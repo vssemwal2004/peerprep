@@ -1,0 +1,108 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Hide scrollbars globally while keeping scrolling functional */
+  * {
+    -ms-overflow-style: none; /* IE and Edge */
+  }
+
+  *::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, Opera */
+  }
+
+  body {
+    @apply bg-white font-sans;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+  }
+
+  /* Monaco draws its own scrollbar DOM; hide it for a LeetCode-like look */
+  .monaco-editor .scrollbar,
+  .monaco-editor .minimap-shadow,
+  .monaco-editor .scroll-decoration {
+    display: none !important;
+  }
+}
+
+/* Hide scrollbars in browsers that support scrollbar-width (Firefox) */
+@supports (scrollbar-width: none) {
+  * {
+    scrollbar-width: none;
+  }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+}
+
+@layer utilities {
+  /* Custom animations */
+  .animate-pulse-slow {
+    animation: pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  .animate-pulse-slower {
+    animation: pulse 6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  .animate-spin-slow {
+    animation: spin 20s linear infinite;
+  }
+
+  /* Ensure no scrolling */
+  .no-scrollbar {
+    -ms-overflow-style: none;  /* IE and Edge */
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;  /* Chrome, Safari, and Opera */
+  }
+
+  /* Enhance touch interactions */
+  @media (hover: none) and (pointer: coarse) {
+    button, a {
+      -webkit-tap-highlight-color: transparent;
+    }
+  }
+}
+
+/* Mobile-specific optimizations */
+@media (max-width: 1024px) {
+  .h-\[85vh\] {
+    height: 100vh !important;
+  }
+  .w-\[105vw\] {
+    width: 100vw !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .min-h-\[68vh\] {
+    min-height: 100vh !important;
+  }
+}
+
+/* Additional global styles for consistency */
+img {
+  @apply object-cover w-full h-full;
+}
+
+input, button, a {
+  @apply outline-none;
+}
+
+input {
+  @apply transition-all duration-300;
+}
+
+button {
+  @apply transition-all duration-300;
+}
+
+a {
+  @apply transition-colors duration-300;
+}
+

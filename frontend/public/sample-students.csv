@@ -1,0 +1,4 @@
+Name,Email,Studentid,Branch,TeacherId,Semester,Course,College,Group
+John Doe,john@university.edu,STU2024001,Computer Science,COORD123,1,B.Tech,"GEU University",G1
+Jane Smith,jane@university.edu,STU2024002,Electronics,"COORD123,COORD456",2,B.Tech,"GEHU Dehradun",G2
+Rohit Sharma,rohit@university.edu,STU2024003,Computer Science,COORD001,3,B.Tech CSE,"ABC Engineering College",G3

@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    
+    <!-- Performance optimizations -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="theme-color" content="#0ea5e9" />
+
+    <!--
+      ISLAND ARCHITECTURE — Step 1: Apply saved theme BEFORE first paint.
+      This prevents a light→dark flash for dark-mode users.
+    -->
+    <script>
+      (function () {
+        var t = localStorage.getItem('theme');
+        if (t === 'dark') document.documentElement.classList.add('dark');
+      })();
+    </script>
+    
+    <!-- Preload critical assets before anything else -->
+    <link rel="preload" as="image" href="/images/logo.png" />
+    
+    <!-- Preconnect to API domain for faster requests (set by VITE_API_BASE in production) -->
+    
+    <!-- Icons and PWA -->
+    <link rel="icon" type="image/png" href="/images/logo.png" sizes="192x192" />
+    <link rel="icon" type="image/png" href="/images/logo.png" sizes="512x512" />
+    <link rel="apple-touch-icon" href="/images/logo.png" sizes="512x512" />
+    
+    <title>PeerPrep</title>
+
+    <!--
+      Backend cold-start wake-up ping.
+      Fires immediately when the HTML is parsed — long before any JS bundle
+      downloads — so the server has maximum time to warm up while the user
+      sees the loading screen.
+    -->
+    <script>
+      (function () {
+        // In local dev, avoid hitting the production domain (CORS noise).
+        // Vite replaces %VITE_API_BASE% at build time if configured.
+        var apiBase = '%VITE_API_BASE%';
+        if (!apiBase || apiBase.indexOf('%VITE_') === 0) apiBase = 'http://localhost:4000/api';
+        fetch(apiBase + '/health', { method: 'GET', credentials: 'omit', mode: 'cors' })
+          .catch(function () { /* ignore errors — this is a best-effort warm-up */ });
+
+        // Update loader status text with reassuring messages while server wakes up
+        var messages = [
+          'Starting up…',
+          'Warming up the server…',
+          'Almost ready…',
+          'Loading PeerPrep…',
+        ];
+        var idx = 0;
+        var statusEl = null;
+        function tick() {
+          if (!statusEl) statusEl = document.getElementById('loader-status');
+          if (statusEl && idx < messages.length) {
+            statusEl.textContent = messages[idx++];
+          }
+        }
+        // First message immediately, then every 8 s
+        document.addEventListener('DOMContentLoaded', function () {
+          statusEl = document.getElementById('loader-status');
+          tick();
+          setInterval(tick, 8000);
+        });
+      })();
+    </script>
+    
+    <style>
+      /* ── GLOBAL SPINNER LOADER ──────────────────────────────────────────
+         Used on non-landing routes. Hidden by useHideGlobalLoader() in
+         App.jsx after first React paint. On "/" it is hidden immediately
+         by the island script below so the static shell shows instead.
+      ──────────────────────────────────────────────────────────────────── */
+      #global-loader {
+        position: fixed; inset: 0; background: #ffffff;
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        z-index: 9999; transition: opacity 0.3s ease-out;
+      }
+      html.dark #global-loader { background: #111827; }
+      #global-loader.fade-out { opacity: 0; pointer-events: none; }
+      .loader-logo { width: 180px; height: auto; margin-bottom: 24px; animation: fadeInLogo 0.6s ease-out; }
+      .loader-spinner {
+        width: 48px; height: 48px;
+        border: 4px solid #e0f2fe; border-top-color: #0ea5e9;
+        border-radius: 50%; animation: spin 0.8s linear infinite;
+      }
+      html.dark .loader-spinner { border-color: #1e293b; border-top-color: #38bdf8; }
+      #loader-status {
+        margin-top: 20px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-size: 14px; color: #64748b; letter-spacing: 0.02em; min-height: 1.4em;
+      }
+      html.dark #loader-status { color: #94a3b8; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      @keyframes fadeInLogo {
+        from { opacity: 0; transform: scale(0.9); }
+        to   { opacity: 1; transform: scale(1); }
+      }
+
+      /* ── ISLAND ARCHITECTURE — Landing Page Static Shell ────────────────
+         Pixel-perfect HTML+CSS replica of the LandingPage hero.
+         Rendered as plain HTML — no JS, no framework needed.
+         Appears in ~50ms (first HTML parse). Fades out when React's
+         LandingPage component mounts (see LandingPage.jsx useEffect).
+
+         Lifecycle on "/":
+           HTML parsed  →  island visible instantly (50ms)
+           React boots  →  LandingPage chunk downloads
+           LandingPage mounts  →  island fades out, React takes over (seamless)
+      ──────────────────────────────────────────────────────────────────── */
+      #landing-island {
+        display: none; /* revealed by the inline script below, only on "/" */
+        position: fixed; inset: 0; z-index: 50;
+        overflow-y: auto; overflow-x: hidden;
+        background: linear-gradient(135deg, #f8fafc 0%, #ffffff 45%, #eef2ff 100%);
+        opacity: 1; transition: opacity 0.3s ease-out;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      html.dark #landing-island {
+        background: linear-gradient(135deg, #111827 0%, #1f2937 55%, #111827 100%);
+      }
+      #landing-island.li-fade { opacity: 0; pointer-events: none; }
+
+      /* Navbar */
+      .li-nav {
+        position: sticky; top: 0; z-index: 60;
+        background: rgba(255,255,255,0.95); backdrop-filter: blur(12px);
+        border-bottom: 1px solid rgba(226,232,240,0.5);
+        box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      }
+      html.dark .li-nav {
+        background: rgba(17,24,39,0.95);
+        border-bottom-color: rgba(55,65,81,0.5);
+      }
+      .li-nav-wrap { max-width:1280px; margin:0 auto; padding:0 24px; height:64px; display:flex; align-items:center; justify-content:space-between; }
+      .li-logo { height:48px; width:auto; object-fit:contain; display:block; }
+      .li-nav-links { display:flex; gap:32px; margin-left:48px; }
+      .li-nav-links a { font-size:14px; font-weight:500; color:#334155; text-decoration:none; }
+      html.dark .li-nav-links a { color:#d1d5db; }
+      .li-nav-right { display:flex; align-items:center; gap:10px; }
+      .li-nbtn { border:none; border-radius:12px; font-size:14px; font-weight:600; cursor:pointer; padding:9px 22px; line-height:1; transition:transform 0.2s; }
+      .li-nbtn:hover { transform:scale(1.04); }
+      .li-nbtn-get { background:linear-gradient(to right,#4f46e5,#0284c7); color:#fff; box-shadow:0 4px 12px rgba(79,70,229,.25); }
+      .li-nbtn-login { background:#0ea5e9; color:#fff; }
+
+      /* Hero layout */
+      .li-hero-wrap { max-width:1280px; margin:0 auto; padding:48px 24px 80px; display:grid; grid-template-columns:1fr 1fr; gap:64px; align-items:center; }
+
+      /* Left: text */
+      .li-badge {
+        display:inline-flex; align-items:center; gap:8px;
+        background:linear-gradient(to right,#eef2ff,#f0f9ff);
+        border:1px solid rgba(99,102,241,.3); border-radius:9999px;
+        padding:10px 20px; font-size:13px; font-weight:600; color:#4f46e5; margin-bottom:24px;
+      }
+      html.dark .li-badge { background:linear-gradient(to right,#1f2937,#111827); border-color:rgba(99,102,241,.4); color:#818cf8; }
+      .li-h1 { font-size:60px; font-weight:700; line-height:1.15; color:#0f172a; margin:0 0 20px; }
+      html.dark .li-h1 { color:#f1f5f9; }
+      .li-grad { background:linear-gradient(to right,#4f46e5,#0284c7,#2563eb); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; display:block; }
+      .li-sub { font-size:18px; line-height:1.7; color:#475569; max-width:480px; margin:0 0 32px; }
+      html.dark .li-sub { color:#94a3b8; }
+      .li-btns { display:flex; gap:12px; flex-wrap:wrap; }
+      .li-btn { border:none; border-radius:12px; font-size:16px; font-weight:600; cursor:pointer; padding:14px 36px; line-height:1; transition:transform 0.2s,box-shadow 0.2s; }
+      .li-btn:hover { transform:scale(1.04); }
+      .li-btn-p { background:linear-gradient(to right,#4f46e5,#0284c7); color:#fff; box-shadow:0 10px 20px rgba(79,70,229,.3); }
+      .li-btn-s { background:#0ea5e9; color:#fff; box-shadow:0 4px 8px rgba(14,165,233,.3); }
+      .li-btn-o { background:#fff; color:#334155; border:2px solid #e2e8f0; }
+      html.dark .li-btn-o { background:#1f2937; color:#e2e8f0; border-color:#374151; }
+
+      /* Right card */
+      .li-card-ring { background:linear-gradient(135deg,#4f46e5,#0284c7,#2563eb); border-radius:28px; padding:4px; box-shadow:0 25px 50px rgba(79,70,229,.3); }
+      .li-card-body { background:#fff; border-radius:24px; padding:32px; }
+      html.dark .li-card-body { background:#1f2937; }
+      .li-card-hd { display:flex; align-items:center; gap:8px; margin-bottom:24px; }
+      .li-dot { width:12px; height:12px; background:#10b981; border-radius:50%; animation:li-pulse 2s infinite; }
+      .li-live-lbl { font-size:14px; font-weight:600; color:#334155; flex:1; }
+      html.dark .li-live-lbl { color:#e2e8f0; }
+      .li-timer-badge { background:#f1f5f9; padding:6px 12px; border-radius:8px; font-size:12px; font-weight:500; color:#475569; }
+      html.dark .li-timer-badge { background:#374151; color:#d1d5db; }
+      .li-vid { background:linear-gradient(135deg,#eef2ff,#f0f9ff,#eff6ff); border-radius:16px; padding:32px 24px; border:2px solid #e0e7ff; display:flex; align-items:center; justify-content:center; gap:20px; margin-bottom:16px; }
+      html.dark .li-vid { background:#374151; border-color:#4b5563; }
+      .li-av { display:flex; flex-direction:column; align-items:center; }
+      .li-av-icon { width:76px; height:76px; border-radius:16px; display:flex; align-items:center; justify-content:center; font-size:32px; margin-bottom:10px; box-shadow:0 8px 16px rgba(0,0,0,.15); }
+      .li-i { background:linear-gradient(135deg,#6366f1,#4f46e5); transform:rotate(3deg); }
+      .li-k { background:linear-gradient(135deg,#38bdf8,#0284c7); transform:rotate(-3deg); }
+      .li-av-n { font-size:14px; font-weight:700; color:#1e293b; margin:0 0 2px; }
+      html.dark .li-av-n { color:#e2e8f0; }
+      .li-av-s { font-size:12px; color:#64748b; margin:0; }
+      html.dark .li-av-s { color:#9ca3af; }
+      .li-conn-c { display:flex; flex-direction:column; align-items:center; gap:6px; }
+      .li-conn-l { width:40px; height:2px; background:linear-gradient(to right,#6366f1,#38bdf8); }
+      .li-conn-ico { font-size:18px; }
+      .li-tags { display:flex; justify-content:center; gap:12px; }
+      .li-ti { background:#eef2ff; color:#4338ca; padding:6px 16px; border-radius:8px; font-size:12px; font-weight:500; }
+      html.dark .li-ti { background:#374151; color:#a5b4fc; }
+      .li-ts { background:#f0f9ff; color:#0369a1; padding:6px 16px; border-radius:8px; font-size:12px; font-weight:500; }
+      html.dark .li-ts { background:#374151; color:#7dd3fc; }
+      @keyframes li-pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.7;transform:scale(1.15)} }
+
+      /* Responsive */
+      @media (max-width: 1024px) {
+        .li-hero-wrap { grid-template-columns:1fr; gap:40px; padding:32px 20px 56px; }
+        .li-h1 { font-size:42px; }
+        .li-card-ring { max-width:440px; margin:0 auto; }
+      }
+      @media (max-width: 640px) {
+        .li-h1 { font-size:32px; }
+        .li-sub { font-size:15px; }
+        .li-nav-links { display:none; }
+        .li-vid { gap:12px; padding:20px 12px; }
+        .li-av-icon { width:56px; height:56px; font-size:24px; }
+        .li-btns { flex-direction:column; }
+        .li-btn { text-align:center; }
+        .li-nav-wrap { padding:0 16px; }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- ── GLOBAL SPINNER LOADER ─────────────────────────────────────────
+         Shown on all routes except "/" (where the island shows instead).
+         Removed after first React paint by useHideGlobalLoader() in App.jsx.
+    ─────────────────────────────────────────────────────────────────── -->
+    <div id="global-loader">
+      <img src="/images/logo.png" alt="PeerPrep" class="loader-logo" />
+      <div class="loader-spinner"></div>
+      <p id="loader-status">Loading PeerPrep&hellip;</p>
+    </div>
+
+    <!-- ── ISLAND ARCHITECTURE — LANDING PAGE STATIC SHELL ──────────────
+         Pure HTML+CSS replica of the landing page hero rendered with zero
+         JavaScript. Appears ~50ms after navigation (on first HTML parse).
+         Stays visible while React downloads JS and boots. Faded out by
+         LandingPage.jsx after the React component mounts.
+    ─────────────────────────────────────────────────────────────────── -->
+    <div id="landing-island">
+      <!-- Static Navbar -->
+      <nav class="li-nav">
+        <div class="li-nav-wrap">
+          <div style="display:flex;align-items:center">
+            <img src="/images/logo.png" alt="PeerPrep" class="li-logo" />
+            <div class="li-nav-links">
+              <a href="#features">Features</a>
+              <a href="#platform">Platform</a>
+              <a href="#system">System</a>
+            </div>
+          </div>
+          <div class="li-nav-right">
+            <button class="li-nbtn li-nbtn-get" onclick="window.location.href='/join'">Get Started &rarr;</button>
+            <button class="li-nbtn li-nbtn-login" onclick="window.location.href='/student'">Login</button>
+          </div>
+        </div>
+      </nav>
+
+      <!-- Static Hero -->
+      <div class="li-hero-wrap">
+        <!-- Left: heading + CTA -->
+        <div>
+          <div class="li-badge">&#10022;&nbsp; Complete Interview Preparation Platform</div>
+          <h1 class="li-h1">
+            Transform Your
+            <span class="li-grad">Interview Success</span>
+          </h1>
+          <p class="li-sub">
+            A comprehensive platform featuring mock interviews, skill exchange, live discussions,
+            personalized learning paths, and intelligent feedback systems designed to accelerate
+            your career growth.
+          </p>
+          <div class="li-btns">
+            <button class="li-btn li-btn-p" onclick="window.location.href='/join'">Get Started &rarr;</button>
+            <button class="li-btn li-btn-s" onclick="window.location.href='/student'">Login</button>
+            <button class="li-btn li-btn-o">Explore Features &#9654;</button>
+          </div>
+        </div>
+
+        <!-- Right: mock interview card -->
+        <div>
+          <div class="li-card-ring">
+            <div class="li-card-body">
+              <div class="li-card-hd">
+                <div class="li-dot"></div>
+                <span class="li-live-lbl">Live Mock Interview</span>
+                <div class="li-timer-badge">&#9200;&nbsp;15:42</div>
+              </div>
+              <div class="li-vid">
+                <div class="li-av">
+                  <div class="li-av-icon li-i">&#127909;</div>
+                  <p class="li-av-n">Interviewer</p>
+                  <p class="li-av-s">Sarah M.</p>
+                </div>
+                <div class="li-conn-c">
+                  <div class="li-conn-l"></div>
+                  <span class="li-conn-ico">&#127909;</span>
+                  <div class="li-conn-l"></div>
+                </div>
+                <div class="li-av">
+                  <div class="li-av-icon li-k">&#128100;</div>
+                  <p class="li-av-n">Candidate</p>
+                  <p class="li-av-s">Alex K.</p>
+                </div>
+              </div>
+              <div class="li-tags">
+                <span class="li-ti">&#128172;&nbsp;Live Feedback</span>
+                <span class="li-ts">&#128202;&nbsp;Analytics</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /#landing-island -->
+
+    <!--
+      Island activation script.
+      Runs synchronously (no defer/async) immediately after the island HTML
+      is in the DOM, so the correct UI shows before the browser paints.
+    -->
+    <script>
+      (function () {
+        var isLanding = window.location.pathname === '/';
+        var island = document.getElementById('landing-island');
+        var loader = document.getElementById('global-loader');
+
+        if (isLanding && island) {
+          island.style.display = 'block';
+          if (loader) loader.style.display = 'none';
+        }
+
+        // Backend cold-start warm-up ping — fires before JS bundles download
+        var apiBase = '%VITE_API_BASE%';
+        if (!apiBase || apiBase.indexOf('%VITE_') === 0) apiBase = 'http://localhost:4000/api';
+        fetch(apiBase + '/health', { method:'GET', credentials:'omit', mode:'cors' })
+          .catch(function(){});
+
+        // Status messages for the global loader (non-landing routes only)
+        if (!isLanding) {
+          var msgs = ['Starting up\u2026','Warming up the server\u2026','Almost ready\u2026','Loading PeerPrep\u2026'];
+          var idx = 0;
+          document.addEventListener('DOMContentLoaded', function () {
+            var el = document.getElementById('loader-status');
+            if (!el) return;
+            el.textContent = msgs[idx++];
+            setInterval(function(){ if (idx < msgs.length && el) el.textContent = msgs[idx++]; }, 8000);
+          });
+        }
+      })();
+    </script>
+
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

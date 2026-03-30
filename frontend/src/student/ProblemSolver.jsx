@@ -1,0 +1,1477 @@
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import {
+  ChevronLeft,
+  ChevronDown,
+  Play,
+  Send,
+  RotateCcw,
+  Tag,
+  Building2,
+  PanelLeftOpen,
+} from 'lucide-react';
+import { api } from '../utils/api';
+import { useToast } from '../components/CustomToast';
+import CodeEditor from './CodeEditor';
+import { DifficultyBadge, EmptyState, LoadingPanel } from '../admin/compiler/CompilerUi';
+import {
+  formatDateTime,
+  formatDuration,
+  getLanguageLabel,
+  submissionStatusClass,
+} from '../admin/compiler/compilerUtils';
+import { RichTextPreview } from '../admin/compiler/CompilerContentPreview';
+import {
+  buildProblemDrafts,
+  loadProblemDrafts,
+  saveProblemDrafts,
+  studentStatusBadgeClass,
+} from './problemUtils';
+function StudentProgressBadge({ status }) {
+  return (
+    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${studentStatusBadgeClass(status)}`}>
+      {status}
+    </span>
+  );
+}
+
+function LeftPanelTabs({
+  activeTab,
+  onTabChange,
+  verdictLabel,
+  verdictTone = 'neutral',
+  verdictDisabled = false,
+}) {
+  const verdictTextTone = verdictTone === 'success'
+    ? 'text-emerald-600 dark:text-emerald-300'
+    : (verdictTone === 'danger' ? 'text-rose-600 dark:text-rose-300' : 'text-slate-500 dark:text-gray-400');
+
+  return (
+    <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 pt-2 dark:border-gray-700 dark:bg-gray-900">
+      <div className="flex items-center gap-4">
+        <button
+          type="button"
+          onClick={() => onTabChange('description')}
+          className={`pb-3 text-sm font-semibold transition-colors ${
+            activeTab === 'description'
+              ? 'border-b-2 border-sky-600 text-slate-900 dark:border-sky-500 dark:text-gray-100'
+              : 'border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:text-gray-400 dark:hover:text-gray-200'
+          }`}
+        >
+          Description
+        </button>
+        <button
+          type="button"
+          onClick={() => onTabChange('submissions')}
+          className={`pb-3 text-sm font-semibold transition-colors ${
+            activeTab === 'submissions'
+              ? 'border-b-2 border-sky-600 text-slate-900 dark:border-sky-500 dark:text-gray-100'
+              : 'border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:text-gray-400 dark:hover:text-gray-200'
+          }`}
+        >
+          Submissions
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onTabChange('acceptance')}
+          disabled={verdictDisabled}
+          className={`pb-3 text-sm font-semibold transition-colors ${
+            activeTab === 'acceptance'
+              ? 'border-b-2 border-sky-600 text-slate-900 dark:border-sky-500 dark:text-gray-100'
+              : `border-b-2 border-transparent ${verdictTextTone} ${verdictDisabled ? 'opacity-50' : 'hover:text-slate-700 dark:hover:text-gray-200'}`
+          }`}
+        >
+          {verdictLabel || 'Result'}
+        </button>
+      </div>
+
+    </div>
+  );
+}
+
+function decodeHtmlEntities(value) {
+  const raw = String(value ?? '');
+  if (!raw.includes('&')) return raw;
+  return raw
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&amp;', '&')
+    .replaceAll('&quot;', '"')
+    .replaceAll('&#39;', "'");
+}
+
+function formatMemoryMb(memoryUsedKb) {
+  const numeric = Number(memoryUsedKb || 0);
+  if (!Number.isFinite(numeric) || numeric <= 0) return '—';
+  return `${(numeric / 1024).toFixed(2)} MB`;
+}
+
+function CodeWithLineNumbers({ code }) {
+  const normalized = String(code ?? '').replace(/\r\n/g, '\n');
+  if (!normalized.trim()) return null;
+
+  const lines = normalized.split('\n');
+  const gutterWidth = String(Math.min(lines.length, 9999)).length;
+
+  return (
+    <div className="overflow-x-auto">
+      <pre className="whitespace-pre text-xs leading-relaxed">
+        {lines.map((line, index) => (
+          <div key={index} className="flex">
+            <span
+              className="select-none pr-4 text-slate-400 dark:text-gray-500"
+              style={{ minWidth: `${gutterWidth + 1}ch` }}
+            >
+              {index + 1}
+            </span>
+            <span className="text-slate-800 dark:text-gray-100">{line || ' '}</span>
+          </div>
+        ))}
+      </pre>
+    </div>
+  );
+}
+
+function Histogram({ values, highlightValue, formatLabel, markerLabel = 'You' }) {
+  const numbers = (values || [])
+    .map((v) => Number(v))
+    .filter((v) => Number.isFinite(v));
+
+  if (numbers.length < 2) {
+    return null;
+  }
+
+  const min = Math.min(...numbers);
+  const max = Math.max(...numbers);
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min === max) {
+    return null;
+  }
+
+  const bins = 28;
+  const range = max - min;
+  const step = range / bins;
+  const counts = Array.from({ length: bins }, () => 0);
+
+  numbers.forEach((value) => {
+    const rawIndex = step > 0 ? Math.floor((value - min) / step) : 0;
+    const index = Math.min(bins - 1, Math.max(0, rawIndex));
+    counts[index] += 1;
+  });
+
+  const maxCount = Math.max(...counts);
+  const totalCount = counts.reduce((sum, count) => sum + count, 0);
+  const percents = totalCount > 0 ? counts.map((count) => (count / totalCount) * 100) : counts.map(() => 0);
+  const maxPercent = Math.max(...percents, 0);
+  const yMax = Math.max(40, Math.ceil(maxPercent / 10) * 10);
+  const highlightIndex = (() => {
+    const hv = Number(highlightValue);
+    if (!Number.isFinite(hv)) return -1;
+    const rawIndex = step > 0 ? Math.floor((hv - min) / step) : 0;
+    return Math.min(bins - 1, Math.max(0, rawIndex));
+  })();
+
+  const xTicks = Array.from({ length: 6 }, (_, idx) => {
+    const t = idx / 5;
+    const value = min + range * t;
+    return {
+      label: formatLabel ? formatLabel(value) : String(value),
+      left: `${t * 100}%`,
+    };
+  });
+
+  const markerLeft = highlightIndex >= 0
+    ? `${((highlightIndex + 0.5) / bins) * 100}%`
+    : null;
+
+  // LeetCode-like hover tooltip.
+  const [hover, setHover] = useState(null);
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-gray-700 dark:bg-gray-900">
+      <div className="relative">
+        <div className="absolute inset-0 pointer-events-none">
+          {[yMax, yMax / 2].map((tick) => {
+            const top = yMax > 0 ? `${100 - (tick / yMax) * 100}%` : '100%';
+            return (
+              <div key={tick} className="absolute left-0 right-0" style={{ top }}>
+                <div className="flex items-center gap-2">
+                  <div className="w-9 text-[10px] text-slate-400 dark:text-gray-500">{`${tick}%`}</div>
+                  <div className="h-px flex-1 bg-slate-100 dark:bg-gray-800" />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="relative flex h-40 items-end gap-0.5 pl-9">
+          {percents.map((percent, index) => {
+            const heightPercent = yMax > 0 ? Math.round((percent / yMax) * 100) : 0;
+            const isActive = index === highlightIndex;
+            const barCount = counts[index];
+            const runtimeValue = min + step * (index + 0.5);
+            return (
+              <div
+                key={index}
+                className={`flex-1 rounded-sm ${isActive ? 'bg-sky-600 dark:bg-sky-500' : 'bg-slate-300/90 dark:bg-gray-700'}`}
+                style={{ height: `${Math.max(4, heightPercent)}%` }}
+                onMouseEnter={() => setHover({ index, percent, count: barCount, value: runtimeValue })}
+                onMouseMove={(event) => {
+                  const rect = event.currentTarget.parentElement?.getBoundingClientRect();
+                  if (!rect) return;
+                  const x = event.clientX - rect.left;
+                  setHover((previous) => (previous ? { ...previous, x } : previous));
+                }}
+                onMouseLeave={() => setHover(null)}
+              />
+            );
+          })}
+        </div>
+
+        {markerLeft && (
+          <div className="pointer-events-none absolute bottom-1" style={{ left: `calc(${markerLeft} + 2.25rem)` }}>
+            <div className="relative -translate-x-1/2">
+              <div className="h-10 w-px bg-slate-200 dark:bg-gray-700" />
+              <div className="absolute -bottom-3 left-1/2 -translate-x-1/2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-sky-600 bg-white text-[10px] font-bold text-slate-700 shadow-sm dark:border-sky-500 dark:bg-gray-900 dark:text-gray-100">
+                  {markerLabel}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {hover && typeof hover.x === 'number' && (
+          <div
+            className="pointer-events-none absolute top-12"
+            style={{ left: `calc(${hover.x}px + 2.25rem)` }}
+          >
+            <div className="relative -translate-x-1/2">
+              <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+                {`${hover.percent.toFixed(2)}% of solutions used ${Math.round(hover.value)} ms of runtime`}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-2 pl-9">
+        <div className="relative h-4">
+          {xTicks.map((tick) => (
+            <div
+              key={tick.left}
+              className="absolute -translate-x-1/2 text-[10px] text-slate-400 dark:text-gray-500"
+              style={{ left: tick.left }}
+            >
+              {tick.label}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProblemDescriptionPanel({ problem }) {
+  const [topicsOpen, setTopicsOpen] = useState(false);
+  const [companiesOpen, setCompaniesOpen] = useState(false);
+
+  const topics = problem.tags || [];
+  const companies = problem.companyTags || [];
+
+  return (
+    <div className="space-y-6 px-5 py-5">
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <DifficultyBadge difficulty={problem.difficulty} />
+          <StudentProgressBadge status={problem.studentStatus || 'Unsolved'} />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-gray-100">{problem.title}</h1>
+          <p className="mt-2 text-sm text-slate-500 dark:text-gray-400">
+            {Number(problem.acceptanceRate || 0).toFixed(1)}% acceptance | {problem.totalSubmissions || 0} submissions
+          </p>
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">
+          Description
+        </h2>
+        <RichTextPreview content={problem.description} />
+      </section>
+
+      <section className="space-y-6">
+        <div className="space-y-2">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Input</h2>
+          <p className="whitespace-pre-wrap text-sm text-slate-700 dark:text-gray-300">
+            {problem.inputFormat || 'Input format will appear here.'}
+          </p>
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Output</h2>
+          <p className="whitespace-pre-wrap text-sm text-slate-700 dark:text-gray-300">
+            {problem.outputFormat || 'Output format will appear here.'}
+          </p>
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Constraints</h2>
+          <p className="whitespace-pre-wrap text-sm text-slate-700 dark:text-gray-300">
+            {problem.constraints || 'Constraints will appear here.'}
+          </p>
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">
+            Examples
+          </h2>
+          <span className="text-xs text-slate-500 dark:text-gray-400">
+            {problem.sampleTestCases?.length || 0} sample cases
+          </span>
+        </div>
+
+        {(problem.sampleTestCases || []).length === 0 ? (
+          <EmptyState
+            title="No sample cases available"
+            description="This problem has not been published with visible examples yet."
+          />
+        ) : (
+          <div className="space-y-4">
+            {(problem.sampleTestCases || []).map((testCase, index) => (
+              <div
+                key={index}
+                className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900"
+              >
+                <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
+                  <div className="text-sm font-semibold text-slate-900 dark:text-gray-100">Example {index + 1}</div>
+                </div>
+
+                <div className="space-y-4 px-4 py-4">
+                  <div className="space-y-2">
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Input</div>
+                    <pre className="whitespace-pre-wrap break-words rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-800 dark:bg-gray-800 dark:text-gray-200">
+                      {testCase.input || ''}
+                    </pre>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Output</div>
+                    <pre className="whitespace-pre-wrap break-words rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-800 dark:bg-gray-800 dark:text-gray-200">
+                      {testCase.output || ''}
+                    </pre>
+                  </div>
+
+                  {testCase.explanation && (
+                    <div className="space-y-2">
+                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Explanation</div>
+                      <div className="text-sm text-slate-700 dark:text-gray-300">{testCase.explanation}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {(topics.length > 0 || companies.length > 0) && (
+          <section className="divide-y divide-slate-200 rounded-xl border border-slate-200 dark:divide-gray-700 dark:border-gray-700">
+            {topics.length > 0 && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setTopicsOpen((previous) => !previous)}
+                  className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Tag className="h-4 w-4 text-slate-500 dark:text-gray-400" />
+                    <span className="text-sm font-semibold text-slate-800 dark:text-gray-100">Topics</span>
+                  </div>
+                  <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform dark:text-gray-500 ${topicsOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {topicsOpen && (
+                  <div className="px-4 pb-3">
+                    <div className="flex flex-wrap gap-2">
+                      {topics.map((tag) => (
+                        <span
+                          key={tag}
+                          className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:bg-gray-800 dark:text-gray-200"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {companies.length > 0 && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setCompaniesOpen((previous) => !previous)}
+                  className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Building2 className="h-4 w-4 text-amber-500" />
+                    <span className="text-sm font-semibold text-slate-800 dark:text-gray-100">Companies</span>
+                  </div>
+                  <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform dark:text-gray-500 ${companiesOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {companiesOpen && (
+                  <div className="px-4 pb-3">
+                    <div className="flex flex-wrap gap-2">
+                      {companies.map((tag) => (
+                        <span
+                          key={tag}
+                          className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-900/20 dark:text-amber-200"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        )}
+      </section>
+
+    </div>
+  );
+}
+
+function statusLabel(status) {
+  const normalized = String(status || '').toUpperCase();
+  if (normalized === 'AC') return 'Accepted';
+  if (normalized === 'WA') return 'Wrong Answer';
+  if (normalized === 'TLE') return 'Time Limit Exceeded';
+  if (normalized === 'RE') return 'Runtime Error';
+  if (normalized === 'CE') return 'Compile Error';
+  if (normalized === 'PENDING') return 'Pending';
+  if (normalized === 'RUNNING') return 'Running';
+  return status || 'Result';
+}
+
+function normalizeComparableText(value) {
+  return String(value ?? '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+    .join('\n')
+    .trim();
+}
+
+function SubmissionDetail({ submission }) {
+  if (!submission) return null;
+
+  const prettyStatus = statusLabel(submission.status);
+  const casesLabel = submission.totalTestCases > 0
+    ? `${submission.passedTestCases || 0} / ${submission.totalTestCases} testcases passed`
+    : '';
+
+  const testCaseBars = Array.isArray(submission.testCaseResults)
+    ? submission.testCaseResults
+    : [];
+  const maxCaseTime = testCaseBars.reduce((max, entry) => Math.max(max, Number(entry.executionTimeMs || 0)), 0);
+
+  return (
+    <div className="space-y-4 px-5 py-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className={`text-lg font-bold ${prettyStatus === 'Accepted' ? 'text-emerald-600 dark:text-emerald-300' : 'text-slate-900 dark:text-gray-100'}`}
+            >
+              {prettyStatus}
+            </div>
+            {casesLabel && (
+              <div className="text-sm text-slate-500 dark:text-gray-400">{casesLabel}</div>
+            )}
+          </div>
+          <div className="mt-1 text-xs text-slate-500 dark:text-gray-400">
+            {formatDateTime(submission.createdAt)}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
+          <div className="text-xs font-semibold text-slate-500 dark:text-gray-400">Runtime</div>
+          <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-gray-100">{formatDuration(submission.executionTimeMs || 0)}</div>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
+          <div className="text-xs font-semibold text-slate-500 dark:text-gray-400">Memory</div>
+          <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-gray-100">
+            {submission.memoryUsedKb ? `${(submission.memoryUsedKb / 1024).toFixed(2)} MB` : '—'}
+          </div>
+        </div>
+      </div>
+
+      {testCaseBars.length > 0 && (
+        <div className="space-y-2">
+          <div className="text-xs font-semibold text-slate-500 dark:text-gray-400">Runtime Distribution</div>
+          <div className="flex h-16 items-end gap-0.5 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800">
+            {testCaseBars.slice(0, 120).map((entry) => {
+              const h = maxCaseTime > 0
+                ? Math.max(10, Math.round((Number(entry.executionTimeMs || 0) / maxCaseTime) * 100))
+                : 12;
+              const isOk = String(entry.status || '').toUpperCase() === 'AC';
+              return (
+                <div
+                  key={`${entry.index}-${entry.status}`}
+                  className={isOk ? 'w-1 rounded-sm bg-sky-500/80' : 'w-1 rounded-sm bg-rose-500/80'}
+                  style={{ height: `${h}%` }}
+                  title={`Case ${entry.index}: ${statusLabel(entry.status)} (${entry.executionTimeMs || 0} ms)`}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SubmissionList({ loading, submissions, selectedId, onSelect, onOpenDetail }) {
+  if (loading) {
+    return (
+      <div className="flex min-h-[220px] items-center justify-center px-5 py-5">
+        <div className="flex items-center gap-3 text-sm text-slate-500 dark:text-gray-400">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-sky-500 dark:border-gray-700 dark:border-t-sky-400" />
+          Loading your submissions...
+        </div>
+      </div>
+    );
+  }
+
+  if (submissions.length === 0) {
+    return (
+      <div className="px-5 py-5">
+        <EmptyState
+          title="No submissions yet"
+          description="Run or submit from the editor to build your attempt history here."
+        />
+      </div>
+    );
+  }
+
+  const rows = submissions;
+  const selectedSubmission = rows.find((submission) => String(submission._id) === String(selectedId))
+    || rows[0];
+
+  return (
+    <div className="px-5 py-5">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <colgroup>
+              <col className="w-[210px]" />
+              <col className="w-[140px]" />
+              <col className="w-[110px]" />
+              <col className="w-[110px]" />
+              <col />
+            </colgroup>
+
+            <thead className="sticky top-0 z-10 bg-white text-xs font-semibold text-slate-500 shadow-[inset_0_-1px_0_0_rgb(226,232,240)] dark:bg-gray-900 dark:text-gray-300 dark:shadow-[inset_0_-1px_0_0_rgb(55,65,81)]">
+              <tr>
+                <th className="px-4 py-3 text-left">Status</th>
+                <th className="px-4 py-3 text-left">Language</th>
+                <th className="px-4 py-3 text-left">Runtime</th>
+                <th className="px-4 py-3 text-left">Memory</th>
+                <th className="px-4 py-3 text-left">Notes</th>
+              </tr>
+            </thead>
+
+            <tbody className="divide-y divide-slate-200 dark:divide-gray-700">
+              {rows.map((submission) => {
+                const isSelected = String(submission._id) === String(selectedSubmission?._id);
+                const statusText = statusLabel(submission.status);
+                const statusUpper = String(submission.status || '').toUpperCase();
+                const statusTone = statusUpper === 'AC'
+                  ? 'text-emerald-600 dark:text-emerald-300'
+                  : (['CE', 'RE', 'WA', 'TLE'].includes(statusUpper) ? 'text-rose-600 dark:text-rose-300' : 'text-slate-800 dark:text-gray-100');
+
+                return (
+                  <tr
+                    key={submission._id}
+                    className={`cursor-pointer transition-colors ${
+                      isSelected
+                        ? 'bg-sky-50 dark:bg-sky-900/10'
+                        : 'bg-white hover:bg-slate-50 dark:bg-gray-900 dark:hover:bg-gray-800'
+                    }`}
+                    onClick={() => {
+                      onSelect?.(submission._id);
+                      onOpenDetail?.();
+                    }}
+                  >
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col gap-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`font-semibold ${statusTone}`}>{statusText}</span>
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase text-slate-600 dark:bg-gray-800 dark:text-gray-300">
+                            {submission.mode}
+                          </span>
+                        </div>
+                        <span className="text-xs text-slate-400 dark:text-gray-500">
+                          {formatDateTime(submission.createdAt)}
+                        </span>
+                      </div>
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+                        {getLanguageLabel(submission.language)}
+                      </span>
+                    </td>
+
+                    <td className="px-4 py-3 font-semibold text-slate-800 dark:text-gray-100">
+                      {submission.executionTimeMs ? formatDuration(submission.executionTimeMs) : 'N/A'}
+                    </td>
+
+                    <td className="px-4 py-3 font-semibold text-slate-800 dark:text-gray-100">
+                      {formatMemoryMb(submission.memoryUsedKb)}
+                    </td>
+
+                    <td className="px-4 py-3 text-slate-400 dark:text-gray-500">—</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function beatsPercentLowerIsBetter(value, dataset) {
+  const numericValue = Number(value);
+  const values = (dataset || [])
+    .map((entry) => Number(entry))
+    .filter((entry) => Number.isFinite(entry) && entry > 0);
+
+  if (!Number.isFinite(numericValue) || numericValue <= 0 || values.length < 2) {
+    return null;
+  }
+
+  const slowerCount = values.filter((entry) => entry > numericValue).length;
+  return Math.max(0, Math.min(100, (slowerCount / values.length) * 100));
+}
+
+function AcceptancePanel({ submissions, selectedId, onBack }) {
+  if (!submissions || submissions.length === 0) {
+    return (
+      <div className="px-5 py-5">
+        <EmptyState
+          title="No submissions yet"
+          description="Submit a solution to see runtime and memory analytics here."
+        />
+      </div>
+    );
+  }
+
+  const selected = submissions.find((entry) => String(entry._id) === String(selectedId)) || submissions[0];
+  const languageKey = selected.language;
+  const peer = submissions
+    .filter((entry) => entry.mode === 'submit' && entry.language === languageKey)
+    .filter((entry) => Number(entry.executionTimeMs || 0) > 0 || Number(entry.memoryUsedKb || 0) > 0);
+
+  const runtimeMs = Number(selected.executionTimeMs || 0);
+  const memoryKb = Number(selected.memoryUsedKb || 0);
+
+  const runtimeBeats = beatsPercentLowerIsBetter(runtimeMs, peer.map((entry) => entry.executionTimeMs));
+  const memoryBeats = beatsPercentLowerIsBetter(memoryKb, peer.map((entry) => entry.memoryUsedKb));
+
+  const codeText = decodeHtmlEntities(selected.sourceCode || '');
+  const compileText = decodeHtmlEntities(selected.compileOutput || '');
+  const stderrText = decodeHtmlEntities(selected.stderr || '');
+
+  const statusUpper = String(selected.status || '').toUpperCase();
+  const isAccepted = statusUpper === 'AC';
+  const isCompileError = statusUpper === 'CE';
+  const isWrongAnswer = statusUpper === 'WA';
+  const isErrorLike = ['CE', 'RE', 'WA', 'TLE'].includes(statusUpper);
+
+  const totalCases = Number(selected.totalTestCases ?? 0);
+  const passedCases = Number(selected.passedTestCases ?? 0);
+  const passedLabel = `${passedCases} / ${totalCases} testcases passed`;
+
+  const failedCaseIndex = Number(selected.failedCase?.index || 0);
+  const caseResults = Array.isArray(selected.testCaseResults) ? selected.testCaseResults : [];
+
+  const userName = selected.user?.name || '';
+  const initials = userName
+    ? userName.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('')
+    : 'U';
+
+  return (
+    <div className="space-y-4 px-4 py-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-900 dark:text-gray-300 dark:hover:text-gray-100"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            All Submissions
+          </button>
+
+          <div className="flex flex-wrap items-baseline gap-2">
+            <div className={`text-lg font-bold ${
+              isAccepted
+                ? 'text-emerald-600 dark:text-emerald-300'
+                : (isErrorLike ? 'text-rose-600 dark:text-rose-300' : 'text-slate-900 dark:text-gray-100')
+            }`}>
+              {statusLabel(selected.status)}
+            </div>
+            <div className="text-xs text-slate-400 dark:text-gray-500">{passedLabel}</div>
+          </div>
+
+          {caseResults.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              {caseResults.slice(0, 200).map((entry) => {
+                const isOk = String(entry.status || '').toUpperCase() === 'AC';
+                const isFailed = failedCaseIndex > 0 && Number(entry.index) === failedCaseIndex;
+                const base = isOk
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-200 dark:border-emerald-800'
+                  : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-200 dark:border-amber-800';
+                const ring = isFailed ? 'ring-2 ring-amber-400/60 dark:ring-amber-300/40' : '';
+
+                return (
+                  <span
+                    key={entry.index}
+                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${base} ${ring}`}
+                    title={`Case ${entry.index}: ${statusLabel(entry.status)}`}
+                  >
+                    <span className={`h-2 w-2 rounded-full ${isOk ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                    Case {entry.index}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-gray-300">
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-700 dark:bg-gray-800 dark:text-gray-100">
+              {initials}
+            </div>
+            <div>
+              <span className="font-semibold text-slate-800 dark:text-gray-100">{userName || 'You'}</span>
+              <span className="text-slate-400 dark:text-gray-500">&nbsp;submitted at {formatDateTime(selected.createdAt)}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+          >
+            Analysis
+          </button>
+          {isAccepted && (
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 dark:bg-emerald-600 dark:hover:bg-emerald-500"
+            >
+              Solution
+            </button>
+          )}
+        </div>
+      </div>
+
+      {isAccepted && (
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+          <div className="grid gap-0 md:grid-cols-2">
+            <div className="space-y-1 bg-slate-50 px-5 py-5 dark:bg-gray-800">
+              <div className="text-sm font-semibold text-slate-700 dark:text-gray-200">Runtime</div>
+              <div className="flex flex-wrap items-baseline gap-2">
+                <div className="text-xl font-bold text-slate-900 dark:text-gray-100">
+                  {runtimeMs ? `${Math.round(runtimeMs)} ms` : '—'}
+                </div>
+                <div className="text-xs text-slate-500 dark:text-gray-400">
+                  {runtimeBeats === null ? 'Beats —' : `Beats ${runtimeBeats.toFixed(2)}%`}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-1 px-5 py-5">
+              <div className="text-sm font-semibold text-slate-400 dark:text-gray-500">Memory</div>
+              <div className="flex flex-wrap items-baseline gap-2">
+                <div className="text-xl font-bold text-slate-400 dark:text-gray-500">
+                  {formatMemoryMb(memoryKb)}
+                </div>
+                <div className="text-xs text-slate-400 dark:text-gray-500">
+                  {memoryBeats === null ? 'Beats —' : `Beats ${memoryBeats.toFixed(2)}%`}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="px-5 pb-5">
+            <Histogram
+              values={peer.map((entry) => entry.executionTimeMs)}
+              highlightValue={runtimeMs}
+              formatLabel={(value) => `${Math.round(value)}ms`}
+              markerLabel={initials || 'You'}
+            />
+          </div>
+        </div>
+      )}
+
+      {isCompileError && (compileText || stderrText) && (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-800 shadow-sm dark:border-rose-800 dark:bg-rose-900/10 dark:text-rose-200">
+          <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">{compileText || stderrText}</pre>
+        </div>
+      )}
+
+      {isWrongAnswer && (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-800 shadow-sm dark:border-rose-800 dark:bg-rose-900/10 dark:text-rose-200">
+            One of the judge test cases did not match the expected output.
+          </div>
+
+          {failedCaseIndex > 0 && (
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+                Case {failedCaseIndex}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {codeText && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-500 dark:text-gray-400">
+            <span>Code</span>
+            <span className="text-slate-300 dark:text-gray-600">|</span>
+            <span className="text-slate-600 dark:text-gray-300">{getLanguageLabel(selected.language)}</span>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+            <CodeWithLineNumbers code={codeText} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function ProblemSolver() {
+  const { id } = useParams();
+  const toast = useToast();
+  const splitContainerRef = useRef(null);
+  const dragFrameRef = useRef(null);
+  const [problem, setProblem] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [activeLeftTab, setActiveLeftTab] = useState('description');
+  const [activeConsoleTab, setActiveConsoleTab] = useState('testcase');
+  const [mobileView, setMobileView] = useState('description');
+  const [leftWidth, setLeftWidth] = useState(null);
+  const [language, setLanguage] = useState('python');
+  const [drafts, setDrafts] = useState({});
+  const [testCases, setTestCases] = useState([]);
+  const [activeTestCaseId, setActiveTestCaseId] = useState(null);
+  const [lastRunInput, setLastRunInput] = useState('');
+  const [lastRunCaseId, setLastRunCaseId] = useState(null);
+  const [result, setResult] = useState(null);
+  const [submissions, setSubmissions] = useState([]);
+  const [submissionsLoading, setSubmissionsLoading] = useState(false);
+  const [selectedSubmissionId, setSelectedSubmissionId] = useState(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const loadSubmissions = useCallback(async ({ silent = false, selectLatest = false } = {}) => {
+    if (!id) {
+      return;
+    }
+
+    try {
+      if (!silent) {
+        setSubmissionsLoading(true);
+      }
+      const response = await api.listStudentProblemSubmissions(id, { page: 1, limit: 50 });
+      const next = response.submissions || [];
+      setSubmissions(next);
+
+      if (selectLatest && next.length > 0) {
+        setSelectedSubmissionId(next[0]._id);
+      } else if (!selectedSubmissionId && next.length > 0) {
+        setSelectedSubmissionId(next[0]._id);
+      }
+    } catch (error) {
+      toast.error(error.message || 'Failed to load submissions.');
+    } finally {
+      if (!silent) {
+        setSubmissionsLoading(false);
+      }
+    }
+  }, [id, toast, selectedSubmissionId]);
+
+  useEffect(() => {
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+    };
+  }, []);
+
+  const clampLeftWidth = useCallback((nextWidth) => {
+    const minLeft = 320;
+    const minRight = 420;
+    const splitterWidth = 12;
+    const container = splitContainerRef.current;
+    if (!container) {
+      return Math.max(minLeft, Math.round(nextWidth));
+    }
+
+    const containerWidth = container.getBoundingClientRect().width;
+    const maxLeft = Math.max(minLeft, Math.floor(containerWidth - minRight - splitterWidth));
+    const rounded = Math.round(nextWidth);
+    return Math.min(maxLeft, Math.max(minLeft, rounded));
+  }, []);
+
+  useEffect(() => {
+    const container = splitContainerRef.current;
+    if (!container) return;
+
+    const ensureWidthInBounds = () => {
+      const rect = container.getBoundingClientRect();
+      const defaultWidth = rect.width > 0 ? rect.width * 0.46 : 520;
+      setLeftWidth((previous) => clampLeftWidth(previous ?? defaultWidth));
+    };
+
+    ensureWidthInBounds();
+    const observer = new ResizeObserver(() => ensureWidthInBounds());
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [clampLeftWidth]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadProblem = async () => {
+      try {
+        setLoading(true);
+        const response = await api.getStudentProblem(id);
+        if (!isMounted) {
+          return;
+        }
+
+        const storedDrafts = loadProblemDrafts(id);
+        const nextDrafts = buildProblemDrafts(response, storedDrafts);
+        const nextLanguage = response.supportedLanguages?.[0] || 'python';
+
+        setProblem(response);
+        setDrafts(nextDrafts);
+        setLanguage((previous) => (
+          response.supportedLanguages?.includes(previous) ? previous : nextLanguage
+        ));
+        const samples = Array.isArray(response.sampleTestCases) ? response.sampleTestCases : [];
+        const nextCases = samples.map((testCase, index) => ({
+          id: `sample-${index + 1}`,
+          kind: 'sample',
+          input: testCase?.input || '',
+          expectedOutput: testCase?.output || '',
+        }));
+        setTestCases(nextCases);
+        setActiveTestCaseId(nextCases[0]?.id || null);
+        setLastRunInput('');
+        setLastRunCaseId(null);
+        setResult(null);
+      } catch (error) {
+        if (isMounted) {
+          toast.error(error.message || 'Failed to load the selected problem.');
+          setProblem(null);
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadProblem();
+    return () => {
+      isMounted = false;
+    };
+  }, [id, toast]);
+
+  useEffect(() => {
+    if (problem?._id) {
+      saveProblemDrafts(problem._id, drafts);
+    }
+  }, [drafts, problem?._id]);
+
+  useEffect(() => {
+    if (problem?._id) {
+      loadSubmissions({ silent: true, selectLatest: true });
+    }
+  }, [loadSubmissions, problem?._id]);
+
+  useEffect(() => {
+    if (activeLeftTab === 'submissions' || activeLeftTab === 'acceptance') {
+      loadSubmissions();
+    }
+  }, [activeLeftTab, loadSubmissions]);
+
+  const activeCode = useMemo(() => {
+    if (!problem) {
+      return '';
+    }
+    return drafts[language] ?? problem.codeTemplates?.[language] ?? '';
+  }, [drafts, language, problem]);
+
+  const activeTestCase = useMemo(() => {
+    if (!Array.isArray(testCases) || testCases.length === 0) return null;
+    const found = testCases.find((entry) => String(entry.id) === String(activeTestCaseId));
+    return found || testCases[0];
+  }, [activeTestCaseId, testCases]);
+
+  const activeTestCaseInput = activeTestCase?.input ?? '';
+
+  const expectedOutputForRun = useMemo(() => {
+    const targetId = lastRunCaseId || activeTestCaseId;
+    if (!targetId) return null;
+    const found = testCases.find((entry) => String(entry.id) === String(targetId));
+    if (!found) return null;
+    return found.expectedOutput !== undefined ? found.expectedOutput : null;
+  }, [activeTestCaseId, lastRunCaseId, testCases]);
+
+  const verdictForTab = useMemo(() => {
+    if (!submissions || submissions.length === 0) return null;
+    const selected = selectedSubmissionId
+      ? submissions.find((entry) => entry._id === selectedSubmissionId)
+      : null;
+    return selected || submissions[0];
+  }, [submissions, selectedSubmissionId]);
+
+  const verdictTabLabel = verdictForTab ? statusLabel(verdictForTab.status) : 'Result';
+  const verdictTabTone = (() => {
+    const upper = String(verdictForTab?.status || '').toUpperCase();
+    if (upper === 'AC') return 'success';
+    if (['WA', 'CE', 'RE', 'TLE'].includes(upper)) return 'danger';
+    return 'neutral';
+  })();
+
+  const updateDraft = (nextCode) => {
+    setDrafts((previous) => ({
+      ...previous,
+      [language]: nextCode,
+    }));
+  };
+
+  const resetCode = () => {
+    if (!problem) {
+      return;
+    }
+
+    setDrafts((previous) => ({
+      ...previous,
+      [language]: problem.codeTemplates?.[language] || '',
+    }));
+    setResult(null);
+  };
+
+  const handleAddCustomTestCase = () => {
+    const newId = `custom-${Date.now()}`;
+    setTestCases((previous) => ([
+      ...(Array.isArray(previous) ? previous : []),
+      {
+        id: newId,
+        kind: 'custom',
+        input: '',
+        expectedOutput: null,
+      },
+    ]));
+    setActiveTestCaseId(newId);
+  };
+
+  const handleTestCaseInputChange = (testCaseId, nextInput) => {
+    setTestCases((previous) => (Array.isArray(previous) ? previous.map((entry) => {
+      if (String(entry.id) !== String(testCaseId)) return entry;
+      if (entry.kind === 'sample') return entry;
+      return {
+        ...entry,
+        input: nextInput,
+        expectedOutput: null,
+      };
+    }) : previous));
+  };
+
+  const handleRun = async () => {
+    if (!problem) {
+      return;
+    }
+
+    const selectedCase = activeTestCase;
+    const runInput = selectedCase?.input ?? '';
+
+    setLastRunInput(runInput);
+    setLastRunCaseId(selectedCase?.id || null);
+
+    setIsRunning(true);
+    try {
+      const response = await api.runStudentProblem(problem._id, {
+        language,
+        sourceCode: activeCode,
+        customInput: runInput,
+      });
+      setResult(response);
+      setActiveConsoleTab('result');
+      await loadSubmissions({ silent: true });
+      toast.success(`Run finished with status ${response.status?.description || 'Completed'}`);
+
+      if (selectedCase?.kind === 'custom' && problem.hasReferenceSolution) {
+        api.getStudentExpectedOutput(problem._id, { language, customInput: runInput })
+          .then((expected) => {
+            if (expected && typeof expected.expectedOutput === 'string') {
+              setTestCases((previous) => (Array.isArray(previous) ? previous.map((entry) => (
+                String(entry.id) === String(selectedCase.id)
+                  ? { ...entry, expectedOutput: expected.expectedOutput }
+                  : entry
+              )) : previous));
+            }
+          })
+          .catch(() => {
+            // Expected output is optional; ignore failures.
+          });
+      }
+    } catch (error) {
+      toast.error(error.message || 'Failed to run code.');
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!problem) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const response = await api.submitStudentProblem(problem._id, {
+        language,
+        sourceCode: activeCode,
+      });
+      setResult(response);
+      if (response.status === 'Accepted') {
+        setProblem((previous) => (previous ? { ...previous, studentStatus: 'Solved' } : previous));
+      }
+      setActiveConsoleTab('result');
+      setActiveLeftTab('acceptance');
+      await loadSubmissions({ silent: true, selectLatest: true });
+      toast.success(`Submission finished with verdict ${response.status}`);
+    } catch (error) {
+      toast.error(error.message || 'Failed to submit code.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleResizeStart = (event) => {
+    if (!splitContainerRef.current) {
+      return;
+    }
+
+    event.preventDefault();
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+
+    try {
+      event.currentTarget?.setPointerCapture?.(event.pointerId);
+    } catch {
+      // ignore
+    }
+
+    const containerRect = splitContainerRef.current.getBoundingClientRect();
+    const defaultWidth = containerRect.width > 0 ? containerRect.width * 0.46 : 520;
+    const startWidth = clampLeftWidth(leftWidth ?? defaultWidth);
+    const startX = event.clientX;
+    let latestWidth = startWidth;
+
+    const schedule = (next) => {
+      latestWidth = clampLeftWidth(next);
+      if (dragFrameRef.current) return;
+      dragFrameRef.current = requestAnimationFrame(() => {
+        dragFrameRef.current = null;
+        setLeftWidth(latestWidth);
+      });
+    };
+
+    const handlePointerMove = (moveEvent) => {
+      const delta = moveEvent.clientX - startX;
+      schedule(startWidth + delta);
+    };
+
+    const handlePointerUp = () => {
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+
+      if (dragFrameRef.current) {
+        cancelAnimationFrame(dragFrameRef.current);
+        dragFrameRef.current = null;
+      }
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen px-4 pb-8 pt-20">
+        <div className="mx-auto max-w-[1600px]">
+          <LoadingPanel label="Loading problem workspace..." />
+        </div>
+      </div>
+    );
+  }
+
+  if (!problem) {
+    return (
+      <div className="min-h-screen px-4 pb-8 pt-20">
+        <div className="mx-auto max-w-5xl">
+          <EmptyState
+            title="Problem unavailable"
+            description="The requested problem could not be loaded or is no longer active."
+          />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-screen overflow-hidden">
+      <div className="flex h-full min-h-0 flex-col">
+        <header className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2 dark:border-gray-700 dark:bg-gray-900">
+          <div className="flex items-center gap-2">
+            <Link
+              to="/problems"
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Problem List
+            </Link>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <select
+              value={language}
+              onChange={(event) => setLanguage(event.target.value)}
+              className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"
+            >
+              {(problem.supportedLanguages || []).map((supportedLanguage) => (
+                <option key={supportedLanguage} value={supportedLanguage}>
+                  {getLanguageLabel(supportedLanguage)}
+                </option>
+              ))}
+            </select>
+
+            <button
+              type="button"
+              onClick={handleRun}
+              disabled={isRunning || isSubmitting}
+              className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-sky-600 dark:hover:bg-sky-500 dark:disabled:bg-gray-700"
+            >
+              <Play className="h-3.5 w-3.5" />
+              {isRunning ? 'Running...' : 'Run'}
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={isRunning || isSubmitting}
+              className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"
+            >
+              <Send className="h-3.5 w-3.5" />
+              {isSubmitting ? 'Submitting...' : 'Submit'}
+            </button>
+            <button
+              type="button"
+              onClick={resetCode}
+              disabled={isRunning || isSubmitting}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Reset
+            </button>
+
+            <div className="flex items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1 shadow-sm dark:border-gray-700 dark:bg-gray-900 lg:hidden">
+              <button
+                type="button"
+                onClick={() => setMobileView('description')}
+                className={`rounded-xl px-3 py-1.5 text-sm font-semibold transition-colors ${mobileView === 'description' ? 'bg-sky-600 text-white' : 'text-slate-600 hover:bg-slate-50 dark:text-gray-300 dark:hover:bg-gray-800'}`}
+              >
+                Description
+              </button>
+              <button
+                type="button"
+                onClick={() => setMobileView('editor')}
+                className={`rounded-xl px-3 py-1.5 text-sm font-semibold transition-colors ${mobileView === 'editor' ? 'bg-sky-600 text-white' : 'text-slate-600 hover:bg-slate-50 dark:text-gray-300 dark:hover:bg-gray-800'}`}
+              >
+                Editor
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <div
+          ref={splitContainerRef}
+          className="hidden min-h-0 flex-1 overflow-hidden border-b border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900 lg:flex"
+        >
+          <section
+            style={{ width: leftWidth ? `${leftWidth}px` : undefined, flexBasis: leftWidth ? `${leftWidth}px` : undefined, willChange: 'width' }}
+            className="flex shrink-0 min-w-[320px] flex-col border-r border-slate-200 dark:border-gray-700"
+          >
+            <LeftPanelTabs
+              activeTab={activeLeftTab}
+              onTabChange={setActiveLeftTab}
+              verdictLabel={verdictTabLabel}
+              verdictTone={verdictTabTone}
+              verdictDisabled={!verdictForTab}
+            />
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {activeLeftTab === 'description' ? (
+                <ProblemDescriptionPanel problem={problem} />
+              ) : activeLeftTab === 'submissions' ? (
+                <SubmissionList
+                  loading={submissionsLoading}
+                  submissions={submissions}
+                  selectedId={selectedSubmissionId}
+                  onSelect={setSelectedSubmissionId}
+                  onOpenDetail={() => setActiveLeftTab('acceptance')}
+                />
+              ) : (
+                <AcceptancePanel
+                  submissions={submissions}
+                  selectedId={selectedSubmissionId}
+                  onBack={() => setActiveLeftTab('submissions')}
+                />
+              )}
+            </div>
+          </section>
+
+          <button
+            type="button"
+            onPointerDown={handleResizeStart}
+            className="group relative flex w-3 shrink-0 cursor-col-resize touch-none select-none items-center justify-center bg-slate-50 transition-colors hover:bg-slate-100 dark:bg-gray-900 dark:hover:bg-gray-800"
+            aria-label="Resize panels"
+          >
+            <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-slate-200 dark:bg-gray-700" />
+            <div className="relative z-10 rounded-full border border-slate-200 bg-white p-1 text-slate-400 shadow-sm transition-colors group-hover:text-sky-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-500">
+              <PanelLeftOpen className="h-3.5 w-3.5 rotate-90" />
+            </div>
+          </button>
+
+          <section className="min-w-[420px] min-h-0 flex-1">
+            <CodeEditor
+              supportedLanguages={problem.supportedLanguages || []}
+              language={language}
+              code={activeCode}
+              onLanguageChange={setLanguage}
+              onCodeChange={updateDraft}
+              customInput={activeTestCaseInput}
+              testCases={testCases}
+              activeTestCaseId={activeTestCaseId}
+              onActiveTestCaseChange={setActiveTestCaseId}
+              onAddCustomTestCase={handleAddCustomTestCase}
+              onTestCaseInputChange={handleTestCaseInputChange}
+              runInputUsed={lastRunCaseId ? lastRunInput : null}
+              expectedOutputForRun={expectedOutputForRun}
+              activeConsoleTab={activeConsoleTab}
+              onConsoleTabChange={setActiveConsoleTab}
+              result={result}
+              isRunning={isRunning}
+              isSubmitting={isSubmitting}
+              onRun={handleRun}
+              onSubmit={handleSubmit}
+              onReset={resetCode}
+              showToolbar={false}
+            />
+          </section>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-4 lg:hidden">
+          <div className={`overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900 ${mobileView === 'description' ? 'block' : 'hidden'}`}>
+            <LeftPanelTabs
+              activeTab={activeLeftTab}
+              onTabChange={setActiveLeftTab}
+              verdictLabel={verdictTabLabel}
+              verdictTone={verdictTabTone}
+              verdictDisabled={!verdictForTab}
+            />
+            <div className="max-h-[calc(100vh-14rem)] overflow-y-auto">
+              {activeLeftTab === 'description' ? (
+                <ProblemDescriptionPanel problem={problem} />
+              ) : activeLeftTab === 'submissions' ? (
+                <SubmissionList
+                  loading={submissionsLoading}
+                  submissions={submissions}
+                  selectedId={selectedSubmissionId}
+                  onSelect={setSelectedSubmissionId}
+                  onOpenDetail={() => setActiveLeftTab('acceptance')}
+                />
+              ) : (
+                <AcceptancePanel
+                  submissions={submissions}
+                  selectedId={selectedSubmissionId}
+                  onBack={() => setActiveLeftTab('submissions')}
+                />
+              )}
+            </div>
+          </div>
+
+          <div className={`${mobileView === 'editor' ? 'block' : 'hidden'}`}>
+            <CodeEditor
+              supportedLanguages={problem.supportedLanguages || []}
+              language={language}
+              code={activeCode}
+              onLanguageChange={setLanguage}
+              onCodeChange={updateDraft}
+              customInput={activeTestCaseInput}
+              testCases={testCases}
+              activeTestCaseId={activeTestCaseId}
+              onActiveTestCaseChange={setActiveTestCaseId}
+              onAddCustomTestCase={handleAddCustomTestCase}
+              onTestCaseInputChange={handleTestCaseInputChange}
+              runInputUsed={lastRunCaseId ? lastRunInput : null}
+              expectedOutputForRun={expectedOutputForRun}
+              activeConsoleTab={activeConsoleTab}
+              onConsoleTabChange={setActiveConsoleTab}
+              result={result}
+              isRunning={isRunning}
+              isSubmitting={isSubmitting}
+              onRun={handleRun}
+              onSubmit={handleSubmit}
+              onReset={resetCode}
+              showToolbar={false}
+            />
+          </div>
+        </div>
+
+        {/* Intentionally no below-fold cards here to keep the page fixed-height (LeetCode-style). */}
+      </div>
+    </div>
+  );
+}
+
+
+
+
+
+
+
+
+
+

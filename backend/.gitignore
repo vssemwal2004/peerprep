@@ -1,0 +1,30 @@
+# Environment variables - NEVER COMMIT THESE
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
+# Dependencies
+node_modules/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+security.log
+errors.log
+
+# Build
+dist/
+build/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
