@@ -57,7 +57,15 @@ function intensityClass(v) {
 export default function ContributionCalendar({ 
   activity = {}, 
   title = 'Contribution Calendar',
-  stats = null
+  stats = null,
+  tooltipFormatter = null,
+  legendLabels = {
+    none: 'No activity',
+    low: '1-2 activities',
+    medium: '3-4 activities',
+    high: '5-7 activities',
+    highest: '8+ activities',
+  },
 }) {
   const months = useMemo(() => getRolling365Days(), []);
   const scrollContainerRef = useRef(null);
@@ -153,11 +161,14 @@ export default function ContributionCalendar({
                     const cls = intensityClass(v);
                     const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'short' });
                     const formattedDate = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                    const tooltip = typeof tooltipFormatter === 'function'
+                      ? tooltipFormatter({ value: v, date, formattedDate, dayOfWeek, key })
+                      : `${formattedDate} (${dayOfWeek}): ${v} activities`;
                     
                     return (
                       <div
                         key={key}
-                        title={`${formattedDate} (${dayOfWeek}): ${v} activities`}
+                        title={tooltip}
                         className={`w-2.5 h-2.5 rounded-sm ${cls} hover:ring-2 hover:ring-blue-500 dark:hover:ring-blue-400 transition-all cursor-pointer`}
                       />
                     );
@@ -174,11 +185,11 @@ export default function ContributionCalendar({
         <div className="flex items-center gap-2">
           <span className="text-xs text-slate-500 dark:text-gray-400">Less</span>
           <div className="flex gap-1">
-            <div className="w-2.5 h-2.5 bg-slate-100 dark:bg-gray-700 rounded-sm border border-slate-300 dark:border-gray-600" title="No activity" />
-            <div className="w-2.5 h-2.5 bg-blue-200 dark:bg-blue-800 rounded-sm" title="1-2 activities" />
-            <div className="w-2.5 h-2.5 bg-blue-400 dark:bg-blue-600 rounded-sm" title="3-4 activities" />
-            <div className="w-2.5 h-2.5 bg-blue-600 dark:bg-blue-500 rounded-sm" title="5-7 activities" />
-            <div className="w-2.5 h-2.5 bg-blue-700 dark:bg-blue-400 rounded-sm" title="8+ activities" />
+            <div className="w-2.5 h-2.5 bg-slate-100 dark:bg-gray-700 rounded-sm border border-slate-300 dark:border-gray-600" title={legendLabels.none} />
+            <div className="w-2.5 h-2.5 bg-blue-200 dark:bg-blue-800 rounded-sm" title={legendLabels.low} />
+            <div className="w-2.5 h-2.5 bg-blue-400 dark:bg-blue-600 rounded-sm" title={legendLabels.medium} />
+            <div className="w-2.5 h-2.5 bg-blue-600 dark:bg-blue-500 rounded-sm" title={legendLabels.high} />
+            <div className="w-2.5 h-2.5 bg-blue-700 dark:bg-blue-400 rounded-sm" title={legendLabels.highest} />
           </div>
           <span className="text-xs text-slate-500 dark:text-gray-400">More</span>
         </div>

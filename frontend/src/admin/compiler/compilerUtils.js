@@ -73,6 +73,13 @@ export function createEmptySampleTestCase() {
   };
 }
 
+export function createEmptyHiddenTestCase() {
+  return {
+    input: '',
+    output: '',
+  };
+}
+
 export function createDefaultProblemForm() {
   return {
     title: '',
@@ -89,11 +96,59 @@ export function createDefaultProblemForm() {
     timeLimitSeconds: 2,
     memoryLimitMb: 256,
     sampleTestCases: [createEmptySampleTestCase()],
+    hiddenTestCases: [createEmptyHiddenTestCase()],
+    existingHiddenTestCaseCount: 0,
     hiddenTestUploadMode: 'pairs',
     hiddenTestFiles: [],
     hiddenBulkInputFile: null,
     hiddenBulkOutputFile: null,
     hiddenBulkDelimiter: '###CASE###',
+    previewTested: false,
+  };
+}
+
+export function createProblemFormFromProblem(problem) {
+  const supportedLanguages = problem?.supportedLanguages?.length
+    ? problem.supportedLanguages
+    : ['python'];
+
+  return {
+    title: problem?.title || '',
+    description: problem?.description || '',
+    difficulty: problem?.difficulty || 'Easy',
+    tags: (problem?.tags || []).join(', '),
+    companyTags: (problem?.companyTags || []).join(', '),
+    supportedLanguages,
+    codeTemplates: {
+      ...DEFAULT_CODE_TEMPLATES,
+      ...(problem?.codeTemplates || {}),
+    },
+    referenceSolutions: problem?.referenceSolutions || {},
+    inputFormat: problem?.inputFormat || '',
+    outputFormat: problem?.outputFormat || '',
+    constraints: problem?.constraints || '',
+    timeLimitSeconds: problem?.timeLimitSeconds || 2,
+    memoryLimitMb: problem?.memoryLimitMb || 256,
+    sampleTestCases: problem?.sampleTestCases?.length
+      ? problem.sampleTestCases.map((testCase) => ({
+        input: testCase.input || '',
+        output: testCase.output || '',
+        explanation: testCase.explanation || '',
+      }))
+      : [createEmptySampleTestCase()],
+    hiddenTestCases: problem?.hiddenTestCases?.length
+      ? problem.hiddenTestCases.map((testCase) => ({
+        input: testCase.input || '',
+        output: testCase.output || '',
+      }))
+      : [createEmptyHiddenTestCase()],
+    existingHiddenTestCaseCount: problem?.hiddenTestCaseCount || 0,
+    hiddenTestUploadMode: problem?.hiddenTestSource?.provider === 's3' ? 'bulk' : 'pairs',
+    hiddenTestFiles: [],
+    hiddenBulkInputFile: null,
+    hiddenBulkOutputFile: null,
+    hiddenBulkDelimiter: problem?.hiddenTestSource?.delimiter || '###CASE###',
+    previewTested: Boolean(problem?.previewTested),
   };
 }
 
@@ -127,6 +182,7 @@ export function buildProblemFormData(problemForm, status) {
     }
     formData.append('hiddenBulkDelimiter', problemForm.hiddenBulkDelimiter || '###CASE###');
   } else {
+    formData.append('hiddenTestCases', JSON.stringify(problemForm.hiddenTestCases || []));
     (problemForm.hiddenTestFiles || []).forEach((file) => {
       formData.append('hiddenTestFiles', file);
     });
@@ -243,6 +299,15 @@ export function formatDateTime(value) {
     day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
+  });
+}
+
+export function formatDate(value) {
+  if (!value) return 'Not available';
+  return new Date(value).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
   });
 }
 

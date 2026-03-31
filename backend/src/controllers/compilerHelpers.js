@@ -12,7 +12,17 @@ export function mapCodeTemplates(codeTemplates) {
   }, {});
 }
 
-export function serializeProblem(problem, { sampleTestCases = [], hiddenTestCaseCount = 0, studentStatus = null } = {}) {
+export function serializeProblem(
+  problem,
+  {
+    sampleTestCases = [],
+    hiddenTestCaseCount = 0,
+    hiddenTestCases = [],
+    includeHiddenTestCases = false,
+    includeReferenceSolutions = false,
+    studentStatus = null,
+  } = {},
+) {
   if (!problem) return null;
 
   const referenceSolutions = problem.referenceSolutions;
@@ -29,6 +39,7 @@ export function serializeProblem(problem, { sampleTestCases = [], hiddenTestCase
     companyTags: problem.companyTags || [],
     supportedLanguages: problem.supportedLanguages || [],
     codeTemplates: mapCodeTemplates(problem.codeTemplates),
+    referenceSolutions: includeReferenceSolutions ? mapCodeTemplates(problem.referenceSolutions) : undefined,
     hasReferenceSolution: referenceSolutionCount > 0,
     inputFormat: problem.inputFormat || '',
     outputFormat: problem.outputFormat || '',
@@ -36,6 +47,7 @@ export function serializeProblem(problem, { sampleTestCases = [], hiddenTestCase
     timeLimitSeconds: problem.timeLimitSeconds,
     memoryLimitMb: problem.memoryLimitMb,
     status: problem.status,
+    previewTested: Boolean(problem.previewTested),
     totalSubmissions: problem.stats?.totalSubmissions || 0,
     acceptedSubmissions: problem.stats?.acceptedSubmissions || 0,
     totalRuns: problem.stats?.totalRuns || 0,
@@ -43,6 +55,7 @@ export function serializeProblem(problem, { sampleTestCases = [], hiddenTestCase
     averageExecutionTimeMs: problem.stats?.averageExecutionTimeMs || 0,
     sampleTestCases,
     hiddenTestCaseCount,
+    hiddenTestCases: includeHiddenTestCases ? hiddenTestCases : undefined,
     hiddenTestSource: {
       provider: problem.hiddenTestSource?.provider || 'none',
       caseCount: Number(problem.hiddenTestSource?.caseCount || 0),

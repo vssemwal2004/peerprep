@@ -184,6 +184,7 @@ export const api = {
     return request(`/students/special${queryString ? '?' + queryString : ''}`);
   },
   listSpecialStudentsByEvent: (eventId) => request(`/students/special/${eventId}`),
+  getStudentByIdForAdmin: (studentId) => request(`/students/${studentId}`),
   getStudentActivityByAdmin: (studentId) => request(`/students/${studentId}/activity`),
   getStudentStatsByAdmin: (studentId) => request(`/students/${studentId}/stats`),
   getStudentVideosWatchedByAdmin: (studentId) => request(`/students/${studentId}/videos-watched`),
@@ -362,7 +363,7 @@ export const api = {
   approveJoinRequest: (requestId, data) => request(`/join/${requestId}/approve`, { method: 'POST', body: data }),
   rejectJoinRequest: (requestId, reason) => request(`/join/${requestId}/reject`, { method: 'POST', body: { reason } }),
   // Compiler Module
-  getCompilerOverview: () => request('/compiler/problems/overview', { skipCache: true }),
+  getCompilerOverview: () => request('/compiler/overview', { skipCache: true }),
   listCompilerProblems: ({ search = '', difficulty = '', tags = '', status = '', sortBy = 'updatedAt', sortOrder = 'desc', page = 1, limit = 8 } = {}) => {
     const params = new URLSearchParams();
     if (search) params.append('search', search);
@@ -377,6 +378,12 @@ export const api = {
   },
   createCompilerProblem: (formData) => request('/compiler/problems', { method: 'POST', formData }),
   updateCompilerProblem: (problemId, formData) => request(`/compiler/problems/${problemId}`, { method: 'PUT', formData }),
+  updateCompilerProblemStatus: (problemId, status) => {
+    const fd = new FormData();
+    fd.append('status', status);
+    return request(`/compiler/problems/${problemId}/status`, { method: 'PATCH', formData: fd });
+  },
+  deleteCompilerProblem: (problemId) => request(`/compiler/problems/${problemId}`, { method: 'DELETE' }),
   getCompilerProblem: (problemId) => request(`/compiler/problems/${problemId}`, { skipCache: true }),
   runCompilerPreview: (formData) => request('/compiler/problems/preview/run', { method: 'POST', formData }),
   runCompilerProblem: (problemId, { language, sourceCode, customInput = '' }) => {
@@ -402,7 +409,18 @@ export const api = {
     params.append('limit', String(limit));
     return request(`/compiler/submissions?${params.toString()}`, { skipCache: true });
   },
-  getCompilerAnalytics: () => request('/compiler/submissions/analytics', { skipCache: true }),
+  getCompilerAnalytics: ({ studentId = '', problemId = '', dateFrom = '', dateTo = '' } = {}) => {
+    const params = new URLSearchParams();
+    if (studentId) params.append('studentId', studentId);
+    if (problemId) params.append('problemId', problemId);
+    if (dateFrom) params.append('dateFrom', dateFrom);
+    if (dateTo) params.append('dateTo', dateTo);
+    const query = params.toString();
+    return request(`/compiler/analytics${query ? `?${query}` : ''}`, { skipCache: true });
+  },
+  getCompilerStudentAnalytics: (studentId) => request(`/compiler/student/${studentId}`, { skipCache: true }),
+  getCompilerAnalyticsOverview: () => request('/compiler/analytics/overview', { skipCache: true }),
+  getCompilerProblemAnalytics: (problemId) => request(`/compiler/analytics/problem/${problemId}`, { skipCache: true }),
   listStudentProblems: ({ search = '', difficulty = '', tags = '', sortBy = 'acceptanceRate', sortOrder = 'desc', page = 1, limit = 10 } = {}) => {
     const params = new URLSearchParams();
     if (search) params.append('search', search);

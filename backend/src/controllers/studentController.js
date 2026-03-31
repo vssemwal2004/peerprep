@@ -78,6 +78,34 @@ export async function listAllStudents(req, res) {
   }
 }
 
+export async function getStudentById(req, res) {
+  try {
+    const user = req.user;
+    const { studentId } = req.params;
+    const query = user.role === 'coordinator'
+      ? { _id: studentId, role: 'student', teacherIds: user.coordinatorId }
+      : { _id: studentId, role: 'student' };
+
+    const student = await User.findOne(query)
+      .select('name email studentId course branch college semester group teacherIds avatarUrl createdAt isSpecialStudent')
+      .lean();
+
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    res.json({
+      student: {
+        ...student,
+        teacherId: Array.isArray(student.teacherIds) ? student.teacherIds.join(', ') : (student.teacherIds || ''),
+      },
+    });
+  } catch (err) {
+    console.error('Error fetching student:', err);
+    res.status(500).json({ error: 'Failed to fetch student' });
+  }
+}
+
 // Export all students as CSV (same format as upload template)
 export async function exportStudentsCsv(req, res) {
   try {

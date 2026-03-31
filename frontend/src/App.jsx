@@ -42,6 +42,7 @@ const AdminLearning = lazy(() => import("./admin/AdminLearning"));
 const AdminLearningDetail = lazy(() => import("./admin/AdminLearningDetail"));
 const StudentOnboarding = lazy(() => import("./admin/StudentOnboarding"));
 const StudentDirectory = lazy(() => import("./admin/StudentDirectory"));
+const AdminStudentProfile = lazy(() => import("./admin/AdminStudentProfile"));
 const EventManagement = lazy(() => import("./admin/EventManagement"));
 const EventDetail = lazy(() => import("./admin/EventDetail"));
 const FeedbackReview = lazy(() => import("./admin/FeedbackReview"));
@@ -88,6 +89,7 @@ function RoutePrefetcher() {
   const prefetchAdminRoutes = useCallback(() => {
     import("./admin/EventManagement");
     import("./admin/StudentDirectory");
+    import("./admin/AdminStudentProfile");
     import("./admin/CoordinatorDirectory");
     import("./admin/StudentOnboarding");
     import("./admin/compiler/AdminCompilerDashboard");
@@ -207,6 +209,7 @@ function AppContent() {
         <Route path="/admin/dashboard" element={<AdminProtectedRoute><AdminDashboard /></AdminProtectedRoute>} />
         <Route path="/admin/onboarding" element={<AdminProtectedRoute><StudentOnboarding /></AdminProtectedRoute>} />
         <Route path="/admin/students" element={<AdminProtectedRoute><StudentDirectory /></AdminProtectedRoute>} />
+        <Route path="/admin/students/:studentId" element={<AdminProtectedRoute><AdminStudentProfile /></AdminProtectedRoute>} />
         <Route path="/admin/coordinator-directory" element={<AdminProtectedRoute><CoordinatorDirectory /></AdminProtectedRoute>} />
         <Route path="/admin/coordinators" element={<AdminProtectedRoute><CoordinatorOnboarding /></AdminProtectedRoute>} />
         <Route path="/admin/event" element={<AdminProtectedRoute><EventManagement /></AdminProtectedRoute>} />
@@ -220,8 +223,8 @@ function AppContent() {
         <Route path="/admin/compiler" element={<AdminProtectedRoute><AdminCompilerDashboard /></AdminProtectedRoute>} />
         <Route path="/admin/compiler/create" element={<AdminProtectedRoute><AdminCompilerDashboard /></AdminProtectedRoute>} />
         <Route path="/admin/compiler/problems" element={<AdminProtectedRoute><AdminCompilerDashboard /></AdminProtectedRoute>} />
-        <Route path="/admin/compiler/problems/:problemId" element={<AdminProtectedRoute><AdminCompilerDashboard /></AdminProtectedRoute>} />
-        <Route path="/admin/compiler/submissions" element={<AdminProtectedRoute><AdminCompilerDashboard /></AdminProtectedRoute>} />
+        <Route path="/admin/compiler/:id/edit" element={<AdminProtectedRoute><AdminCompilerDashboard /></AdminProtectedRoute>} />
+        <Route path="/admin/compiler/:id/preview" element={<AdminProtectedRoute><AdminCompilerDashboard /></AdminProtectedRoute>} />
         <Route path="/admin/compiler/analytics" element={<AdminProtectedRoute><AdminCompilerDashboard /></AdminProtectedRoute>} />
         
         {/* Coordinator Routes - Protected */}

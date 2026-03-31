@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../utils/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, Users, Loader2, X, Trash2, Edit2, Save, Download } from "lucide-react";
@@ -8,6 +9,7 @@ import ContributionCalendar from "../components/ContributionCalendar";
 import { useToast } from "../components/CustomToast";
 
 export default function StudentDirectory() {
+  const navigate = useNavigate();
   const toast = useToast();
   const [students, setStudents] = useState([]);
   const [specialStudents, setSpecialStudents] = useState([]);
@@ -132,13 +134,8 @@ export default function StudentDirectory() {
     loadData();
   };
 
-  const openStudentProfile = async (student) => {
-    setSelectedStudent(student);
-    setShowModal(true);
-    
-    // Load real activity data and stats
-    await loadStudentActivity(student._id);
-    await loadStudentStats(student._id);
+  const openStudentProfile = (student) => {
+    navigate(`/admin/students/${student._id}`);
   };
 
   const loadStudentActivity = async (studentId) => {
@@ -500,7 +497,7 @@ export default function StudentDirectory() {
               <div className="mb-3 px-2">
                 <p className="text-sm text-slate-600 dark:text-white flex items-center gap-2">
                   <span className="font-medium text-sky-600 dark:text-sky-400">💡 Tip:</span>
-                  Click on a student's name to view their detailed profile
+                  Click on a student's name to open their full analytics profile
                 </p>
               </div>
               <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-gray-700">

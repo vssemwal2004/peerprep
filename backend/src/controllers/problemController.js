@@ -441,13 +441,25 @@ async function attachStudentStatuses(userId, problems) {
   }));
 }
 
-async function loadProblemShape(problemId, { studentStatus = null } = {}) {
-  const [problem, sampleTestCases, hiddenTestCaseCount] = await Promise.all([
+async function loadProblemShape(
+  problemId,
+  {
+    studentStatus = null,
+    includeHiddenTestCases = false,
+    includeReferenceSolutions = false,
+  } = {},
+) {
+  const [problem, sampleTestCases, hiddenTestCaseCount, hiddenTestCases] = await Promise.all([
     Problem.findById(problemId).lean(),
     TestCase.find({ problem: problemId, kind: 'sample' })
       .sort({ position: 1 })
       .lean(),
     TestCase.countDocuments({ problem: problemId, kind: 'hidden' }),
+    includeHiddenTestCases
+      ? TestCase.find({ problem: problemId, kind: 'hidden' })
+        .sort({ position: 1 })
+        .lean()
+      : Promise.resolve([]),
   ]);
 
   if (!problem) {
@@ -468,6 +480,12 @@ async function loadProblemShape(problemId, { studentStatus = null } = {}) {
         explanation: testCase.explanation || '',
       })),
       hiddenTestCaseCount: effectiveHiddenTestCaseCount,
+      hiddenTestCases: hiddenTestCases.map((testCase) => ({
+        input: testCase.input || '',
+        output: testCase.output || '',
+      })),
+      includeHiddenTestCases,
+      includeReferenceSolutions,
       studentStatus,
     }),
   };
@@ -753,7 +771,11 @@ export async function getProblemDetail(req, res) {
   const studentStatus = isStudentRequest(req)
     ? await getStudentProblemStatus(req.user._id, req.params.id)
     : null;
-  const { problem, serializedProblem } = await loadProblemShape(req.params.id, { studentStatus });
+  const { problem, serializedProblem } = await loadProblemShape(req.params.id, {
+    studentStatus,
+    includeHiddenTestCases: isAdminRequest(req),
+    includeReferenceSolutions: isAdminRequest(req),
+  });
 
   if (isStudentRequest(req) && problem.status !== 'Active') {
     throw new HttpError(404, 'Problem not found.');
@@ -765,8 +787,13 @@ export async function getProblemDetail(req, res) {
 export async function createProblem(req, res) {
   const payload = buildProblemPayload(req);
 
+  if (payload.problem.status === 'Active') {
+    throw new HttpError(400, 'Preview testing is required before publishing a problem.');
+  }
+
   const problem = await Problem.create({
     ...payload.problem,
+    previewTested: false,
     codeTemplates: new Map(Object.entries(payload.problem.codeTemplates)),
     referenceSolutions: new Map(Object.entries(payload.problem.referenceSolutions || {})),
     createdBy: req.user._id,
@@ -827,13 +854,19 @@ export async function updateProblem(req, res) {
     existingHiddenTestCaseCount,
     existingHiddenBulkCaseCount: Number(existingProblem.hiddenTestSource?.caseCount || 0),
   });
+  const canRetainPreviewStatus = payload.problem.status === 'Active' && existingProblem.previewTested;
 
   Object.assign(existingProblem, {
     ...payload.problem,
+    previewTested: canRetainPreviewStatus,
     codeTemplates: new Map(Object.entries(payload.problem.codeTemplates)),
     referenceSolutions: new Map(Object.entries(payload.problem.referenceSolutions || {})),
     updatedBy: req.user._id,
   });
+
+  if (payload.problem.status === 'Active' && !canRetainPreviewStatus) {
+    throw new HttpError(400, 'Preview testing is required before publishing a problem.');
+  }
 
   if (payload.problem.status === 'Active' && !existingProblem.publishedAt) {
     existingProblem.publishedAt = new Date();
@@ -866,6 +899,64 @@ export async function updateProblem(req, res) {
   await refreshProblemStats(existingProblem._id);
 
   const { serializedProblem } = await loadProblemShape(existingProblem._id);
+  res.json(serializedProblem);
+}
+
+export async function deleteProblem(req, res) {
+  ensureObjectId(req.params.id, 'Problem ID');
+
+  const problem = await Problem.findById(req.params.id).select('_id');
+  if (!problem) {
+    throw new HttpError(404, 'Problem not found.');
+  }
+
+  await Promise.all([
+    TestCase.deleteMany({ problem: problem._id }),
+    Submission.deleteMany({ problem: problem._id }),
+    Problem.findByIdAndDelete(problem._id),
+  ]);
+
+  res.json({ success: true });
+}
+
+export async function updateProblemStatus(req, res) {
+  ensureObjectId(req.params.id, 'Problem ID');
+
+  const problem = await Problem.findById(req.params.id);
+  if (!problem) {
+    throw new HttpError(404, 'Problem not found.');
+  }
+
+  const nextStatus = normalizeStatus(req.body.status);
+  const sampleCount = await TestCase.countDocuments({ problem: problem._id, kind: 'sample' });
+  const hiddenCount = Math.max(
+    Number(problem.hiddenTestSource?.caseCount || 0),
+    await TestCase.countDocuments({ problem: problem._id, kind: 'hidden' }),
+  );
+
+  if (nextStatus === 'Active') {
+    if (sampleCount === 0) {
+      throw new HttpError(400, 'Publishing a problem requires at least one sample test case.');
+    }
+    if (hiddenCount === 0) {
+      throw new HttpError(400, 'Publishing a problem requires at least one hidden test case pair.');
+    }
+    if (!problem.previewTested) {
+      throw new HttpError(400, 'Preview testing is required before publishing a problem.');
+    }
+    if (!problem.publishedAt) {
+      problem.publishedAt = new Date();
+    }
+  }
+
+  problem.status = nextStatus;
+  problem.updatedBy = req.user._id;
+  await problem.save();
+
+  const { serializedProblem } = await loadProblemShape(problem._id, {
+    includeHiddenTestCases: true,
+    includeReferenceSolutions: true,
+  });
   res.json(serializedProblem);
 }
 
@@ -937,6 +1028,13 @@ export async function runProblemCode(req, res) {
     });
 
     await finalizeSubmission(req, submission, result);
+    if (result.status === 'AC') {
+      await Problem.findByIdAndUpdate(problem._id, {
+        $set: {
+          previewTested: true,
+        },
+      });
+    }
     await refreshProblemStats(problem._id);
 
     res.json(buildSubmissionResponse(req, submission));
@@ -995,6 +1093,13 @@ export async function submitProblemCode(req, res) {
     });
 
     await finalizeSubmission(req, submission, result);
+    if (result.status === 'AC') {
+      await Problem.findByIdAndUpdate(problem._id, {
+        $set: {
+          previewTested: true,
+        },
+      });
+    }
     await refreshProblemStats(problem._id);
 
     res.json(buildSubmissionResponse(req, submission));

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { uploadStudentsCsv, createStudent, checkStudentsCsv, listAllStudents, listAllSpecialStudents, listSpecialStudentsByEvent, deleteStudent, updateStudent, exportStudentsCsv } from '../controllers/studentController.js';
+import { uploadStudentsCsv, createStudent, checkStudentsCsv, listAllStudents, listAllSpecialStudents, listSpecialStudentsByEvent, deleteStudent, updateStudent, exportStudentsCsv, getStudentById } from '../controllers/studentController.js';
 import { getStudentActivityByAdmin, getStudentStats, getStudentVideosWatched, getStudentCoursesEnrolled } from '../controllers/activityController.js';
 import { requireAuth, requireAdmin, requireAdminOrCoordinator } from '../middleware/auth.js';
 import { authorizeStudent } from '../middleware/authorization.js';
@@ -13,6 +13,7 @@ router.get('/list', requireAuth, requireAdminOrCoordinator, listAllStudents);
 router.get('/export', requireAuth, requireAdminOrCoordinator, exportStudentsCsv);
 router.get('/special', requireAuth, requireAdmin, listAllSpecialStudents);
 router.get('/special/:eventId', requireAuth, requireAdmin, listSpecialStudentsByEvent);
+router.get('/:studentId', requireAuth, requireAdminOrCoordinator, getStudentById);
 // SECURITY: Add authorization check for student-specific data
 router.get('/:studentId/activity', requireAuth, authorizeStudent('studentId'), getStudentActivityByAdmin);
 router.get('/:studentId/stats', requireAuth, authorizeStudent('studentId'), getStudentStats);

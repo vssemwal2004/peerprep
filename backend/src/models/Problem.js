@@ -69,6 +69,10 @@ const problemSchema = new mongoose.Schema({
     enum: ['Draft', 'Active'],
     default: 'Draft',
   },
+  previewTested: {
+    type: Boolean,
+    default: false,
+  },
   hiddenTestSource: {
     provider: {
       type: String,
