@@ -69,6 +69,29 @@ const problemSchema = new mongoose.Schema({
     enum: ['Draft', 'Active'],
     default: 'Draft',
   },
+  hiddenTestSource: {
+    provider: {
+      type: String,
+      enum: ['none', 'db', 's3'],
+      default: 'none',
+    },
+    inputObjectKey: {
+      type: String,
+      default: '',
+    },
+    outputObjectKey: {
+      type: String,
+      default: '',
+    },
+    delimiter: {
+      type: String,
+      default: '###CASE###',
+    },
+    caseCount: {
+      type: Number,
+      default: 0,
+    },
+  },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',

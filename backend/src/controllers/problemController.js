@@ -5,6 +5,8 @@ import { HttpError } from '../utils/errors.js';
 import { sanitizeSearchQuery, sanitizeString, validateObjectId, validatePagination } from '../utils/validators.js';
 import { refreshProblemStats, serializeProblem, serializeSubmission, serializeStudentSubmission } from './compilerHelpers.js';
 import { executeAgainstTestCases, executeWithCustomInput } from '../services/compilerExecutionService.js';
+import { parseBulkCasePair } from '../utils/testcaseBulkParser.js';
+import { isS3TestcaseStorageEnabled, uploadS3TextObject } from '../utils/s3.js';
 
 const STATUS_MAP = {
   draft: 'Draft',
@@ -188,6 +190,26 @@ function extractHiddenTestCasesFromFiles(files = []) {
     });
 }
 
+function extractBulkHiddenFiles(files = []) {
+  const inputFile = files.find((file) => file.fieldname === 'hiddenBulkInputFile');
+  const outputFile = files.find((file) => file.fieldname === 'hiddenBulkOutputFile');
+
+  if (!inputFile && !outputFile) {
+    return null;
+  }
+
+  if (!inputFile || !outputFile) {
+    throw new HttpError(400, 'Both hidden bulk files are required: hiddenBulkInputFile and hiddenBulkOutputFile.');
+  }
+
+  return { inputFile, outputFile };
+}
+
+function normalizeHiddenBulkDelimiter(value) {
+  const delimiter = String(value ?? '').trim();
+  return delimiter || '###CASE###';
+}
+
 function normalizeCodeTemplates(value, supportedLanguages) {
   const parsedTemplates = parseJsonField(value, {});
   if (!parsedTemplates || Array.isArray(parsedTemplates) || typeof parsedTemplates !== 'object') {
@@ -241,7 +263,13 @@ function normalizeReferenceSolutions(value, supportedLanguages) {
   return referenceSolutions;
 }
 
-function buildProblemPayload(req, { existingHiddenTestCaseCount = 0 } = {}) {
+function buildProblemPayload(
+  req,
+  {
+    existingHiddenTestCaseCount = 0,
+    existingHiddenBulkCaseCount = 0,
+  } = {},
+) {
   const title = sanitizeString(req.body.title, 200);
   if (!title) {
     throw new HttpError(400, 'Problem title is required.');
@@ -255,14 +283,29 @@ function buildProblemPayload(req, { existingHiddenTestCaseCount = 0 } = {}) {
   const status = normalizeStatus(req.body.status);
   const sampleTestCasesProvided = req.body.sampleTestCases !== undefined;
   const hiddenTestCasesFromFiles = extractHiddenTestCasesFromFiles(req.files || []);
+  const bulkHiddenFiles = extractBulkHiddenFiles(req.files || []);
+  const hiddenBulkDelimiter = normalizeHiddenBulkDelimiter(req.body.hiddenBulkDelimiter);
+  const hiddenBulkCases = bulkHiddenFiles
+    ? parseBulkCasePair(
+      bulkHiddenFiles.inputFile.buffer.toString('utf8'),
+      bulkHiddenFiles.outputFile.buffer.toString('utf8'),
+      hiddenBulkDelimiter,
+    )
+    : null;
   const hiddenTestCasesProvided = hiddenTestCasesFromFiles !== null || req.body.hiddenTestCases !== undefined;
+  const hiddenBulkProvided = hiddenBulkCases !== null;
+  if (hiddenBulkProvided && hiddenTestCasesProvided) {
+    throw new HttpError(400, 'Use either bulk hidden files (S3 mode) or per-case hidden files/JSON (DB mode), not both.');
+  }
   const sampleTestCases = sampleTestCasesProvided ? normalizeSampleTestCases(req.body.sampleTestCases) : null;
   const hiddenTestCases = hiddenTestCasesFromFiles
     || (req.body.hiddenTestCases !== undefined ? normalizeHiddenTestCases(req.body.hiddenTestCases) : null);
 
   if (status === 'Active') {
     const effectiveSampleCount = sampleTestCases ? sampleTestCases.length : 0;
-    const effectiveHiddenCount = hiddenTestCases ? hiddenTestCases.length : existingHiddenTestCaseCount;
+    const effectiveHiddenCount = hiddenBulkCases
+      ? hiddenBulkCases.length
+      : (hiddenTestCases ? hiddenTestCases.length : Math.max(existingHiddenTestCaseCount, existingHiddenBulkCaseCount));
 
     if (effectiveSampleCount === 0) {
       throw new HttpError(400, 'Publishing a problem requires at least one sample test case.');
@@ -293,9 +336,12 @@ function buildProblemPayload(req, { existingHiddenTestCaseCount = 0 } = {}) {
   return {
     problem,
     sampleTestCases,
-    hiddenTestCases,
+    hiddenTestCases: hiddenTestCases || [],
     sampleTestCasesProvided,
-    hiddenTestCasesProvided,
+    hiddenTestCasesProvided: hiddenTestCasesProvided || hiddenBulkProvided,
+    hiddenBulkProvided,
+    hiddenBulkDelimiter,
+    hiddenBulkCases,
   };
 }
 
@@ -319,7 +365,7 @@ async function replaceTestCases(problemId, userId, { sampleTestCases, hiddenTest
   if (hiddenTestCasesProvided) {
     await TestCase.deleteMany({ problem: problemId, kind: 'hidden' });
 
-    if (hiddenTestCases.length > 0) {
+    if ((hiddenTestCases || []).length > 0) {
       await TestCase.insertMany(hiddenTestCases.map((testCase) => ({
         problem: problemId,
         kind: 'hidden',
@@ -330,6 +376,38 @@ async function replaceTestCases(problemId, userId, { sampleTestCases, hiddenTest
       })));
     }
   }
+}
+
+async function uploadHiddenBulkToS3(problemId, payload) {
+  if (!payload.hiddenBulkProvided || !payload.hiddenBulkCases) {
+    return null;
+  }
+
+  if (!isS3TestcaseStorageEnabled()) {
+    throw new HttpError(500, 'S3 testcase storage is not configured on the server.');
+  }
+
+  const inputs = payload.hiddenBulkCases.map((entry) => entry.input).join(`\n${payload.hiddenBulkDelimiter}\n`);
+  const outputs = payload.hiddenBulkCases.map((entry) => entry.output).join(`\n${payload.hiddenBulkDelimiter}\n`);
+  const versionTag = Date.now();
+
+  const inputObjectKey = await uploadS3TextObject({
+    key: `${problemId}/hidden/${versionTag}/inputs.txt`,
+    text: inputs,
+  });
+
+  const outputObjectKey = await uploadS3TextObject({
+    key: `${problemId}/hidden/${versionTag}/outputs.txt`,
+    text: outputs,
+  });
+
+  return {
+    provider: 's3',
+    inputObjectKey,
+    outputObjectKey,
+    delimiter: payload.hiddenBulkDelimiter,
+    caseCount: payload.hiddenBulkCases.length,
+  };
 }
 
 async function getStudentProblemStatus(userId, problemId) {
@@ -376,6 +454,11 @@ async function loadProblemShape(problemId, { studentStatus = null } = {}) {
     throw new HttpError(404, 'Problem not found.');
   }
 
+  const effectiveHiddenTestCaseCount = Math.max(
+    Number(hiddenTestCaseCount || 0),
+    Number(problem.hiddenTestSource?.caseCount || 0),
+  );
+
   return {
     problem,
     serializedProblem: serializeProblem(problem, {
@@ -384,7 +467,7 @@ async function loadProblemShape(problemId, { studentStatus = null } = {}) {
         output: testCase.output,
         explanation: testCase.explanation || '',
       })),
-      hiddenTestCaseCount,
+      hiddenTestCaseCount: effectiveHiddenTestCaseCount,
       studentStatus,
     }),
   };
@@ -689,9 +772,38 @@ export async function createProblem(req, res) {
     createdBy: req.user._id,
     updatedBy: req.user._id,
     publishedAt: payload.problem.status === 'Active' ? new Date() : undefined,
+    hiddenTestSource: {
+      provider: 'none',
+      inputObjectKey: '',
+      outputObjectKey: '',
+      delimiter: payload.hiddenBulkDelimiter || '###CASE###',
+      caseCount: 0,
+    },
   });
 
   await replaceTestCases(problem._id, req.user._id, payload);
+
+  const hiddenBulkSource = await uploadHiddenBulkToS3(problem._id, payload);
+  if (hiddenBulkSource) {
+    await Problem.findByIdAndUpdate(problem._id, {
+      $set: {
+        hiddenTestSource: hiddenBulkSource,
+      },
+    });
+  } else if ((payload.hiddenTestCases || []).length > 0) {
+    await Problem.findByIdAndUpdate(problem._id, {
+      $set: {
+        hiddenTestSource: {
+          provider: 'db',
+          inputObjectKey: '',
+          outputObjectKey: '',
+          delimiter: payload.hiddenBulkDelimiter || '###CASE###',
+          caseCount: payload.hiddenTestCases.length,
+        },
+      },
+    });
+  }
+
   await refreshProblemStats(problem._id);
 
   const { serializedProblem } = await loadProblemShape(problem._id);
@@ -713,6 +825,7 @@ export async function updateProblem(req, res) {
 
   const payload = buildProblemPayload(req, {
     existingHiddenTestCaseCount,
+    existingHiddenBulkCaseCount: Number(existingProblem.hiddenTestSource?.caseCount || 0),
   });
 
   Object.assign(existingProblem, {
@@ -728,6 +841,28 @@ export async function updateProblem(req, res) {
 
   await existingProblem.save();
   await replaceTestCases(existingProblem._id, req.user._id, payload);
+
+  if (payload.hiddenBulkProvided) {
+    const hiddenBulkSource = await uploadHiddenBulkToS3(existingProblem._id, payload);
+    await Problem.findByIdAndUpdate(existingProblem._id, {
+      $set: {
+        hiddenTestSource: hiddenBulkSource,
+      },
+    });
+  } else if (payload.hiddenTestCasesProvided) {
+    await Problem.findByIdAndUpdate(existingProblem._id, {
+      $set: {
+        hiddenTestSource: {
+          provider: (payload.hiddenTestCases || []).length > 0 ? 'db' : 'none',
+          inputObjectKey: '',
+          outputObjectKey: '',
+          delimiter: payload.hiddenBulkDelimiter || '###CASE###',
+          caseCount: (payload.hiddenTestCases || []).length,
+        },
+      },
+    });
+  }
+
   await refreshProblemStats(existingProblem._id);
 
   const { serializedProblem } = await loadProblemShape(existingProblem._id);
@@ -878,6 +1013,3 @@ export async function submitProblemCode(req, res) {
     throw error;
   }
 }
-
-
-

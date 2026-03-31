@@ -105,8 +105,17 @@ export default function CreateProblem() {
   };
 
   const persistProblem = async (status) => {
-    if (hiddenPairs.issues.length > 0) {
+    if (form.hiddenTestUploadMode === 'pairs' && hiddenPairs.issues.length > 0) {
       toast.error('Fix hidden test case upload issues before saving.');
+      return;
+    }
+
+    if (
+      form.hiddenTestUploadMode === 'bulk'
+      && (!form.hiddenBulkInputFile || !form.hiddenBulkOutputFile)
+      && status === 'Active'
+    ) {
+      toast.error('Bulk hidden mode requires both inputs and outputs files before publishing.');
       return;
     }
 
@@ -122,6 +131,8 @@ export default function CreateProblem() {
       setForm((previous) => ({
         ...previous,
         hiddenTestFiles: [],
+        hiddenBulkInputFile: null,
+        hiddenBulkOutputFile: null,
       }));
 
       toast.success(status === 'Active' ? 'Problem published successfully.' : 'Draft saved successfully.');
@@ -348,30 +359,94 @@ export default function CreateProblem() {
           </div>
         </SectionCard>
 
-        <SectionCard title="Hidden Test Cases" subtitle="Upload paired .txt files using input_1.txt and output_1.txt naming for automatic matching.">
-          <label className="flex cursor-pointer items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm font-medium text-slate-600 transition-colors hover:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-900">
-            <Upload className="mr-2 h-4 w-4" />
-            Upload hidden test case files
-            <input type="file" multiple accept=".txt" className="hidden" onChange={(event) => updateField('hiddenTestFiles', Array.from(event.target.files || []))} />
-          </label>
+        <SectionCard title="Hidden Test Cases" subtitle="Use pair mode for input_1/output_1 uploads, or bulk mode for one inputs.txt and outputs.txt file.">
+          <div className="mb-4 grid gap-3 sm:grid-cols-2">
+            <label className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 transition-colors ${form.hiddenTestUploadMode === 'pairs' ? 'border-sky-300 bg-sky-50 dark:border-sky-700 dark:bg-sky-900/10' : 'border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900'}`}>
+              <input
+                type="radio"
+                name="hidden-upload-mode"
+                checked={form.hiddenTestUploadMode === 'pairs'}
+                onChange={() => updateField('hiddenTestUploadMode', 'pairs')}
+                className="h-4 w-4 border-slate-300 text-sky-600 focus:ring-sky-500"
+              />
+              <span className="text-sm font-medium text-slate-700 dark:text-gray-200">Pair files mode</span>
+            </label>
+            <label className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 transition-colors ${form.hiddenTestUploadMode === 'bulk' ? 'border-sky-300 bg-sky-50 dark:border-sky-700 dark:bg-sky-900/10' : 'border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900'}`}>
+              <input
+                type="radio"
+                name="hidden-upload-mode"
+                checked={form.hiddenTestUploadMode === 'bulk'}
+                onChange={() => updateField('hiddenTestUploadMode', 'bulk')}
+                className="h-4 w-4 border-slate-300 text-sky-600 focus:ring-sky-500"
+              />
+              <span className="text-sm font-medium text-slate-700 dark:text-gray-200">Bulk S3 mode</span>
+            </label>
+          </div>
 
-          {(hiddenPairs.pairs.length > 0 || hiddenPairs.issues.length > 0) && (
-            <div className="mt-4 space-y-3">
-              {hiddenPairs.pairs.map((pair) => (
-                <div key={pair.key} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 px-4 py-3 dark:border-gray-700">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-800 dark:text-gray-100">Pair {pair.key}</p>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">{pair.input || 'Missing input'} / {pair.output || 'Missing output'}</p>
-                  </div>
-                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${pair.complete ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300'}`}>
-                    {pair.complete ? 'Matched' : 'Incomplete'}
-                  </span>
+          {form.hiddenTestUploadMode === 'pairs' ? (
+            <>
+              <label className="flex cursor-pointer items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm font-medium text-slate-600 transition-colors hover:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-900">
+                <Upload className="mr-2 h-4 w-4" />
+                Upload hidden test case files
+                <input type="file" multiple accept=".txt" className="hidden" onChange={(event) => updateField('hiddenTestFiles', Array.from(event.target.files || []))} />
+              </label>
+
+              {(hiddenPairs.pairs.length > 0 || hiddenPairs.issues.length > 0) && (
+                <div className="mt-4 space-y-3">
+                  {hiddenPairs.pairs.map((pair) => (
+                    <div key={pair.key} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 px-4 py-3 dark:border-gray-700">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800 dark:text-gray-100">Pair {pair.key}</p>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">{pair.input || 'Missing input'} / {pair.output || 'Missing output'}</p>
+                      </div>
+                      <span className={`rounded-full px-3 py-1 text-xs font-semibold ${pair.complete ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300'}`}>
+                        {pair.complete ? 'Matched' : 'Incomplete'}
+                      </span>
+                    </div>
+                  ))}
+
+                  {hiddenPairs.issues.map((issue) => (
+                    <p key={issue} className="text-sm text-rose-600 dark:text-rose-300">{issue}</p>
+                  ))}
                 </div>
-              ))}
-
-              {hiddenPairs.issues.map((issue) => (
-                <p key={issue} className="text-sm text-rose-600 dark:text-rose-300">{issue}</p>
-              ))}
+              )}
+            </>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="flex cursor-pointer items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm font-medium text-slate-600 transition-colors hover:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-900">
+                  <Upload className="mr-2 h-4 w-4" />
+                  {form.hiddenBulkInputFile ? form.hiddenBulkInputFile.name : 'Upload inputs.txt'}
+                  <input
+                    type="file"
+                    accept=".txt"
+                    className="hidden"
+                    onChange={(event) => updateField('hiddenBulkInputFile', event.target.files?.[0] || null)}
+                  />
+                </label>
+                <label className="flex cursor-pointer items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm font-medium text-slate-600 transition-colors hover:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-900">
+                  <Upload className="mr-2 h-4 w-4" />
+                  {form.hiddenBulkOutputFile ? form.hiddenBulkOutputFile.name : 'Upload outputs.txt'}
+                  <input
+                    type="file"
+                    accept=".txt"
+                    className="hidden"
+                    onChange={(event) => updateField('hiddenBulkOutputFile', event.target.files?.[0] || null)}
+                  />
+                </label>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-gray-300">Bulk Delimiter</label>
+                <input
+                  value={form.hiddenBulkDelimiter || '###CASE###'}
+                  onChange={(event) => updateField('hiddenBulkDelimiter', event.target.value)}
+                  placeholder="###CASE###"
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"
+                />
+                <p className="mt-2 text-xs text-slate-500 dark:text-gray-400">
+                  Keep the same delimiter in inputs and outputs files. Example: <code>###CASE###</code>
+                </p>
+              </div>
             </div>
           )}
         </SectionCard>
@@ -401,7 +476,9 @@ export default function CreateProblem() {
             status: currentProblemId ? 'Draft' : 'Draft',
             tags: form.tags.split(',').map((item) => item.trim()).filter(Boolean),
             companyTags: form.companyTags.split(',').map((item) => item.trim()).filter(Boolean),
-            hiddenTestCaseCount: hiddenPairs.pairs.filter((pair) => pair.complete).length,
+            hiddenTestCaseCount: form.hiddenTestUploadMode === 'bulk'
+              ? (form.hiddenBulkInputFile && form.hiddenBulkOutputFile ? 1 : 0)
+              : hiddenPairs.pairs.filter((pair) => pair.complete).length,
           }}
         />
 

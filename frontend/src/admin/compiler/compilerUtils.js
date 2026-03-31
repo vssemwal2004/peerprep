@@ -89,7 +89,11 @@ export function createDefaultProblemForm() {
     timeLimitSeconds: 2,
     memoryLimitMb: 256,
     sampleTestCases: [createEmptySampleTestCase()],
+    hiddenTestUploadMode: 'pairs',
     hiddenTestFiles: [],
+    hiddenBulkInputFile: null,
+    hiddenBulkOutputFile: null,
+    hiddenBulkDelimiter: '###CASE###',
   };
 }
 
@@ -111,9 +115,22 @@ export function buildProblemFormData(problemForm, status) {
   formData.append('sampleTestCases', JSON.stringify(problemForm.sampleTestCases || []));
   formData.append('status', status);
 
-  (problemForm.hiddenTestFiles || []).forEach((file) => {
-    formData.append('hiddenTestFiles', file);
-  });
+  const uploadMode = problemForm.hiddenTestUploadMode || 'pairs';
+  formData.append('hiddenTestUploadMode', uploadMode);
+
+  if (uploadMode === 'bulk') {
+    if (problemForm.hiddenBulkInputFile) {
+      formData.append('hiddenBulkInputFile', problemForm.hiddenBulkInputFile);
+    }
+    if (problemForm.hiddenBulkOutputFile) {
+      formData.append('hiddenBulkOutputFile', problemForm.hiddenBulkOutputFile);
+    }
+    formData.append('hiddenBulkDelimiter', problemForm.hiddenBulkDelimiter || '###CASE###');
+  } else {
+    (problemForm.hiddenTestFiles || []).forEach((file) => {
+      formData.append('hiddenTestFiles', file);
+    });
+  }
 
   return formData;
 }
@@ -240,7 +257,6 @@ export function getMonacoLanguage(languageId) {
 export function getJudge0LanguageId(languageId) {
   return COMPILER_LANGUAGES.find((language) => language.id === languageId)?.judge0LanguageId || null;
 }
-
 
 
 

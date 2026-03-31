@@ -4,10 +4,16 @@ import TestCase from '../models/TestCase.js';
 import { HttpError } from '../utils/errors.js';
 import { validateObjectId } from '../utils/validators.js';
 import { refreshProblemStats, serializeSubmission } from './compilerHelpers.js';
+import { parseBulkCasePair } from '../utils/testcaseBulkParser.js';
+import { readS3TextObject } from '../utils/s3.js';
 
 const JUDGE0_BASE_URL = process.env.JUDGE0_BASE_URL || 'https://ce.judge0.com';
 const JUDGE0_AUTH_HEADER = String(process.env.JUDGE0_AUTH_HEADER || '').trim();
 const JUDGE0_AUTH_TOKEN = String(process.env.JUDGE0_AUTH_TOKEN || '').trim();
+const JUDGE0_BASE_URLS = String(process.env.JUDGE0_BASE_URLS || JUDGE0_BASE_URL)
+  .split(',')
+  .map((url) => String(url || '').trim().replace(/\/+$/, ''))
+  .filter(Boolean);
 const MAX_SOURCE_CODE_SIZE_BYTES = 50 * 1024;
 const MAX_STDIN_SIZE_BYTES = 64 * 1024;
 const MAX_TESTCASE_TEXT_BYTES = 64 * 1024;
@@ -17,6 +23,7 @@ const SUBMIT_CASE_DELAY_MS = 350;
 const JUDGE0_REQUEST_TIMEOUT_MS = Number(process.env.JUDGE0_REQUEST_TIMEOUT_MS || 15000);
 const DEFAULT_TIME_LIMIT_SECONDS = 2;
 const DEFAULT_MEMORY_LIMIT_KB = 256 * 1024;
+let judge0RoundRobinIndex = 0;
 
 const LANGUAGE_ID_TO_KEY = {
   50: 'c',
@@ -122,6 +129,20 @@ function buildJudge0Error(message, statusCode = 502) {
   return new HttpError(statusCode, message);
 }
 
+function getNextJudge0Targets() {
+  if (JUDGE0_BASE_URLS.length <= 1) {
+    return JUDGE0_BASE_URLS;
+  }
+
+  const start = judge0RoundRobinIndex % JUDGE0_BASE_URLS.length;
+  judge0RoundRobinIndex = (judge0RoundRobinIndex + 1) % JUDGE0_BASE_URLS.length;
+
+  return [
+    ...JUDGE0_BASE_URLS.slice(start),
+    ...JUDGE0_BASE_URLS.slice(0, start),
+  ];
+}
+
 function resolveLanguageRequest(body) {
   if (body.language_id !== undefined && body.language_id !== null && body.language_id !== '') {
     const languageId = Number(body.language_id);
@@ -142,8 +163,6 @@ function resolveLanguageRequest(body) {
 }
 
 async function judge0Request(path, { method = 'GET', body } = {}) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), JUDGE0_REQUEST_TIMEOUT_MS);
   const headers = {
     'Content-Type': 'application/json',
   };
@@ -152,41 +171,66 @@ async function judge0Request(path, { method = 'GET', body } = {}) {
     headers[JUDGE0_AUTH_HEADER] = JUDGE0_AUTH_TOKEN;
   }
 
-  try {
-    const response = await fetch(`${JUDGE0_BASE_URL}${path}`, {
-      method,
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: controller.signal,
-    });
+  const targets = getNextJudge0Targets();
+  let lastError = null;
 
-    const rawBody = await response.text();
-    let parsedBody = {};
+  for (let index = 0; index < targets.length; index += 1) {
+    const target = targets[index];
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), JUDGE0_REQUEST_TIMEOUT_MS);
+
     try {
-      parsedBody = rawBody ? JSON.parse(rawBody) : {};
-    } catch {
-      parsedBody = { message: rawBody };
-    }
+      const response = await fetch(`${target}${path}`, {
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: controller.signal,
+      });
 
-    if (!response.ok) {
-      const upstreamMessage = parsedBody.message
-        || parsedBody.error
-        || parsedBody.stderr
-        || `Judge0 request failed with status ${response.status}.`;
-      throw buildJudge0Error(upstreamMessage, response.status === 429 ? 503 : 502);
-    }
+      const rawBody = await response.text();
+      let parsedBody = {};
+      try {
+        parsedBody = rawBody ? JSON.parse(rawBody) : {};
+      } catch {
+        parsedBody = { message: rawBody };
+      }
 
-    return parsedBody;
-  } catch (error) {
-    if (error.name === 'AbortError') {
-      throw buildJudge0Error('Judge0 request timed out.', 504);
+      if (!response.ok) {
+        const upstreamMessage = parsedBody.message
+          || parsedBody.error
+          || parsedBody.stderr
+          || `Judge0 request failed with status ${response.status}.`;
+
+        // 4xx from upstream is usually a client/config issue, do not fail over.
+        if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+          throw buildJudge0Error(upstreamMessage, response.status);
+        }
+
+        lastError = buildJudge0Error(upstreamMessage, response.status === 429 ? 503 : 502);
+        continue;
+      }
+
+      return parsedBody;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        lastError = buildJudge0Error('Judge0 request timed out.', 504);
+        continue;
+      }
+      if (error instanceof HttpError) {
+        // Keep 4xx behavior explicit and fail fast.
+        if (error.status >= 400 && error.status < 500 && error.status !== 429) {
+          throw error;
+        }
+        lastError = error;
+        continue;
+      }
+      lastError = buildJudge0Error(error.message || 'Unable to reach Judge0.');
+    } finally {
+      clearTimeout(timeoutId);
     }
-    throw error instanceof HttpError
-      ? error
-      : buildJudge0Error(error.message || 'Unable to reach Judge0.');
-  } finally {
-    clearTimeout(timeoutId);
   }
+
+  throw lastError || buildJudge0Error('Unable to reach any Judge0 node.');
 }
 
 export async function runJudge0(source_code, language_id, stdin = '', options = {}) {
@@ -491,9 +535,33 @@ export async function submitCode(req, res) {
     TestCase.find({ problem: problem._id, kind: 'hidden' }).sort({ position: 1 }).lean(),
   ]);
 
-  const allTestCases = hiddenTestCases.length > 0
+  let allTestCases = hiddenTestCases.length > 0
     ? hiddenTestCases
-    : sampleTestCases;
+    : [];
+
+  const isS3HiddenSource = problem.hiddenTestSource?.provider === 's3'
+    && problem.hiddenTestSource?.inputObjectKey
+    && problem.hiddenTestSource?.outputObjectKey;
+
+  if (allTestCases.length === 0 && isS3HiddenSource) {
+    try {
+      const [inputsBlob, outputsBlob] = await Promise.all([
+        readS3TextObject(problem.hiddenTestSource.inputObjectKey),
+        readS3TextObject(problem.hiddenTestSource.outputObjectKey),
+      ]);
+      allTestCases = parseBulkCasePair(
+        inputsBlob,
+        outputsBlob,
+        problem.hiddenTestSource.delimiter || '###CASE###',
+      );
+    } catch (error) {
+      throw new HttpError(500, `Failed to load hidden S3 testcases: ${error.message}`);
+    }
+  }
+
+  if (allTestCases.length === 0) {
+    allTestCases = sampleTestCases;
+  }
 
   if (allTestCases.length === 0) {
     throw new HttpError(400, 'No test cases are configured for this problem yet.');
@@ -685,5 +753,62 @@ export async function getExpectedOutput(req, res) {
   res.json({
     expectedOutput: responsePayload.stdout || '',
     language: reference.languageKey,
+  });
+}
+
+export async function getJudge0Health(req, res) {
+  const headers = {};
+  if (JUDGE0_AUTH_HEADER && JUDGE0_AUTH_TOKEN) {
+    headers[JUDGE0_AUTH_HEADER] = JUDGE0_AUTH_TOKEN;
+  }
+
+  const checks = await Promise.all(
+    JUDGE0_BASE_URLS.map(async (baseUrl) => {
+      const startedAt = Date.now();
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), Math.min(JUDGE0_REQUEST_TIMEOUT_MS, 5000));
+        const response = await fetch(`${baseUrl}/languages`, {
+          method: 'GET',
+          headers,
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          return {
+            node: baseUrl,
+            ok: false,
+            status: response.status,
+            latencyMs: Date.now() - startedAt,
+          };
+        }
+
+        return {
+          node: baseUrl,
+          ok: true,
+          status: response.status,
+          latencyMs: Date.now() - startedAt,
+        };
+      } catch (error) {
+        return {
+          node: baseUrl,
+          ok: false,
+          status: 0,
+          latencyMs: Date.now() - startedAt,
+          error: error?.name === 'AbortError'
+            ? 'timeout'
+            : (error?.message || 'request failed'),
+        };
+      }
+    }),
+  );
+
+  const healthyNodes = checks.filter((entry) => entry.ok).length;
+  res.json({
+    totalNodes: checks.length,
+    healthyNodes,
+    degraded: healthyNodes < checks.length,
+    nodes: checks,
   });
 }

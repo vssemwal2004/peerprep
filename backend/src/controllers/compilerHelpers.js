@@ -43,6 +43,11 @@ export function serializeProblem(problem, { sampleTestCases = [], hiddenTestCase
     averageExecutionTimeMs: problem.stats?.averageExecutionTimeMs || 0,
     sampleTestCases,
     hiddenTestCaseCount,
+    hiddenTestSource: {
+      provider: problem.hiddenTestSource?.provider || 'none',
+      caseCount: Number(problem.hiddenTestSource?.caseCount || 0),
+      delimiter: problem.hiddenTestSource?.delimiter || '###CASE###',
+    },
     createdAt: problem.createdAt,
     updatedAt: problem.updatedAt,
     publishedAt: problem.publishedAt || null,
@@ -147,6 +152,5 @@ export async function refreshProblemStats(problemId) {
     },
   });
 }
-
 
 

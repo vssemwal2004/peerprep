@@ -238,20 +238,83 @@ export const feedbackLimiter = rateLimit({
 });
 
 // Compiler execution limiter - protects free Judge0 capacity from spam
-export const compilerExecutionLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000, // 10 minutes
-  max: 60, // 60 executions per 10 minutes per user/IP
+const RUN_WINDOW_MS = Number(process.env.COMPILER_RUN_WINDOW_MS || 60 * 1000);
+const RUN_MAX = Number(process.env.COMPILER_RUN_MAX || 10);
+const SUBMIT_WINDOW_MS = Number(process.env.COMPILER_SUBMIT_WINDOW_MS || 60 * 1000);
+const SUBMIT_MAX = Number(process.env.COMPILER_SUBMIT_MAX || 5);
+const RUN_COOLDOWN_MS = Number(process.env.COMPILER_RUN_COOLDOWN_MS || 5 * 1000);
+const SUBMIT_COOLDOWN_MS = Number(process.env.COMPILER_SUBMIT_COOLDOWN_MS || 10 * 1000);
+
+const runCooldownTracker = new Map(); // Map<key, nextAllowedTimestampMs>
+const submitCooldownTracker = new Map(); // Map<key, nextAllowedTimestampMs>
+
+function getCompilerKey(req) {
+  return req.user?._id?.toString() || req.ip;
+}
+
+function createCooldownMiddleware({ tracker, cooldownMs, label }) {
+  return (req, res, next) => {
+    const key = getCompilerKey(req);
+    const now = Date.now();
+    const nextAllowedAt = tracker.get(key) || 0;
+
+    if (now < nextAllowedAt) {
+      const waitSeconds = Math.max(1, Math.ceil((nextAllowedAt - now) / 1000));
+      console.warn(`[SECURITY] ${label} cooldown blocked for ${key}, wait=${waitSeconds}s`);
+      return res.status(429).json({
+        error: `Please wait ${waitSeconds}s before your next ${label.toLowerCase()} request.`,
+      });
+    }
+
+    tracker.set(key, now + cooldownMs);
+    return next();
+  };
+}
+
+export const compilerRunLimiter = rateLimit({
+  windowMs: RUN_WINDOW_MS,
+  max: RUN_MAX,
   message: 'Too many compiler execution requests',
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.user?._id?.toString() || req.ip,
+  keyGenerator: getCompilerKey,
   handler: (req, res) => {
-    console.warn(`[SECURITY] Compiler execution limit exceeded for ${req.user?._id || req.ip}`);
+    console.warn(`[SECURITY] Compiler run limit exceeded for ${req.user?._id || req.ip}`);
     res.status(429).json({
-      error: 'Compiler rate limit exceeded. Please wait a moment before retrying.'
+      error: 'Run rate limit exceeded. Please wait before retrying.'
     });
   }
 });
+
+export const compilerSubmitLimiter = rateLimit({
+  windowMs: SUBMIT_WINDOW_MS,
+  max: SUBMIT_MAX,
+  message: 'Too many submit requests',
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: getCompilerKey,
+  handler: (req, res) => {
+    console.warn(`[SECURITY] Compiler submit limit exceeded for ${req.user?._id || req.ip}`);
+    res.status(429).json({
+      error: 'Submit rate limit exceeded. Please wait before retrying.'
+    });
+  }
+});
+
+export const compilerRunCooldown = createCooldownMiddleware({
+  tracker: runCooldownTracker,
+  cooldownMs: RUN_COOLDOWN_MS,
+  label: 'RUN',
+});
+
+export const compilerSubmitCooldown = createCooldownMiddleware({
+  tracker: submitCooldownTracker,
+  cooldownMs: SUBMIT_COOLDOWN_MS,
+  label: 'SUBMIT',
+});
+
+// Backward compatibility for older imports.
+export const compilerExecutionLimiter = compilerRunLimiter;
 /**
  * WHY THIS IS SAFE:
  * - All limits are very generous and won't affect legitimate users
@@ -260,4 +323,3 @@ export const compilerExecutionLimiter = rateLimit({
  * - Only adds headers, doesn't change response bodies
  * - No breaking changes to any existing functionality
  */
-
