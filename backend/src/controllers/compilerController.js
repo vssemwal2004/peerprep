@@ -6,13 +6,15 @@ import { validateObjectId } from '../utils/validators.js';
 import { refreshProblemStats, serializeSubmission } from './compilerHelpers.js';
 
 const JUDGE0_BASE_URL = process.env.JUDGE0_BASE_URL || 'https://ce.judge0.com';
+const JUDGE0_AUTH_HEADER = String(process.env.JUDGE0_AUTH_HEADER || '').trim();
+const JUDGE0_AUTH_TOKEN = String(process.env.JUDGE0_AUTH_TOKEN || '').trim();
 const MAX_SOURCE_CODE_SIZE_BYTES = 50 * 1024;
 const MAX_STDIN_SIZE_BYTES = 64 * 1024;
 const MAX_TESTCASE_TEXT_BYTES = 64 * 1024;
 const POLL_DELAY_MS = 1000;
 const POLL_MAX_ATTEMPTS = 10;
 const SUBMIT_CASE_DELAY_MS = 350;
-const JUDGE0_REQUEST_TIMEOUT_MS = 15000;
+const JUDGE0_REQUEST_TIMEOUT_MS = Number(process.env.JUDGE0_REQUEST_TIMEOUT_MS || 15000);
 const DEFAULT_TIME_LIMIT_SECONDS = 2;
 const DEFAULT_MEMORY_LIMIT_KB = 256 * 1024;
 
@@ -38,7 +40,7 @@ function sleep(ms) {
 
 function looksLikeBase64(value) {
   if (value === undefined || value === null) return false;
-  const text = String(value);
+  const text = String(value).replace(/\s+/g, '');
   if (!text || text.length % 4 !== 0) return false;
   if (!/^[A-Za-z0-9+/]+={0,2}$/.test(text)) return false;
   return true;
@@ -53,7 +55,16 @@ function fromBase64Utf8(value) {
   const text = String(value);
   if (!looksLikeBase64(text)) return text;
   try {
-    return Buffer.from(text, 'base64').toString('utf8');
+    const compactBase64 = text.replace(/\s+/g, '');
+    const decoded = Buffer.from(compactBase64, 'base64').toString('utf8');
+    const roundTripBase64 = Buffer.from(decoded, 'utf8').toString('base64');
+
+    // Decode only when round-trip matches to avoid corrupting plain text that
+    // accidentally matches base64 regex.
+    if (roundTripBase64 === compactBase64) {
+      return decoded;
+    }
+    return text;
   } catch {
     return text;
   }
@@ -133,13 +144,18 @@ function resolveLanguageRequest(body) {
 async function judge0Request(path, { method = 'GET', body } = {}) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), JUDGE0_REQUEST_TIMEOUT_MS);
+  const headers = {
+    'Content-Type': 'application/json',
+  };
+
+  if (JUDGE0_AUTH_HEADER && JUDGE0_AUTH_TOKEN) {
+    headers[JUDGE0_AUTH_HEADER] = JUDGE0_AUTH_TOKEN;
+  }
 
   try {
     const response = await fetch(`${JUDGE0_BASE_URL}${path}`, {
       method,
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: controller.signal,
     });
