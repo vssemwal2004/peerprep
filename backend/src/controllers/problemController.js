@@ -4,9 +4,9 @@ import TestCase from '../models/TestCase.js';
 import { HttpError } from '../utils/errors.js';
 import { sanitizeSearchQuery, sanitizeString, validateObjectId, validatePagination } from '../utils/validators.js';
 import { refreshProblemStats, serializeProblem, serializeSubmission, serializeStudentSubmission } from './compilerHelpers.js';
-import { executeAgainstTestCases, executeWithCustomInput } from '../services/compilerExecutionService.js';
+import { runJudge0 } from './compilerController.js';
 import { parseBulkCasePair } from '../utils/testcaseBulkParser.js';
-import { isS3TestcaseStorageEnabled, uploadS3TextObject } from '../utils/s3.js';
+import { isS3TestcaseStorageEnabled, readS3TextObject, uploadS3TextObject } from '../utils/s3.js';
 
 const STATUS_MAP = {
   draft: 'Draft',
@@ -21,12 +21,91 @@ const DIFFICULTY_SORT_BRANCHES = [
   { case: { $eq: ['$difficulty', 'Hard'] }, then: 3 },
 ];
 
+const DEFAULT_TIME_LIMIT_SECONDS = 2;
+const DEFAULT_MEMORY_LIMIT_MB = 256;
+
+const KEY_TO_LANGUAGE_ID = {
+  c: 50,
+  cpp: 54,
+  java: 62,
+  javascript: 63,
+  python: 71,
+};
+
 function isAdminRequest(req) {
   return req.user?.role === 'admin';
 }
 
 function isStudentRequest(req) {
   return req.user?.role === 'student';
+}
+
+function roundNumber(value, digits = 3) {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric)) return 0;
+  return Number(numeric.toFixed(digits));
+}
+
+function secondsToMilliseconds(value) {
+  return roundNumber(Number(value || 0) * 1000, 2);
+}
+
+function normalizeComparableOutput(value) {
+  return String(value ?? '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+    .join('\n')
+    .trim();
+}
+
+function buildJudge0Options(problem) {
+  const timeLimit = Number(problem?.timeLimitSeconds || DEFAULT_TIME_LIMIT_SECONDS);
+  const memoryLimitMb = Number(problem?.memoryLimitMb || DEFAULT_MEMORY_LIMIT_MB);
+  return {
+    cpuTimeLimitSeconds: timeLimit,
+    wallTimeLimitSeconds: Math.max(5, timeLimit * 2),
+    memoryLimitKb: Math.trunc(memoryLimitMb * 1024),
+  };
+}
+
+function evaluateJudge0Case(judgeResult, expectedOutput = '') {
+  if (judgeResult.compile_output || judgeResult.status?.id === 6) {
+    return {
+      status: 'CE',
+      error: judgeResult.compile_output || 'Compilation failed.',
+    };
+  }
+
+  if (judgeResult.status?.id === 5) {
+    return {
+      status: 'TLE',
+      error: judgeResult.message || 'Execution exceeded time limit.',
+    };
+  }
+
+  if (judgeResult.stderr || (judgeResult.status?.id >= 7 && judgeResult.status?.id <= 13) || judgeResult.message) {
+    return {
+      status: 'RE',
+      error: judgeResult.stderr || judgeResult.message || judgeResult.status?.description || 'Runtime error.',
+    };
+  }
+
+  const actualOutput = judgeResult.stdout || '';
+  const expected = String(expectedOutput ?? '');
+  if (normalizeComparableOutput(actualOutput) !== normalizeComparableOutput(expected)) {
+    return {
+      status: 'WA',
+      actualOutput,
+      expectedOutput: expected,
+    };
+  }
+
+  return {
+    status: 'AC',
+    actualOutput,
+    expectedOutput: expected,
+  };
 }
 
 function parseJsonField(value, fallback) {
@@ -223,10 +302,6 @@ function normalizeCodeTemplates(value, supportedLanguages) {
 
     if (!template.trim()) {
       throw new HttpError(400, `${language} template is required.`);
-    }
-
-    if (!template.includes('STUDENT_CODE_START') || !template.includes('STUDENT_CODE_END')) {
-      throw new HttpError(400, `${language} template must include STUDENT_CODE_START and STUDENT_CODE_END markers.`);
     }
 
     templates[language] = template.replace(/\r\n/g, '\n');
@@ -974,12 +1049,32 @@ export async function previewRunProblem(req, res) {
     : (sampleTestCases[0]?.input || '');
   const timeLimitSeconds = parseNumber(req.body.timeLimitSeconds ?? req.body.timeLimit, 2, { min: 1, max: 15, integer: false });
 
-  const result = await executeWithCustomInput({
-    language: selectedLanguage,
-    sourceCode: templates[selectedLanguage],
+  const languageId = KEY_TO_LANGUAGE_ID[selectedLanguage];
+  if (!languageId) {
+    throw new HttpError(400, 'Unsupported language for Judge0 preview run.');
+  }
+
+  const judgeResult = await runJudge0(
+    templates[selectedLanguage],
+    languageId,
     customInput,
-    timeLimitSeconds,
-  });
+    {
+      cpuTimeLimitSeconds: timeLimitSeconds,
+      wallTimeLimitSeconds: Math.max(5, timeLimitSeconds * 2),
+      memoryLimitKb: DEFAULT_MEMORY_LIMIT_MB * 1024,
+    },
+  );
+
+  const evaluation = evaluateJudge0Case(judgeResult, '');
+  const result = {
+    status: evaluation.status,
+    output: judgeResult.stdout || '',
+    stderr: evaluation.status === 'RE' ? (evaluation.error || '') : (judgeResult.stderr || ''),
+    compileOutput: evaluation.status === 'CE' ? (evaluation.error || '') : (judgeResult.compile_output || ''),
+    executionTimeMs: secondsToMilliseconds(judgeResult.time),
+    memoryUsedKb: Math.trunc(Number(judgeResult.memory || 0)),
+    provider: 'judge0-ce',
+  };
 
   res.json({
     ...result,
@@ -999,6 +1094,10 @@ export async function runProblemCode(req, res) {
   const sourceCode = String(req.body.sourceCode || '');
   if (!sourceCode.trim()) {
     throw new HttpError(400, 'Source code is required.');
+  }
+  const languageId = KEY_TO_LANGUAGE_ID[language];
+  if (!languageId) {
+    throw new HttpError(400, 'Unsupported language for Judge0 run.');
   }
 
   const firstSampleCase = await TestCase.findOne({
@@ -1020,12 +1119,24 @@ export async function runProblemCode(req, res) {
   try {
     await markSubmissionRunning(req, submission);
 
-    const result = await executeWithCustomInput({
-      language,
+    const judgeResult = await runJudge0(
       sourceCode,
+      languageId,
       customInput,
-      timeLimitSeconds: problem.timeLimitSeconds,
-    });
+      buildJudge0Options(problem),
+    );
+    const evaluation = evaluateJudge0Case(judgeResult, '');
+    const result = {
+      status: evaluation.status,
+      output: judgeResult.stdout || '',
+      stderr: evaluation.status === 'RE' ? (evaluation.error || '') : (judgeResult.stderr || ''),
+      compileOutput: evaluation.status === 'CE' ? (evaluation.error || '') : (judgeResult.compile_output || ''),
+      executionTimeMs: secondsToMilliseconds(judgeResult.time),
+      memoryUsedKb: Math.trunc(Number(judgeResult.memory || 0)),
+      provider: 'judge0-ce',
+      totalTestCases: 0,
+      passedTestCases: 0,
+    };
 
     await finalizeSubmission(req, submission, result);
     if (result.status === 'AC') {
@@ -1045,7 +1156,7 @@ export async function runProblemCode(req, res) {
       stderr: error.message || 'Execution failed unexpectedly.',
       executionTimeMs: 0,
       memoryUsedKb: 0,
-      provider: 'local-sandbox',
+      provider: 'judge0-ce',
       totalTestCases: 0,
       passedTestCases: 0,
     });
@@ -1066,11 +1177,36 @@ export async function submitProblemCode(req, res) {
   if (!sourceCode.trim()) {
     throw new HttpError(400, 'Source code is required.');
   }
+  const languageId = KEY_TO_LANGUAGE_ID[language];
+  if (!languageId) {
+    throw new HttpError(400, 'Unsupported language for Judge0 submit.');
+  }
 
-  const hiddenTestCases = await TestCase.find({
+  const hiddenTestCasesDb = await TestCase.find({
     problem: problem._id,
     kind: 'hidden',
   }).sort({ position: 1 }).lean();
+
+  let hiddenTestCases = hiddenTestCasesDb;
+  const isS3HiddenSource = problem.hiddenTestSource?.provider === 's3'
+    && problem.hiddenTestSource?.inputObjectKey
+    && problem.hiddenTestSource?.outputObjectKey;
+
+  if (hiddenTestCases.length === 0 && isS3HiddenSource) {
+    try {
+      const [inputsBlob, outputsBlob] = await Promise.all([
+        readS3TextObject(problem.hiddenTestSource.inputObjectKey),
+        readS3TextObject(problem.hiddenTestSource.outputObjectKey),
+      ]);
+      hiddenTestCases = parseBulkCasePair(
+        inputsBlob,
+        outputsBlob,
+        problem.hiddenTestSource.delimiter || '###CASE###',
+      );
+    } catch (error) {
+      throw new HttpError(500, `Failed to load hidden S3 testcases: ${error.message}`);
+    }
+  }
 
   if (hiddenTestCases.length === 0) {
     throw new HttpError(400, 'No hidden test cases are configured for this problem yet.');
@@ -1085,12 +1221,71 @@ export async function submitProblemCode(req, res) {
   try {
     await markSubmissionRunning(req, submission);
 
-    const result = await executeAgainstTestCases({
-      language,
-      sourceCode,
-      testCases: hiddenTestCases,
-      timeLimitSeconds: problem.timeLimitSeconds,
-    });
+    const testCaseResults = [];
+    let totalExecutionTimeSeconds = 0;
+    let peakMemoryKb = 0;
+    let failedCase = null;
+    let finalStatus = 'AC';
+    let finalOutput = '';
+    let finalStderr = '';
+    let finalCompileOutput = '';
+    let passedTestCases = 0;
+
+    for (let index = 0; index < hiddenTestCases.length; index += 1) {
+      const testCase = hiddenTestCases[index];
+      const judgeResult = await runJudge0(
+        sourceCode,
+        languageId,
+        testCase.input || '',
+        buildJudge0Options(problem),
+      );
+      const evaluation = evaluateJudge0Case(judgeResult, testCase.output || '');
+      const executionTimeMs = secondsToMilliseconds(judgeResult.time);
+      const actualOutput = judgeResult.stdout || '';
+
+      totalExecutionTimeSeconds += Number(judgeResult.time || 0);
+      peakMemoryKb = Math.max(peakMemoryKb, Math.trunc(Number(judgeResult.memory || 0)));
+
+      testCaseResults.push({
+        index: index + 1,
+        status: evaluation.status,
+        input: testCase.input || '',
+        expectedOutput: testCase.output || '',
+        actualOutput,
+        executionTimeMs,
+      });
+
+      if (evaluation.status !== 'AC') {
+        finalStatus = evaluation.status;
+        finalOutput = actualOutput;
+        finalStderr = evaluation.status === 'RE' || evaluation.status === 'TLE' ? (evaluation.error || '') : '';
+        finalCompileOutput = evaluation.status === 'CE' ? (evaluation.error || '') : '';
+        failedCase = {
+          index: index + 1,
+          input: testCase.input || '',
+          expectedOutput: testCase.output || '',
+          actualOutput: evaluation.actualOutput || actualOutput,
+        };
+        break;
+      }
+
+      passedTestCases += 1;
+      finalOutput = actualOutput;
+    }
+
+    const result = {
+      status: finalStatus,
+      output: finalOutput,
+      stderr: finalStderr,
+      compileOutput: finalCompileOutput,
+      executionTimeMs: secondsToMilliseconds(totalExecutionTimeSeconds),
+      memoryUsedKb: peakMemoryKb,
+      provider: 'judge0-ce',
+      failedCase,
+      testCaseResults,
+      totalTestCases: hiddenTestCases.length,
+      passedTestCases,
+    };
 
     await finalizeSubmission(req, submission, result);
     if (result.status === 'AC') {
@@ -1110,7 +1305,7 @@ export async function submitProblemCode(req, res) {
       stderr: error.message || 'Submission failed unexpectedly.',
       executionTimeMs: 0,
       memoryUsedKb: 0,
-      provider: 'local-sandbox',
+      provider: 'judge0-ce',
       totalTestCases: hiddenTestCases.length,
       passedTestCases: 0,
     });

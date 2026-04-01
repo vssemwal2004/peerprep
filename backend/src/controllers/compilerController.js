@@ -23,6 +23,9 @@ const SUBMIT_CASE_DELAY_MS = 350;
 const JUDGE0_REQUEST_TIMEOUT_MS = Number(process.env.JUDGE0_REQUEST_TIMEOUT_MS || 15000);
 const DEFAULT_TIME_LIMIT_SECONDS = 2;
 const DEFAULT_MEMORY_LIMIT_KB = 256 * 1024;
+const JUDGE0_MAX_CPU_TIME_LIMIT_SECONDS = Number(process.env.JUDGE0_MAX_CPU_TIME_LIMIT_SECONDS || 15);
+const JUDGE0_MAX_WALL_TIME_LIMIT_SECONDS = Number(process.env.JUDGE0_MAX_WALL_TIME_LIMIT_SECONDS || 20);
+const JUDGE0_MAX_MEMORY_LIMIT_KB = Number(process.env.JUDGE0_MAX_MEMORY_LIMIT_KB || 512000);
 let judge0RoundRobinIndex = 0;
 
 const LANGUAGE_ID_TO_KEY = {
@@ -129,6 +132,38 @@ function buildJudge0Error(message, statusCode = 502) {
   return new HttpError(statusCode, message);
 }
 
+function clampNumber(value, min, max, fallback) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.min(Math.max(numeric, min), max);
+}
+
+function extractJudge0ErrorMessage(parsedBody, statusCode) {
+  if (!parsedBody || typeof parsedBody !== 'object') {
+    return `Judge0 request failed with status ${statusCode}.`;
+  }
+
+  if (parsedBody.message) return String(parsedBody.message);
+  if (parsedBody.error) return String(parsedBody.error);
+  if (parsedBody.stderr) return String(parsedBody.stderr);
+
+  const entries = Object.entries(parsedBody);
+  for (const [field, value] of entries) {
+    if (Array.isArray(value) && value.length > 0) {
+      return `${field}: ${String(value[0])}`;
+    }
+    if (typeof value === 'string' && value.trim()) {
+      return `${field}: ${value}`;
+    }
+  }
+
+  try {
+    return `Judge0 request failed with status ${statusCode}. ${JSON.stringify(parsedBody).slice(0, 240)}`;
+  } catch {
+    return `Judge0 request failed with status ${statusCode}.`;
+  }
+}
+
 function getNextJudge0Targets() {
   if (JUDGE0_BASE_URLS.length <= 1) {
     return JUDGE0_BASE_URLS;
@@ -196,10 +231,7 @@ async function judge0Request(path, { method = 'GET', body } = {}) {
       }
 
       if (!response.ok) {
-        const upstreamMessage = parsedBody.message
-          || parsedBody.error
-          || parsedBody.stderr
-          || `Judge0 request failed with status ${response.status}.`;
+        const upstreamMessage = extractJudge0ErrorMessage(parsedBody, response.status);
 
         // 4xx from upstream is usually a client/config issue, do not fail over.
         if (response.status >= 400 && response.status < 500 && response.status !== 429) {
@@ -242,13 +274,32 @@ export async function runJudge0(source_code, language_id, stdin = '', options = 
     throw new HttpError(400, 'Unsupported language_id.');
   }
 
+  const cpuTimeLimit = clampNumber(
+    options.cpuTimeLimitSeconds || DEFAULT_TIME_LIMIT_SECONDS,
+    1,
+    JUDGE0_MAX_CPU_TIME_LIMIT_SECONDS,
+    DEFAULT_TIME_LIMIT_SECONDS,
+  );
+  const wallTimeLimit = clampNumber(
+    options.wallTimeLimitSeconds || Math.max(5, cpuTimeLimit * 2),
+    2,
+    JUDGE0_MAX_WALL_TIME_LIMIT_SECONDS,
+    Math.min(JUDGE0_MAX_WALL_TIME_LIMIT_SECONDS, Math.max(5, cpuTimeLimit * 2)),
+  );
+  const memoryLimitKb = Math.trunc(clampNumber(
+    options.memoryLimitKb || DEFAULT_MEMORY_LIMIT_KB,
+    32 * 1024,
+    JUDGE0_MAX_MEMORY_LIMIT_KB,
+    DEFAULT_MEMORY_LIMIT_KB,
+  ));
+
   const submissionPayload = {
     source_code: toBase64Utf8(sourceCode),
     language_id: languageId,
     stdin: toBase64Utf8(standardInput),
-    cpu_time_limit: roundNumber(options.cpuTimeLimitSeconds || DEFAULT_TIME_LIMIT_SECONDS, 2),
-    wall_time_limit: roundNumber(options.wallTimeLimitSeconds || Math.max(5, (options.cpuTimeLimitSeconds || DEFAULT_TIME_LIMIT_SECONDS) * 2), 2),
-    memory_limit: Math.trunc(options.memoryLimitKb || DEFAULT_MEMORY_LIMIT_KB),
+    cpu_time_limit: roundNumber(cpuTimeLimit, 2),
+    wall_time_limit: roundNumber(wallTimeLimit, 2),
+    memory_limit: memoryLimitKb,
     number_of_runs: 1,
     max_file_size: 1024,
   };
