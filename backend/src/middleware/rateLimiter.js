@@ -1,4 +1,6 @@
 ﻿import rateLimit from 'express-rate-limit';
+import { RedisStore } from 'rate-limit-redis';
+import { getValkeyClient, isValkeyEnabled } from '../utils/valkey.js';
 
 /**
  * SECURITY: Rate Limiting Middleware
@@ -252,12 +254,37 @@ function getCompilerKey(req) {
   return req.user?._id?.toString() || req.ip;
 }
 
-function createCooldownMiddleware({ tracker, cooldownMs, label }) {
-  return (req, res, next) => {
+function createCooldownMiddleware({ tracker, cooldownMs, label, redisPrefix }) {
+  return async (req, res, next) => {
     const key = getCompilerKey(req);
     const now = Date.now();
-    const nextAllowedAt = tracker.get(key) || 0;
+    const redisEnabled = isValkeyEnabled();
+    const redis = redisEnabled ? getValkeyClient() : null;
 
+    if (redis) {
+      try {
+        const redisKey = `${redisPrefix}:${key}`;
+        const lockResult = await redis.set(redisKey, '1', {
+          PX: cooldownMs,
+          NX: true,
+        });
+
+        if (!lockResult) {
+          const ttlMs = await redis.pTTL(redisKey);
+          const waitSeconds = Math.max(1, Math.ceil(Math.max(0, ttlMs) / 1000));
+          console.warn(`[SECURITY] ${label} cooldown blocked for ${key}, wait=${waitSeconds}s`);
+          return res.status(429).json({
+            error: `Please wait ${waitSeconds}s before your next ${label.toLowerCase()} request.`,
+          });
+        }
+
+        return next();
+      } catch (error) {
+        console.warn(`[Rate Limiter] Valkey cooldown fallback (${label}): ${error.message}`);
+      }
+    }
+
+    const nextAllowedAt = tracker.get(key) || 0;
     if (now < nextAllowedAt) {
       const waitSeconds = Math.max(1, Math.ceil((nextAllowedAt - now) / 1000));
       console.warn(`[SECURITY] ${label} cooldown blocked for ${key}, wait=${waitSeconds}s`);
@@ -271,6 +298,22 @@ function createCooldownMiddleware({ tracker, cooldownMs, label }) {
   };
 }
 
+function buildRateLimitStore(prefix) {
+  if (!isValkeyEnabled()) {
+    return undefined;
+  }
+
+  const client = getValkeyClient();
+  if (!client) {
+    return undefined;
+  }
+
+  return new RedisStore({
+    prefix,
+    sendCommand: async (...args) => client.sendCommand(args),
+  });
+}
+
 export const compilerRunLimiter = rateLimit({
   windowMs: RUN_WINDOW_MS,
   max: RUN_MAX,
@@ -278,6 +321,7 @@ export const compilerRunLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: getCompilerKey,
+  store: buildRateLimitStore('rl:compiler:run:'),
   handler: (req, res) => {
     console.warn(`[SECURITY] Compiler run limit exceeded for ${req.user?._id || req.ip}`);
     res.status(429).json({
@@ -293,6 +337,7 @@ export const compilerSubmitLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: getCompilerKey,
+  store: buildRateLimitStore('rl:compiler:submit:'),
   handler: (req, res) => {
     console.warn(`[SECURITY] Compiler submit limit exceeded for ${req.user?._id || req.ip}`);
     res.status(429).json({
@@ -305,12 +350,14 @@ export const compilerRunCooldown = createCooldownMiddleware({
   tracker: runCooldownTracker,
   cooldownMs: RUN_COOLDOWN_MS,
   label: 'RUN',
+  redisPrefix: 'cooldown:compiler:run',
 });
 
 export const compilerSubmitCooldown = createCooldownMiddleware({
   tracker: submitCooldownTracker,
   cooldownMs: SUBMIT_COOLDOWN_MS,
   label: 'SUBMIT',
+  redisPrefix: 'cooldown:compiler:submit',
 });
 
 // Backward compatibility for older imports.
