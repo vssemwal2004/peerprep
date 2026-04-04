@@ -26,6 +26,7 @@
 ];
 
 const DRAFT_KEY_PREFIX = 'peerprep:problem-drafts:';
+const DRAFT_PAYLOAD_VERSION = 2;
 
 export function resolveProblemSort(value) {
   return PROBLEM_SORT_OPTIONS.find((option) => option.value === value) || PROBLEM_SORT_OPTIONS[0];
@@ -48,22 +49,60 @@ export function loadProblemDrafts(problemId) {
   }
 }
 
-export function saveProblemDrafts(problemId, drafts) {
-  if (typeof window === 'undefined' || !problemId) {
+function buildTemplateVersionKey(problem) {
+  return String(problem?.updatedAt || '');
+}
+
+function normalizeStoredDraftPayload(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {
+      version: DRAFT_PAYLOAD_VERSION,
+      templateVersionKey: '',
+      drafts: {},
+    };
+  }
+
+  if ('drafts' in value) {
+    return {
+      version: Number(value.version || DRAFT_PAYLOAD_VERSION),
+      templateVersionKey: String(value.templateVersionKey || ''),
+      drafts: value.drafts && typeof value.drafts === 'object' && !Array.isArray(value.drafts)
+        ? value.drafts
+        : {},
+    };
+  }
+
+  return {
+    version: 1,
+    templateVersionKey: '',
+    drafts: value,
+  };
+}
+
+export function saveProblemDrafts(problemId, problem, drafts) {
+  if (typeof window === 'undefined' || !problemId || !problem) {
     return;
   }
 
   try {
-    window.localStorage.setItem(getProblemDraftStorageKey(problemId), JSON.stringify(drafts || {}));
+    window.localStorage.setItem(getProblemDraftStorageKey(problemId), JSON.stringify({
+      version: DRAFT_PAYLOAD_VERSION,
+      templateVersionKey: buildTemplateVersionKey(problem),
+      drafts: drafts || {},
+    }));
   } catch {
     // Ignore localStorage write errors in restricted environments.
   }
 }
 
 export function buildProblemDrafts(problem, storedDrafts = {}) {
+  const storedDraftPayload = normalizeStoredDraftPayload(storedDrafts);
+  const canUseStoredDrafts = storedDraftPayload.templateVersionKey
+    && storedDraftPayload.templateVersionKey === buildTemplateVersionKey(problem);
+
   return (problem?.supportedLanguages || []).reduce((acc, language) => {
     const fallbackTemplate = problem?.codeTemplates?.[language] || '';
-    const storedDraft = storedDrafts?.[language];
+    const storedDraft = canUseStoredDrafts ? storedDraftPayload.drafts?.[language] : undefined;
     acc[language] = typeof storedDraft === 'string' ? storedDraft : fallbackTemplate;
     return acc;
   }, {});

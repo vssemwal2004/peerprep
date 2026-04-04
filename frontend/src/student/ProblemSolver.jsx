@@ -1007,9 +1007,9 @@ export default function ProblemSolver() {
 
   useEffect(() => {
     if (problem?._id) {
-      saveProblemDrafts(problem._id, drafts);
+      saveProblemDrafts(problem._id, problem, drafts);
     }
-  }, [drafts, problem?._id]);
+  }, [drafts, problem]);
 
   useEffect(() => {
     if (problem?._id) {
@@ -1465,7 +1465,6 @@ export default function ProblemSolver() {
     </div>
   );
 }
-
 
 
 

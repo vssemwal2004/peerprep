@@ -87,8 +87,8 @@ export function createDefaultProblemForm() {
     difficulty: 'Easy',
     tags: '',
     companyTags: '',
-    supportedLanguages: ['python', 'javascript'],
-    codeTemplates: { ...DEFAULT_CODE_TEMPLATES },
+    supportedLanguages: ['python'],
+    codeTemplates: { python: '' },
     referenceSolutions: {},
     inputFormat: '',
     outputFormat: '',
@@ -111,6 +111,13 @@ export function createProblemFormFromProblem(problem) {
   const supportedLanguages = problem?.supportedLanguages?.length
     ? problem.supportedLanguages
     : ['python'];
+  const savedTemplates = problem?.codeTemplates || {};
+  const codeTemplates = supportedLanguages.reduce((acc, language) => {
+    acc[language] = typeof savedTemplates?.[language] === 'string'
+      ? savedTemplates[language]
+      : '';
+    return acc;
+  }, {});
 
   return {
     title: problem?.title || '',
@@ -119,10 +126,7 @@ export function createProblemFormFromProblem(problem) {
     tags: (problem?.tags || []).join(', '),
     companyTags: (problem?.companyTags || []).join(', '),
     supportedLanguages,
-    codeTemplates: {
-      ...DEFAULT_CODE_TEMPLATES,
-      ...(problem?.codeTemplates || {}),
-    },
+    codeTemplates,
     referenceSolutions: problem?.referenceSolutions || {},
     inputFormat: problem?.inputFormat || '',
     outputFormat: problem?.outputFormat || '',

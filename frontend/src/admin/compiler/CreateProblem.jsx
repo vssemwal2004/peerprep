@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Eye, FilePlus2, Plus, Save, Trash2, Upload, X } from 'lucide-react';
 import { api } from '../../utils/api';
@@ -108,6 +108,14 @@ export default function CreateProblem() {
   const [previewTested, setPreviewTested] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isReadingTemplateFile, setIsReadingTemplateFile] = useState(false);
+  const formRef = useRef(form);
+
+  const setFormAndRef = (updater) => {
+    const nextValue = typeof updater === 'function' ? updater(formRef.current) : updater;
+    formRef.current = nextValue;
+    setForm(nextValue);
+  };
 
   useEffect(() => {
     if (!isEditMode) {
@@ -121,7 +129,9 @@ export default function CreateProblem() {
         setLoading(true);
         const response = await api.getCompilerProblem(id);
         if (!isMounted) return;
-        setForm(createProblemFormFromProblem(response));
+        const nextForm = createProblemFormFromProblem(response);
+        formRef.current = nextForm;
+        setForm(nextForm);
         setCurrentProblemId(response._id);
         setCurrentStatus(response.status || 'Draft');
         setPreviewTested(Boolean(response.previewTested));
@@ -154,38 +164,71 @@ export default function CreateProblem() {
   const activeTemplate = form.codeTemplates[activeLanguage] || '';
   const activeReferenceSolution = form.referenceSolutions?.[activeLanguage] || '';
 
-  const updateField = (field, value) => setForm((previous) => ({ ...previous, [field]: value }));
+  const updateField = (field, value) => setFormAndRef((previous) => ({ ...previous, [field]: value }));
 
   const toggleLanguage = (languageId) => {
-    setForm((previous) => {
+    setFormAndRef((previous) => {
       const hasLanguage = previous.supportedLanguages.includes(languageId);
       const supportedLanguages = hasLanguage
         ? previous.supportedLanguages.filter((item) => item !== languageId)
         : [...previous.supportedLanguages, languageId];
+      const nextTemplates = { ...(previous.codeTemplates || {}) };
+      const nextReferenceSolutions = { ...(previous.referenceSolutions || {}) };
+
+      if (!hasLanguage && typeof nextTemplates[languageId] !== 'string') {
+        nextTemplates[languageId] = '';
+      }
+
+      if (hasLanguage) {
+        delete nextTemplates[languageId];
+        delete nextReferenceSolutions[languageId];
+      }
 
       return {
         ...previous,
         supportedLanguages: supportedLanguages.length > 0 ? supportedLanguages : [languageId],
+        codeTemplates: nextTemplates,
+        referenceSolutions: nextReferenceSolutions,
       };
     });
   };
 
   const updateTemplate = (nextTemplate) => {
-    setForm((previous) => ({
+    setFormAndRef((previous) => ({
       ...previous,
       codeTemplates: { ...previous.codeTemplates, [activeLanguage]: nextTemplate },
     }));
   };
 
+  const handleTemplateUpload = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+
+    if (!file) {
+      return;
+    }
+
+    setIsReadingTemplateFile(true);
+    try {
+      const content = await file.text();
+      updateTemplate(content.replace(/\r\n/g, '\n'));
+      toast.success(`${getLanguageLabel(activeLanguage)} template loaded into the editor.`);
+    } catch (error) {
+      toast.error(error.message || 'Failed to read the uploaded template.');
+    } finally {
+      setIsReadingTemplateFile(false);
+    }
+  };
+
   const updateReferenceSolution = (nextSolution) => {
-    setForm((previous) => ({
+    setFormAndRef((previous) => ({
       ...previous,
       referenceSolutions: { ...(previous.referenceSolutions || {}), [activeLanguage]: nextSolution },
     }));
   };
 
   const updateSampleTestCase = (index, field, value) => {
-    setForm((previous) => ({
+    setFormAndRef((previous) => ({
       ...previous,
       sampleTestCases: previous.sampleTestCases.map((testCase, itemIndex) => (
         itemIndex === index ? { ...testCase, [field]: value } : testCase
@@ -194,7 +237,7 @@ export default function CreateProblem() {
   };
 
   const updateHiddenTestCase = (index, field, value) => {
-    setForm((previous) => ({
+    setFormAndRef((previous) => ({
       ...previous,
       hiddenTestCases: previous.hiddenTestCases.map((testCase, itemIndex) => (
         itemIndex === index ? { ...testCase, [field]: value } : testCase
@@ -203,29 +246,27 @@ export default function CreateProblem() {
   };
 
   const persistProblem = async (status, { redirectToPreview = false } = {}) => {
-    if (form.hiddenTestUploadMode === 'pairs' && hiddenPairs.issues.length > 0) {
+    const latestForm = formRef.current;
+    const latestHiddenPairs = deriveHiddenFilePairs(latestForm.hiddenTestFiles);
+
+    if (latestForm.hiddenTestUploadMode === 'pairs' && latestHiddenPairs.issues.length > 0) {
       toast.error('Fix hidden testcase file issues before saving.');
       return null;
     }
 
     setIsSaving(true);
     try {
-      const payload = buildProblemFormData(form, status);
+      const payload = buildProblemFormData(latestForm, status);
       const response = currentProblemId
         ? await api.updateCompilerProblem(currentProblemId, payload)
         : await api.createCompilerProblem(payload);
 
+      const nextForm = createProblemFormFromProblem(response);
+      formRef.current = nextForm;
       setCurrentProblemId(response._id);
       setCurrentStatus(response.status || status);
       setPreviewTested(Boolean(response.previewTested));
-      setForm((previous) => ({
-        ...previous,
-        hiddenTestFiles: [],
-        hiddenBulkInputFile: null,
-        hiddenBulkOutputFile: null,
-        existingHiddenTestCaseCount: response.hiddenTestCaseCount || previous.existingHiddenTestCaseCount,
-        previewTested: Boolean(response.previewTested),
-      }));
+      setForm(nextForm);
 
       if (redirectToPreview) {
         toast.success('Draft saved. Opening preview workspace.');
@@ -271,6 +312,10 @@ export default function CreateProblem() {
 
   const openPreview = async () => {
     await persistProblem('Draft', { redirectToPreview: true });
+  };
+
+  const handleSaveTemplate = async () => {
+    await persistProblem(currentProblemId ? currentStatus : 'Draft');
   };
 
   if (loading) {
@@ -518,6 +563,33 @@ export default function CreateProblem() {
 
             <SectionCard title="Code Templates" subtitle="Provide starter code for each language. Students can fully replace it with any valid program entrypoint.">
               <div className="mb-4 flex flex-wrap gap-2">{form.supportedLanguages.map((languageId) => <button key={languageId} type="button" onClick={() => setActiveLanguage(languageId)} className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${activeLanguage === languageId ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}>{getLanguageLabel(languageId)}</button>)}</div>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/60">
+                <div>
+                  <p className="text-sm font-semibold text-slate-800 dark:text-gray-100">{getLanguageLabel(activeLanguage)} starter template</p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Upload a language-specific starter file, then save it so the same template appears for both admins and students.</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
+                    <Upload className="h-4 w-4" />
+                    {isReadingTemplateFile ? 'Loading...' : 'Upload Template'}
+                    <input
+                      type="file"
+                      accept=".txt,.py,.js,.java,.cpp,.cc,.c,.json"
+                      className="hidden"
+                      onChange={handleTemplateUpload}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleSaveTemplate}
+                    disabled={isSaving || isDeleting || isReadingTemplateFile}
+                    className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"
+                  >
+                    <Save className="h-4 w-4" />
+                    {isSaving ? 'Saving...' : 'Save Template'}
+                  </button>
+                </div>
+              </div>
               <MonacoCodeEditor language={activeLanguage} value={activeTemplate} onChange={updateTemplate} height={380} />
             </SectionCard>
 

@@ -70,10 +70,16 @@ export default function MonacoCodeEditor({
   const editorRef = useRef(null);
   const mutationObserverRef = useRef(null);
   const resizeObserverRef = useRef(null);
+  const onChangeRef = useRef(onChange);
+  const isApplyingExternalValueRef = useRef(false);
   const [loadError, setLoadError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
   const resolvedHeight = typeof height === 'number' ? `${height}px` : height;
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
 
   useEffect(() => {
     let cancelled = false;
@@ -125,7 +131,10 @@ export default function MonacoCodeEditor({
         });
 
         editor.onDidChangeModelContent(() => {
-          onChange?.(editor.getValue());
+          if (isApplyingExternalValueRef.current) {
+            return;
+          }
+          onChangeRef.current?.(editor.getValue());
         });
 
         mutationObserverRef.current = new MutationObserver(() => {
@@ -171,7 +180,9 @@ export default function MonacoCodeEditor({
     if (!editor) return;
 
     if (editor.getValue() !== value) {
+      isApplyingExternalValueRef.current = true;
       editor.setValue(value || '');
+      isApplyingExternalValueRef.current = false;
     }
   }, [value]);
 
@@ -224,7 +235,6 @@ export default function MonacoCodeEditor({
     </div>
   );
 }
-
 
 
 

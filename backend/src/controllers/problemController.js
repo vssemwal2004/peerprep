@@ -908,7 +908,10 @@ export async function createProblem(req, res) {
 
   await refreshProblemStats(problem._id);
 
-  const { serializedProblem } = await loadProblemShape(problem._id);
+  const { serializedProblem } = await loadProblemShape(problem._id, {
+    includeHiddenTestCases: true,
+    includeReferenceSolutions: true,
+  });
   res.status(201).json(serializedProblem);
 }
 
@@ -973,7 +976,10 @@ export async function updateProblem(req, res) {
 
   await refreshProblemStats(existingProblem._id);
 
-  const { serializedProblem } = await loadProblemShape(existingProblem._id);
+  const { serializedProblem } = await loadProblemShape(existingProblem._id, {
+    includeHiddenTestCases: true,
+    includeReferenceSolutions: true,
+  });
   res.json(serializedProblem);
 }
 
