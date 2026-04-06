@@ -78,7 +78,10 @@ export default function AssessmentAttempt() {
   const [allowedEndTime, setAllowedEndTime] = useState(null);
   const [violationMessage, setViolationMessage] = useState('');
   const [activeConsoleTab, setActiveConsoleTab] = useState('result');
-  const [codeResult] = useState(null);
+  const [codeResultMap, setCodeResultMap] = useState({});
+  const [isRunningMap, setIsRunningMap] = useState({});
+  const [isSubmittingMap, setIsSubmittingMap] = useState({});
+  const [runInputUsedMap, setRunInputUsedMap] = useState({});
   const [rulesCountdown, setRulesCountdown] = useState(30);
   const [rulesReady, setRulesReady] = useState(false);
   const [hasSeenRules, setHasSeenRules] = useState(false);
@@ -705,11 +708,107 @@ export default function AssessmentAttempt() {
   };
 
   const handleRunCoding = () => {
-    toast.info('Run is disabled during assessments.');
+    if (!assessment || isSubmitted) return;
+    const section = assessment?.sections?.[activeSection];
+    if (!section || section.type !== 'coding') return;
+    const question = section?.questions?.[activeQuestion];
+    const key = answerKey(activeSection, activeQuestion);
+    const codingData = question?.problemDataSnapshot || question?.problemData || question?.coding?.problemData || question?.coding || {};
+    const problemId = question?.problemId || question?.coding?.problemId || codingData?._id;
+    if (!problemId) {
+      toast.error('This coding question is missing its problem reference.');
+      return;
+    }
+    const supported = codingData?.supportedLanguages?.length ? codingData.supportedLanguages : ['python'];
+    const language = answersMap[key]?.language || supported[0];
+    const sourceCode = answersMap[key]?.code || '';
+    if (!sourceCode.trim()) {
+      toast.error('Please enter code before running.');
+      return;
+    }
+
+    const baseTestCases = buildSampleTestCases(codingData);
+    const testCases = testCaseMap[key] || baseTestCases;
+    const activeTestCaseId = activeTestCaseMap[key] || testCases[0]?.id || null;
+    const activeTestCase = testCases.find((entry) => String(entry.id) === String(activeTestCaseId)) || testCases[0];
+    const runInput = activeTestCase?.input ?? '';
+
+    setRunInputUsedMap((prev) => ({ ...prev, [key]: runInput }));
+    setIsRunningMap((prev) => ({ ...prev, [key]: true }));
+
+    api.runStudentProblem(problemId, {
+      language,
+      sourceCode,
+      customInput: runInput,
+      assessmentId: assessment?._id,
+    }).then((response) => {
+      setCodeResultMap((prev) => ({ ...prev, [key]: response }));
+      setActiveConsoleTab('result');
+      toast.success(`Run finished with status ${response.status?.description || 'Completed'}`);
+
+      if (activeTestCase?.kind === 'custom') {
+        api.getStudentExpectedOutput(problemId, {
+          language,
+          customInput: runInput,
+          assessmentId: assessment?._id,
+        }).then((expected) => {
+          if (expected && typeof expected.expectedOutput === 'string') {
+            setTestCaseMap((prev) => {
+              const existing = prev[key] || baseTestCases;
+              const next = existing.map((entry) => (
+                String(entry.id) === String(activeTestCase.id)
+                  ? { ...entry, expectedOutput: expected.expectedOutput }
+                  : entry
+              ));
+              return { ...prev, [key]: next };
+            });
+          }
+        }).catch(() => {
+          // Expected output is optional; ignore failures.
+        });
+      }
+    }).catch((error) => {
+      toast.error(error.message || 'Failed to run code.');
+    }).finally(() => {
+      setIsRunningMap((prev) => ({ ...prev, [key]: false }));
+    });
   };
 
   const handleSubmitCoding = () => {
-    toast.info('Code submissions are evaluated only when you submit the assessment.');
+    if (!assessment || isSubmitted) return;
+    const section = assessment?.sections?.[activeSection];
+    if (!section || section.type !== 'coding') return;
+    const question = section?.questions?.[activeQuestion];
+    const key = answerKey(activeSection, activeQuestion);
+    const codingData = question?.problemDataSnapshot || question?.problemData || question?.coding?.problemData || question?.coding || {};
+    const problemId = question?.problemId || question?.coding?.problemId || codingData?._id;
+    if (!problemId) {
+      toast.error('This coding question is missing its problem reference.');
+      return;
+    }
+    const supported = codingData?.supportedLanguages?.length ? codingData.supportedLanguages : ['python'];
+    const language = answersMap[key]?.language || supported[0];
+    const sourceCode = answersMap[key]?.code || '';
+    if (!sourceCode.trim()) {
+      toast.error('Please enter code before submitting.');
+      return;
+    }
+
+    setIsSubmittingMap((prev) => ({ ...prev, [key]: true }));
+
+    api.submitStudentProblem(problemId, {
+      language,
+      sourceCode,
+      assessmentId: assessment?._id,
+    }).then((response) => {
+      setCodeResultMap((prev) => ({ ...prev, [key]: response }));
+      setActiveConsoleTab('result');
+      toast.success(`Submission finished with verdict ${response.status || 'Completed'}`);
+    }).catch((error) => {
+      toast.error(error.message || 'Failed to submit code.');
+    }).finally(() => {
+      setIsSubmittingMap((prev) => ({ ...prev, [key]: false }));
+    });
   };
 
   const handleResetCoding = () => {
@@ -816,6 +915,11 @@ export default function AssessmentAttempt() {
   const activeLanguage = isCoding
     ? (answersMap[answerKey(activeSection, activeQuestion)]?.language || codingLanguages[0])
     : '';
+  const activeAnswerKey = answerKey(activeSection, activeQuestion);
+  const codeResult = codeResultMap[activeAnswerKey] || null;
+  const isRunning = Boolean(isRunningMap[activeAnswerKey]);
+  const isSubmitting = Boolean(isSubmittingMap[activeAnswerKey]);
+  const runInputUsed = runInputUsedMap[activeAnswerKey] ?? null;
   const currentSectionLabel = section?.sectionName || `Section ${activeSection + 1}`;
   const breadcrumbLabel = `${currentSectionLabel} > Question ${activeQuestion + 1}`;
   const fallbackRules = [
@@ -1068,9 +1172,20 @@ export default function AssessmentAttempt() {
               <button
                 type="button"
                 onClick={handleRunCoding}
+                disabled={isRunning || isSubmitting || isSubmitted}
                 className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-800 dark:bg-sky-600 dark:hover:bg-sky-500"
               >
-                Run
+                {isRunning ? 'Running...' : 'Run Code'}
+              </button>
+            )}
+            {isCoding && (
+              <button
+                type="button"
+                onClick={handleSubmitCoding}
+                disabled={isRunning || isSubmitting || isSubmitted}
+                className="rounded-full bg-sky-600 px-3 py-1 text-xs font-semibold text-white disabled:opacity-50"
+              >
+                {isSubmitting ? 'Submitting...' : 'Submit Code'}
               </button>
             )}
             <button
@@ -1079,7 +1194,7 @@ export default function AssessmentAttempt() {
               disabled={isSubmitted}
               className="rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white disabled:opacity-50"
             >
-              Submit
+              Submit Assessment
             </button>
             {isCoding && (
               <button
@@ -1193,6 +1308,10 @@ export default function AssessmentAttempt() {
                     const baseTestCases = buildSampleTestCases(codingData);
                     const testCases = testCaseMap[key] || baseTestCases;
                     const activeTestCaseId = activeTestCaseMap[key] || testCases[0]?.id || null;
+                    const activeTestCase = testCases.find((entry) => String(entry.id) === String(activeTestCaseId))
+                      || testCases[0]
+                      || null;
+                    const expectedOutputForRun = activeTestCase?.expectedOutput ?? null;
 
                     const handleAddCustomTestCase = () => {
                       const newId = `custom-${Date.now()}`;
@@ -1234,13 +1353,13 @@ export default function AssessmentAttempt() {
                         onActiveTestCaseChange={(nextId) => setActiveTestCaseMap((prev) => ({ ...prev, [key]: nextId }))}
                         onAddCustomTestCase={handleAddCustomTestCase}
                         onTestCaseInputChange={handleTestCaseInputChange}
-                        expectedOutputForRun={null}
-                        runInputUsed={null}
+                        expectedOutputForRun={expectedOutputForRun}
+                        runInputUsed={runInputUsed}
                         activeConsoleTab={activeConsoleTab}
                         onConsoleTabChange={setActiveConsoleTab}
                         result={codeResult}
-                        isRunning={false}
-                        isSubmitting={false}
+                        isRunning={isRunning}
+                        isSubmitting={isSubmitting}
                         onRun={handleRunCoding}
                         onSubmit={handleSubmitCoding}
                         onReset={handleResetCoding}
@@ -1735,5 +1854,3 @@ export default function AssessmentAttempt() {
     </div>
   );
 }
-
-
