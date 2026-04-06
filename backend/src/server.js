@@ -11,7 +11,7 @@ import cookie from 'cookie';
 import { seedEmailTemplates } from './services/emailTemplateService.js';
 
 const PORT = process.env.PORT || 4000;
-
+//new file check
 await connectDb();
 await seedAdminIfNeeded();
 await seedEmailTemplates();
