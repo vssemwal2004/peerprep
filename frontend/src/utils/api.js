@@ -68,7 +68,14 @@ export function setToken(t) {
   clearLegacyToken();
 }
 
-async function request(path, { method = 'GET', body, headers = {}, formData, skipCache = false } = {}) {
+async function request(path, {
+  method = 'GET',
+  body,
+  headers = {},
+  formData,
+  skipCache = false,
+  timeoutMs = 15000,
+} = {}) {
   // Check cache for GET requests
   const cacheKey = getCacheKey(path, method);
   if (method === 'GET' && !skipCache) {
@@ -97,14 +104,18 @@ async function request(path, { method = 'GET', body, headers = {}, formData, ski
   
   const url = `${API_BASE}${path}`;
   
+  let controller = null;
+  let timeoutId = null;
+
   try {
-    // Add 15s timeout via AbortController
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-    opts.signal = controller.signal;
+    if (timeoutMs && timeoutMs > 0) {
+      // Default timeout keeps regular requests responsive, but callers can disable it.
+      controller = new AbortController();
+      timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      opts.signal = controller.signal;
+    }
     
     const res = await fetch(url, opts);
-    clearTimeout(timeoutId);
     
     if (!res.ok) {
       let err;
@@ -144,6 +155,10 @@ async function request(path, { method = 'GET', body, headers = {}, formData, ski
       throw timeoutErr;
     }
     throw err;
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
   }
 }
 
@@ -262,6 +277,46 @@ export const api = {
   getEventAnalytics: (eventId) => request(`/events/${eventId}/analytics`),
   getEventTemplateUrl: (eventId) => request(`/events/${eventId}/template-url`),
 
+  // Assessments (Admin)
+  createAssessment: (body) => request('/admin/assessment/create', { method: 'POST', body }),
+  listAssessments: () => request('/admin/assessment/list'),
+  getAssessmentById: (id) => request(`/admin/assessment/${id}`),
+  updateAssessment: (id, body) => request(`/admin/assessment/${id}`, { method: 'PUT', body }),
+  deleteAssessment: (id) => request(`/admin/assessment/${id}`, { method: 'DELETE' }),
+  getAssessmentReports: (params = {}) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') qs.append(key, String(value));
+    });
+    return request(`/admin/assessment/reports${qs.toString() ? `?${qs.toString()}` : ''}`);
+  },
+  exportAssessmentReports: async (params = {}) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') qs.append(key, String(value));
+    });
+    const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000/api';
+    const res = await fetch(`${API_BASE}/admin/assessment/reports/export${qs.toString() ? `?${qs.toString()}` : ''}`, { credentials: 'include' });
+    if (!res.ok) throw new Error('Failed to export report');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'assessment-report.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
+  getAssessmentRulesAdmin: () => request('/admin/assessment/rules', { skipCache: true }),
+  saveAssessmentRulesAdmin: (body) => request('/admin/assessment/rules', { method: 'PUT', body }),
+
+  // Assessments (Student)
+  listStudentAssessments: () => request('/student/assessments'),
+  getStudentAssessment: (id) => request(`/student/assessment/${id}`),
+  submitStudentAssessment: (body) => request('/student/assessment/submit', { method: 'POST', body }),
+  getStudentAssessmentRules: () => request('/student/assessment/rules', { skipCache: true }),
+
   // Pairing
 
   listPairs: (eventId) => request(`/pairing/${eventId}`),
@@ -356,6 +411,13 @@ export const api = {
       body: { actionType, targetType, targetId, description, changes, metadata } 
     }),
 
+  // Email Templates (Admin)
+  listEmailTemplates: (search = '') => request(`/email-templates${search ? '?search=' + encodeURIComponent(search) : ''}`),
+  getEmailTemplate: (id) => request(`/email-templates/${id}`),
+  createEmailTemplate: (body) => request('/email-templates', { method: 'POST', body }),
+  updateEmailTemplate: (id, body) => request(`/email-templates/${id}`, { method: 'PUT', body }),
+  deleteEmailTemplate: (id) => request(`/email-templates/${id}`, { method: 'DELETE' }),
+
   // Join Requests
   submitJoinRequest: (data) => request('/join/submit', { method: 'POST', body: data }),
   checkJoinStatus: (email) => request(`/join/status?email=${encodeURIComponent(email)}`),
@@ -364,12 +426,13 @@ export const api = {
   rejectJoinRequest: (requestId, reason) => request(`/join/${requestId}/reject`, { method: 'POST', body: { reason } }),
   // Compiler Module
   getCompilerOverview: () => request('/compiler/overview', { skipCache: true }),
-  listCompilerProblems: ({ search = '', difficulty = '', tags = '', status = '', sortBy = 'updatedAt', sortOrder = 'desc', page = 1, limit = 8 } = {}) => {
+  listCompilerProblems: ({ search = '', difficulty = '', tags = '', status = '', visibility = '', sortBy = 'updatedAt', sortOrder = 'desc', page = 1, limit = 8 } = {}) => {
     const params = new URLSearchParams();
     if (search) params.append('search', search);
     if (difficulty) params.append('difficulty', difficulty);
     if (tags) params.append('tags', tags);
     if (status) params.append('status', status);
+    if (visibility) params.append('visibility', visibility);
     if (sortBy) params.append('sortBy', sortBy);
     if (sortOrder) params.append('sortOrder', sortOrder);
     params.append('page', String(page));
@@ -397,7 +460,11 @@ export const api = {
     const fd = new FormData();
     fd.append('language', language);
     fd.append('sourceCode', sourceCode);
-    return request(`/compiler/problems/${problemId}/submit`, { method: 'POST', formData: fd });
+    return request(`/compiler/problems/${problemId}/submit`, {
+      method: 'POST',
+      formData: fd,
+      timeoutMs: 0,
+    });
   },
   listCompilerSubmissions: ({ search = '', status = '', language = '', mode = '', page = 1, limit = 15 } = {}) => {
     const params = new URLSearchParams();
@@ -433,7 +500,7 @@ export const api = {
     return request(`/compiler/problems?${params.toString()}`, { skipCache: true });
   },
   getStudentProblem: (problemId) => request(`/compiler/problems/${problemId}`, { skipCache: true }),
-  runStudentProblem: (problemId, { language, sourceCode, customInput = '' }) => {
+  runStudentProblem: (problemId, { language, sourceCode, customInput = '', assessmentId = '' }) => {
     return request('/compiler/run', {
       method: 'POST',
       body: {
@@ -441,26 +508,30 @@ export const api = {
         source_code: sourceCode,
         language_id: getJudge0LanguageId(language),
         stdin: customInput,
+        ...(assessmentId ? { assessmentId } : {}),
       },
     });
   },
-  getStudentExpectedOutput: (problemId, { language = '', customInput = '' } = {}) => {
+  getStudentExpectedOutput: (problemId, { language = '', customInput = '', assessmentId = '' } = {}) => {
     return request(`/compiler/problems/${problemId}/expected`, {
       method: 'POST',
       body: {
         language,
         stdin: customInput,
+        ...(assessmentId ? { assessmentId } : {}),
       },
     });
   },
-  submitStudentProblem: (problemId, { language, sourceCode }) => {
+  submitStudentProblem: (problemId, { language, sourceCode, assessmentId = '' }) => {
     return request('/compiler/submit', {
       method: 'POST',
       body: {
         problemId,
         source_code: sourceCode,
         language_id: getJudge0LanguageId(language),
+        ...(assessmentId ? { assessmentId } : {}),
       },
+      timeoutMs: 0,
     });
   },
   listStudentProblemSubmissions: (problemId, { mode = '', page = 1, limit = 10 } = {}) => {
@@ -471,6 +542,18 @@ export const api = {
     return request(`/compiler/problems/${problemId}/submissions?${params.toString()}`, { skipCache: true });
   },
 };
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

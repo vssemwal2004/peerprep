@@ -66,9 +66,19 @@ const problemSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Draft', 'Active'],
-    default: 'Draft',
+    enum: ['draft', 'published'],
+    default: 'draft',
   },
+  visibility: {
+    type: String,
+    enum: ['public', 'assessment', 'private'],
+    default: 'public',
+  },
+  previewValidated: {
+    type: Boolean,
+    default: false,
+  },
+  // Backward-compat field for older documents
   previewTested: {
     type: Boolean,
     default: false,
@@ -131,6 +141,6 @@ const problemSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 problemSchema.index({ title: 'text', tags: 'text', companyTags: 'text' });
-problemSchema.index({ status: 1, difficulty: 1, createdAt: -1 });
+problemSchema.index({ status: 1, visibility: 1, difficulty: 1, createdAt: -1 });
 
 export default mongoose.model('Problem', problemSchema);

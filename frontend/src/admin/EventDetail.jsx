@@ -1,6 +1,6 @@
 /* eslint-disable no-unused-vars */
 import { useEffect, useState, useCallback } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../utils/api';
 import { 
@@ -142,7 +142,7 @@ const EventSearchFilter = ({ searchQuery, setSearchQuery, eventTab, setEventTab 
         type="text"
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
-        placeholder="Search scheduled interviews..."
+        placeholder="Search interviews..."
         className="w-full bg-slate-50 dark:bg-gray-700 border border-slate-300 dark:border-gray-600 pl-7 pr-7 py-2 rounded-lg focus:ring-1 focus:ring-sky-500 dark:focus:ring-sky-600 focus:border-sky-500 dark:focus:border-sky-600 text-slate-700 dark:text-white text-sm placeholder:text-gray-400 dark:placeholder:text-gray-400"
       />
       {searchQuery && (
@@ -177,6 +177,7 @@ const EventSearchFilter = ({ searchQuery, setSearchQuery, eventTab, setEventTab 
 export default function EventDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [eventCreatedMsg, setEventCreatedMsg] = useState("");
   const [event, setEvent] = useState(null);
   const [events, setEvents] = useState([]);
@@ -188,6 +189,13 @@ export default function EventDetail() {
   const [msg, setMsg] = useState('');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [eventTab, setEventTab] = useState('all');
+
+  const getBasePath = useCallback(() => {
+    if (location.pathname.startsWith('/admin/interviews/past')) return '/admin/interviews/past';
+    if (location.pathname.startsWith('/admin/interviews/scheduled')) return '/admin/interviews/scheduled';
+    if (location.pathname.startsWith('/admin/interviews')) return '/admin/interviews';
+    return '/admin/event';
+  }, [location.pathname]);
 
   const load = useCallback(async (eventId) => {
     try {
@@ -206,7 +214,8 @@ export default function EventDetail() {
       if (!targetEventId && allEvents.length > 0) {
         targetEventId = allEvents[0]._id;
         setActiveEventId(targetEventId);
-        navigate(`/admin/event/${targetEventId}`, { replace: true });
+        const basePath = getBasePath();
+        navigate(`${basePath}/${targetEventId}`, { replace: true });
       }
 
       if (targetEventId) {
@@ -222,7 +231,7 @@ export default function EventDetail() {
         setEvent(null);
         setAnalytics(null);
         setPairs([]);
-                setMsg('No scheduled interviews available. Please create one first.');
+        setMsg('No interviews available. Please create one first.');
       }
     } catch (e) {
       setMsg(e.message || 'Failed to load event data');
@@ -232,7 +241,7 @@ export default function EventDetail() {
     } finally {
       setLoading(false);
     }
-  }, [id, navigate]);
+  }, [getBasePath, id, navigate]);
 
   useEffect(() => {
     if (window.history.state && window.history.state.usr && window.history.state.usr.eventCreated) {
@@ -241,6 +250,22 @@ export default function EventDetail() {
     }
     load(activeEventId);
   }, [activeEventId, load]);
+
+  useEffect(() => {
+    const path = location.pathname;
+    if (path.startsWith('/admin/interviews/past')) {
+      setEventTab('previous');
+    } else if (path.startsWith('/admin/interviews/scheduled')) {
+      setEventTab('upcoming');
+    } else if (path.startsWith('/admin/interviews')) {
+      setEventTab('all');
+    } else if (path.startsWith('/admin/event')) {
+      setEventTab('all');
+    }
+  }, [location.pathname]);
+
+  const listTitle = eventTab === 'previous' ? 'Past Interviews' : eventTab === 'upcoming' ? 'Scheduled Interviews' : 'Interviews';
+  const backPath = getBasePath();
 
   // Filter events based on tab and search
   const now = new Date();
@@ -272,7 +297,8 @@ export default function EventDetail() {
 
   const handleEventSelect = (eventId) => {
     setActiveEventId(eventId);
-    navigate(`/admin/event/${eventId}`);
+    const basePath = getBasePath();
+    navigate(`${basePath}/${eventId}`);
     setIsMobileSidebarOpen(false);
   };
 
@@ -282,14 +308,14 @@ export default function EventDetail() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white dark:bg-gray-900 flex items-center justify-center pt-16">
+      <div className="min-h-screen bg-white dark:bg-gray-900 flex items-center justify-center pt-20">
         <div className="text-slate-600 dark:text-gray-400">Loading...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 flex flex-col pt-16">
+    <div className="min-h-screen bg-white dark:bg-gray-900 flex flex-col pt-20">
       {eventCreatedMsg && (
         <div className="fixed top-20 left-1/2 transform -translate-x-1/2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-6 py-2 rounded-lg shadow-lg z-50 text-base font-semibold">
           {eventCreatedMsg}
@@ -299,7 +325,7 @@ export default function EventDetail() {
         <div className="flex flex-col lg:flex-row gap-4">
           {/* Mobile Header */}
           <div className="lg:hidden flex items-center justify-between bg-white dark:bg-gray-800 rounded-lg p-3 border border-slate-200 dark:border-gray-700">
-                        <h1 className="text-lg font-semibold text-slate-800 dark:text-white">Scheduled Interviews</h1>
+            <h1 className="text-lg font-semibold text-slate-800 dark:text-white">{listTitle}</h1>
             <button
               onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
               className="p-1.5 rounded bg-slate-100 dark:bg-gray-700 hover:bg-slate-200 dark:hover:bg-gray-600"
@@ -317,12 +343,12 @@ export default function EventDetail() {
                 exit={{ x: window.innerWidth < 1024 ? "-100%" : 0 }}
                 className={`lg:block lg:w-80 ${
                   window.innerWidth < 1024 
-                    ? "fixed inset-0 top-16 z-30 bg-white p-4 overflow-y-auto" 
+                    ? "fixed inset-0 top-20 z-30 bg-white p-4 overflow-y-auto" 
                     : "relative"
                 }`}
               >
                 <div className="bg-white dark:bg-gray-800 rounded-lg border border-slate-200 dark:border-gray-700 p-4 h-[calc(100vh-8rem)] overflow-y-auto">
-                                    <h2 className="text-lg font-semibold text-slate-800 dark:text-white mb-3">Scheduled Interviews</h2>
+                  <h2 className="text-lg font-semibold text-slate-800 dark:text-white mb-3">{listTitle}</h2>
                   
                   <EventSearchFilter 
                     searchQuery={searchQuery}
@@ -374,7 +400,7 @@ export default function EventDetail() {
                         <p className="text-slate-600 dark:text-gray-400 text-xs sm:text-sm mt-0.5">{event.description}</p>
                       </div>
                     <Link
-                      to="/admin/event"
+                      to={backPath}
                       className="flex items-center gap-1 text-sky-600 dark:text-sky-400 hover:text-sky-800 dark:hover:text-sky-300 text-sm self-start sm:self-auto"
                     >
                       <ArrowLeft className="w-3 h-3" />

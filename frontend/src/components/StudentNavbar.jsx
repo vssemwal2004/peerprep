@@ -12,7 +12,8 @@ import {
   User,
   Lock,
   ChevronDown,
-  Code2
+  Code2,
+  ClipboardList
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import DarkModeToggle from "./DarkModeToggle";
@@ -72,11 +73,15 @@ export function StudentNavbar() {
   const navItems = [
     { path: "/student/dashboard", label: "Dashboard", Icon: BookOpenCheck },
     { path: "/student/learning", label: "Learning Modules", Icon: GraduationCap },
+    { path: "/student/assessments", label: "Assessments", Icon: ClipboardList },
     { path: "/student/session", label: "Feedback", Icon: CalendarDays },
     { path: "/problems", label: "Problems", Icon: Code2 },
   ];
 
-  const isItemActive = (path) => location.pathname === path || location.pathname.startsWith(`${path}/`);
+  const isItemActive = (path) => {
+    if (path === "/student/assessments" && location.pathname.startsWith("/student/assessment/")) return true;
+    return location.pathname === path || location.pathname.startsWith(`${path}/`);
+  };
 
   // Animation variants
   const menuVariants = {

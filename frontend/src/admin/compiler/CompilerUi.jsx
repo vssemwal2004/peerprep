@@ -1,4 +1,4 @@
-﻿import { difficultyBadgeClass, problemStatusClass, submissionStatusClass } from './compilerUtils';
+import { difficultyBadgeClass, problemStatusClass, submissionStatusClass } from './compilerUtils';
 
 export function SectionCard({ title, subtitle, action, children, className = '' }) {
   return (
@@ -107,9 +107,14 @@ export function DifficultyBadge({ difficulty }) {
 }
 
 export function ProblemStatusBadge({ status }) {
-  return <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${problemStatusClass(status)}`}>{status}</span>;
+  const normalized = String(status || '').toLowerCase();
+  const label = normalized === 'published' || normalized === 'active'
+    ? 'Published'
+    : (normalized === 'draft' ? 'Draft' : (status || 'Draft'));
+  return <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${problemStatusClass(status)}`}>{label}</span>;
 }
-
 export function SubmissionStatusBadge({ status }) {
   return <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${submissionStatusClass(status)}`}>{status}</span>;
 }
+
+

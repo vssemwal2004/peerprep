@@ -236,12 +236,13 @@ export default function AdminActivity() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pt-20">
       <div className="flex min-h-screen">
         {/* Mobile Sidebar Toggle */}
         <button
           onClick={() => setMobileSidebarOpen(!mobileSidebarOpen)}
-          className="lg:hidden fixed top-20 left-4 z-40 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700"
+          className="lg:hidden fixed top-20 z-40 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700"
+          style={{ left: 'calc(var(--admin-sidebar-width, 4rem) + 1rem)' }}
         >
           <Menu className="w-5 h-5 text-gray-600 dark:text-gray-400" />
         </button>
@@ -255,7 +256,8 @@ export default function AdminActivity() {
         )}
         
         {/* Left Sidebar - Fixed with independent scroll */}
-        <div className={`activity-sidebar fixed lg:sticky top-0 left-0 h-screen w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex-shrink-0 overflow-y-auto z-40 transform transition-transform duration-300 ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`} style={{
+        <div className={`activity-sidebar fixed lg:sticky top-20 h-[calc(100vh-5rem)] w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex-shrink-0 overflow-y-auto z-40 transform transition-transform duration-300 ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`} style={{
+          left: 'var(--admin-sidebar-width, 4rem)',
           scrollbarWidth: 'thin',
           scrollbarColor: '#9ca3af #f3f4f6'
         }}>
@@ -647,3 +649,5 @@ export default function AdminActivity() {
     </div>
   );
 }
+
+

@@ -19,7 +19,7 @@ function createDrafts(problem) {
   }, {});
 }
 
-export default function AdminTestCompiler() {
+export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', editLabel = 'Back to Edit' } = {}) {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
@@ -81,7 +81,7 @@ export default function AdminTestCompiler() {
       });
       setResult(response);
       if (response.status === 'AC') {
-        setProblem((previous) => (previous ? { ...previous, previewTested: true } : previous));
+        setProblem((previous) => (previous ? { ...previous, previewValidated: true, previewTested: true } : previous));
       }
       toast.success(`Run finished with status ${response.status}`);
     } catch (error) {
@@ -102,7 +102,7 @@ export default function AdminTestCompiler() {
       });
       setResult(response);
       if (response.status === 'AC') {
-        setProblem((previous) => (previous ? { ...previous, previewTested: true } : previous));
+        setProblem((previous) => (previous ? { ...previous, previewValidated: true, previewTested: true } : previous));
       }
       toast.success(`Submission finished with status ${response.status}`);
     } catch (error) {
@@ -154,12 +154,12 @@ export default function AdminTestCompiler() {
         subtitle="Student-style preview required before a problem can be published."
         action={(
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => navigate('/admin/compiler/problems')} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
+            <button type="button" onClick={() => navigate(backTo || '/admin/compiler/problems')} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
               <ArrowLeft className="h-4 w-4" />
-              Back
+              {backLabel}
             </button>
-            <button type="button" onClick={() => navigate(`/admin/compiler/${problem._id}/edit`)} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
-              Back to Edit
+            <button type="button" onClick={() => navigate(editTo || `/admin/compiler/${problem._id}/edit`)} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
+              {editLabel}
             </button>
           </div>
         )}
@@ -167,8 +167,8 @@ export default function AdminTestCompiler() {
         <div className="flex flex-wrap items-center gap-2">
           <DifficultyBadge difficulty={problem.difficulty} />
           <ProblemStatusBadge status={problem.status} />
-          <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${problem.previewTested ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300' : 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'}`}>
-            {problem.previewTested ? 'Preview Passed' : 'Preview Required'}
+          <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${problem.previewValidated ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300' : 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'}`}>
+            {problem.previewValidated ? 'Preview Passed' : 'Preview Required'}
           </span>
           {(problem.tags || []).map((tag) => (
             <span key={tag} className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-gray-800 dark:text-gray-300">{tag}</span>
@@ -311,3 +311,4 @@ export default function AdminTestCompiler() {
     </div>
   );
 }
+

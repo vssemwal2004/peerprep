@@ -12,6 +12,7 @@ export default function ProblemManagement() {
   const [searchQuery, setSearchQuery] = useState('');
   const [difficulty, setDifficulty] = useState('');
   const [status, setStatus] = useState('');
+  const [visibility, setVisibility] = useState('');
   const [sortBy, setSortBy] = useState('updatedAt');
   const [sortOrder, setSortOrder] = useState('desc');
   const [page, setPage] = useState(1);
@@ -28,6 +29,7 @@ export default function ProblemManagement() {
           search: deferredSearch,
           difficulty,
           status,
+          visibility,
           sortBy,
           sortOrder,
           page,
@@ -44,11 +46,11 @@ export default function ProblemManagement() {
     return () => {
       isMounted = false;
     };
-  }, [deferredSearch, difficulty, page, sortBy, sortOrder, status, toast]);
+  }, [deferredSearch, difficulty, page, sortBy, sortOrder, status, visibility, toast]);
 
   useEffect(() => {
     setPage(1);
-  }, [deferredSearch, difficulty, sortBy, sortOrder, status]);
+  }, [deferredSearch, difficulty, sortBy, sortOrder, status, visibility]);
 
   const handleDelete = async (problemId) => {
     const confirmed = window.confirm('Delete this problem and its related submissions?');
@@ -56,7 +58,7 @@ export default function ProblemManagement() {
     try {
       await api.deleteCompilerProblem(problemId);
       toast.success('Problem deleted successfully.');
-      const refreshed = await api.listCompilerProblems({ search: deferredSearch, difficulty, status, sortBy, sortOrder, page, limit: 8 });
+      const refreshed = await api.listCompilerProblems({ search: deferredSearch, difficulty, status, visibility, sortBy, sortOrder, page, limit: 8 });
       setResponse(refreshed);
     } catch (error) {
       toast.error(error.message || 'Failed to delete problem.');
@@ -64,11 +66,12 @@ export default function ProblemManagement() {
   };
 
   const handleToggleStatus = async (problem) => {
-    const nextStatus = problem.status === 'Active' ? 'Draft' : 'Active';
+    const normalized = String(problem.status || '').toLowerCase();
+    const nextStatus = normalized === 'published' || normalized === 'active' ? 'draft' : 'published';
     try {
       await api.updateCompilerProblemStatus(problem._id, nextStatus);
       toast.success(`Problem moved to ${nextStatus}.`);
-      const refreshed = await api.listCompilerProblems({ search: deferredSearch, difficulty, status, sortBy, sortOrder, page, limit: 8 });
+      const refreshed = await api.listCompilerProblems({ search: deferredSearch, difficulty, status, visibility, sortBy, sortOrder, page, limit: 8 });
       setResponse(refreshed);
     } catch (error) {
       toast.error(error.message || 'Failed to update problem status.');
@@ -93,13 +96,14 @@ export default function ProblemManagement() {
         </button>
       )}
     >
-      <div className="mb-5 grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_repeat(4,minmax(0,1fr))]">
+      <div className="mb-5 grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_repeat(5,minmax(0,1fr))]">
         <label className="relative block">
           <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search problems" className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
         </label>
         <select value={difficulty} onChange={(event) => setDifficulty(event.target.value)} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"><option value="">All difficulties</option><option value="Easy">Easy</option><option value="Medium">Medium</option><option value="Hard">Hard</option></select>
-        <select value={status} onChange={(event) => setStatus(event.target.value)} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"><option value="">All statuses</option><option value="Draft">Draft</option><option value="Active">Active</option></select>
+        <select value={status} onChange={(event) => setStatus(event.target.value)} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"><option value="">All statuses</option><option value="draft">Draft</option><option value="published">Published</option></select>
+        <select value={visibility} onChange={(event) => setVisibility(event.target.value)} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"><option value="">All visibility</option><option value="public">Public</option><option value="assessment">Assessment-only</option><option value="private">Private</option></select>
         <select value={sortBy} onChange={(event) => setSortBy(event.target.value)} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"><option value="updatedAt">Recently updated</option><option value="createdAt">Recently created</option><option value="title">Title</option><option value="totalSubmissions">Submissions</option><option value="acceptanceRate">Acceptance rate</option></select>
         <select value={sortOrder} onChange={(event) => setSortOrder(event.target.value)} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"><option value="desc">Descending</option><option value="asc">Ascending</option></select>
       </div>
@@ -118,6 +122,7 @@ export default function ProblemManagement() {
                   <th className="px-4 py-3 text-left font-semibold text-slate-500 dark:text-gray-400">Total Submissions</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-500 dark:text-gray-400">Created At</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-500 dark:text-gray-400">Status</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-500 dark:text-gray-400">Visibility</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-500 dark:text-gray-400">Actions</th>
                 </tr>
               </thead>
@@ -136,10 +141,15 @@ export default function ProblemManagement() {
                     <td className="px-4 py-4 text-slate-700 dark:text-gray-200">{formatDate(problem.createdAt)}</td>
                     <td className="px-4 py-4"><ProblemStatusBadge status={problem.status} /></td>
                     <td className="px-4 py-4">
+                      <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${problem.visibility === 'assessment' ? 'border border-purple-300 text-purple-700 bg-purple-50 dark:border-purple-700 dark:text-purple-300 dark:bg-purple-900/20' : problem.visibility === 'private' ? 'border border-amber-300 text-amber-700 bg-amber-50 dark:border-amber-700 dark:text-amber-300 dark:bg-amber-900/20' : 'border border-slate-200 text-slate-600 bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800'}`}>
+                        {problem.visibility === 'assessment' ? 'Assessment' : problem.visibility === 'private' ? 'Private' : 'Public'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4">
                       <div className="flex flex-wrap gap-2">
                         <button type="button" onClick={() => navigate(`/admin/compiler/${problem._id}/edit`)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Edit</button>
                         <button type="button" onClick={() => navigate(`/admin/compiler/${problem._id}/preview`)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Preview</button>
-                        <button type="button" onClick={() => handleToggleStatus(problem)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">{problem.status === 'Active' ? 'Unpublish' : 'Publish'}</button>
+                        <button type="button" onClick={() => handleToggleStatus(problem)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">{(String(problem.status || '').toLowerCase() === 'published' || String(problem.status || '').toLowerCase() === 'active') ? 'Unpublish' : 'Publish'}</button>
                         <button type="button" onClick={() => handleDelete(problem._id)} className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-600 transition-colors hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-900/20"><Trash2 className="h-3.5 w-3.5" />Delete</button>
                       </div>
                     </td>
@@ -162,3 +172,14 @@ export default function ProblemManagement() {
     </SectionCard>
   );
 }
+
+
+
+
+
+
+
+
+
+
+

@@ -36,7 +36,11 @@ app.use(mongoSanitizeMiddleware);
 // It escapes angle brackets in source code (e.g., <bits/stdc++.h> -> &lt;bits...),
 // which breaks compilation and makes Judge0 output confusing.
 app.use((req, res, next) => {
-  if (req.path.startsWith('/api/compiler') || req.path.startsWith('/compiler')) {
+  if (
+    req.path.startsWith('/api/compiler') ||
+    req.path.startsWith('/compiler') ||
+    req.path.startsWith('/api/email-templates')
+  ) {
     return next();
   }
   return xssProtectionMiddleware(req, res, next);

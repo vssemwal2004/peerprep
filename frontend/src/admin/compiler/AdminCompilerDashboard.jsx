@@ -1,13 +1,19 @@
-import { useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { BarChart3, FileCode2, LayoutDashboard, PlusSquare, TerminalSquare } from 'lucide-react';
 import CompilerSidebar from './CompilerSidebar';
-import CompilerOverview from './CompilerOverview';
-import CreateProblem from './CreateProblem';
-import ProblemManagement from './ProblemManagement';
-import CompilerAnalytics from './CompilerAnalytics';
-import AdminTestCompiler from './AdminTestCompiler';
 
+const CompilerOverview = lazy(() => import('./CompilerOverview'));
+const CreateProblem = lazy(() => import('./CreateProblem'));
+const ProblemManagement = lazy(() => import('./ProblemManagement'));
+const CompilerAnalytics = lazy(() => import('./CompilerAnalytics'));
+const AdminTestCompiler = lazy(() => import('./AdminTestCompiler'));
+
+const LoadingBlock = () => (
+  <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+    Loading module...
+  </div>
+);
 export default function AdminCompilerDashboard() {
   const location = useLocation();
   const [isExpanded, setIsExpanded] = useState(false);
@@ -42,7 +48,7 @@ export default function AdminCompilerDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-white pt-16 dark:bg-gray-900">
+    <div className="min-h-screen bg-white pt-20 dark:bg-gray-900">
       <CompilerSidebar items={sections} activeSection={activeSection} isExpanded={isExpanded} onExpand={() => setIsExpanded(true)} onCollapse={() => setIsExpanded(false)} />
 
       <div className={`transition-all duration-300 ${isExpanded ? 'md:pl-[272px]' : 'md:pl-[80px]'}`}>
@@ -61,9 +67,14 @@ export default function AdminCompilerDashboard() {
               </div>
             </div>
           </div>
-          <div>{renderContent()}</div>
+          <Suspense fallback={<LoadingBlock />}><div>{renderContent()}</div></Suspense>
         </div>
       </div>
     </div>
   );
 }
+
+
+
+
+

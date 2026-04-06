@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FiBook, FiCamera, FiGitBranch, FiHash, FiMail, FiMapPin, FiUserCheck, FiX } from 'react-icons/fi';
+import { BookOpen, Camera, GitBranch, Hash, Mail, MapPin, UserCheck, X } from 'lucide-react';
 import ContributionCalendar from '../components/ContributionCalendar';
 import { api } from '../utils/api';
 import socketService from '../utils/socket';
@@ -11,7 +11,7 @@ function formatDateTime(value) {
 }
 
 function formatDuration(value) {
-  return `${Number(value || 0).toFixed(2)} ms`;
+  return `${Number(value || 0).toXed(2)} ms`;
 }
 
 function difficultyClasses(difficulty) {
@@ -246,14 +246,14 @@ export default function StudentProfile() {
                       <div className="flex h-28 w-28 items-center justify-center rounded-3xl border-4 border-white bg-gradient-to-br from-sky-500 to-indigo-600 text-4xl font-bold text-white shadow-xl dark:border-gray-800">{user.name ? user.name.charAt(0).toUpperCase() : 'U'}</div>
                     )}
                     <button type="button" onClick={openPhotoModal} className="absolute -bottom-1 -right-1 rounded-2xl border-2 border-white bg-white p-2.5 text-sky-600 shadow-lg transition-colors hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-800 dark:text-sky-300 dark:hover:bg-gray-700" title="Edit Photo">
-                      <FiCamera className="h-4 w-4" />
+                      <Camera className="h-4 w-4" />
                     </button>
                   </div>
                   <div className="space-y-3">
                     <div>
                       <h1 className="text-3xl font-bold text-slate-900 dark:text-white">{user.name || 'Student Name'}</h1>
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-gray-400">
-                        <span className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 backdrop-blur-sm dark:bg-gray-800/80"><FiHash className="h-3.5 w-3.5" />{user.studentId || 'Student ID'}</span>
+                        <span className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 backdrop-blur-sm dark:bg-gray-800/80"><Hash className="h-3.5 w-3.5" />{user.studentId || 'Student ID'}</span>
                         <span className="rounded-full bg-white/80 px-3 py-1.5 backdrop-blur-sm dark:bg-gray-800/80">Semester {user.semester || '-'}</span>
                         <span className="rounded-full bg-white/80 px-3 py-1.5 backdrop-blur-sm dark:bg-gray-800/80">{stats?.mostUsedLanguage ? `${stats.mostUsedLanguage} primary` : 'No coding language yet'}</span>
                       </div>
@@ -262,12 +262,12 @@ export default function StudentProfile() {
                   </div>
                 </div>
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  <InfoTile icon={<FiMail className="h-5 w-5" />} label="Email" value={user.email} />
-                  <InfoTile icon={<FiBook className="h-5 w-5" />} label="Course" value={user.course} />
-                  <InfoTile icon={<FiGitBranch className="h-5 w-5" />} label="Branch" value={user.branch} />
-                  <InfoTile icon={<FiMapPin className="h-5 w-5" />} label="College" value={user.college} />
-                  <InfoTile icon={<FiUserCheck className="h-5 w-5" />} label="Coordinator" value={user.teacherId || 'Not Assigned'} />
-                  <InfoTile icon={<FiBook className="h-5 w-5" />} label="Semester" value={user.semester ? `Semester ${user.semester}` : 'Not provided'} />
+                  <InfoTile icon={<Mail className="h-5 w-5" />} label="Email" value={user.email} />
+                  <InfoTile icon={<BookOpen className="h-5 w-5" />} label="Course" value={user.course} />
+                  <InfoTile icon={<GitBranch className="h-5 w-5" />} label="Branch" value={user.branch} />
+                  <InfoTile icon={<MapPin className="h-5 w-5" />} label="College" value={user.college} />
+                  <InfoTile icon={<UserCheck className="h-5 w-5" />} label="Coordinator" value={user.teacherId || 'Not Assigned'} />
+                  <InfoTile icon={<BookOpen className="h-5 w-5" />} label="Semester" value={user.semester ? `Semester ${user.semester}` : 'Not provided'} />
                 </div>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -288,7 +288,7 @@ export default function StudentProfile() {
         </section>
 
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Courses Enrolled" value={stats?.totalCoursesEnrolled || 0} helper="Assigned learning tracks" accent="bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-300" icon={<FiBook className="h-5 w-5" />} />
+          <StatCard label="Courses Enrolled" value={stats?.totalCoursesEnrolled || 0} helper="Assigned learning tracks" accent="bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-300" icon={<BookOpen className="h-5 w-5" />} />
           <StatCard label="Videos Watched" value={stats?.totalVideosWatched || 0} helper="Completed learning videos" accent="bg-pink-50 text-pink-600 dark:bg-pink-900/20 dark:text-pink-300" icon={<svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24"><path d="M10 16.5l6-4.5-6-4.5v9zM12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" /></svg>} />
           <StatCard label="Watch Time" value={`${stats?.totalWatchTimeHours || 0} hrs`} helper="Learning time invested" accent="bg-orange-50 text-orange-600 dark:bg-orange-900/20 dark:text-orange-300" icon={<svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 1a11 11 0 1011 11A11 11 0 0012 1zm1 11.59l3.3 3.3-1.42 1.41L11 13V6h2z" /></svg>} />
           <StatCard label="Active Days" value={activityStats?.totalActiveDays || 0} helper="Days with tracked activity" accent="bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-300" icon={<svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24"><path d="M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 00-2 2v13a3 3 0 003 3h12a3 3 0 003-3V6a2 2 0 00-2-2z" /></svg>} />
@@ -404,12 +404,12 @@ export default function StudentProfile() {
       <AnimatePresence>
         {showPhotoModal && (
           <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={closePhotoModal} className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
-            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} transition={{ type: 'spring', duration: 0.5 }} className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={closePhotoModal} className="Xed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} transition={{ type: 'spring', duration: 0.5 }} className="Xed inset-0 z-50 flex items-center justify-center p-4">
               <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl dark:bg-gray-800">
                 <div className="flex items-center justify-between rounded-t-2xl bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4">
-                  <h2 className="flex items-center gap-2 text-xl font-bold text-white"><FiCamera className="h-5 w-5" />Edit Photo</h2>
-                  <button type="button" onClick={closePhotoModal} className="rounded-lg p-2 text-white transition-colors hover:bg-white/20"><FiX className="h-6 w-6" /></button>
+                  <h2 className="flex items-center gap-2 text-xl font-bold text-white"><Camera className="h-5 w-5" />Edit Photo</h2>
+                  <button type="button" onClick={closePhotoModal} className="rounded-lg p-2 text-white transition-colors hover:bg-white/20"><X className="h-6 w-6" /></button>
                 </div>
                 <div className="p-6">
                   {error ? <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">{error}</motion.div> : null}
@@ -417,7 +417,7 @@ export default function StudentProfile() {
                   <div className="flex flex-col items-center">
                     <div className="relative mb-4">
                       {avatarPreview ? <img src={avatarPreview} alt="Preview" className="h-32 w-32 rounded-full border-4 border-blue-500 object-cover shadow-lg" /> : user.avatarUrl ? <img src={user.avatarUrl} alt={user.name} className="h-32 w-32 rounded-full border-4 border-slate-200 object-cover shadow-lg dark:border-gray-600" /> : <div className="flex h-32 w-32 items-center justify-center rounded-full border-4 border-slate-200 bg-gradient-to-br from-blue-500 to-indigo-600 text-4xl font-bold text-white shadow-lg dark:border-gray-600">{user.name ? user.name.charAt(0).toUpperCase() : 'U'}</div>}
-                      <label className="absolute bottom-0 right-0 cursor-pointer rounded-full bg-blue-600 p-3 text-white shadow-lg transition-colors hover:bg-blue-700"><FiCamera className="h-5 w-5" /><input type="file" accept="image/*" onChange={onAvatarChange} className="hidden" /></label>
+                      <label className="absolute bottom-0 right-0 cursor-pointer rounded-full bg-blue-600 p-3 text-white shadow-lg transition-colors hover:bg-blue-700"><Camera className="h-5 w-5" /><input type="file" accept="image/*" onChange={onAvatarChange} className="hidden" /></label>
                     </div>
                     <p className="mb-2 text-center text-sm text-slate-600 dark:text-gray-300">{avatarFile ? avatarFile.name : 'Click the camera icon to select a new photo'}</p>
                     <p className="text-center text-xs text-slate-500 dark:text-gray-400">Recommended: Square image, at least 256x256px</p>
@@ -435,3 +435,4 @@ export default function StudentProfile() {
     </div>
   );
 }
+

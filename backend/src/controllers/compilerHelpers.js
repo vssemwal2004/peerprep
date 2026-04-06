@@ -24,6 +24,11 @@ export function serializeProblem(
   } = {},
 ) {
   if (!problem) return null;
+  const previewValidated = problem.previewValidated ?? problem.previewTested ?? false;
+  const normalizedStatus = String(problem.status || '').trim().toLowerCase();
+  const status = normalizedStatus === 'active'
+    ? 'published'
+    : (normalizedStatus === 'draft' ? 'draft' : (problem.status || 'draft'));
 
   const referenceSolutions = problem.referenceSolutions;
   const referenceSolutionCount = referenceSolutions instanceof Map
@@ -46,8 +51,9 @@ export function serializeProblem(
     constraints: problem.constraints || '',
     timeLimitSeconds: problem.timeLimitSeconds,
     memoryLimitMb: problem.memoryLimitMb,
-    status: problem.status,
-    previewTested: Boolean(problem.previewTested),
+    status,
+    visibility: problem.visibility || 'public',
+    previewValidated: Boolean(previewValidated),
     totalSubmissions: problem.stats?.totalSubmissions || 0,
     acceptedSubmissions: problem.stats?.acceptedSubmissions || 0,
     totalRuns: problem.stats?.totalRuns || 0,

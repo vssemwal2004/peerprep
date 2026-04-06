@@ -9,8 +9,10 @@ import coordinatorRoutes from './coordinators.js';
 import subjectRoutes from './subjects.js';
 import learningRoutes from './learning.js';
 import activityRoutes from './activity.js';
-import joinRoutes from './join.js';
 import compilerRoutes from './compiler.js';
+import adminAssessmentRoutes from './adminAssessment.js';
+import studentAssessmentRoutes from './studentAssessment.js';
+import emailTemplateRoutes from './emailTemplates.js';
 
 const router = Router();
 router.use('/auth', authRoutes);
@@ -23,7 +25,9 @@ router.use('/coordinators', coordinatorRoutes);
 router.use('/subjects', subjectRoutes);
 router.use('/learning', learningRoutes);
 router.use('/activity', activityRoutes);
-router.use('/join', joinRoutes);
 router.use('/compiler', compilerRoutes);
+router.use('/admin', adminAssessmentRoutes);
+router.use('/student', studentAssessmentRoutes);
+router.use('/email-templates', emailTemplateRoutes);
 
 export default router;

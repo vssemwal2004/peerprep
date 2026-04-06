@@ -8,11 +8,13 @@ import { Server } from 'socket.io';
 import { verifyToken } from './utils/jwt.js';
 import { logSuspiciousActivity } from './utils/logger.js';
 import cookie from 'cookie';
+import { seedEmailTemplates } from './services/emailTemplateService.js';
 
 const PORT = process.env.PORT || 4000;
 
 await connectDb();
 await seedAdminIfNeeded();
+await seedEmailTemplates();
 
 const httpServer = createServer(app);
 

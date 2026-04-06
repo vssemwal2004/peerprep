@@ -319,8 +319,8 @@ export default function AdminLearningDetail() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pt-16">
-      <div className="flex h-[calc(100vh-4rem)]">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pt-20">
+      <div className="flex h-[calc(100vh-5rem)]">
         {/* Sidebar */}
         <motion.aside
           initial={false}

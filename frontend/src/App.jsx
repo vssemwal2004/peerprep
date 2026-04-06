@@ -1,14 +1,14 @@
-﻿import { BrowserRouter, Routes, Route, Link, useLocation } from "react-router-dom";
-import { lazy, Suspense, useEffect, useCallback } from "react";
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { lazy, Suspense, useEffect, useCallback, useRef } from "react";
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './components/CustomToast';
+import AdminLayout from './admin/AdminLayout';
 import SessionMonitor from './components/SessionMonitor';
-import { NavbarSkeleton, PageSkeleton, DashboardSkeleton, TableSkeleton, FormSkeleton } from './components/Skeletons';
+import { NavbarSkeleton, PageSkeleton, DashboardSkeleton } from './components/Skeletons';
 
 // Lazy-load navbars to keep them out of the main bundle
 const StudentNavbar = lazy(() => import('./components/StudentNavbar').then(m => ({ default: m.StudentNavbar })));
-const AdminNavbar = lazy(() => import('./components/AdminNavbar').then(m => ({ default: m.AdminNavbar })));
 const CoordinatorNavbar = lazy(() => import('./coordinator/CoordinatorNavbar').then(m => ({ default: m.CoordinatorNavbar })));
 const Footer = lazy(() => import('./components/Footer').then(m => ({ default: m.Footer })));
 
@@ -20,7 +20,6 @@ const ResetPassword = lazy(() => import("./auth/ResetPassword"));
 const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
 const TermsAndConditions = lazy(() => import("./pages/TermsAndConditions"));
 const ContactUs = lazy(() => import("./pages/ContactUs"));
-const JoinPage = lazy(() => import("./pages/JoinPage"));
 
 // Student Pages
 const StudentProtectedRoute = lazy(() => import("./student/StudentProtectedRoute"));
@@ -34,10 +33,12 @@ const StudentProfile = lazy(() => import("./student/StudentProfile"));
 const HelpAndSupport = lazy(() => import("./student/HelpAndSupport"));
 const ProblemsPage = lazy(() => import("./student/ProblemsPage"));
 const ProblemSolver = lazy(() => import("./student/ProblemSolver"));
+const StudentAssessmentList = lazy(() => import("./student/StudentAssessmentList"));
+const AssessmentAttempt = lazy(() => import("./student/AssessmentAttempt"));
 
 // Admin Pages
 const AdminProtectedRoute = lazy(() => import("./admin/AdminProtectedRoute"));
-const AdminDashboard = lazy(() => import("./admin/AdminDashboard"));
+const AdminOverview = lazy(() => import("./admin/AdminOverview"));
 const AdminLearning = lazy(() => import("./admin/AdminLearning"));
 const AdminLearningDetail = lazy(() => import("./admin/AdminLearningDetail"));
 const StudentOnboarding = lazy(() => import("./admin/StudentOnboarding"));
@@ -50,8 +51,16 @@ const CoordinatorOnboarding = lazy(() => import("./admin/CoordinatorOnboarding")
 const CoordinatorDirectory = lazy(() => import("./admin/CoordinatorDirectory"));
 const AdminChangePassword = lazy(() => import("./admin/AdminChangePassword"));
 const AdminActivity = lazy(() => import("./admin/AdminActivity"));
-const JoinRequests = lazy(() => import("./admin/JoinRequests"));
 const AdminCompilerDashboard = lazy(() => import("./admin/compiler/AdminCompilerDashboard"));
+const AssessmentDashboard = lazy(() => import("./admin/AssessmentDashboard"));
+const CreateAssessment = lazy(() => import("./admin/CreateAssessment"));
+const AssessmentReports = lazy(() => import("./admin/AssessmentReports"));
+const AssessmentRules = lazy(() => import("./admin/AssessmentRules"));
+const CodingQuestionEditorPage = lazy(() => import("./admin/assessment/CodingQuestionEditorPage"));
+const AssessmentCodingPreview = lazy(() => import("./admin/assessment/AssessmentCodingPreview"));
+const SelectProblemFromLibrary = lazy(() => import("./admin/assessment/SelectProblemFromLibrary"));
+const AdminAssessmentPreview = lazy(() => import("./admin/assessment/AdminAssessmentPreview"));
+const AdminEmailTemplates = lazy(() => import("./admin/EmailTemplates"));
 
 // Coordinator Pages
 const CoordinatorProtectedRoute = lazy(() => import("./coordinator/CoordinatorProtectedRoute"));
@@ -76,41 +85,49 @@ const gradientBg = "bg-white";
  */
 function RoutePrefetcher() {
   const location = useLocation();
+  const prefetched = useRef({ student: false, admin: false, coordinator: false });
+
+  const canPrefetch = () => {
+    const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if (!connection) return true;
+    if (connection.saveData) return false;
+    const effectiveType = connection.effectiveType || '';
+    return effectiveType !== 'slow-2g' && effectiveType !== '2g';
+  };
 
   const prefetchStudentRoutes = useCallback(() => {
     import("./student/StudentDashboard");
-    import("./student/SessionAndFeedback");
-    import("./student/StudentLearning");
-    import("./student/StudentProfile");
     import("./student/ProblemsPage");
-    import("./student/ProblemSolver");
+    import("./student/StudentAssessmentList");
   }, []);
 
   const prefetchAdminRoutes = useCallback(() => {
-    import("./admin/EventManagement");
-    import("./admin/StudentDirectory");
-    import("./admin/AdminStudentProfile");
-    import("./admin/CoordinatorDirectory");
-    import("./admin/StudentOnboarding");
+    import("./admin/AssessmentDashboard");
     import("./admin/compiler/AdminCompilerDashboard");
+    import("./admin/StudentDirectory");
   }, []);
 
   const prefetchCoordinatorRoutes = useCallback(() => {
     import("./coordinator/CoordinatorDashboard");
     import("./coordinator/CoordinatorStudents");
-    import("./coordinator/SemesterManagement");
-    import("./coordinator/CoordinatorEventDetail");
   }, []);
 
   useEffect(() => {
     // Prefetch based on current path - use requestIdleCallback so it doesn't
     // block the main render
     const prefetch = () => {
+      if (!canPrefetch()) return;
       if (location.pathname.startsWith('/student/') || location.pathname.startsWith('/problems')) {
+        if (prefetched.current.student) return;
+        prefetched.current.student = true;
         prefetchStudentRoutes();
       } else if (location.pathname.startsWith('/admin/')) {
+        if (prefetched.current.admin) return;
+        prefetched.current.admin = true;
         prefetchAdminRoutes();
       } else if (location.pathname.startsWith('/coordinator')) {
+        if (prefetched.current.coordinator) return;
+        prefetched.current.coordinator = true;
         prefetchCoordinatorRoutes();
       }
     };
@@ -147,30 +164,32 @@ function AppContent() {
   const isMain = location.pathname === "/";
   const isStudentLogin = location.pathname === "/student";
   const isResetPassword = location.pathname === "/reset-password";
-  const isJoinPage = location.pathname === "/join";
   const isPublicPage = location.pathname === "/privacy" || location.pathname === "/terms" || location.pathname === "/contact";
   const isFeedbackForm = location.pathname.startsWith("/student/feedback/");
+  const isAssessmentAttempt = location.pathname.startsWith("/student/assessment/");
   const isChangePassword = location.pathname === "/student/change-password" || location.pathname === "/admin/change-password" || location.pathname === "/coordinator/change-password";
   const isStudentProblems = location.pathname.startsWith("/problems");
   const isStudentDashboard = (location.pathname.startsWith("/student/") || isStudentProblems) && !isStudentLogin && !isFeedbackForm && !isChangePassword;
-  const isAdmin = location.pathname.startsWith("/admin/");
+  const isAdmin = location.pathname === '/admin' || location.pathname.startsWith('/admin/');
+  const isAssessmentPreview = location.pathname.startsWith("/admin/assessment/preview/");
   const isCoordinator = location.pathname.startsWith("/coordinator");
-  const isLoginPage = isMain || isStudentLogin || isResetPassword || isJoinPage;
+  const isLoginPage = isMain || isStudentLogin || isResetPassword;
+  const AdminShell = ({ children, layout = true }) => (
+    <AdminProtectedRoute>
+      {layout ? <AdminLayout>{children}</AdminLayout> : children}
+    </AdminProtectedRoute>
+  );
 
   return (
     <div className="min-h-screen w-full flex flex-col">
       <SessionMonitor />
       <RoutePrefetcher />
-      
       {/* Navbar: Renders independently with its own Suspense boundary.
           Shows NavbarSkeleton briefly instead of nothing, so the page structure
           streams in progressively (navbar skeleton â†’ navbar â†’ content skeleton â†’ content) */}
-      {!isFeedbackForm && !isPublicPage && (
-        <Suspense fallback={isAdmin || isCoordinator || isStudentDashboard ? <NavbarSkeleton /> : null}>
-          {isAdmin ? <AdminNavbar /> :
-           isCoordinator ? <CoordinatorNavbar /> :
-           (isStudentDashboard && !isProblemSolver) ? <StudentNavbar /> :
-           null}
+      {!isFeedbackForm && !isPublicPage && !isAssessmentPreview && !isAssessmentAttempt && (
+        <Suspense fallback={isCoordinator || isStudentDashboard ? <NavbarSkeleton /> : null}>
+          {isCoordinator ? <CoordinatorNavbar /> : (isStudentDashboard && !isProblemSolver) ? <StudentNavbar /> : null}
         </Suspense>
       )}
      
@@ -186,7 +205,6 @@ function AppContent() {
         }>
           <Routes>
             <Route path="/" element={<LandingPage />} />
-            <Route path="/join" element={<JoinPage />} />
             <Route path="/student" element={<StudentLogin />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/privacy" element={<PrivacyPolicy />} />
@@ -202,30 +220,49 @@ function AppContent() {
         <Route path="/student/learning" element={<StudentProtectedRoute><StudentLearning /></StudentProtectedRoute>} />
         <Route path="/student/learning/:semester/:subject/:teacherId" element={<StudentProtectedRoute><LearningDetail /></StudentProtectedRoute>} />
         <Route path="/student/help" element={<StudentProtectedRoute><HelpAndSupport /></StudentProtectedRoute>} />
+        <Route path="/student/assessments" element={<StudentProtectedRoute><StudentAssessmentList /></StudentProtectedRoute>} />
+        <Route path="/student/assessment/:id" element={<StudentProtectedRoute><AssessmentAttempt /></StudentProtectedRoute>} />
         <Route path="/problems" element={<StudentProtectedRoute><ProblemsPage /></StudentProtectedRoute>} />
         <Route path="/problems/:id" element={<StudentProtectedRoute><ProblemSolver /></StudentProtectedRoute>} />
         
         {/* Admin Routes - Protected */}
-        <Route path="/admin/dashboard" element={<AdminProtectedRoute><AdminDashboard /></AdminProtectedRoute>} />
-        <Route path="/admin/onboarding" element={<AdminProtectedRoute><StudentOnboarding /></AdminProtectedRoute>} />
-        <Route path="/admin/students" element={<AdminProtectedRoute><StudentDirectory /></AdminProtectedRoute>} />
-        <Route path="/admin/students/:studentId" element={<AdminProtectedRoute><AdminStudentProfile /></AdminProtectedRoute>} />
-        <Route path="/admin/coordinator-directory" element={<AdminProtectedRoute><CoordinatorDirectory /></AdminProtectedRoute>} />
-        <Route path="/admin/coordinators" element={<AdminProtectedRoute><CoordinatorOnboarding /></AdminProtectedRoute>} />
-        <Route path="/admin/event" element={<AdminProtectedRoute><EventManagement /></AdminProtectedRoute>} />
-        <Route path="/admin/event/:id" element={<AdminProtectedRoute><EventDetail /></AdminProtectedRoute>} />
-        <Route path="/admin/feedback" element={<AdminProtectedRoute><FeedbackReview /></AdminProtectedRoute>} />
-        <Route path="/admin/change-password" element={<AdminProtectedRoute><AdminChangePassword /></AdminProtectedRoute>} />
-        <Route path="/admin/learning" element={<AdminProtectedRoute><AdminLearning /></AdminProtectedRoute>} />
-        <Route path="/admin/learning/:semester/:subject/:teacherId" element={<AdminProtectedRoute><AdminLearningDetail /></AdminProtectedRoute>} />
-        <Route path="/admin/activity" element={<AdminProtectedRoute><AdminActivity /></AdminProtectedRoute>} />
-        <Route path="/admin/join-requests" element={<AdminProtectedRoute><JoinRequests /></AdminProtectedRoute>} />
-        <Route path="/admin/compiler" element={<AdminProtectedRoute><AdminCompilerDashboard /></AdminProtectedRoute>} />
-        <Route path="/admin/compiler/create" element={<AdminProtectedRoute><AdminCompilerDashboard /></AdminProtectedRoute>} />
-        <Route path="/admin/compiler/problems" element={<AdminProtectedRoute><AdminCompilerDashboard /></AdminProtectedRoute>} />
-        <Route path="/admin/compiler/:id/edit" element={<AdminProtectedRoute><AdminCompilerDashboard /></AdminProtectedRoute>} />
-        <Route path="/admin/compiler/:id/preview" element={<AdminProtectedRoute><AdminCompilerDashboard /></AdminProtectedRoute>} />
-        <Route path="/admin/compiler/analytics" element={<AdminProtectedRoute><AdminCompilerDashboard /></AdminProtectedRoute>} />
+        <Route path="/admin" element={<AdminShell><AdminOverview /></AdminShell>} />
+        <Route path="/admin/overview" element={<AdminShell><AdminOverview /></AdminShell>} />
+        <Route path="/admin/dashboard" element={<AdminShell><AdminOverview /></AdminShell>} />
+        <Route path="/admin/onboarding" element={<AdminShell><StudentOnboarding /></AdminShell>} />
+        <Route path="/admin/students" element={<AdminShell><StudentDirectory /></AdminShell>} />
+        <Route path="/admin/students/:studentId" element={<AdminShell><AdminStudentProfile /></AdminShell>} />
+        <Route path="/admin/coordinator-directory" element={<AdminShell><CoordinatorDirectory /></AdminShell>} />
+        <Route path="/admin/coordinators" element={<AdminShell><CoordinatorOnboarding /></AdminShell>} />
+        <Route path="/admin/event" element={<AdminShell><EventManagement /></AdminShell>} />
+        <Route path="/admin/event/:id" element={<AdminShell><EventDetail /></AdminShell>} />
+        <Route path="/admin/interviews" element={<AdminShell><EventDetail /></AdminShell>} />
+        <Route path="/admin/interviews/:id" element={<AdminShell><EventDetail /></AdminShell>} />
+        <Route path="/admin/interviews/scheduled" element={<AdminShell><EventDetail /></AdminShell>} />
+        <Route path="/admin/interviews/scheduled/:id" element={<AdminShell><EventDetail /></AdminShell>} />
+        <Route path="/admin/interviews/past" element={<AdminShell><EventDetail /></AdminShell>} />
+        <Route path="/admin/interviews/past/:id" element={<AdminShell><EventDetail /></AdminShell>} />
+        <Route path="/admin/feedback" element={<AdminShell><FeedbackReview /></AdminShell>} />
+        <Route path="/admin/change-password" element={<AdminShell><AdminChangePassword /></AdminShell>} />
+        <Route path="/admin/learning" element={<AdminShell><AdminLearning /></AdminShell>} />
+        <Route path="/admin/learning/:semester/:subject/:teacherId" element={<AdminShell><AdminLearningDetail /></AdminShell>} />
+        <Route path="/admin/activity" element={<AdminShell><AdminActivity /></AdminShell>} />
+        <Route path="/admin/assessment" element={<AdminShell><AssessmentDashboard /></AdminShell>} />
+        <Route path="/admin/assessment/create" element={<AdminShell><CreateAssessment /></AdminShell>} />
+        <Route path="/admin/assessment/:id/edit" element={<AdminShell><CreateAssessment /></AdminShell>} />
+        <Route path="/admin/assessment/reports" element={<AdminShell><AssessmentReports /></AdminShell>} />
+        <Route path="/admin/assessment/rules" element={<AdminShell><AssessmentRules /></AdminShell>} />
+        <Route path="/admin/assessment/select-problem" element={<AdminShell><SelectProblemFromLibrary /></AdminShell>} />
+        <Route path="/admin/assessment/preview/:id" element={<AdminShell layout={false}><AdminAssessmentPreview /></AdminShell>} />
+        <Route path="/admin/assessment/coding-question/:tempId" element={<AdminShell><CodingQuestionEditorPage /></AdminShell>} />
+        <Route path="/admin/assessment/coding-question/:tempId/preview/:id" element={<AdminShell><AssessmentCodingPreview /></AdminShell>} />
+        <Route path="/admin/compiler" element={<AdminShell><AdminCompilerDashboard /></AdminShell>} />
+        <Route path="/admin/compiler/create" element={<AdminShell><AdminCompilerDashboard /></AdminShell>} />
+        <Route path="/admin/compiler/problems" element={<AdminShell><AdminCompilerDashboard /></AdminShell>} />
+        <Route path="/admin/compiler/:id/edit" element={<AdminShell><AdminCompilerDashboard /></AdminShell>} />
+        <Route path="/admin/compiler/:id/preview" element={<AdminShell><AdminCompilerDashboard /></AdminShell>} />
+        <Route path="/admin/compiler/analytics" element={<AdminShell><AdminCompilerDashboard /></AdminShell>} />
+        <Route path="/admin/settings/email-templates" element={<AdminShell><AdminEmailTemplates /></AdminShell>} />
         
         {/* Coordinator Routes - Protected */}
         <Route path="/coordinator" element={<CoordinatorProtectedRoute><CoordinatorEventDetail /></CoordinatorProtectedRoute>} />
@@ -242,7 +279,7 @@ function AppContent() {
         </Suspense>
       </main>
       
-      {!isLoginPage && !isFeedbackForm && !isPublicPage && !isProblemSolver && (
+      {!isAdmin && !isLoginPage && !isFeedbackForm && !isPublicPage && !isProblemSolver && !isAssessmentPreview && !isAssessmentAttempt && (
         <Suspense fallback={null}><Footer /></Suspense>
       )}
     </div>
@@ -264,5 +301,38 @@ function App() {
 }
 
 export default App;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 

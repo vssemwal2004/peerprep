@@ -315,7 +315,7 @@ export default function EventManagement() {
   };
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 flex flex-col pt-16">
+    <div className="min-h-screen bg-white dark:bg-gray-900 flex flex-col pt-20">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}

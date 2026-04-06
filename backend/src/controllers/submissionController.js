@@ -1,4 +1,4 @@
-﻿import Problem from '../models/Problem.js';
+import Problem from '../models/Problem.js';
 import Submission from '../models/Submission.js';
 import { HttpError } from '../utils/errors.js';
 import { serializeSubmission, serializeStudentSubmission } from './compilerHelpers.js';
@@ -73,8 +73,10 @@ export async function listProblemSubmissions(req, res) {
   const { page, limit } = validatePagination(req.query.page, req.query.limit);
   const mode = String(req.query.mode || '').trim().toLowerCase();
 
-  const problem = await Problem.findById(req.params.id).select('_id status').lean();
-  if (!problem || problem.status !== 'Active') {
+  const problem = await Problem.findById(req.params.id).select('_id status visibility').lean();
+  const normalizedStatus = String(problem?.status || '').toLowerCase();
+  const isPublished = normalizedStatus === 'published' || normalizedStatus === 'active';
+  if (!problem || !isPublished || problem.visibility !== 'public') {
     throw new HttpError(404, 'Problem not found.');
   }
 
@@ -217,3 +219,4 @@ export async function getCompilerAnalytics(req, res) {
     })),
   });
 }
+

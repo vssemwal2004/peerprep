@@ -6,65 +6,6 @@ export const COMPILER_LANGUAGES = [
   { id: 'c', label: 'C', monacoLanguage: 'c', judge0LanguageId: 50 },
 ];
 
-export const DEFAULT_CODE_TEMPLATES = {
-  python: `def solve():
-    # STUDENT_CODE_START
-    pass
-    # STUDENT_CODE_END
-
-
-if __name__ == "__main__":
-    solve()
-`,
-  javascript: `function solve() {
-  // STUDENT_CODE_START
-
-  // STUDENT_CODE_END
-}
-
-solve();
-`,
-  java: `import java.io.*;
-import java.util.*;
-
-public class Main {
-    public static void solve() throws Exception {
-        // STUDENT_CODE_START
-
-        // STUDENT_CODE_END
-    }
-
-    public static void main(String[] args) throws Exception {
-        solve();
-    }
-}
-`,
-  cpp: `#include <bits/stdc++.h>
-using namespace std;
-
-int main() {
-    ios::sync_with_stdio(false);
-    cin.tie(nullptr);
-
-    // STUDENT_CODE_START
-
-    // STUDENT_CODE_END
-
-    return 0;
-}
-`,
-  c: `#include <stdio.h>
-
-int main(void) {
-    // STUDENT_CODE_START
-
-    // STUDENT_CODE_END
-
-    return 0;
-}
-`,
-};
-
 export function createEmptySampleTestCase() {
   return {
     input: '',
@@ -87,8 +28,8 @@ export function createDefaultProblemForm() {
     difficulty: 'Easy',
     tags: '',
     companyTags: '',
-    supportedLanguages: ['python'],
-    codeTemplates: { python: '' },
+    supportedLanguages: ['python', 'javascript'],
+    codeTemplates: {},
     referenceSolutions: {},
     inputFormat: '',
     outputFormat: '',
@@ -103,6 +44,8 @@ export function createDefaultProblemForm() {
     hiddenBulkInputFile: null,
     hiddenBulkOutputFile: null,
     hiddenBulkDelimiter: '###CASE###',
+    visibility: 'public',
+    previewValidated: false,
     previewTested: false,
   };
 }
@@ -111,13 +54,6 @@ export function createProblemFormFromProblem(problem) {
   const supportedLanguages = problem?.supportedLanguages?.length
     ? problem.supportedLanguages
     : ['python'];
-  const savedTemplates = problem?.codeTemplates || {};
-  const codeTemplates = supportedLanguages.reduce((acc, language) => {
-    acc[language] = typeof savedTemplates?.[language] === 'string'
-      ? savedTemplates[language]
-      : '';
-    return acc;
-  }, {});
 
   return {
     title: problem?.title || '',
@@ -126,7 +62,7 @@ export function createProblemFormFromProblem(problem) {
     tags: (problem?.tags || []).join(', '),
     companyTags: (problem?.companyTags || []).join(', '),
     supportedLanguages,
-    codeTemplates,
+    codeTemplates: problem?.codeTemplates || {},
     referenceSolutions: problem?.referenceSolutions || {},
     inputFormat: problem?.inputFormat || '',
     outputFormat: problem?.outputFormat || '',
@@ -152,6 +88,8 @@ export function createProblemFormFromProblem(problem) {
     hiddenBulkInputFile: null,
     hiddenBulkOutputFile: null,
     hiddenBulkDelimiter: problem?.hiddenTestSource?.delimiter || '###CASE###',
+    visibility: problem?.visibility || 'public',
+    previewValidated: Boolean(problem?.previewValidated ?? problem?.previewTested),
     previewTested: Boolean(problem?.previewTested),
   };
 }
@@ -163,6 +101,7 @@ export function buildProblemFormData(problemForm, status) {
   formData.append('difficulty', problemForm.difficulty || 'Easy');
   formData.append('tags', problemForm.tags || '');
   formData.append('companyTags', problemForm.companyTags || '');
+  formData.append('visibility', problemForm.visibility || 'public');
   formData.append('supportedLanguages', JSON.stringify(problemForm.supportedLanguages || []));
   formData.append('codeTemplates', JSON.stringify(problemForm.codeTemplates || {}));
   formData.append('referenceSolutions', JSON.stringify(problemForm.referenceSolutions || {}));
@@ -266,7 +205,8 @@ export function difficultyBadgeClass(difficulty) {
 }
 
 export function problemStatusClass(status) {
-  return status === 'Active'
+  const normalized = String(status || '').toLowerCase();
+  return normalized === 'published' || normalized === 'active'
     ? 'bg-sky-50 text-sky-700 border border-sky-200 dark:bg-sky-900/20 dark:text-sky-300 dark:border-sky-800'
     : 'bg-slate-100 text-slate-700 border border-slate-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700';
 }
@@ -326,6 +266,12 @@ export function getMonacoLanguage(languageId) {
 export function getJudge0LanguageId(languageId) {
   return COMPILER_LANGUAGES.find((language) => language.id === languageId)?.judge0LanguageId || null;
 }
+
+
+
+
+
+
 
 
 

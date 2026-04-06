@@ -1,4 +1,6 @@
 import nodemailer from 'nodemailer';
+import EmailTemplate from '../models/EmailTemplate.js';
+import { EMAIL_TEMPLATE_TYPES } from '../services/emailTemplateService.js';
 
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp.gmail.com',
@@ -47,8 +49,36 @@ export async function sendBulkMail(emails) {
   return results;
 }
 
-export function renderTemplate(template, vars) {
-  return template.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '');
+export function renderTemplate(template, vars = {}) {
+  if (!template) return '';
+  return template.replace(/\{\{\s*(\w+)\s*\}\}|\{(\w+)\}/g, (_, k1, k2) => {
+    const key = k1 || k2;
+    const value = vars[key];
+    return value === undefined || value === null ? '' : String(value);
+  });
+}
+
+function getDashboardUrl() {
+  const origin = (process.env.FRONTEND_ORIGIN || 'https://peerprep.co.in').split(',')[0].trim();
+  return origin.endsWith('/') ? origin : `${origin}/`;
+}
+
+async function getTemplateByType(type) {
+  const template = await EmailTemplate.findOne({ type }).lean();
+  if (!template) {
+    throw new Error(`Email template not found for type: ${type}`);
+  }
+  return template;
+}
+
+function buildSlotsBlock(slots, accentColor, highlightColor) {
+  if (slots.length > 1) {
+    const items = slots
+      .map((s) => `<li style="margin:8px 0;font-weight:500;color:#334155;">${s}</li>`)
+      .join('');
+    return `<ul style="background:${highlightColor};padding:20px 24px;border-radius:8px;border-left:4px solid ${accentColor};list-style:none;margin:20px 0;">${items}</ul>`;
+  }
+  return `<div style="background:${highlightColor};padding:20px;border-radius:8px;border-left:4px solid ${accentColor};margin:20px 0;"><p style="margin:0;font-size:16px;font-weight:600;color:#334155;">${slots[0]}</p></div>`;
 }
 
 // Simple iCal (ICS) event generator
@@ -78,340 +108,127 @@ export function buildICS({ uid, start, end, summary, description, url, organizer
 
 // Onboarding email: StudentId & Password
 export async function sendOnboardingEmail({ to, studentId, password }) {
-  const subject = 'Welcome to PeerPrep - Your Account Details';
-  const html = `
-    <div style="font-family:Arial,sans-serif;font-size:15px;color:#222;max-width:600px;">
-      <p style="margin-bottom:20px;">Dear Student,</p>
-      <p style="margin-bottom:16px;">Welcome to <strong>PeerPrep - Mock Interview System</strong>! Your account has been successfully created.</p>
-      
-      <div style="background:#f0f9ff;padding:24px;border-radius:8px;border-left:4px solid #0ea5e9;margin:24px 0;">
-        <p style="margin:0 0 12px 0;font-size:17px;font-weight:700;color:#0c4a6e;">📋 Your Login Credentials</p>
-        <table style="width:100%;font-size:15px;">
-          <tr>
-            <td style="padding:8px 0;color:#475569;width:40%;"><strong>Student ID:</strong></td>
-            <td style="padding:8px 0;color:#0f172a;font-weight:600;">{studentId}</td>
-          </tr>
-          <tr>
-            <td style="padding:8px 0;color:#475569;"><strong>Temporary Password:</strong></td>
-            <td style="padding:8px 0;color:#0f172a;font-weight:600;">{password}</td>
-          </tr>
-        </table>
-      </div>
-      
-      <div style="background:#fef3c7;padding:16px;border-radius:6px;margin:24px 0;border-left:3px solid #f59e0b;">
-        <p style="margin:0;font-size:14px;color:#78350f;"><strong>🔒 Important Security Notice:</strong></p>
-        <p style="margin:8px 0 0 0;font-size:14px;color:#78350f;">For your security, please change your password immediately after your first login.</p>
-      </div>
-      
-      <div style="text-align:center;margin:32px 0;">
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center">
-          <tr>
-            <td style="border-radius:8px;background:#0ea5e9;">
-              <a href="https://peerprep.co.in/" target="_blank" style="display:inline-block;padding:16px 40px;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:8px;background:#0ea5e9;">Go to Dashboard</a>
-            </td>
-          </tr>
-        </table>
-      </div>
-      
-      <p style="margin-top:28px;color:#64748b;font-size:14px;">If you have any questions or need assistance, please contact your program administrator.</p>
-      <p style="margin-top:24px;">Best regards,<br/><strong>PeerPrep Team</strong></p>
-    </div>
-  `;
-  return sendMail({ to, subject, html: renderTemplate(html, { studentId, password }) });
+  const template = await getTemplateByType(EMAIL_TEMPLATE_TYPES.ONBOARDING);
+  const vars = { studentId, password, dashboardUrl: getDashboardUrl() };
+  return sendMail({
+    to,
+    subject: renderTemplate(template.subject, vars),
+    html: renderTemplate(template.htmlContent, vars),
+  });
 }
 
 // Password reset email
 export async function sendPasswordResetEmail({ to, name, resetUrl }) {
-  const subject = 'Password Reset Request - PeerPrep';
-  const html = `
-    <div style="font-family:Arial,sans-serif;font-size:15px;color:#222;max-width:600px;">
-      <p style="margin-bottom:20px;">Dear {name},</p>
-      <p style="margin-bottom:16px;">We received a request to reset your password for your <strong>PeerPrep</strong> account.</p>
-      
-      <div style="background:#dbeafe;padding:20px;border-radius:8px;margin:24px 0;text-align:center;">
-        <p style="margin:0 0 16px 0;font-size:14px;color:#1e3a8a;">Click the button below to reset your password:</p>
-        <a href="{resetUrl}" style="display:inline-block;padding:14px 32px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;font-size:16px;">Reset Password</a>
-        <p style="margin:16px 0 0 0;font-size:13px;color:#475569;">This link is valid for 1 hour</p>
-      </div>
-      
-      <div style="background:#f1f5f9;padding:16px;border-radius:6px;margin:24px 0;">
-        <p style="margin:0;font-size:13px;color:#475569;">Or copy and paste this link in your browser:</p>
-        <p style="margin:8px 0 0 0;font-size:13px;color:#0ea5e9;word-break:break-all;">{resetUrl}</p>
-      </div>
-      
-      <div style="background:#fef3c7;padding:16px;border-radius:6px;margin:24px 0;border-left:3px solid #f59e0b;">
-        <p style="margin:0;font-size:14px;color:#78350f;"><strong>⚠️ Security Notice:</strong></p>
-        <p style="margin:8px 0 0 0;font-size:14px;color:#78350f;">If you did not request this password reset, please ignore this email. Your password will remain unchanged.</p>
-      </div>
-      
-      <div style="text-align:center;margin:32px 0;">
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center">
-          <tr>
-            <td style="border-radius:8px;background:#0ea5e9;">
-              <a href="https://peerprep.co.in/" target="_blank" style="display:inline-block;padding:16px 40px;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:8px;background:#0ea5e9;">Go to Dashboard</a>
-            </td>
-          </tr>
-        </table>
-      </div>
-      
-      <p>Best regards,<br/>PeerPrep Team</p>
-    </div>
-  `;
-  return sendMail({ to, subject, html: renderTemplate(html, { name, resetUrl }) });
+  const template = await getTemplateByType(EMAIL_TEMPLATE_TYPES.PASSWORD_RESET);
+  const vars = { name, resetUrl, dashboardUrl: getDashboardUrl() };
+  return sendMail({
+    to,
+    subject: renderTemplate(template.subject, vars),
+    html: renderTemplate(template.htmlContent, vars),
+  });
 }
 
 // Event notification email (unified for both regular and special events)
 export async function sendEventNotificationEmail({ to, event, interviewer, interviewee }) {
-  const subject = `Mock Interview: ${event.title}`;
-  const html = `
-    <div style="font-family:Arial,sans-serif;font-size:15px;color:#222;">
-      <p>Dear Student,</p>
-      <p>A mock interview has been scheduled for you. Please find the details below:</p>
-      <p>
-        <strong>Mock Interview:</strong> {title}<br/>
-        <strong>Date:</strong> {date}<br/>
-        <strong>Details:</strong> {details}
-        ${event.templateUrl ? `<br/><strong>Template:</strong> <a href="${event.templateUrl}">Download Template</a>` : ''}
-      </p>
-      <p>Please check your dashboard for pairing information and to propose interview slots.</p>
-      
-      <div style="text-align:center;margin:32px 0;">
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center">
-          <tr>
-            <td style="border-radius:8px;background:#0ea5e9;">
-              <a href="https://peerprep.co.in/" target="_blank" style="display:inline-block;padding:16px 40px;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:8px;background:#0ea5e9;">Go to Dashboard</a>
-            </td>
-          </tr>
-        </table>
-      </div>
-      
-      <p>Best regards,<br/>PeerPrep Team</p>
-    </div>
-  `;
+  const template = await getTemplateByType(EMAIL_TEMPLATE_TYPES.EVENT_NOTIFICATION);
+  const templateSection = event.templateUrl
+    ? `<br/><strong>Template:</strong> <a href="${event.templateUrl}">Download Template</a>`
+    : '';
+  const vars = {
+    title: event.title,
+    date: event.date,
+    details: event.details,
+    templateSection,
+    dashboardUrl: getDashboardUrl(),
+  };
   return sendMail({
     to,
-    subject,
-    html: renderTemplate(html, {
-      title: event.title,
-      date: event.date,
-      details: event.details,
-    }),
+    subject: renderTemplate(template.subject, vars),
+    html: renderTemplate(template.htmlContent, vars),
+  });
+}
+
+// Assessment notification email
+export async function sendAssessmentNotificationEmail({ to, assessment, student }) {
+  const start = assessment.startTime ? new Date(assessment.startTime) : null;
+  const end = assessment.endTime ? new Date(assessment.endTime) : null;
+  const startLabel = start ? start.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : '-';
+  const endLabel = end ? end.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : '-';
+  const duration = assessment.duration ? `${assessment.duration} minutes` : '-';
+
+  const template = await getTemplateByType(EMAIL_TEMPLATE_TYPES.ASSESSMENT_NOTIFICATION);
+  const vars = {
+    studentName: student?.name || 'Student',
+    assessmentTitle: assessment.title,
+    startLabel,
+    endLabel,
+    duration,
+    dashboardUrl: getDashboardUrl(),
+  };
+
+  return sendMail({
+    to,
+    subject: renderTemplate(template.subject, vars),
+    html: renderTemplate(template.htmlContent, vars),
   });
 }
 
 // Slot proposal email (to interviewee)
 export async function sendSlotProposalEmail({ to, interviewer, slot }) {
-  const subject = 'Mock Interview Slot Proposal';
-  
-  // Check if multiple slots (pipe-separated to avoid conflict with comma in datetime)
   const slots = String(slot).split('|').map(s => s.trim()).filter(Boolean);
-  const slotsList = slots.length > 1 
-    ? slots.map(s => `<li style="margin:8px 0;font-weight:500;color:#334155;">${s}</li>`).join('')
-    : slot;
-  
-  const html = slots.length > 1
-    ? `<div style="font-family:Arial,sans-serif;font-size:15px;color:#222;max-width:600px;">
-        <p style="margin-bottom:20px;">Dear Student,</p>
-        <p style="margin-bottom:16px;">Your interviewer <strong style="color:#0ea5e9;">${interviewer}</strong> has proposed the following time slots for your upcoming mockinterview:</p>
-        <ul style="background:#f8fafc;padding:20px 24px;border-radius:8px;border-left:4px solid #0ea5e9;list-style:none;margin:20px 0;">
-          ${slotsList}
-        </ul>
-        <div style="background:#e0f2fe;padding:16px;border-radius:6px;margin:20px 0;border-left:3px solid #0284c7;">
-          <p style="margin:0;font-size:14px;color:#0c4a6e;"><strong>📝 Next Steps:</strong></p>
-          <p style="margin:8px 0 0 0;font-size:14px;color:#0c4a6e;">• Log in to your dashboard to review the proposed slots<br/>• Accept one of the proposed slots, or<br/>• Suggest up to 3 alternative time slots if none work for you</p>
-        </div>
-        
-        <div style="text-align:center;margin:32px 0;">
-          <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center">
-            <tr>
-              <td style="border-radius:8px;background:#0ea5e9;">
-                <a href="https://peerprep.co.in/" target="_blank" style="display:inline-block;padding:16px 40px;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:8px;background:#0ea5e9;">Go to Dashboard</a>
-              </td>
-            </tr>
-          </table>
-        </div>
-        
-        <p style="margin-top:24px;color:#64748b;font-size:14px;">If you have any questions or concerns, please contact your program coordinator.</p>
-        <p style="margin-top:24px;">Best regards,<br/><strong>Interview System Team</strong></p>
-      </div>`
-    : `<div style="font-family:Arial,sans-serif;font-size:15px;color:#222;max-width:600px;">
-        <p style="margin-bottom:20px;">Dear Student,</p>
-        <p style="margin-bottom:16px;">Your interviewer <strong style="color:#0ea5e9;">${interviewer}</strong> has proposed the following time slot for your upcoming mock interview:</p>
-        <div style="background:#f8fafc;padding:20px;border-radius:8px;border-left:4px solid #0ea5e9;margin:20px 0;">
-          <p style="margin:0;font-size:16px;font-weight:600;color:#334155;">📅 ${slot}</p>
-        </div>
-        <div style="background:#e0f2fe;padding:16px;border-radius:6px;margin:20px 0;border-left:3px solid #0284c7;">
-          <p style="margin:0;font-size:14px;color:#0c4a6e;"><strong>📝 Next Steps:</strong></p>
-          <p style="margin:8px 0 0 0;font-size:14px;color:#0c4a6e;">• Log in to your dashboard to review the proposed slot<br/>• Accept the proposed slot, or<br/>• Suggest up to 3 alternative time slots if this doesn't work for you</p>
-        </div>
-        
-        <div style="text-align:center;margin:32px 0;">
-          <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center">
-            <tr>
-              <td style="border-radius:8px;background:#0ea5e9;">
-                <a href="https://peerprep.co.in/" target="_blank" style="display:inline-block;padding:16px 40px;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:8px;background:#0ea5e9;">Go to Dashboard</a>
-              </td>
-            </tr>
-          </table>
-        </div>
-        
-        <p style="margin-top:24px;color:#64748b;font-size:14px;">If you have any questions or concerns, please contact your program coordinator.</p>
-        <p style="margin-top:24px;">Best regards,<br/><strong>PeerPrep Team</strong></p>
-      </div>`;
-  
-  return sendMail({ to, subject, html: renderTemplate(html, { interviewer, slot, slotsList }) });
+  const template = await getTemplateByType(EMAIL_TEMPLATE_TYPES.SLOT_PROPOSAL);
+  const slotIntro = slots.length > 1 ? 'the following time slots' : 'the following time slot';
+  const slotsBlock = buildSlotsBlock(slots, '#0ea5e9', '#f8fafc');
+  const vars = {
+    interviewer,
+    slotIntro,
+    slotsBlock,
+    dashboardUrl: getDashboardUrl(),
+  };
+  return sendMail({
+    to,
+    subject: renderTemplate(template.subject, vars),
+    html: renderTemplate(template.htmlContent, vars),
+  });
 }
 
 // Slot acceptance/notification email (to interviewer)
 export async function sendSlotAcceptanceEmail({ to, interviewee, slot, accepted }) {
-  const subject = accepted ? 'Mock Interview Slot Accepted ✓' : 'New Slot Proposal from Interviewee';
-  
-  // Check if multiple slots (pipe-separated to avoid conflict with comma in datetime)
   const slots = String(slot).split('|').map(s => s.trim()).filter(Boolean);
-  const slotsList = slots.length > 1 
-    ? slots.map(s => `<li style="margin:8px 0;font-weight:500;color:#334155;">${s}</li>`).join('')
-    : slot;
-  
-  const html = accepted
-    ? `<div style="font-family:Arial,sans-serif;font-size:15px;color:#222;max-width:600px;">
-        <p style="margin-bottom:20px;">Dear Interviewer,</p>
-        <p style="margin-bottom:16px;">Great news! <strong style="color:#10b981;">${interviewee}</strong> has accepted your proposed interview slot:</p>
-        <div style="background:#f0fdf4;padding:20px;border-radius:8px;border-left:4px solid #10b981;margin:20px 0;">
-          <p style="margin:0;font-size:16px;font-weight:600;color:#065f46;">✓ ${slot}</p>
-        </div>
-        <div style="background:#dcfce7;padding:16px;border-radius:6px;margin:20px 0;border-left:3px solid #16a34a;">
-          <p style="margin:0;font-size:14px;color:#14532d;"><strong>📝 Next Steps:</strong></p>
-          <p style="margin:8px 0 0 0;font-size:14px;color:#14532d;">• The mock interview is now scheduled and confirmed<br/>• Check your dashboard for the meeting link and details<br/>• The meeting link will be available 30 minutes before the scheduled time</p>
-        </div>
-        
-        <div style="text-align:center;margin:32px 0;">
-          <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center">
-            <tr>
-              <td style="border-radius:8px;background:#0ea5e9;">
-                <a href="https://peerprep.co.in/" target="_blank" style="display:inline-block;padding:16px 40px;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:8px;background:#0ea5e9;">Go to Dashboard</a>
-              </td>
-            </tr>
-          </table>
-        </div>
-        
-        <p style="margin-top:24px;color:#64748b;font-size:14px;">Please ensure you're prepared and available at the scheduled time.</p>
-        <p style="margin-top:24px;">Best regards,<br/><strong>PeerPrep Team</strong></p>
-      </div>`
-    : (slots.length > 1
-      ? `<div style="font-family:Arial,sans-serif;font-size:15px;color:#222;max-width:600px;">
-          <p style="margin-bottom:20px;">Dear Interviewer,</p>
-          <p style="margin-bottom:16px;"><strong style="color:#f59e0b;">${interviewee}</strong> has proposed the following alternative time slots for the mock interview:</p>
-          <ul style="background:#fef3c7;padding:20px 24px;border-radius:8px;border-left:4px solid #f59e0b;list-style:none;margin:20px 0;">
-            ${slotsList}
-          </ul>
-          <div style="background:#fef9c3;padding:16px;border-radius:6px;margin:20px 0;border-left:3px solid #eab308;">
-            <p style="margin:0;font-size:14px;color:#713f12;"><strong>📝 Next Steps:</strong></p>
-            <p style="margin:8px 0 0 0;font-size:14px;color:#713f12;">• Log in to your dashboard to review the proposed slots<br/>• Accept one of the proposed slots to schedule the mock interview<br/>• Or propose new times if none of these work for you</p>
-          </div>
-          
-          <div style="text-align:center;margin:32px 0;">
-            <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center">
-              <tr>
-                <td style="border-radius:8px;background:#0ea5e9;">
-                  <a href="https://peerprep.co.in/" target="_blank" style="display:inline-block;padding:16px 40px;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:8px;background:#0ea5e9;">Go to Dashboard</a>
-                </td>
-              </tr>
-            </table>
-          </div>
-          
-          <p style="margin-top:24px;color:#64748b;font-size:14px;">Please respond at your earliest convenience to finalize the mock interview schedule.</p>
-          <p style="margin-top:24px;">Best regards,<br/><strong>PeerPrep Team</strong></p>
-        </div>`
-      : `<div style="font-family:Arial,sans-serif;font-size:15px;color:#222;max-width:600px;">
-          <p style="margin-bottom:20px;">Dear Interviewer,</p>
-          <p style="margin-bottom:16px;"><strong style="color:#f59e0b;">${interviewee}</strong> has proposed an alternative time slot for the mock interview:</p>
-          <div style="background:#fef3c7;padding:20px;border-radius:8px;border-left:4px solid #f59e0b;margin:20px 0;">
-            <p style="margin:0;font-size:16px;font-weight:600;color:#78350f;">📅 ${slot}</p>
-          </div>
-          <div style="background:#fef9c3;padding:16px;border-radius:6px;margin:20px 0;border-left:3px solid #eab308;">
-            <p style="margin:0;font-size:14px;color:#713f12;"><strong>📝 Next Steps:</strong></p>
-            <p style="margin:8px 0 0 0;font-size:14px;color:#713f12;">• Log in to your dashboard to review the proposed slot<br/>• Accept the proposed slot to schedule the mock interview<br/>• Or propose a new time if this doesn't work for you</p>
-          </div>
-          
-          <div style="text-align:center;margin:32px 0;">
-            <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center">
-              <tr>
-                <td style="border-radius:8px;background:#0ea5e9;">
-                  <a href="https://peerprep.co.in/" target="_blank" style="display:inline-block;padding:16px 40px;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:8px;background:#0ea5e9;">Go to Dashboard</a>
-                </td>
-              </tr>
-            </table>
-          </div>
-          
-          <p style="margin-top:24px;color:#64748b;font-size:14px;">Please respond at your earliest convenience to finalize the mock interview schedule.</p>
-          <p style="margin-top:24px;">Best regards,<br/><strong>PeerPrep Team</strong></p>
-        </div>`);
-        
-  return sendMail({ to, subject, html: renderTemplate(html, { interviewee, slot, slotsList }) });
+  const type = accepted ? EMAIL_TEMPLATE_TYPES.SLOT_ACCEPTED : EMAIL_TEMPLATE_TYPES.SLOT_COUNTER;
+  const template = await getTemplateByType(type);
+  const slotIntro = slots.length > 1 ? 'the following alternative time slots' : 'an alternative time slot';
+  const slotsBlock = buildSlotsBlock(slots, accepted ? '#10b981' : '#f59e0b', accepted ? '#f0fdf4' : '#fef3c7');
+  const vars = {
+    interviewee,
+    slot: slots[0],
+    slotIntro,
+    slotsBlock,
+    dashboardUrl: getDashboardUrl(),
+  };
+  return sendMail({
+    to,
+    subject: renderTemplate(template.subject, vars),
+    html: renderTemplate(template.htmlContent, vars),
+  });
 }
 
 // Interview scheduled email 
 export async function sendInterviewScheduledEmail({ to, interviewer, interviewee, event, link }) {
-  const subject = 'Mock Interview Scheduled - Confirmation & Details';
-  const html = `
-    <div style="font-family:Arial,sans-serif;font-size:15px;color:#222;max-width:600px;">
-      <p style="margin-bottom:20px;">Dear Participant,</p>
-      <p style="margin-bottom:16px;">Your mock interview has been successfully scheduled! Here are the confirmed details:</p>
-      
-      <div style="background:#f0f9ff;padding:24px;border-radius:8px;border-left:4px solid #0ea5e9;margin:24px 0;">
-        <p style="margin:0 0 12px 0;font-size:17px;font-weight:700;color:#0c4a6e;">Mock Interview Confirmation</p>
-        <table style="width:100%;font-size:15px;">
-          <tr>
-            <td style="padding:8px 0;color:#475569;width:40%;"><strong>📋 Mock Interview:</strong></td>
-            <td style="padding:8px 0;color:#0f172a;font-weight:600;">{title}</td>
-          </tr>
-          <tr>
-            <td style="padding:8px 0;color:#475569;"><strong>📅 Date:</strong></td>
-            <td style="padding:8px 0;color:#0f172a;font-weight:600;">{date}</td>
-          </tr>
-          <tr>
-            <td style="padding:8px 0;color:#475569;"><strong>👤 Interviewer:</strong></td>
-            <td style="padding:8px 0;color:#0f172a;">{interviewer}</td>
-          </tr>
-        </table>
-      </div>
-      
-      <div style="background:#dbeafe;padding:16px;border-radius:6px;margin:24px 0;border-left:3px solid #3b82f6;">
-        <p style="margin:0;font-size:14px;color:#1e3a8a;"><strong>📝 Important Reminders:</strong></p>
-        <ul style="margin:8px 0 0 20px;padding:0;font-size:14px;color:#1e3a8a;">
-          <li style="margin:6px 0;">Please join 5 minutes early to ensure a smooth start</li>
-          <li style="margin:6px 0;">Test your camera and microphone beforehand</li>
-          <li style="margin:6px 0;">Have your materials prepared and ready to go</li>
-          <li style="margin:6px 0;">Check your dashboard for the meeting link and updates</li>
-        </ul>
-      </div>
-      
-      {details}
-      
-      <div style="text-align:center;margin:32px 0;">
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center">
-          <tr>
-            <td style="border-radius:8px;background:#0ea5e9;">
-              <a href="https://peerprep.co.in/" target="_blank" style="display:inline-block;padding:16px 40px;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:8px;background:#0ea5e9;">Go to Dashboard</a>
-            </td>
-          </tr>
-        </table>
-      </div>
-      
-      <p style="margin-top:28px;color:#64748b;font-size:14px;">We look forward to a successful mock interview session!</p>
-      <p style="margin-top:24px;">Best regards,<br/><strong>PeerPrep Team</strong></p>
-    </div>
-  `;
+  const template = await getTemplateByType(EMAIL_TEMPLATE_TYPES.INTERVIEW_SCHEDULED);
+  const detailsSection = event.details
+    ? `<div style="background:#fef3c7;padding:16px;border-radius:6px;margin:24px 0;border-left:3px solid #eab308;"><p style="margin:0;font-size:14px;color:#713f12;"><strong>Additional Details:</strong></p><p style="margin:8px 0 0 0;font-size:14px;color:#713f12;">${event.details}</p></div>`
+    : '';
+  const vars = {
+    title: event.title,
+    date: event.date,
+    detailsSection,
+    interviewer,
+    dashboardUrl: getDashboardUrl(),
+  };
   return sendMail({
     to,
-    subject,
-    html: renderTemplate(html, {
-      title: event.title,
-      date: event.date,
-      details: event.details ? `<div style="background:#fef3c7;padding:16px;border-radius:6px;margin:24px 0;border-left:3px solid #eab308;"><p style="margin:0;font-size:14px;color:#713f12;"><strong>ℹ️ Additional Details:</strong></p><p style="margin:8px 0 0 0;font-size:14px;color:#713f12;">${event.details}</p></div>` : '',
-      interviewer,
-      interviewee,
-      link,
-    }),
+    subject: renderTemplate(template.subject, vars),
+    html: renderTemplate(template.htmlContent, vars),
   });
 }

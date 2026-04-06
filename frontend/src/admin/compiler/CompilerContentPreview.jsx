@@ -1,4 +1,4 @@
-﻿import { difficultyBadgeClass, formatDateTime, formatPercent, problemStatusClass } from './compilerUtils';
+import { difficultyBadgeClass, formatDateTime, formatPercent, problemStatusClass } from './compilerUtils';
 
 function renderInlineNodes(text, keyPrefix) {
   const tokens = String(text || '').split(/(\*\*.*?\*\*|`.*?`|_.*?_)/g).filter(Boolean);
@@ -138,7 +138,7 @@ export function ProblemStatementPreview({ problem, showMeta = true }) {
                 {problem?.difficulty || 'Easy'}
               </span>
               <span className={`rounded-full px-3 py-1 text-xs font-semibold ${problemStatusClass(problem?.status || 'Draft')}`}>
-                {problem?.status || 'Draft'}
+                {(String(problem?.status || 'draft').toLowerCase() === 'published' || String(problem?.status || '').toLowerCase() === 'active') ? 'Published' : 'Draft'}
               </span>
             </div>
           )}
@@ -250,3 +250,4 @@ export function ProblemStatementPreview({ problem, showMeta = true }) {
     </div>
   );
 }
+

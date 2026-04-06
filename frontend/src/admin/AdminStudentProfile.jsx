@@ -229,7 +229,7 @@ export default function AdminStudentProfile() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white pt-16 dark:bg-gray-900">
+      <div className="min-h-screen bg-white pt-20 dark:bg-gray-900">
         <div className="mx-auto w-full px-4 py-6">
           <LoadingPanel label="Loading student profile..." />
         </div>
@@ -239,7 +239,7 @@ export default function AdminStudentProfile() {
 
   if (error || !student) {
     return (
-      <div className="min-h-screen bg-white pt-16 dark:bg-gray-900">
+      <div className="min-h-screen bg-white pt-20 dark:bg-gray-900">
         <div className="mx-auto w-full px-4 py-6">
           <SectionCard title="Student profile unavailable" subtitle={error || 'This student could not be found.'}>
             <button
@@ -256,7 +256,7 @@ export default function AdminStudentProfile() {
   }
 
   return (
-    <div className="min-h-screen bg-white pt-16 dark:bg-gray-900">
+    <div className="min-h-screen bg-white pt-20 dark:bg-gray-900">
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}

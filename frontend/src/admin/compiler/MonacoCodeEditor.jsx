@@ -68,10 +68,9 @@ export default function MonacoCodeEditor({
 }) {
   const containerRef = useRef(null);
   const editorRef = useRef(null);
+  const onChangeRef = useRef(onChange);
   const mutationObserverRef = useRef(null);
   const resizeObserverRef = useRef(null);
-  const onChangeRef = useRef(onChange);
-  const isApplyingExternalValueRef = useRef(false);
   const [loadError, setLoadError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
@@ -131,9 +130,6 @@ export default function MonacoCodeEditor({
         });
 
         editor.onDidChangeModelContent(() => {
-          if (isApplyingExternalValueRef.current) {
-            return;
-          }
           onChangeRef.current?.(editor.getValue());
         });
 
@@ -180,9 +176,7 @@ export default function MonacoCodeEditor({
     if (!editor) return;
 
     if (editor.getValue() !== value) {
-      isApplyingExternalValueRef.current = true;
       editor.setValue(value || '');
-      isApplyingExternalValueRef.current = false;
     }
   }, [value]);
 
@@ -207,7 +201,7 @@ export default function MonacoCodeEditor({
             <p>{loadError}</p>
             <textarea
               value={value}
-              onChange={(event) => onChange?.(event.target.value)}
+              onChange={(event) => onChangeRef.current?.(event.target.value)}
               readOnly={readOnly}
               style={{ height: resolvedHeight }}
               className="w-full rounded-xl border border-rose-200 bg-white px-3 py-3 font-mono text-xs text-slate-700 outline-none dark:border-rose-800 dark:bg-gray-950 dark:text-gray-200"
@@ -235,6 +229,7 @@ export default function MonacoCodeEditor({
     </div>
   );
 }
+
 
 
 

@@ -1,7 +1,6 @@
 /* eslint-disable no-unused-vars */
 import { useEffect, useState, useCallback } from 'react';
 import { api } from '../utils/api';
-import { AdminNavbar } from '../components/AdminNavbar';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ClipboardList, Search, Filter, RefreshCw, CheckCircle, XCircle, Clock,
@@ -366,7 +365,6 @@ export default function JoinRequests() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <AdminNavbar />
 
       {/* Toast */}
       <AnimatePresence>
@@ -405,7 +403,7 @@ export default function JoinRequests() {
         )}
       </AnimatePresence>
 
-      <div className="pt-16 sm:pt-20 px-3 sm:px-6 lg:px-8 max-w-7xl mx-auto pb-8">
+      <div className="pt-20 px-3 sm:px-6 lg:px-8 max-w-7xl mx-auto pb-8">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
@@ -602,3 +600,4 @@ export default function JoinRequests() {
     </div>
   );
 }
+

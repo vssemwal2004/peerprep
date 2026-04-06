@@ -17,6 +17,7 @@ import {
   getLanguageLabel,
 } from './compilerUtils';
 import { EmptyState, LoadingPanel, SectionCard } from './CompilerUi';
+import { loadCodingDraft, saveCodingDraft } from '../assessment/assessmentCodingStore';
 
 const EDITOR_TABS = [
   { key: 'details', label: 'Question Details' },
@@ -94,30 +95,61 @@ function TestCaseEditorCard({ title, cases, onAdd, onRemove, onChange, includeEx
   );
 }
 
-export default function CreateProblem() {
+export default function CreateProblem({ mode = 'compiler', assessmentContext } = {}) {
   const navigate = useNavigate();
   const toast = useToast();
-  const { id } = useParams();
-  const isEditMode = Boolean(id);
-  const [loading, setLoading] = useState(isEditMode);
+  const { id, tempId } = useParams();
+  const isAssessment = mode === 'assessment';
+  const editorId = assessmentContext?.tempId || (isAssessment ? tempId : id);
+  const isEditMode = !isAssessment && Boolean(id);
+  const [loading, setLoading] = useState(isAssessment ? false : isEditMode);
   const [form, setForm] = useState(() => createDefaultProblemForm());
   const [activeTab, setActiveTab] = useState('details');
   const [activeLanguage, setActiveLanguage] = useState('python');
-  const [currentProblemId, setCurrentProblemId] = useState(id || '');
-  const [currentStatus, setCurrentStatus] = useState('Draft');
-  const [previewTested, setPreviewTested] = useState(false);
+  const [currentProblemId, setCurrentProblemId] = useState(assessmentContext?.problemId || (isAssessment ? '' : (id || '')));
+  const [currentStatus, setCurrentStatus] = useState('draft');
+  const [previewValidated, setPreviewValidated] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isReadingTemplateFile, setIsReadingTemplateFile] = useState(false);
-  const formRef = useRef(form);
-
-  const setFormAndRef = (updater) => {
-    const nextValue = typeof updater === 'function' ? updater(formRef.current) : updater;
-    formRef.current = nextValue;
-    setForm(nextValue);
-  };
+  const [isDirty, setIsDirty] = useState(false);
+  const [autoSaveStatus, setAutoSaveStatus] = useState('');
+  const autoSaveRef = useRef(null);
+  const assessmentKey = assessmentContext?.assessmentKey || 'new';
+  const assessmentReturnTo = assessmentContext?.returnTo || '/admin/assessment';
 
   useEffect(() => {
+    if (isAssessment) {
+      const draft = editorId ? loadCodingDraft(editorId) : null;
+      if (draft?.form) {
+        setForm(draft.form);
+      } else if (draft?.problemData) {
+        setForm(createProblemFormFromProblem(draft.problemData));
+      } else {
+        setForm(createDefaultProblemForm());
+      }
+      setCurrentProblemId(draft?.problemId || draft?.problemData?._id || '');
+      setCurrentStatus(draft?.status || 'draft');
+      setPreviewValidated(Boolean(draft?.previewValidated ?? draft?.previewTested ?? draft?.problemData?.previewValidated ?? draft?.problemData?.previewTested));
+      setActiveLanguage(draft?.form?.supportedLanguages?.[0] || draft?.problemData?.supportedLanguages?.[0] || 'python');
+      setLoading(false);
+
+      if (draft?.problemId && editorId) {
+        api.getCompilerProblem(draft.problemId)
+          .then((response) => {
+            setPreviewValidated(Boolean(response.previewValidated ?? response.previewTested));
+            setCurrentStatus(response.status || 'draft');
+            saveCodingDraft(editorId, {
+              problemId: response._id,
+              problemData: response,
+              previewValidated: Boolean(response.previewValidated ?? response.previewTested),
+              status: (response.previewValidated ?? response.previewTested) ? 'Validated' : 'Draft',
+            });
+          })
+          .catch(() => {});
+      }
+      return undefined;
+    }
+
     if (!isEditMode) {
       setLoading(false);
       return undefined;
@@ -129,12 +161,10 @@ export default function CreateProblem() {
         setLoading(true);
         const response = await api.getCompilerProblem(id);
         if (!isMounted) return;
-        const nextForm = createProblemFormFromProblem(response);
-        formRef.current = nextForm;
-        setForm(nextForm);
+        setForm(createProblemFormFromProblem(response));
         setCurrentProblemId(response._id);
-        setCurrentStatus(response.status || 'Draft');
-        setPreviewTested(Boolean(response.previewTested));
+        setCurrentStatus(response.status || 'draft');
+        setPreviewValidated(Boolean(response.previewValidated ?? response.previewTested));
         setActiveLanguage(response.supportedLanguages?.[0] || 'python');
       } catch (error) {
         toast.error(error.message || 'Failed to load problem for editing.');
@@ -147,7 +177,7 @@ export default function CreateProblem() {
     return () => {
       isMounted = false;
     };
-  }, [id, isEditMode, toast]);
+  }, [id, isEditMode, toast, isAssessment, editorId]);
 
   useEffect(() => {
     if (!form.supportedLanguages.includes(activeLanguage)) {
@@ -163,136 +193,169 @@ export default function CreateProblem() {
     : Math.max(hiddenPairs.pairs.filter((pair) => pair.complete).length, manualHiddenCount, form.existingHiddenTestCaseCount || 0);
   const activeTemplate = form.codeTemplates[activeLanguage] || '';
   const activeReferenceSolution = form.referenceSolutions?.[activeLanguage] || '';
+  const hasTemplate = form.supportedLanguages.some((language) => String(form.codeTemplates?.[language] || '').trim());
+  const canAddToAssessment = isAssessment && previewValidated && visibleSampleCount > 0 && hiddenCount > 0 && hasTemplate;
+  const validationStatus = previewValidated ? (canAddToAssessment ? 'Ready' : 'Validated') : 'Draft';
 
-  const updateField = (field, value) => setFormAndRef((previous) => ({ ...previous, [field]: value }));
+  const updateField = (field, value) => {
+    setForm((previous) => ({ ...previous, [field]: value }));
+    setIsDirty(true);
+  };
 
   const toggleLanguage = (languageId) => {
-    setFormAndRef((previous) => {
+    setForm((previous) => {
       const hasLanguage = previous.supportedLanguages.includes(languageId);
       const supportedLanguages = hasLanguage
         ? previous.supportedLanguages.filter((item) => item !== languageId)
         : [...previous.supportedLanguages, languageId];
-      const nextTemplates = { ...(previous.codeTemplates || {}) };
-      const nextReferenceSolutions = { ...(previous.referenceSolutions || {}) };
-
-      if (!hasLanguage && typeof nextTemplates[languageId] !== 'string') {
-        nextTemplates[languageId] = '';
-      }
-
-      if (hasLanguage) {
-        delete nextTemplates[languageId];
-        delete nextReferenceSolutions[languageId];
-      }
 
       return {
         ...previous,
         supportedLanguages: supportedLanguages.length > 0 ? supportedLanguages : [languageId],
-        codeTemplates: nextTemplates,
-        referenceSolutions: nextReferenceSolutions,
       };
     });
+    setIsDirty(true);
   };
 
   const updateTemplate = (nextTemplate) => {
-    setFormAndRef((previous) => ({
+    setForm((previous) => ({
       ...previous,
       codeTemplates: { ...previous.codeTemplates, [activeLanguage]: nextTemplate },
     }));
-  };
-
-  const handleTemplateUpload = async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-
-    if (!file) {
-      return;
-    }
-
-    setIsReadingTemplateFile(true);
-    try {
-      const content = await file.text();
-      updateTemplate(content.replace(/\r\n/g, '\n'));
-      toast.success(`${getLanguageLabel(activeLanguage)} template loaded into the editor.`);
-    } catch (error) {
-      toast.error(error.message || 'Failed to read the uploaded template.');
-    } finally {
-      setIsReadingTemplateFile(false);
-    }
+    setIsDirty(true);
   };
 
   const updateReferenceSolution = (nextSolution) => {
-    setFormAndRef((previous) => ({
+    setForm((previous) => ({
       ...previous,
       referenceSolutions: { ...(previous.referenceSolutions || {}), [activeLanguage]: nextSolution },
     }));
+    setIsDirty(true);
   };
 
   const updateSampleTestCase = (index, field, value) => {
-    setFormAndRef((previous) => ({
+    setForm((previous) => ({
       ...previous,
       sampleTestCases: previous.sampleTestCases.map((testCase, itemIndex) => (
         itemIndex === index ? { ...testCase, [field]: value } : testCase
       )),
     }));
+    setIsDirty(true);
   };
 
   const updateHiddenTestCase = (index, field, value) => {
-    setFormAndRef((previous) => ({
+    setForm((previous) => ({
       ...previous,
       hiddenTestCases: previous.hiddenTestCases.map((testCase, itemIndex) => (
         itemIndex === index ? { ...testCase, [field]: value } : testCase
       )),
     }));
+    setIsDirty(true);
   };
 
-  const persistProblem = async (status, { redirectToPreview = false } = {}) => {
-    const latestForm = formRef.current;
-    const latestHiddenPairs = deriveHiddenFilePairs(latestForm.hiddenTestFiles);
-
-    if (latestForm.hiddenTestUploadMode === 'pairs' && latestHiddenPairs.issues.length > 0) {
+  const persistProblem = async (status, { redirectToPreview = false, silent = false } = {}) => {
+    if (form.hiddenTestUploadMode === 'pairs' && hiddenPairs.issues.length > 0) {
       toast.error('Fix hidden testcase file issues before saving.');
       return null;
     }
+    if (isSaving) return null;
 
     setIsSaving(true);
+    if (silent) setAutoSaveStatus('Saving draft...');
     try {
-      const payload = buildProblemFormData(latestForm, status);
+      const payload = buildProblemFormData(form, status);
       const response = currentProblemId
         ? await api.updateCompilerProblem(currentProblemId, payload)
         : await api.createCompilerProblem(payload);
 
-      const nextForm = createProblemFormFromProblem(response);
-      formRef.current = nextForm;
       setCurrentProblemId(response._id);
       setCurrentStatus(response.status || status);
-      setPreviewTested(Boolean(response.previewTested));
-      setForm(nextForm);
+      setPreviewValidated(Boolean(response.previewValidated ?? response.previewTested));
+      setForm({
+        ...createProblemFormFromProblem(response),
+        hiddenTestFiles: [],
+        hiddenBulkInputFile: null,
+        hiddenBulkOutputFile: null,
+        previewValidated: Boolean(response.previewValidated ?? response.previewTested),
+      });
+      setActiveLanguage((previous) => {
+        if (response.supportedLanguages?.includes(previous)) {
+          return previous;
+        }
+        return response.supportedLanguages?.[0] || 'python';
+      });
+      setIsDirty(false);
+
+      if (isAssessment && editorId) {
+        saveCodingDraft(editorId, {
+          assessmentKey,
+          sectionIndex: assessmentContext?.sectionIndex,
+          questionIndex: assessmentContext?.questionIndex,
+          problemId: response._id,
+          form: createProblemFormFromProblem(response),
+          problemData: response,
+          previewValidated: Boolean(response.previewValidated ?? response.previewTested),
+          status: (response.previewValidated ?? response.previewTested) ? 'Validated' : 'Draft',
+        });
+      }
 
       if (redirectToPreview) {
-        toast.success('Draft saved. Opening preview workspace.');
-      } else {
+        if (!silent) {
+          toast.success(isAssessment ? 'Draft saved. Opening validation workspace.' : 'Draft saved. Opening preview workspace.');
+        }
+      } else if (!silent) {
         toast.success(
           currentProblemId
-            ? (status === 'Active' ? 'Problem updated and published.' : 'Problem updated.')
-            : (status === 'Active' ? 'Problem published successfully.' : 'Draft saved successfully.'),
+            ? (status === 'published' ? 'Problem updated and published.' : 'Problem updated.')
+            : (status === 'published' ? 'Problem published successfully.' : 'Draft saved successfully.'),
         );
       }
 
-      if (!currentProblemId && !redirectToPreview) {
+      if (redirectToPreview) {
+        if (isAssessment) {
+          navigate(`/admin/assessment/coding-question/${editorId}/preview/${response._id}?return=${encodeURIComponent(assessmentReturnTo)}`);
+        } else {
+          navigate(`/admin/compiler/${response._id}/preview`);
+        }
+      } else if (!currentProblemId && !isAssessment) {
         navigate(`/admin/compiler/${response._id}/edit`, { replace: true });
       }
-      if (redirectToPreview) {
-        navigate(`/admin/compiler/${response._id}/preview`);
-      }
+
+      if (silent) setAutoSaveStatus('Draft auto-saved');
       return response;
     } catch (error) {
-      toast.error(error.message || 'Failed to save problem.');
+      if (!silent) {
+        toast.error(error.message || 'Failed to save problem.');
+      }
+      if (silent) setAutoSaveStatus('Auto-save failed');
       return null;
     } finally {
       setIsSaving(false);
     }
   };
 
+  useEffect(() => {
+    if (!isAssessment) return undefined;
+    if (autoSaveRef.current) {
+      clearInterval(autoSaveRef.current);
+    }
+    autoSaveRef.current = setInterval(() => {
+      if (!isDirty) return;
+      persistProblem('draft', { silent: true });
+    }, 8000);
+    return () => clearInterval(autoSaveRef.current);
+  }, [isAssessment, isDirty, form, currentProblemId]);
+
+  useEffect(() => {
+    if (!isAssessment) return undefined;
+    const handleBeforeUnload = (event) => {
+      if (!isDirty) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isAssessment, isDirty]);
   const handleDelete = async () => {
     if (!currentProblemId) return;
     const confirmed = window.confirm('Delete this problem and all related submissions? This cannot be undone.');
@@ -311,11 +374,50 @@ export default function CreateProblem() {
   };
 
   const openPreview = async () => {
-    await persistProblem('Draft', { redirectToPreview: true });
+    await persistProblem('draft', { redirectToPreview: true });
   };
 
-  const handleSaveTemplate = async () => {
-    await persistProblem(currentProblemId ? currentStatus : 'Draft');
+  const handleAddToAssessment = async () => {
+    if (!canAddToAssessment) {
+      toast.error('Complete validation requirements before adding to the assessment.');
+      return;
+    }
+    let response = currentProblemId ? null : await persistProblem('draft', { silent: true });
+    const problemId = response?._id || currentProblemId;
+    if (!problemId || !editorId) {
+      toast.error('Save the coding problem before adding to the assessment.');
+      return;
+    }
+
+    let publishedProblem = response;
+    if (!publishedProblem || publishedProblem.status !== 'published') {
+      try {
+        await api.updateCompilerProblemStatus(problemId, 'published');
+        publishedProblem = await api.getCompilerProblem(problemId);
+      } catch (error) {
+        toast.error(error.message || 'Publish the problem before adding it to the assessment.');
+        return;
+      }
+    }
+
+    const isValidated = Boolean(publishedProblem?.previewValidated ?? publishedProblem?.previewTested);
+if (!isValidated || publishedProblem.status !== 'published') {
+      toast.error('Problem must be published and validated before adding to the assessment.');
+      return;
+    }
+
+    saveCodingDraft(editorId, {
+      assessmentKey,
+      sectionIndex: assessmentContext?.sectionIndex,
+      questionIndex: assessmentContext?.questionIndex,
+      problemId: publishedProblem._id,
+      form: createProblemFormFromProblem(publishedProblem),
+      problemData: publishedProblem,
+      previewValidated: Boolean(publishedProblem.previewValidated ?? publishedProblem.previewTested),
+      status: 'Ready',
+    });
+    toast.success('Coding question added to assessment.');
+    navigate(assessmentReturnTo);
   };
 
   if (loading) {
@@ -334,16 +436,16 @@ export default function CreateProblem() {
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
       <div className="space-y-6">
         <SectionCard
-          title={isEditMode ? 'Edit Problem' : 'Create Problem'}
-          subtitle="Professional authoring workflow for question details, judge testcases, and multi-language starter code."
+          title={isAssessment ? 'Assessment Coding Question' : (isEditMode ? 'Edit Problem' : 'Create Problem')}
+          subtitle={isAssessment ? 'Full compiler-grade authoring flow for assessment coding questions.' : 'Professional authoring workflow for question details, judge testcases, and multi-language starter code.'}
           action={<div className="flex flex-wrap gap-2">{EDITOR_TABS.map((tab) => <TabButton key={tab.key} label={tab.label} active={activeTab === tab.key} onClick={() => setActiveTab(tab.key)} />)}</div>}
         >
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/60">
             <div>
-              <p className="text-sm font-semibold text-slate-800 dark:text-gray-100">{currentStatus === 'Active' ? 'Published problem' : 'Draft workspace'}</p>
+              <p className="text-sm font-semibold text-slate-800 dark:text-gray-100">{currentStatus === 'published' ? 'Published problem' : 'Draft workspace'}</p>
               <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Sample cases: {visibleSampleCount} | Hidden cases: {hiddenCount} | Languages: {form.supportedLanguages.length}</p>
               <p className="mt-2 text-xs text-slate-500 dark:text-gray-400">
-                Preview validation: {previewTested ? 'Completed' : 'Required before publish'}
+                Preview validation: {previewValidated ? 'Completed' : 'Required before publish'}
               </p>
             </div>
             {currentProblemId ? (
@@ -563,33 +665,6 @@ export default function CreateProblem() {
 
             <SectionCard title="Code Templates" subtitle="Provide starter code for each language. Students can fully replace it with any valid program entrypoint.">
               <div className="mb-4 flex flex-wrap gap-2">{form.supportedLanguages.map((languageId) => <button key={languageId} type="button" onClick={() => setActiveLanguage(languageId)} className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${activeLanguage === languageId ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}>{getLanguageLabel(languageId)}</button>)}</div>
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/60">
-                <div>
-                  <p className="text-sm font-semibold text-slate-800 dark:text-gray-100">{getLanguageLabel(activeLanguage)} starter template</p>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Upload a language-specific starter file, then save it so the same template appears for both admins and students.</p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
-                    <Upload className="h-4 w-4" />
-                    {isReadingTemplateFile ? 'Loading...' : 'Upload Template'}
-                    <input
-                      type="file"
-                      accept=".txt,.py,.js,.java,.cpp,.cc,.c,.json"
-                      className="hidden"
-                      onChange={handleTemplateUpload}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleSaveTemplate}
-                    disabled={isSaving || isDeleting || isReadingTemplateFile}
-                    className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"
-                  >
-                    <Save className="h-4 w-4" />
-                    {isSaving ? 'Saving...' : 'Save Template'}
-                  </button>
-                </div>
-              </div>
               <MonacoCodeEditor language={activeLanguage} value={activeTemplate} onChange={updateTemplate} height={380} />
             </SectionCard>
 
@@ -600,14 +675,87 @@ export default function CreateProblem() {
           </>
         ) : null}
 
-        <SectionCard title="Actions" subtitle="Save drafts, publish, or cleanly remove the problem from the judge workspace.">
+        {activeTab === 'draft' ? (
+          <SectionCard title="Draft Workspace" subtitle="Auto-save, validation, and readiness checks.">
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">Status</p>
+                <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-gray-100">{validationStatus}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">Auto-save</p>
+                <p className="mt-2 text-sm text-slate-600 dark:text-gray-300">{isAssessment ? (autoSaveStatus || 'Waiting for changes') : 'Manual save only'}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">Preview</p>
+                <p className="mt-2 text-sm text-slate-600 dark:text-gray-300">{previewValidated ? 'Validation completed' : 'Validation required'}</p>
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-2 text-xs text-slate-600 dark:text-gray-300">
+              <div className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2 dark:border-gray-700">
+                <span>At least 1 sample test case</span>
+                <span className={visibleSampleCount > 0 ? 'text-emerald-600' : 'text-rose-500'}>{visibleSampleCount > 0 ? 'Ready' : 'Missing'}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2 dark:border-gray-700">
+                <span>At least 1 hidden test case</span>
+                <span className={hiddenCount > 0 ? 'text-emerald-600' : 'text-rose-500'}>{hiddenCount > 0 ? 'Ready' : 'Missing'}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2 dark:border-gray-700">
+                <span>Language template provided</span>
+                <span className={hasTemplate ? 'text-emerald-600' : 'text-rose-500'}>{hasTemplate ? 'Ready' : 'Missing'}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2 dark:border-gray-700">
+                <span>Preview validation run</span>
+                <span className={previewValidated ? 'text-emerald-600' : 'text-rose-500'}>{previewValidated ? 'Done' : 'Pending'}</span>
+              </div>
+            </div>
+          </SectionCard>
+        ) : null}
+
+        <SectionCard
+          title="Actions"
+          subtitle={isAssessment ? 'Save drafts, validate, and add to the assessment.' : 'Save drafts, publish, or cleanly remove the problem from the judge workspace.'}
+        >
+          {!isAssessment && (
+            <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-800 dark:text-gray-100">Use for Assessment Only</p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Assessment-only problems will not appear in the student problem list.</p>
+                </div>
+                <label className="inline-flex items-center gap-2 text-xs font-semibold">
+                  <input
+                    type="checkbox"
+                    checked={form.visibility === 'assessment'}
+                    onChange={(event) => updateField('visibility', event.target.checked ? 'assessment' : 'public')}
+                    className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                  />
+                  {form.visibility === 'assessment' ? 'Assessment-only' : 'Public'}
+                </label>
+              </div>
+            </div>
+          )}
           <div className="flex flex-wrap gap-3">
-            <button type="button" onClick={openPreview} disabled={isSaving || isDeleting} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-sky-600 dark:hover:bg-sky-500 dark:disabled:bg-gray-700"><Eye className="h-4 w-4" />{isSaving ? 'Saving...' : 'Preview'}</button>
-            <button type="button" onClick={() => persistProblem('Draft')} disabled={isSaving || isDeleting} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"><Save className="h-4 w-4" />{isSaving ? 'Saving...' : 'Save Draft'}</button>
-            <button type="button" onClick={() => persistProblem('Active')} disabled={isSaving || isDeleting || !previewTested || !currentProblemId} title={!previewTested ? 'Preview testing is required before publishing.' : ''} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"><FilePlus2 className="h-4 w-4" />{isSaving ? (isEditMode ? 'Updating...' : 'Publishing...') : (isEditMode ? 'Update Problem' : 'Publish')}</button>
-            {currentProblemId ? <button type="button" onClick={handleDelete} disabled={isDeleting || isSaving} className="inline-flex items-center gap-2 rounded-xl border border-rose-200 px-4 py-2.5 text-sm font-semibold text-rose-600 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-900/20"><Trash2 className="h-4 w-4" />{isDeleting ? 'Deleting...' : 'Delete Problem'}</button> : null}
+            {isAssessment ? (
+              <>
+                <button type="button" onClick={() => persistProblem('draft')} disabled={isSaving} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"><Save className="h-4 w-4" />{isSaving ? 'Saving...' : 'Save Draft'}</button>
+                <button type="button" onClick={openPreview} disabled={isSaving} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-sky-600 dark:hover:bg-sky-500 dark:disabled:bg-gray-700"><Eye className="h-4 w-4" />{isSaving ? 'Saving...' : 'Run Test / Validate'}</button>
+                <button type="button" onClick={handleAddToAssessment} disabled={isSaving || !canAddToAssessment} title={!canAddToAssessment ? 'Complete validation checks before adding.' : ''} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"><FilePlus2 className="h-4 w-4" />Add to Assessment</button>
+              </>
+            ) : (
+              <>
+                <button type="button" onClick={openPreview} disabled={isSaving || isDeleting} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-sky-600 dark:hover:bg-sky-500 dark:disabled:bg-gray-700"><Eye className="h-4 w-4" />{isSaving ? 'Saving...' : 'Preview'}</button>
+                <button type="button" onClick={() => persistProblem('draft')} disabled={isSaving || isDeleting} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"><Save className="h-4 w-4" />{isSaving ? 'Saving...' : 'Save Draft'}</button>
+                <button type="button" onClick={() => persistProblem('published')} disabled={isSaving || isDeleting || !previewValidated || !currentProblemId} title={!previewValidated ? 'Preview testing is required before publishing.' : ''} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"><FilePlus2 className="h-4 w-4" />{isSaving ? (isEditMode ? 'Updating...' : 'Publishing...') : (isEditMode ? 'Update Problem' : 'Publish')}</button>
+                {currentProblemId ? <button type="button" onClick={handleDelete} disabled={isDeleting || isSaving} className="inline-flex items-center gap-2 rounded-xl border border-rose-200 px-4 py-2.5 text-sm font-semibold text-rose-600 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-900/20"><Trash2 className="h-4 w-4" />{isDeleting ? 'Deleting...' : 'Delete Problem'}</button> : null}
+              </>
+            )}
           </div>
-          {!previewTested ? <p className="mt-3 text-xs text-amber-600 dark:text-amber-300">Publishing stays disabled until the admin completes at least one successful preview run or submit.</p> : null}
+          {isAssessment && !canAddToAssessment ? (
+            <p className="mt-3 text-xs text-amber-600 dark:text-amber-300">Preview validation and required testcases/templates must be completed before adding to the assessment.</p>
+          ) : null}
+          {!isAssessment && !previewValidated ? <p className="mt-3 text-xs text-amber-600 dark:text-amber-300">Publishing stays disabled until the admin completes at least one successful preview run or submit.</p> : null}
         </SectionCard>
       </div>
 
@@ -617,3 +765,10 @@ export default function CreateProblem() {
     </div>
   );
 }
+
+
+
+
+
+
+

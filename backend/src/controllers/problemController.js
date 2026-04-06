@@ -9,10 +9,12 @@ import { parseBulkCasePair } from '../utils/testcaseBulkParser.js';
 import { isS3TestcaseStorageEnabled, readS3TextObject, uploadS3TextObject } from '../utils/s3.js';
 
 const STATUS_MAP = {
-  draft: 'Draft',
-  Draft: 'Draft',
-  active: 'Active',
-  Active: 'Active',
+  draft: 'draft',
+  Draft: 'draft',
+  published: 'published',
+  Published: 'published',
+  active: 'published',
+  Active: 'published',
 };
 
 const DIFFICULTY_SORT_BRANCHES = [
@@ -178,7 +180,18 @@ function normalizeSupportedLanguages(value) {
 
 function normalizeStatus(value) {
   const normalized = STATUS_MAP[value] || STATUS_MAP[String(value || '').trim()];
-  return normalized || 'Draft';
+  return normalized || 'draft';
+}
+
+function normalizeVisibility(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (['public', 'assessment', 'private'].includes(normalized)) return normalized;
+  return 'public';
+}
+
+function isPublishedStatus(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'published' || normalized === 'active';
 }
 
 function parseNumber(value, fallback, { min, max, integer = false }) {
@@ -299,11 +312,6 @@ function normalizeCodeTemplates(value, supportedLanguages) {
 
   supportedLanguages.forEach((language) => {
     const template = String(parsedTemplates[language] ?? '');
-
-    if (!template.trim()) {
-      throw new HttpError(400, `${language} template is required.`);
-    }
-
     templates[language] = template.replace(/\r\n/g, '\n');
   });
 
@@ -376,7 +384,7 @@ function buildProblemPayload(
   const hiddenTestCases = hiddenTestCasesFromFiles
     || (req.body.hiddenTestCases !== undefined ? normalizeHiddenTestCases(req.body.hiddenTestCases) : null);
 
-  if (status === 'Active') {
+  if (status === 'published') {
     const effectiveSampleCount = sampleTestCases ? sampleTestCases.length : 0;
     const effectiveHiddenCount = hiddenBulkCases
       ? hiddenBulkCases.length
@@ -406,6 +414,7 @@ function buildProblemPayload(
     timeLimitSeconds: parseNumber(req.body.timeLimitSeconds ?? req.body.timeLimit, 2, { min: 1, max: 15, integer: false }),
     memoryLimitMb: parseNumber(req.body.memoryLimitMb ?? req.body.memoryLimit, 256, { min: 64, max: 1024, integer: true }),
     status,
+    visibility: normalizeVisibility(req.body.visibility),
   };
 
   return {
@@ -636,7 +645,8 @@ async function resolveExecutionProblem(req) {
     throw new HttpError(404, 'Problem not found.');
   }
 
-  if (!isAdminRequest(req) && problem.status !== 'Active') {
+  const visibility = problem.visibility || 'public';
+  if (!isAdminRequest(req) && (!isPublishedStatus(problem.status) || visibility !== 'public')) {
     throw new HttpError(404, 'Problem not found.');
   }
 
@@ -665,7 +675,7 @@ export async function getCompilerOverview(req, res) {
     recentSubmissions,
   ] = await Promise.all([
     Problem.countDocuments(),
-    Problem.countDocuments({ status: 'Active' }),
+    Problem.countDocuments({ status: { $in: ['published', 'Active', 'active'] } }),
     Submission.countDocuments({ mode: 'submit' }),
     Submission.countDocuments({ mode: 'submit', status: 'AC' }),
     Submission.aggregate([
@@ -755,15 +765,24 @@ export async function listProblems(req, res) {
   const tagFilters = parseCommaOrJsonList(req.query.tags);
   const sortBy = String(req.query.sortBy || 'updatedAt');
   const sortOrder = String(req.query.sortOrder || 'desc') === 'asc' ? 1 : -1;
-  const accessQuery = isAdminRequest(req) ? {} : { status: 'Active' };
+  const accessQuery = isAdminRequest(req)
+    ? {}
+    : { status: { $in: ['published', 'Active', 'active'] }, $or: [{ visibility: 'public' }, { visibility: { $exists: false } }] };
   const query = { ...accessQuery };
 
   if (difficulty && ['Easy', 'Medium', 'Hard'].includes(difficulty)) {
     query.difficulty = difficulty;
   }
 
-  if (isAdminRequest(req) && status && ['Draft', 'Active'].includes(status)) {
-    query.status = status;
+  if (isAdminRequest(req) && status && ['draft', 'published', 'Draft', 'Active', 'Published'].includes(status)) {
+    const normalizedStatus = normalizeStatus(status);
+    query.status = normalizedStatus === 'published'
+      ? { $in: ['published', 'Active', 'active'] }
+      : { $in: ['draft', 'Draft'] };
+  }
+
+  if (isAdminRequest(req) && req.query.visibility) {
+    query.visibility = normalizeVisibility(req.query.visibility);
   }
 
   if (tagFilters.length > 0) {
@@ -852,7 +871,8 @@ export async function getProblemDetail(req, res) {
     includeReferenceSolutions: isAdminRequest(req),
   });
 
-  if (isStudentRequest(req) && problem.status !== 'Active') {
+  const visibility = problem.visibility || 'public';
+  if (isStudentRequest(req) && (!isPublishedStatus(problem.status) || visibility !== 'public')) {
     throw new HttpError(404, 'Problem not found.');
   }
 
@@ -862,18 +882,19 @@ export async function getProblemDetail(req, res) {
 export async function createProblem(req, res) {
   const payload = buildProblemPayload(req);
 
-  if (payload.problem.status === 'Active') {
+  if (payload.problem.status === 'published') {
     throw new HttpError(400, 'Preview testing is required before publishing a problem.');
   }
 
   const problem = await Problem.create({
     ...payload.problem,
+    previewValidated: false,
     previewTested: false,
     codeTemplates: new Map(Object.entries(payload.problem.codeTemplates)),
     referenceSolutions: new Map(Object.entries(payload.problem.referenceSolutions || {})),
     createdBy: req.user._id,
     updatedBy: req.user._id,
-    publishedAt: payload.problem.status === 'Active' ? new Date() : undefined,
+    publishedAt: payload.problem.status === 'published' ? new Date() : undefined,
     hiddenTestSource: {
       provider: 'none',
       inputObjectKey: '',
@@ -908,10 +929,7 @@ export async function createProblem(req, res) {
 
   await refreshProblemStats(problem._id);
 
-  const { serializedProblem } = await loadProblemShape(problem._id, {
-    includeHiddenTestCases: true,
-    includeReferenceSolutions: true,
-  });
+  const { serializedProblem } = await loadProblemShape(problem._id);
   res.status(201).json(serializedProblem);
 }
 
@@ -932,21 +950,22 @@ export async function updateProblem(req, res) {
     existingHiddenTestCaseCount,
     existingHiddenBulkCaseCount: Number(existingProblem.hiddenTestSource?.caseCount || 0),
   });
-  const canRetainPreviewStatus = payload.problem.status === 'Active' && existingProblem.previewTested;
+  const canRetainPreviewStatus = payload.problem.status === 'published' && (existingProblem.previewValidated ?? existingProblem.previewTested);
 
   Object.assign(existingProblem, {
     ...payload.problem,
+    previewValidated: canRetainPreviewStatus,
     previewTested: canRetainPreviewStatus,
     codeTemplates: new Map(Object.entries(payload.problem.codeTemplates)),
     referenceSolutions: new Map(Object.entries(payload.problem.referenceSolutions || {})),
     updatedBy: req.user._id,
   });
 
-  if (payload.problem.status === 'Active' && !canRetainPreviewStatus) {
+  if (payload.problem.status === 'published' && !canRetainPreviewStatus) {
     throw new HttpError(400, 'Preview testing is required before publishing a problem.');
   }
 
-  if (payload.problem.status === 'Active' && !existingProblem.publishedAt) {
+  if (payload.problem.status === 'published' && !existingProblem.publishedAt) {
     existingProblem.publishedAt = new Date();
   }
 
@@ -976,10 +995,7 @@ export async function updateProblem(req, res) {
 
   await refreshProblemStats(existingProblem._id);
 
-  const { serializedProblem } = await loadProblemShape(existingProblem._id, {
-    includeHiddenTestCases: true,
-    includeReferenceSolutions: true,
-  });
+  const { serializedProblem } = await loadProblemShape(existingProblem._id);
   res.json(serializedProblem);
 }
 
@@ -1015,14 +1031,15 @@ export async function updateProblemStatus(req, res) {
     await TestCase.countDocuments({ problem: problem._id, kind: 'hidden' }),
   );
 
-  if (nextStatus === 'Active') {
+  if (nextStatus === 'published') {
     if (sampleCount === 0) {
       throw new HttpError(400, 'Publishing a problem requires at least one sample test case.');
     }
     if (hiddenCount === 0) {
       throw new HttpError(400, 'Publishing a problem requires at least one hidden test case pair.');
     }
-    if (!problem.previewTested) {
+    const previewValidated = problem.previewValidated ?? problem.previewTested;
+    if (!previewValidated) {
       throw new HttpError(400, 'Preview testing is required before publishing a problem.');
     }
     if (!problem.publishedAt) {
@@ -1148,6 +1165,7 @@ export async function runProblemCode(req, res) {
     if (result.status === 'AC') {
       await Problem.findByIdAndUpdate(problem._id, {
         $set: {
+          previewValidated: true,
           previewTested: true,
         },
       });
@@ -1297,6 +1315,7 @@ export async function submitProblemCode(req, res) {
     if (result.status === 'AC') {
       await Problem.findByIdAndUpdate(problem._id, {
         $set: {
+          previewValidated: true,
           previewTested: true,
         },
       });
@@ -1319,3 +1338,4 @@ export async function submitProblemCode(req, res) {
     throw error;
   }
 }
+

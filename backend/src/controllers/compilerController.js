@@ -1,4 +1,5 @@
-﻿import Problem from '../models/Problem.js';
+import Problem from '../models/Problem.js';
+import Assessment from '../models/Assessment.js';
 import Submission from '../models/Submission.js';
 import TestCase from '../models/TestCase.js';
 import { HttpError } from '../utils/errors.js';
@@ -459,12 +460,65 @@ async function finalizeTrackedSubmission(req, submission, payload) {
   emitSubmissionUpdate(req, submission);
 }
 
-async function resolveActiveProblem(problemId) {
+function assessmentIncludesProblem(assessment, problemId) {
+  const targetId = String(problemId);
+  const sections = Array.isArray(assessment?.sections) ? assessment.sections : [];
+  return sections.some((section) => {
+    const questionType = section?.type;
+    const questions = Array.isArray(section?.questions) ? section.questions : [];
+    return questions.some((question) => {
+      const resolvedType = question?.type || questionType;
+      if (resolvedType !== 'coding') return false;
+      const resolvedProblemId = question?.problemId
+        || question?.coding?.problemId
+        || question?.problemDataSnapshot?._id
+        || question?.coding?.problemData?._id
+        || question?.problemData?._id;
+      return resolvedProblemId && String(resolvedProblemId) === targetId;
+    });
+  });
+}
+
+async function resolveActiveProblem(problemId, { userId, assessmentId } = {}) {
   ensureObjectId(problemId, 'Problem ID');
   const problem = await Problem.findById(problemId);
-  if (!problem || problem.status !== 'Active') {
+  const normalizedStatus = String(problem?.status || '').toLowerCase();
+  const isPublished = normalizedStatus === 'published' || normalizedStatus === 'active';
+  if (!problem || !isPublished) {
     throw new HttpError(404, 'Problem not found.');
   }
+
+  const visibility = problem.visibility || 'public';
+  if (visibility === 'public') {
+    return problem;
+  }
+
+  if (visibility !== 'assessment') {
+    throw new HttpError(404, 'Problem not found.');
+  }
+
+  if (!assessmentId || !userId) {
+    throw new HttpError(404, 'Problem not found.');
+  }
+
+  ensureObjectId(assessmentId, 'Assessment ID');
+  const assessment = await Assessment.findById(assessmentId).lean();
+  if (!assessment || assessment.lifecycleStatus === 'draft') {
+    throw new HttpError(404, 'Problem not found.');
+  }
+
+  const studentId = String(userId);
+  if (assessment.targetType !== 'all') {
+    const assigned = (assessment.assignedStudents || []).some((id) => String(id) === studentId);
+    if (!assigned) {
+      throw new HttpError(404, 'Problem not found.');
+    }
+  }
+
+  if (!assessmentIncludesProblem(assessment, problemId)) {
+    throw new HttpError(404, 'Problem not found.');
+  }
+
   return problem;
 }
 
@@ -521,12 +575,13 @@ export async function runCode(req, res) {
   const sourceCode = validateSourceCode(req.body.source_code);
   const standardInput = sanitizeExecutionText(req.body.stdin, MAX_STDIN_SIZE_BYTES, 'Input');
   const problemId = String(req.body.problemId || '').trim();
+  const assessmentId = String(req.body.assessmentId || '').trim();
 
   let problem = null;
   let submission = null;
 
   if (problemId) {
-    problem = await resolveActiveProblem(problemId);
+    problem = await resolveActiveProblem(problemId, { userId: req.user?._id, assessmentId });
     validateProblemLanguage(problem, languageKey);
     submission = await createTrackedSubmission(req, problem, {
       mode: 'run',
@@ -576,9 +631,10 @@ export async function runCode(req, res) {
 
 export async function submitCode(req, res) {
   const problemId = String(req.body.problemId || '').trim();
+  const assessmentId = String(req.body.assessmentId || '').trim();
   const { languageId, languageKey } = resolveLanguageRequest(req.body);
   const sourceCode = validateSourceCode(req.body.source_code);
-  const problem = await resolveActiveProblem(problemId);
+  const problem = await resolveActiveProblem(problemId, { userId: req.user?._id, assessmentId });
   validateProblemLanguage(problem, languageKey);
 
   const [sampleTestCases, hiddenTestCases] = await Promise.all([
@@ -769,7 +825,8 @@ export async function submitCode(req, res) {
 
 export async function getExpectedOutput(req, res) {
   const problemId = String(req.params.id || req.body.problemId || '').trim();
-  const problem = await resolveActiveProblem(problemId);
+  const assessmentId = String(req.body.assessmentId || req.query.assessmentId || '').trim();
+  const problem = await resolveActiveProblem(problemId, { userId: req.user?._id, assessmentId });
 
   const standardInput = sanitizeExecutionText(
     req.body.stdin ?? req.body.customInput ?? '',
@@ -863,3 +920,9 @@ export async function getJudge0Health(req, res) {
     nodes: checks,
   });
 }
+
+
+
+
+
+

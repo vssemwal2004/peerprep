@@ -866,6 +866,9 @@ export default function ProblemSolver() {
   const toast = useToast();
   const splitContainerRef = useRef(null);
   const dragFrameRef = useRef(null);
+  const submissionPollRef = useRef(null);
+  const submissionTrackerRef = useRef(null);
+  const isMountedRef = useRef(true);
   const [problem, setProblem] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeLeftTab, setActiveLeftTab] = useState('description');
@@ -885,9 +888,22 @@ export default function ProblemSolver() {
   const [isRunning, setIsRunning] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const stopSubmissionPolling = useCallback(() => {
+    if (submissionPollRef.current) {
+      clearInterval(submissionPollRef.current);
+      submissionPollRef.current = null;
+    }
+    submissionTrackerRef.current = null;
+  }, []);
+
+  useEffect(() => () => {
+    isMountedRef.current = false;
+    stopSubmissionPolling();
+  }, [stopSubmissionPolling]);
+
   const loadSubmissions = useCallback(async ({ silent = false, selectLatest = false } = {}) => {
     if (!id) {
-      return;
+      return [];
     }
 
     try {
@@ -900,17 +916,76 @@ export default function ProblemSolver() {
 
       if (selectLatest && next.length > 0) {
         setSelectedSubmissionId(next[0]._id);
-      } else if (!selectedSubmissionId && next.length > 0) {
-        setSelectedSubmissionId(next[0]._id);
+      } else if (next.length > 0) {
+        setSelectedSubmissionId((current) => current || next[0]._id);
       }
+
+      return next;
     } catch (error) {
-      toast.error(error.message || 'Failed to load submissions.');
+      if (!silent) {
+        toast.error(error.message || 'Failed to load submissions.');
+      }
+      return [];
     } finally {
       if (!silent) {
         setSubmissionsLoading(false);
       }
     }
-  }, [id, toast, selectedSubmissionId]);
+  }, [id, toast]);
+
+  const syncSubmissionResult = useCallback((submission) => {
+    if (!submission || !isMountedRef.current) {
+      return;
+    }
+
+    const normalizedStatus = String(submission.status || '').toUpperCase();
+    setResult(submission);
+    setActiveConsoleTab('result');
+    setActiveLeftTab('acceptance');
+    if (submission._id) {
+      setSelectedSubmissionId(submission._id);
+    }
+    if (normalizedStatus === 'AC' || normalizedStatus === 'ACCEPTED') {
+      setProblem((previous) => (previous ? { ...previous, studentStatus: 'Solved' } : previous));
+    }
+  }, []);
+
+  const finalizeTrackedSubmission = useCallback((submission, { successMessage, errorMessage } = {}) => {
+    if (!isMountedRef.current) {
+      return;
+    }
+
+    syncSubmissionResult(submission);
+    stopSubmissionPolling();
+    void loadSubmissions({ silent: true, selectLatest: true }).catch(() => {
+      // The submission row is already finalized; the UI can still use the current snapshot.
+    });
+    setIsSubmitting(false);
+
+    if (successMessage) {
+      toast.success(successMessage);
+    } else if (errorMessage) {
+      toast.error(errorMessage);
+    }
+  }, [loadSubmissions, stopSubmissionPolling, syncSubmissionResult, toast]);
+
+  const findTrackedSubmission = useCallback((submissionsList) => {
+    const tracker = submissionTrackerRef.current;
+    if (!tracker) {
+      return null;
+    }
+
+    return (submissionsList || []).find((submission) => {
+      const status = String(submission.status || '').toUpperCase();
+      const createdAt = new Date(submission.createdAt || 0).getTime();
+      return submission.mode === 'submit'
+        && String(submission.language || '') === tracker.language
+        && String(submission.sourceCode || '') === tracker.sourceCode
+        && createdAt >= tracker.startedAt - 1000
+        && createdAt <= tracker.startedAt + 5 * 60 * 1000
+        && ['PENDING', 'RUNNING', 'AC', 'WA', 'TLE', 'RE', 'CE'].includes(status);
+    }) || null;
+  }, []);
 
   useEffect(() => {
     const previousBodyOverflow = document.body.style.overflow;
@@ -1007,9 +1082,9 @@ export default function ProblemSolver() {
 
   useEffect(() => {
     if (problem?._id) {
-      saveProblemDrafts(problem._id, problem, drafts);
+      saveProblemDrafts(problem._id, drafts);
     }
-  }, [drafts, problem]);
+  }, [drafts, problem?._id]);
 
   useEffect(() => {
     if (problem?._id) {
@@ -1152,30 +1227,104 @@ export default function ProblemSolver() {
     }
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!problem) {
       return;
     }
 
+    stopSubmissionPolling();
     setIsSubmitting(true);
-    try {
-      const response = await api.submitStudentProblem(problem._id, {
-        language,
-        sourceCode: activeCode,
-      });
-      setResult(response);
-      if (response.status === 'Accepted') {
-        setProblem((previous) => (previous ? { ...previous, studentStatus: 'Solved' } : previous));
+
+    const tracker = {
+      language,
+      sourceCode: activeCode,
+      startedAt: Date.now(),
+      deadlineAt: Date.now() + (10 * 60 * 1000),
+    };
+    submissionTrackerRef.current = tracker;
+
+    const pollSubmissionStatus = async () => {
+      if (!isMountedRef.current) {
+        return;
       }
-      setActiveConsoleTab('result');
-      setActiveLeftTab('acceptance');
-      await loadSubmissions({ silent: true, selectLatest: true });
-      toast.success(`Submission finished with verdict ${response.status}`);
-    } catch (error) {
-      toast.error(error.message || 'Failed to submit code.');
-    } finally {
-      setIsSubmitting(false);
-    }
+
+      const nextSubmissions = await loadSubmissions({ silent: true });
+      const matchedSubmission = findTrackedSubmission(nextSubmissions);
+
+      if (!matchedSubmission) {
+        if (Date.now() > tracker.deadlineAt) {
+          stopSubmissionPolling();
+          setIsSubmitting(false);
+          toast.error('Submission is taking longer than expected. Please refresh the submissions tab.');
+        }
+        return;
+      }
+
+      syncSubmissionResult(matchedSubmission);
+
+      const status = String(matchedSubmission.status || '').toUpperCase();
+      if (['PENDING', 'RUNNING'].includes(status)) {
+        if (Date.now() > tracker.deadlineAt) {
+          stopSubmissionPolling();
+          setIsSubmitting(false);
+          toast.error('Submission is still processing. Please refresh the submissions tab to check again.');
+          return;
+        }
+        if (!tracker.notifiedQueued) {
+          tracker.notifiedQueued = true;
+          toast.info('Submission received. Checking results in the background.');
+        }
+        return;
+      }
+
+      finalizeTrackedSubmission(matchedSubmission, {
+        successMessage: `Submission finished with verdict ${statusLabel(matchedSubmission.status)}`,
+      });
+    };
+
+    submissionPollRef.current = setInterval(() => {
+      void pollSubmissionStatus().catch(() => {
+        // Keep polling if a transient refresh fails.
+      });
+    }, 2000);
+
+    void pollSubmissionStatus().catch(() => {
+      // The immediate poll may race with the backend creating the row.
+    });
+
+    void api.submitStudentProblem(problem._id, {
+      language,
+      sourceCode: activeCode,
+    }).then((response) => {
+      if (!submissionTrackerRef.current) {
+        return;
+      }
+
+      if (!isMountedRef.current) {
+        return;
+      }
+
+      syncSubmissionResult(response);
+
+      const finalStatus = String(response.status || '').toUpperCase();
+      if (['PENDING', 'RUNNING'].includes(finalStatus)) {
+        if (!submissionTrackerRef.current.notifiedQueued) {
+          submissionTrackerRef.current.notifiedQueued = true;
+          toast.info('Submission received. Checking results in the background.');
+        }
+        return;
+      }
+
+      finalizeTrackedSubmission(response, {
+        successMessage: `Submission finished with verdict ${statusLabel(response.status)}`,
+      });
+    }).catch((error) => {
+      if (submissionTrackerRef.current && isMountedRef.current) {
+        stopSubmissionPolling();
+        setIsSubmitting(false);
+        toast.error(error.message || 'Failed to submit code.');
+      }
+    });
   };
 
   const handleResizeStart = (event) => {
@@ -1465,12 +1614,3 @@ export default function ProblemSolver() {
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
