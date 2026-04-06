@@ -18,6 +18,7 @@ import {
 import { useState, useEffect } from "react";
 import DarkModeToggle from "./DarkModeToggle";
 import { useAuth } from "../context/AuthContext";
+import NotificationBell from "./NotificationBell";
 
 export function StudentNavbar() {
   const location = useLocation();
@@ -167,7 +168,10 @@ export function StudentNavbar() {
           </div>
 
           {/* Dark Mode Toggle */}
-          <DarkModeToggle className="hidden md:flex ml-1" />
+          <div className="hidden md:flex items-center gap-2 ml-1">
+            <NotificationBell />
+            <DarkModeToggle />
+          </div>
 
           {/* Desktop Profile */}
           <div className="hidden md:block relative desktop-profile-container ml-1">
@@ -276,16 +280,19 @@ export function StudentNavbar() {
 
 
           {/* Mobile Menu Toggle */}
-          <button
-            onClick={toggleMenu}
-            className="md:hidden flex items-center justify-center w-8 h-8 rounded bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-          >
-            {isMenuOpen ? (
-              <X className="text-gray-700 dark:text-gray-300 w-4 h-4" />
-            ) : (
-              <Menu className="text-gray-700 dark:text-gray-300 w-4 h-4" />
-            )}
-          </button>
+          <div className="md:hidden flex items-center gap-2">
+            <NotificationBell />
+            <button
+              onClick={toggleMenu}
+              className="flex items-center justify-center w-8 h-8 rounded bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+            >
+              {isMenuOpen ? (
+                <X className="text-gray-700 dark:text-gray-300 w-4 h-4" />
+              ) : (
+                <Menu className="text-gray-700 dark:text-gray-300 w-4 h-4" />
+              )}
+            </button>
+          </div>
         </div>
       </div>
 

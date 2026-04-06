@@ -7,6 +7,7 @@ import { validateObjectId } from '../utils/validators.js';
 import { refreshProblemStats, serializeSubmission } from './compilerHelpers.js';
 import { parseBulkCasePair } from '../utils/testcaseBulkParser.js';
 import { readS3TextObject } from '../utils/s3.js';
+import { createNotification } from '../services/notificationService.js';
 
 const JUDGE0_BASE_URL = process.env.JUDGE0_BASE_URL || 'https://ce.judge0.com';
 const JUDGE0_AUTH_HEADER = String(process.env.JUDGE0_AUTH_HEADER || '').trim();
@@ -798,6 +799,19 @@ export async function submitCode(req, res) {
       testCaseResults,
     });
     await refreshProblemStats(problem._id);
+
+    try {
+      await createNotification({
+        userId: req.user._id,
+        title: 'Submission Result',
+        message: 'Your solution passed all test cases',
+        type: 'CODING',
+        referenceId: problem._id,
+        actionUrl: '/problems'
+      });
+    } catch (e) {
+      console.error('[submitCode] Notification error:', e.message);
+    }
 
     return res.json({
       status: 'Accepted',

@@ -4,6 +4,8 @@ import { HttpError } from '../utils/errors.js';
 import { supabase } from '../utils/supabase.js';
 import { io } from '../server.js';
 import { logActivity } from './adminActivityController.js';
+import User from '../models/User.js';
+import { createNotifications } from '../services/notificationService.js';
 
 // Get all semesters for a coordinator
 export async function listSemesters(req, res) {
@@ -644,6 +646,25 @@ export async function addTopic(req, res) {
     
     // Emit socket event for real-time update
     io.emit('learning-updated', { type: 'topic-created', data: semester });
+
+    // Real-time notifications for students
+    setImmediate(async () => {
+      try {
+        const students = await User.find({ role: 'student' }).select('_id').lean();
+        const notifs = students.map(s => ({
+          userId: s._id,
+          title: 'New Learning Content',
+          message: 'New learning content added',
+          type: 'LEARNING',
+          referenceId: semester._id,
+          actionUrl: '/student/learning',
+          dedupeKey: `learning-topic:${semester._id}:${s._id}:${chapterId}`
+        }));
+        await createNotifications(notifs);
+      } catch (e) {
+        console.error('[addTopic] Notification error:', e.message);
+      }
+    });
     
     res.status(201).json(semester);
   } catch (err) {

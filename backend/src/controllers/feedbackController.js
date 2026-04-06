@@ -4,6 +4,7 @@ import Event from '../models/Event.js';
 import User from '../models/User.js';
 import { HttpError } from '../utils/errors.js';
 import { logStudentActivity } from './activityController.js';
+import { createNotification } from '../services/notificationService.js';
 
 // Only interviewer can submit feedback about the interviewee.
 // Feedback allowed only after the meeting END (scheduledAt + duration) OR after event end.
@@ -81,6 +82,19 @@ export async function submitFeedback(req, res) {
     feedbackData,
     { upsert: true, new: true }
   );
+
+  try {
+    await createNotification({
+      userId: to,
+      title: 'Feedback Received',
+      message: 'You received feedback from your partner',
+      type: 'FEEDBACK',
+      referenceId: pair._id,
+      actionUrl: '/student/session'
+    });
+  } catch (e) {
+    console.error('[submitFeedback] Notification error:', e.message);
+  }
   
   // Mark pair as completed after feedback submission
   await Pair.findByIdAndUpdate(pairId, { status: 'completed' });

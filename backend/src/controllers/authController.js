@@ -10,6 +10,7 @@ import { autoEnrollStudentInCourses } from './learningController.js';
 import { logAuthAttempt, logSuspiciousActivity } from '../utils/logger.js';
 import { validatePasswordStrength, validateEmail, generateSecureToken, hashToken } from '../utils/validators.js';
 import { checkEmailResetLimit, recordEmailResetAttempt } from '../middleware/rateLimiter.js';
+import { createNotification } from '../services/notificationService.js';
 
 // Change password for student (requires current password)
 export async function changePassword(req, res) {
@@ -42,6 +43,21 @@ export async function changePassword(req, res) {
   user.passwordHash = await User.hashPassword(newPassword);
   user.mustChangePassword = false;
   await user.save();
+
+  if (user.role === 'student') {
+    try {
+      await createNotification({
+        userId: user._id,
+        title: 'Password Updated',
+        message: 'Your password was updated',
+        type: 'SYSTEM',
+        referenceId: user._id,
+        actionUrl: '/student/profile'
+      });
+    } catch (e) {
+      console.error('[changePassword] Notification error:', e.message);
+    }
+  }
 
   // Auto-enroll student in all courses for their semester on first login
   if (wasFirstLogin) {
@@ -592,6 +608,21 @@ export async function resetPassword(req, res) {
       metadata: {},
       req
     });
+
+    if (user.role === 'student') {
+      try {
+        await createNotification({
+          userId: user._id,
+          title: 'Password Updated',
+          message: 'Your password was updated',
+          type: 'SYSTEM',
+          referenceId: user._id,
+          actionUrl: '/student/profile'
+        });
+      } catch (e) {
+        console.error('[resetPassword] Notification error:', e.message);
+      }
+    }
     
     res.json({ message: 'Password has been reset successfully' });
   } catch (err) {

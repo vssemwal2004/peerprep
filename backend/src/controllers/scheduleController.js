@@ -6,6 +6,7 @@ import { sendMail, buildICS, sendSlotProposalEmail, sendSlotAcceptanceEmail, sen
 import { HttpError } from '../utils/errors.js';
 import crypto from 'crypto';
 import { logStudentActivity } from './activityController.js';
+import { createNotification, createNotifications } from '../services/notificationService.js';
 
 // Helper function to format date as "6/11/2025, 12:16:00 PM"
 function formatDateTime(date) {
@@ -141,6 +142,93 @@ async function checkAndAutoAssign(pair) {
   }
   pair.status = 'scheduled';
   await pair.save();
+
+  try {
+    await createNotifications([
+      {
+        userId: pair.interviewer?._id || pair.interviewer,
+        title: 'Interview Confirmed',
+        message: 'Your interview slot is confirmed',
+        type: 'INTERVIEW',
+        referenceId: pair._id,
+        actionUrl: '/student/session',
+        dedupeKey: `interview-confirmed:${pair._id}:${pair.interviewer?._id || pair.interviewer}`
+      },
+      {
+        userId: pair.interviewee?._id || pair.interviewee,
+        title: 'Interview Confirmed',
+        message: 'Your interview slot is confirmed',
+        type: 'INTERVIEW',
+        referenceId: pair._id,
+        actionUrl: '/student/session',
+        dedupeKey: `interview-confirmed:${pair._id}:${pair.interviewee?._id || pair.interviewee}`
+      },
+      {
+        userId: pair.interviewer?._id || pair.interviewer,
+        title: 'Meeting Link Available',
+        message: 'Meeting link available',
+        type: 'INTERVIEW',
+        referenceId: pair._id,
+        actionUrl: '/student/session',
+        dedupeKey: `meeting-link:${pair._id}:${pair.interviewer?._id || pair.interviewer}`
+      },
+      {
+        userId: pair.interviewee?._id || pair.interviewee,
+        title: 'Meeting Link Available',
+        message: 'Meeting link available',
+        type: 'INTERVIEW',
+        referenceId: pair._id,
+        actionUrl: '/student/session',
+        dedupeKey: `meeting-link:${pair._id}:${pair.interviewee?._id || pair.interviewee}`
+      }
+    ]);
+  } catch (e) {
+    console.error('[confirmSlot] Notification error:', e.message);
+  }
+
+  try {
+    const notifyItems = [
+      {
+        userId: pair.interviewer,
+        title: 'Interview Confirmed',
+        message: 'Your interview slot is confirmed',
+        type: 'INTERVIEW',
+        referenceId: pair._id,
+        actionUrl: '/student/session',
+        dedupeKey: `interview-confirmed:${pair._id}:${pair.interviewer}`
+      },
+      {
+        userId: pair.interviewee,
+        title: 'Interview Confirmed',
+        message: 'Your interview slot is confirmed',
+        type: 'INTERVIEW',
+        referenceId: pair._id,
+        actionUrl: '/student/session',
+        dedupeKey: `interview-confirmed:${pair._id}:${pair.interviewee}`
+      },
+      {
+        userId: pair.interviewer,
+        title: 'Meeting Link Available',
+        message: 'Meeting link available',
+        type: 'INTERVIEW',
+        referenceId: pair._id,
+        actionUrl: '/student/session',
+        dedupeKey: `meeting-link:${pair._id}:${pair.interviewer}`
+      },
+      {
+        userId: pair.interviewee,
+        title: 'Meeting Link Available',
+        message: 'Meeting link available',
+        type: 'INTERVIEW',
+        referenceId: pair._id,
+        actionUrl: '/student/session',
+        dedupeKey: `meeting-link:${pair._id}:${pair.interviewee}`
+      }
+    ];
+    await createNotifications(notifyItems);
+  } catch (e) {
+    console.error('[auto-assign] Notification error:', e.message);
+  }
 
   try {
     const populated = await Pair.findById(pair._id).populate('interviewer').populate('interviewee');
@@ -655,8 +743,65 @@ export async function proposeSlots(req, res) {
   
   await pair.save();
 
-  // Send email notifications
   const justScheduled = newCombinedCount >= 6 && pair.status === 'scheduled';
+
+  // Real-time notifications
+  try {
+    if (justScheduled) {
+      await createNotifications([
+        {
+          userId: pair.interviewer?._id || pair.interviewer,
+          title: 'Interview Confirmed',
+          message: 'Your interview slot is confirmed',
+          type: 'INTERVIEW',
+          referenceId: pair._id,
+          actionUrl: '/student/session',
+          dedupeKey: `interview-confirmed:${pair._id}:${pair.interviewer?._id || pair.interviewer}`
+        },
+        {
+          userId: pair.interviewee?._id || pair.interviewee,
+          title: 'Interview Confirmed',
+          message: 'Your interview slot is confirmed',
+          type: 'INTERVIEW',
+          referenceId: pair._id,
+          actionUrl: '/student/session',
+          dedupeKey: `interview-confirmed:${pair._id}:${pair.interviewee?._id || pair.interviewee}`
+        },
+        {
+          userId: pair.interviewer?._id || pair.interviewer,
+          title: 'Meeting Link Available',
+          message: 'Meeting link available',
+          type: 'INTERVIEW',
+          referenceId: pair._id,
+          actionUrl: '/student/session',
+          dedupeKey: `meeting-link:${pair._id}:${pair.interviewer?._id || pair.interviewer}`
+        },
+        {
+          userId: pair.interviewee?._id || pair.interviewee,
+          title: 'Meeting Link Available',
+          message: 'Meeting link available',
+          type: 'INTERVIEW',
+          referenceId: pair._id,
+          actionUrl: '/student/session',
+          dedupeKey: `meeting-link:${pair._id}:${pair.interviewee?._id || pair.interviewee}`
+        }
+      ]);
+    } else {
+      const targetUserId = partnerId;
+      await createNotification({
+        userId: targetUserId,
+        title: 'New Slot Proposed',
+        message: 'A new time slot has been proposed',
+        type: 'INTERVIEW',
+        referenceId: pair._id,
+        actionUrl: '/student/session'
+      });
+    }
+  } catch (e) {
+    console.error('[Propose] Notification error:', e.message);
+  }
+
+  // Send email notifications
   
   if (justScheduled) {
     // Send final scheduled emails to both parties

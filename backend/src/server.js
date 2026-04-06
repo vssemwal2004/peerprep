@@ -9,6 +9,7 @@ import { verifyToken } from './utils/jwt.js';
 import { logSuspiciousActivity } from './utils/logger.js';
 import cookie from 'cookie';
 import { seedEmailTemplates } from './services/emailTemplateService.js';
+import { setIo } from './utils/io.js';
 
 const PORT = process.env.PORT || 4000;
 //new file check
@@ -95,6 +96,16 @@ io.on('connection', (socket) => {
       connectionsPerUser.set(userId, count - 1);
     }
   });
+
+  // Join personal room for real-time notifications
+  socket.on('register', (userId) => {
+    const normalized = userId ? String(userId) : '';
+    const socketUserId = socket.userId ? String(socket.userId) : '';
+    const roomToJoin = normalized && normalized === socketUserId ? normalized : socketUserId;
+    if (roomToJoin) {
+      socket.join(roomToJoin);
+    }
+  });
   
   // SECURITY: Rate limit events per socket (prevent spam)
   const eventCounts = new Map();
@@ -127,6 +138,7 @@ io.on('connection', (socket) => {
 
 // Make io available globally
 app.set('io', io);
+setIo(io);
 
 // SECURITY: Graceful shutdown handlers
 const shutdown = async (signal) => {

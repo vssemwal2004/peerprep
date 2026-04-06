@@ -4,6 +4,7 @@ import AssessmentSubmission from '../models/AssessmentSubmission.js';
 import Problem from '../models/Problem.js';
 import User from '../models/User.js';
 import { sendOnboardingEmail, sendAssessmentNotificationEmail } from '../utils/mailer.js';
+import { createNotification, createNotifications } from '../services/notificationService.js';
 
 function generateRandomPassword() {
   const length = Math.random() < 0.5 ? 7 : 8;
@@ -470,6 +471,19 @@ export async function createAssessment(req, res) {
           );
         }
 
+        if (normalizedLifecycle === 'published' && created.length > 0) {
+          const accountNotifs = created.map(student => ({
+            userId: student.id,
+            title: 'Account Created',
+            message: 'Your account has been created',
+            type: 'SYSTEM',
+            referenceId: student.id,
+            actionUrl: '/student/dashboard',
+            dedupeKey: `account-created:${student.id}`
+          }));
+          await createNotifications(accountNotifs);
+        }
+
         if (normalizedLifecycle === 'published' && sendEmail !== false && process.env.EMAIL_ON_ASSESSMENT === 'true') {
           const emailJobs = users
             .filter(u => u.email)
@@ -479,6 +493,19 @@ export async function createAssessment(req, res) {
               student: u,
             }));
           await Promise.allSettled(emailJobs);
+        }
+
+        if (normalizedLifecycle === 'published' && users.length > 0) {
+          const notifs = users.map(u => ({
+            userId: u._id,
+            title: 'Assessment Assigned',
+            message: 'A new assessment has been assigned',
+            type: 'ASSESSMENT',
+            referenceId: assessment._id,
+            actionUrl: `/student/assessment/${assessment._id}`,
+            dedupeKey: `assessment-assigned:${assessment._id}:${u._id}`
+          }));
+          await createNotifications(notifs);
         }
       } catch (err) {
         console.error('[Assessment] Email send failed:', err.message);
@@ -684,6 +711,26 @@ export async function updateAssessment(req, res) {
           await Promise.allSettled(emailJobs);
         } catch (err) {
           console.error('[Assessment] Email send failed:', err.message);
+        }
+      });
+    }
+
+    if (assessment.lifecycleStatus === 'published') {
+      const assignedUsers = await User.find({ _id: { $in: assessment.assignedStudents || [] } }).select('_id').lean();
+      setImmediate(async () => {
+        try {
+          const notifs = assignedUsers.map(u => ({
+            userId: u._id,
+            title: 'Assessment Assigned',
+            message: 'A new assessment has been assigned',
+            type: 'ASSESSMENT',
+            referenceId: assessment._id,
+            actionUrl: `/student/assessment/${assessment._id}`,
+            dedupeKey: `assessment-assigned:${assessment._id}:${u._id}`
+          }));
+          await createNotifications(notifs);
+        } catch (err) {
+          console.error('[Assessment] Notification send failed:', err.message);
         }
       });
     }
@@ -923,6 +970,22 @@ export async function submitAssessment(req, res) {
     }
 
     await submission.save();
+
+    if (finalStatus === 'submitted') {
+      try {
+        await createNotification({
+          userId: studentId,
+          title: 'Assessment Submitted',
+          message: 'Assessment submitted successfully',
+          type: 'ASSESSMENT',
+          referenceId: assessment._id,
+          actionUrl: '/student/assessments',
+          dedupeKey: `assessment-submitted:${assessment._id}:${studentId}`
+        });
+      } catch (e) {
+        console.error('[Assessment] Submit notification failed:', e.message);
+      }
+    }
 
     res.json({ message: 'Saved', status: submission.status, submittedAt: submission.submittedAt, allowedEnd, serverTime: now });
   } catch (err) {

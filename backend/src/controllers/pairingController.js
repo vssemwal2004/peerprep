@@ -5,6 +5,7 @@ import User from '../models/User.js';
 import mongoose from 'mongoose';
 import { sendMail, renderTemplate } from '../utils/mailer.js';
 import { HttpError } from '../utils/errors.js';
+import { createNotifications } from '../services/notificationService.js';
 
 // Fisher-Yates shuffle algorithm for random array shuffling
 function shuffleArray(array) {
@@ -289,6 +290,31 @@ export async function setMeetingLink(req, res) {
   if (now < showAt) throw new HttpError(400, 'Cannot set meeting link earlier than 1 hour before scheduled time');
   pair.meetingLink = meetingLink;
   await pair.save();
+
+  try {
+    await createNotifications([
+      {
+        userId: pair.interviewer?._id || pair.interviewer,
+        title: 'Meeting Link Available',
+        message: 'Meeting link available',
+        type: 'INTERVIEW',
+        referenceId: pair._id,
+        actionUrl: '/student/session',
+        dedupeKey: `meeting-link:${pair._id}:${pair.interviewer?._id || pair.interviewer}`
+      },
+      {
+        userId: pair.interviewee?._id || pair.interviewee,
+        title: 'Meeting Link Available',
+        message: 'Meeting link available',
+        type: 'INTERVIEW',
+        referenceId: pair._id,
+        actionUrl: '/student/session',
+        dedupeKey: `meeting-link:${pair._id}:${pair.interviewee?._id || pair.interviewee}`
+      }
+    ]);
+  } catch (e) {
+    console.error('[setMeetingLink] Notification error:', e.message);
+  }
   // Email both parties with generated link
   const subject = 'Meeting link available';
   const text = `Your interview at ${formatDateTime(pair.scheduledAt)} now has a meeting link: ${meetingLink}`;

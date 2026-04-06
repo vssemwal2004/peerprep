@@ -5,6 +5,7 @@ import { sendMail, renderTemplate } from '../utils/mailer.js';
 import { sendOnboardingEmail } from '../utils/mailer.js';
 import { logActivity } from './adminActivityController.js';
 import { sanitizeCsvRow, sanitizeCsvField, validateObjectId, validateCsvImport, CSV_LIMITS } from '../utils/validators.js';
+import { createNotification, createNotifications } from '../services/notificationService.js';
 
 // Generate random password (7-8 characters)
 function generateRandomPassword() {
@@ -421,6 +422,7 @@ export async function uploadStudentsCsv(req, res) {
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const newStudents = []; // Collect new students for async email sending
+  const createdUserIds = [];
 
   for (const row of normalizedRows) {
     const { course, name, email, studentid, branch, college, teacherid } = row;
@@ -531,6 +533,7 @@ export async function uploadStudentsCsv(req, res) {
         group: row.group,
         mustChangePassword: true,
       });
+      createdUserIds.push(user._id);
       results.push({ row: row.__row, id: user._id, email, studentid, status: 'created' });
       
       // Store for async email sending
@@ -583,6 +586,25 @@ export async function uploadStudentsCsv(req, res) {
       }
     });
   }
+
+  if (createdUserIds.length > 0) {
+    setImmediate(async () => {
+      try {
+        const notifs = createdUserIds.map(id => ({
+          userId: id,
+          title: 'Account Created',
+          message: 'Your account has been created',
+          type: 'SYSTEM',
+          referenceId: id,
+          actionUrl: '/student/dashboard',
+          dedupeKey: `account-created:${id}`
+        }));
+        await createNotifications(notifs);
+      } catch (err) {
+        console.error('[uploadStudentsCsv] Notification error:', err.message);
+      }
+    });
+  }
 }
 
 export async function createStudent(req, res) {
@@ -630,6 +652,20 @@ export async function createStudent(req, res) {
     }
     
     const user = await User.create(userData);
+
+    try {
+      await createNotification({
+        userId: user._id,
+        title: 'Account Created',
+        message: 'Your account has been created',
+        type: 'SYSTEM',
+        referenceId: user._id,
+        actionUrl: '/student/dashboard',
+        dedupeKey: `account-created:${user._id}`
+      });
+    } catch (e) {
+      console.error('[createStudent] Notification error:', e.message);
+    }
 
     // Send password via email
     if (process.env.EMAIL_ON_ONBOARD === 'true' && email) {

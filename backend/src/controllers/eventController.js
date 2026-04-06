@@ -10,6 +10,7 @@ import { supabase } from '../utils/supabase.js';
 import { logActivity } from './adminActivityController.js';
 import Event from '../models/Event.js';
 import User from '../models/User.js';
+import { createNotifications } from '../services/notificationService.js';
 
 // Fisher-Yates shuffle algorithm for random array shuffling
 function shuffleArray(array) {
@@ -217,6 +218,22 @@ export async function createEvent(req, res) {
       // Set participants to eligible students only
       event.participants = students.map(s => s._id);
       await event.save();
+
+      // Real-time notifications: Event assigned
+      try {
+        const assignedNotifs = students.map(s => ({
+          userId: s._id,
+          title: 'Interview Event Assigned',
+          message: 'You have been assigned to a new interview event',
+          type: 'INTERVIEW',
+          referenceId: event._id,
+          actionUrl: '/student/session',
+          dedupeKey: `event-assigned:${event._id}:${s._id}`
+        }));
+        await createNotifications(assignedNotifs);
+      } catch (e) {
+        console.error('[createEvent] Failed to create event notifications:', e.message);
+      }
       
       // Generate pairs with randomized shuffling for unique pairings each event
       if (ids.length >= 2) {
@@ -237,6 +254,33 @@ export async function createEvent(req, res) {
         if (proposalsToInsert.length) {
           await SlotProposal.insertMany(proposalsToInsert);
           console.log(`[createEvent] Auto-assigned initial random slot for ${insertedPairs.length} pairs`);
+        }
+
+        // Real-time notifications: Pair created
+        try {
+          const pairNotifs = insertedPairs.flatMap(p => ([
+            {
+              userId: p.interviewer,
+              title: 'Pair Created',
+              message: 'You have been paired with a student',
+              type: 'INTERVIEW',
+              referenceId: p._id,
+              actionUrl: '/student/session',
+              dedupeKey: `pair-created:${p._id}:${p.interviewer}`
+            },
+            {
+              userId: p.interviewee,
+              title: 'Pair Created',
+              message: 'You have been paired with a student',
+              type: 'INTERVIEW',
+              referenceId: p._id,
+              actionUrl: '/student/session',
+              dedupeKey: `pair-created:${p._id}:${p.interviewee}`
+            }
+          ]));
+          await createNotifications(pairNotifs);
+        } catch (e) {
+          console.error('[createEvent] Failed to create pair notifications:', e.message);
         }
       }
       
@@ -906,6 +950,22 @@ export async function createSpecialEvent(req, res) {
   event.participants = createdStudents.map(s => s._id);
   await event.save();
 
+  // Real-time notifications: Event assigned
+  try {
+    const assignedNotifs = createdStudents.map(s => ({
+      userId: s._id,
+      title: 'Interview Event Assigned',
+      message: 'You have been assigned to a new interview event',
+      type: 'INTERVIEW',
+      referenceId: event._id,
+      actionUrl: '/student/session',
+      dedupeKey: `event-assigned:${event._id}:${s._id}`
+    }));
+    await createNotifications(assignedNotifs);
+  } catch (e) {
+    console.error('[createSpecialEvent] Failed to create event notifications:', e.message);
+  }
+
   // Send response immediately
   res.status(201).json({
     eventId: event._id,
@@ -946,6 +1006,33 @@ export async function createSpecialEvent(req, res) {
           await SlotProposal.insertMany(proposalsToInsert);
           console.log(`[createSpecialEvent] Auto-assigned initial random slot for ${insertedPairs.length} pairs`);
         }
+
+        // Real-time notifications: Pair created
+        try {
+          const pairNotifs = insertedPairs.flatMap(p => ([
+            {
+              userId: p.interviewer,
+              title: 'Pair Created',
+              message: 'You have been paired with a student',
+              type: 'INTERVIEW',
+              referenceId: p._id,
+              actionUrl: '/student/session',
+              dedupeKey: `pair-created:${p._id}:${p.interviewer}`
+            },
+            {
+              userId: p.interviewee,
+              title: 'Pair Created',
+              message: 'You have been paired with a student',
+              type: 'INTERVIEW',
+              referenceId: p._id,
+              actionUrl: '/student/session',
+              dedupeKey: `pair-created:${p._id}:${p.interviewee}`
+            }
+          ]));
+          await createNotifications(pairNotifs);
+        } catch (e) {
+          console.error('[createSpecialEvent] Failed to create pair notifications:', e.message);
+        }
       }
 
       // Send onboarding emails to special students in parallel (only for new students)
@@ -969,6 +1056,24 @@ export async function createSpecialEvent(req, res) {
         } else {
           console.log(`[createSpecialEvent] No new students requiring onboarding emails`);
         }
+      }
+
+      // Account created notifications for new students
+      try {
+        const newStudentNotifs = createdStudents
+          .filter(s => s.shouldSendOnboarding)
+          .map(s => ({
+            userId: s._id,
+            title: 'Account Created',
+            message: 'Your account has been created',
+            type: 'SYSTEM',
+            referenceId: s._id,
+            actionUrl: '/student/dashboard',
+            dedupeKey: `account-created:${s._id}`
+          }));
+        await createNotifications(newStudentNotifs);
+      } catch (e) {
+        console.error('[createSpecialEvent] Account notification error:', e.message);
       }
 
       // Send event notification emails using unified mailer.js function

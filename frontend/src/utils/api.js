@@ -183,6 +183,12 @@ export const api = {
   requestPasswordReset: (email) => request('/auth/password/request-reset', { method: 'POST', body: { email } }),
   resetPassword: (token, newPassword) => request('/auth/password/reset', { method: 'POST', body: { token, newPassword } }),
 
+  // Notifications
+  getNotifications: () => request('/notifications', { skipCache: true }),
+  markNotificationRead: (id) => request(`/notifications/${id}/read`, { method: 'PATCH' }),
+  markAllNotificationsRead: () => request('/notifications/read-all', { method: 'PATCH' }),
+  clearAllNotifications: () => request('/notifications/clear-all', { method: 'DELETE' }),
+
   // Students
   listAllStudents: (search = '', sortOrder = 'asc') => {
     const params = new URLSearchParams();
