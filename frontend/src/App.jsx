@@ -24,6 +24,7 @@ const ContactUs = lazy(() => import("./pages/ContactUs"));
 // Student Pages
 const StudentProtectedRoute = lazy(() => import("./student/StudentProtectedRoute"));
 const StudentDashboard = lazy(() => import("./student/StudentDashboard"));
+const StudentInterview = lazy(() => import("./student/StudentInterview"));
 const ChangePassword = lazy(() => import("./student/ChangePassword"));
 const SessionAndFeedback = lazy(() => import("./student/SessionAndFeedback"));
 const FeedbackForm = lazy(() => import("./student/FeedbackForm"));
@@ -97,6 +98,7 @@ function RoutePrefetcher() {
 
   const prefetchStudentRoutes = useCallback(() => {
     import("./student/StudentDashboard");
+    import("./student/StudentInterview");
     import("./student/ProblemsPage");
     import("./student/StudentAssessmentList");
   }, []);
@@ -215,6 +217,7 @@ function AppContent() {
         <Route path="/student/change-password" element={<StudentProtectedRoute><ChangePassword /></StudentProtectedRoute>} />
         <Route path="/student/profile" element={<StudentProtectedRoute><StudentProfile /></StudentProtectedRoute>} />
         <Route path="/student/dashboard" element={<StudentProtectedRoute><StudentDashboard /></StudentProtectedRoute>} />
+        <Route path="/student/interview" element={<StudentProtectedRoute><StudentInterview /></StudentProtectedRoute>} />
         <Route path="/student/session" element={<StudentProtectedRoute><SessionAndFeedback /></StudentProtectedRoute>} />
         <Route path="/student/feedback/:pairId" element={<StudentProtectedRoute><FeedbackForm /></StudentProtectedRoute>} />
         <Route path="/student/learning" element={<StudentProtectedRoute><StudentLearning /></StudentProtectedRoute>} />

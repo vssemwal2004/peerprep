@@ -104,6 +104,7 @@ export default function StudentLoginPage() {
         import('../coordinator/CoordinatorStudents');
       } else {
         import('../student/StudentDashboard');
+        import('../student/StudentInterview');
         import('../student/SessionAndFeedback');
       }
 

@@ -73,9 +73,9 @@ export function StudentNavbar() {
 
   const navItems = [
     { path: "/student/dashboard", label: "Dashboard", Icon: BookOpenCheck },
-    { path: "/student/learning", label: "Learning Modules", Icon: GraduationCap },
+    { path: "/student/interview", label: "Interview", Icon: CalendarDays },
     { path: "/student/assessments", label: "Assessments", Icon: ClipboardList },
-    { path: "/student/session", label: "Feedback", Icon: CalendarDays },
+    { path: "/student/learning", label: "Learning", Icon: GraduationCap },
     { path: "/problems", label: "Problems", Icon: Code2 },
   ];
 
