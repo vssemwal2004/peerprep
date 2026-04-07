@@ -28,8 +28,6 @@ import {
   CartesianGrid,
   Cell,
   LabelList,
-  Line,
-  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -75,6 +73,10 @@ const STATUS_STYLES = {
 };
 
 const PIE_COLORS = ["#38bdf8", "#22c55e", "#f59e0b"];
+const AXIS_LINE = { stroke: "#cbd5e1", strokeWidth: 1 };
+const AXIS_TICK = { fontSize: 11, fill: "#64748b", fontWeight: 500 };
+const AXIS_TICK_LIGHT = { fontSize: 11, fill: "#94a3b8", fontWeight: 500 };
+const GRID_STYLE = { stroke: "#cbd5e1", strokeDasharray: "4 6", strokeOpacity: 0.18 };
 
 function statusLabel(score = 0) {
   if (score >= 85) return "Ready";
@@ -241,9 +243,16 @@ function ScoreRing({ score = 0, size = 104, stroke = 8, color = "#38bdf8" }) {
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (clamp(score) / 100) * circumference;
+  const ringId = `ring-${String(color).replace(/[^a-zA-Z0-9]/g, "")}-${size}-${stroke}`;
 
   return (
     <svg width={size} height={size} className="-rotate-90">
+      <defs>
+        <linearGradient id={`${ringId}-gradient`} x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#7dd3fc" />
+          <stop offset="100%" stopColor={color} />
+        </linearGradient>
+      </defs>
       <circle
         cx={size / 2}
         cy={size / 2}
@@ -257,7 +266,7 @@ function ScoreRing({ score = 0, size = 104, stroke = 8, color = "#38bdf8" }) {
         cy={size / 2}
         r={radius}
         fill="none"
-        stroke={color}
+        stroke={`url(#${ringId}-gradient)`}
         strokeLinecap="round"
         strokeWidth={stroke}
         strokeDasharray={circumference}
@@ -272,14 +281,33 @@ function ScoreRing({ score = 0, size = 104, stroke = 8, color = "#38bdf8" }) {
 function ChartTooltip({ active, payload, label, suffix = "" }) {
   if (!active || !payload?.length) return null;
   const title = label || payload[0]?.name || payload[0]?.payload?.name || "Value";
+  const item = payload[0];
+  const tone = item?.fill || item?.color || "#38bdf8";
 
   return (
-    <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-3 py-2 shadow-[0_18px_45px_-38px_rgba(15,23,42,0.35)] backdrop-blur dark:border-gray-700/80 dark:bg-gray-950/95">
-      <div className="text-xs font-semibold text-slate-900 dark:text-white">{title}</div>
-      <div className="mt-1 text-xs text-slate-500 dark:text-gray-400">
-        <span className="font-bold text-slate-900 dark:text-white">{payload[0]?.value}</span>
-        {suffix}
+    <div className="min-w-[148px] rounded-2xl border border-slate-200/80 bg-white/95 px-3 py-3 shadow-[0_18px_45px_-38px_rgba(15,23,42,0.35)] backdrop-blur dark:border-gray-700/80 dark:bg-gray-950/95">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">
+        Detail
       </div>
+      <div className="mt-1 text-xs font-semibold text-slate-900 dark:text-white">{title}</div>
+      <div className="mt-2 flex items-center gap-2 text-xs text-slate-500 dark:text-gray-400">
+        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: tone }} />
+        <span className="font-medium">Value</span>
+        <span className="ml-auto text-sm font-black text-slate-900 dark:text-white">
+          {item?.value}
+          {suffix}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function ChartShell({ children, className = "" }) {
+  return (
+    <div
+      className={`overflow-hidden rounded-3xl border border-slate-200/70 bg-gradient-to-br from-slate-50 via-white to-sky-50/40 p-5 shadow-[0_18px_45px_-40px_rgba(15,23,42,0.28)] dark:border-gray-700/60 dark:bg-gradient-to-br dark:from-gray-900/80 dark:via-gray-900/60 dark:to-sky-500/5 ${className}`}
+    >
+      {children}
     </div>
   );
 }
@@ -473,49 +501,76 @@ function ProblemsTab({
             </div>
           }
         />
-        <div className="mt-6 h-[380px]">
-          {topicData.length ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={topicData} layout="vertical" margin={{ left: 8, right: 28, top: 4, bottom: 4 }}>
-                <defs>
-                  <linearGradient id="topicStrong" x1="0" x2="1" y1="0" y2="0">
-                    <stop offset="0%" stopColor="#4ade80" stopOpacity="0.82" />
-                    <stop offset="100%" stopColor="#16a34a" />
-                  </linearGradient>
-                  <linearGradient id="topicMedium" x1="0" x2="1" y1="0" y2="0">
-                    <stop offset="0%" stopColor="#fbbf24" stopOpacity="0.82" />
-                    <stop offset="100%" stopColor="#d97706" />
-                  </linearGradient>
-                  <linearGradient id="topicWeak" x1="0" x2="1" y1="0" y2="0">
-                    <stop offset="0%" stopColor="#fb7185" stopOpacity="0.82" />
-                    <stop offset="100%" stopColor="#e11d48" />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.14} vertical={false} />
-                <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis dataKey="topic" type="category" width={142} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                <Tooltip content={<ChartTooltip suffix="%" />} cursor={{ fill: "rgba(56,189,248,0.05)" }} />
-                <Bar dataKey="accuracy" radius={[12, 12, 12, 12]} maxBarSize={18} isAnimationActive animationDuration={850}>
-                  {topicData.map((topic) => (
-                    <Cell
-                      key={topic.topic}
-                      fill={
-                        topic.level === "strong"
-                          ? "url(#topicStrong)"
-                          : topic.level === "medium"
-                          ? "url(#topicMedium)"
-                          : "url(#topicWeak)"
-                      }
-                    />
-                  ))}
-                  <LabelList dataKey="accuracy" position="right" formatter={(value) => `${value}%`} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <EmptyState text="Start solving topic-tagged problems to unlock DSA analysis." />
-          )}
-        </div>
+        <ChartShell className="mt-6">
+          <div className="h-[380px]">
+            {topicData.length ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={topicData} layout="vertical" margin={{ left: 16, right: 40, top: 12, bottom: 14 }} barCategoryGap="28%">
+                  <defs>
+                    <linearGradient id="topicStrong" x1="0" x2="1" y1="0" y2="0">
+                      <stop offset="0%" stopColor="#86efac" stopOpacity="0.92" />
+                      <stop offset="100%" stopColor="#16a34a" />
+                    </linearGradient>
+                    <linearGradient id="topicMedium" x1="0" x2="1" y1="0" y2="0">
+                      <stop offset="0%" stopColor="#fde68a" stopOpacity="0.92" />
+                      <stop offset="100%" stopColor="#d97706" />
+                    </linearGradient>
+                    <linearGradient id="topicWeak" x1="0" x2="1" y1="0" y2="0">
+                      <stop offset="0%" stopColor="#fda4af" stopOpacity="0.92" />
+                      <stop offset="100%" stopColor="#e11d48" />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid {...GRID_STYLE} vertical={false} />
+                  <XAxis
+                    type="number"
+                    domain={[0, 100]}
+                    tick={AXIS_TICK_LIGHT}
+                    tickMargin={12}
+                    axisLine={AXIS_LINE}
+                    tickLine={false}
+                    padding={{ left: 6, right: 8 }}
+                  />
+                  <YAxis
+                    dataKey="topic"
+                    type="category"
+                    width={156}
+                    tick={AXIS_TICK}
+                    tickMargin={14}
+                    axisLine={AXIS_LINE}
+                    tickLine={false}
+                    interval={0}
+                  />
+                  <Tooltip content={<ChartTooltip suffix="%" />} cursor={{ fill: "rgba(56,189,248,0.06)" }} />
+                  <Bar
+                    dataKey="accuracy"
+                    radius={[999, 999, 999, 999]}
+                    maxBarSize={18}
+                    isAnimationActive
+                    animationDuration={850}
+                    animationEasing="ease-out"
+                    background={{ fill: "rgba(148,163,184,0.10)", radius: 999 }}
+                  >
+                    {topicData.map((topic) => (
+                      <Cell
+                        key={topic.topic}
+                        fill={
+                          topic.level === "strong"
+                            ? "url(#topicStrong)"
+                            : topic.level === "medium"
+                            ? "url(#topicMedium)"
+                            : "url(#topicWeak)"
+                        }
+                      />
+                    ))}
+                    <LabelList dataKey="accuracy" position="right" formatter={(value) => `${value}%`} style={{ fontSize: 11, fontWeight: 700, fill: "#475569" }} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <EmptyState text="Start solving topic-tagged problems to unlock DSA analysis." />
+            )}
+          </div>
+        </ChartShell>
       </SectionCard>
 
       <SectionCard className="p-6">
@@ -568,55 +623,103 @@ function AssessmentsTab({ assessments, progressScores, assessmentImprovement }) 
           title="Score trend over time"
           subtitle="This tells you whether your performance is rising steadily or still swinging too much from one test to another."
         />
-        <div className="mt-6 h-[320px]">
-          {progressScores.length ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={progressScores}>
-                <defs>
-                  <linearGradient id="assessmentArea" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.26" />
-                    <stop offset="100%" stopColor="#38bdf8" stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.14} />
-                <XAxis dataKey="label" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                <Tooltip content={<ChartTooltip suffix="%" />} />
-                <Area type="monotone" dataKey="value" stroke="#38bdf8" strokeWidth={3} fill="url(#assessmentArea)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          ) : (
-            <EmptyState text="Submit more assessments to unlock trend analysis." />
-          )}
-        </div>
+        <ChartShell className="mt-6">
+          <div className="h-[320px]">
+            {progressScores.length ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={progressScores} margin={{ top: 12, right: 14, left: 10, bottom: 10 }}>
+                  <defs>
+                    <linearGradient id="assessmentArea" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.30" />
+                      <stop offset="100%" stopColor="#38bdf8" stopOpacity="0" />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid {...GRID_STYLE} />
+                  <XAxis
+                    dataKey="label"
+                    tick={AXIS_TICK_LIGHT}
+                    tickMargin={12}
+                    axisLine={AXIS_LINE}
+                    tickLine={false}
+                    padding={{ left: 8, right: 8 }}
+                  />
+                  <YAxis
+                    tick={AXIS_TICK_LIGHT}
+                    tickMargin={12}
+                    axisLine={AXIS_LINE}
+                    tickLine={false}
+                    width={44}
+                  />
+                  <Tooltip content={<ChartTooltip suffix="%" />} />
+                  <Area
+                    type="monotone"
+                    dataKey="value"
+                    stroke="#38bdf8"
+                    strokeWidth={3}
+                    fill="url(#assessmentArea)"
+                    isAnimationActive
+                    animationDuration={900}
+                    dot={{ r: 0 }}
+                    activeDot={{ r: 5, strokeWidth: 0, fill: "#0ea5e9" }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <EmptyState text="Submit more assessments to unlock trend analysis." />
+            )}
+          </div>
+        </ChartShell>
       </SectionCard>
 
       <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
         <SectionCard className="p-6">
           <SectionHeader title="Score distribution" subtitle="Each bar shows one assessment result." />
-          <div className="mt-6 h-[260px]">
-            {progressScores.length ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={progressScores}>
-                  <defs>
-                    <linearGradient id="assessmentBar" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#60a5fa" />
-                      <stop offset="100%" stopColor="#2563eb" stopOpacity="0.82" />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.14} vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <Tooltip content={<ChartTooltip suffix="%" />} />
-                  <Bar dataKey="value" fill="url(#assessmentBar)" radius={[10, 10, 0, 0]} maxBarSize={42}>
-                    <LabelList dataKey="value" position="top" formatter={(value) => `${value}%`} />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <EmptyState text="No assessment score distribution yet." />
-            )}
-          </div>
+          <ChartShell className="mt-6">
+            <div className="h-[260px]">
+              {progressScores.length ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={progressScores} margin={{ top: 10, right: 12, left: 8, bottom: 8 }} barCategoryGap="30%">
+                    <defs>
+                      <linearGradient id="assessmentBar" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#7dd3fc" />
+                        <stop offset="100%" stopColor="#2563eb" stopOpacity="0.86" />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid {...GRID_STYLE} vertical={false} />
+                    <XAxis
+                      dataKey="label"
+                      tick={AXIS_TICK_LIGHT}
+                      tickMargin={12}
+                      axisLine={AXIS_LINE}
+                      tickLine={false}
+                      padding={{ left: 8, right: 8 }}
+                    />
+                    <YAxis
+                      tick={AXIS_TICK_LIGHT}
+                      tickMargin={12}
+                      axisLine={AXIS_LINE}
+                      tickLine={false}
+                      width={44}
+                    />
+                    <Tooltip content={<ChartTooltip suffix="%" />} />
+                    <Bar
+                      dataKey="value"
+                      fill="url(#assessmentBar)"
+                      radius={[12, 12, 0, 0]}
+                      maxBarSize={42}
+                      isAnimationActive
+                      animationDuration={850}
+                      background={{ fill: "rgba(148,163,184,0.10)", radius: 12 }}
+                    >
+                      <LabelList dataKey="value" position="top" formatter={(value) => `${value}%`} style={{ fontSize: 10, fontWeight: 700, fill: "#475569" }} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <EmptyState text="No assessment score distribution yet." />
+              )}
+            </div>
+          </ChartShell>
         </SectionCard>
 
         <div className="space-y-6">
@@ -661,29 +764,52 @@ function InterviewsTab({ interviews, categoryData, lowestCategory }) {
             title="Rating distribution"
             subtitle="See how your interview feedback is spread across score ranges."
           />
-          <div className="mt-6 h-[320px]">
-            {interviews.ratingDistribution?.length ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={interviews.ratingDistribution}>
-                  <defs>
-                    <linearGradient id="interviewBar" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#34d399" />
-                      <stop offset="100%" stopColor="#059669" stopOpacity="0.82" />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.14} vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <Tooltip content={<ChartTooltip />} />
-                  <Bar dataKey="value" fill="url(#interviewBar)" radius={[10, 10, 0, 0]} maxBarSize={42}>
-                    <LabelList dataKey="value" position="top" />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <EmptyState text="No interview ratings available yet." />
-            )}
-          </div>
+          <ChartShell className="mt-6">
+            <div className="h-[320px]">
+              {interviews.ratingDistribution?.length ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={interviews.ratingDistribution} margin={{ top: 10, right: 12, left: 8, bottom: 8 }} barCategoryGap="30%">
+                    <defs>
+                      <linearGradient id="interviewBar" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#6ee7b7" />
+                        <stop offset="100%" stopColor="#059669" stopOpacity="0.86" />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid {...GRID_STYLE} vertical={false} />
+                    <XAxis
+                      dataKey="label"
+                      tick={AXIS_TICK_LIGHT}
+                      tickMargin={12}
+                      axisLine={AXIS_LINE}
+                      tickLine={false}
+                      padding={{ left: 8, right: 8 }}
+                    />
+                    <YAxis
+                      tick={AXIS_TICK_LIGHT}
+                      tickMargin={12}
+                      axisLine={AXIS_LINE}
+                      tickLine={false}
+                      width={44}
+                    />
+                    <Tooltip content={<ChartTooltip />} />
+                    <Bar
+                      dataKey="value"
+                      fill="url(#interviewBar)"
+                      radius={[12, 12, 0, 0]}
+                      maxBarSize={42}
+                      isAnimationActive
+                      animationDuration={850}
+                      background={{ fill: "rgba(148,163,184,0.10)", radius: 12 }}
+                    >
+                      <LabelList dataKey="value" position="top" style={{ fontSize: 10, fontWeight: 700, fill: "#475569" }} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <EmptyState text="No interview ratings available yet." />
+              )}
+            </div>
+          </ChartShell>
         </SectionCard>
 
         <SectionCard className="p-6">
@@ -691,23 +817,56 @@ function InterviewsTab({ interviews, categoryData, lowestCategory }) {
             title="Feedback breakdown"
             subtitle="Communication, explanation quality, and preparedness all matter here."
           />
-          <div className="mt-6 h-[320px]">
-            {categoryData.length ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={categoryData} layout="vertical" margin={{ left: 10, right: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.14} vertical={false} />
-                  <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis dataKey="label" type="category" width={138} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <Tooltip content={<ChartTooltip suffix="%" />} />
-                  <Bar dataKey="value" fill="#38bdf8" radius={[12, 12, 12, 12]} maxBarSize={20}>
-                    <LabelList dataKey="value" position="right" formatter={(value) => `${value}%`} />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <EmptyState text="Feedback category data appears after interview reviews." />
-            )}
-          </div>
+          <ChartShell className="mt-6">
+            <div className="h-[320px]">
+              {categoryData.length ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={categoryData} layout="vertical" margin={{ left: 16, right: 24, top: 10, bottom: 10 }} barCategoryGap="24%">
+                    <defs>
+                      <linearGradient id="feedbackBar" x1="0" x2="1" y1="0" y2="0">
+                        <stop offset="0%" stopColor="#7dd3fc" />
+                        <stop offset="100%" stopColor="#2563eb" />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid {...GRID_STYLE} vertical={false} />
+                    <XAxis
+                      type="number"
+                      domain={[0, 100]}
+                      tick={AXIS_TICK_LIGHT}
+                      tickMargin={12}
+                      axisLine={AXIS_LINE}
+                      tickLine={false}
+                      padding={{ left: 6, right: 8 }}
+                    />
+                    <YAxis
+                      dataKey="label"
+                      type="category"
+                      width={150}
+                      tick={AXIS_TICK}
+                      tickMargin={14}
+                      axisLine={AXIS_LINE}
+                      tickLine={false}
+                      interval={0}
+                    />
+                    <Tooltip content={<ChartTooltip suffix="%" />} />
+                    <Bar
+                      dataKey="value"
+                      fill="url(#feedbackBar)"
+                      radius={[999, 999, 999, 999]}
+                      maxBarSize={18}
+                      isAnimationActive
+                      animationDuration={850}
+                      background={{ fill: "rgba(148,163,184,0.10)", radius: 999 }}
+                    >
+                      <LabelList dataKey="value" position="right" formatter={(value) => `${value}%`} style={{ fontSize: 11, fontWeight: 700, fill: "#475569" }} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <EmptyState text="Feedback category data appears after interview reviews." />
+              )}
+            </div>
+          </ChartShell>
         </SectionCard>
       </div>
 
@@ -756,21 +915,52 @@ function LearningTab({ learning, timeline, mixData, consistencyScore }) {
           title="Learning activity over time"
           subtitle="The goal is steady progress, not random spikes followed by long gaps."
         />
-        <div className="mt-6 h-[320px]">
-          {timeline.length ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={timeline}>
-                <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.14} />
-                <XAxis dataKey="label" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                <Tooltip content={<ChartTooltip />} />
-                <Line type="monotone" dataKey="count" stroke="#22c55e" strokeWidth={3} dot={{ r: 3, fill: "#22c55e", strokeWidth: 0 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : (
-            <EmptyState text="Learning activity will appear after module usage starts." />
-          )}
-        </div>
+        <ChartShell className="mt-6">
+          <div className="h-[320px]">
+            {timeline.length ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={timeline} margin={{ top: 12, right: 14, left: 10, bottom: 10 }}>
+                  <defs>
+                    <linearGradient id="learningArea" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#4ade80" stopOpacity="0.28" />
+                      <stop offset="100%" stopColor="#4ade80" stopOpacity="0" />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid {...GRID_STYLE} />
+                  <XAxis
+                    dataKey="label"
+                    tick={AXIS_TICK_LIGHT}
+                    tickMargin={12}
+                    axisLine={AXIS_LINE}
+                    tickLine={false}
+                    padding={{ left: 8, right: 8 }}
+                  />
+                  <YAxis
+                    tick={AXIS_TICK_LIGHT}
+                    tickMargin={12}
+                    axisLine={AXIS_LINE}
+                    tickLine={false}
+                    width={44}
+                  />
+                  <Tooltip content={<ChartTooltip />} />
+                  <Area
+                    type="monotone"
+                    dataKey="count"
+                    stroke="#22c55e"
+                    strokeWidth={3}
+                    fill="url(#learningArea)"
+                    isAnimationActive
+                    animationDuration={900}
+                    dot={{ r: 0 }}
+                    activeDot={{ r: 5, strokeWidth: 0, fill: "#16a34a" }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <EmptyState text="Learning activity will appear after module usage starts." />
+            )}
+          </div>
+        </ChartShell>
       </SectionCard>
 
       <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
@@ -779,22 +969,53 @@ function LearningTab({ learning, timeline, mixData, consistencyScore }) {
             title="Learning distribution"
             subtitle="How your current effort is split across watching, completing, and practicing."
           />
-          <div className="mt-6 h-[280px]">
-            {mixData.length ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={mixData} dataKey="value" nameKey="name" innerRadius={64} outerRadius={100} paddingAngle={3}>
-                    {mixData.map((item, index) => (
-                      <Cell key={item.name} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip content={<ChartTooltip />} />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <EmptyState text="Learning mix appears once enough activity exists." />
-            )}
-          </div>
+          <ChartShell className="mt-6">
+            <div className="relative h-[280px]">
+              {mixData.length ? (
+                <>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <defs>
+                        <linearGradient id="pieSky" x1="0%" y1="0%" x2="100%" y2="100%">
+                          <stop offset="0%" stopColor="#7dd3fc" />
+                          <stop offset="100%" stopColor="#0ea5e9" />
+                        </linearGradient>
+                        <linearGradient id="pieGreen" x1="0%" y1="0%" x2="100%" y2="100%">
+                          <stop offset="0%" stopColor="#6ee7b7" />
+                          <stop offset="100%" stopColor="#16a34a" />
+                        </linearGradient>
+                        <linearGradient id="pieAmber" x1="0%" y1="0%" x2="100%" y2="100%">
+                          <stop offset="0%" stopColor="#fde68a" />
+                          <stop offset="100%" stopColor="#f59e0b" />
+                        </linearGradient>
+                      </defs>
+                      <Pie data={mixData} dataKey="value" nameKey="name" innerRadius={68} outerRadius={102} paddingAngle={3}>
+                        {mixData.map((item, index) => (
+                          <Cell
+                            key={item.name}
+                            fill={index === 0 ? "url(#pieSky)" : index === 1 ? "url(#pieGreen)" : "url(#pieAmber)"}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<ChartTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                    <div className="rounded-full border border-slate-200/80 bg-white/90 px-5 py-4 text-center shadow-sm dark:border-gray-700/70 dark:bg-gray-950/85">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-gray-500">
+                        Total Mix
+                      </div>
+                      <div className="mt-1 text-2xl font-black text-slate-900 dark:text-white">
+                        {mixData.reduce((sum, item) => sum + item.value, 0)}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <EmptyState text="Learning mix appears once enough activity exists." />
+              )}
+            </div>
+          </ChartShell>
           <div className="mt-4 flex flex-wrap gap-2">
             {mixData.map((item, index) => (
               <span
@@ -1029,9 +1250,32 @@ function AnalyzePanel({
                                 {comparison.note}
                               </p>
                             </div>
-                            <div className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${STATUS_STYLES[activeStatus].pill}`}>
-                              <span className={`h-1.5 w-1.5 rounded-full ${STATUS_STYLES[activeStatus].dot}`} />
-                              {activeStatus}
+                            <div className="flex items-center gap-4">
+                              <div className="relative flex h-[84px] w-[84px] items-center justify-center">
+                                <ScoreRing
+                                  score={comparison.current}
+                                  size={84}
+                                  stroke={7}
+                                  color={
+                                    activeStatus === "Ready"
+                                      ? "#16a34a"
+                                      : activeStatus === "Almost Ready"
+                                      ? "#0ea5e9"
+                                      : activeStatus === "Improving"
+                                      ? "#d97706"
+                                      : "#e11d48"
+                                  }
+                                />
+                                <div className="absolute text-center">
+                                  <div className="text-lg font-black text-slate-900 dark:text-white">
+                                    {Math.round(comparison.current)}%
+                                  </div>
+                                </div>
+                              </div>
+                              <div className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${STATUS_STYLES[activeStatus].pill}`}>
+                                <span className={`h-1.5 w-1.5 rounded-full ${STATUS_STYLES[activeStatus].dot}`} />
+                                {activeStatus}
+                              </div>
                             </div>
                           </div>
                         </div>
