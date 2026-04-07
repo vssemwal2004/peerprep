@@ -520,30 +520,30 @@ export default function StudentDashboard() {
 
   return (
     <RequirePasswordChange user={user}>
-      <div className="min-h-screen w-full bg-gradient-to-b from-sky-50 via-white to-sky-50 dark:bg-gray-900 pt-20 pb-10">
+      <div className="min-h-screen w-full bg-gradient-to-b from-sky-50 via-white to-sky-50 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 pt-20 pb-10">
 
         {/* ── 1. FULL VIEWPORT HERO (Hero + Motivation) ── */}
         <div className="relative h-[calc(100vh-5rem)] flex flex-col justify-start gap-[clamp(10px,2vh,20px)] overflow-hidden">
           {/* Shared Growth Flow background for Hero + Motivation (single continuous backdrop) */}
           <div className="pointer-events-none absolute inset-0">
             {/* Layer 1: clean gradient base */}
-            <div className="absolute inset-0 bg-gradient-to-b from-sky-50 via-white to-sky-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-900" />
+            <div className="absolute inset-0 bg-gradient-to-b from-sky-50 via-white to-sky-50 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950" />
 
             {/* Layer 2: glow accents */}
             <motion.div
-              className="absolute -left-16 top-10 h-64 w-64 rounded-full bg-sky-200/35 blur-3xl dark:bg-sky-500/10"
+              className="absolute -left-16 top-10 h-64 w-64 rounded-full bg-sky-200/35 blur-3xl dark:bg-white/6"
               animate={{ x: [0, 18, 0], y: [0, -10, 0], opacity: [0.65, 0.45, 0.65] }}
               transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
             />
             <motion.div
-              className="absolute -right-20 bottom-8 h-72 w-72 rounded-full bg-blue-200/30 blur-3xl dark:bg-blue-500/10"
+              className="absolute -right-20 bottom-8 h-72 w-72 rounded-full bg-blue-200/30 blur-3xl dark:bg-white/6"
               animate={{ x: [0, -16, 0], y: [0, 12, 0], opacity: [0.55, 0.35, 0.55] }}
               transition={{ duration: 14, repeat: Infinity, ease: "easeInOut" }}
             />
 
             {/* Layer 3: animated flow lines */}
             <motion.svg
-              className="absolute inset-0 h-full w-full text-sky-500/10 dark:text-sky-300/10"
+              className="absolute inset-0 h-full w-full text-sky-500/10 dark:text-white/6"
               viewBox="0 0 1200 360"
               preserveAspectRatio="none"
               fill="none"
@@ -568,7 +568,7 @@ export default function StudentDashboard() {
             </motion.svg>
 
             <motion.svg
-              className="absolute inset-0 h-full w-full text-blue-600/10 dark:text-blue-300/10"
+              className="absolute inset-0 h-full w-full text-blue-600/10 dark:text-white/5"
               viewBox="0 0 1200 360"
               preserveAspectRatio="none"
               fill="none"
@@ -591,17 +591,17 @@ export default function StudentDashboard() {
 
             {/* Layer 4: floating geometry */}
             <motion.div
-              className="absolute left-14 top-24 h-2 w-2 rounded-full bg-sky-400/25 dark:bg-sky-300/20"
+              className="absolute left-14 top-24 h-2 w-2 rounded-full bg-sky-400/25 dark:bg-white/10"
               animate={{ y: [0, -18, 0], x: [0, 8, 0], scale: [1, 1.2, 1], opacity: [0.35, 0.55, 0.35] }}
               transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
             />
             <motion.div
-              className="absolute right-20 top-28 h-9 w-9 rounded-2xl border border-sky-300/25 bg-white/25 backdrop-blur-sm dark:border-sky-400/15 dark:bg-white/5"
+              className="absolute right-20 top-28 h-9 w-9 rounded-2xl border border-sky-300/25 bg-white/25 backdrop-blur-sm dark:border-white/10 dark:bg-white/5"
               animate={{ y: [0, -14, 0], x: [0, -10, 0], rotate: [0, 4, 0], opacity: [0.3, 0.5, 0.3] }}
               transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
             />
             <motion.div
-              className="absolute left-1/2 bottom-10 h-3 w-3 -translate-x-1/2 rounded-full bg-blue-500/15 dark:bg-blue-300/15"
+              className="absolute left-1/2 bottom-10 h-3 w-3 -translate-x-1/2 rounded-full bg-blue-500/15 dark:bg-white/8"
               animate={{ y: [0, -20, 0], x: [0, 10, 0], scale: [1, 1.15, 1], opacity: [0.25, 0.45, 0.25] }}
               transition={{ duration: 11, repeat: Infinity, ease: "easeInOut" }}
             />
@@ -933,7 +933,7 @@ export default function StudentDashboard() {
                         <div className="text-xs text-slate-500 dark:text-gray-400 truncate">
                           {item.detail}
                         </div>
-                        <div className="mt-1 text-[11px] text-slate-400">
+                        <div className="mt-1 text-[11px] text-slate-400 dark:text-gray-500">
                           {formatRelativeTime(item.time)}
                         </div>
                       </div>
