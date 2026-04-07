@@ -215,9 +215,14 @@ export const api = {
   downloadCompanyBenchmarkTemplate: () => request('/admin/company-insights/template', { skipCache: true }),
 
   // Student Analysis
-  getStudentAnalysis: () => request('/student/analysis', { skipCache: true }),
+  getStudentAnalysis: (forceRefresh = false) =>
+    request(`/student/analysis${forceRefresh ? '?refresh=1' : ''}`, { skipCache: true }),
   listStudentCompanies: () => request('/student/analysis/companies', { skipCache: true }),
-  getCompanyReadiness: (companyId) => request(`/student/analysis/readiness?companyId=${companyId}`, { skipCache: true }),
+  getCompanyReadiness: (companyId, forceRefresh = false) =>
+    request(
+      `/student/analysis/readiness?companyId=${companyId}${forceRefresh ? '&refresh=1' : ''}`,
+      { skipCache: true }
+    ),
 
   // Students
   listAllStudents: (search = '', sortOrder = 'asc') => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
@@ -36,6 +36,8 @@ import {
   YAxis,
 } from "recharts";
 import { api } from "../utils/api";
+import { useAuth } from "../context/AuthContext";
+import socketService from "../utils/socket";
 
 void motion;
 
@@ -1409,6 +1411,7 @@ function AnalyzePanel({
 }
 
 export default function StudentAnalytics() {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("problems");
   const [problemView, setProblemView] = useState("topics");
   const [analysis, setAnalysis] = useState(null);
@@ -1419,30 +1422,99 @@ export default function StudentAnalytics() {
   const [selectedCategory, setSelectedCategory] = useState("overall");
   const [readiness, setReadiness] = useState(null);
   const [loadingReadiness, setLoadingReadiness] = useState(false);
+  const refreshInFlightRef = useRef(false);
+  const selectedCompanyRef = useRef("");
 
   useEffect(() => {
-    let mounted = true;
+    selectedCompanyRef.current = selectedCompany;
+  }, [selectedCompany]);
 
-    const load = async () => {
+  const loadAnalytics = useCallback(
+    async ({ forceRefresh = false, withLoader = false } = {}) => {
+      if (refreshInFlightRef.current) return;
+
+      refreshInFlightRef.current = true;
+
       try {
-        setLoading(true);
+        if (withLoader) {
+          setLoading(true);
+        }
+
         const [analysisRes, companiesRes] = await Promise.all([
-          api.getStudentAnalysis(),
+          api.getStudentAnalysis(forceRefresh),
           api.listStudentCompanies(),
         ]);
-        if (!mounted) return;
+
         setAnalysis(analysisRes?.analysis || null);
         setCompanies(companiesRes?.companies || []);
+
+        if (selectedCompanyRef.current) {
+          const readinessRes = await api.getCompanyReadiness(selectedCompanyRef.current, forceRefresh);
+          setReadiness(readinessRes || null);
+        }
+      } catch (error) {
+        console.error("Failed to refresh student analytics:", error);
       } finally {
-        if (mounted) setLoading(false);
+        refreshInFlightRef.current = false;
+        if (withLoader) {
+          setLoading(false);
+        }
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    loadAnalytics({ forceRefresh: true, withLoader: true });
+  }, [loadAnalytics]);
+
+  useEffect(() => {
+    const handleWindowFocus = () => {
+      loadAnalytics({ forceRefresh: true });
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        loadAnalytics({ forceRefresh: true });
       }
     };
 
-    load();
+    window.addEventListener("focus", handleWindowFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        loadAnalytics({ forceRefresh: true });
+      }
+    }, 30000);
+
     return () => {
-      mounted = false;
+      window.removeEventListener("focus", handleWindowFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.clearInterval(intervalId);
     };
-  }, []);
+  }, [loadAnalytics]);
+
+  useEffect(() => {
+    if (!user?._id) return undefined;
+
+    socketService.connect();
+
+    const handleSubmissionUpdate = (payload) => {
+      const payloadUserId = String(payload?.userId || "");
+      if (payloadUserId !== String(user._id)) return;
+      if (payload?.mode !== "submit") return;
+      if (!["AC", "WA", "TLE", "RE", "CE"].includes(payload?.status)) return;
+
+      loadAnalytics({ forceRefresh: true });
+    };
+
+    socketService.on("compiler-submission-updated", handleSubmissionUpdate);
+
+    return () => {
+      socketService.off("compiler-submission-updated", handleSubmissionUpdate);
+    };
+  }, [loadAnalytics, user?._id]);
 
   const overview = analysis?.overview || {};
   const problems = analysis?.problems || {};
@@ -1559,7 +1631,7 @@ export default function StudentAnalytics() {
 
     try {
       setLoadingReadiness(true);
-      const result = await api.getCompanyReadiness(companyId);
+      const result = await api.getCompanyReadiness(companyId, true);
       setReadiness(result);
     } finally {
       setLoadingReadiness(false);
