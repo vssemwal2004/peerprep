@@ -14,6 +14,8 @@ import adminAssessmentRoutes from './adminAssessment.js';
 import studentAssessmentRoutes from './studentAssessment.js';
 import emailTemplateRoutes from './emailTemplates.js';
 import notificationRoutes from './notifications.js';
+import announcementAdminRoutes from './announcementsAdmin.js';
+import announcementStudentRoutes from './announcementsStudent.js';
 
 const router = Router();
 router.use('/auth', authRoutes);
@@ -31,5 +33,7 @@ router.use('/admin', adminAssessmentRoutes);
 router.use('/student', studentAssessmentRoutes);
 router.use('/email-templates', emailTemplateRoutes);
 router.use('/notifications', notificationRoutes);
+router.use('/admin/announcements', announcementAdminRoutes);
+router.use('/student/announcements', announcementStudentRoutes);
 
 export default router;

@@ -189,6 +189,19 @@ export const api = {
   markAllNotificationsRead: () => request('/notifications/read-all', { method: 'PATCH' }),
   clearAllNotifications: () => request('/notifications/clear-all', { method: 'DELETE' }),
 
+  // Announcements
+  createAnnouncement: (body) => request('/admin/announcements/create', { method: 'POST', body }),
+  listAnnouncementsAdmin: (params = {}) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value) qs.append(key, value);
+    });
+    return request(`/admin/announcements${qs.toString() ? `?${qs.toString()}` : ''}`, { skipCache: true });
+  },
+  updateAnnouncement: (id, body) => request(`/admin/announcements/${id}`, { method: 'PUT', body }),
+  deleteAnnouncement: (id) => request(`/admin/announcements/${id}`, { method: 'DELETE' }),
+  listStudentAnnouncements: () => request('/student/announcements', { skipCache: true }),
+
   // Students
   listAllStudents: (search = '', sortOrder = 'asc') => {
     const params = new URLSearchParams();

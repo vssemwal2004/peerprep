@@ -2,6 +2,7 @@ import React from 'react';
 
 function NotificationItem({ notification, onView, timeLabel }) {
   const isUnread = !notification.isRead;
+  const isAnnouncement = notification.source === 'announcement';
 
   return (
     <div
@@ -17,6 +18,11 @@ function NotificationItem({ notification, onView, timeLabel }) {
             <div className={`text-sm font-semibold ${isUnread ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-200'}`}>
               {notification.title}
             </div>
+            {isAnnouncement && (
+              <span className="text-[10px] uppercase tracking-wide text-sky-600 dark:text-sky-400">
+                Announcement
+              </span>
+            )}
             {isUnread && (
               <span className="text-[10px] uppercase tracking-wide text-sky-600 dark:text-sky-400">Unread</span>
             )}

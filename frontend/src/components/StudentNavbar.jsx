@@ -129,20 +129,9 @@ export function StudentNavbar() {
           />
         </div>
 
-        {/* Center: Mobile Logo */}
-        <div className="flex-1 flex justify-center sm:hidden">
-          <img 
-            src="/images/logo.png" 
-            alt="PeerPrep Logo" 
-            className="w-auto object-contain"
-            style={{ height: '87px' }}
-          />
-        </div>
-
-        {/* Right Side: Desktop Navigation + Mobile Buttons */}
-        <div className="flex items-center gap-1">
-          {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center gap-0">
+        {/* Desktop Center Navigation */}
+        <div className="hidden md:flex flex-1 items-center justify-center">
+          <div className="flex items-center gap-1">
             {navItems.map(({ path, label, Icon }) => {
               const isActive = isItemActive(path);
               return (
@@ -153,19 +142,33 @@ export function StudentNavbar() {
                   className="relative"
                 >
                   <div
-                    className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-colors mx-0.5 ${
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors mx-0.5 ${
                       isActive 
                         ? "bg-sky-50 dark:bg-sky-900 text-sky-600 dark:text-sky-400" 
                         : "text-gray-600 dark:text-gray-300 hover:text-sky-500 dark:hover:text-sky-400 hover:bg-sky-50 dark:hover:bg-gray-800"
                     }`}
                   >
-                    <Icon className="w-3 h-3" />
-                    <span className="font-medium text-sm">{label}</span>
+                    <Icon className="w-3.5 h-3.5" />
+                    <span className="font-semibold text-[13px]">{label}</span>
                   </div>
                 </Link>
               );
             })}
           </div>
+        </div>
+
+        {/* Center: Mobile Logo */}
+        <div className="flex-1 flex justify-center sm:hidden">
+          <img 
+            src="/images/logo.png" 
+            alt="PeerPrep Logo" 
+            className="w-auto object-contain"
+            style={{ height: '87px' }}
+          />
+        </div>
+
+        {/* Right Side: Actions + Mobile Buttons */}
+        <div className="flex items-center gap-1">
 
           {/* Dark Mode Toggle */}
           <div className="hidden md:flex items-center gap-2 ml-1">

@@ -17,6 +17,7 @@ import {
   Settings,
   Mail,
   ShieldCheck,
+  Megaphone,
 } from 'lucide-react';
 
 const buildNavItems = () => ([
@@ -79,7 +80,16 @@ const buildNavItems = () => ([
       { label: 'Overview', to: '/admin/assessment', icon: ClipboardList },
       { label: 'Add Assessment', to: '/admin/assessment/create', icon: ClipboardList },
       { label: 'Reports', to: '/admin/assessment/reports', icon: ClipboardList },
-      { label: 'Rules', to: '/admin/assessment/rules', icon: ShieldCheck },
+    ],
+  },
+  {
+    type: 'group',
+    key: 'announcements',
+    label: 'Announcements',
+    icon: Megaphone,
+    items: [
+      { label: 'Add Announcement', to: '/admin/announcements/add', icon: Megaphone },
+      { label: 'Manage Announcements', to: '/admin/announcements/manage', icon: Megaphone },
     ],
   },
   {
@@ -95,6 +105,7 @@ const buildNavItems = () => ([
     icon: Settings,
     items: [
       { label: 'Email Templates', to: '/admin/settings/email-templates', icon: Mail },
+      { label: 'Assessment Rules', to: '/admin/assessment/rules', icon: ShieldCheck },
     ],
   },
 ]);

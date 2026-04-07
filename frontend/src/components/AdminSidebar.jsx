@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { CalendarDays, ClipboardList, GraduationCap, MessageSquare, Users, UserPlus, LayoutDashboard, Code2, BookOpen } from 'lucide-react';
+import { CalendarDays, ClipboardList, GraduationCap, MessageSquare, Users, UserPlus, LayoutDashboard, Code2, BookOpen, Megaphone, ChevronDown } from 'lucide-react';
 
 export default function AdminSidebar() {
   const location = useLocation();
+  const [announcementsOpen, setAnnouncementsOpen] = useState(false);
 
   const items = useMemo(() => ([
     { label: 'Overview', to: '/admin', Icon: LayoutDashboard },
@@ -45,6 +46,49 @@ export default function AdminSidebar() {
             </span>
           </NavLink>
         ))}
+
+        <div className="mt-1">
+          <button
+            onClick={() => setAnnouncementsOpen((prev) => !prev)}
+            className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-xs font-semibold transition-all duration-200 ${
+              isActive('/admin/announcements')
+                ? 'bg-sky-50 text-sky-600 dark:bg-gray-800 dark:text-sky-400'
+                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800 dark:text-gray-300 dark:hover:bg-gray-800'
+            }`}
+          >
+            <Megaphone className="h-4.5 w-4.5 shrink-0" />
+            <span className="flex-1 whitespace-nowrap opacity-0 transition-all duration-200 group-hover:opacity-100">
+              Announcements
+            </span>
+            <ChevronDown className={`h-4 w-4 opacity-0 transition-all duration-200 group-hover:opacity-100 ${announcementsOpen ? 'rotate-180' : ''}`} />
+          </button>
+          <div className={`mt-1 flex flex-col gap-1 pl-8 ${announcementsOpen ? 'block' : 'hidden'} group-hover:block`}>
+            <NavLink
+              to="/admin/announcements/add"
+              className={({ isActive: linkActive }) => (
+                `rounded-lg px-3 py-1.5 text-[11px] font-semibold transition-all duration-200 ${
+                  linkActive
+                    ? 'bg-sky-50 text-sky-600 dark:bg-gray-800 dark:text-sky-400'
+                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800 dark:text-gray-400 dark:hover:bg-gray-800'
+                }`
+              )}
+            >
+              Add Announcement
+            </NavLink>
+            <NavLink
+              to="/admin/announcements/manage"
+              className={({ isActive: linkActive }) => (
+                `rounded-lg px-3 py-1.5 text-[11px] font-semibold transition-all duration-200 ${
+                  linkActive
+                    ? 'bg-sky-50 text-sky-600 dark:bg-gray-800 dark:text-sky-400'
+                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800 dark:text-gray-400 dark:hover:bg-gray-800'
+                }`
+              )}
+            >
+              Manage Announcements
+            </NavLink>
+          </div>
+        </div>
       </div>
     </aside>
   );

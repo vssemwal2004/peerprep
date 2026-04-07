@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import NotificationItem from './NotificationItem';
 
@@ -12,6 +12,34 @@ function NotificationSidebar({
   onView,
   formatTime,
 }) {
+  const announcementItems = useMemo(
+    () => (notifications || []).filter((n) => n?.source === 'announcement'),
+    [notifications]
+  );
+
+  const listItems = useMemo(
+    () => (notifications || []),
+    [notifications]
+  );
+
+  const [announcementIndex, setAnnouncementIndex] = useState(0);
+
+  useEffect(() => {
+    // Reset when opening or when the list changes.
+    if (isOpen) setAnnouncementIndex(0);
+  }, [isOpen, announcementItems.length]);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    if (announcementItems.length <= 1) return undefined;
+
+    const id = setInterval(() => {
+      setAnnouncementIndex((prev) => (prev + 1) % announcementItems.length);
+    }, 5000);
+
+    return () => clearInterval(id);
+  }, [isOpen, announcementItems.length]);
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -61,15 +89,56 @@ function NotificationSidebar({
                 </button>
               </div>
 
+              {/* Announcement highlight (auto-fades every 5s) */}
+              {announcementItems.length > 0 && (
+                <div className="border-b border-slate-200 dark:border-slate-800 px-5 py-4">
+                  <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                    Announcement highlight
+                  </div>
+                  <div className="mt-2">
+                    <AnimatePresence mode="wait">
+                      <motion.div
+                        key={announcementItems[announcementIndex]?._id}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+                        className="rounded-xl border border-sky-500/20 bg-sky-50/70 dark:bg-slate-900/60 px-4 py-3"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-slate-900 dark:text-white line-clamp-1">
+                              {announcementItems[announcementIndex]?.title}
+                            </div>
+                            <div className="mt-1 text-sm text-slate-600 dark:text-slate-300 line-clamp-2">
+                              {announcementItems[announcementIndex]?.message}
+                            </div>
+                            <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                              {formatTime(announcementItems[announcementIndex]?.createdAt)}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => onView(announcementItems[announcementIndex])}
+                            className="shrink-0 rounded-md border border-slate-200 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-sky-400 hover:text-sky-600 dark:hover:text-sky-400 transition-colors"
+                          >
+                            View
+                          </button>
+                        </div>
+                      </motion.div>
+                    </AnimatePresence>
+                  </div>
+                </div>
+              )}
+
               <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-                {notifications.length === 0 ? (
+                {listItems.length === 0 ? (
                   <div className="flex h-full items-center justify-center">
                     <div className="text-sm text-slate-500 dark:text-slate-400">
                       No notifications yet
                     </div>
                   </div>
                 ) : (
-                  notifications.map((notif) => (
+                  listItems.map((notif) => (
                     <NotificationItem
                       key={notif._id}
                       notification={notif}

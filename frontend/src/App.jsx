@@ -36,6 +36,7 @@ const ProblemsPage = lazy(() => import("./student/ProblemsPage"));
 const ProblemSolver = lazy(() => import("./student/ProblemSolver"));
 const StudentAssessmentList = lazy(() => import("./student/StudentAssessmentList"));
 const AssessmentAttempt = lazy(() => import("./student/AssessmentAttempt"));
+const StudentAnalytics = lazy(() => import("./student/StudentAnalytics"));
 
 // Admin Pages
 const AdminProtectedRoute = lazy(() => import("./admin/AdminProtectedRoute"));
@@ -62,6 +63,8 @@ const AssessmentCodingPreview = lazy(() => import("./admin/assessment/Assessment
 const SelectProblemFromLibrary = lazy(() => import("./admin/assessment/SelectProblemFromLibrary"));
 const AdminAssessmentPreview = lazy(() => import("./admin/assessment/AdminAssessmentPreview"));
 const AdminEmailTemplates = lazy(() => import("./admin/EmailTemplates"));
+const AnnouncementCreate = lazy(() => import("./admin/AnnouncementCreate"));
+const AnnouncementManage = lazy(() => import("./admin/AnnouncementManage"));
 
 // Coordinator Pages
 const CoordinatorProtectedRoute = lazy(() => import("./coordinator/CoordinatorProtectedRoute"));
@@ -225,6 +228,7 @@ function AppContent() {
         <Route path="/student/help" element={<StudentProtectedRoute><HelpAndSupport /></StudentProtectedRoute>} />
         <Route path="/student/assessments" element={<StudentProtectedRoute><StudentAssessmentList /></StudentProtectedRoute>} />
         <Route path="/student/assessment/:id" element={<StudentProtectedRoute><AssessmentAttempt /></StudentProtectedRoute>} />
+        <Route path="/student/analytics" element={<StudentProtectedRoute><StudentAnalytics /></StudentProtectedRoute>} />
         <Route path="/problems" element={<StudentProtectedRoute><ProblemsPage /></StudentProtectedRoute>} />
         <Route path="/problems/:id" element={<StudentProtectedRoute><ProblemSolver /></StudentProtectedRoute>} />
         
@@ -266,6 +270,8 @@ function AppContent() {
         <Route path="/admin/compiler/:id/preview" element={<AdminShell><AdminCompilerDashboard /></AdminShell>} />
         <Route path="/admin/compiler/analytics" element={<AdminShell><AdminCompilerDashboard /></AdminShell>} />
         <Route path="/admin/settings/email-templates" element={<AdminShell><AdminEmailTemplates /></AdminShell>} />
+        <Route path="/admin/announcements/add" element={<AdminShell><AnnouncementCreate /></AdminShell>} />
+        <Route path="/admin/announcements/manage" element={<AdminShell><AnnouncementManage /></AdminShell>} />
         
         {/* Coordinator Routes - Protected */}
         <Route path="/coordinator" element={<CoordinatorProtectedRoute><CoordinatorEventDetail /></CoordinatorProtectedRoute>} />
