@@ -54,6 +54,8 @@ const CoordinatorDirectory = lazy(() => import("./admin/CoordinatorDirectory"));
 const AdminChangePassword = lazy(() => import("./admin/AdminChangePassword"));
 const AdminActivity = lazy(() => import("./admin/AdminActivity"));
 const AdminCompilerDashboard = lazy(() => import("./admin/compiler/AdminCompilerDashboard"));
+const AdminCompanyInsights = lazy(() => import("./admin/AdminCompanyInsights"));
+const AdminCompanyBenchmarkAdd = lazy(() => import("./admin/AdminCompanyBenchmarkAdd"));
 const AssessmentDashboard = lazy(() => import("./admin/AssessmentDashboard"));
 const CreateAssessment = lazy(() => import("./admin/CreateAssessment"));
 const AssessmentReports = lazy(() => import("./admin/AssessmentReports"));
@@ -229,6 +231,7 @@ function AppContent() {
         <Route path="/student/assessments" element={<StudentProtectedRoute><StudentAssessmentList /></StudentProtectedRoute>} />
         <Route path="/student/assessment/:id" element={<StudentProtectedRoute><AssessmentAttempt /></StudentProtectedRoute>} />
         <Route path="/student/analytics" element={<StudentProtectedRoute><StudentAnalytics /></StudentProtectedRoute>} />
+        <Route path="/student/analysis" element={<StudentProtectedRoute><StudentAnalytics /></StudentProtectedRoute>} />
         <Route path="/problems" element={<StudentProtectedRoute><ProblemsPage /></StudentProtectedRoute>} />
         <Route path="/problems/:id" element={<StudentProtectedRoute><ProblemSolver /></StudentProtectedRoute>} />
         
@@ -269,6 +272,8 @@ function AppContent() {
         <Route path="/admin/compiler/:id/edit" element={<AdminShell><AdminCompilerDashboard /></AdminShell>} />
         <Route path="/admin/compiler/:id/preview" element={<AdminShell><AdminCompilerDashboard /></AdminShell>} />
         <Route path="/admin/compiler/analytics" element={<AdminShell><AdminCompilerDashboard /></AdminShell>} />
+        <Route path="/admin/company-insights" element={<AdminShell><AdminCompanyInsights /></AdminShell>} />
+        <Route path="/admin/company-insights/add" element={<AdminShell><AdminCompanyBenchmarkAdd /></AdminShell>} />
         <Route path="/admin/settings/email-templates" element={<AdminShell><AdminEmailTemplates /></AdminShell>} />
         <Route path="/admin/announcements/add" element={<AdminShell><AnnouncementCreate /></AdminShell>} />
         <Route path="/admin/announcements/manage" element={<AdminShell><AnnouncementManage /></AdminShell>} />

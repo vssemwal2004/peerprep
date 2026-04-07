@@ -16,6 +16,8 @@ import emailTemplateRoutes from './emailTemplates.js';
 import notificationRoutes from './notifications.js';
 import announcementAdminRoutes from './announcementsAdmin.js';
 import announcementStudentRoutes from './announcementsStudent.js';
+import companyInsightsRoutes from './companyInsights.js';
+import studentAnalysisRoutes from './studentAnalysis.js';
 
 const router = Router();
 router.use('/auth', authRoutes);
@@ -35,5 +37,7 @@ router.use('/email-templates', emailTemplateRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/admin/announcements', announcementAdminRoutes);
 router.use('/student/announcements', announcementStudentRoutes);
+router.use('/admin/company-insights', companyInsightsRoutes);
+router.use('/student/analysis', studentAnalysisRoutes);
 
 export default router;

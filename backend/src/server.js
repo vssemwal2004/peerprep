@@ -2,6 +2,7 @@ import './setup.js';
 import app from './setupApp.js';
 import { connectDb } from './utils/db.js';
 import './jobs/reminders.js';
+import './jobs/analytics.js';
 import { seedAdminIfNeeded } from './controllers/authController.js';
 import { createServer } from 'http';
 import { Server } from 'socket.io';

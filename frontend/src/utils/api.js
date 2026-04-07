@@ -202,6 +202,23 @@ export const api = {
   deleteAnnouncement: (id) => request(`/admin/announcements/${id}`, { method: 'DELETE' }),
   listStudentAnnouncements: () => request('/student/announcements', { skipCache: true }),
 
+  // Company Insights (Admin)
+  listCompanyBenchmarks: () => request('/admin/company-insights', { skipCache: true }),
+  createCompanyBenchmark: (body) => request('/admin/company-insights', { method: 'POST', body }),
+  updateCompanyBenchmark: (id, body) => request(`/admin/company-insights/${id}`, { method: 'PUT', body }),
+  deleteCompanyBenchmark: (id) => request(`/admin/company-insights/${id}`, { method: 'DELETE' }),
+  uploadCompanyBenchmarks: (file) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return request('/admin/company-insights/upload', { method: 'POST', formData: fd });
+  },
+  downloadCompanyBenchmarkTemplate: () => request('/admin/company-insights/template', { skipCache: true }),
+
+  // Student Analysis
+  getStudentAnalysis: () => request('/student/analysis', { skipCache: true }),
+  listStudentCompanies: () => request('/student/analysis/companies', { skipCache: true }),
+  getCompanyReadiness: (companyId) => request(`/student/analysis/readiness?companyId=${companyId}`, { skipCache: true }),
+
   // Students
   listAllStudents: (search = '', sortOrder = 'asc') => {
     const params = new URLSearchParams();

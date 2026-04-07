@@ -13,7 +13,8 @@ import {
   Lock,
   ChevronDown,
   Code2,
-  ClipboardList
+  ClipboardList,
+  BarChart3
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import DarkModeToggle from "./DarkModeToggle";
@@ -73,6 +74,7 @@ export function StudentNavbar() {
 
   const navItems = [
     { path: "/student/dashboard", label: "Dashboard", Icon: BookOpenCheck },
+    { path: "/student/analysis", label: "Analysis", Icon: BarChart3 },
     { path: "/student/interview", label: "Interview", Icon: CalendarDays },
     { path: "/student/assessments", label: "Assessments", Icon: ClipboardList },
     { path: "/student/learning", label: "Learning", Icon: GraduationCap },

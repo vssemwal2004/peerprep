@@ -506,7 +506,7 @@ export default function StudentDashboard() {
       description: "Track your progress and improve consistently.",
       cta: "See analytics",
       icon: BarChart3,
-      path: "/student/analytics",
+      path: "/student/analysis",
       tone: "sky",
     },
   ];
@@ -768,7 +768,7 @@ export default function StudentDashboard() {
 
                   <motion.button
                     type="button"
-                    onClick={() => navigate("/student/analytics")}
+                    onClick={() => navigate("/student/analysis")}
                     whileHover={{ scale: 1.03, y: -1 }}
                     whileTap={{ scale: 0.98 }}
                     transition={{ type: "spring", stiffness: 260, damping: 18 }}

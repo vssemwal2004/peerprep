@@ -18,6 +18,7 @@ import {
   Mail,
   ShieldCheck,
   Megaphone,
+  Building2,
 } from 'lucide-react';
 
 const buildNavItems = () => ([
@@ -97,6 +98,16 @@ const buildNavItems = () => ([
     label: 'Compiler',
     to: '/admin/compiler',
     icon: TerminalSquare,
+  },
+  {
+    type: 'group',
+    key: 'company-insights',
+    label: 'Company Insights',
+    icon: Building2,
+    items: [
+      { label: 'Add Benchmark', to: '/admin/company-insights/add', icon: Building2 },
+      { label: 'View Benchmarks', to: '/admin/company-insights', icon: Building2 },
+    ],
   },
   {
     type: 'group',
