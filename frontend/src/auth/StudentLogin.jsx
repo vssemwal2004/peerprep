@@ -148,16 +148,13 @@ export default function StudentLoginPage() {
       <div className="relative z-10 flex min-h-screen w-full items-center justify-center px-4 py-10">
         <div className="w-full max-w-5xl overflow-hidden rounded-3xl border border-slate-200 bg-white/70 shadow-2xl backdrop-blur">
           <div className="grid min-h-[560px] grid-cols-1 lg:grid-cols-2">
-            <div className="hidden items-center justify-center bg-white/40 p-10 lg:flex">
-              <div className="relative w-full max-w-md">
-                <div className="aspect-square w-full overflow-hidden rounded-2xl bg-slate-100">
-                  <img
-                    src="/images/loginimg.webp"
-                    alt="Student Login"
-                    className="h-full w-full object-cover"
-                  />
-                </div>
-              </div>
+            <div className="hidden items-center justify-center bg-transparent p-10 lg:flex">
+              <img
+                src="/images/loginimg.webp"
+                alt="Student Login"
+                className="w-full max-w-md object-contain"
+                draggable="false"
+              />
             </div>
 
             <div className="flex items-center justify-center p-8 sm:p-12">
