@@ -60,3 +60,20 @@ export async function connectDb() {
 
   // No local uploads required; Supabase is used for template storage
 }
+
+export async function closeDb() {
+  try {
+    if (mongoose.connection?.readyState && mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
+  } finally {
+    if (memServer) {
+      try {
+        await memServer.stop();
+      } catch {
+        // ignore
+      }
+      memServer = undefined;
+    }
+  }
+}

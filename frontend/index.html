@@ -118,6 +118,7 @@
         display: none; /* revealed by the inline script below, only on "/" */
         position: fixed; inset: 0; z-index: 50;
         overflow-y: auto; overflow-x: hidden;
+        scrollbar-gutter: stable;
         background: linear-gradient(135deg, #e0f2fe 0%, #ffffff 52%, #f8fafc 100%);
         opacity: 1; transition: opacity 0.3s ease-out;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
@@ -208,7 +209,8 @@
       }
 
       .li-nav-wrap {
-        width: 100%; padding: 12px 16px;
+        box-sizing: border-box;
+        width: 100%; padding: 12px 28px 12px 16px;
         display: flex; align-items: center; justify-content: space-between;
       }
       .li-brand { display: inline-flex; align-items: center; gap: 12px; }
@@ -242,6 +244,7 @@
         color: #0369a1; font-size: 11px; font-weight: 700;
         letter-spacing: 0.22em; text-transform: uppercase;
         box-shadow: 0 18px 45px rgba(14,116,144,0.12);
+        -webkit-backdrop-filter: blur(18px);
         backdrop-filter: blur(18px);
       }
       .li-h1 {
@@ -283,12 +286,63 @@
         background: rgba(255,255,255,0.86); color: #047857;
         border: 1px solid rgba(167,243,208,0.85);
         box-shadow: 0 18px 45px rgba(16,185,129,0.14);
+        -webkit-backdrop-filter: blur(18px);
         backdrop-filter: blur(18px);
       }
       html.dark .li-btn-s {
         background: rgba(15,23,42,0.62);
         border-color: rgba(16,185,129,0.22);
         color: #6ee7b7;
+      }
+
+      .li-tabs {
+        margin-top: 40px;
+        width: min(920px, 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .li-tabs-wrap {
+        width: 100%;
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        padding: 8px;
+        border-radius: 16px;
+        border: 1px solid rgba(226,232,240,0.85);
+        background: rgba(255,255,255,0.78);
+        box-shadow: 0 18px 45px rgba(15,23,42,0.10);
+        -webkit-backdrop-filter: blur(18px);
+        backdrop-filter: blur(18px);
+      }
+      .li-tab {
+        border: 1px solid transparent;
+        background: transparent;
+        color: #475569;
+        border-radius: 14px;
+        padding: 10px 16px;
+        font-size: 14px;
+        font-weight: 800;
+        cursor: pointer;
+        white-space: nowrap;
+        text-align: center;
+        transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+      }
+      .li-tab:hover { color: #0f172a; }
+
+      .li-tab.is-active[data-tab="mock"] { background: rgba(224,242,254,0.95); border-color: rgba(186,230,253,0.95); color: #0c4a6e; }
+      .li-tab.is-active[data-tab="assessments"] { background: rgba(209,250,229,0.92); border-color: rgba(167,243,208,0.95); color: #064e3b; }
+      .li-tab.is-active[data-tab="learning"] { background: rgba(254,243,199,0.92); border-color: rgba(253,230,138,0.95); color: #78350f; }
+      .li-tab.is-active[data-tab="problems"] { background: rgba(224,231,255,0.92); border-color: rgba(199,210,254,0.95); color: #312e81; }
+      .li-tab.is-active[data-tab="analytics"] { background: rgba(241,245,249,0.95); border-color: rgba(226,232,240,0.95); color: #0f172a; }
+
+      @media (min-width: 640px) {
+        .li-tabs-wrap {
+          display: grid;
+          grid-template-columns: repeat(5, minmax(0, 1fr));
+          overflow-x: visible;
+        }
+        .li-tab { width: 100%; }
       }
 
       /* (Preview panel removed) */
@@ -349,7 +403,7 @@
         </nav>
 
         <div class="li-hero-wrap">
-          <div class="li-badge">&#10022;&nbsp; AI-Powered Interview Preparation Platform</div>
+         
           <h1 class="li-h1">
             Practice Smart. Track Progress.
             <span class="li-grad">Crack Every Interview.</span>
@@ -362,6 +416,16 @@
           <div class="li-btns">
             <button class="li-btn li-btn-p" onclick="window.location.href='/student'">Start Practicing &rarr;</button>
             <button class="li-btn li-btn-s" onclick="window.location.href='/student'">Explore Platform</button>
+          </div>
+
+          <div class="li-tabs" aria-label="Platform features">
+            <div class="li-tabs-wrap" role="tablist">
+              <button class="li-tab is-active" role="tab" aria-selected="true" data-tab="mock" type="button">Mock Interview Practice</button>
+              <button class="li-tab" role="tab" aria-selected="false" data-tab="assessments" type="button">Assessments</button>
+              <button class="li-tab" role="tab" aria-selected="false" data-tab="learning" type="button">Learning Modules</button>
+              <button class="li-tab" role="tab" aria-selected="false" data-tab="problems" type="button">Problem Solve</button>
+              <button class="li-tab" role="tab" aria-selected="false" data-tab="analytics" type="button">Analyse Performance</button>
+            </div>
           </div>
         </div>
       </div>
@@ -399,6 +463,24 @@
             el.textContent = msgs[idx++];
             setInterval(function(){ if (idx < msgs.length && el) el.textContent = msgs[idx++]; }, 8000);
           });
+        }
+
+        // Landing island tabs (purely visual)
+        if (isLanding && island) {
+          var tabsWrap = island.querySelector('.li-tabs-wrap');
+          if (tabsWrap) {
+            tabsWrap.addEventListener('click', function (e) {
+              var btn = e.target && e.target.closest ? e.target.closest('.li-tab') : null;
+              if (!btn) return;
+              var tabs = tabsWrap.querySelectorAll('.li-tab');
+              tabs.forEach(function (t) {
+                t.classList.remove('is-active');
+                t.setAttribute('aria-selected', 'false');
+              });
+              btn.classList.add('is-active');
+              btn.setAttribute('aria-selected', 'true');
+            });
+          }
         }
       })();
     </script>

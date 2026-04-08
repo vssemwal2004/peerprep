@@ -23,7 +23,7 @@ export default function Navbar({ onLogin }) {
       </div>
 
       {/* Main navbar */}
-      <div className="flex w-full items-center justify-between px-2 py-2 sm:px-4 lg:px-6">
+      <div className="flex w-full items-center justify-between px-2 pr-6 py-2 sm:px-4 sm:pr-8 lg:px-6 lg:pr-10">
         <div className="flex items-center gap-3">
           <img
             src="/images/logo.png"

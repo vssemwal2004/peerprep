@@ -1,6 +1,6 @@
 import './setup.js';
 import app from './setupApp.js';
-import { connectDb } from './utils/db.js';
+import { closeDb, connectDb } from './utils/db.js';
 import './jobs/reminders.js';
 import './jobs/analytics.js';
 import { seedAdminIfNeeded } from './controllers/authController.js';
@@ -19,6 +19,8 @@ await seedAdminIfNeeded();
 await seedEmailTemplates();
 
 const httpServer = createServer(app);
+
+let isShuttingDown = false;
 
 // Setup Socket.IO with CORS
 const io = new Server(httpServer, {
@@ -143,27 +145,45 @@ setIo(io);
 
 // SECURITY: Graceful shutdown handlers
 const shutdown = async (signal) => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
   console.log(`\n${signal} received. Starting graceful shutdown...`);
-  
-  // Stop accepting new connections
-  httpServer.close(async () => {
-    console.log('HTTP server closed');
-    
-    // Close all WebSocket connections gracefully
-    io.close(() => {
-      console.log('WebSocket server closed');
-    });
-    
-    // Close database connection
+
+  const exitCleanly = async (code) => {
     try {
-      await connectDb().then(mongoose => mongoose.connection.close());
+      io.close(() => {
+        console.log('WebSocket server closed');
+      });
+    } catch {
+      // ignore
+    }
+
+    try {
+      await closeDb();
       console.log('Database connection closed');
     } catch (err) {
       console.error('Error closing database:', err);
     }
-    
-    process.exit(0);
-  });
+
+    process.exit(code);
+  };
+
+  // Stop accepting new connections (if server actually started)
+  try {
+    if (!httpServer.listening) {
+      await exitCleanly(signal === 'UNCAUGHT_EXCEPTION' ? 1 : 0);
+      return;
+    }
+
+    httpServer.close(async () => {
+      console.log('HTTP server closed');
+      await exitCleanly(signal === 'UNCAUGHT_EXCEPTION' ? 1 : 0);
+    });
+  } catch (err) {
+    console.error('Error closing HTTP server:', err);
+    await exitCleanly(1);
+  }
   
   // Force shutdown after 10 seconds
   setTimeout(() => {
@@ -183,6 +203,18 @@ process.on('uncaughtException', (err) => {
 
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+httpServer.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error(`Uncaught Exception: Error: listen EADDRINUSE: address already in use :::${PORT}`);
+    console.error(`Port ${PORT} is already in use. Stop the existing server or set PORT to a different value in backend/.env.`);
+    shutdown('UNCAUGHT_EXCEPTION');
+    return;
+  }
+
+  console.error('HTTP server error:', err);
+  shutdown('UNCAUGHT_EXCEPTION');
 });
 
 httpServer.listen(PORT, () => {
