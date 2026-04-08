@@ -14,8 +14,23 @@
     -->
     <script>
       (function () {
-        var t = localStorage.getItem('theme');
-        if (t === 'dark') document.documentElement.classList.add('dark');
+        function normalizeTheme(value) {
+          if (value === 'dark' || value === 'light') return value;
+          if (value === 'true' || value === '1') return 'dark';
+          if (value === 'false' || value === '0') return 'light';
+          return null;
+        }
+
+        function getSystemTheme() {
+          return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'dark'
+            : 'light';
+        }
+
+        var stored = normalizeTheme(localStorage.getItem('theme'));
+        var initial = stored || getSystemTheme();
+        if (initial === 'dark') document.documentElement.classList.add('dark');
+        else document.documentElement.classList.remove('dark');
       })();
     </script>
     
@@ -165,6 +180,9 @@
         -webkit-mask-image: radial-gradient(circle at 50% 18%, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.75) 48%, rgba(0,0,0,0.0) 74%);
         mask-image: radial-gradient(circle at 50% 18%, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.75) 48%, rgba(0,0,0,0.0) 74%);
         animation: liGridWave 18s ease-in-out infinite;
+      }
+      html.dark .li-grid {
+        opacity: 0.09;
       }
 
       @keyframes liGridWave {

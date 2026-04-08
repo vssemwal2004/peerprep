@@ -56,10 +56,10 @@ export default function HeroSection({
             initial="hidden"
             animate="show"
             variants={fadeUp}
-            className="mt-8 max-w-5xl text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl md:text-6xl"
+            className="mt-8 max-w-5xl text-4xl font-bold tracking-tight text-slate-900 dark:text-slate-50 sm:text-5xl md:text-6xl"
           >
             Practice Smart. Track Progress.
-            <span className="block bg-gradient-to-r from-slate-900 via-sky-700 to-indigo-700 bg-clip-text text-transparent">
+            <span className="block bg-gradient-to-r from-slate-900 via-sky-700 to-indigo-700 bg-clip-text text-transparent dark:from-slate-100 dark:via-sky-300 dark:to-indigo-300">
               Crack Every Interview.
             </span>
           </MotionH1>
@@ -69,7 +69,7 @@ export default function HeroSection({
             initial="hidden"
             animate="show"
             variants={fadeUp}
-            className="mt-6 max-w-2xl text-base leading-8 text-slate-500 sm:text-lg"
+            className="mt-6 max-w-2xl text-base leading-8 text-slate-500 dark:text-slate-300 sm:text-lg"
           >
             PeerPrep brings DSA practice, mock interviews, AI-driven feedback, assessments, and progress analytics into one focused workflow so every prep session moves you closer to interview-ready confidence.
           </MotionP>
@@ -97,7 +97,7 @@ export default function HeroSection({
               onClick={onSecondaryAction}
               whileHover={{ scale: 1.05, y: -1 }}
               whileTap={{ scale: 0.98 }}
-              className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/85 px-6 py-3 text-sm font-semibold text-emerald-700 shadow-[0_18px_45px_-30px_rgba(16,185,129,0.28)] backdrop-blur-xl transition-all duration-300 hover:border-emerald-300 hover:text-emerald-800"
+              className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/85 px-6 py-3 text-sm font-semibold text-emerald-700 shadow-[0_18px_45px_-30px_rgba(16,185,129,0.28)] backdrop-blur-xl transition-all duration-300 hover:border-emerald-300 hover:text-emerald-800 dark:border-slate-700/80 dark:bg-slate-900/40 dark:text-emerald-200 dark:shadow-none dark:hover:border-slate-600 dark:hover:text-emerald-100"
             >
               Explore Platform
               <Target className="h-4 w-4" />
@@ -112,7 +112,7 @@ export default function HeroSection({
             className="mt-24 w-full max-w-4xl"
           >
             <div className="mx-auto flex w-full items-center justify-center">
-              <div className="w-full max-w-4xl rounded-2xl border border-slate-200/80 bg-white/75 p-2 shadow-[0_18px_45px_-30px_rgba(15,23,42,0.18)] backdrop-blur-xl">
+              <div className="w-full max-w-4xl rounded-2xl border border-slate-200/80 bg-white/75 p-2 shadow-[0_18px_45px_-30px_rgba(15,23,42,0.18)] backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/40 dark:shadow-none">
                 <div className="flex items-center gap-2 overflow-x-auto sm:grid sm:grid-cols-5 sm:gap-2 sm:overflow-visible">
                 {FEATURE_TABS.map((tab) => {
                   const isActive = tab.key === resolvedActiveTab;

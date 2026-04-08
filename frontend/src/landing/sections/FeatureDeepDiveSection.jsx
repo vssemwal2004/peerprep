@@ -72,15 +72,23 @@ export default function FeatureDeepDiveSection({
     >
       {/* Bluish shade stack (top fade + mid band + center glow) */}
       <div
-        className="pointer-events-none absolute inset-0 z-0"
+        className="pointer-events-none absolute inset-0 z-0 dark:hidden"
         style={{
           backgroundImage: [
-            // soft top-to-bottom tint so it blends from hero
             "linear-gradient(to bottom, rgba(224,242,254,0) 0%, rgba(224,242,254,0.06) 18%, rgba(224,242,254,0.22) 70%, rgba(224,242,254,0.12) 100%)",
-            // mid-section horizontal band like the reference
             "linear-gradient(to bottom, rgba(56,189,248,0) 0%, rgba(56,189,248,0.10) 48%, rgba(56,189,248,0) 88%)",
-            // center glow to avoid the middle looking 'flat'
             "radial-gradient(circle at 50% 52%, rgba(56,189,248,0.18) 0%, rgba(56,189,248,0.0) 62%)",
+          ].join(", "),
+        }}
+      />
+
+      <div
+        className="pointer-events-none absolute inset-0 z-0 hidden dark:block"
+        style={{
+          backgroundImage: [
+            "linear-gradient(to bottom, rgba(2,6,23,0) 0%, rgba(15,23,42,0.22) 20%, rgba(15,23,42,0.55) 72%, rgba(2,6,23,0.28) 100%)",
+            "linear-gradient(to bottom, rgba(56,189,248,0) 0%, rgba(56,189,248,0.16) 50%, rgba(56,189,248,0) 90%)",
+            "radial-gradient(circle at 50% 52%, rgba(56,189,248,0.16) 0%, rgba(56,189,248,0.0) 62%)",
           ].join(", "),
         }}
       />
@@ -98,16 +106,16 @@ export default function FeatureDeepDiveSection({
           </div>
 
           <div className="max-w-xl text-left">
-            <h2 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
+            <h2 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-50 sm:text-4xl">
               {content.heading}
-              <span className="mt-2 block bg-gradient-to-r from-slate-900 via-sky-800 to-indigo-900 bg-clip-text text-transparent">
+              <span className="mt-2 block bg-gradient-to-r from-slate-900 via-sky-800 to-indigo-900 bg-clip-text text-transparent dark:from-slate-100 dark:via-sky-300 dark:to-indigo-300">
                 {content.highlight}
               </span>
             </h2>
-            <p className="mt-4 text-base leading-8 text-slate-600 sm:text-lg">
+            <p className="mt-4 text-base leading-8 text-slate-600 dark:text-slate-300 sm:text-lg">
               {content.subline}
             </p>
-            <p className="mt-4 text-sm leading-7 text-slate-600 sm:text-base">
+            <p className="mt-4 text-sm leading-7 text-slate-600 dark:text-slate-300 sm:text-base">
               {content.body}
             </p>
 
@@ -115,7 +123,7 @@ export default function FeatureDeepDiveSection({
               {content.chips.map((chip) => (
                 <span
                   key={chip}
-                  className="rounded-full border border-slate-200/80 bg-white/65 px-4 py-2 text-sm font-semibold text-slate-700 shadow-[0_12px_35px_-26px_rgba(15,23,42,0.22)] backdrop-blur"
+                  className="rounded-full border border-slate-200/80 bg-white/65 px-4 py-2 text-sm font-semibold text-slate-700 shadow-[0_12px_35px_-26px_rgba(15,23,42,0.22)] backdrop-blur dark:border-slate-700/80 dark:bg-slate-900/40 dark:text-slate-100 dark:shadow-none"
                 >
                   {chip}
                 </span>

@@ -41,15 +41,16 @@ export default function LandingPage() {
   };
 
   return (
-    <div className="relative overflow-hidden bg-gradient-to-br from-sky-100 via-white to-slate-50">
+    <div className="relative overflow-hidden bg-gradient-to-br from-sky-100 via-white to-slate-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
       <GridBackground />
       <AnimatedStars />
 
       <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
-        <div className="absolute left-1/2 top-24 h-80 w-80 -translate-x-1/2 rounded-full bg-sky-300/35 blur-3xl" />
-        <div className="absolute left-12 top-28 h-52 w-52 rounded-full bg-sky-200/55 blur-3xl" />
-        <div className="absolute bottom-16 right-10 h-64 w-64 rounded-full bg-emerald-200/35 blur-3xl" />
-        <div className="absolute inset-x-0 top-0 h-[28rem] bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.20),transparent_58%)]" />
+        <div className="absolute left-1/2 top-24 h-80 w-80 -translate-x-1/2 rounded-full bg-sky-300/35 blur-3xl dark:bg-sky-500/15" />
+        <div className="absolute left-12 top-28 h-52 w-52 rounded-full bg-sky-200/55 blur-3xl dark:bg-blue-500/12" />
+        <div className="absolute bottom-16 right-10 h-64 w-64 rounded-full bg-emerald-200/35 blur-3xl dark:bg-emerald-500/10" />
+        <div className="absolute inset-x-0 top-0 h-[28rem] bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.20),transparent_58%)] dark:hidden" />
+        <div className="absolute inset-x-0 top-0 hidden h-[28rem] bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.12),transparent_62%)] dark:block" />
       </div>
 
       <Navbar onLogin={handleLogin} />

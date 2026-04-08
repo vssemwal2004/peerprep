@@ -46,13 +46,13 @@ export default function FAQSection() {
     <section className="relative z-10 py-20">
       <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8">
         <div className="max-w-3xl">
-          <h2 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
+          <h2 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-50 sm:text-4xl">
             FAQs
-            <span className="mt-2 block bg-gradient-to-r from-slate-900 via-sky-800 to-indigo-900 bg-clip-text text-transparent">
+            <span className="mt-2 block bg-gradient-to-r from-slate-900 via-sky-800 to-indigo-900 bg-clip-text text-transparent dark:from-slate-100 dark:via-sky-300 dark:to-indigo-300">
               Quick answers about PeerPrep
             </span>
           </h2>
-          <p className="mt-4 text-base leading-8 text-slate-600 sm:text-lg">
+          <p className="mt-4 text-base leading-8 text-slate-600 dark:text-slate-300 sm:text-lg">
             Everything you need to know about mock interviews, scheduling, feedback, assessments, and analytics.
           </p>
         </div>
@@ -61,11 +61,11 @@ export default function FAQSection() {
           {FAQS.map((item) => (
             <details
               key={item.q}
-              className="group rounded-2xl border border-slate-200/80 bg-white/70 p-5 shadow-[0_18px_45px_-30px_rgba(15,23,42,0.14)] backdrop-blur-xl"
+              className="group rounded-2xl border border-slate-200/80 bg-white/70 p-5 shadow-[0_18px_45px_-30px_rgba(15,23,42,0.14)] backdrop-blur-xl dark:border-slate-700/75 dark:bg-slate-900/40 dark:shadow-none"
             >
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4">
-                <span className="truncate text-sm font-bold text-slate-900 sm:text-base">{item.q}</span>
-                <span className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200/80 bg-white/70 text-slate-700 transition-transform duration-200 group-open:rotate-180">
+                <span className="truncate text-sm font-bold text-slate-900 dark:text-slate-50 sm:text-base">{item.q}</span>
+                <span className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200/80 bg-white/70 text-slate-700 transition-transform duration-200 group-open:rotate-180 dark:border-slate-700/80 dark:bg-slate-900/40 dark:text-slate-200">
                   <svg
                     viewBox="0 0 24 24"
                     width="18"
@@ -81,7 +81,7 @@ export default function FAQSection() {
                   </svg>
                 </span>
               </summary>
-              <p className="mt-4 text-sm leading-7 text-slate-600 sm:text-base">{item.a}</p>
+              <p className="mt-4 text-sm leading-7 text-slate-600 dark:text-slate-300 sm:text-base">{item.a}</p>
             </details>
           ))}
         </div>

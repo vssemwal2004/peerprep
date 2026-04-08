@@ -63,7 +63,7 @@ export default function GridBackground() {
         </defs>
 
         <g
-          className="pp-grid-anim"
+          className="pp-grid-anim block dark:hidden"
           filter="url(#pp-grid-warp)"
           opacity="0.12"
           stroke="#60a5fa"
@@ -72,15 +72,38 @@ export default function GridBackground() {
           fill="none"
         >
           {horizontalPaths.map((d) => (
-            <path key={d} d={d} />
+            <path key={`l-${d}`} d={d} />
           ))}
           {verticalPaths.map((d) => (
-            <path key={d} d={d} />
+            <path key={`l-v-${d}`} d={d} />
           ))}
 
           <g filter="url(#pp-grid-soften)" opacity="0.7">
             {horizontalPaths.slice(3, 20).map((d) => (
-              <path key={`soft-${d}`} d={d} strokeWidth="1.6" opacity="0.55" />
+              <path key={`l-soft-${d}`} d={d} strokeWidth="1.6" opacity="0.55" />
+            ))}
+          </g>
+        </g>
+
+        <g
+          className="pp-grid-anim hidden dark:block"
+          filter="url(#pp-grid-warp)"
+          opacity="0.08"
+          stroke="#7dd3fc"
+          strokeWidth="1"
+          strokeLinecap="round"
+          fill="none"
+        >
+          {horizontalPaths.map((d) => (
+            <path key={`d-${d}`} d={d} />
+          ))}
+          {verticalPaths.map((d) => (
+            <path key={`d-v-${d}`} d={d} />
+          ))}
+
+          <g filter="url(#pp-grid-soften)" opacity="0.65">
+            {horizontalPaths.slice(3, 20).map((d) => (
+              <path key={`d-soft-${d}`} d={d} strokeWidth="1.6" opacity="0.5" />
             ))}
           </g>
         </g>
