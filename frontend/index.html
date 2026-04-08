@@ -232,7 +232,7 @@
       .li-hero-wrap {
         position: relative; z-index: 10;
         max-width: 1152px; min-height: 100vh;
-        margin: 0 auto; padding: 112px 24px 40px;
+        margin: 0 auto; padding: 112px 24px 24px;
         display: flex; flex-direction: column; align-items: center; justify-content: center;
         text-align: center;
       }
@@ -296,11 +296,297 @@
       }
 
       .li-tabs {
-        margin-top: 40px;
+        margin-top: 92px;
         width: min(920px, 100%);
         display: flex;
         align-items: center;
         justify-content: center;
+      }
+
+      /* ── DEEP DIVE SECTION (static island) ─────────────────────────── */
+      .li-deep {
+        position: relative;
+        z-index: 10;
+        margin-top: -96px;
+        padding: 48px 24px 88px;
+      }
+      .li-deep::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background-image:
+          linear-gradient(
+            to bottom,
+            rgba(224, 242, 254, 0) 0%,
+            rgba(224, 242, 254, 0.06) 18%,
+            rgba(224, 242, 254, 0.22) 70%,
+            rgba(224, 242, 254, 0.12) 100%
+          ),
+          linear-gradient(
+            to bottom,
+            rgba(56, 189, 248, 0) 0%,
+            rgba(56, 189, 248, 0.10) 48%,
+            rgba(56, 189, 248, 0) 88%
+          ),
+          radial-gradient(
+            circle at 50% 52%,
+            rgba(56, 189, 248, 0.18) 0%,
+            rgba(56, 189, 248, 0.0) 62%
+          );
+      }
+      html.dark .li-deep::before {
+        background-image:
+          linear-gradient(
+            to bottom,
+            rgba(14, 165, 233, 0) 0%,
+            rgba(14, 165, 233, 0.05) 18%,
+            rgba(14, 165, 233, 0.14) 70%,
+            rgba(14, 165, 233, 0.08) 100%
+          ),
+          linear-gradient(
+            to bottom,
+            rgba(56, 189, 248, 0) 0%,
+            rgba(56, 189, 248, 0.06) 48%,
+            rgba(56, 189, 248, 0) 88%
+          ),
+          radial-gradient(
+            circle at 50% 52%,
+            rgba(56, 189, 248, 0.10) 0%,
+            rgba(56, 189, 248, 0.0) 62%
+          );
+      }
+      .li-deep-inner {
+        max-width: 1152px;
+        margin: 0 auto;
+      }
+      .li-deep-panels { margin-top: 48px; }
+      .li-panel { display: none; }
+      .li-panel.is-active { display: block; }
+      .li-panel-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 40px;
+        align-items: center;
+      }
+      .li-panel-img {
+        width: 100%;
+        max-width: 420px;
+        height: auto;
+        object-fit: contain;
+        margin: 0 auto;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-user-drag: none;
+      }
+      .li-panel-h2 {
+        margin: 0;
+        font-size: 34px;
+        line-height: 1.1;
+        letter-spacing: -0.03em;
+        font-weight: 900;
+        color: #0f172a;
+      }
+      .li-panel-grad {
+        display: block;
+        margin-top: 10px;
+        background: linear-gradient(90deg, #0f172a 0%, #075985 55%, #312e81 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+      .li-panel-sub {
+        margin: 16px 0 0;
+        max-width: 560px;
+        font-size: 18px;
+        line-height: 1.75;
+        color: #475569;
+      }
+      .li-panel-sub2 {
+        margin-top: 14px;
+        font-size: 16px;
+        line-height: 1.7;
+        color: #475569;
+      }
+      .li-chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+      .li-chip {
+        display: inline-flex;
+        align-items: center;
+        padding: 10px 14px;
+        border-radius: 9999px;
+        border: 1px solid rgba(226,232,240,0.85);
+        background: rgba(255,255,255,0.70);
+        color: #334155;
+        font-size: 14px;
+        font-weight: 800;
+        box-shadow: 0 14px 36px rgba(15,23,42,0.08);
+        -webkit-backdrop-filter: blur(18px);
+        backdrop-filter: blur(18px);
+      }
+      html.dark .li-panel-h2 { color: #f8fafc; }
+      html.dark .li-panel-grad {
+        background: linear-gradient(90deg, #f8fafc 0%, #7dd3fc 55%, #a5b4fc 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+      html.dark .li-panel-sub { color: #94a3b8; }
+      html.dark .li-panel-sub2 { color: #94a3b8; }
+      html.dark .li-chip {
+        border-color: rgba(51,65,85,0.75);
+        background: rgba(15,23,42,0.55);
+        color: #e2e8f0;
+        box-shadow: none;
+      }
+      @media (min-width: 1024px) {
+        .li-panel-grid {
+          grid-template-columns: 1fr 1fr;
+          gap: 64px;
+        }
+        .li-panel-img { margin: 0; }
+      }
+
+      .li-footer {
+        position: relative;
+        z-index: 10;
+        padding: 22px 24px;
+        background: linear-gradient(90deg, #f8fafc 0%, #f1f5f9 100%);
+        border-top: 1px solid rgba(226,232,240,0.85);
+        color: #1f2937;
+      }
+      html.dark .li-footer {
+        background: linear-gradient(90deg, #111827 0%, #1f2937 100%);
+        border-top-color: rgba(51,65,85,0.75);
+        color: #e5e7eb;
+      }
+      .li-footer-inner {
+        max-width: 1152px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .li-footer-logo { height: 84px; width: auto; object-fit: contain; }
+      .li-footer-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 18px;
+        justify-content: center;
+        font-size: 14px;
+        font-weight: 700;
+      }
+      .li-footer-links a { color: inherit; text-decoration: none; }
+      .li-footer-links a:hover { color: #0284c7; }
+      html.dark .li-footer-links a:hover { color: #38bdf8; }
+      .li-footer-copy { font-size: 12px; font-weight: 600; color: #64748b; }
+      html.dark .li-footer-copy { color: #94a3b8; }
+      @media (min-width: 768px) {
+        .li-footer-inner { flex-direction: row; }
+      }
+
+      .li-faq {
+        position: relative;
+        z-index: 10;
+        padding: 88px 24px 72px;
+      }
+      .li-faq-inner {
+        max-width: 1152px;
+        margin: 0 auto;
+      }
+      .li-faq-head { max-width: 720px; }
+      .li-faq-h2 {
+        margin: 0;
+        font-size: 38px;
+        line-height: 1.08;
+        letter-spacing: -0.03em;
+        font-weight: 900;
+        color: #0f172a;
+      }
+      .li-faq-grad {
+        display: block;
+        margin-top: 10px;
+        background: linear-gradient(90deg, #0f172a 0%, #075985 55%, #312e81 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+      .li-faq-sub {
+        margin-top: 16px;
+        font-size: 18px;
+        line-height: 1.75;
+        color: #475569;
+      }
+      html.dark .li-faq-h2 { color: #f8fafc; }
+      html.dark .li-faq-grad {
+        background: linear-gradient(90deg, #f8fafc 0%, #7dd3fc 55%, #a5b4fc 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+      html.dark .li-faq-sub { color: #94a3b8; }
+
+      .li-faq-grid {
+        margin-top: 40px;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 14px;
+      }
+      @media (min-width: 768px) {
+        .li-faq-grid { grid-template-columns: 1fr 1fr; }
+      }
+      .li-faq-item {
+        border-radius: 18px;
+        border: 1px solid rgba(226,232,240,0.85);
+        background: rgba(255,255,255,0.72);
+        box-shadow: 0 18px 45px rgba(15,23,42,0.10);
+        -webkit-backdrop-filter: blur(18px);
+        backdrop-filter: blur(18px);
+        padding: 16px 16px;
+      }
+      html.dark .li-faq-item {
+        border-color: rgba(51,65,85,0.75);
+        background: rgba(15,23,42,0.55);
+        box-shadow: none;
+      }
+      .li-faq-item summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        cursor: pointer;
+        list-style: none;
+      }
+      .li-faq-item summary::-webkit-details-marker { display: none; }
+      .li-faq-q {
+        font-weight: 900;
+        font-size: 15px;
+        color: #0f172a;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .li-faq-ico {
+        width: 32px;
+        height: 32px;
+        border-radius: 9999px;
+        border: 1px solid rgba(226,232,240,0.85);
+        background: rgba(255,255,255,0.72);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: #334155;
+        transition: transform 160ms ease;
+      }
+      .li-faq-item[open] .li-faq-ico { transform: rotate(180deg); }
+      .li-faq-a { margin-top: 14px; font-size: 15px; line-height: 1.7; color: #475569; }
+      html.dark .li-faq-q { color: #f8fafc; }
+      html.dark .li-faq-a { color: #94a3b8; }
+      html.dark .li-faq-ico {
+        border-color: rgba(51,65,85,0.75);
+        background: rgba(15,23,42,0.55);
+        color: #e2e8f0;
       }
       .li-tabs-wrap {
         width: 100%;
@@ -415,7 +701,7 @@
           </p>
           <div class="li-btns">
             <button class="li-btn li-btn-p" onclick="window.location.href='/student'">Start Practicing &rarr;</button>
-            <button class="li-btn li-btn-s" onclick="window.location.href='/student'">Explore Platform</button>
+            <button class="li-btn li-btn-s" onclick="document.getElementById('platform-preview') && document.getElementById('platform-preview').scrollIntoView({behavior:'smooth', block:'start'})">Explore Platform</button>
           </div>
 
           <div class="li-tabs" aria-label="Platform features">
@@ -428,6 +714,163 @@
             </div>
           </div>
         </div>
+
+        <section class="li-deep" id="platform-preview" aria-label="Feature details">
+          <div class="li-deep-inner">
+            <div class="li-deep-panels">
+              <div class="li-panel is-active" data-pane="mock">
+                <div class="li-panel-grid">
+                  <img class="li-panel-img" src="/images/interview-img.webp" alt="Mock interviews that feel real" />
+                  <div>
+                    <h2 class="li-panel-h2">Mock Interview Practice<span class="li-panel-grad">Built for real interview confidence</span></h2>
+                    <p class="li-panel-sub">Pair up fast, lock a slot smoothly, and run a full interview session with structured feedback — the PeerPrep way.</p>
+                    <p class="li-panel-sub li-panel-sub2">From scheduling to reminders to post-session feedback, everything stays in one clean workflow so you focus only on performance.</p>
+                    <div class="li-chips">
+                      <span class="li-chip">Pairing</span>
+                      <span class="li-chip">Smart scheduling</span>
+                      <span class="li-chip">Interview session</span>
+                      <span class="li-chip">Feedback</span>
+                      <span class="li-chip">Reminders</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="li-panel" data-pane="assessments">
+                <div class="li-panel-grid">
+                  <img class="li-panel-img" src="/images/assesment_img.webp" alt="Assessments with clear evaluation" />
+                  <div>
+                    <h2 class="li-panel-h2">Assessments<span class="li-panel-grad">Clear scoring. Cleaner preparation.</span></h2>
+                    <p class="li-panel-sub">Run structured assessments with consistent rules and visibility — so your practice feels closer to real hiring tests.</p>
+                    <p class="li-panel-sub li-panel-sub2">PeerPrep keeps attempts, submissions, and outcomes organized so you always know where you stand and what to improve next.</p>
+                    <div class="li-chips">
+                      <span class="li-chip">Timed tests</span>
+                      <span class="li-chip">Rules</span>
+                      <span class="li-chip">Submissions</span>
+                      <span class="li-chip">Reports</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="li-panel" data-pane="learning">
+                <div class="li-panel-grid">
+                  <img class="li-panel-img" src="/images/loginimg.webp" alt="Learning modules that keep you consistent" />
+                  <div>
+                    <h2 class="li-panel-h2">Learning Modules<span class="li-panel-grad">Consistency that compounds</span></h2>
+                    <p class="li-panel-sub">Build strong fundamentals with guided learning that supports your daily routine and reduces random, unfocused prep.</p>
+                    <p class="li-panel-sub li-panel-sub2">PeerPrep helps you connect concepts to practice so improvements feel measurable, not accidental.</p>
+                    <div class="li-chips">
+                      <span class="li-chip">Guided learning</span>
+                      <span class="li-chip">Concepts</span>
+                      <span class="li-chip">Practice</span>
+                      <span class="li-chip">Consistency</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="li-panel" data-pane="problems">
+                <div class="li-panel-grid">
+                  <img class="li-panel-img" src="/images/img%201.png" alt="Problem solving, organized" />
+                  <div>
+                    <h2 class="li-panel-h2">Problem Solve<span class="li-panel-grad">Speed + accuracy, tracked</span></h2>
+                    <p class="li-panel-sub">Solve curated problems with a clean flow designed for revision, pattern-building, and interview-style thinking.</p>
+                    <p class="li-panel-sub li-panel-sub2">PeerPrep keeps your problem practice structured so you can iterate faster and revisit weak areas without chaos.</p>
+                    <div class="li-chips">
+                      <span class="li-chip">DSA practice</span>
+                      <span class="li-chip">Difficulty</span>
+                      <span class="li-chip">Progress</span>
+                      <span class="li-chip">Revision</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="li-panel" data-pane="analytics">
+                <div class="li-panel-grid">
+                  <img class="li-panel-img" src="/images/analysis-img.webp" alt="Performance analysis you can act on" />
+                  <div>
+                    <h2 class="li-panel-h2">Analyse Performance<span class="li-panel-grad">Turn data into direction</span></h2>
+                    <p class="li-panel-sub">See your trends across sessions and practice so you can prioritize the next best improvement — not guesswork.</p>
+                    <p class="li-panel-sub li-panel-sub2">PeerPrep highlights progress, stability, and gaps so you can plan smarter and stay confident before interviews.</p>
+                    <div class="li-chips">
+                      <span class="li-chip">Progress analytics</span>
+                      <span class="li-chip">Trends</span>
+                      <span class="li-chip">Benchmarks</span>
+                      <span class="li-chip">Insights</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="li-faq" aria-label="FAQs">
+          <div class="li-faq-inner">
+            <div class="li-faq-head">
+              <h2 class="li-faq-h2">FAQs<span class="li-faq-grad">Quick answers about PeerPrep</span></h2>
+              <p class="li-faq-sub">Everything you need to know about mock interviews, scheduling, feedback, assessments, and analytics.</p>
+            </div>
+
+            <div class="li-faq-grid">
+              <details class="li-faq-item">
+                <summary><span class="li-faq-q">What is PeerPrep?</span><span class="li-faq-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span></summary>
+                <div class="li-faq-a">PeerPrep is a placement preparation platform that combines mock interviews, DSA practice, assessments, and performance analytics into one focused workflow.</div>
+              </details>
+              <details class="li-faq-item">
+                <summary><span class="li-faq-q">How do mock interviews work?</span><span class="li-faq-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span></summary>
+                <div class="li-faq-a">You join an interview event, get paired automatically, propose a suitable time, confirm a slot with your partner, and join the session using the generated meeting link.</div>
+              </details>
+              <details class="li-faq-item">
+                <summary><span class="li-faq-q">When will the meeting link be available?</span><span class="li-faq-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span></summary>
+                <div class="li-faq-a">After the interview is scheduled, a meeting link is generated. The UI typically allows joining closer to the interview time to keep sessions organized.</div>
+              </details>
+              <details class="li-faq-item">
+                <summary><span class="li-faq-q">Can I reschedule if the proposed time doesn’t work?</span><span class="li-faq-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span></summary>
+                <div class="li-faq-a">Yes. You and your partner can propose a new time and confirm it. The scheduling flow keeps the latest proposal active and records past proposals for clarity.</div>
+              </details>
+              <details class="li-faq-item">
+                <summary><span class="li-faq-q">Who can submit feedback and when?</span><span class="li-faq-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span></summary>
+                <div class="li-faq-a">Feedback is submitted after the session by the interviewer. This keeps feedback consistent and aligned with the completed interview.</div>
+              </details>
+              <details class="li-faq-item">
+                <summary><span class="li-faq-q">What do assessments include?</span><span class="li-faq-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span></summary>
+                <div class="li-faq-a">Assessments are structured practice tests with clear rules and a timed environment. Your submissions and outcomes are tracked so you can review progress.</div>
+              </details>
+              <details class="li-faq-item">
+                <summary><span class="li-faq-q">How does Problem Solve help my preparation?</span><span class="li-faq-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span></summary>
+                <div class="li-faq-a">It helps you practice curated DSA problems with a clean workflow for revision, pattern-building, and steady improvement.</div>
+              </details>
+              <details class="li-faq-item">
+                <summary><span class="li-faq-q">What can I see in Analyse Performance?</span><span class="li-faq-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span></summary>
+                <div class="li-faq-a">You can view trends and gaps across practice and sessions to prioritize what to improve next, instead of relying on guesswork.</div>
+              </details>
+              <details class="li-faq-item">
+                <summary><span class="li-faq-q">Do I need to install anything to use PeerPrep?</span><span class="li-faq-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span></summary>
+                <div class="li-faq-a">No. PeerPrep runs in the browser. You just need an internet connection and a modern browser.</div>
+              </details>
+              <details class="li-faq-item">
+                <summary><span class="li-faq-q">Is my data private?</span><span class="li-faq-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span></summary>
+                <div class="li-faq-a">PeerPrep is designed to handle your account and preparation data responsibly. You can review the Privacy Policy for full details.</div>
+              </details>
+            </div>
+          </div>
+        </section>
+
+        <footer class="li-footer" aria-label="Footer">
+          <div class="li-footer-inner">
+            <img src="/images/logo.png" alt="PeerPrep" class="li-footer-logo" />
+            <div class="li-footer-links">
+              <a href="/privacy">Privacy Policy</a>
+              <a href="/terms">Terms &amp; Conditions</a>
+              <a href="/contact">Contact Us</a>
+              <a href="/student/help">Help &amp; Support</a>
+            </div>
+            <div class="li-footer-copy">&copy; <span id="li-year"></span> PeerPrep. All rights reserved.</div>
+          </div>
+        </footer>
       </div>
     </div><!-- /#landing-island -->
 
@@ -465,22 +908,43 @@
           });
         }
 
-        // Landing island tabs (purely visual)
+        // Landing island tabs: select + scroll + swap deep-dive panel
         if (isLanding && island) {
-          var tabsWrap = island.querySelector('.li-tabs-wrap');
-          if (tabsWrap) {
+          var year = island.querySelector('#li-year');
+          if (year) year.textContent = String(new Date().getFullYear());
+
+          var wraps = island.querySelectorAll('.li-tabs-wrap');
+          var deep = island.querySelector('#platform-preview');
+
+          function setActiveTab(key) {
+            wraps.forEach(function (wrap) {
+              var tabs = wrap.querySelectorAll('.li-tab');
+              tabs.forEach(function (t) {
+                var isActive = t.getAttribute('data-tab') === key;
+                t.classList.toggle('is-active', isActive);
+                t.setAttribute('aria-selected', isActive ? 'true' : 'false');
+              });
+            });
+
+            var panels = island.querySelectorAll('.li-panel');
+            panels.forEach(function (p) {
+              p.classList.toggle('is-active', p.getAttribute('data-pane') === key);
+            });
+          }
+
+          wraps.forEach(function (tabsWrap) {
             tabsWrap.addEventListener('click', function (e) {
               var btn = e.target && e.target.closest ? e.target.closest('.li-tab') : null;
               if (!btn) return;
-              var tabs = tabsWrap.querySelectorAll('.li-tab');
-              tabs.forEach(function (t) {
-                t.classList.remove('is-active');
-                t.setAttribute('aria-selected', 'false');
-              });
-              btn.classList.add('is-active');
-              btn.setAttribute('aria-selected', 'true');
+              var key = btn.getAttribute('data-tab');
+              if (!key) return;
+              setActiveTab(key);
+              if (deep) deep.scrollIntoView({ behavior: 'smooth', block: 'start' });
             });
-          }
+          });
+
+          // Initialize deep-dive panels to match default tab
+          setActiveTab('mock');
         }
       })();
     </script>

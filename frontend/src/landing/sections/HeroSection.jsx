@@ -9,46 +9,12 @@ import {
   Sparkles,
   Target,
 } from "lucide-react";
-import AnimatedStars from "../components/AnimatedStars";
-import GridBackground from "../components/GridBackground";
+import { FEATURE_TABS } from "../constants/featureTabs";
 
 const MotionH1 = motion.h1;
 const MotionP = motion.p;
 const MotionDiv = motion.div;
 const MotionButton = motion.button;
-
-const featureTabs = [
-  {
-    key: "mock",
-    label: "Mock Interview Practice",
-    activeClass: "bg-sky-100 text-sky-900 border-sky-200",
-    idleClass: "text-slate-600 hover:text-sky-900",
-  },
-  {
-    key: "assessments",
-    label: "Assessments",
-    activeClass: "bg-emerald-100 text-emerald-900 border-emerald-200",
-    idleClass: "text-slate-600 hover:text-emerald-900",
-  },
-  {
-    key: "learning",
-    label: "Learning Modules",
-    activeClass: "bg-amber-100 text-amber-900 border-amber-200",
-    idleClass: "text-slate-600 hover:text-amber-900",
-  },
-  {
-    key: "problems",
-    label: "Problem Solve",
-    activeClass: "bg-indigo-100 text-indigo-900 border-indigo-200",
-    idleClass: "text-slate-600 hover:text-indigo-900",
-  },
-  {
-    key: "analytics",
-    label: "Analyse Performance",
-    activeClass: "bg-slate-100 text-slate-900 border-slate-200",
-    idleClass: "text-slate-600 hover:text-slate-900",
-  },
-];
 
 const fadeUp = {
   hidden: { opacity: 0, y: 24 },
@@ -63,22 +29,24 @@ const fadeUp = {
   }),
 };
 
-export default function HeroSection({ onPrimaryAction, onSecondaryAction }) {
-  const [activeTab, setActiveTab] = useState(featureTabs[0].key);
+export default function HeroSection({
+  onPrimaryAction,
+  onSecondaryAction,
+  activeTab,
+  onTabSelect,
+}) {
+  const [internalTab, setInternalTab] = useState(FEATURE_TABS[0].key);
+  const resolvedActiveTab = activeTab ?? internalTab;
+
+  const handleTabClick = (key) => {
+    if (onTabSelect) onTabSelect(key);
+    else setInternalTab(key);
+  };
 
   return (
-    <section className="relative min-h-screen overflow-hidden bg-gradient-to-br from-sky-100 via-white to-slate-50">
-      <GridBackground />
-      <AnimatedStars />
+    <section className="relative min-h-screen overflow-hidden">
 
-      <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
-        <div className="absolute left-1/2 top-24 h-80 w-80 -translate-x-1/2 rounded-full bg-sky-300/35 blur-3xl" />
-        <div className="absolute left-12 top-28 h-52 w-52 rounded-full bg-sky-200/55 blur-3xl" />
-        <div className="absolute bottom-16 right-10 h-64 w-64 rounded-full bg-emerald-200/35 blur-3xl" />
-        <div className="absolute inset-x-0 top-0 h-[28rem] bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.20),transparent_58%)]" />
-      </div>
-
-      <div className="relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col px-4 pt-28 pb-10 sm:px-6 lg:px-8">
+      <div className="relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col px-4 pt-28 pb-4 sm:px-6 lg:px-8">
         <div className="flex flex-1 -translate-y-12 flex-col items-center justify-center text-center">
          
            
@@ -141,18 +109,18 @@ export default function HeroSection({ onPrimaryAction, onSecondaryAction }) {
             initial="hidden"
             animate="show"
             variants={fadeUp}
-            className="mt-10 w-full max-w-4xl"
+            className="mt-24 w-full max-w-4xl"
           >
             <div className="mx-auto flex w-full items-center justify-center">
               <div className="w-full max-w-4xl rounded-2xl border border-slate-200/80 bg-white/75 p-2 shadow-[0_18px_45px_-30px_rgba(15,23,42,0.18)] backdrop-blur-xl">
                 <div className="flex items-center gap-2 overflow-x-auto sm:grid sm:grid-cols-5 sm:gap-2 sm:overflow-visible">
-                {featureTabs.map((tab) => {
-                  const isActive = tab.key === activeTab;
+                {FEATURE_TABS.map((tab) => {
+                  const isActive = tab.key === resolvedActiveTab;
                   return (
                     <button
                       key={tab.key}
                       type="button"
-                      onClick={() => setActiveTab(tab.key)}
+                      onClick={() => handleTabClick(tab.key)}
                       className={
                         "whitespace-nowrap rounded-xl border px-4 py-2 text-sm font-semibold transition-colors duration-200 sm:w-full sm:text-center " +
                         (isActive

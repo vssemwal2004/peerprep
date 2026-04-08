@@ -1,10 +1,18 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import HeroSection from "./sections/HeroSection";
 import Navbar from "./components/Navbar";
+import FeatureDeepDiveSection from "./sections/FeatureDeepDiveSection";
+import FAQSection from "./sections/FAQSection";
+import { FEATURE_TABS } from "./constants/featureTabs";
+import GridBackground from "./components/GridBackground";
+import AnimatedStars from "./components/AnimatedStars";
+import { Footer } from "../components/Footer";
 
 export default function LandingPage() {
   const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState(FEATURE_TABS[0].key);
+  const deepDiveRef = useRef(null);
 
   useEffect(() => {
     const island = document.getElementById("landing-island");
@@ -21,16 +29,42 @@ export default function LandingPage() {
   };
 
   const handleExplore = () => {
-    document.getElementById("platform-preview")?.scrollIntoView({
-      behavior: "smooth",
-      block: "center",
+    deepDiveRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const handleTabSelect = (key) => {
+    setActiveTab(key);
+    // Ensure React has a chance to render before scrolling.
+    window.requestAnimationFrame(() => {
+      deepDiveRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   };
 
   return (
-    <div className="relative overflow-hidden">
+    <div className="relative overflow-hidden bg-gradient-to-br from-sky-100 via-white to-slate-50">
+      <GridBackground />
+      <AnimatedStars />
+
+      <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+        <div className="absolute left-1/2 top-24 h-80 w-80 -translate-x-1/2 rounded-full bg-sky-300/35 blur-3xl" />
+        <div className="absolute left-12 top-28 h-52 w-52 rounded-full bg-sky-200/55 blur-3xl" />
+        <div className="absolute bottom-16 right-10 h-64 w-64 rounded-full bg-emerald-200/35 blur-3xl" />
+        <div className="absolute inset-x-0 top-0 h-[28rem] bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.20),transparent_58%)]" />
+      </div>
+
       <Navbar onLogin={handleLogin} />
-      <HeroSection onPrimaryAction={handleLogin} onSecondaryAction={handleExplore} />
+      <HeroSection
+        onPrimaryAction={handleLogin}
+        onSecondaryAction={handleExplore}
+        activeTab={activeTab}
+        onTabSelect={handleTabSelect}
+      />
+      <FeatureDeepDiveSection
+        activeTab={activeTab}
+        sectionRef={deepDiveRef}
+      />
+      <FAQSection />
+      <Footer />
     </div>
   );
 }
