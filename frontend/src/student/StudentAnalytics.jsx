@@ -282,7 +282,13 @@ function ScoreRing({ score = 0, size = 104, stroke = 8, color = "#38bdf8" }) {
 
 function ChartTooltip({ active, payload, label, suffix = "" }) {
   if (!active || !payload?.length) return null;
-  const title = label || payload[0]?.name || payload[0]?.payload?.name || "Value";
+  const title =
+    payload[0]?.payload?.topic ||
+    payload[0]?.payload?.topicLabel ||
+    label ||
+    payload[0]?.name ||
+    payload[0]?.payload?.name ||
+    "Value";
   const item = payload[0];
   const tone = item?.fill || item?.color || "#38bdf8";
 
@@ -364,6 +370,9 @@ function CompareMeter({
 function ProblemsTab({
   problems,
   topicData,
+  topicChartData,
+  topicTickInterval,
+  formatTopicTick,
   strongTopics,
   weakTopics,
   lowVolumeTopics,
@@ -374,6 +383,35 @@ function ProblemsTab({
   problemView,
   setProblemView,
 }) {
+  const TopicAxisTick = ({ x, y, payload }) => {
+    const full = String(payload?.value ?? "");
+    const display = formatTopicTick(full);
+
+    return (
+      <g transform={`translate(${x},${y})`}>
+        <title>{full}</title>
+        <text
+          dy={16}
+          textAnchor="end"
+          transform="rotate(-35)"
+          style={AXIS_TICK}
+        >
+          {display}
+        </text>
+      </g>
+    );
+  };
+
+  const topicChartWidth = useMemo(() => {
+    const count = topicChartData.length;
+    if (!count) return "100%";
+    if (count <= 14) return "100%";
+    // Keep bars readable when there are many topics.
+    return `${Math.max(960, count * 56)}px`;
+  }, [topicChartData.length]);
+
+  const showTopicValueLabels = topicChartData.length > 0 && topicChartData.length <= 18;
+
   const panelContent = {
     topics: (
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -506,68 +544,79 @@ function ProblemsTab({
         <ChartShell className="mt-6">
           <div className="h-[380px]">
             {topicData.length ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={topicData} layout="vertical" margin={{ left: 16, right: 40, top: 12, bottom: 14 }} barCategoryGap="28%">
-                  <defs>
-                    <linearGradient id="topicStrong" x1="0" x2="1" y1="0" y2="0">
-                      <stop offset="0%" stopColor="#86efac" stopOpacity="0.92" />
-                      <stop offset="100%" stopColor="#16a34a" />
-                    </linearGradient>
-                    <linearGradient id="topicMedium" x1="0" x2="1" y1="0" y2="0">
-                      <stop offset="0%" stopColor="#fde68a" stopOpacity="0.92" />
-                      <stop offset="100%" stopColor="#d97706" />
-                    </linearGradient>
-                    <linearGradient id="topicWeak" x1="0" x2="1" y1="0" y2="0">
-                      <stop offset="0%" stopColor="#fda4af" stopOpacity="0.92" />
-                      <stop offset="100%" stopColor="#e11d48" />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid {...GRID_STYLE} vertical={false} />
-                  <XAxis
-                    type="number"
-                    domain={[0, 100]}
-                    tick={AXIS_TICK_LIGHT}
-                    tickMargin={12}
-                    axisLine={AXIS_LINE}
-                    tickLine={false}
-                    padding={{ left: 6, right: 8 }}
-                  />
-                  <YAxis
-                    dataKey="topic"
-                    type="category"
-                    width={156}
-                    tick={AXIS_TICK}
-                    tickMargin={14}
-                    axisLine={AXIS_LINE}
-                    tickLine={false}
-                    interval={0}
-                  />
-                  <Tooltip content={<ChartTooltip suffix="%" />} cursor={{ fill: "rgba(56,189,248,0.06)" }} />
-                  <Bar
-                    dataKey="accuracy"
-                    radius={[999, 999, 999, 999]}
-                    maxBarSize={18}
-                    isAnimationActive
-                    animationDuration={850}
-                    animationEasing="ease-out"
-                    background={{ fill: "rgba(148,163,184,0.10)", radius: 999 }}
-                  >
-                    {topicData.map((topic) => (
-                      <Cell
-                        key={topic.topic}
-                        fill={
-                          topic.level === "strong"
-                            ? "url(#topicStrong)"
-                            : topic.level === "medium"
-                            ? "url(#topicMedium)"
-                            : "url(#topicWeak)"
-                        }
+              <div className="h-full w-full overflow-x-auto overflow-y-hidden">
+                <div className="h-full" style={{ width: topicChartWidth, minWidth: "100%" }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={topicChartData} margin={{ left: 12, right: 14, top: 12, bottom: 62 }} barCategoryGap="22%">
+                      <defs>
+                        <linearGradient id="topicStrong" x1="0" x2="0" y1="0" y2="1">
+                          <stop offset="0%" stopColor="#86efac" stopOpacity="0.92" />
+                          <stop offset="100%" stopColor="#16a34a" />
+                        </linearGradient>
+                        <linearGradient id="topicMedium" x1="0" x2="0" y1="0" y2="1">
+                          <stop offset="0%" stopColor="#fde68a" stopOpacity="0.92" />
+                          <stop offset="100%" stopColor="#d97706" />
+                        </linearGradient>
+                        <linearGradient id="topicWeak" x1="0" x2="0" y1="0" y2="1">
+                          <stop offset="0%" stopColor="#fda4af" stopOpacity="0.92" />
+                          <stop offset="100%" stopColor="#e11d48" />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid {...GRID_STYLE} vertical={false} />
+                      <XAxis
+                        dataKey="topicLabel"
+                        tick={TopicAxisTick}
+                        tickMargin={16}
+                        axisLine={AXIS_LINE}
+                        tickLine={false}
+                        interval={topicTickInterval}
+                        height={70}
                       />
-                    ))}
-                    <LabelList dataKey="accuracy" position="right" formatter={(value) => `${value}%`} style={{ fontSize: 11, fontWeight: 700, fill: "#475569" }} />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+                      <YAxis
+                        type="number"
+                        domain={[0, 100]}
+                        tick={AXIS_TICK_LIGHT}
+                        tickMargin={12}
+                        axisLine={AXIS_LINE}
+                        tickLine={false}
+                        width={52}
+                        tickFormatter={(value) => `${value}%`}
+                      />
+                      <Tooltip content={<ChartTooltip suffix="%" />} cursor={{ fill: "rgba(56,189,248,0.06)" }} />
+                      <Bar
+                        dataKey="accuracy"
+                        radius={[12, 12, 0, 0]}
+                        maxBarSize={42}
+                        isAnimationActive
+                        animationDuration={850}
+                        animationEasing="ease-out"
+                        background={{ fill: "rgba(148,163,184,0.10)", radius: 12 }}
+                      >
+                        {topicChartData.map((topic, idx) => (
+                          <Cell
+                            key={`${topic.topic}-${idx}`}
+                            fill={
+                              topic.level === "strong"
+                                ? "url(#topicStrong)"
+                                : topic.level === "medium"
+                                ? "url(#topicMedium)"
+                                : "url(#topicWeak)"
+                            }
+                          />
+                        ))}
+                        {showTopicValueLabels ? (
+                          <LabelList
+                            dataKey="accuracy"
+                            position="top"
+                            formatter={(value) => `${value}%`}
+                            style={{ fontSize: 10, fontWeight: 700, fill: "#475569" }}
+                          />
+                        ) : null}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
             ) : (
               <EmptyState text="Start solving topic-tagged problems to unlock DSA analysis." />
             )}
@@ -1524,10 +1573,39 @@ export default function StudentAnalytics() {
   const consistency = analysis?.consistency || {};
   const derived = analysis?.derived || {};
 
+  const normalizeTopicLabel = useCallback((value) => {
+    const raw = String(value ?? "").trim();
+    if (!raw) return "Unknown";
+    return raw.replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+  }, []);
+
   const topicData = useMemo(
     () => [...(problems.topics || [])].sort((a, b) => b.attempts - a.attempts),
     [problems.topics]
   );
+
+  const topicChartData = useMemo(() => {
+    return (topicData || []).map((item) => ({
+      ...item,
+      topic: String(item?.topic || "Unknown"),
+      topicLabel: normalizeTopicLabel(item?.topic),
+      attempts: Number(item?.attempts || 0),
+      accuracy: Math.max(0, Math.min(100, Number(item?.accuracy || 0))),
+      level: item?.level || "medium",
+    }));
+  }, [normalizeTopicLabel, topicData]);
+
+  const topicTickInterval = useMemo(() => {
+    const count = topicChartData.length;
+    if (count <= 14) return 0;
+    // Target ~10-14 ticks max on the X axis.
+    return Math.max(0, Math.ceil(count / 12) - 1);
+  }, [topicChartData.length]);
+
+  const formatTopicTick = useCallback((value) => {
+    const label = String(value || "");
+    return label.length > 18 ? `${label.slice(0, 16)}…` : label;
+  }, []);
   const strongTopics = useMemo(
     () => topicData.filter((topic) => topic.level === "strong"),
     [topicData]
@@ -1713,6 +1791,9 @@ export default function StudentAnalytics() {
       <ProblemsTab
         problems={problems}
         topicData={topicData}
+        topicChartData={topicChartData}
+        topicTickInterval={topicTickInterval}
+        formatTopicTick={formatTopicTick}
         strongTopics={strongTopics}
         weakTopics={weakTopics}
         lowVolumeTopics={lowVolumeTopics}
