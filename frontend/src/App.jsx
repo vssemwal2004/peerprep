@@ -35,6 +35,9 @@ const HelpAndSupport = lazy(() => import("./student/HelpAndSupport"));
 const ProblemsPage = lazy(() => import("./student/ProblemsPage"));
 const ProblemSolver = lazy(() => import("./student/ProblemSolver"));
 const StudentAssessmentList = lazy(() => import("./student/StudentAssessmentList"));
+const AssessmentReportsPage = lazy(() => import("./student/AssessmentReportsPage"));
+const AssessmentRanksPage = lazy(() => import("./student/AssessmentRanksPage"));
+const AssessmentHistoryPage = lazy(() => import("./student/AssessmentHistoryPage"));
 const AssessmentAttempt = lazy(() => import("./student/AssessmentAttempt"));
 const StudentAnalytics = lazy(() => import("./student/StudentAnalytics"));
 
@@ -106,6 +109,9 @@ function RoutePrefetcher() {
     import("./student/StudentInterview");
     import("./student/ProblemsPage");
     import("./student/StudentAssessmentList");
+    import("./student/AssessmentReportsPage");
+    import("./student/AssessmentRanksPage");
+    import("./student/AssessmentHistoryPage");
   }, []);
 
   const prefetchAdminRoutes = useCallback(() => {
@@ -167,6 +173,7 @@ function useHideGlobalLoader() {
 function AppContent() {
   useHideGlobalLoader();
   const location = useLocation();
+  const isAssessmentModuleAlias = /^\/(assessments|assessment-reports|ranks|assessment-history)(\/)?$/.test(location.pathname);
   const isProblemSolver = /^\/problems\/[^/]+$/.test(location.pathname);
   const isMain = location.pathname === "/";
   const isStudentLogin = location.pathname === "/student";
@@ -176,7 +183,7 @@ function AppContent() {
   const isAssessmentAttempt = location.pathname.startsWith("/student/assessment/");
   const isChangePassword = location.pathname === "/student/change-password" || location.pathname === "/admin/change-password" || location.pathname === "/coordinator/change-password";
   const isStudentProblems = location.pathname.startsWith("/problems");
-  const isStudentDashboard = (location.pathname.startsWith("/student/") || isStudentProblems) && !isStudentLogin && !isFeedbackForm && !isChangePassword;
+  const isStudentDashboard = (location.pathname.startsWith("/student/") || isStudentProblems || isAssessmentModuleAlias) && !isStudentLogin && !isFeedbackForm && !isChangePassword;
   const isAdmin = location.pathname === '/admin' || location.pathname.startsWith('/admin/');
   const isAssessmentPreview = location.pathname.startsWith("/admin/assessment/preview/");
   const isCoordinator = location.pathname.startsWith("/coordinator");
@@ -229,6 +236,13 @@ function AppContent() {
         <Route path="/student/learning/:semester/:subject/:teacherId" element={<StudentProtectedRoute><LearningDetail /></StudentProtectedRoute>} />
         <Route path="/student/help" element={<StudentProtectedRoute><HelpAndSupport /></StudentProtectedRoute>} />
         <Route path="/student/assessments" element={<StudentProtectedRoute><StudentAssessmentList /></StudentProtectedRoute>} />
+        <Route path="/student/assessment-reports" element={<StudentProtectedRoute><AssessmentReportsPage /></StudentProtectedRoute>} />
+        <Route path="/student/ranks" element={<StudentProtectedRoute><AssessmentRanksPage /></StudentProtectedRoute>} />
+        <Route path="/student/assessment-history" element={<StudentProtectedRoute><AssessmentHistoryPage /></StudentProtectedRoute>} />
+        <Route path="/assessments" element={<StudentProtectedRoute><StudentAssessmentList /></StudentProtectedRoute>} />
+        <Route path="/assessment-reports" element={<StudentProtectedRoute><AssessmentReportsPage /></StudentProtectedRoute>} />
+        <Route path="/ranks" element={<StudentProtectedRoute><AssessmentRanksPage /></StudentProtectedRoute>} />
+        <Route path="/assessment-history" element={<StudentProtectedRoute><AssessmentHistoryPage /></StudentProtectedRoute>} />
         <Route path="/student/assessment/:id" element={<StudentProtectedRoute><AssessmentAttempt /></StudentProtectedRoute>} />
         <Route path="/student/analytics" element={<StudentProtectedRoute><StudentAnalytics /></StudentProtectedRoute>} />
         <Route path="/student/analysis" element={<StudentProtectedRoute><StudentAnalytics /></StudentProtectedRoute>} />

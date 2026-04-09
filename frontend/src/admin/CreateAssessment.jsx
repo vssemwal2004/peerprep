@@ -16,6 +16,7 @@ import AssessmentPreview from './assessment/components/AssessmentPreview';
 import { listCodingDrafts, loadCodingDraft, saveCodingDraft } from './assessment/assessmentCodingStore';
 import { loadAssessmentDraft, saveAssessmentDraft, clearAssessmentDraft } from './assessment/assessmentDraftStore';
 import { consumeProblemSelections } from './assessment/assessmentProblemSelectionStore';
+import DateTimePicker from '../components/DateTimePicker';
 
 const steps = [
   { id: 'basic', label: 'Basic Info', description: 'Title, description, instructions.' },
@@ -44,6 +45,19 @@ const createQuestionId = () => {
     return crypto.randomUUID();
   }
   return `q-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+};
+
+const toLocalIsoMinutes = (value) => {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
 };
 
 export default function CreateAssessment() {
@@ -283,8 +297,8 @@ export default function CreateAssessment() {
           title: assessment.title || '',
           description: assessment.description || '',
           instructions: assessment.instructions || '',
-          startTime: assessment.startTime ? new Date(assessment.startTime).toISOString().slice(0, 16) : '',
-          endTime: assessment.endTime ? new Date(assessment.endTime).toISOString().slice(0, 16) : '',
+          startTime: assessment.startTime ? toLocalIsoMinutes(assessment.startTime) : '',
+          endTime: assessment.endTime ? toLocalIsoMinutes(assessment.endTime) : '',
           duration: assessment.duration || 60,
           allowLateSubmission: Boolean(assessment.allowLateSubmission),
           attemptLimit: assessment.attemptLimit || 1,
@@ -679,21 +693,39 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
         <div className="grid gap-4 md:grid-cols-2">
           <div>
             <label className="text-xs text-slate-500 dark:text-gray-400">Start Date & Time</label>
-            <input
-              type="datetime-local"
-              value={form.startTime}
-              onChange={(e) => updateForm({ startTime: e.target.value })}
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-            />
+            <div className="mt-1">
+              <DateTimePicker
+                value={form.startTime}
+                onChange={(isoDateTime) => {
+                  updateForm({ startTime: isoDateTime });
+                  if (
+                    form.endTime &&
+                    isoDateTime &&
+                    !Number.isNaN(new Date(isoDateTime).getTime()) &&
+                    !Number.isNaN(new Date(form.endTime).getTime()) &&
+                    new Date(isoDateTime).getTime() > new Date(form.endTime).getTime()
+                  ) {
+                    updateForm({ endTime: '' });
+                  }
+                }}
+                placeholder="Select start date and time"
+                className="text-sm"
+              />
+            </div>
           </div>
           <div>
             <label className="text-xs text-slate-500 dark:text-gray-400">End Date & Time</label>
-            <input
-              type="datetime-local"
-              value={form.endTime}
-              onChange={(e) => updateForm({ endTime: e.target.value })}
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-            />
+            <div className="mt-1">
+              <DateTimePicker
+                value={form.endTime}
+                onChange={(isoDateTime) => updateForm({ endTime: isoDateTime })}
+                min={form.startTime || undefined}
+                disabled={!form.startTime}
+                placeholder={form.startTime ? 'Select end date and time' : 'Select start time first'}
+                className="text-sm"
+                isEnd
+              />
+            </div>
           </div>
           <div>
             <label className="text-xs text-slate-500 dark:text-gray-400">Duration (minutes)</label>
@@ -734,6 +766,10 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
           onChange={updateSections}
           onOpenCodingEditor={handleOpenCodingEditor}
           onOpenProblemLibrary={handleOpenProblemLibrary}
+          onNotify={{
+            success: (message) => toast.success(message),
+            error: (message) => toast.error(message),
+          }}
         />
       </SectionCard>
     ),

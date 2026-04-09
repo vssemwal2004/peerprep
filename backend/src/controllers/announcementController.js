@@ -1,6 +1,7 @@
 import Announcement from '../models/Announcement.js';
 import { HttpError } from '../utils/errors.js';
 import { getIo } from '../utils/io.js';
+import { logActivity } from './adminActivityController.js';
 
 const PRIORITY_ORDER = { high: 0, normal: 1, low: 2 };
 
@@ -25,6 +26,23 @@ export async function createAnnouncement(req, res) {
     expiryDate: expiryDate ? new Date(expiryDate) : undefined
   });
 
+  logActivity({
+    userEmail: req.user?.email,
+    userRole: req.user?.role,
+    actionType: 'CREATE',
+    targetType: 'ANNOUNCEMENT',
+    targetId: String(announcement._id),
+    description: `Created announcement: ${announcement.title}`,
+    changes: {
+      title: { from: null, to: announcement.title },
+      status: { from: null, to: announcement.status },
+      priority: { from: null, to: announcement.priority },
+      type: { from: null, to: announcement.type },
+    },
+    metadata: { announcementId: String(announcement._id) },
+    req,
+  });
+
   emitAnnouncementUpdate();
   res.status(201).json({ announcement });
 }
@@ -45,6 +63,9 @@ export async function listAnnouncementsAdmin(req, res) {
 export async function updateAnnouncement(req, res) {
   const { id } = req.params;
   if (!id) throw new HttpError(400, 'Announcement ID is required');
+
+  const before = await Announcement.findById(id).lean();
+  if (!before) throw new HttpError(404, 'Announcement not found');
 
   const updates = {};
   const fields = ['title', 'message', 'type', 'status', 'priority', 'expiryDate'];
@@ -67,6 +88,25 @@ export async function updateAnnouncement(req, res) {
   const announcement = await Announcement.findByIdAndUpdate(id, updates, { new: true });
   if (!announcement) throw new HttpError(404, 'Announcement not found');
 
+  const changes = {};
+  Object.keys(updates).forEach((k) => {
+    const from = before?.[k] ?? null;
+    const to = announcement?.[k] ?? null;
+    if (String(from) !== String(to)) changes[k] = { from, to };
+  });
+
+  logActivity({
+    userEmail: req.user?.email,
+    userRole: req.user?.role,
+    actionType: 'UPDATE',
+    targetType: 'ANNOUNCEMENT',
+    targetId: String(announcement._id),
+    description: `Updated announcement: ${announcement.title}`,
+    changes: Object.keys(changes).length ? changes : null,
+    metadata: { announcementId: String(announcement._id) },
+    req,
+  });
+
   emitAnnouncementUpdate();
   res.json({ announcement });
 }
@@ -77,6 +117,17 @@ export async function deleteAnnouncement(req, res) {
 
   const announcement = await Announcement.findByIdAndDelete(id);
   if (!announcement) throw new HttpError(404, 'Announcement not found');
+
+  logActivity({
+    userEmail: req.user?.email,
+    userRole: req.user?.role,
+    actionType: 'DELETE',
+    targetType: 'ANNOUNCEMENT',
+    targetId: String(announcement._id),
+    description: `Deleted announcement: ${announcement.title}`,
+    metadata: { announcementId: String(announcement._id) },
+    req,
+  });
 
   emitAnnouncementUpdate();
   res.json({ message: 'Announcement deleted' });

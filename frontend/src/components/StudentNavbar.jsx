@@ -82,7 +82,19 @@ export function StudentNavbar() {
   ];
 
   const isItemActive = (path) => {
-    if (path === "/student/assessments" && location.pathname.startsWith("/student/assessment/")) return true;
+    if (
+      path === "/student/assessments" &&
+      (
+        location.pathname.startsWith("/student/assessment/") ||
+        location.pathname === "/student/assessment-reports" ||
+        location.pathname === "/student/ranks" ||
+        location.pathname === "/student/assessment-history" ||
+        location.pathname === "/assessments" ||
+        location.pathname === "/assessment-reports" ||
+        location.pathname === "/ranks" ||
+        location.pathname === "/assessment-history"
+      )
+    ) return true;
     return location.pathname === path || location.pathname.startsWith(`${path}/`);
   };
 

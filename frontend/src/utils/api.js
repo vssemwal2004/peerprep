@@ -354,6 +354,7 @@ export const api = {
 
   // Assessments (Student)
   listStudentAssessments: () => request('/student/assessments'),
+  getStudentAssessmentDashboard: () => request('/student/assessment-dashboard'),
   getStudentAssessment: (id) => request(`/student/assessment/${id}`),
   submitStudentAssessment: (body) => request('/student/assessment/submit', { method: 'POST', body }),
   getStudentAssessmentRules: () => request('/student/assessment/rules', { skipCache: true }),

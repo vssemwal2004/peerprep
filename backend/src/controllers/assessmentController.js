@@ -5,6 +5,19 @@ import Problem from '../models/Problem.js';
 import User from '../models/User.js';
 import { sendOnboardingEmail, sendAssessmentNotificationEmail } from '../utils/mailer.js';
 import { createNotification, createNotifications } from '../services/notificationService.js';
+import { logActivity } from './adminActivityController.js';
+
+function buildSimpleChanges(before = {}, after = {}, keys = []) {
+  const changes = {};
+  keys.forEach((k) => {
+    const from = before?.[k] ?? null;
+    const to = after?.[k] ?? null;
+    const fromStr = from instanceof Date ? from.toISOString() : String(from);
+    const toStr = to instanceof Date ? to.toISOString() : String(to);
+    if (fromStr !== toStr) changes[k] = { from, to };
+  });
+  return Object.keys(changes).length ? changes : null;
+}
 
 function generateRandomPassword() {
   const length = Math.random() < 0.5 ? 7 : 8;
@@ -61,6 +74,156 @@ function computeAllowedEnd(assessment, startedAt) {
   const durationMs = (assessment.duration || 0) * 60 * 1000;
   const byDuration = new Date(startedAt.getTime() + durationMs);
   return byDuration < assessment.endTime ? byDuration : assessment.endTime;
+}
+
+const ASSESSMENT_EXPIRY_GRACE_MS = 24 * 60 * 60 * 1000;
+
+function hasMeaningfulValue(value) {
+  if (value === undefined || value === null) return false;
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  return true;
+}
+
+function evaluateQuestionResponse(question = {}, section = {}, answer = null) {
+  const type = question.type || section.type;
+
+  if (type === 'mcq') {
+    if (!hasMeaningfulValue(answer?.answer)) return 'skipped';
+    return Number(answer.answer) === Number(question.correctOptionIndex) ? 'correct' : 'wrong';
+  }
+
+  if (type === 'short' || type === 'one_line') {
+    const actual = String(answer?.answer || '').trim().toLowerCase();
+    if (!actual) return 'skipped';
+
+    const expected = String(question.expectedAnswer || '').trim().toLowerCase();
+    if (expected && actual === expected) return 'correct';
+
+    if (Array.isArray(question.keywords) && question.keywords.length > 0) {
+      const matched = question.keywords.every((keyword) => actual.includes(String(keyword).toLowerCase()));
+      return matched ? 'correct' : 'wrong';
+    }
+
+    return expected ? 'wrong' : 'pending';
+  }
+
+  if (type === 'coding') {
+    const hasCode = String(answer?.code || '').trim().length > 0;
+    return hasCode ? 'pending' : 'skipped';
+  }
+
+  if (!hasMeaningfulValue(answer?.answer)) return 'skipped';
+  return 'pending';
+}
+
+function buildAssessmentAttemptAnalytics(assessment = {}, submission = {}) {
+  const answerMap = new Map();
+  (submission.answers || []).forEach((answer) => {
+    answerMap.set(`${answer.sectionIndex}-${answer.questionIndex}`, answer);
+  });
+
+  const summary = {
+    totalQuestions: 0,
+    correctAnswers: 0,
+    wrongAnswers: 0,
+    skippedQuestions: 0,
+    pendingEvaluationQuestions: 0,
+    sectionBreakdown: [],
+  };
+
+  (assessment.sections || []).forEach((section, sectionIndex) => {
+    const sectionStats = {
+      sectionName: section.sectionName || `Section ${sectionIndex + 1}`,
+      type: section.type || 'mixed',
+      totalQuestions: 0,
+      correctAnswers: 0,
+      wrongAnswers: 0,
+      skippedQuestions: 0,
+      pendingEvaluationQuestions: 0,
+    };
+
+    (section.questions || []).forEach((question, questionIndex) => {
+      sectionStats.totalQuestions += 1;
+      summary.totalQuestions += 1;
+
+      const result = evaluateQuestionResponse(
+        question,
+        section,
+        answerMap.get(`${sectionIndex}-${questionIndex}`),
+      );
+
+      if (result === 'correct') {
+        sectionStats.correctAnswers += 1;
+        summary.correctAnswers += 1;
+      } else if (result === 'wrong') {
+        sectionStats.wrongAnswers += 1;
+        summary.wrongAnswers += 1;
+      } else if (result === 'pending') {
+        sectionStats.pendingEvaluationQuestions += 1;
+        summary.pendingEvaluationQuestions += 1;
+      } else {
+        sectionStats.skippedQuestions += 1;
+        summary.skippedQuestions += 1;
+      }
+    });
+
+    summary.sectionBreakdown.push(sectionStats);
+  });
+
+  return summary;
+}
+
+function computeSubmissionTimeTakenSec(submission = {}) {
+  if (Number.isFinite(Number(submission.timeTakenSec)) && Number(submission.timeTakenSec) > 0) {
+    return Number(submission.timeTakenSec);
+  }
+
+  const startedAt = submission.startedAt ? new Date(submission.startedAt).getTime() : null;
+  const endedAt = submission.submittedAt
+    ? new Date(submission.submittedAt).getTime()
+    : submission.lastSavedAt
+      ? new Date(submission.lastSavedAt).getTime()
+      : null;
+
+  if (!startedAt || !endedAt || endedAt < startedAt) return 0;
+  return Math.round((endedAt - startedAt) / 1000);
+}
+
+function formatStudentSubmissionStatus(submission = {}) {
+  return submission.status === 'submitted' ? 'Completed' : 'Partial';
+}
+
+function buildStudentReportRow(assessment = {}, submission = {}) {
+  const analytics = buildAssessmentAttemptAnalytics(assessment, submission);
+  const totalMarks = Number(assessment.totalMarks || computeTotalMarksFromSections(assessment.sections || []));
+  const score = Number(submission.score || 0);
+  const accuracy = Number.isFinite(Number(submission.accuracy))
+    ? Number(submission.accuracy)
+    : totalMarks > 0
+      ? Number(((score / totalMarks) * 100).toFixed(2))
+      : 0;
+
+  return {
+    id: submission._id,
+    assessmentId: assessment._id,
+    assessmentName: assessment.title || 'Untitled Assessment',
+    assessmentType: assessment.assessmentType || 'mixed',
+    dateAttempted: submission.submittedAt || submission.startedAt || submission.updatedAt || submission.createdAt,
+    status: formatStudentSubmissionStatus(submission),
+    score,
+    totalMarks,
+    totalQuestions: analytics.totalQuestions,
+    correctAnswers: analytics.correctAnswers,
+    wrongAnswers: analytics.wrongAnswers,
+    skippedQuestions: analytics.skippedQuestions,
+    pendingEvaluationQuestions: analytics.pendingEvaluationQuestions,
+    accuracy,
+    timeTakenSec: computeSubmissionTimeTakenSec(submission),
+    submittedAt: submission.submittedAt,
+    startedAt: submission.startedAt,
+    sectionBreakdown: analytics.sectionBreakdown,
+  };
 }
 
 function normalizeAssessmentSections(sections = []) {
@@ -455,6 +618,27 @@ export async function createAssessment(req, res) {
       versionUpdatedAt: new Date(),
     });
 
+    logActivity({
+      userEmail: req.user?.email,
+      userRole: req.user?.role,
+      actionType: 'CREATE',
+      targetType: 'ASSESSMENT',
+      targetId: String(assessment._id),
+      description: `Created assessment: ${assessment.title || 'Untitled'}`,
+      changes: {
+        title: { from: null, to: assessment.title || '' },
+        lifecycleStatus: { from: null, to: assessment.lifecycleStatus },
+        targetType: { from: null, to: assessment.targetType },
+        assignedCount: { from: null, to: Array.isArray(assessment.assignedStudents) ? assessment.assignedStudents.length : 0 },
+      },
+      metadata: {
+        assessmentId: String(assessment._id),
+        lifecycleStatus: assessment.lifecycleStatus,
+        targetType: assessment.targetType,
+      },
+      req,
+    });
+
     res.status(201).json({ assessmentId: assessment._id, assignedCount: ids.length });
 
     setImmediate(async () => {
@@ -594,6 +778,21 @@ export async function updateAssessment(req, res) {
     const assessment = await Assessment.findById(id);
     if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
 
+    const beforeSnapshot = {
+      title: assessment.title,
+      description: assessment.description,
+      instructions: assessment.instructions,
+      lifecycleStatus: assessment.lifecycleStatus,
+      startTime: assessment.startTime,
+      endTime: assessment.endTime,
+      duration: assessment.duration,
+      targetType: assessment.targetType,
+      assignedStudentsCount: Array.isArray(assessment.assignedStudents) ? assessment.assignedStudents.length : 0,
+      allowLateSubmission: assessment.allowLateSubmission,
+      attemptLimit: assessment.attemptLimit,
+      version: assessment.version,
+    };
+
     if (title !== undefined) assessment.title = title;
     if (description !== undefined) assessment.description = description;
     if (instructions !== undefined) assessment.instructions = instructions;
@@ -695,6 +894,55 @@ export async function updateAssessment(req, res) {
     assessment.versionUpdatedAt = new Date();
 
     await assessment.save();
+
+    const afterSnapshot = {
+      title: assessment.title,
+      description: assessment.description,
+      instructions: assessment.instructions,
+      lifecycleStatus: assessment.lifecycleStatus,
+      startTime: assessment.startTime,
+      endTime: assessment.endTime,
+      duration: assessment.duration,
+      targetType: assessment.targetType,
+      assignedStudentsCount: Array.isArray(assessment.assignedStudents) ? assessment.assignedStudents.length : 0,
+      allowLateSubmission: assessment.allowLateSubmission,
+      attemptLimit: assessment.attemptLimit,
+      version: assessment.version,
+    };
+
+    const changes = {
+      ...(buildSimpleChanges(beforeSnapshot, afterSnapshot, [
+        'title',
+        'description',
+        'instructions',
+        'lifecycleStatus',
+        'startTime',
+        'endTime',
+        'duration',
+        'targetType',
+        'assignedStudentsCount',
+        'allowLateSubmission',
+        'attemptLimit',
+        'version',
+      ]) || {}),
+    };
+
+    logActivity({
+      userEmail: req.user?.email,
+      userRole: req.user?.role,
+      actionType: 'UPDATE',
+      targetType: 'ASSESSMENT',
+      targetId: String(assessment._id),
+      description: `Updated assessment: ${assessment.title || 'Untitled'}`,
+      changes: Object.keys(changes).length ? changes : null,
+      metadata: {
+        assessmentId: String(assessment._id),
+        lifecycleStatus: assessment.lifecycleStatus,
+        targetType: assessment.targetType,
+      },
+      req,
+    });
+
     res.json({ message: 'Assessment updated', assessmentId: assessment._id });
 
     if (assessment.lifecycleStatus === 'published' && sendEmail !== false && process.env.EMAIL_ON_ASSESSMENT === 'true') {
@@ -747,6 +995,18 @@ export async function deleteAssessment(req, res) {
     if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
 
     await AssessmentSubmission.deleteMany({ assessmentId: id });
+
+    logActivity({
+      userEmail: req.user?.email,
+      userRole: req.user?.role,
+      actionType: 'DELETE',
+      targetType: 'ASSESSMENT',
+      targetId: String(assessment._id),
+      description: `Deleted assessment: ${assessment.title || 'Untitled'}`,
+      metadata: { assessmentId: String(assessment._id) },
+      req,
+    });
+
     res.json({ message: 'Assessment deleted' });
   } catch (err) {
     console.error('Error deleting assessment:', err);
@@ -799,6 +1059,170 @@ export async function listStudentAssessments(req, res) {
   } catch (err) {
     console.error('Error listing student assessments:', err);
     res.status(500).json({ error: 'Failed to load assessments' });
+  }
+}
+
+export async function getStudentAssessmentDashboard(req, res) {
+  try {
+    const studentId = String(req.user?._id || '');
+    const now = new Date();
+
+    const [assessments, studentSubmissions, leaderboardRows] = await Promise.all([
+      Assessment.find({
+        lifecycleStatus: { $ne: 'draft' },
+        startTime: { $ne: null },
+        endTime: { $ne: null },
+        $or: [
+          { targetType: 'all' },
+          { assignedStudents: req.user._id },
+        ],
+      }).sort({ startTime: -1, createdAt: -1 }).lean(),
+      AssessmentSubmission.find({ studentId: req.user._id }).sort({ updatedAt: -1 }).lean(),
+      AssessmentSubmission.aggregate([
+        { $match: { status: 'submitted' } },
+        {
+          $group: {
+            _id: '$studentId',
+            totalScore: { $sum: { $ifNull: ['$score', 0] } },
+            assessmentsCompleted: { $sum: 1 },
+            averageAccuracy: { $avg: '$accuracy' },
+            averageTimeTakenSec: { $avg: '$timeTakenSec' },
+            latestSubmittedAt: { $max: '$submittedAt' },
+          },
+        },
+        {
+          $lookup: {
+            from: 'users',
+            localField: '_id',
+            foreignField: '_id',
+            as: 'student',
+          },
+        },
+        { $unwind: '$student' },
+        {
+          $project: {
+            studentId: '$_id',
+            name: '$student.name',
+            avatarUrl: '$student.avatarUrl',
+            collegeId: '$student.studentId',
+            totalScore: { $round: ['$totalScore', 2] },
+            assessmentsCompleted: 1,
+            averageAccuracy: { $round: [{ $ifNull: ['$averageAccuracy', 0] }, 2] },
+            averageTimeTakenSec: { $round: [{ $ifNull: ['$averageTimeTakenSec', 0] }, 0] },
+            latestSubmittedAt: 1,
+          },
+        },
+      ]),
+    ]);
+
+    const submissionsByAssessment = new Map(
+      studentSubmissions.map((submission) => [String(submission.assessmentId), submission]),
+    );
+
+    const ongoingAssessments = [];
+    const upcomingAssessments = [];
+    const reportRows = [];
+
+    assessments.forEach((assessment) => {
+      const assessmentId = String(assessment._id);
+      const submission = submissionsByAssessment.get(assessmentId);
+      const totalMarks = Number(assessment.totalMarks || computeTotalMarksFromSections(assessment.sections || []));
+      const totalQuestions = countQuestions(assessment.sections || []);
+      const startsAt = assessment.startTime ? new Date(assessment.startTime) : null;
+      const endsAt = assessment.endTime ? new Date(assessment.endTime) : null;
+      const isUpcoming = startsAt && now < startsAt;
+      const isLive = startsAt && endsAt && now >= startsAt && now <= endsAt;
+      const hasExpiredLongEnough = endsAt ? (now.getTime() - endsAt.getTime()) > ASSESSMENT_EXPIRY_GRACE_MS : false;
+
+      if ((isUpcoming || isLive) && !hasExpiredLongEnough) {
+        const status = isLive ? 'Live' : 'Upcoming';
+        const card = {
+          _id: assessment._id,
+          title: assessment.title || 'Untitled Assessment',
+          description: assessment.description || '',
+          startTime: assessment.startTime,
+          endTime: assessment.endTime,
+          duration: assessment.duration || 0,
+          totalMarks,
+          totalQuestions,
+          assessmentType: assessment.assessmentType || 'mixed',
+          status,
+          actionLabel: submission?.status === 'in_progress' ? 'Continue' : 'Start',
+          hasSubmissionInProgress: submission?.status === 'in_progress',
+        };
+
+        if (status === 'Live') ongoingAssessments.push(card);
+        else upcomingAssessments.push(card);
+      }
+
+      if (submission && (submission.startedAt || submission.submittedAt || submission.updatedAt)) {
+        reportRows.push(buildStudentReportRow(assessment, submission));
+      }
+    });
+
+    const sortedReports = reportRows.sort(
+      (a, b) => new Date(b.dateAttempted || 0).getTime() - new Date(a.dateAttempted || 0).getTime(),
+    );
+
+    const historyRows = sortedReports.filter((row) => {
+      const assessment = assessments.find((item) => String(item._id) === String(row.assessmentId));
+      const ended = assessment?.endTime ? new Date(assessment.endTime).getTime() < now.getTime() : false;
+      return row.status === 'Completed' && ended;
+    });
+
+    const leaderboard = [...leaderboardRows]
+      .sort((left, right) => {
+        if (right.totalScore !== left.totalScore) return right.totalScore - left.totalScore;
+        if (right.averageAccuracy !== left.averageAccuracy) return right.averageAccuracy - left.averageAccuracy;
+        if (right.assessmentsCompleted !== left.assessmentsCompleted) return right.assessmentsCompleted - left.assessmentsCompleted;
+        return String(left.name || '').localeCompare(String(right.name || ''));
+      })
+      .map((entry, index) => ({
+        rank: index + 1,
+        studentId: entry.studentId,
+        name: entry.name || 'Student',
+        avatarUrl: entry.avatarUrl || '',
+        collegeId: entry.collegeId || '',
+        score: Number(entry.totalScore || 0),
+        assessmentsCompleted: Number(entry.assessmentsCompleted || 0),
+        averageAccuracy: Number(entry.averageAccuracy || 0),
+        averageTimeTakenSec: Number(entry.averageTimeTakenSec || 0),
+        latestSubmittedAt: entry.latestSubmittedAt,
+        isCurrentStudent: String(entry.studentId) === studentId,
+      }));
+
+    const currentStudentRank = leaderboard.find((entry) => entry.isCurrentStudent) || null;
+    const completedReports = sortedReports.filter((row) => row.status === 'Completed');
+    const averageScore = completedReports.length
+      ? Number((completedReports.reduce((sum, row) => sum + Number(row.score || 0), 0) / completedReports.length).toFixed(2))
+      : 0;
+    const bestScore = completedReports.length
+      ? Math.max(...completedReports.map((row) => Number(row.score || 0)))
+      : 0;
+
+    res.json({
+      serverTime: now,
+      currentStudent: {
+        id: studentId,
+        rank: currentStudentRank?.rank || null,
+      },
+      overview: {
+        upcomingCount: upcomingAssessments.length,
+        liveCount: ongoingAssessments.length,
+        reportsCount: sortedReports.length,
+        historyCount: historyRows.length,
+        averageScore,
+        bestScore,
+      },
+      upcomingAssessments,
+      ongoingAssessments,
+      reports: sortedReports,
+      history: historyRows,
+      leaderboard,
+    });
+  } catch (err) {
+    console.error('Error loading student assessment dashboard:', err);
+    res.status(500).json({ error: 'Failed to load assessment dashboard' });
   }
 }
 

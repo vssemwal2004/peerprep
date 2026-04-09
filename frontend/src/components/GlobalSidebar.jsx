@@ -81,6 +81,7 @@ const buildNavItems = () => ([
       { label: 'Overview', to: '/admin/assessment', icon: ClipboardList },
       { label: 'Add Assessment', to: '/admin/assessment/create', icon: ClipboardList },
       { label: 'Reports', to: '/admin/assessment/reports', icon: ClipboardList },
+      { label: 'Assessment Rules', to: '/admin/assessment/rules', icon: ShieldCheck },
     ],
   },
   {
@@ -116,7 +117,6 @@ const buildNavItems = () => ([
     icon: Settings,
     items: [
       { label: 'Email Templates', to: '/admin/settings/email-templates', icon: Mail },
-      { label: 'Assessment Rules', to: '/admin/assessment/rules', icon: ShieldCheck },
     ],
   },
 ]);
@@ -150,7 +150,7 @@ export default function GlobalSidebar({ isExpanded = false, onExpand = () => {},
       className="fixed left-0 top-20 z-40 h-[calc(100vh-5rem)] overflow-hidden border-r border-slate-200 bg-white/95 shadow-sm backdrop-blur transition-[width] duration-300 dark:border-gray-700 dark:bg-gray-900/95"
       style={{ width: 'var(--admin-sidebar-width)' }}
     >
-      <div className="flex h-full flex-col gap-2 overflow-y-auto px-2 py-3">
+      <div className="flex h-full flex-col gap-1.5 overflow-y-auto px-2 py-3">
         {navItems.map((item) => {
           if (item.type === 'link') {
             const Icon = item.icon;
@@ -160,20 +160,20 @@ export default function GlobalSidebar({ isExpanded = false, onExpand = () => {},
                 key={item.label}
                 to={item.to}
                 title={item.label}
-                className={`flex items-center gap-3 rounded-xl px-2.5 py-2 text-[13px] font-semibold transition-colors ${
+                className={`flex items-center gap-2 rounded-xl px-2 py-1.5 text-[13px] font-semibold transition-colors ${
                   active
                     ? 'bg-sky-50 text-sky-700 shadow-sm dark:bg-sky-900/30 dark:text-sky-300'
                     : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100'
                 }`}
               >
-                <span className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${
+                <span className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
                   active
                     ? 'bg-sky-100 text-sky-700 dark:bg-sky-800/40 dark:text-sky-300'
                     : 'bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-gray-400'
                 }`}>
                   <Icon className="h-4 w-4" />
                 </span>
-                <span className={`whitespace-nowrap transition-all duration-300 ${isExpanded ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-2 pointer-events-none'}`}>
+                <span className={`whitespace-nowrap leading-tight transition-all duration-300 ${isExpanded ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-2 pointer-events-none'}`}>
                   {item.label}
                 </span>
               </NavLink>
@@ -185,25 +185,25 @@ export default function GlobalSidebar({ isExpanded = false, onExpand = () => {},
           const groupActive = isGroupActive(item);
 
           return (
-            <div key={item.key} className="space-y-1">
+            <div key={item.key} className="space-y-0.5">
               <button
                 type="button"
                 onClick={() => handleGroupToggle(item.key)}
                 title={item.label}
-                className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-[13px] font-semibold transition-colors ${
+                className={`flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-[13px] font-semibold transition-colors ${
                   groupActive
                     ? 'bg-sky-50 text-sky-700 shadow-sm dark:bg-sky-900/30 dark:text-sky-300'
                     : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100'
                 }`}
               >
-                <span className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${
+                <span className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
                   groupActive
                     ? 'bg-sky-100 text-sky-700 dark:bg-sky-800/40 dark:text-sky-300'
                     : 'bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-gray-400'
                 }`}>
                   <GroupIcon className="h-4 w-4" />
                 </span>
-                <span className={`flex-1 whitespace-nowrap text-left transition-all duration-300 ${isExpanded ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-2 pointer-events-none'}`}>
+                <span className={`flex-1 whitespace-nowrap text-left leading-tight transition-all duration-300 ${isExpanded ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-2 pointer-events-none'}`}>
                   {item.label}
                 </span>
                 {isExpanded && (
@@ -211,8 +211,12 @@ export default function GlobalSidebar({ isExpanded = false, onExpand = () => {},
                 )}
               </button>
 
-              <div className={`overflow-hidden transition-[max-height,opacity] duration-300 ${isOpen && isExpanded ? 'max-h-80 opacity-100' : 'max-h-0 opacity-0'}`}>
-                <div className="space-y-1 pl-11 pr-2 pb-1">
+              <div
+                className={`overflow-hidden transition-[max-height,opacity] duration-300 ${
+                  isOpen && isExpanded ? 'max-h-80 opacity-100' : 'max-h-0 opacity-0'
+                }`}
+              >
+                <div className="space-y-0.5 pl-12 pr-2 pb-1">
                   {item.items.map((child) => {
                     const ChildIcon = child.icon;
                     const childActive = isRouteActive(child);
@@ -220,7 +224,7 @@ export default function GlobalSidebar({ isExpanded = false, onExpand = () => {},
                       <NavLink
                         key={child.label}
                         to={child.to}
-                        className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-[12px] font-semibold transition-colors ${
+                        className={`flex items-center gap-2 rounded-lg px-2 py-1 text-[12px] font-semibold transition-colors ${
                           childActive
                             ? 'bg-sky-50 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
                             : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100'

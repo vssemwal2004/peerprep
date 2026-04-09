@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../utils/api';
 
 const formatDate = (value) => {
@@ -23,6 +23,14 @@ export default function EmailTemplates() {
   const [editing, setEditing] = useState(null);
   const [editForm, setEditForm] = useState({ name: '', subject: '', htmlContent: '', type: '', variables: [] });
   const [saving, setSaving] = useState(false);
+
+  const htmlTextareaRef = useRef(null);
+  const previewRef = useRef(null);
+  const syncingScrollRef = useRef(false);
+
+  const [findQuery, setFindQuery] = useState('');
+  const [findMatches, setFindMatches] = useState([]);
+  const [findIndex, setFindIndex] = useState(0);
 
   const filteredTemplates = useMemo(() => {
     if (!search.trim()) return templates;
@@ -69,6 +77,9 @@ export default function EmailTemplates() {
         type: full.type || '',
         variables: full.variables || [],
       });
+      setFindQuery('');
+      setFindMatches([]);
+      setFindIndex(0);
     } catch (err) {
       setError(err?.message || 'Failed to load template');
     }
@@ -78,6 +89,113 @@ export default function EmailTemplates() {
     setViewing(null);
     setEditing(null);
   };
+
+  const scrollTextareaToIndex = useCallback((index) => {
+    const textarea = htmlTextareaRef.current;
+    if (!textarea) return;
+
+    const content = textarea.value || '';
+    const before = content.slice(0, Math.max(0, index));
+    const lineCount = before.split('\n').length - 1;
+    const computed = window.getComputedStyle(textarea);
+    const lineHeight = Number.parseFloat(computed.lineHeight) || 18;
+    const targetScroll = Math.max(0, lineCount * lineHeight - textarea.clientHeight * 0.35);
+    textarea.scrollTop = targetScroll;
+  }, []);
+
+  const selectRangeInTextarea = useCallback((start, end) => {
+    const textarea = htmlTextareaRef.current;
+    if (!textarea) return;
+    textarea.focus();
+    textarea.setSelectionRange(start, end);
+    scrollTextareaToIndex(start);
+  }, [scrollTextareaToIndex]);
+
+  const insertAtCursor = useCallback((insertText) => {
+    const textarea = htmlTextareaRef.current;
+    const content = editForm.htmlContent || '';
+    if (!textarea) {
+      setEditForm((prev) => ({ ...prev, htmlContent: (prev.htmlContent || '') + insertText }));
+      return;
+    }
+
+    const start = textarea.selectionStart ?? content.length;
+    const end = textarea.selectionEnd ?? content.length;
+    const next = content.slice(0, start) + insertText + content.slice(end);
+    setEditForm((prev) => ({ ...prev, htmlContent: next }));
+
+    requestAnimationFrame(() => {
+      textarea.focus();
+      const nextPos = start + insertText.length;
+      textarea.setSelectionRange(nextPos, nextPos);
+      scrollTextareaToIndex(nextPos);
+    });
+  }, [editForm.htmlContent, scrollTextareaToIndex]);
+
+  const computeFindMatches = useCallback((query, content) => {
+    const q = (query || '').trim();
+    if (!q) return [];
+    const haystack = content || '';
+    const needle = q.toLowerCase();
+
+    const matches = [];
+    const lower = haystack.toLowerCase();
+    let idx = 0;
+    while (idx < lower.length) {
+      const at = lower.indexOf(needle, idx);
+      if (at === -1) break;
+      matches.push({ start: at, end: at + needle.length });
+      idx = at + Math.max(1, needle.length);
+      if (matches.length > 200) break;
+    }
+    return matches;
+  }, []);
+
+  const runFind = useCallback((direction) => {
+    const content = editForm.htmlContent || '';
+    const matches = computeFindMatches(findQuery, content);
+    setFindMatches(matches);
+    if (!matches.length) return;
+
+    let nextIndex = findIndex;
+    if (direction === 'next') nextIndex = (findIndex + 1) % matches.length;
+    if (direction === 'prev') nextIndex = (findIndex - 1 + matches.length) % matches.length;
+    setFindIndex(nextIndex);
+    const m = matches[nextIndex];
+    selectRangeInTextarea(m.start, m.end);
+  }, [computeFindMatches, editForm.htmlContent, findIndex, findQuery, selectRangeInTextarea]);
+
+  const handleTextareaScroll = useCallback(() => {
+    const textarea = htmlTextareaRef.current;
+    const preview = previewRef.current;
+    if (!textarea || !preview) return;
+    if (syncingScrollRef.current) return;
+
+    syncingScrollRef.current = true;
+    const maxTextarea = Math.max(1, textarea.scrollHeight - textarea.clientHeight);
+    const maxPreview = Math.max(1, preview.scrollHeight - preview.clientHeight);
+    const ratio = textarea.scrollTop / maxTextarea;
+    preview.scrollTop = ratio * maxPreview;
+    requestAnimationFrame(() => {
+      syncingScrollRef.current = false;
+    });
+  }, []);
+
+  const handlePreviewScroll = useCallback(() => {
+    const textarea = htmlTextareaRef.current;
+    const preview = previewRef.current;
+    if (!textarea || !preview) return;
+    if (syncingScrollRef.current) return;
+
+    syncingScrollRef.current = true;
+    const maxTextarea = Math.max(1, textarea.scrollHeight - textarea.clientHeight);
+    const maxPreview = Math.max(1, preview.scrollHeight - preview.clientHeight);
+    const ratio = preview.scrollTop / maxPreview;
+    textarea.scrollTop = ratio * maxTextarea;
+    requestAnimationFrame(() => {
+      syncingScrollRef.current = false;
+    });
+  }, []);
 
   const handleSave = async () => {
     if (!editing) return;
@@ -276,27 +394,83 @@ export default function EmailTemplates() {
                 <div>
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <label className="text-xs font-semibold uppercase text-slate-500">HTML Content</label>
-                    {editForm.variables?.length > 0 && (
-                      <div className="flex flex-wrap gap-2 text-[11px] text-slate-500">
-                        {editForm.variables.map((v) => (
-                          <span key={v} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5">
-                            {`{{${v}}}`}
-                          </span>
-                        ))}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="relative">
+                          <input
+                            value={findQuery}
+                            onChange={(e) => {
+                              setFindQuery(e.target.value);
+                              setFindIndex(0);
+                              setFindMatches([]);
+                            }}
+                            placeholder="Find in HTML"
+                            className="w-44 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => runFind('prev')}
+                          disabled={!findQuery.trim()}
+                          className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-200 dark:hover:bg-gray-700"
+                        >
+                          Prev
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => runFind('next')}
+                          disabled={!findQuery.trim()}
+                          className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-200 dark:hover:bg-gray-700"
+                        >
+                          Next
+                        </button>
+                        {!!findMatches.length && (
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                            {Math.min(findIndex + 1, findMatches.length)}/{findMatches.length}
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </div>
+
+                  {editForm.variables?.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                      {editForm.variables.map((v) => (
+                        <button
+                          key={v}
+                          type="button"
+                          title="Click to insert into HTML"
+                          onClick={() => insertAtCursor(`{{${v}}}`)}
+                          className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 font-semibold text-slate-600 hover:bg-slate-100 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-200 dark:hover:bg-gray-700"
+                        >
+                          {`{{${v}}}`}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
                   <textarea
+                    ref={htmlTextareaRef}
                     value={editForm.htmlContent}
                     onChange={(e) => setEditForm((prev) => ({ ...prev, htmlContent: e.target.value }))}
+                    onScroll={handleTextareaScroll}
                     className="mt-2 h-[360px] w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-mono text-slate-700 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                   />
                 </div>
               </div>
               <div>
-                <label className="text-xs font-semibold uppercase text-slate-500">Live Preview</label>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-xs font-semibold uppercase text-slate-500">Live Preview</label>
+                  {editForm.variables?.length > 0 && (
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Tip: use variables above to insert quickly
+                    </div>
+                  )}
+                </div>
                 <div
+                  ref={previewRef}
                   className="mt-2 h-[520px] overflow-y-auto rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-950"
+                  onScroll={handlePreviewScroll}
                   dangerouslySetInnerHTML={{ __html: editForm.htmlContent }}
                 />
               </div>

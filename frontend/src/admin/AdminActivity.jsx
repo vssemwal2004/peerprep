@@ -9,7 +9,7 @@ const actionTypeColors = {
   CREATE: 'text-green-600 dark:text-green-400',
   UPDATE: 'text-blue-600 dark:text-blue-400',
   DELETE: 'text-red-600 dark:text-red-400',
-  LOGIN: 'text-purple-600 dark:text-purple-400',
+  LOGIN: 'text-sky-600 dark:text-sky-400',
   LOGOUT: 'text-gray-600 dark:text-gray-400',
   PASSWORD_CHANGE: 'text-yellow-600 dark:text-yellow-400',
   EXPORT: 'text-sky-600 dark:text-sky-400',
@@ -235,8 +235,37 @@ export default function AdminActivity() {
     }
   };
 
+  const formatChangeLines = (changes) => {
+    if (!changes || typeof changes !== 'object') return [];
+    const lines = [];
+    for (const [key, value] of Object.entries(changes)) {
+      if (!value || typeof value !== 'object') continue;
+      const hasFrom = Object.prototype.hasOwnProperty.call(value, 'from');
+      const hasTo = Object.prototype.hasOwnProperty.call(value, 'to');
+      if (!hasFrom && !hasTo) continue;
+
+      const toDisplay = (v) => {
+        if (v === null || v === undefined) return '—';
+        if (typeof v === 'boolean') return v ? 'true' : 'false';
+        if (typeof v === 'number') return String(v);
+        if (typeof v === 'string') return v.length > 48 ? `${v.slice(0, 45)}…` : v;
+        try {
+          const s = JSON.stringify(v);
+          return s.length > 48 ? `${s.slice(0, 45)}…` : s;
+        } catch {
+          return String(v);
+        }
+      };
+
+      const from = hasFrom ? value.from : undefined;
+      const to = hasTo ? value.to : undefined;
+      lines.push(`${key}: ${toDisplay(from)} → ${toDisplay(to)}`);
+    }
+    return lines;
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pt-20">
+    <div className="min-h-screen bg-white dark:bg-gray-900 pt-20">
       <div className="flex min-h-screen">
         {/* Mobile Sidebar Toggle */}
         <button
@@ -256,7 +285,7 @@ export default function AdminActivity() {
         )}
         
         {/* Left Sidebar - Fixed with independent scroll */}
-        <div className={`activity-sidebar fixed lg:sticky top-20 h-[calc(100vh-5rem)] w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex-shrink-0 overflow-y-auto z-40 transform transition-transform duration-300 ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`} style={{
+        <div className={`activity-sidebar fixed lg:sticky top-20 h-[calc(100vh-5rem)] w-64 bg-white dark:bg-gray-900 border-r border-slate-200 dark:border-gray-700 flex-shrink-0 overflow-y-auto z-40 transform transition-transform duration-300 ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`} style={{
           left: 'var(--admin-sidebar-width, 4rem)',
           scrollbarWidth: 'thin',
           scrollbarColor: '#9ca3af #f3f4f6'
@@ -271,8 +300,8 @@ export default function AdminActivity() {
               onClick={() => { handleViewChange('admin'); setMobileSidebarOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors mb-2 ${
                 selectedView === 'admin'
-                  ? 'bg-purple-600 text-white'
-                  : 'bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600'
+                  ? 'bg-sky-600 text-white'
+                  : 'bg-slate-50 dark:bg-gray-800 text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-gray-800/80'
               }`}
             >
               <Shield className="w-5 h-5" />
@@ -283,7 +312,7 @@ export default function AdminActivity() {
             <div className="mt-2">
               <button
                 onClick={() => setShowCoordinatorDropdown(!showCoordinatorDropdown)}
-                className="w-full flex items-center justify-between px-4 py-3 rounded-lg bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+                className="w-full flex items-center justify-between px-4 py-3 rounded-lg bg-slate-50 dark:bg-gray-800 text-slate-700 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-gray-800/80 transition-colors"
               >
                 <div className="flex items-center gap-3">
                   <Users className="w-5 h-5" />
@@ -322,8 +351,8 @@ export default function AdminActivity() {
                             onClick={() => { handleCoordinatorSelect(coordinator._id); setMobileSidebarOpen(false); }}
                             className={`w-full text-left px-4 py-2 rounded-lg text-sm transition-colors ${
                               selectedView === coordinator._id
-                                ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
-                                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-600'
+                                ? 'bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300'
+                                : 'text-slate-600 dark:text-gray-400 hover:bg-slate-100 dark:hover:bg-gray-800/80'
                             }`}
                           >
                             {coordinator.name}
@@ -354,7 +383,7 @@ export default function AdminActivity() {
             </div>
 
         {/* Top Bar */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 mb-4">
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-slate-200 dark:border-gray-700 p-4 mb-4">
           <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
             {/* Search Bar */}
             <form onSubmit={handleSearch} className="flex-1 w-full sm:w-auto">
@@ -365,7 +394,7 @@ export default function AdminActivity() {
                   placeholder="Search activities..."
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                  className="w-full pl-10 pr-4 py-2 border border-slate-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 text-slate-900 dark:text-gray-100 placeholder-slate-400 focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none"
                 />
               </div>
             </form>
@@ -374,16 +403,16 @@ export default function AdminActivity() {
             <div className="flex gap-2">
               <button
                 onClick={() => setShowFilters(!showFilters)}
-                className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl transition-colors ${
                   hasActiveFilters 
-                    ? 'bg-purple-600 text-white hover:bg-purple-700' 
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-white hover:bg-gray-200 dark:hover:bg-gray-600'
+                    ? 'bg-sky-600 text-white hover:bg-sky-700' 
+                    : 'bg-slate-100 dark:bg-gray-800 text-slate-700 dark:text-gray-100 hover:bg-slate-200 dark:hover:bg-gray-800/80'
                 }`}
               >
                 <Filter className="w-4 h-4" />
                 <span className="hidden sm:inline">Filters</span>
                 {hasActiveFilters && (
-                  <span className="bg-white dark:bg-gray-800 text-purple-600 dark:text-purple-400 text-xs font-semibold px-2 py-0.5 rounded-full">
+                  <span className="bg-white dark:bg-gray-900 text-sky-600 dark:text-sky-400 text-xs font-semibold px-2 py-0.5 rounded-full">
                     Active
                   </span>
                 )}
@@ -391,7 +420,7 @@ export default function AdminActivity() {
               <button
                 onClick={handleRefresh}
                 disabled={refreshing}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-white rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-gray-800 text-slate-700 dark:text-gray-100 rounded-xl hover:bg-slate-200 dark:hover:bg-gray-800/80 transition-colors disabled:opacity-50"
               >
                 <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
                 <span className="hidden sm:inline">Refresh</span>
@@ -399,7 +428,7 @@ export default function AdminActivity() {
               <button
                 onClick={handleExport}
                 disabled={exporting}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-sky-600 text-white rounded-xl hover:bg-sky-700 transition-colors disabled:opacity-50"
               >
                 <Download className="w-4 h-4" />
                 <span className="hidden sm:inline">{exporting ? 'Exporting...' : 'Export CSV'}</span>
@@ -417,7 +446,7 @@ export default function AdminActivity() {
                 transition={{ duration: 0.2 }}
                 className="overflow-hidden"
               >
-                <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <div className="mt-4 pt-4 border-t border-slate-200 dark:border-gray-700">
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                     {/* Action Type Filter */}
                     <div>
@@ -427,7 +456,7 @@ export default function AdminActivity() {
                       <select
                         value={filters.actionType}
                         onChange={(e) => handleFilterChange('actionType', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                        className="w-full px-3 py-2 border border-slate-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 text-slate-900 dark:text-gray-100 focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none"
                       >
                         <option value="">All Actions</option>
                         <option value="CREATE">Create</option>
@@ -455,7 +484,7 @@ export default function AdminActivity() {
                       <select
                         value={filters.targetType}
                         onChange={(e) => handleFilterChange('targetType', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                        className="w-full px-3 py-2 border border-slate-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 text-slate-900 dark:text-gray-100 focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none"
                       >
                         <option value="">All Targets</option>
                         <option value="STUDENT">Student</option>
@@ -465,6 +494,11 @@ export default function AdminActivity() {
                         <option value="CHAPTER">Chapter</option>
                         <option value="TOPIC">Topic</option>
                         <option value="SEMESTER">Semester</option>
+                        <option value="ANNOUNCEMENT">Announcement</option>
+                        <option value="ASSESSMENT">Assessment</option>
+                        <option value="ASSESSMENT_RULE">Assessment Rule</option>
+                        <option value="EMAIL_TEMPLATE">Email Template</option>
+                        <option value="COMPANY_BENCHMARK">Company Benchmark</option>
                         <option value="FEEDBACK">Feedback</option>
                         <option value="PROFILE">Profile</option>
                         <option value="SYSTEM">System</option>
@@ -480,7 +514,7 @@ export default function AdminActivity() {
                         type="date"
                         value={filters.startDate}
                         onChange={(e) => handleFilterChange('startDate', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                        className="w-full px-3 py-2 border border-slate-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 text-slate-900 dark:text-gray-100 focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none"
                       />
                     </div>
 
@@ -493,7 +527,7 @@ export default function AdminActivity() {
                         type="date"
                         value={filters.endDate}
                         onChange={(e) => handleFilterChange('endDate', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                        className="w-full px-3 py-2 border border-slate-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 text-slate-900 dark:text-gray-100 focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none"
                       />
                     </div>
                   </div>
@@ -503,7 +537,7 @@ export default function AdminActivity() {
                     <div className="mt-3 flex justify-end">
                       <button
                         onClick={clearFilters}
-                        className="inline-flex items-center gap-2 px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-white rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                        className="inline-flex items-center gap-2 px-3 py-1.5 text-sm bg-slate-100 dark:bg-gray-800 text-slate-700 dark:text-gray-100 rounded-xl hover:bg-slate-200 dark:hover:bg-gray-800/80 transition-colors"
                       >
                         <X className="w-4 h-4" />
                         Clear Filters
@@ -519,16 +553,16 @@ export default function AdminActivity() {
           {!loading && (
             <div className="mt-3 text-sm text-gray-600 dark:text-white">
               Showing {activities.length} of {totalActivities} activities
-              {hasActiveFilters && <span className="ml-1 text-purple-600 dark:text-purple-400">(filtered)</span>}
+              {hasActiveFilters && <span className="ml-1 text-sky-600 dark:text-sky-400">(filtered)</span>}
             </div>
           )}
         </div>
 
         {/* Table */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-slate-200 dark:border-gray-700 overflow-hidden">
           {loading ? (
             <div className="flex items-center justify-center py-20">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600"></div>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-600"></div>
             </div>
           ) : activities.length === 0 ? (
             <div className="text-center py-20">
@@ -599,12 +633,33 @@ export default function AdminActivity() {
                             <div className="text-sm text-gray-900 dark:text-white">
                               {activity.targetType || '-'}
                             </div>
+                            {activity.targetId && (
+                              <div className="text-xs text-gray-500 dark:text-gray-400">
+                                {activity.targetId}
+                              </div>
+                            )}
                           </td>
 
                           {/* Description */}
                           <td className="px-6 py-4">
-                            <div className="text-sm text-gray-700 dark:text-white max-w-md">
-                              {activity.description}
+                            <div className="text-sm text-gray-700 dark:text-gray-200 max-w-md">
+                              <div>{activity.description}</div>
+                              {(() => {
+                                const lines = formatChangeLines(activity.changes);
+                                if (!lines.length) return null;
+                                const shown = lines.slice(0, 3);
+                                const remaining = lines.length - shown.length;
+                                return (
+                                  <div className="mt-1 space-y-0.5 text-xs text-slate-500 dark:text-gray-400">
+                                    {shown.map((l) => (
+                                      <div key={l} className="truncate">{l}</div>
+                                    ))}
+                                    {remaining > 0 && (
+                                      <div className="text-slate-400 dark:text-gray-500">+{remaining} more changes</div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </div>
                           </td>
                         </motion.tr>
@@ -616,7 +671,7 @@ export default function AdminActivity() {
 
               {/* Pagination */}
               {totalPages > 1 && (
-                <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+                <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200 dark:border-gray-700 bg-slate-50 dark:bg-gray-900/50">
                   <div className="text-sm text-gray-600 dark:text-white">
                     Page {page} of {totalPages}
                   </div>
@@ -624,7 +679,7 @@ export default function AdminActivity() {
                     <button
                       onClick={() => setPage(p => Math.max(1, p - 1))}
                       disabled={page === 1}
-                      className="inline-flex items-center gap-1 px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-white rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="inline-flex items-center gap-1 px-3 py-2 bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-700 text-slate-700 dark:text-gray-100 rounded-xl hover:bg-slate-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <ChevronLeft className="w-4 h-4" />
                       Previous
@@ -632,7 +687,7 @@ export default function AdminActivity() {
                     <button
                       onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                       disabled={page === totalPages}
-                      className="inline-flex items-center gap-1 px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-white rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="inline-flex items-center gap-1 px-3 py-2 bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-700 text-slate-700 dark:text-gray-100 rounded-xl hover:bg-slate-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Next
                       <ChevronRight className="w-4 h-4" />

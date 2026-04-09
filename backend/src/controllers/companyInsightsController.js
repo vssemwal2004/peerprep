@@ -2,6 +2,7 @@ import Papa from 'papaparse';
 import CompanyBenchmark from '../models/CompanyBenchmark.js';
 import { HttpError } from '../utils/errors.js';
 import { sanitizeCsvRow, validateCsvImport, sanitizeString } from '../utils/validators.js';
+import { logActivity } from './adminActivityController.js';
 
 const REQUIRED_FIELDS = [
   'company_name',
@@ -114,6 +115,19 @@ export async function createCompanyBenchmark(req, res) {
     createdBy: req.user?._id,
     updatedBy: req.user?._id,
   });
+
+  logActivity({
+    userEmail: req.user?.email,
+    userRole: req.user?.role,
+    actionType: 'CREATE',
+    targetType: 'COMPANY_BENCHMARK',
+    targetId: String(benchmark._id),
+    description: `Created company benchmark: ${benchmark.companyName}`,
+    changes: { companyName: { from: null, to: benchmark.companyName } },
+    metadata: { companyBenchmarkId: String(benchmark._id), companyName: benchmark.companyName },
+    req,
+  });
+
   res.status(201).json({ company: toResponse(benchmark) });
 }
 
@@ -122,18 +136,54 @@ export async function updateCompanyBenchmark(req, res) {
   const errors = validateBenchmarkPayload(payload);
   if (errors.length) throw new HttpError(400, errors.join('; '));
 
+  const before = await CompanyBenchmark.findById(req.params.id).lean();
+  if (!before) throw new HttpError(404, 'Company benchmark not found');
+
   const updated = await CompanyBenchmark.findByIdAndUpdate(
     req.params.id,
     { ...payload, updatedBy: req.user?._id },
     { new: true },
   );
   if (!updated) throw new HttpError(404, 'Company benchmark not found');
+
+  const keys = Object.keys(payload);
+  const changes = {};
+  keys.forEach((k) => {
+    const from = before?.[k] ?? null;
+    const to = updated?.[k] ?? null;
+    if (JSON.stringify(from) !== JSON.stringify(to)) changes[k] = { from, to };
+  });
+
+  logActivity({
+    userEmail: req.user?.email,
+    userRole: req.user?.role,
+    actionType: 'UPDATE',
+    targetType: 'COMPANY_BENCHMARK',
+    targetId: String(updated._id),
+    description: `Updated company benchmark: ${updated.companyName}`,
+    changes: Object.keys(changes).length ? changes : null,
+    metadata: { companyBenchmarkId: String(updated._id), companyName: updated.companyName },
+    req,
+  });
+
   res.json({ company: toResponse(updated) });
 }
 
 export async function deleteCompanyBenchmark(req, res) {
   const removed = await CompanyBenchmark.findByIdAndDelete(req.params.id);
   if (!removed) throw new HttpError(404, 'Company benchmark not found');
+
+  logActivity({
+    userEmail: req.user?.email,
+    userRole: req.user?.role,
+    actionType: 'DELETE',
+    targetType: 'COMPANY_BENCHMARK',
+    targetId: String(removed._id),
+    description: `Deleted company benchmark: ${removed.companyName}`,
+    metadata: { companyBenchmarkId: String(removed._id), companyName: removed.companyName },
+    req,
+  });
+
   res.json({ success: true });
 }
 
@@ -198,6 +248,20 @@ export async function uploadCompanyBenchmarks(req, res) {
       results.errors.push({ row: '-', company: normalized.companyName, issues: [err.message] });
     }
   }
+
+  logActivity({
+    userEmail: req.user?.email,
+    userRole: req.user?.role,
+    actionType: 'UPLOAD',
+    targetType: 'COMPANY_BENCHMARK',
+    description: `Uploaded company benchmarks CSV: ${results.imported} imported, ${results.skipped} skipped`,
+    metadata: {
+      imported: results.imported,
+      skipped: results.skipped,
+      fileSize,
+    },
+    req,
+  });
 
   res.json({ result: results });
 }

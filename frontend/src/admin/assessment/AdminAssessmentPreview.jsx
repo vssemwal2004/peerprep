@@ -53,6 +53,22 @@ export default function AdminAssessmentPreview() {
   const section = assessment.sections?.[activeSection];
   const question = section?.questions?.[activeQuestion];
   const previewTimer = formatTime((assessment.duration || 0) * 60 * 1000);
+  const previewSummary = (() => {
+    const sections = assessment.sections || [];
+    const counts = { mcq: 0, coding: 0, short: 0, one_line: 0, total: 0 };
+    let totalMarks = 0;
+    sections.forEach((sec) => {
+      const sectionType = sec?.type;
+      (sec.questions || []).forEach((q) => {
+        const type = q?.type || sectionType;
+        if (type && counts[type] !== undefined) counts[type] += 1;
+        counts.total += 1;
+        const points = Number(q?.points ?? sec?.marksPerQuestion ?? 1) || 1;
+        totalMarks += points;
+      });
+    });
+    return { ...counts, totalMarks, sections: sections.length };
+  })();
 
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900">
@@ -78,6 +94,37 @@ export default function AdminAssessmentPreview() {
       </div>
 
       <div className="mx-auto max-w-[1400px] px-6 py-6">
+        <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-7">
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Total Sections</div>
+            <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">{previewSummary.sections}</div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Total Questions</div>
+            <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">{previewSummary.total}</div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">MCQ</div>
+            <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">{previewSummary.mcq}</div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Coding</div>
+            <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">{previewSummary.coding}</div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Short</div>
+            <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">{previewSummary.short}</div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">One Line</div>
+            <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">{previewSummary.one_line}</div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-900 sm:col-span-2 lg:col-span-1">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Total Marks</div>
+            <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">{previewSummary.totalMarks}</div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[260px_minmax(0,1fr)_220px]">
           <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
             <h3 className="text-sm font-semibold text-slate-800 dark:text-white">Sections</h3>

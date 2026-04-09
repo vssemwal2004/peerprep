@@ -52,37 +52,34 @@
       downloads — so the server has maximum time to warm up while the user
       sees the loading screen.
     -->
-    <script>
-      (function () {
-        // In local dev, avoid hitting the production domain (CORS noise).
-        // Vite replaces %VITE_API_BASE% at build time if configured.
-        var apiBase = '%VITE_API_BASE%';
-        if (!apiBase || apiBase.indexOf('%VITE_') === 0) apiBase = 'http://localhost:4000/api';
-        fetch(apiBase + '/health', { method: 'GET', credentials: 'omit', mode: 'cors' })
-          .catch(function () { /* ignore errors — this is a best-effort warm-up */ });
+    <script type="module">
+      // Backend cold-start wake-up ping.
+      // Uses Vite env if provided; otherwise falls back to local dev.
+      const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:4000/api';
+      fetch(apiBase + '/health', { method: 'GET', credentials: 'omit', mode: 'cors' })
+        .catch(() => { /* ignore errors — this is a best-effort warm-up */ });
 
-        // Update loader status text with reassuring messages while server wakes up
-        var messages = [
-          'Starting up…',
-          'Warming up the server…',
-          'Almost ready…',
-          'Loading PeerPrep…',
-        ];
-        var idx = 0;
-        var statusEl = null;
-        function tick() {
-          if (!statusEl) statusEl = document.getElementById('loader-status');
-          if (statusEl && idx < messages.length) {
-            statusEl.textContent = messages[idx++];
-          }
-        }
-        // First message immediately, then every 8 s
-        document.addEventListener('DOMContentLoaded', function () {
-          statusEl = document.getElementById('loader-status');
-          tick();
-          setInterval(tick, 8000);
-        });
-      })();
+      // Update loader status text with reassuring messages while server wakes up
+      const messages = [
+        'Starting up…',
+        'Warming up the server…',
+        'Almost ready…',
+        'Loading PeerPrep…',
+      ];
+      let idx = 0;
+      let statusEl = null;
+
+      function tick() {
+        if (!statusEl) statusEl = document.getElementById('loader-status');
+        if (statusEl && idx < messages.length) statusEl.textContent = messages[idx++];
+      }
+
+      // First message immediately, then every 8 s
+      document.addEventListener('DOMContentLoaded', () => {
+        statusEl = document.getElementById('loader-status');
+        tick();
+        setInterval(tick, 8000);
+      });
     </script>
     
     <style>
@@ -1042,23 +1039,8 @@
           if (loader) loader.style.display = 'none';
         }
 
-        // Backend cold-start warm-up ping — fires before JS bundles download
-        var apiBase = '%VITE_API_BASE%';
-        if (!apiBase || apiBase.indexOf('%VITE_') === 0) apiBase = 'http://localhost:4000/api';
-        fetch(apiBase + '/health', { method:'GET', credentials:'omit', mode:'cors' })
-          .catch(function(){});
-
-        // Status messages for the global loader (non-landing routes only)
-        if (!isLanding) {
-          var msgs = ['Starting up\u2026','Warming up the server\u2026','Almost ready\u2026','Loading PeerPrep\u2026'];
-          var idx = 0;
-          document.addEventListener('DOMContentLoaded', function () {
-            var el = document.getElementById('loader-status');
-            if (!el) return;
-            el.textContent = msgs[idx++];
-            setInterval(function(){ if (idx < msgs.length && el) el.textContent = msgs[idx++]; }, 8000);
-          });
-        }
+        // Backend warm-up ping + global-loader status messaging are handled
+        // by the earlier head script.
 
         // Landing island tabs: select + scroll + swap deep-dive panel
         if (isLanding && island) {

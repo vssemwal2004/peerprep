@@ -2,6 +2,7 @@
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import { Download, Filter } from 'lucide-react';
+import DateTimePicker from '../components/DateTimePicker';
 
 const statusOptions = [
   { value: '', label: 'All Statuses' },
@@ -144,17 +145,18 @@ export default function AssessmentReports() {
               placeholder="Student ID"
               className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
             />
-            <input
-              type="datetime-local"
+            <DateTimePicker
               value={filters.from}
-              onChange={(e) => updateFilter('from', e.target.value)}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+              onChange={(isoDateTime) => updateFilter('from', isoDateTime)}
+              placeholder="From"
+              className="text-xs"
             />
-            <input
-              type="datetime-local"
+            <DateTimePicker
               value={filters.to}
-              onChange={(e) => updateFilter('to', e.target.value)}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+              onChange={(isoDateTime) => updateFilter('to', isoDateTime)}
+              min={filters.from || undefined}
+              placeholder="To"
+              className="text-xs"
             />
             <input
               type="number"
