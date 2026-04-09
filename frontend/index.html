@@ -160,22 +160,22 @@
         inset: 0;
         opacity: 0.18;
         transform-origin: 50% 20%;
-        transform: perspective(900px) rotateX(58deg) rotateZ(-18deg) scale(1.12);
+        transform: rotateZ(-18deg) scale(1.12);
         filter: blur(0.2px);
         background-image:
           repeating-linear-gradient(
             0deg,
             rgba(255,255,255,0.0) 0,
-            rgba(255,255,255,0.0) 56px,
-            rgba(186,230,253,0.16) 57px,
-            rgba(186,230,253,0.16) 58px
+            rgba(255,255,255,0.0) 40px,
+            rgba(186,230,253,0.16) 41px,
+            rgba(186,230,253,0.16) 42px
           ),
           repeating-linear-gradient(
             90deg,
             rgba(255,255,255,0.0) 0,
-            rgba(255,255,255,0.0) 56px,
-            rgba(191,219,254,0.14) 57px,
-            rgba(191,219,254,0.14) 58px
+            rgba(255,255,255,0.0) 40px,
+            rgba(191,219,254,0.14) 41px,
+            rgba(191,219,254,0.14) 42px
           );
         -webkit-mask-image: radial-gradient(circle at 50% 18%, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.75) 48%, rgba(0,0,0,0.0) 74%);
         mask-image: radial-gradient(circle at 50% 18%, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.75) 48%, rgba(0,0,0,0.0) 74%);
@@ -186,9 +186,9 @@
       }
 
       @keyframes liGridWave {
-        0% { transform: perspective(900px) rotateX(58deg) rotateZ(-18deg) scale(1.12) translateY(0px); }
-        50% { transform: perspective(900px) rotateX(58deg) rotateZ(-18deg) scale(1.14) translateY(-14px); }
-        100% { transform: perspective(900px) rotateX(58deg) rotateZ(-18deg) scale(1.12) translateY(0px); }
+        0% { transform: rotateZ(-18deg) scale(1.12) translateY(0px); }
+        50% { transform: rotateZ(-18deg) scale(1.14) translateY(-14px); }
+        100% { transform: rotateZ(-18deg) scale(1.12) translateY(0px); }
       }
 
       .li-star { position: absolute; font-size: 22px; line-height: 1; opacity: 0.55; }
@@ -503,6 +503,117 @@
       @media (min-width: 768px) {
         .li-footer-inner { flex-direction: row; }
       }
+
+      .li-ready {
+        position: relative;
+        z-index: 10;
+        padding: 84px 24px 10px;
+        overflow: hidden;
+      }
+      .li-ready-shade {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+        background-image:
+          linear-gradient(to bottom, rgba(224,242,254,0) 0%, rgba(224,242,254,0.06) 18%, rgba(224,242,254,0.20) 72%, rgba(224,242,254,0.10) 100%),
+          linear-gradient(to bottom, rgba(56,189,248,0) 0%, rgba(56,189,248,0.10) 50%, rgba(56,189,248,0) 92%),
+          radial-gradient(circle at 50% 48%, rgba(56,189,248,0.16) 0%, rgba(56,189,248,0.0) 60%);
+      }
+      html.dark .li-ready-shade {
+        background-image:
+          linear-gradient(to bottom, rgba(2,6,23,0) 0%, rgba(15,23,42,0.20) 20%, rgba(15,23,42,0.52) 74%, rgba(2,6,23,0.26) 100%),
+          linear-gradient(to bottom, rgba(56,189,248,0) 0%, rgba(56,189,248,0.14) 52%, rgba(56,189,248,0) 92%),
+          radial-gradient(circle at 50% 48%, rgba(56,189,248,0.14) 0%, rgba(56,189,248,0.0) 62%);
+      }
+      .li-ready-inner {
+        max-width: 1152px;
+        margin: 0 auto;
+        position: relative;
+        z-index: 1;
+      }
+      .li-ready-head {
+        max-width: 820px;
+        margin: 0 auto;
+        text-align: center;
+      }
+      .li-ready-h2 {
+        margin: 0;
+        font-size: 44px;
+        line-height: 1.08;
+        letter-spacing: -0.03em;
+        font-weight: 900;
+        color: #0f172a;
+      }
+      .li-ready-grad {
+        display: block;
+        margin-top: 10px;
+        background: linear-gradient(90deg, #0f172a 0%, #075985 55%, #312e81 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+      .li-ready-sub {
+        margin-top: 16px;
+        font-size: 20px;
+        line-height: 1.75;
+        color: #475569;
+      }
+
+      .li-ready-lines {
+        max-width: 820px;
+        margin: 30px auto 0;
+        display: grid;
+        gap: 12px;
+        text-align: center;
+      }
+      .li-ready-line {
+        margin: 0;
+        font-size: 18px;
+        line-height: 1.75;
+        color: #334155;
+      }
+      .li-ready-list {
+        max-width: 820px;
+        margin: 34px auto 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 12px;
+      }
+      .li-ready-li {
+        display: flex;
+        gap: 12px;
+        font-size: 16px;
+        line-height: 1.75;
+        color: #334155;
+      }
+      .li-ready-dot {
+        color: #94a3b8;
+        line-height: 1.4;
+        transform: translateY(2px);
+      }
+      .li-ready-foot {
+        max-width: 820px;
+        margin: 28px auto 0;
+        text-align: center;
+        font-size: 16px;
+        line-height: 1.75;
+        font-weight: 800;
+        color: #475569;
+      }
+      html.dark .li-ready-h2 { color: #f8fafc; }
+      html.dark .li-ready-grad {
+        background: linear-gradient(90deg, #f8fafc 0%, #7dd3fc 55%, #a5b4fc 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+      html.dark .li-ready-sub { color: #94a3b8; }
+      html.dark .li-ready-line { color: rgba(226,232,240,0.92); }
+      html.dark .li-ready-li { color: rgba(226,232,240,0.92); }
+      html.dark .li-ready-dot { color: rgba(100,116,139,0.9); }
+      html.dark .li-ready-foot { color: #94a3b8; }
 
       .li-faq {
         position: relative;
@@ -825,7 +936,30 @@
           </div>
         </section>
 
-        <section class="li-faq" aria-label="FAQs">
+        <section class="li-ready" aria-label="Get ready">
+          <div class="li-ready-shade" aria-hidden="true"></div>
+          <div class="li-ready-inner">
+            <div class="li-ready-head">
+              <h2 class="li-ready-h2">Get Ready<span class="li-ready-grad">Your interview-ready sprint starts here</span></h2>
+              <p class="li-ready-sub">A focused routine beats random prep. PeerPrep keeps your learning, practice, assessments, and feedback in one clean flow — so every session builds momentum.</p>
+            </div>
+
+            <div class="li-ready-lines" aria-label="Get ready highlights">
+              <p class="li-ready-line">• Practice with real interview structure: pairing, scheduling, sessions, and feedback.</p>
+              <p class="li-ready-line">• Stay sharp with timed assessments that feel like actual hiring tests.</p>
+              <p class="li-ready-line">• Use performance analytics to spot gaps early and fix them faster.</p>
+            </div>
+
+            <div class="li-btns" style="margin-top: 34px; justify-content: center;">
+              <button class="li-btn li-btn-p" onclick="window.location.href='/student'">Start Practicing &rarr;</button>
+              <button class="li-btn li-btn-s" onclick="document.getElementById('faqs') && document.getElementById('faqs').scrollIntoView({behavior:'smooth', block:'start'})">View FAQs</button>
+            </div>
+
+            <p class="li-ready-foot">Show up prepared. Track progress. Repeat.</p>
+          </div>
+        </section>
+
+        <section class="li-faq" id="faqs" aria-label="FAQs">
           <div class="li-faq-inner">
             <div class="li-faq-head">
               <h2 class="li-faq-h2">FAQs<span class="li-faq-grad">Quick answers about PeerPrep</span></h2>

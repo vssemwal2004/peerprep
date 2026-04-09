@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import HeroSection from "./sections/HeroSection";
 import Navbar from "./components/Navbar";
 import FeatureDeepDiveSection from "./sections/FeatureDeepDiveSection";
+import GetReadySection from "./sections/GetReadySection";
 import FAQSection from "./sections/FAQSection";
 import { FEATURE_TABS } from "./constants/featureTabs";
 import GridBackground from "./components/GridBackground";
@@ -13,6 +14,7 @@ export default function LandingPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState(FEATURE_TABS[0].key);
   const deepDiveRef = useRef(null);
+  const faqRef = useRef(null);
 
   useEffect(() => {
     const island = document.getElementById("landing-island");
@@ -40,6 +42,10 @@ export default function LandingPage() {
     });
   };
 
+  const handleViewFaqs = () => {
+    faqRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   return (
     <div className="relative overflow-hidden bg-gradient-to-br from-sky-100 via-white to-slate-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
       <GridBackground />
@@ -64,7 +70,8 @@ export default function LandingPage() {
         activeTab={activeTab}
         sectionRef={deepDiveRef}
       />
-      <FAQSection />
+      <GetReadySection onPrimaryAction={handleLogin} onSecondaryAction={handleViewFaqs} />
+      <FAQSection sectionRef={faqRef} />
       <Footer />
     </div>
   );

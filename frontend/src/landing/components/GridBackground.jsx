@@ -1,19 +1,19 @@
-const GRID_GAP = 48; // 30px–50px requirement
+const GRID_GAP = 40;
+const VIEW_W = 1920;
+const VIEW_H = 1280;
+const PAD = 240;
 
-const horizontalPaths = Array.from({ length: 30 }, (_, index) => {
-  const y = -240 + index * GRID_GAP;
-  const amp = 14 + (index % 5) * 3;
-  return `M -240 ${y}
-    Q 480 ${y - amp}, 960 ${y}
-    T 2160 ${y}`;
+const H_COUNT = Math.ceil((VIEW_H + PAD * 2) / GRID_GAP) + 1;
+const V_COUNT = Math.ceil((VIEW_W + PAD * 2) / GRID_GAP) + 1;
+
+const horizontalPaths = Array.from({ length: H_COUNT }, (_, index) => {
+  const y = -PAD + index * GRID_GAP;
+  return `M ${-PAD} ${y} L ${VIEW_W + PAD} ${y}`;
 });
 
-const verticalPaths = Array.from({ length: 46 }, (_, index) => {
-  const x = -240 + index * GRID_GAP;
-  const amp = 12 + (index % 6) * 3;
-  return `M ${x} -240
-    Q ${x + amp} 320, ${x} 640
-    T ${x} 1520`;
+const verticalPaths = Array.from({ length: V_COUNT }, (_, index) => {
+  const x = -PAD + index * GRID_GAP;
+  return `M ${x} ${-PAD} L ${x} ${VIEW_H + PAD}`;
 });
 
 export default function GridBackground() {
@@ -64,7 +64,7 @@ export default function GridBackground() {
 
         <g
           className="pp-grid-anim block dark:hidden"
-          filter="url(#pp-grid-warp)"
+          filter="url(#pp-grid-soften)"
           opacity="0.12"
           stroke="#60a5fa"
           strokeWidth="1"
@@ -79,7 +79,7 @@ export default function GridBackground() {
           ))}
 
           <g filter="url(#pp-grid-soften)" opacity="0.7">
-            {horizontalPaths.slice(3, 20).map((d) => (
+            {horizontalPaths.slice(4, Math.min(24, horizontalPaths.length)).map((d) => (
               <path key={`l-soft-${d}`} d={d} strokeWidth="1.6" opacity="0.55" />
             ))}
           </g>
@@ -87,7 +87,7 @@ export default function GridBackground() {
 
         <g
           className="pp-grid-anim hidden dark:block"
-          filter="url(#pp-grid-warp)"
+          filter="url(#pp-grid-soften)"
           opacity="0.08"
           stroke="#7dd3fc"
           strokeWidth="1"
@@ -102,7 +102,7 @@ export default function GridBackground() {
           ))}
 
           <g filter="url(#pp-grid-soften)" opacity="0.65">
-            {horizontalPaths.slice(3, 20).map((d) => (
+            {horizontalPaths.slice(4, Math.min(24, horizontalPaths.length)).map((d) => (
               <path key={`d-soft-${d}`} d={d} strokeWidth="1.6" opacity="0.5" />
             ))}
           </g>

@@ -41,9 +41,9 @@ const FAQS = [
   },
 ];
 
-export default function FAQSection() {
+export default function FAQSection({ sectionRef } = {}) {
   return (
-    <section className="relative z-10 py-20">
+    <section id="faqs" className="relative z-10 py-20" ref={sectionRef}>
       <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8">
         <div className="max-w-3xl">
           <h2 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-50 sm:text-4xl">
