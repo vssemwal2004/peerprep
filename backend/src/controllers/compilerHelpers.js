@@ -84,6 +84,7 @@ export function serializeSubmission(submission, { includeJudgeDetails = true } =
 
   return {
     _id: submission._id,
+    jobId: submission.jobId || '',
     problemId: submission.problem,
     userId: submission.user,
     user: {

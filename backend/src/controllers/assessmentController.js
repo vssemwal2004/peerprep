@@ -5,6 +5,7 @@ import Problem from '../models/Problem.js';
 import User from '../models/User.js';
 import { sendOnboardingEmail, sendAssessmentNotificationEmail } from '../utils/mailer.js';
 import { createNotification, createNotifications } from '../services/notificationService.js';
+import { enqueueAssessmentCodingEvaluationJobs } from '../services/compilerExecutionWorkflowService.js';
 import { logActivity } from './adminActivityController.js';
 
 function buildSimpleChanges(before = {}, after = {}, keys = []) {
@@ -310,15 +311,16 @@ function scoreAssessment(assessment, answers = []) {
   (assessment.sections || []).forEach((section, sIdx) => {
     const questions = section.questions || [];
     questions.forEach((question, qIdx) => {
+      const questionType = question.type || section.type;
       const points = Number(question.points || question.marks || 0);
       maxMarks += points;
       const answer = answerMap.get(`${sIdx}-${qIdx}`);
       if (!answer) return;
-      if (question.type === 'mcq') {
+      if (questionType === 'mcq') {
         if (Number(answer.answer) === Number(question.correctOptionIndex)) {
           score += points;
         }
-      } else if (question.type === 'short' || question.type === 'one_line') {
+      } else if (questionType === 'short' || questionType === 'one_line') {
         const expected = (question.expectedAnswer || '').trim().toLowerCase();
         const actual = (answer.answer || '').toString().trim().toLowerCase();
         if (!expected) return;
@@ -327,6 +329,10 @@ function scoreAssessment(assessment, answers = []) {
         } else if (Array.isArray(question.keywords) && question.keywords.length > 0) {
           const matched = question.keywords.every((k) => actual.includes(String(k).toLowerCase()));
           if (matched) score += points;
+        }
+      } else if (questionType === 'coding') {
+        if (String(answer.executionVerdict || '').toUpperCase() === 'AC') {
+          score += points;
         }
       }
     });
@@ -1395,6 +1401,15 @@ export async function submitAssessment(req, res) {
 
     await submission.save();
 
+    let queuedCodingJobIds = [];
+    if (finalStatus === 'submitted') {
+      queuedCodingJobIds = await enqueueAssessmentCodingEvaluationJobs({
+        assessment,
+        submission,
+        studentId,
+      });
+    }
+
     if (finalStatus === 'submitted') {
       try {
         await createNotification({
@@ -1411,7 +1426,15 @@ export async function submitAssessment(req, res) {
       }
     }
 
-    res.json({ message: 'Saved', status: submission.status, submittedAt: submission.submittedAt, allowedEnd, serverTime: now });
+    res.json({
+      message: 'Saved',
+      status: submission.status,
+      submittedAt: submission.submittedAt,
+      allowedEnd,
+      serverTime: now,
+      evaluationStatus: submission.evaluationStatus,
+      queuedCodingJobIds,
+    });
   } catch (err) {
     console.error('Error submitting assessment:', err);
     res.status(500).json({ error: 'Failed to submit assessment' });

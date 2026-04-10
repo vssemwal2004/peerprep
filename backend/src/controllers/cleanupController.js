@@ -1,6 +1,6 @@
 import Semester from '../models/Subject.js';
 import { HttpError } from '../utils/errors.js';
-import { io } from '../server.js';
+import { getIo } from '../utils/io.js';
 
 // Clean up duplicate semesters for a coordinator
 export async function cleanupDuplicateSemesters(req, res) {
@@ -68,7 +68,10 @@ export async function cleanupDuplicateSemesters(req, res) {
     console.log(`Errors: ${results.errors.length}`);
 
     // Emit socket event to refresh UI
-    io.emit('learning-updated', { type: 'cleanup-complete', coordinatorId });
+    const io = getIo();
+    if (io) {
+      io.emit('learning-updated', { type: 'cleanup-complete', coordinatorId });
+    }
 
     res.json({
       success: true,

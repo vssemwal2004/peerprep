@@ -2,10 +2,17 @@ import Semester from '../models/Subject.js';
 import Progress from '../models/Progress.js';
 import { HttpError } from '../utils/errors.js';
 import { supabase } from '../utils/supabase.js';
-import { io } from '../server.js';
+import { getIo } from '../utils/io.js';
 import { logActivity } from './adminActivityController.js';
 import User from '../models/User.js';
 import { createNotifications } from '../services/notificationService.js';
+
+function emitLearningUpdate(payload) {
+  const io = getIo();
+  if (io) {
+    io.emit('learning-updated', payload);
+  }
+}
 
 // Get all semesters for a coordinator
 export async function listSemesters(req, res) {
@@ -59,7 +66,7 @@ export async function createSemester(req, res) {
     });
     
     // Emit socket event for real-time update
-    io.emit('learning-updated', { type: 'semester-created', data: semester });
+    emitLearningUpdate({ type: 'semester-created', data: semester });
     
     res.status(201).json(semester);
   } catch (err) {
@@ -107,7 +114,7 @@ export async function updateSemester(req, res) {
     });
     
     // Emit socket event for real-time update
-    io.emit('learning-updated', { type: 'semester-updated', data: semester });
+    emitLearningUpdate({ type: 'semester-updated', data: semester });
     
     res.json(semester);
   } catch (err) {
@@ -153,7 +160,7 @@ export async function deleteSemester(req, res) {
     });
     
     // Emit socket event for real-time update
-    io.emit('learning-updated', { type: 'semester-deleted', data: { id } });
+    emitLearningUpdate({ type: 'semester-deleted', data: { id } });
     
     res.json({ message: 'Semester deleted successfully' });
   } catch (err) {
@@ -176,7 +183,7 @@ export async function reorderSemesters(req, res) {
     await Promise.all(updates);
     
     // Emit socket event for real-time update
-    io.emit('learning-updated', { type: 'semesters-reordered', data: { semesterIds } });
+    emitLearningUpdate({ type: 'semesters-reordered', data: { semesterIds } });
     
     res.json({ message: 'Semesters reordered successfully' });
   } catch (err) {
@@ -229,7 +236,7 @@ export async function addSubject(req, res) {
     await semester.save();
     
     // Emit socket event for real-time update
-    io.emit('learning-updated', { type: 'subject-created', data: semester });
+    emitLearningUpdate({ type: 'subject-created', data: semester });
     
     res.status(201).json(semester);
   } catch (err) {
@@ -270,7 +277,7 @@ export async function updateSubject(req, res) {
     });
     
     // Emit socket event for real-time update
-    io.emit('learning-updated', { type: 'subject-updated', data: semester });
+    emitLearningUpdate({ type: 'subject-updated', data: semester });
     
     res.json(semester);
   } catch (err) {
@@ -312,7 +319,7 @@ export async function deleteSubject(req, res) {
     });
     
     // Emit socket event for real-time update
-    io.emit('learning-updated', { type: 'subject-deleted', data: semester });
+    emitLearningUpdate({ type: 'subject-deleted', data: semester });
     
     res.json({ message: 'Subject deleted successfully', semester });
   } catch (err) {
@@ -343,7 +350,7 @@ export async function reorderSubjects(req, res) {
     await semester.save();
     
     // Emit socket event for real-time update
-    io.emit('learning-updated', { type: 'subjects-reordered', data: semester });
+    emitLearningUpdate({ type: 'subjects-reordered', data: semester });
     
     res.json(semester);
   } catch (err) {
@@ -400,7 +407,7 @@ export async function addChapter(req, res) {
     await semester.save();
     
     // Emit socket event for real-time update
-    io.emit('learning-updated', { type: 'chapter-created', data: semester });
+    emitLearningUpdate({ type: 'chapter-created', data: semester });
     
     res.status(201).json(semester);
   } catch (err) {
@@ -444,7 +451,7 @@ export async function updateChapter(req, res) {
     });
     
     // Emit socket event for real-time update
-    io.emit('learning-updated', { type: 'chapter-updated', data: semester });
+    emitLearningUpdate({ type: 'chapter-updated', data: semester });
     
     res.json(semester);
   } catch (err) {
@@ -489,7 +496,7 @@ export async function deleteChapter(req, res) {
     });
     
     // Emit socket event for real-time update
-    io.emit('learning-updated', { type: 'chapter-deleted', data: semester });
+    emitLearningUpdate({ type: 'chapter-deleted', data: semester });
     
     res.json({ message: 'Chapter deleted successfully', semester });
   } catch (err) {
@@ -523,7 +530,7 @@ export async function reorderChapters(req, res) {
     await semester.save();
     
     // Emit socket event for real-time update
-    io.emit('learning-updated', { type: 'chapters-reordered', data: semester });
+    emitLearningUpdate({ type: 'chapters-reordered', data: semester });
     
     res.json(semester);
   } catch (err) {
@@ -645,7 +652,7 @@ export async function addTopic(req, res) {
     console.log('[addTopic] Semester saved successfully');
     
     // Emit socket event for real-time update
-    io.emit('learning-updated', { type: 'topic-created', data: semester });
+    emitLearningUpdate({ type: 'topic-created', data: semester });
 
     // Real-time notifications for students
     setImmediate(async () => {
@@ -767,7 +774,7 @@ export async function updateTopic(req, res) {
     });
     
     // Emit socket event for real-time update
-    io.emit('learning-updated', { type: 'topic-updated', data: semester });
+    emitLearningUpdate({ type: 'topic-updated', data: semester });
     
     res.json(semester);
   } catch (err) {
@@ -814,7 +821,7 @@ export async function deleteTopic(req, res) {
     });
     
     // Emit socket event for real-time update
-    io.emit('learning-updated', { type: 'topic-deleted', data: semester });
+    emitLearningUpdate({ type: 'topic-deleted', data: semester });
     
     res.json({ message: 'Topic deleted successfully', semester });
   } catch (err) {
@@ -851,7 +858,7 @@ export async function reorderTopics(req, res) {
     await semester.save();
     
     // Emit socket event for real-time update
-    io.emit('learning-updated', { type: 'topics-reordered', data: semester });
+    emitLearningUpdate({ type: 'topics-reordered', data: semester });
     
     res.json(semester);
   } catch (err) {

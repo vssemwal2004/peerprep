@@ -6,6 +6,17 @@ const answerSchema = new mongoose.Schema({
   answer: { type: mongoose.Schema.Types.Mixed },
   language: { type: String },
   code: { type: String },
+  jobId: { type: String },
+  executionStatus: {
+    type: String,
+    enum: ['queued', 'processing', 'completed', 'failed'],
+  },
+  executionVerdict: {
+    type: String,
+    enum: ['PENDING', 'AC', 'WA', 'TLE', 'RE', 'CE', 'FAILED'],
+  },
+  executionResult: { type: mongoose.Schema.Types.Mixed },
+  lastEvaluatedAt: { type: Date },
 }, { _id: false });
 
 const assessmentSubmissionSchema = new mongoose.Schema({
@@ -29,6 +40,13 @@ const assessmentSubmissionSchema = new mongoose.Schema({
   isLate: { type: Boolean, default: false },
   lastIp: { type: String },
   lastUserAgent: { type: String },
+  evaluationStatus: {
+    type: String,
+    enum: ['completed', 'processing', 'failed'],
+    default: 'completed',
+  },
+  codingJobsPending: { type: Number, default: 0 },
+  codingJobsCompleted: { type: Number, default: 0 },
 }, { timestamps: true });
 
 assessmentSubmissionSchema.index({ assessmentId: 1, studentId: 1 }, { unique: true });

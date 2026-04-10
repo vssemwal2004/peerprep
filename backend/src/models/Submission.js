@@ -20,6 +20,11 @@ const failedCaseSchema = new mongoose.Schema({
 }, { _id: false });
 
 const submissionSchema = new mongoose.Schema({
+  jobId: {
+    type: String,
+    index: true,
+    sparse: true,
+  },
   problem: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Problem',
@@ -59,6 +64,10 @@ const submissionSchema = new mongoose.Schema({
   customInput: {
     type: String,
     default: '',
+  },
+  assessmentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Assessment',
   },
   output: {
     type: String,

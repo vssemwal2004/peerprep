@@ -4,7 +4,7 @@ let clientPromise = null;
 let loggedDisabled = false;
 let loggedEnabled = false;
 
-function buildRedisUrl() {
+export function buildValkeyUrl() {
   const directUrl = String(process.env.VALKEY_URL || process.env.REDIS_URL || '').trim();
   if (directUrl) {
     return directUrl;
@@ -24,11 +24,27 @@ function buildRedisUrl() {
 }
 
 export function isValkeyEnabled() {
-  return Boolean(buildRedisUrl());
+  return Boolean(buildValkeyUrl());
+}
+
+export function createValkeyBaseClient(overrides = {}) {
+  const url = buildValkeyUrl();
+  if (!url) {
+    return null;
+  }
+
+  return createClient({
+    url,
+    socket: {
+      reconnectStrategy: (retries) => Math.min(retries * 50, 2000),
+      ...overrides.socket,
+    },
+    ...overrides,
+  });
 }
 
 export function getValkeyClient() {
-  const redisUrl = buildRedisUrl();
+  const redisUrl = buildValkeyUrl();
   if (!redisUrl) {
     if (!loggedDisabled) {
       console.warn('[Valkey] REDIS/VALKEY env not configured. Falling back to in-memory limits.');
@@ -38,12 +54,7 @@ export function getValkeyClient() {
   }
 
   if (!clientPromise) {
-    const client = createClient({
-      url: redisUrl,
-      socket: {
-        reconnectStrategy: (retries) => Math.min(retries * 50, 2000),
-      },
-    });
+    const client = createValkeyBaseClient();
 
     client.on('error', (error) => {
       console.warn(`[Valkey] Client error: ${error.message}`);

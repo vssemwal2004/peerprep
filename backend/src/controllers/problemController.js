@@ -4,7 +4,7 @@ import TestCase from '../models/TestCase.js';
 import { HttpError } from '../utils/errors.js';
 import { sanitizeSearchQuery, sanitizeString, validateObjectId, validatePagination } from '../utils/validators.js';
 import { refreshProblemStats, serializeProblem, serializeSubmission, serializeStudentSubmission } from './compilerHelpers.js';
-import { runJudge0 } from './compilerController.js';
+import { runJudge0 } from '../services/executionService.js';
 import { parseBulkCasePair } from '../utils/testcaseBulkParser.js';
 import { isS3TestcaseStorageEnabled, readS3TextObject, uploadS3TextObject } from '../utils/s3.js';
 
