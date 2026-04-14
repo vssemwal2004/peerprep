@@ -40,6 +40,8 @@ const questionSchema = new mongoose.Schema({
   options: { type: [String], default: [] },
   correctOptionIndex: { type: Number },
   expectedAnswer: { type: String },
+  keywords: { type: [String], default: [] },
+  tags: { type: [String], default: [] },
   problemId: { type: mongoose.Schema.Types.ObjectId, ref: 'Problem' },
   problemDataSnapshot: { type: mongoose.Schema.Types.Mixed },
   coding: { type: codingSchema },

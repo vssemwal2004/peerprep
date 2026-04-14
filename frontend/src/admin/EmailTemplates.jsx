@@ -1,5 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Redo2, Undo2 } from 'lucide-react';
 import { api } from '../utils/api';
+
+const HISTORY_LIMIT = 50;
+
+const areEditFormsEqual = (a, b) => {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if (a.name !== b.name) return false;
+  if (a.subject !== b.subject) return false;
+  if (a.htmlContent !== b.htmlContent) return false;
+  if (a.type !== b.type) return false;
+
+  const av = Array.isArray(a.variables) ? a.variables : [];
+  const bv = Array.isArray(b.variables) ? b.variables : [];
+  if (av.length !== bv.length) return false;
+  for (let i = 0; i < av.length; i += 1) {
+    if (av[i] !== bv[i]) return false;
+  }
+  return true;
+};
 
 const formatDate = (value) => {
   if (!value) return '-';
@@ -21,8 +41,51 @@ export default function EmailTemplates() {
   const [search, setSearch] = useState('');
   const [viewing, setViewing] = useState(null);
   const [editing, setEditing] = useState(null);
-  const [editForm, setEditForm] = useState({ name: '', subject: '', htmlContent: '', type: '', variables: [] });
+  const [editHistory, setEditHistory] = useState({
+    past: [],
+    present: { name: '', subject: '', htmlContent: '', type: '', variables: [] },
+    future: [],
+  });
   const [saving, setSaving] = useState(false);
+
+  const editForm = editHistory.present;
+
+  const commitEditForm = useCallback((updater) => {
+    setEditHistory((prev) => {
+      const current = prev.present;
+      const next = typeof updater === 'function' ? updater(current) : updater;
+      if (areEditFormsEqual(current, next)) return prev;
+
+      const past = [...prev.past, current];
+      const trimmedPast = past.length > HISTORY_LIMIT ? past.slice(past.length - HISTORY_LIMIT) : past;
+      return { past: trimmedPast, present: next, future: [] };
+    });
+  }, []);
+
+  const canUndo = editHistory.past.length > 0;
+  const canRedo = editHistory.future.length > 0;
+
+  const handleUndo = useCallback(() => {
+    setEditHistory((prev) => {
+      if (!prev.past.length) return prev;
+      const previous = prev.past[prev.past.length - 1];
+      const nextPast = prev.past.slice(0, -1);
+      const future = [prev.present, ...prev.future];
+      const trimmedFuture = future.length > HISTORY_LIMIT ? future.slice(0, HISTORY_LIMIT) : future;
+      return { past: nextPast, present: previous, future: trimmedFuture };
+    });
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    setEditHistory((prev) => {
+      if (!prev.future.length) return prev;
+      const next = prev.future[0];
+      const nextFuture = prev.future.slice(1);
+      const past = [...prev.past, prev.present];
+      const trimmedPast = past.length > HISTORY_LIMIT ? past.slice(past.length - HISTORY_LIMIT) : past;
+      return { past: trimmedPast, present: next, future: nextFuture };
+    });
+  }, []);
 
   const htmlTextareaRef = useRef(null);
   const previewRef = useRef(null);
@@ -70,12 +133,16 @@ export default function EmailTemplates() {
     try {
       const full = await api.getEmailTemplate(tpl._id);
       setEditing(full);
-      setEditForm({
-        name: full.name || '',
-        subject: full.subject || '',
-        htmlContent: full.htmlContent || '',
-        type: full.type || '',
-        variables: full.variables || [],
+      setEditHistory({
+        past: [],
+        present: {
+          name: full.name || '',
+          subject: full.subject || '',
+          htmlContent: full.htmlContent || '',
+          type: full.type || '',
+          variables: full.variables || [],
+        },
+        future: [],
       });
       setFindQuery('');
       setFindMatches([]);
@@ -115,14 +182,14 @@ export default function EmailTemplates() {
     const textarea = htmlTextareaRef.current;
     const content = editForm.htmlContent || '';
     if (!textarea) {
-      setEditForm((prev) => ({ ...prev, htmlContent: (prev.htmlContent || '') + insertText }));
+      commitEditForm((prev) => ({ ...prev, htmlContent: (prev.htmlContent || '') + insertText }));
       return;
     }
 
     const start = textarea.selectionStart ?? content.length;
     const end = textarea.selectionEnd ?? content.length;
     const next = content.slice(0, start) + insertText + content.slice(end);
-    setEditForm((prev) => ({ ...prev, htmlContent: next }));
+    commitEditForm((prev) => ({ ...prev, htmlContent: next }));
 
     requestAnimationFrame(() => {
       textarea.focus();
@@ -130,7 +197,7 @@ export default function EmailTemplates() {
       textarea.setSelectionRange(nextPos, nextPos);
       scrollTextareaToIndex(nextPos);
     });
-  }, [editForm.htmlContent, scrollTextareaToIndex]);
+  }, [commitEditForm, editForm.htmlContent, scrollTextareaToIndex]);
 
   const computeFindMatches = useCallback((query, content) => {
     const q = (query || '').trim();
@@ -359,6 +426,26 @@ export default function EmailTemplates() {
               </div>
               <div className="flex items-center gap-2">
                 <button
+                  type="button"
+                  onClick={handleUndo}
+                  disabled={!canUndo}
+                  title="Undo"
+                  aria-label="Undo"
+                  className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-200 dark:hover:bg-gray-700"
+                >
+                  <Undo2 className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRedo}
+                  disabled={!canRedo}
+                  title="Redo"
+                  aria-label="Redo"
+                  className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-200 dark:hover:bg-gray-700"
+                >
+                  <Redo2 className="h-4 w-4" />
+                </button>
+                <button
                   onClick={handleSave}
                   disabled={saving}
                   className="rounded-lg bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-70"
@@ -379,7 +466,7 @@ export default function EmailTemplates() {
                   <label className="text-xs font-semibold uppercase text-slate-500">Template Name</label>
                   <input
                     value={editForm.name}
-                    onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))}
+                    onChange={(e) => commitEditForm((prev) => ({ ...prev, name: e.target.value }))}
                     className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                   />
                 </div>
@@ -387,7 +474,7 @@ export default function EmailTemplates() {
                   <label className="text-xs font-semibold uppercase text-slate-500">Subject Line</label>
                   <input
                     value={editForm.subject}
-                    onChange={(e) => setEditForm((prev) => ({ ...prev, subject: e.target.value }))}
+                    onChange={(e) => commitEditForm((prev) => ({ ...prev, subject: e.target.value }))}
                     className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                   />
                 </div>
@@ -452,7 +539,7 @@ export default function EmailTemplates() {
                   <textarea
                     ref={htmlTextareaRef}
                     value={editForm.htmlContent}
-                    onChange={(e) => setEditForm((prev) => ({ ...prev, htmlContent: e.target.value }))}
+                    onChange={(e) => commitEditForm((prev) => ({ ...prev, htmlContent: e.target.value }))}
                     onScroll={handleTextareaScroll}
                     className="mt-2 h-[360px] w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-mono text-slate-700 shadow-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                   />

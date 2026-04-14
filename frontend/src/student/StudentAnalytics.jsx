@@ -1834,7 +1834,7 @@ export default function StudentAnalytics() {
 
   return (
     <div className="min-h-screen w-full bg-gradient-to-br from-sky-50/70 via-white to-slate-50 dark:from-gray-950 dark:via-gray-950 dark:to-gray-900 pt-20 pb-14">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="w-full px-4 sm:px-6 lg:px-10">
         <SectionCard className="overflow-hidden">
           <div className="relative px-6 py-6 sm:px-8">
             <div className="pointer-events-none absolute inset-y-0 right-0 w-1/3 bg-gradient-to-l from-sky-100/60 to-transparent blur-3xl dark:from-sky-500/10" />

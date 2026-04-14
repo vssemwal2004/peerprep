@@ -110,7 +110,7 @@ export default function ProblemsPage() {
   if (loading) {
     return (
       <div className="min-h-screen px-4 pb-8 pt-20">
-        <div className="mx-auto max-w-7xl">
+        <div className="w-full">
           <LoadingPanel label="Loading problem set..." />
         </div>
       </div>
@@ -119,7 +119,7 @@ export default function ProblemsPage() {
 
   return (
     <div className="min-h-screen px-4 pb-8 pt-20">
-      <div className="mx-auto max-w-7xl space-y-6">
+      <div className="w-full space-y-6">
         <SectionCard
           title="Problems"
           subtitle="Browse coding challenges, filter by difficulty and topic, and jump straight into the student compiler workspace."

@@ -63,6 +63,7 @@ const AssessmentDashboard = lazy(() => import("./admin/AssessmentDashboard"));
 const CreateAssessment = lazy(() => import("./admin/CreateAssessment"));
 const AssessmentReports = lazy(() => import("./admin/AssessmentReports"));
 const AssessmentRules = lazy(() => import("./admin/AssessmentRules"));
+const QuestionLibrary = lazy(() => import("./admin/QuestionLibrary"));
 const CodingQuestionEditorPage = lazy(() => import("./admin/assessment/CodingQuestionEditorPage"));
 const AssessmentCodingPreview = lazy(() => import("./admin/assessment/AssessmentCodingPreview"));
 const SelectProblemFromLibrary = lazy(() => import("./admin/assessment/SelectProblemFromLibrary"));
@@ -276,6 +277,7 @@ function AppContent() {
         <Route path="/admin/assessment/:id/edit" element={<AdminShell><CreateAssessment /></AdminShell>} />
         <Route path="/admin/assessment/reports" element={<AdminShell><AssessmentReports /></AdminShell>} />
         <Route path="/admin/assessment/rules" element={<AdminShell><AssessmentRules /></AdminShell>} />
+        <Route path="/admin/library" element={<AdminShell><QuestionLibrary /></AdminShell>} />
         <Route path="/admin/assessment/select-problem" element={<AdminShell><SelectProblemFromLibrary /></AdminShell>} />
         <Route path="/admin/assessment/preview/:id" element={<AdminShell layout={false}><AdminAssessmentPreview /></AdminShell>} />
         <Route path="/admin/assessment/coding-question/:tempId" element={<AdminShell><CodingQuestionEditorPage /></AdminShell>} />

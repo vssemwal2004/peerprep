@@ -423,6 +423,30 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
             </button>
           </div>
         </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-[150px_minmax(0,1fr)]">
+          <div>
+            <label className="text-[11px] text-slate-500 dark:text-gray-400">Points</label>
+            <input
+              type="number"
+              min="1"
+              value={question.points || section.marksPerQuestion || 1}
+              onChange={(e) => updateQuestion(sectionIndex, questionIndex, { points: Number(e.target.value) })}
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+            />
+          </div>
+          <div>
+            <label className="text-[11px] text-slate-500 dark:text-gray-400">Add Tag</label>
+            <input
+              value={(question.tags || problemData.tags || []).join(', ')}
+              onChange={(e) => updateQuestion(sectionIndex, questionIndex, {
+                tags: e.target.value.split(',').map((tag) => tag.trim()).filter(Boolean),
+              })}
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+              placeholder="Company, topic, pattern..."
+            />
+          </div>
+        </div>
       </div>
     );
   };
@@ -607,11 +631,11 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
                     </button>
                     <button
                       type="button"
-                      onClick={() => onOpenProblemLibrary?.(index)}
+                      onClick={() => onOpenProblemLibrary?.()}
                       className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
                     >
                       <Plus className="h-3.5 w-3.5" />
-                      Add From Existing Library
+                      Add Questions from Library
                     </button>
                   </div>
                 ) : (

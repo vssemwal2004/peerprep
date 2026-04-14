@@ -13,6 +13,14 @@ const QUEUE_NAMES = {
 
 let commandClientPromise = null;
 
+function flattenHash(fields) {
+  return Object.entries(fields || {}).flatMap(([field, value]) => [String(field), String(value)]);
+}
+
+function hmsetCommand(key, fields) {
+  return ['HMSET', key, ...flattenHash(fields)];
+}
+
 function queueKey(queueName, suffix) {
   return `${QUEUE_PREFIX}:queue:${queueName}:${suffix}`;
 }
@@ -56,19 +64,22 @@ function createQueue(queueName) {
       const backoffMs = Math.max(0, Number(options.backoffMs || DEFAULT_BACKOFF_MS));
       const now = Date.now();
 
+      const jobRecord = {
+        id: jobId,
+        name: jobName,
+        queueName,
+        payload: JSON.stringify(payload || {}),
+        attemptsMade: '0',
+        maxAttempts: String(attempts),
+        backoffMs: String(backoffMs),
+        status: 'queued',
+        createdAt: String(now),
+        updatedAt: String(now),
+      };
+
       await client.multi()
-        .hSet(jobKey(jobId), {
-          id: jobId,
-          name: jobName,
-          queueName,
-          payload: JSON.stringify(payload || {}),
-          attemptsMade: '0',
-          maxAttempts: String(attempts),
-          backoffMs: String(backoffMs),
-          status: 'queued',
-          createdAt: String(now),
-          updatedAt: String(now),
-        })
+        // Redis 3.x does NOT support multi-field HSET; use HMSET for compatibility.
+        .addCommand(hmsetCommand(jobKey(jobId), jobRecord))
         .rPush(waitingListKey, jobId)
         .exec();
 
@@ -142,10 +153,10 @@ export async function fetchNextQueueJob(queueName, blockingClient, commandClient
     return null;
   }
 
-  await commandClient.hSet(jobKey(job.id), {
+  await commandClient.sendCommand(hmsetCommand(jobKey(job.id), {
     status: 'processing',
     updatedAt: String(Date.now()),
-  });
+  }));
 
   return job;
 }
@@ -167,12 +178,12 @@ export async function retryQueueJob(queueName, commandClient, job, errorMessage 
 
   const multi = commandClient.multi()
     .lRem(processingKey, 0, job.id)
-    .hSet(jobKey(job.id), {
+    .addCommand(hmsetCommand(jobKey(job.id), {
       attemptsMade: String(nextAttemptsMade),
       status: 'queued',
       lastError: String(errorMessage || ''),
       updatedAt: String(Date.now()),
-    });
+    }));
 
   if (nextBackoffMs > 0) {
     multi.zAdd(delayedKey(queueName), [{ score: nextAvailableAt, value: job.id }]);
@@ -191,11 +202,11 @@ export async function failQueueJob(queueName, commandClient, jobId, details = {}
   const processingKey = queueKey(queueName, 'processing');
   await commandClient.multi()
     .lRem(processingKey, 0, jobId)
-    .hSet(jobKey(jobId), {
+    .addCommand(hmsetCommand(jobKey(jobId), {
       status: 'failed',
       updatedAt: String(Date.now()),
       lastError: String(details.message || ''),
-    })
+    }))
     .exec();
 }
 
@@ -214,10 +225,10 @@ export async function startDelayedJobPromoter(queueName, { intervalMs = 1000, st
         dueJobIds.forEach((jobId) => {
           multi.zRem(delayedJobsKey, jobId);
           multi.rPush(waitingKey, jobId);
-          multi.hSet(jobKey(jobId), {
+          multi.addCommand(hmsetCommand(jobKey(jobId), {
             status: 'queued',
             updatedAt: String(Date.now()),
-          });
+          }));
         });
         await multi.exec();
       }

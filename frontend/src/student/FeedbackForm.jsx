@@ -184,7 +184,7 @@ export default function FeedbackForm() {
 
   return (
     <div className="h-screen bg-white dark:bg-gray-900 overflow-hidden flex items-center justify-center">
-      <div className="w-full max-w-6xl px-4 py-3">
+      <div className="w-full px-4 py-3 sm:px-6 lg:px-10">
         <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 rounded-lg border border-slate-200 dark:border-gray-700 p-4 shadow-lg">
           {/* Meeting Link */}
           {pair?.meetingLink && (

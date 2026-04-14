@@ -351,6 +351,15 @@ export const api = {
   },
   getAssessmentRulesAdmin: () => request('/admin/assessment/rules', { skipCache: true }),
   saveAssessmentRulesAdmin: (body) => request('/admin/assessment/rules', { method: 'PUT', body }),
+  listLibraryQuestions: (params = {}) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') qs.append(key, String(value));
+    });
+    return request(`/admin/library/questions${qs.toString() ? `?${qs.toString()}` : ''}`, { skipCache: true });
+  },
+  getLibraryQuestion: (id) => request(`/admin/library/questions/${id}`, { skipCache: true }),
+  resolveLibraryQuestions: (ids = []) => request('/admin/library/questions/resolve', { method: 'POST', body: { ids } }),
 
   // Assessments (Student)
   listStudentAssessments: () => request('/student/assessments'),

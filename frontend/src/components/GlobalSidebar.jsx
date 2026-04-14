@@ -12,6 +12,7 @@ import {
   BookOpen,
   MessageSquare,
   ClipboardList,
+  Library,
   TerminalSquare,
   ChevronDown,
   Settings,
@@ -83,6 +84,12 @@ const buildNavItems = () => ([
       { label: 'Reports', to: '/admin/assessment/reports', icon: ClipboardList },
       { label: 'Assessment Rules', to: '/admin/assessment/rules', icon: ShieldCheck },
     ],
+  },
+  {
+    type: 'link',
+    label: 'Library',
+    to: '/admin/library',
+    icon: Library,
   },
   {
     type: 'group',

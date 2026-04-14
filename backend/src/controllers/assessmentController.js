@@ -6,6 +6,7 @@ import User from '../models/User.js';
 import { sendOnboardingEmail, sendAssessmentNotificationEmail } from '../utils/mailer.js';
 import { createNotification, createNotifications } from '../services/notificationService.js';
 import { enqueueAssessmentCodingEvaluationJobs } from '../services/compilerExecutionWorkflowService.js';
+import { syncAssessmentQuestionsToLibrary } from '../services/questionLibraryService.js';
 import { logActivity } from './adminActivityController.js';
 
 function buildSimpleChanges(before = {}, after = {}, keys = []) {
@@ -624,6 +625,8 @@ export async function createAssessment(req, res) {
       versionUpdatedAt: new Date(),
     });
 
+    await syncAssessmentQuestionsToLibrary(assessment);
+
     logActivity({
       userEmail: req.user?.email,
       userRole: req.user?.role,
@@ -900,6 +903,7 @@ export async function updateAssessment(req, res) {
     assessment.versionUpdatedAt = new Date();
 
     await assessment.save();
+    await syncAssessmentQuestionsToLibrary(assessment);
 
     const afterSnapshot = {
       title: assessment.title,

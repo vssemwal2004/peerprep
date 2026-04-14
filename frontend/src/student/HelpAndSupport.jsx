@@ -11,7 +11,7 @@ export default function HelpAndSupport() {
 
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900">
-      <div className="container mx-auto px-4 py-8 max-w-6xl">
+      <div className="w-full px-4 py-8 sm:px-6 lg:px-10">
         {/* Back Button */}
         <button
           onClick={() => navigate(-1)}

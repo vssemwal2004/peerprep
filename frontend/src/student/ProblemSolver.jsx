@@ -1381,7 +1381,7 @@ export default function ProblemSolver() {
   if (loading) {
     return (
       <div className="min-h-screen px-4 pb-8 pt-20">
-        <div className="mx-auto max-w-[1600px]">
+        <div className="w-full">
           <LoadingPanel label="Loading problem workspace..." />
         </div>
       </div>
@@ -1391,7 +1391,7 @@ export default function ProblemSolver() {
   if (!problem) {
     return (
       <div className="min-h-screen px-4 pb-8 pt-20">
-        <div className="mx-auto max-w-5xl">
+        <div className="w-full">
           <EmptyState
             title="Problem unavailable"
             description="The requested problem could not be loaded or is no longer active."

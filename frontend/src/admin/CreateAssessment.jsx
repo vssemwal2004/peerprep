@@ -4,7 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
-import { ArrowLeft, ClipboardList, Save, Send, AlertCircle } from 'lucide-react';
+import { ArrowLeft, ClipboardList, Save, Send, AlertCircle, Plus } from 'lucide-react';
 import { SectionCard } from './compiler/CompilerUi';
 import RichTextEditor from './compiler/RichTextEditor';
 import { createDefaultProblemForm, createProblemFormFromProblem } from './compiler/compilerUtils';
@@ -15,7 +15,7 @@ import SectionBuilder from './assessment/components/SectionBuilder';
 import AssessmentPreview from './assessment/components/AssessmentPreview';
 import { listCodingDrafts, loadCodingDraft, saveCodingDraft } from './assessment/assessmentCodingStore';
 import { loadAssessmentDraft, saveAssessmentDraft, clearAssessmentDraft } from './assessment/assessmentDraftStore';
-import { consumeProblemSelections } from './assessment/assessmentProblemSelectionStore';
+import { consumeProblemSelections, consumeQuestionSelections } from './assessment/assessmentProblemSelectionStore';
 import DateTimePicker from '../components/DateTimePicker';
 
 const steps = [
@@ -45,6 +45,13 @@ const createQuestionId = () => {
     return crypto.randomUUID();
   }
   return `q-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+};
+
+const LIBRARY_SECTION_LABELS = {
+  mcq: 'MCQ Questions',
+  short: 'Short Questions',
+  one_line: 'One-word Questions',
+  coding: 'Coding Questions',
 };
 
 const toLocalIsoMinutes = (value) => {
@@ -171,6 +178,40 @@ export default function CreateAssessment() {
     return nextSections;
   };
 
+  const addLibraryQuestionsToSections = (prevSections, libraryQuestions = []) => {
+    const nextSections = Array.isArray(prevSections)
+      ? prevSections.map((section) => ({ ...section, questions: [...(section.questions || [])] }))
+      : [];
+
+    (libraryQuestions || []).forEach((libraryQuestion) => {
+      const baseQuestion = libraryQuestion.questionData || libraryQuestion;
+      const type = baseQuestion.type || libraryQuestion.questionType || 'mcq';
+      const clonedQuestion = ensureQuestionMeta({
+        ...baseQuestion,
+        questionId: createQuestionId(),
+        type,
+      }, type);
+
+      const existingSectionIndex = nextSections.findIndex((section) => section.type === type);
+      if (existingSectionIndex >= 0) {
+        nextSections[existingSectionIndex].questions = [
+          ...(nextSections[existingSectionIndex].questions || []),
+          clonedQuestion,
+        ];
+        return;
+      }
+
+      nextSections.push({
+        sectionName: LIBRARY_SECTION_LABELS[type] || `${String(type).replace(/_/g, ' ')} Questions`,
+        type,
+        marksPerQuestion: Number(clonedQuestion.points || clonedQuestion.marks || 1) || 1,
+        questions: [clonedQuestion],
+      });
+    });
+
+    return nextSections;
+  };
+
   const handleOpenCodingEditor = async (sectionIndex, questionIndex) => {
     const section = sections[sectionIndex];
     const question = section?.questions?.[questionIndex];
@@ -231,7 +272,7 @@ export default function CreateAssessment() {
     navigate(`/admin/assessment/coding-question/${editorId}?${query.toString()}`);
   };
 
-  const handleOpenProblemLibrary = async (sectionIndex) => {
+  const handleOpenProblemLibrary = async () => {
     if (currentId && dirty) {
       await saveDraft(true);
     }
@@ -244,11 +285,11 @@ export default function CreateAssessment() {
     });
     const returnTo = currentId ? `/admin/assessment/${currentId}/edit` : '/admin/assessment/create';
     const query = new URLSearchParams({
+      mode: 'select',
       assessment: assessmentKey,
-      section: String(sectionIndex),
       return: returnTo,
     });
-    navigate(`/admin/assessment/select-problem?${query.toString()}`);
+    navigate(`/admin/library?${query.toString()}`);
   };
 
   useEffect(() => {
@@ -368,10 +409,17 @@ export default function CreateAssessment() {
           });
           return { ...section, questions };
         });
-        const selections = consumeProblemSelections(assessmentKey);
-        const mergedSections = selections.length
-          ? selections.reduce((acc, selection) => addProblemsToSection(acc, selection.sectionIndex, selection.problems || []), mappedSections)
+        const problemSelections = consumeProblemSelections(assessmentKey);
+        const librarySelections = consumeQuestionSelections(assessmentKey);
+        let mergedSections = problemSelections.length
+          ? problemSelections.reduce((acc, selection) => addProblemsToSection(acc, selection.sectionIndex, selection.problems || []), mappedSections)
           : mappedSections;
+        if (librarySelections.length) {
+          mergedSections = librarySelections.reduce(
+            (acc, selection) => addLibraryQuestionsToSections(acc, selection.questions || []),
+            mergedSections,
+          );
+        }
         setSections(mergedSections);
         setCurrentId(id);
       } catch (err) {
@@ -401,12 +449,16 @@ export default function CreateAssessment() {
 
   useEffect(() => {
     if (id) return;
-    const selections = consumeProblemSelections(assessmentKey);
-    if (!selections.length) return;
+    const problemSelections = consumeProblemSelections(assessmentKey);
+    const librarySelections = consumeQuestionSelections(assessmentKey);
+    if (!problemSelections.length && !librarySelections.length) return;
     setSections((prev) => {
       let next = prev;
-      selections.forEach((selection) => {
+      problemSelections.forEach((selection) => {
         next = addProblemsToSection(next, selection.sectionIndex, selection.problems || []);
+      });
+      librarySelections.forEach((selection) => {
+        next = addLibraryQuestionsToSections(next, selection.questions || []);
       });
 
       // Persist immediately so navigation/remount doesn't lose the selection.
@@ -761,6 +813,22 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
     ),
     sections: (
       <SectionCard title="Sections & Questions" subtitle="Create structured sections with rich question builders.">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
+          <div>
+            <div className="text-xs font-semibold text-slate-700 dark:text-gray-100">Question Library</div>
+            <div className="mt-1 text-[11px] text-slate-500 dark:text-gray-400">
+              Reuse questions across all types and let the builder group them into sections automatically.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => handleOpenProblemLibrary()}
+            className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-3 py-2 text-xs font-semibold text-white hover:bg-sky-500"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add Questions from Library
+          </button>
+        </div>
         <SectionBuilder
           sections={sections}
           onChange={updateSections}

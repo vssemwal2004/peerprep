@@ -98,7 +98,7 @@ export default function StudentLearning() {
   if (loading) {
     return (
       <div className="min-h-screen bg-white dark:bg-gray-900 pt-20 px-4">
-        <div className="max-w-7xl mx-auto">
+        <div className="w-full">
           <div className="flex items-center justify-center py-20">
             <div className="animate-spin rounded-full h-10 w-10 border-2 border-slate-200 border-t-sky-500"></div>
           </div>
@@ -109,7 +109,7 @@ export default function StudentLearning() {
 
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900 pt-20 px-4 pb-8">
-      <div className="max-w-7xl mx-auto">
+      <div className="w-full">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}

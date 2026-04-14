@@ -17,6 +17,7 @@ import { api } from "../utils/api";
 import socketService from "../utils/socket";
 import { useAuth } from "../context/AuthContext";
 import RequirePasswordChange from "./RequirePasswordChange";
+import GridBackground from "../landing/components/GridBackground";
 
 function RocketFlightScene() {
   return (
@@ -145,6 +146,14 @@ function formatRelativeTime(dateValue) {
   return date.toLocaleDateString();
 }
 
+function intensityClass(value) {
+  if (!value || value <= 0) return "bg-slate-100 dark:bg-gray-700 border border-slate-200 dark:border-gray-600";
+  if (value >= 1 && value <= 2) return "bg-blue-200 dark:bg-blue-800";
+  if (value >= 3 && value <= 4) return "bg-blue-400 dark:bg-blue-600";
+  if (value >= 5 && value <= 7) return "bg-blue-600 dark:bg-blue-500";
+  return "bg-blue-700 dark:bg-blue-400";
+}
+
 /* ─── AnimatedNumber ─── */
 function AnimatedNumber({ value }) {
   const [display, setDisplay] = useState(0);
@@ -238,7 +247,7 @@ function ActionPanel({ title, description, icon: Icon, cta, path, navigate, tone
           <div className="flex-1 min-w-0 h-full flex flex-col">
             <div>
               <div
-                className="text-base sm:text-[17px] font-black text-slate-900 dark:text-gray-100 tracking-tight leading-snug"
+                className="text-base sm:text-[17px] font-black text-sky-950 dark:text-gray-100 tracking-tight leading-snug"
                 style={{
                   display: "-webkit-box",
                   WebkitBoxOrient: "vertical",
@@ -261,7 +270,7 @@ function ActionPanel({ title, description, icon: Icon, cta, path, navigate, tone
               </div>
             </div>
 
-            <div className="mt-auto pt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-slate-900 dark:text-gray-100">
+            <div className="mt-auto pt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-sky-950 dark:text-gray-100">
               {cta}
               <ArrowRight className="w-3.5 h-3.5 transition-transform duration-200 group-hover:translate-x-1" />
             </div>
@@ -273,31 +282,39 @@ function ActionPanel({ title, description, icon: Icon, cta, path, navigate, tone
 }
 
 /* ─── Weekly Activity Bars ─── */
-function WeeklyBars({ data }) {
-  const max = Math.max(...data.map(d => d.count), 1);
-
+function WeeklyHeatmap({ data }) {
   return (
-    <div className="flex items-end gap-2 h-20 mt-4">
-      {data.map((day, i) => (
-        <div key={day.key} className="flex flex-col items-center gap-1.5 flex-1">
-          <motion.div
-            initial={{ scaleY: 0 }}
-            whileInView={{ scaleY: 1 }}
-            viewport={{ once: true }}
-            transition={{ delay: 0.05 * i, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-            className={
-              "w-full rounded-md origin-bottom " +
-              (day.count > 0
-                ? "bg-gradient-to-t from-sky-500 to-blue-600"
-                : "bg-slate-200 dark:bg-gray-700")
-            }
-            style={{
-              height: `${Math.max(8, (day.count / max) * 64)}px`,
-            }}
-          />
-          <div className="text-[10px] text-slate-400 dark:text-gray-500">{day.label}</div>
+    <div className="mt-4">
+      <div className="grid grid-cols-7 gap-2">
+        {data.map((day) => {
+          const cls = intensityClass(day.count);
+          const title = `${day.fullLabel}: ${day.count} activit${day.count === 1 ? "y" : "ies"}`;
+          return (
+            <div key={day.key} className="flex flex-col items-center gap-1">
+              <div
+                title={title}
+                className={
+                  "h-7 w-full rounded-md transition-all " +
+                  cls +
+                  " hover:ring-2 hover:ring-blue-500 dark:hover:ring-blue-400"
+                }
+              />
+              <div className="text-[10px] text-slate-400 dark:text-gray-500">{day.label}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-3 flex items-center justify-end gap-2">
+        <span className="text-[10px] font-semibold text-slate-400 dark:text-gray-500">Less</span>
+        <div className="flex gap-1">
+          <div className="h-2.5 w-2.5 rounded-sm bg-slate-100 dark:bg-gray-700 border border-slate-200 dark:border-gray-600" />
+          <div className="h-2.5 w-2.5 rounded-sm bg-blue-200 dark:bg-blue-800" />
+          <div className="h-2.5 w-2.5 rounded-sm bg-blue-400 dark:bg-blue-600" />
+          <div className="h-2.5 w-2.5 rounded-sm bg-blue-600 dark:bg-blue-500" />
+          <div className="h-2.5 w-2.5 rounded-sm bg-blue-700 dark:bg-blue-400" />
         </div>
-      ))}
+        <span className="text-[10px] font-semibold text-slate-400 dark:text-gray-500">More</span>
+      </div>
     </div>
   );
 }
@@ -315,7 +332,7 @@ function QuickNav({ navigate }) {
         <button
           key={item.label}
           onClick={() => navigate(item.to)}
-          className="inline-flex items-center gap-2 rounded-xl bg-transparent px-3.5 py-2 text-sm font-semibold text-slate-900 dark:text-gray-50 border border-slate-200/60 dark:border-white/10 transition-colors duration-300 hover:bg-white/10 dark:hover:bg-white/5"
+          className="inline-flex items-center gap-2 rounded-xl bg-transparent px-3.5 py-2 text-sm font-semibold text-sky-950 dark:text-gray-50 border border-slate-200/60 dark:border-white/10 transition-colors duration-300 hover:bg-white/10 dark:hover:bg-white/5"
         >
           <item.Icon className="h-4 w-4 text-slate-600 dark:text-slate-200" />
           {item.label}
@@ -332,6 +349,7 @@ export default function StudentDashboard() {
   const [events, setEvents] = useState([]);
   const [assessments, setAssessments] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
+  const [activityByDate, setActivityByDate] = useState({});
   const [announcementIndex, setAnnouncementIndex] = useState(0);
   const [thoughtIndex, setThoughtIndex] = useState(0);
 
@@ -347,6 +365,24 @@ export default function StudentDashboard() {
       const al = ar?.assessments || ar || [];
       setAssessments(Array.isArray(al) ? al : []);
     });
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadActivity = async () => {
+      try {
+        const res = await api.getStudentActivity();
+        if (!mounted) return;
+        setActivityByDate(res?.activityByDate && typeof res.activityByDate === "object" ? res.activityByDate : {});
+      } catch {
+        if (!mounted) return;
+        setActivityByDate({});
+      }
+    };
+
+    loadActivity();
     return () => { mounted = false; };
   }, []);
 
@@ -430,13 +466,19 @@ export default function StudentDashboard() {
     const days = [];
     for (let i = 6; i >= 0; i--) {
       const day = new Date();
+      day.setHours(0, 0, 0, 0);
       day.setDate(day.getDate() - i);
       const key = getDateKey(day);
-      const count = events.filter(e => e.joined && getDateKey(e.startDate) === key).length;
-      days.push({ key, label: day.toLocaleDateString(undefined, { weekday: "short" }), count });
+      const count = key ? Number(activityByDate?.[key] || 0) : 0;
+      days.push({
+        key: key || String(i),
+        label: day.toLocaleDateString(undefined, { weekday: "short" }),
+        fullLabel: day.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" }),
+        count: Number.isFinite(count) ? count : 0,
+      });
     }
     return days;
-  }, [events]);
+  }, [activityByDate]);
 
   const recentActivity = useMemo(() => {
     const items = [];
@@ -453,12 +495,18 @@ export default function StudentDashboard() {
     return items.filter(i => i.time).sort((a, b) => new Date(b.time) - new Date(a.time)).slice(0, 3);
   }, [events, assessments]);
 
-  const weeklyTotal = useMemo(
+  const weeklyTotalActivities = useMemo(
     () => weeklyActivity.reduce((sum, d) => sum + d.count, 0),
     [weeklyActivity]
   );
-  const weeklyGoal = 5;
-  const weeklyRemaining = Math.max(0, weeklyGoal - weeklyTotal);
+
+  const weeklyActiveDays = useMemo(
+    () => weeklyActivity.reduce((sum, d) => sum + (d.count > 0 ? 1 : 0), 0),
+    [weeklyActivity]
+  );
+
+  const weeklyGoal = 7;
+  const weeklyRemaining = Math.max(0, weeklyGoal - weeklyActiveDays);
 
   const platformOverviewCards = [
     {
@@ -520,14 +568,22 @@ export default function StudentDashboard() {
 
   return (
     <RequirePasswordChange user={user}>
-      <div className="min-h-screen w-full bg-gradient-to-b from-sky-50 via-white to-sky-50 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 pt-20 pb-10">
+      <div className="relative min-h-screen w-full overflow-hidden bg-gradient-to-br from-sky-100 via-white to-slate-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 pt-20 pb-10">
+
+        {/* Fixed grid background (doesn't scroll) */}
+        <div aria-hidden="true" className="pointer-events-none fixed inset-0">
+          <GridBackground />
+        </div>
+
+        {/* Keep all page content above the grid */}
+        <div className="relative z-10">
 
         {/* ── 1. FULL VIEWPORT HERO (Hero + Motivation) ── */}
         <div className="relative h-[calc(100vh-5rem)] flex flex-col justify-start gap-[clamp(10px,2vh,20px)] overflow-hidden">
           {/* Shared Growth Flow background for Hero + Motivation (single continuous backdrop) */}
           <div className="pointer-events-none absolute inset-0">
             {/* Layer 1: clean gradient base */}
-            <div className="absolute inset-0 bg-gradient-to-b from-sky-50 via-white to-sky-50 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950" />
+            <div className="absolute inset-0 bg-gradient-to-br from-sky-100 via-white to-slate-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950" />
 
             {/* Layer 2: glow accents */}
             <motion.div
@@ -540,54 +596,6 @@ export default function StudentDashboard() {
               animate={{ x: [0, -16, 0], y: [0, 12, 0], opacity: [0.55, 0.35, 0.55] }}
               transition={{ duration: 14, repeat: Infinity, ease: "easeInOut" }}
             />
-
-            {/* Layer 3: animated flow lines */}
-            <motion.svg
-              className="absolute inset-0 h-full w-full text-sky-500/10 dark:text-white/6"
-              viewBox="0 0 1200 360"
-              preserveAspectRatio="none"
-              fill="none"
-              animate={{ x: [-40, 40, -40], opacity: [0.55, 0.8, 0.55] }}
-              transition={{ duration: 16, repeat: Infinity, ease: "easeInOut" }}
-            >
-              <path
-                d="M-40 80 C 140 30, 260 130, 420 95 S 700 35, 860 85 S 1100 150, 1240 100"
-                stroke="currentColor"
-                strokeWidth="1.2"
-              />
-              <path
-                d="M-60 170 C 120 120, 300 210, 480 165 S 760 95, 930 155 S 1100 240, 1260 185"
-                stroke="currentColor"
-                strokeWidth="1.1"
-              />
-              <path
-                d="M-40 265 C 160 230, 300 310, 520 265 S 820 195, 980 245 S 1100 320, 1240 275"
-                stroke="currentColor"
-                strokeWidth="1.15"
-              />
-            </motion.svg>
-
-            <motion.svg
-              className="absolute inset-0 h-full w-full text-blue-600/10 dark:text-white/5"
-              viewBox="0 0 1200 360"
-              preserveAspectRatio="none"
-              fill="none"
-              animate={{ x: [30, -30, 30], opacity: [0.45, 0.7, 0.45] }}
-              transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
-            >
-              <path
-                d="M-80 120 C 120 80, 260 160, 460 120 S 760 50, 980 120 S 1160 200, 1280 140"
-                stroke="currentColor"
-                strokeWidth="1"
-                strokeDasharray="7 10"
-              />
-              <path
-                d="M-80 220 C 140 175, 320 260, 520 215 S 820 150, 1000 215 S 1180 290, 1280 235"
-                stroke="currentColor"
-                strokeWidth="1"
-                strokeDasharray="9 14"
-              />
-            </motion.svg>
 
             {/* Layer 4: floating geometry */}
             <motion.div
@@ -622,22 +630,25 @@ export default function StudentDashboard() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-            className="relative z-10 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8"
+            className="relative z-10 w-full px-4 sm:px-6 lg:px-10"
           >
             <div className="relative overflow-hidden rounded-[32px]">
-              <div className="relative overflow-hidden rounded-[31px] bg-white/70 dark:bg-gray-900/55 backdrop-blur-xl">
+              <div className="relative overflow-hidden rounded-[31px] bg-transparent">
                 <div className="relative px-6 sm:px-10 py-[clamp(18px,4vh,54px)]">
                   <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 items-center">
                     {/* left */}
                     <div className="lg:col-span-3">
                       <div className="pointer-events-none absolute -left-16 top-10 h-56 w-72 rounded-full bg-white/12 blur-3xl" />
-                      <div className="inline-flex items-center rounded-full bg-transparent px-3 py-1 text-[12px] font-semibold text-slate-700 dark:text-white/85">
+                      <div className="inline-flex items-center rounded-full bg-transparent px-3 py-1 text-[12px] font-semibold text-sky-900 dark:text-sky-200">
                         PeerPrep student dashboard
                       </div>
-                      <h1 className="mt-4 text-3xl sm:text-4xl lg:text-4xl font-black text-slate-900 dark:text-white leading-tight tracking-tight">
-                        Welcome back{user?.name ? "," : ""} {user?.name || "Student"}
+                      <h1 className="mt-4 text-3xl sm:text-4xl lg:text-4xl font-black leading-tight tracking-tight text-sky-950 dark:text-slate-50">
+                        Welcome back{user?.name ? "," : ""}{" "}
+                        <span className="bg-gradient-to-r from-sky-950 via-sky-700 to-indigo-700 bg-clip-text text-transparent dark:from-slate-100 dark:via-sky-300 dark:to-indigo-300">
+                          {user?.name || "Student"}
+                        </span>
                       </h1>
-                      <p className="mt-4 text-slate-600 dark:text-white/75 text-sm sm:text-base max-w-xl leading-relaxed">
+                      <p className="mt-4 text-slate-600 dark:text-slate-300 text-sm sm:text-base max-w-xl leading-relaxed">
                         Your home for interviews, assessments, learning modules, and coding practice — all in one place.
                       </p>
 
@@ -649,15 +660,15 @@ export default function StudentDashboard() {
                     {/* right: quick status */}
                     <div className="lg:col-span-2">
                       <div className="rounded-2xl bg-transparent backdrop-blur-xl p-6">
-                        <div className="text-[11px] font-semibold text-slate-600 dark:text-white/75">This week</div>
+                        <div className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">This week</div>
 
                         <div className="mt-4 space-y-3">
                           <div className="flex items-center justify-between rounded-xl bg-white/30 dark:bg-white/10 px-4 py-3">
                             <div className="flex items-center gap-3">
                               <Calendar className="h-4 w-4 text-slate-600 dark:text-white/80" />
-                              <div className="text-sm font-semibold text-slate-900 dark:text-white">Upcoming interviews</div>
+                              <div className="text-sm font-semibold text-sky-950 dark:text-slate-50">Upcoming interviews</div>
                             </div>
-                            <div className="text-lg font-black text-slate-900 dark:text-white">
+                            <div className="text-lg font-black text-sky-950 dark:text-slate-50">
                               <AnimatedNumber value={upcomingInterviews} />
                             </div>
                           </div>
@@ -665,20 +676,20 @@ export default function StudentDashboard() {
                           <div className="flex items-center justify-between rounded-xl bg-white/30 dark:bg-white/10 px-4 py-3">
                             <div className="flex items-center gap-3">
                               <ClipboardList className="h-4 w-4 text-slate-600 dark:text-white/80" />
-                              <div className="text-sm font-semibold text-slate-900 dark:text-white">Pending assessments</div>
+                              <div className="text-sm font-semibold text-sky-950 dark:text-slate-50">Pending assessments</div>
                             </div>
-                            <div className="text-lg font-black text-slate-900 dark:text-white">
+                            <div className="text-lg font-black text-sky-950 dark:text-slate-50">
                               <AnimatedNumber value={activeAssessments} />
                             </div>
                           </div>
                         </div>
 
-                        <div className="mt-5 flex items-start gap-2 text-slate-600 dark:text-white/75 text-sm">
-                          <BarChart3 className="h-4 w-4 mt-0.5 text-slate-500 dark:text-white/75" />
+                        <div className="mt-5 flex items-start gap-2 text-slate-600 dark:text-slate-300 text-sm">
+                          <BarChart3 className="h-4 w-4 mt-0.5 text-slate-500 dark:text-slate-300" />
                           <p className="leading-relaxed">
                             {weeklyRemaining === 0
                               ? "Weekly goal reached — keep it consistent."
-                              : `You're ${weeklyRemaining} session${weeklyRemaining !== 1 ? "s" : ""} away from your weekly goal.`}
+                              : `You're ${weeklyRemaining} day${weeklyRemaining !== 1 ? "s" : ""} away from your weekly goal.`}
                           </p>
                         </div>
                       </div>
@@ -691,12 +702,12 @@ export default function StudentDashboard() {
 
           {/* ── 1B. MOTIVATION ── */}
           <section className="relative z-10 overflow-hidden flex-1 min-h-0">
-          <div className="relative h-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-[clamp(10px,2vh,22px)] flex flex-col justify-center">
+          <div className="relative h-full w-full px-4 sm:px-6 lg:px-10 py-[clamp(10px,2vh,22px)] flex flex-col justify-center">
             <div className="mx-auto w-full max-w-3xl text-center">
               <div className="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-gray-300">
                 Daily updates
               </div>
-              <h2 className="mt-3 text-xl sm:text-2xl font-black text-slate-900 dark:text-gray-50 tracking-tight">
+              <h2 className="mt-3 text-xl sm:text-2xl font-black text-sky-950 dark:text-gray-50 tracking-tight">
                 A small push, every day
               </h2>
 
@@ -714,7 +725,7 @@ export default function StudentDashboard() {
                       <div className="inline-flex items-center rounded-full bg-transparent px-3 py-1 text-xs font-semibold text-slate-600 dark:text-gray-200">
                         Announcement
                       </div>
-                      <div className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-gray-50 leading-relaxed">
+                      <div className="text-lg sm:text-xl font-semibold text-sky-950 dark:text-gray-50 leading-relaxed">
                         {displayAnnouncements[announcementIndex]?.title}
                       </div>
                       <div className="text-sm text-slate-600 dark:text-gray-300 leading-relaxed">
@@ -735,7 +746,7 @@ export default function StudentDashboard() {
                       <div className="inline-flex items-center rounded-full bg-transparent px-3 py-1 text-xs font-semibold text-slate-600 dark:text-gray-200">
                         {fallbackThoughts[thoughtIndex]?.area}
                       </div>
-                      <div className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-gray-50 leading-relaxed">
+                      <div className="text-lg sm:text-xl font-semibold text-sky-950 dark:text-gray-50 leading-relaxed">
                         {fallbackThoughts[thoughtIndex]?.text}
                       </div>
                     </motion.div>
@@ -758,7 +769,7 @@ export default function StudentDashboard() {
                       AI Insights
                     </div>
 
-                    <div className="mt-3 text-lg sm:text-xl font-black text-slate-900 dark:text-gray-50 tracking-tight">
+                    <div className="mt-3 text-lg sm:text-xl font-black text-sky-950 dark:text-gray-50 tracking-tight">
                       Track your performance
                     </div>
                     <div className="mt-2 text-sm text-slate-600 dark:text-gray-300 leading-relaxed max-w-xl">
@@ -787,7 +798,7 @@ export default function StudentDashboard() {
           </section>
         </div>
 
-        <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12 pt-10 pb-16">
+        <div className="w-full px-4 sm:px-6 lg:px-10 space-y-12 pt-10 pb-16">
 
           {/* ── 2. PLATFORM OVERVIEW ── */}
           <motion.section {...sectionFade}>
@@ -797,7 +808,7 @@ export default function StudentDashboard() {
                   {/* Left */}
                   <div className="lg:col-span-4 flex flex-col justify-center">
                     <div className="text-center lg:text-left">
-                      <h2 className="text-2xl sm:text-3xl lg:text-3xl font-black text-slate-900 dark:text-gray-50 tracking-tight leading-[1.1]">
+                      <h2 className="text-2xl sm:text-3xl lg:text-3xl font-black text-sky-950 dark:text-gray-50 tracking-tight leading-[1.1]">
                         Grow your skills. Build your future.
                       </h2>
                       <p className="mt-3 text-sm sm:text-base text-slate-600 dark:text-gray-300 leading-relaxed max-w-xl mx-auto lg:mx-0">
@@ -842,17 +853,17 @@ export default function StudentDashboard() {
                   <div className="text-[11px] uppercase tracking-widest text-slate-400 dark:text-gray-500 font-semibold">
                     Progress
                   </div>
-                  <h3 className="mt-2 text-lg sm:text-xl font-bold text-slate-900 dark:text-gray-100 tracking-tight">
+                  <h3 className="mt-2 text-lg sm:text-xl font-bold text-sky-950 dark:text-gray-100 tracking-tight">
                     Keep your momentum
                   </h3>
                   <p className="mt-1 text-sm text-slate-600 dark:text-gray-400">
-                    {weeklyTotal > 0 ? "You are improving steadily this week." : "Start with one session today."}
+                    {weeklyActiveDays > 0 ? "You are improving steadily this week." : "Start with one activity today."}
                   </p>
                 </div>
                 <div className="hidden sm:flex items-center gap-2 rounded-xl bg-slate-50 dark:bg-gray-900/40 px-3 py-2">
                   <CheckCircle2 className="h-4 w-4 text-emerald-500" />
                   <span className="text-sm font-semibold text-slate-700 dark:text-gray-200">
-                    {weeklyTotal}/{weeklyGoal} this week
+                    {weeklyActiveDays}/{weeklyGoal} days active
                   </span>
                 </div>
               </div>
@@ -900,9 +911,9 @@ export default function StudentDashboard() {
               <div className="mt-7">
                 <div className="flex items-center justify-between">
                   <div className="text-xs font-semibold text-slate-500 dark:text-gray-400">Weekly activity</div>
-                  <div className="text-xs font-semibold text-slate-700 dark:text-gray-200">{weeklyTotal} sessions</div>
+                    <div className="text-xs font-semibold text-slate-700 dark:text-gray-200">{weeklyTotalActivities} activities</div>
                 </div>
-                <WeeklyBars data={weeklyActivity} />
+                <WeeklyHeatmap data={weeklyActivity} />
               </div>
             </div>
 
@@ -910,7 +921,7 @@ export default function StudentDashboard() {
               <div className="text-[11px] uppercase tracking-widest text-slate-400 dark:text-gray-500 font-semibold">
                 Recent activity
               </div>
-              <h3 className="mt-2 text-lg font-bold text-slate-900 dark:text-gray-100 tracking-tight">
+              <h3 className="mt-2 text-lg font-bold text-sky-950 dark:text-gray-100 tracking-tight">
                 Last updates
               </h3>
 
@@ -947,14 +958,14 @@ export default function StudentDashboard() {
                 <div className="text-sm font-bold text-slate-900 dark:text-gray-100">
                   {weeklyRemaining === 0
                     ? "Weekly goal completed"
-                    : `You're ${weeklyRemaining} step${weeklyRemaining !== 1 ? "s" : ""} away from your weekly goal`}
+                    : `You're ${weeklyRemaining} day${weeklyRemaining !== 1 ? "s" : ""} away from your weekly goal`}
                 </div>
                 <div className="mt-1 text-sm text-slate-600 dark:text-gray-400">
                   A small daily effort compounds.
                 </div>
                 <button
                   onClick={() => navigate("/problems")}
-                  className="mt-4 inline-flex items-center gap-2 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-4 py-2 text-sm font-semibold hover:opacity-95 transition-opacity"
+                  className="mt-4 inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 text-white px-4 py-2 text-sm font-semibold hover:opacity-95 transition-opacity"
                 >
                   Start a quick practice
                   <ArrowRight className="h-4 w-4" />
@@ -987,6 +998,8 @@ export default function StudentDashboard() {
               </motion.button>
             </div>
           </motion.section>
+
+        </div>
 
         </div>
       </div>

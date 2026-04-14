@@ -101,15 +101,26 @@ export default function QuestionBuilder({ type, value, onChange, onRemove, group
           </div>
         )}
 
-        <div>
-          <label className="text-xs text-slate-500 dark:text-gray-400">Points</label>
-          <input
-            type="number"
-            min="1"
-            value={question.points || 1}
-            onChange={(e) => update({ points: Number(e.target.value) })}
-            className="mt-1 w-32 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-          />
+        <div className="grid gap-3 md:grid-cols-[140px_minmax(0,1fr)]">
+          <div>
+            <label className="text-xs text-slate-500 dark:text-gray-400">Points</label>
+            <input
+              type="number"
+              min="1"
+              value={question.points || 1}
+              onChange={(e) => update({ points: Number(e.target.value) })}
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 dark:text-gray-400">Add Tag</label>
+            <input
+              value={(question.tags || []).join(', ')}
+              onChange={(e) => update({ tags: e.target.value.split(',').map((tag) => tag.trim()).filter(Boolean) })}
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+              placeholder="Company, topic, difficulty..."
+            />
+          </div>
         </div>
       </div>
     </div>

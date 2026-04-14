@@ -10,6 +10,11 @@ import {
   exportAssessmentReports,
 } from '../controllers/assessmentController.js';
 import { getAssessmentRules, upsertAssessmentRules } from '../controllers/assessmentRulesController.js';
+import {
+  getLibraryQuestion,
+  listLibraryQuestions,
+  resolveLibraryQuestions,
+} from '../controllers/questionLibraryController.js';
 
 const router = Router();
 
@@ -19,6 +24,9 @@ router.get('/assessment/reports', requireAuth, requireAdmin, getAssessmentReport
 router.get('/assessment/reports/export', requireAuth, requireAdmin, exportAssessmentReports);
 router.get('/assessment/rules', requireAuth, requireAdmin, getAssessmentRules);
 router.put('/assessment/rules', requireAuth, requireAdmin, upsertAssessmentRules);
+router.get('/library/questions', requireAuth, requireAdmin, listLibraryQuestions);
+router.get('/library/questions/:id', requireAuth, requireAdmin, getLibraryQuestion);
+router.post('/library/questions/resolve', requireAuth, requireAdmin, resolveLibraryQuestions);
 router.get('/assessment/:id', requireAuth, requireAdmin, getAssessment);
 router.put('/assessment/:id', requireAuth, requireAdmin, updateAssessment);
 router.delete('/assessment/:id', requireAuth, requireAdmin, deleteAssessment);

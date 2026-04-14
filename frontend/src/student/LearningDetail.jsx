@@ -633,7 +633,7 @@ export default function LearningDetail() {
           )}
 
           {subjectDetails ? (
-            <div className="max-w-5xl mx-auto p-6">
+            <div className="w-full p-6 sm:p-6 lg:px-10 lg:py-8">
               {/* Header */}
               <div className="mb-6 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-slate-200 dark:border-gray-700 p-5">
                 <div className="flex items-start justify-between mb-2">
