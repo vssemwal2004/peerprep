@@ -23,6 +23,7 @@ cd backend; npm install; npm run dev
 ```
 
 API runs on http://localhost:4000.
+Execution workers now start inside the backend server by default. Set `START_EXECUTION_WORKERS=false` only if you want to run `npm run worker:compiler` and `npm run worker:assessment` separately.
 
 2. Frontend
 - Create `.env` in `frontend` (optional):

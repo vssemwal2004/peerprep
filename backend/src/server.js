@@ -11,6 +11,7 @@ import { logSuspiciousActivity } from './utils/logger.js';
 import cookie from 'cookie';
 import { seedEmailTemplates } from './services/emailTemplateService.js';
 import { setIo } from './utils/io.js';
+import { startEmbeddedWorkers } from './workers/startEmbeddedWorkers.js';
 
 const PORT = process.env.PORT || 4000;
 //new file check
@@ -142,6 +143,7 @@ io.on('connection', (socket) => {
 // Make io available globally
 app.set('io', io);
 setIo(io);
+startEmbeddedWorkers();
 
 // SECURITY: Graceful shutdown handlers
 const shutdown = async (signal) => {

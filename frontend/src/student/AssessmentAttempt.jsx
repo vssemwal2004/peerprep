@@ -741,7 +741,17 @@ export default function AssessmentAttempt() {
       sourceCode,
       customInput: runInput,
       assessmentId: assessment?._id,
-    }).then((response) => {
+    }).then(async (queuedJob) => {
+      let completedRun = queuedJob;
+      if (queuedJob?.jobId) {
+        toast.info('Run received. Waiting for execution result.');
+        completedRun = await api.waitForExecutionResult(queuedJob.jobId, {
+          intervalMs: 1000,
+          timeoutMs: 2 * 60 * 1000,
+        });
+      }
+
+      const response = completedRun?.result?.response || completedRun;
       setCodeResultMap((prev) => ({ ...prev, [key]: response }));
       setActiveConsoleTab('result');
       toast.success(`Run finished with status ${response.status?.description || 'Completed'}`);
@@ -800,7 +810,17 @@ export default function AssessmentAttempt() {
       language,
       sourceCode,
       assessmentId: assessment?._id,
-    }).then((response) => {
+    }).then(async (queuedJob) => {
+      let completedSubmission = queuedJob;
+      if (queuedJob?.jobId) {
+        toast.info('Submission received. Waiting for final verdict.');
+        completedSubmission = await api.waitForExecutionResult(queuedJob.jobId, {
+          intervalMs: 1000,
+          timeoutMs: 10 * 60 * 1000,
+        });
+      }
+
+      const response = completedSubmission?.result?.response || completedSubmission;
       setCodeResultMap((prev) => ({ ...prev, [key]: response }));
       setActiveConsoleTab('result');
       toast.success(`Submission finished with verdict ${response.status || 'Completed'}`);

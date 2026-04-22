@@ -40,6 +40,10 @@ function setCache(key, data) {
   }
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 // Clear cache (useful after mutations)
 export function clearApiCache(pathPattern) {
   if (pathPattern) {
@@ -541,6 +545,27 @@ export const api = {
   getCompilerStudentAnalytics: (studentId) => request(`/compiler/student/${studentId}`, { skipCache: true }),
   getCompilerAnalyticsOverview: () => request('/compiler/analytics/overview', { skipCache: true }),
   getCompilerProblemAnalytics: (problemId) => request(`/compiler/analytics/problem/${problemId}`, { skipCache: true }),
+  getExecutionResult: (jobId) => request(`/results/${jobId}`, { skipCache: true }),
+  waitForExecutionResult: async (jobId, { intervalMs = 1000, timeoutMs = 120000 } = {}) => {
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt <= timeoutMs) {
+      const result = await request(`/results/${jobId}`, { skipCache: true });
+      const status = String(result?.status || '').toLowerCase();
+
+      if (status === 'completed') {
+        return result;
+      }
+
+      if (status === 'failed') {
+        throw new Error(result?.error?.message || 'Execution failed.');
+      }
+
+      await sleep(intervalMs);
+    }
+
+    throw new Error('Execution is taking longer than expected. Please try again shortly.');
+  },
   listStudentProblems: ({ search = '', difficulty = '', tags = '', sortBy = 'acceptanceRate', sortOrder = 'desc', page = 1, limit = 10 } = {}) => {
     const params = new URLSearchParams();
     if (search) params.append('search', search);
@@ -595,7 +620,6 @@ export const api = {
     return request(`/compiler/problems/${problemId}/submissions?${params.toString()}`, { skipCache: true });
   },
 };
-
 
 
 

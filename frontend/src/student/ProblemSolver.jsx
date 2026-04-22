@@ -1194,16 +1194,37 @@ export default function ProblemSolver() {
     setLastRunCaseId(selectedCase?.id || null);
 
     setIsRunning(true);
+    setActiveConsoleTab('result');
     try {
-      const response = await api.runStudentProblem(problem._id, {
+      const queuedJob = await api.runStudentProblem(problem._id, {
         language,
         sourceCode: activeCode,
         customInput: runInput,
       });
-      setResult(response);
-      setActiveConsoleTab('result');
-      await loadSubmissions({ silent: true });
-      toast.success(`Run finished with status ${response.status?.description || 'Completed'}`);
+
+      let completedRun = queuedJob;
+      if (queuedJob?.jobId) {
+        toast.info('Run received. Waiting for execution result.');
+        completedRun = await api.waitForExecutionResult(queuedJob.jobId, {
+          intervalMs: 1000,
+          timeoutMs: 2 * 60 * 1000,
+        });
+      }
+
+      const nextSubmissions = await loadSubmissions({ silent: true, selectLatest: true });
+      const matchedSubmission = queuedJob?.jobId
+        ? nextSubmissions.find((submission) => String(submission.jobId || '') === String(queuedJob.jobId))
+        : null;
+
+      if (matchedSubmission) {
+        setResult(matchedSubmission);
+        setSelectedSubmissionId(matchedSubmission._id);
+        toast.success(`Run finished with status ${statusLabel(matchedSubmission.status)}`);
+      } else {
+        const responsePayload = completedRun?.result?.response || completedRun;
+        setResult(responsePayload);
+        toast.success(`Run finished with status ${responsePayload?.status?.description || 'Completed'}`);
+      }
 
       if (selectedCase?.kind === 'custom' && problem.hasReferenceSolution) {
         api.getStudentExpectedOutput(problem._id, { language, customInput: runInput })
@@ -1235,91 +1256,39 @@ export default function ProblemSolver() {
     stopSubmissionPolling();
     setIsSubmitting(true);
 
-    const tracker = {
-      language,
-      sourceCode: activeCode,
-      startedAt: Date.now(),
-      deadlineAt: Date.now() + (10 * 60 * 1000),
-    };
-    submissionTrackerRef.current = tracker;
-
-    const pollSubmissionStatus = async () => {
-      if (!isMountedRef.current) {
-        return;
-      }
-
-      const nextSubmissions = await loadSubmissions({ silent: true });
-      const matchedSubmission = findTrackedSubmission(nextSubmissions);
-
-      if (!matchedSubmission) {
-        if (Date.now() > tracker.deadlineAt) {
-          stopSubmissionPolling();
-          setIsSubmitting(false);
-          toast.error('Submission is taking longer than expected. Please refresh the submissions tab.');
-        }
-        return;
-      }
-
-      syncSubmissionResult(matchedSubmission);
-
-      const status = String(matchedSubmission.status || '').toUpperCase();
-      if (['PENDING', 'RUNNING'].includes(status)) {
-        if (Date.now() > tracker.deadlineAt) {
-          stopSubmissionPolling();
-          setIsSubmitting(false);
-          toast.error('Submission is still processing. Please refresh the submissions tab to check again.');
-          return;
-        }
-        if (!tracker.notifiedQueued) {
-          tracker.notifiedQueued = true;
-          toast.info('Submission received. Checking results in the background.');
-        }
-        return;
-      }
-
-      finalizeTrackedSubmission(matchedSubmission, {
-        successMessage: `Submission finished with verdict ${statusLabel(matchedSubmission.status)}`,
-      });
-    };
-
-    submissionPollRef.current = setInterval(() => {
-      void pollSubmissionStatus().catch(() => {
-        // Keep polling if a transient refresh fails.
-      });
-    }, 2000);
-
-    void pollSubmissionStatus().catch(() => {
-      // The immediate poll may race with the backend creating the row.
-    });
-
     void api.submitStudentProblem(problem._id, {
       language,
       sourceCode: activeCode,
-    }).then((response) => {
-      if (!submissionTrackerRef.current) {
-        return;
-      }
-
+    }).then(async (queuedJob) => {
       if (!isMountedRef.current) {
         return;
       }
 
-      syncSubmissionResult(response);
+      if (queuedJob?.jobId) {
+        toast.info('Submission received. Waiting for final verdict.');
+        await api.waitForExecutionResult(queuedJob.jobId, {
+          intervalMs: 1000,
+          timeoutMs: 10 * 60 * 1000,
+        });
+      }
 
-      const finalStatus = String(response.status || '').toUpperCase();
-      if (['PENDING', 'RUNNING'].includes(finalStatus)) {
-        if (!submissionTrackerRef.current.notifiedQueued) {
-          submissionTrackerRef.current.notifiedQueued = true;
-          toast.info('Submission received. Checking results in the background.');
-        }
+      const nextSubmissions = await loadSubmissions({ silent: true, selectLatest: true });
+      const matchedSubmission = queuedJob?.jobId
+        ? nextSubmissions.find((submission) => String(submission.jobId || '') === String(queuedJob.jobId))
+        : findTrackedSubmission(nextSubmissions);
+
+      if (matchedSubmission) {
+        finalizeTrackedSubmission(matchedSubmission, {
+          successMessage: `Submission finished with verdict ${statusLabel(matchedSubmission.status)}`,
+        });
         return;
       }
 
-      finalizeTrackedSubmission(response, {
-        successMessage: `Submission finished with verdict ${statusLabel(response.status)}`,
-      });
+      stopSubmissionPolling();
+      setIsSubmitting(false);
+      toast.success('Submission finished. Refresh the submissions tab if details are not visible yet.');
     }).catch((error) => {
-      if (submissionTrackerRef.current && isMountedRef.current) {
+      if (isMountedRef.current) {
         stopSubmissionPolling();
         setIsSubmitting(false);
         toast.error(error.message || 'Failed to submit code.');

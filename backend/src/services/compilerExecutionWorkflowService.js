@@ -39,7 +39,7 @@ import {
   secondsToMilliseconds,
 } from './executionService.js';
 
-const SUBMIT_CASE_DELAY_MS = 350;
+const SUBMIT_CASE_DELAY_MS = Math.max(0, Number(process.env.SUBMIT_CASE_DELAY_MS || 0));
 const DEFAULT_LANGUAGE = 'python';
 
 function sleep(ms) {
