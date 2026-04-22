@@ -84,7 +84,8 @@ export default function QuestionLibrary() {
   const params = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const selectionMode = params.get('mode') === 'select';
   const assessmentKey = params.get('assessment') || 'new';
-  const returnTo = params.get('return') || '/admin/assessment/create';
+  const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
+  const returnTo = params.get('return') || `${rolePrefix}/assessment/create`;
   const initialType = params.get('type') || 'all';
 
   const [filters, setFilters] = useState({

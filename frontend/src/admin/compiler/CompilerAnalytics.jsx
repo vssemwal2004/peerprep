@@ -68,6 +68,7 @@ function PieLegend({ data }) {
 export default function CompilerAnalytics() {
   const navigate = useNavigate();
   const toast = useToast();
+  const rolePrefix = window.location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({
@@ -150,7 +151,7 @@ export default function CompilerAnalytics() {
                 </thead>
                 <tbody className="divide-y divide-slate-200 bg-white dark:divide-gray-700 dark:bg-gray-900">
                   {studentPerformance.map((student) => (
-                    <tr key={student.studentId} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-gray-800/60" onClick={() => navigate(`/admin/students/${student.studentId}`)}>
+                    <tr key={student.studentId} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-gray-800/60" onClick={() => navigate(`${rolePrefix}/students/${student.studentId}`)}>
                       <td className="px-4 py-4 font-semibold text-slate-800 dark:text-gray-100">{student.name}</td>
                       <td className="px-4 py-4 text-slate-700 dark:text-gray-200">{student.totalAttempts}</td>
                       <td className="px-4 py-4 text-slate-700 dark:text-gray-200">{student.problemsSolved}</td>
@@ -171,7 +172,7 @@ export default function CompilerAnalytics() {
               <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Selection applied to filtered analytics.</p>
               <button
                 type="button"
-                onClick={() => navigate(`/admin/students/${selectedStudent._id}`)}
+                onClick={() => navigate(`${rolePrefix}/students/${selectedStudent._id}`)}
                 className="mt-3 rounded-xl bg-sky-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-700"
               >
                 Open Full Student Profile

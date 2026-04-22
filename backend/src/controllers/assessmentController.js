@@ -712,7 +712,11 @@ export async function createAssessment(req, res) {
 
 export async function listAssessments(req, res) {
   try {
-    const assessments = await Assessment.find().sort({ createdAt: -1 }).lean();
+    const query = {};
+    if (req.user?.role === 'coordinator') {
+      query.createdBy = req.user._id;
+    }
+    const assessments = await Assessment.find(query).sort({ createdAt: -1 }).lean();
     const submissionCounts = await AssessmentSubmission.aggregate([
       {
         $group: {
@@ -1510,6 +1514,9 @@ export async function getAssessmentReports(req, res) {
     const postMatch = {};
     if (assessmentType) postMatch['assessment.assessmentType'] = assessmentType;
     if (studentId) postMatch['student._id'] = new mongoose.Types.ObjectId(studentId);
+    if (req.user?.role === 'coordinator') {
+      postMatch['assessment.createdBy'] = req.user._id;
+    }
     if (Object.keys(postMatch).length) {
       baseLookup.push({ $match: postMatch });
     }
@@ -1586,8 +1593,12 @@ export async function getAssessmentReports(req, res) {
     const summary = summaryRows?.[0] || { avgScore: 0, maxScore: 0, minScore: 0, total: 0, passCount: 0 };
     const failCount = Math.max(0, (summary.total || 0) - (summary.passCount || 0));
 
+    const assessmentSummariesMatch = {};
+    if (assessmentType) assessmentSummariesMatch.assessmentType = assessmentType;
+    if (req.user?.role === 'coordinator') assessmentSummariesMatch.createdBy = req.user._id;
+
     const assessmentSummaries = await Assessment.aggregate([
-      assessmentType ? { $match: { assessmentType } } : { $match: {} },
+      { $match: assessmentSummariesMatch },
       {
         $lookup: {
           from: 'assessmentsubmissions',

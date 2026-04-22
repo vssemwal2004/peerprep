@@ -28,7 +28,7 @@ function tokenizeSearchValue(value = '') {
     .filter(Boolean);
 }
 
-function buildSearchPrefixes(values = []) {
+export function buildSearchPrefixes(values = []) {
   const prefixes = new Set();
   values.forEach((value) => {
     tokenizeSearchValue(value).forEach((token) => {

@@ -4,6 +4,7 @@ import {
   backfillQuestionLibraryIfEmpty,
   buildLibrarySearchMatch,
   formatLibraryQuestionSummary,
+  buildSearchPrefixes,
 } from '../services/questionLibraryService.js';
 
 function normalizeType(type = '') {
@@ -40,6 +41,9 @@ export async function listLibraryQuestions(req, res) {
     }
     if (difficulty) {
       baseMatch.difficulty = String(difficulty).trim();
+    }
+    if (req.user?.role === 'coordinator') {
+      baseMatch.createdBy = req.user._id;
     }
 
     const match = { ...baseMatch };
@@ -129,5 +133,114 @@ export async function resolveLibraryQuestions(req, res) {
   } catch (err) {
     console.error('Error resolving library questions:', err);
     res.status(500).json({ error: 'Failed to resolve library questions' });
+  }
+}
+
+export async function createLibraryQuestion(req, res) {
+  try {
+    const { question } = req.body;
+    if (!question || !question.type) {
+      return res.status(400).json({ error: 'Invalid question data' });
+    }
+
+    const type = normalizeType(question.type);
+    const tags = Array.isArray(question.tags) ? question.tags : [];
+    const keywords = Array.isArray(question.keywords) ? question.keywords : [];
+    const questionText = String(question.questionText || '').trim();
+    const sourceKey = `direct_${new mongoose.Types.ObjectId()}`;
+
+    const searchPrefixes = buildSearchPrefixes([
+      questionText,
+      ...(question.options || []),
+      question.expectedAnswer,
+      ...tags,
+      ...keywords,
+    ]);
+
+    const newQuestion = new QuestionLibrary({
+      sourceKey,
+      sourceAssessmentTitle: 'Direct Added',
+      sectionName: 'General',
+      questionType: type,
+      questionText,
+      tags,
+      keywords,
+      searchPrefixes,
+      questionData: {
+        ...question,
+        questionId: sourceKey,
+      },
+      createdBy: req.user?._id || req.admin?._id,
+      lastSyncedAt: new Date(),
+    });
+
+    await newQuestion.save();
+
+    res.json({
+      question: {
+        ...formatLibraryQuestionSummary(newQuestion),
+        questionData: newQuestion.questionData,
+      },
+    });
+  } catch (err) {
+    console.error('Error creating library question:', err);
+    res.status(500).json({ error: 'Failed to create library question' });
+  }
+}
+
+export async function createLibraryQuestionsBulk(req, res) {
+  try {
+    const { questions } = req.body;
+    if (!Array.isArray(questions) || !questions.length) {
+      return res.status(400).json({ error: 'Invalid questions datary array' });
+    }
+
+    const createdBy = req.user?._id || req.admin?._id;
+    const itemsToInsert = questions.map(question => {
+      const type = normalizeType(question.type);
+      const tags = Array.isArray(question.tags) ? question.tags : [];
+      const keywords = Array.isArray(question.keywords) ? question.keywords : [];
+      const questionText = String(question.questionText || '').trim();
+      const sourceKey = `direct_${new mongoose.Types.ObjectId()}`;
+
+      const searchPrefixes = buildSearchPrefixes([
+        questionText,
+        ...(question.options || []),
+        question.expectedAnswer,
+        ...tags,
+        ...keywords,
+      ]);
+
+      return {
+        sourceKey,
+        sourceAssessmentTitle: 'Direct Added',
+        sectionName: 'General',
+        questionType: type,
+        questionText,
+        tags,
+        keywords,
+        searchPrefixes,
+        questionData: {
+          ...question,
+          questionId: sourceKey,
+        },
+        createdBy,
+        lastSyncedAt: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+    });
+
+    const result = await QuestionLibrary.insertMany(itemsToInsert);
+
+    res.json({
+      questions: result.map((q) => ({
+        ...formatLibraryQuestionSummary(q),
+        questionData: q.questionData,
+      })),
+    });
+  } catch (err) {
+    console.error('Error bulk creating library questions:', err);
+    res.status(500).json({ error: 'Failed to bulk create library questions' });
   }
 }

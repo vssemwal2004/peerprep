@@ -358,6 +358,8 @@ export const api = {
     });
     return request(`/admin/library/questions${qs.toString() ? `?${qs.toString()}` : ''}`, { skipCache: true });
   },
+  createLibraryQuestion: (question) => request('/admin/library/questions', { method: 'POST', body: { question } }),
+  createLibraryQuestionsBulk: (questions) => request('/admin/library/questions/bulk', { method: 'POST', body: { questions } }),
   getLibraryQuestion: (id) => request(`/admin/library/questions/${id}`, { skipCache: true }),
   resolveLibraryQuestions: (ids = []) => request('/admin/library/questions/resolve', { method: 'POST', body: { ids } }),
 

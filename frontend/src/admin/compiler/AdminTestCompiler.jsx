@@ -23,6 +23,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const rolePrefix = window.location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
   const [loading, setLoading] = useState(true);
   const [problem, setProblem] = useState(null);
   const [language, setLanguage] = useState('python');
@@ -154,11 +155,11 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
         subtitle="Student-style preview required before a problem can be published."
         action={(
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => navigate(backTo || '/admin/compiler/problems')} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
+            <button type="button" onClick={() => navigate(backTo || `${rolePrefix}/compiler/problems`)} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
               <ArrowLeft className="h-4 w-4" />
               {backLabel}
             </button>
-            <button type="button" onClick={() => navigate(editTo || `/admin/compiler/${problem._id}/edit`)} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
+            <button type="button" onClick={() => navigate(editTo || `${rolePrefix}/compiler/${problem._id}/edit`)} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
               {editLabel}
             </button>
           </div>

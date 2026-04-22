@@ -38,6 +38,10 @@ function isAdminRequest(req) {
   return req.user?.role === 'admin';
 }
 
+function isCoordinatorRequest(req) {
+  return req.user?.role === 'coordinator';
+}
+
 function isStudentRequest(req) {
   return req.user?.role === 'student';
 }
@@ -646,7 +650,7 @@ async function resolveExecutionProblem(req) {
   }
 
   const visibility = problem.visibility || 'public';
-  if (!isAdminRequest(req) && (!isPublishedStatus(problem.status) || visibility !== 'public')) {
+  if (!isAdminRequest(req) && !(isCoordinatorRequest(req) && String(problem.createdBy) === String(req.user._id)) && (!isPublishedStatus(problem.status) || visibility !== 'public')) {
     throw new HttpError(404, 'Problem not found.');
   }
 
@@ -664,6 +668,8 @@ export async function getCompilerOverview(req, res) {
   startDate.setHours(0, 0, 0, 0);
   startDate.setDate(startDate.getDate() - 6);
 
+  const baseQuery = isCoordinatorRequest(req) ? { createdBy: req.user._id } : {};
+
   const [
     totalProblems,
     activeProblems,
@@ -674,8 +680,8 @@ export async function getCompilerOverview(req, res) {
     recentProblems,
     recentSubmissions,
   ] = await Promise.all([
-    Problem.countDocuments(),
-    Problem.countDocuments({ status: { $in: ['published', 'Active', 'active'] } }),
+    Problem.countDocuments(baseQuery),
+    Problem.countDocuments({ ...baseQuery, status: { $in: ['published', 'Active', 'active'] } }),
     Submission.countDocuments({ mode: 'submit' }),
     Submission.countDocuments({ mode: 'submit', status: 'AC' }),
     Submission.aggregate([
@@ -694,6 +700,7 @@ export async function getCompilerOverview(req, res) {
       { $sort: { _id: 1 } },
     ]),
     Problem.aggregate([
+      { $match: baseQuery },
       {
         $group: {
           _id: '$difficulty',
@@ -701,7 +708,7 @@ export async function getCompilerOverview(req, res) {
         },
       },
     ]),
-    Problem.find()
+    Problem.find(baseQuery)
       .sort({ createdAt: -1 })
       .limit(5)
       .select('title difficulty status createdAt')
@@ -767,21 +774,23 @@ export async function listProblems(req, res) {
   const sortOrder = String(req.query.sortOrder || 'desc') === 'asc' ? 1 : -1;
   const accessQuery = isAdminRequest(req)
     ? {}
-    : { status: { $in: ['published', 'Active', 'active'] }, $or: [{ visibility: 'public' }, { visibility: { $exists: false } }] };
+    : isCoordinatorRequest(req)
+      ? { createdBy: req.user._id }
+      : { status: { $in: ['published', 'Active', 'active'] }, $or: [{ visibility: 'public' }, { visibility: { $exists: false } }] };
   const query = { ...accessQuery };
 
   if (difficulty && ['Easy', 'Medium', 'Hard'].includes(difficulty)) {
     query.difficulty = difficulty;
   }
 
-  if (isAdminRequest(req) && status && ['draft', 'published', 'Draft', 'Active', 'Published'].includes(status)) {
+  if ((isAdminRequest(req) || isCoordinatorRequest(req)) && status && ['draft', 'published', 'Draft', 'Active', 'Published'].includes(status)) {
     const normalizedStatus = normalizeStatus(status);
     query.status = normalizedStatus === 'published'
       ? { $in: ['published', 'Active', 'active'] }
       : { $in: ['draft', 'Draft'] };
   }
 
-  if (isAdminRequest(req) && req.query.visibility) {
+  if ((isAdminRequest(req) || isCoordinatorRequest(req)) && req.query.visibility) {
     query.visibility = normalizeVisibility(req.query.visibility);
   }
 
@@ -865,14 +874,21 @@ export async function getProblemDetail(req, res) {
   const studentStatus = isStudentRequest(req)
     ? await getStudentProblemStatus(req.user._id, req.params.id)
     : null;
+  const problemDoc = await Problem.findById(req.params.id).select('createdBy');
+  if (!problemDoc) {
+    throw new HttpError(404, 'Problem not found.');
+  }
+
+  const isAuthor = isAdminRequest(req) || (isCoordinatorRequest(req) && String(problemDoc.createdBy) === String(req.user._id));
+
   const { problem, serializedProblem } = await loadProblemShape(req.params.id, {
     studentStatus,
-    includeHiddenTestCases: isAdminRequest(req),
-    includeReferenceSolutions: isAdminRequest(req),
+    includeHiddenTestCases: !!isAuthor,
+    includeReferenceSolutions: !!isAuthor,
   });
 
   const visibility = problem.visibility || 'public';
-  if (isStudentRequest(req) && (!isPublishedStatus(problem.status) || visibility !== 'public')) {
+  if ((isStudentRequest(req) || (!isAuthor && isCoordinatorRequest(req))) && (!isPublishedStatus(problem.status) || visibility !== 'public')) {
     throw new HttpError(404, 'Problem not found.');
   }
 
@@ -937,7 +953,7 @@ export async function updateProblem(req, res) {
   ensureObjectId(req.params.id, 'Problem ID');
 
   const existingProblem = await Problem.findById(req.params.id);
-  if (!existingProblem) {
+  if (!existingProblem || (isCoordinatorRequest(req) && String(existingProblem.createdBy) !== String(req.user._id))) {
     throw new HttpError(404, 'Problem not found.');
   }
 
@@ -1002,8 +1018,8 @@ export async function updateProblem(req, res) {
 export async function deleteProblem(req, res) {
   ensureObjectId(req.params.id, 'Problem ID');
 
-  const problem = await Problem.findById(req.params.id).select('_id');
-  if (!problem) {
+  const problem = await Problem.findById(req.params.id).select('_id createdBy');
+  if (!problem || (isCoordinatorRequest(req) && String(problem.createdBy) !== String(req.user._id))) {
     throw new HttpError(404, 'Problem not found.');
   }
 
@@ -1020,7 +1036,7 @@ export async function updateProblemStatus(req, res) {
   ensureObjectId(req.params.id, 'Problem ID');
 
   const problem = await Problem.findById(req.params.id);
-  if (!problem) {
+  if (!problem || (isCoordinatorRequest(req) && String(problem.createdBy) !== String(req.user._id))) {
     throw new HttpError(404, 'Problem not found.');
   }
 

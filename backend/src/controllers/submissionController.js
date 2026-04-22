@@ -25,6 +25,11 @@ export async function listSubmissions(req, res) {
 
   const query = {};
 
+  if (req?.user?.role === 'coordinator') {
+    const problems = await Problem.find({ createdBy: req.user._id }).select('_id').lean();
+    query.problem = { $in: problems.map((p) => p._id) };
+  }
+
   if (status && ['PENDING', 'RUNNING', 'AC', 'WA', 'TLE', 'RE', 'CE'].includes(status)) {
     query.status = status;
   }
@@ -110,27 +115,34 @@ export async function listProblemSubmissions(req, res) {
 }
 
 export async function getCompilerAnalytics(req, res) {
+  const matchObj = { mode: 'submit' };
+  
+  if (req?.user?.role === 'coordinator') {
+    const problems = await Problem.find({ createdBy: req.user._id }).select('_id').lean();
+    matchObj.problem = { $in: problems.map((p) => p._id) };
+  }
+
   const [totalAttempts, acceptedAttempts, averageExecutionAggregation, statusDistribution, languageDistribution, attemptsByDay, problemAnalytics] = await Promise.all([
-    Submission.countDocuments({ mode: 'submit' }),
-    Submission.countDocuments({ mode: 'submit', status: 'AC' }),
+    Submission.countDocuments(matchObj),
+    Submission.countDocuments({ ...matchObj, status: 'AC' }),
     Submission.aggregate([
-      { $match: { mode: 'submit', status: { $in: ['AC', 'WA', 'TLE', 'RE'] } } },
+      { $match: { ...matchObj, status: { $in: ['AC', 'WA', 'TLE', 'RE'] } } },
       { $group: { _id: null, avgExecutionTimeMs: { $avg: '$executionTimeMs' } } },
     ]),
     Submission.aggregate([
-      { $match: { mode: 'submit' } },
+      { $match: matchObj },
       { $group: { _id: '$status', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
     ]),
     Submission.aggregate([
-      { $match: { mode: 'submit' } },
+      { $match: matchObj },
       { $group: { _id: '$language', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
     ]),
     Submission.aggregate([
       {
         $match: {
-          mode: 'submit',
+          ...matchObj,
           createdAt: {
             $gte: (() => {
               const date = new Date();
@@ -155,7 +167,7 @@ export async function getCompilerAnalytics(req, res) {
       { $sort: { _id: 1 } },
     ]),
     Submission.aggregate([
-      { $match: { mode: 'submit' } },
+      { $match: matchObj },
       {
         $group: {
           _id: '$problem',

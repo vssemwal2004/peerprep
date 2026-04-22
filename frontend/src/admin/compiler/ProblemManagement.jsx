@@ -9,6 +9,7 @@ import { DifficultyBadge, EmptyState, LoadingPanel, ProblemStatusBadge, SectionC
 export default function ProblemManagement() {
   const navigate = useNavigate();
   const toast = useToast();
+  const rolePrefix = window.location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
   const [searchQuery, setSearchQuery] = useState('');
   const [difficulty, setDifficulty] = useState('');
   const [status, setStatus] = useState('');
@@ -90,7 +91,7 @@ export default function ProblemManagement() {
       title="Problem Management"
       subtitle="Professional management table for authored problems, publishing controls, and preview access."
       action={(
-        <button type="button" onClick={() => navigate('/admin/compiler/create')} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-sky-500">
+        <button type="button" onClick={() => navigate(`${rolePrefix}/compiler/create`)} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-sky-500">
           Create Problem
           <ArrowRight className="h-4 w-4" />
         </button>
@@ -147,8 +148,8 @@ export default function ProblemManagement() {
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex flex-wrap gap-2">
-                        <button type="button" onClick={() => navigate(`/admin/compiler/${problem._id}/edit`)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Edit</button>
-                        <button type="button" onClick={() => navigate(`/admin/compiler/${problem._id}/preview`)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Preview</button>
+                        <button type="button" onClick={() => navigate(`${rolePrefix}/compiler/${problem._id}/edit`)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Edit</button>
+                        <button type="button" onClick={() => navigate(`${rolePrefix}/compiler/${problem._id}/preview`)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Preview</button>
                         <button type="button" onClick={() => handleToggleStatus(problem)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">{(String(problem.status || '').toLowerCase() === 'published' || String(problem.status || '').toLowerCase() === 'active') ? 'Unpublish' : 'Publish'}</button>
                         <button type="button" onClick={() => handleDelete(problem._id)} className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-600 transition-colors hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-900/20"><Trash2 className="h-3.5 w-3.5" />Delete</button>
                       </div>

@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, FileCode2 } from 'lucide-react';
 import { api } from '../../utils/api';
@@ -11,6 +11,7 @@ import { DifficultyBadge, LoadingPanel, ProblemStatusBadge, SectionCard, StatCar
 export default function ProblemDetail() {
   const navigate = useNavigate();
   const toast = useToast();
+  const rolePrefix = window.location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
   const { problemId } = useParams();
   const [problem, setProblem] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -56,7 +57,7 @@ export default function ProblemDetail() {
         action={(
           <button
             type="button"
-            onClick={() => navigate('/admin/compiler/problems')}
+            onClick={() => navigate(`${rolePrefix}/compiler/problems`)}
             className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
           >
             <ArrowLeft className="h-4 w-4" />

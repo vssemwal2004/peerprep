@@ -115,7 +115,8 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
   const [autoSaveStatus, setAutoSaveStatus] = useState('');
   const autoSaveRef = useRef(null);
   const assessmentKey = assessmentContext?.assessmentKey || 'new';
-  const assessmentReturnTo = assessmentContext?.returnTo || '/admin/assessment';
+  const rolePrefix = window.location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
+  const assessmentReturnTo = assessmentContext?.returnTo || `${rolePrefix}/assessment`;
 
   useEffect(() => {
     if (isAssessment) {
@@ -313,12 +314,12 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
 
       if (redirectToPreview) {
         if (isAssessment) {
-          navigate(`/admin/assessment/coding-question/${editorId}/preview/${response._id}?return=${encodeURIComponent(assessmentReturnTo)}`);
+          navigate(`${rolePrefix}/assessment/coding-question/${editorId}/preview/${response._id}?return=${encodeURIComponent(assessmentReturnTo)}`);
         } else {
-          navigate(`/admin/compiler/${response._id}/preview`);
+          navigate(`${rolePrefix}/compiler/${response._id}/preview`);
         }
       } else if (!currentProblemId && !isAssessment) {
-        navigate(`/admin/compiler/${response._id}/edit`, { replace: true });
+        navigate(`${rolePrefix}/compiler/${response._id}/edit`, { replace: true });
       }
 
       if (silent) setAutoSaveStatus('Draft auto-saved');
@@ -365,7 +366,7 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
     try {
       await api.deleteCompilerProblem(currentProblemId);
       toast.success('Problem deleted successfully.');
-      navigate('/admin/compiler/problems');
+      navigate(`${rolePrefix}/compiler/problems`);
     } catch (error) {
       toast.error(error.message || 'Failed to delete problem.');
     } finally {
@@ -451,7 +452,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
             {currentProblemId ? (
               <button
                 type="button"
-                onClick={() => navigate(`/admin/compiler/${currentProblemId}/preview`)}
+                onClick={() => navigate(`${rolePrefix}/compiler/${currentProblemId}/preview`)}
                 className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
               >
                 <Eye className="h-4 w-4" />

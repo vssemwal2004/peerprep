@@ -24,6 +24,8 @@ const EventCard = ({ event, isActive, onClick }) => (
   <motion.div
     initial={{ opacity: 0, y: 10 }}
     animate={{ opacity: 1, y: 0 }}
+    whileHover={{ x: 6 }}
+    transition={{ type: "spring", stiffness: 420, damping: 30 }}
     className={`p-3 rounded-lg bg-white dark:bg-gray-800 border transition-all duration-200 cursor-pointer ${
       isActive 
         ? "border-sky-500 dark:border-sky-400 ring-1 ring-sky-500 dark:ring-sky-400 bg-sky-50 dark:bg-sky-900/30" 
@@ -316,7 +318,11 @@ export default function CoordinatorEventDetail() {
                     : "relative"
                 }`}
               >
-                <div className="bg-white dark:bg-gray-800 rounded-lg border border-slate-200 dark:border-gray-700 p-4 h-[calc(100vh-8rem)] overflow-y-auto">
+                <motion.div
+                  whileHover={{ x: 8 }}
+                  transition={{ type: "spring", stiffness: 420, damping: 32 }}
+                  className="bg-white dark:bg-gray-800 rounded-lg border border-slate-200 dark:border-gray-700 p-4 h-[calc(100vh-8rem)] overflow-y-auto"
+                >
                   <h2 className="text-lg font-semibold text-slate-800 dark:text-gray-100 mb-3">Scheduled Interviews</h2>
                   
                   <EventSearchFilter 
@@ -342,7 +348,7 @@ export default function CoordinatorEventDetail() {
                       ))
                     )}
                   </div>
-                </div>
+                </motion.div>
               </motion.div>
             )}
           </AnimatePresence>

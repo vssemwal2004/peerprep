@@ -109,8 +109,9 @@ async function getControlledStudents() {
     .lean();
 }
 
-async function getControlledProblems() {
-  return Problem.find()
+async function getControlledProblems(req) {
+  const query = req?.user?.role === 'coordinator' ? { createdBy: req.user._id } : {};
+  return Problem.find(query)
     .select('_id title difficulty status createdAt')
     .sort({ createdAt: -1 })
     .lean();
@@ -132,8 +133,10 @@ export async function getAdminCompilerOverview(req, res) {
   const students = await getControlledStudents();
   const controlledStudentIds = students.map((student) => student._id);
 
+  const problemQuery = req?.user?.role === 'coordinator' ? { createdBy: req.user._id } : {};
+
   const [problems, totalSubmissions, acceptedSubmissions, activeStudents, recentSubmissions, recentProblems, recentActiveStudents, topSolved, topAccuracy, problemAttempts, submissionTrendAgg, activityHeatmapAgg, topSolvedDaily, topSolvedWeekly, problemGrowthAgg, submissionCalendarAgg, topSolvedDetailedAgg] = await Promise.all([
-    getControlledProblems(),
+    getControlledProblems(req),
     Submission.countDocuments({ mode: 'submit', user: { $in: controlledStudentIds } }),
     Submission.countDocuments({ mode: 'submit', status: 'AC', user: { $in: controlledStudentIds } }),
     Submission.distinct('user', { mode: 'submit', user: { $in: controlledStudentIds }, createdAt: { $gte: sevenDaysAgo } }),
@@ -141,7 +144,7 @@ export async function getAdminCompilerOverview(req, res) {
       .sort({ createdAt: -1 })
       .limit(8)
       .lean(),
-    Problem.find()
+    Problem.find(problemQuery)
       .sort({ createdAt: -1 })
       .limit(6)
       .select('_id title difficulty status createdAt')
@@ -517,8 +520,12 @@ export async function getAdminCompilerAnalytics(req, res) {
   const controlledStudents = await getControlledStudents();
   const controlledStudentIds = controlledStudents.map((student) => student._id);
 
-  const [problems, studentPerformanceRows, studentLastActivity, problemAnalysisAgg, submissionTimelineAgg, difficultyAgg, statusAgg] = await Promise.all([
-    getControlledProblems(),
+  const problems = await getControlledProblems(req);
+  if (req?.user?.role === 'coordinator') {
+    submissionMatch.problem = { $in: problems.map((p) => p._id) };
+  }
+
+  const [studentPerformanceRows, studentLastActivity, problemAnalysisAgg, submissionTimelineAgg, difficultyAgg, statusAgg] = await Promise.all([
     Submission.aggregate([
       { $match: { ...submissionMatch, user: studentId ? submissionMatch.user : { $in: controlledStudentIds } } },
       {
@@ -746,9 +753,15 @@ export async function getCompilerStudentAnalytics(req, res) {
     throw new HttpError(404, 'Student not found.');
   }
 
+  const matchObj = { user: student._id, mode: 'submit' };
+  if (req?.user?.role === 'coordinator') {
+    const controlledProblems = await getControlledProblems(req);
+    matchObj.problem = { $in: controlledProblems.map((p) => p._id) };
+  }
+
   const [attemptedProblemsAgg, solvedProblemsAgg, submissionHistory, performanceTrendAgg, activityHeatmapAgg, summaryAgg, statusBreakdownAgg] = await Promise.all([
     Submission.aggregate([
-      { $match: { user: student._id, mode: 'submit' } },
+      { $match: matchObj },
       {
         $group: {
           _id: '$problem',
@@ -762,7 +775,7 @@ export async function getCompilerStudentAnalytics(req, res) {
       { $sort: { lastSubmittedAt: -1 } },
     ]),
     Submission.aggregate([
-      { $match: { user: student._id, mode: 'submit', status: 'AC' } },
+      { $match: { ...matchObj, status: 'AC' } },
       {
         $group: {
           _id: '$problem',
@@ -773,15 +786,14 @@ export async function getCompilerStudentAnalytics(req, res) {
       },
       { $sort: { acceptedAt: -1 } },
     ]),
-    Submission.find({ user: student._id, mode: 'submit' })
+    Submission.find(matchObj)
       .sort({ createdAt: -1 })
       .limit(50)
       .lean(),
     Submission.aggregate([
       {
         $match: {
-          user: student._id,
-          mode: 'submit',
+          ...matchObj,
           createdAt: { $gte: buildLastNDates(30)[0] },
         },
       },
@@ -806,8 +818,7 @@ export async function getCompilerStudentAnalytics(req, res) {
     Submission.aggregate([
       {
         $match: {
-          user: student._id,
-          mode: 'submit',
+          ...matchObj,
           createdAt: { $gte: buildLastNDates(365)[0] },
         },
       },
@@ -825,7 +836,7 @@ export async function getCompilerStudentAnalytics(req, res) {
       },
     ]),
     Submission.aggregate([
-      { $match: { user: student._id, mode: 'submit' } },
+      { $match: matchObj },
       {
         $group: {
           _id: null,
@@ -845,7 +856,7 @@ export async function getCompilerStudentAnalytics(req, res) {
       },
     ]),
     Submission.aggregate([
-      { $match: { user: student._id, mode: 'submit' } },
+      { $match: matchObj },
       {
         $group: {
           _id: '$status',
@@ -928,8 +939,13 @@ export async function getCompilerProblemAnalytics(req, res) {
     ...buildSubmissionMatch({ problemId: req.params.id }),
     user: { $in: controlledStudentIds },
   };
-  const [problem, submissionsByStatus, recentStudents] = await Promise.all([
-    Problem.findById(req.params.id).select('_id title difficulty status').lean(),
+  const problem = await Problem.findById(req.params.id).select('_id title difficulty status createdBy').lean();
+  
+  if (!problem || (req?.user?.role === 'coordinator' && String(problem.createdBy) !== String(req.user._id))) {
+    throw new HttpError(404, 'Problem not found.');
+  }
+
+  const [submissionsByStatus, recentStudents] = await Promise.all([
     Submission.aggregate([
       { $match: match },
       { $group: { _id: '$status', count: { $sum: 1 } } },
@@ -953,10 +969,6 @@ export async function getCompilerProblemAnalytics(req, res) {
       { $sort: { lastActive: -1 } },
     ]),
   ]);
-
-  if (!problem) {
-    throw new HttpError(404, 'Problem not found.');
-  }
 
   const filteredStudents = recentStudents.filter((student) => {
     if (!search) return true;

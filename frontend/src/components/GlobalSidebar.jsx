@@ -22,115 +22,174 @@ import {
   Building2,
 } from 'lucide-react';
 
-const buildNavItems = () => ([
-  {
-    type: 'link',
-    label: 'Overview',
-    to: '/admin/overview',
-    icon: LayoutDashboard,
-    match: (loc) => loc.pathname === '/admin' || loc.pathname.startsWith('/admin/overview') || loc.pathname.startsWith('/admin/dashboard'),
-  },
-  {
-    type: 'group',
-    key: 'interviews',
-    label: 'Interviews',
-    icon: CalendarDays,
-    items: [
-      { label: 'Create Interview', to: '/admin/event', icon: CalendarPlus },
-      { label: 'Scheduled Interviews', to: '/admin/interviews/scheduled', icon: CalendarClock },
-      { label: 'Past Interview Details', to: '/admin/interviews/past', icon: History },
-    ],
-  },
-  {
-    type: 'group',
-    key: 'add-users',
-    label: 'Add Users',
-    icon: UserPlus,
-    items: [
-      { label: 'Add Students', to: '/admin/onboarding', icon: UserPlus },
-      { label: 'Add Coordinators', to: '/admin/coordinators', icon: GraduationCap },
-    ],
-  },
-  {
-    type: 'group',
-    key: 'users',
-    label: 'Users',
-    icon: Users,
-    items: [
-      { label: 'Students List', to: '/admin/students', icon: Users },
-      { label: 'Coordinators List', to: '/admin/coordinator-directory', icon: Users },
-    ],
-  },
-  {
-    type: 'link',
-    label: 'Learning Modules',
-    to: '/admin/learning',
-    icon: BookOpen,
-  },
-  {
-    type: 'link',
-    label: 'Feedback',
-    to: '/admin/feedback',
-    icon: MessageSquare,
-  },
-  {
-    type: 'group',
-    key: 'assessment',
-    label: 'Assessment',
-    icon: ClipboardList,
-    items: [
-      { label: 'Overview', to: '/admin/assessment', icon: ClipboardList },
-      { label: 'Add Assessment', to: '/admin/assessment/create', icon: ClipboardList },
-      { label: 'Reports', to: '/admin/assessment/reports', icon: ClipboardList },
-      { label: 'Assessment Rules', to: '/admin/assessment/rules', icon: ShieldCheck },
-    ],
-  },
-  {
-    type: 'link',
-    label: 'Library',
-    to: '/admin/library',
-    icon: Library,
-  },
-  {
-    type: 'group',
-    key: 'announcements',
-    label: 'Announcements',
-    icon: Megaphone,
-    items: [
-      { label: 'Add Announcement', to: '/admin/announcements/add', icon: Megaphone },
-      { label: 'Manage Announcements', to: '/admin/announcements/manage', icon: Megaphone },
-    ],
-  },
-  {
-    type: 'link',
-    label: 'Compiler',
-    to: '/admin/compiler',
-    icon: TerminalSquare,
-  },
-  {
-    type: 'group',
-    key: 'company-insights',
-    label: 'Company Insights',
-    icon: Building2,
-    items: [
-      { label: 'Add Benchmark', to: '/admin/company-insights/add', icon: Building2 },
-      { label: 'View Benchmarks', to: '/admin/company-insights', icon: Building2 },
-    ],
-  },
-  {
-    type: 'group',
-    key: 'settings',
-    label: 'Settings',
-    icon: Settings,
-    items: [
-      { label: 'Email Templates', to: '/admin/settings/email-templates', icon: Mail },
-    ],
-  },
-]);
+const buildNavItems = (role = 'admin') => {
+  if (role === 'coordinator') {
+    return [
+      {
+        type: 'link',
+        label: 'Overview',
+        to: '/coordinator/overview',
+        icon: LayoutDashboard,
+        match: (loc) => loc.pathname === '/coordinator/overview' || loc.pathname === '/coordinator',
+      },
+      {
+        type: 'group',
+        key: 'interviews',
+        label: 'Interviews',
+        icon: CalendarDays,
+        items: [
+          { label: 'Create Interview', to: '/coordinator/event/create', icon: CalendarPlus },
+          { label: 'Scheduled Interviews', to: '/coordinator', icon: CalendarClock },
+        ],
+      },
+      { type: 'link', label: 'My Students', to: '/coordinator/students', icon: Users },
+      { type: 'link', label: 'Learning Modules', to: '/coordinator/subjects', icon: BookOpen },
+      { type: 'link', label: 'Registered Courses', to: '/coordinator/database', icon: Building2 },
+      { type: 'link', label: 'Feedback', to: '/coordinator/feedback', icon: MessageSquare },
+      {
+        type: 'group',
+        key: 'assessment',
+        label: 'Assessment',
+        icon: ClipboardList,
+        items: [
+          { label: 'Overview', to: '/coordinator/assessment', icon: ClipboardList },
+          { label: 'Add Assessment', to: '/coordinator/assessment/create', icon: ClipboardList },
+          { label: 'Reports', to: '/coordinator/assessment/reports', icon: ClipboardList },
+        ],
+      },
+      {
+        type: 'group',
+        key: 'library',
+        label: 'Library',
+        icon: Library,
+        items: [
+          { label: 'View Library', to: '/coordinator/library', icon: Library },
+          { label: 'Add Question', to: '/coordinator/library/add-question', icon: Library },
+        ],
+      },
+      {
+        type: 'group',
+        key: 'announcements',
+        label: 'Announcements',
+        icon: Megaphone,
+        items: [
+          { label: 'Add Announcement', to: '/coordinator/announcements/add', icon: Megaphone },
+          { label: 'Manage Announcements', to: '/coordinator/announcements/manage', icon: Megaphone },
+        ],
+      },
+      { type: 'link', label: 'Compiler', to: '/coordinator/compiler', icon: TerminalSquare },
+      {
+        type: 'group',
+        key: 'company-insights',
+        label: 'Company Insights',
+        icon: Building2,
+        items: [
+          { label: 'Add Benchmark', to: '/coordinator/company-insights/add', icon: Building2 },
+          { label: 'View Benchmarks', to: '/coordinator/company-insights', icon: Building2 },
+        ],
+      },
+    ];
+  }
 
-export default function GlobalSidebar({ isExpanded = false, onExpand = () => {}, onCollapse = () => {} }) {
+  return [
+    {
+      type: 'link',
+      label: 'Overview',
+      to: '/admin/overview',
+      icon: LayoutDashboard,
+      match: (loc) => loc.pathname === '/admin' || loc.pathname.startsWith('/admin/overview') || loc.pathname.startsWith('/admin/dashboard'),
+    },
+    {
+      type: 'group',
+      key: 'interviews',
+      label: 'Interviews',
+      icon: CalendarDays,
+      items: [
+        { label: 'Create Interview', to: '/admin/event', icon: CalendarPlus },
+        { label: 'Scheduled Interviews', to: '/admin/interviews/scheduled', icon: CalendarClock },
+        { label: 'Past Interview Details', to: '/admin/interviews/past', icon: History },
+      ],
+    },
+    {
+      type: 'group',
+      key: 'add-users',
+      label: 'Add Users',
+      icon: UserPlus,
+      items: [
+        { label: 'Add Students', to: '/admin/onboarding', icon: UserPlus },
+        { label: 'Add Coordinators', to: '/admin/coordinators', icon: GraduationCap },
+      ],
+    },
+    {
+      type: 'group',
+      key: 'users',
+      label: 'Users',
+      icon: Users,
+      items: [
+        { label: 'Students List', to: '/admin/students', icon: Users },
+        { label: 'Coordinators List', to: '/admin/coordinator-directory', icon: Users },
+      ],
+    },
+    { type: 'link', label: 'Learning Modules', to: '/admin/learning', icon: BookOpen },
+    { type: 'link', label: 'Feedback', to: '/admin/feedback', icon: MessageSquare },
+    {
+      type: 'group',
+      key: 'assessment',
+      label: 'Assessment',
+      icon: ClipboardList,
+      items: [
+        { label: 'Overview', to: '/admin/assessment', icon: ClipboardList },
+        { label: 'Add Assessment', to: '/admin/assessment/create', icon: ClipboardList },
+        { label: 'Reports', to: '/admin/assessment/reports', icon: ClipboardList },
+        { label: 'Assessment Rules', to: '/admin/assessment/rules', icon: ShieldCheck },
+      ],
+    },
+    {
+      type: 'group',
+      key: 'library',
+      label: 'Library',
+      icon: Library,
+      items: [
+        { label: 'View Library', to: '/admin/library', icon: Library },
+        { label: 'Add Question', to: '/admin/library/add-question', icon: Library },
+      ],
+    },
+    {
+      type: 'group',
+      key: 'announcements',
+      label: 'Announcements',
+      icon: Megaphone,
+      items: [
+        { label: 'Add Announcement', to: '/admin/announcements/add', icon: Megaphone },
+        { label: 'Manage Announcements', to: '/admin/announcements/manage', icon: Megaphone },
+      ],
+    },
+    { type: 'link', label: 'Compiler', to: '/admin/compiler', icon: TerminalSquare },
+    {
+      type: 'group',
+      key: 'company-insights',
+      label: 'Company Insights',
+      icon: Building2,
+      items: [
+        { label: 'Add Benchmark', to: '/admin/company-insights/add', icon: Building2 },
+        { label: 'View Benchmarks', to: '/admin/company-insights', icon: Building2 },
+      ],
+    },
+    {
+      type: 'group',
+      key: 'settings',
+      label: 'Settings',
+      icon: Settings,
+      items: [
+        { label: 'Email Templates', to: '/admin/settings/email-templates', icon: Mail },
+      ],
+    },
+  ];
+};
+
+export default function GlobalSidebar({ role = 'admin', isExpanded = false, onExpand = () => {}, onCollapse = () => {} }) {
   const location = useLocation();
-  const navItems = useMemo(() => buildNavItems(), []);
+  const navItems = useMemo(() => buildNavItems(role), [role]);
   const [openGroup, setOpenGroup] = useState(null);
 
   useEffect(() => {

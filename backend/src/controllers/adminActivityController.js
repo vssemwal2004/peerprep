@@ -96,10 +96,20 @@ const getActivities = async (req, res) => {
 
     // Search in description
     if (search) {
-      query.$or = [
-        { description: { $regex: search, $options: 'i' } },
-        { userEmail: { $regex: search, $options: 'i' } }
-      ];
+      const searchCondition = {
+        $or: [
+          { description: { $regex: search, $options: 'i' } },
+          { userEmail: { $regex: search, $options: 'i' } }
+        ]
+      };
+      // If we already have a role-based $or, combine with $and
+      if (query.$or) {
+        const roleCondition = { $or: query.$or };
+        delete query.$or;
+        query.$and = [roleCondition, searchCondition];
+      } else {
+        query.$or = searchCondition.$or;
+      }
     }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
