@@ -224,15 +224,15 @@ function ProfileField({ label, value, onChange, placeholder = '', multiline = fa
 
 function LeetCodeProgressCard({
   totalSolved,
-  totalAttempted,
-  attempting,
+  totalProblems,
+  totalAttempts,
   easySolved,
   mediumSolved,
   hardSolved,
 }) {
   const [showBeats, setShowBeats] = useState(false);
   const [activeDifficulty, setActiveDifficulty] = useState('');
-  const ratio = Math.min(totalSolved / Math.max(totalAttempted, 1), 1);
+  const ratio = Math.min(totalSolved / Math.max(totalProblems, 1), 1);
   const ringRadius = 70;
   const circumference = 2 * Math.PI * ringRadius;
   const beats = Math.max(1, Math.min(99.9, Number((ratio * 100).toFixed(2))));
@@ -344,7 +344,7 @@ function LeetCodeProgressCard({
               <div className="mt-1.5 flex max-w-[150px] items-baseline justify-center gap-0.5 whitespace-nowrap font-bold tracking-tight leading-none tabular-nums">
                 <span className="text-[clamp(22px,4.2vw,34px)] text-slate-950">{totalSolved}</span>
                 <span className="text-[clamp(16px,3.2vw,22px)] font-semibold text-slate-400">/</span>
-                <span className="text-[clamp(16px,3.2vw,22px)] font-semibold text-slate-400">{totalAttempted}</span>
+                <span className="text-[clamp(16px,3.2vw,22px)] font-semibold text-slate-400">{totalProblems}</span>
               </div>
             )}
 
@@ -355,7 +355,7 @@ function LeetCodeProgressCard({
               </div>
             )}
 
-            <div className="mt-1.5 text-[11px] font-medium text-slate-500">{attempting} Attempting</div>
+            <div className="mt-1.5 text-[11px] font-medium text-slate-500">{totalAttempts} Total Attempts</div>
           </div>
         </div>
       </div>
@@ -442,8 +442,9 @@ export default function StudentProfile() {
   const [analysis, setAnalysis] = useState(null);
   const [problemStatusSummary, setProblemStatusSummary] = useState({
     loaded: false,
+    totalProblems: 0,
     solvedCount: 0,
-    attemptedCount: 0,
+    attemptCount: 0,
     solvedByDifficulty: { easy: 0, medium: 0, hard: 0 },
   });
   const [loading, setLoading] = useState(true);
@@ -486,18 +487,24 @@ export default function StudentProfile() {
       const analysisData = analysisResult.status === 'fulfilled' ? analysisResult.value : null;
       const firstProblemsPage = problemsResult.status === 'fulfilled' ? problemsResult.value : null;
       const problemsLoaded = problemsResult.status === 'fulfilled';
+      const statsPayload = data?.stats || null;
 
-      let solvedCountFromProblems = 0;
-      let attemptedCountFromProblems = 0;
-      let solvedEasyFromProblems = 0;
-      let solvedMediumFromProblems = 0;
-      let solvedHardFromProblems = 0;
-      if (firstProblemsPage?.problems) {
-        const pages = Number(firstProblemsPage?.pagination?.pages || 1);
-        let allProblems = [...firstProblemsPage.problems];
-        if (pages > 1) {
+      let fallbackSolvedCount = 0;
+      let fallbackAttemptCount = 0;
+      let fallbackSolvedByDifficulty = { easy: 0, medium: 0, hard: 0 };
+
+      const shouldUseProblemFallback = problemsLoaded
+        && Number(firstProblemsPage?.pagination?.total || 0) > 0
+        && Number(statsPayload?.totalQuestionsSolved || statsPayload?.problemsSolved || 0) === 0
+        && Number(statsPayload?.totalSubmissions || 0) === 0;
+
+      if (shouldUseProblemFallback) {
+        const totalPages = Number(firstProblemsPage?.pagination?.pages || 1);
+        let allProblems = Array.isArray(firstProblemsPage?.problems) ? [...firstProblemsPage.problems] : [];
+
+        if (totalPages > 1) {
           const remainingPages = await Promise.allSettled(
-            Array.from({ length: pages - 1 }, (_, index) => (
+            Array.from({ length: totalPages - 1 }, (_, index) => (
               api.listStudentProblems({
                 page: index + 2,
                 limit: 100,
@@ -506,32 +513,59 @@ export default function StudentProfile() {
               })
             ))
           );
+
           remainingPages.forEach((pageResult) => {
             if (pageResult.status !== 'fulfilled') return;
-            if (pageResult.value?.problems) allProblems = allProblems.concat(pageResult.value.problems);
+            if (Array.isArray(pageResult.value?.problems)) {
+              allProblems = allProblems.concat(pageResult.value.problems);
+            }
           });
         }
 
         const solvedProblems = allProblems.filter((problem) => problem?.studentStatus === 'Solved');
-        solvedCountFromProblems = solvedProblems.length;
-        attemptedCountFromProblems = allProblems.filter((problem) => ['Solved', 'Unsolved'].includes(problem?.studentStatus)).length;
+        fallbackSolvedCount = solvedProblems.length;
+        fallbackSolvedByDifficulty = solvedProblems.reduce((acc, problem) => {
+          const key = String(problem?.difficulty || '').toLowerCase();
+          if (key === 'easy' || key === 'medium' || key === 'hard') {
+            acc[key] += 1;
+          }
+          return acc;
+        }, { easy: 0, medium: 0, hard: 0 });
 
-        solvedEasyFromProblems = solvedProblems.filter((problem) => problem?.difficulty === 'Easy').length;
-        solvedMediumFromProblems = solvedProblems.filter((problem) => problem?.difficulty === 'Medium').length;
-        solvedHardFromProblems = solvedProblems.filter((problem) => problem?.difficulty === 'Hard').length;
+        const submissionTotals = await Promise.allSettled(
+          allProblems.map((problem) => (
+            api.listStudentProblemSubmissions(problem._id, { page: 1, limit: 1 })
+          ))
+        );
+
+        fallbackAttemptCount = submissionTotals.reduce((total, submissionResult) => {
+          if (submissionResult.status !== 'fulfilled') return total;
+          return total + Number(submissionResult.value?.pagination?.total || 0);
+        }, 0);
       }
 
       if (!isMountedRef.current) return;
-      setStats(data?.stats || null);
+      setStats(statsPayload || null);
       setAnalysis(analysisData?.analysis || null);
       setProblemStatusSummary({
         loaded: problemsLoaded,
-        solvedCount: solvedCountFromProblems,
-        attemptedCount: attemptedCountFromProblems,
+        totalProblems: Number(firstProblemsPage?.pagination?.total || 0),
+        solvedCount: shouldUseProblemFallback
+          ? fallbackSolvedCount
+          : Number(statsPayload?.totalQuestionsSolved || statsPayload?.problemsSolved || 0),
+        attemptCount: shouldUseProblemFallback
+          ? fallbackAttemptCount
+          : Number(statsPayload?.totalSubmissions || 0),
         solvedByDifficulty: {
-          easy: solvedEasyFromProblems,
-          medium: solvedMediumFromProblems,
-          hard: solvedHardFromProblems,
+          easy: shouldUseProblemFallback
+            ? fallbackSolvedByDifficulty.easy
+            : Number(statsPayload?.solvedByDifficulty?.easy || 0),
+          medium: shouldUseProblemFallback
+            ? fallbackSolvedByDifficulty.medium
+            : Number(statsPayload?.solvedByDifficulty?.medium || 0),
+          hard: shouldUseProblemFallback
+            ? fallbackSolvedByDifficulty.hard
+            : Number(statsPayload?.solvedByDifficulty?.hard || 0),
         },
       });
     } catch {
@@ -540,8 +574,9 @@ export default function StudentProfile() {
       setAnalysis(null);
       setProblemStatusSummary({
         loaded: false,
+        totalProblems: 0,
         solvedCount: 0,
-        attemptedCount: 0,
+        attemptCount: 0,
         solvedByDifficulty: { easy: 0, medium: 0, hard: 0 },
       });
     }
@@ -567,7 +602,7 @@ export default function StudentProfile() {
     const loadProfile = async () => {
       setLoading(true);
       try {
-        const me = await api.me();
+        const me = await api.me(true);
         if (!isMountedRef.current) return;
         setUser(me);
         setProfileForm({
@@ -713,7 +748,7 @@ export default function StudentProfile() {
 
     try {
       await api.updateMyAvatar(avatarFile);
-      const me = await api.me();
+      const me = await api.me(true);
       if (!isMountedRef.current) return;
       setUser(me);
       if (me && me.avatarUrl !== undefined) {
@@ -867,19 +902,21 @@ export default function StudentProfile() {
         Number(analysis?.problems?.solved || 0),
       );
 
-    const totalAttempted = problemStatusSummary.loaded
-      ? Math.max(Number(problemStatusSummary.attemptedCount || 0), totalSolved, 1)
+    const totalProblems = problemStatusSummary.loaded
+      ? Math.max(Number(problemStatusSummary.totalProblems || 0), totalSolved, 1)
+      : Math.max(Number(totalSolved || 0), 1);
+    const totalAttempts = problemStatusSummary.loaded
+      ? Math.max(Number(problemStatusSummary.attemptCount || 0), totalSolved, 0)
       : Math.max(
-        Number(stats?.totalQuestionsAttempted || 0),
+        Number(stats?.totalSubmissions || 0),
         Number(analysis?.problems?.attempts || 0),
         totalSolved,
-        1,
+        0,
       );
-    const attempting = Math.max(totalAttempted - totalSolved, 0);
     return {
       totalSolved,
-      totalAttempted,
-      attempting,
+      totalProblems,
+      totalAttempts,
       easySolved,
       mediumSolved,
       hardSolved,
@@ -887,8 +924,9 @@ export default function StudentProfile() {
   }, [
     analysis?.problems?.attempts,
     analysis?.problems?.solved,
+    problemStatusSummary.totalProblems,
     problemStatusSummary.loaded,
-    problemStatusSummary.attemptedCount,
+    problemStatusSummary.attemptCount,
     problemStatusSummary.solvedByDifficulty?.easy,
     problemStatusSummary.solvedByDifficulty?.medium,
     problemStatusSummary.solvedByDifficulty?.hard,
@@ -896,7 +934,7 @@ export default function StudentProfile() {
     stats?.solvedByDifficulty?.easy,
     stats?.solvedByDifficulty?.hard,
     stats?.solvedByDifficulty?.medium,
-    stats?.totalQuestionsAttempted,
+    stats?.totalSubmissions,
     stats?.totalQuestionsSolved,
     stats?.problemsSolved,
   ]);

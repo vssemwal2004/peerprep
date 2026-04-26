@@ -1008,7 +1008,7 @@ export default function ProblemSolver() {
 
   const clampLeftWidth = useCallback((nextWidth) => {
     const minLeft = 320;
-    const minRight = 520;
+    const minRight = 420;
     const splitterWidth = 12;
     const container = splitContainerRef.current;
     if (!container) {
@@ -1027,7 +1027,7 @@ export default function ProblemSolver() {
 
     const ensureWidthInBounds = () => {
       const rect = container.getBoundingClientRect();
-      const defaultWidth = rect.width > 0 ? rect.width * 0.4 : 500;
+      const defaultWidth = rect.width > 0 ? rect.width * 0.4 : 480;
       setLeftWidth((previous) => clampLeftWidth(previous ?? defaultWidth));
     };
 
@@ -1385,7 +1385,7 @@ export default function ProblemSolver() {
     }
 
     const containerRect = splitContainerRef.current.getBoundingClientRect();
-    const defaultWidth = containerRect.width > 0 ? containerRect.width * 0.46 : 520;
+    const defaultWidth = containerRect.width > 0 ? containerRect.width * 0.45 : 480;
     const startWidth = clampLeftWidth(leftWidth ?? defaultWidth);
     const startX = event.clientX;
     let latestWidth = startWidth;
@@ -1616,10 +1616,14 @@ export default function ProblemSolver() {
 
           <div
             ref={splitContainerRef}
-            className="min-h-0 flex flex-1 overflow-hidden"
+            className="mx-auto grid min-h-0 w-full max-w-[1680px] flex-1 grid-cols-[auto_16px_minmax(0,1fr)] overflow-hidden"
           >
           <section
-            style={{ width: leftWidth ? `${leftWidth}px` : undefined, flexBasis: leftWidth ? `${leftWidth}px` : undefined, willChange: 'width' }}
+            style={{
+              width: leftWidth === null ? 'clamp(320px, 40vw, 680px)' : `${leftWidth}px`,
+              flexBasis: leftWidth === null ? 'clamp(320px, 40vw, 680px)' : `${leftWidth}px`,
+              willChange: 'width',
+            }}
             className="flex shrink-0 min-w-[320px] flex-col overflow-hidden rounded-[30px] bg-white/84 shadow-[0_10px_32px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:bg-gray-900/84"
           >
             <LeftPanelTabs
@@ -1653,7 +1657,7 @@ export default function ProblemSolver() {
           <button
             type="button"
             onPointerDown={handleResizeStart}
-            className="group relative mx-2 flex w-4 shrink-0 cursor-col-resize touch-none select-none items-center justify-center transition-colors"
+            className="group relative flex w-4 shrink-0 cursor-col-resize touch-none select-none items-center justify-center transition-colors"
             aria-label="Resize panels"
           >
             <div className="absolute inset-y-5 left-1/2 w-px -translate-x-1/2 rounded-full bg-slate-200/90 dark:bg-gray-700" />
@@ -1662,7 +1666,7 @@ export default function ProblemSolver() {
             </div>
           </button>
 
-          <section className="min-w-[520px] min-h-0 flex-1">
+          <section className="min-h-0 min-w-0 overflow-hidden">
             <CodeEditor
               supportedLanguages={problem.supportedLanguages || []}
               language={language}

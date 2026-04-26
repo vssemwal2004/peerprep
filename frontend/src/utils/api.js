@@ -169,7 +169,7 @@ async function request(path, {
 export const api = {
   updateEventJoinDisable: (eventId, joinDisabled, joinDisableTime) => request(`/events/${eventId}/join-disable`, { method: 'PATCH', body: { joinDisabled, joinDisableTime } }),
   // Auth (unified)
-  me: () => request('/auth/me'),
+  me: (forceRefresh = false) => request('/auth/me', { skipCache: forceRefresh }),
   updateMyProfile: (body) => request('/auth/me', { method: 'PUT', body }),
   updateMyAvatar: (file) => {
     const fd = new FormData();

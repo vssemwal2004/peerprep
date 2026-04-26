@@ -35,7 +35,7 @@ export function AuthProvider({ children }) {
 
     fetchingRef.current = true;
     try {
-      const userData = await api.me();
+      const userData = await api.me(force);
       setUser(userData);
       cacheTimestampRef.current = Date.now();
     } catch {

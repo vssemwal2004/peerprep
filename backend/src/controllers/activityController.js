@@ -664,7 +664,13 @@ export async function getStudentStats(req, res) {
     // Find the student in unified User collection
     const student = await User.findById(studentId);
     if (!student) throw new HttpError(404, 'Student not found');
-    const acceptedStatuses = ['AC', 'Accepted'];
+    const acceptedStatuses = ['AC', 'ACCEPTED', 'ACCEPT'];
+    const acceptedMatchExpression = {
+      $in: [
+        { $toUpper: { $ifNull: ['$status', ''] } },
+        acceptedStatuses,
+      ],
+    };
 
     // Determine learning scope for this student (semesters/subjects/videos assigned)
     const { allowedSemesterIds, totalCourses, totalVideosTotal, validTopicIds } = await computeLearningScopeForStudent(student);
@@ -719,7 +725,7 @@ export async function getStudentStats(req, res) {
             totalSubmissions: { $sum: 1 },
             acceptedAttempts: {
               $sum: {
-                $cond: [{ $in: ['$status', acceptedStatuses] }, 1, 0],
+                $cond: [acceptedMatchExpression, 1, 0],
               },
             },
           },
@@ -730,7 +736,11 @@ export async function getStudentStats(req, res) {
           $match: {
             user: student._id,
             mode: 'submit',
-            status: { $in: acceptedStatuses },
+          },
+        },
+        {
+          $match: {
+            $expr: acceptedMatchExpression,
           },
         },
         {
@@ -739,6 +749,11 @@ export async function getStudentStats(req, res) {
             title: { $first: '$problemSnapshot.title' },
             difficulty: { $first: '$problemSnapshot.difficulty' },
             acceptedAt: { $max: '$createdAt' },
+          },
+        },
+        {
+          $match: {
+            _id: { $ne: null },
           },
         },
         {
@@ -755,6 +770,11 @@ export async function getStudentStats(req, res) {
         {
           $group: {
             _id: '$problem',
+          },
+        },
+        {
+          $match: {
+            _id: { $ne: null },
           },
         },
         {
