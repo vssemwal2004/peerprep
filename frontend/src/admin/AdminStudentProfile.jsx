@@ -8,7 +8,10 @@ import {
   Clock3,
   Code2,
   Flame,
+  Github,
+  Globe,
   GraduationCap,
+  Linkedin,
   LineChart,
   Mail,
   MapPin,
@@ -326,6 +329,54 @@ export default function AdminStudentProfile() {
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">Joined</p>
                 <p className="mt-2 text-sm font-medium text-slate-800 dark:text-gray-100">{formatDate(student.createdAt)}</p>
               </div>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-gray-700 dark:bg-gray-800">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">Student Bio</p>
+              <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-gray-300">
+                {student.bio || 'This student has not added a professional bio yet.'}
+              </p>
+            </div>
+
+            <div className="grid gap-3">
+              {[
+                { label: 'LinkedIn', href: student.linkedinUrl, Icon: Linkedin },
+                { label: 'GitHub', href: student.githubUrl, Icon: Github },
+                { label: 'Portfolio', href: student.portfolioUrl, Icon: Globe },
+              ].map(({ label, href, Icon }) => (
+                <div key={label} className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-700 dark:bg-gray-800 dark:text-gray-200">
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">{label}</p>
+                      {href ? (() => {
+                        const raw = typeof href === 'string' ? href.trim() : '';
+                        const normalized = !raw
+                          ? ''
+                          : (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(raw)
+                            ? raw
+                            : (raw.startsWith('//') ? `https:${raw}` : `https://${raw}`));
+                        return (
+                        <a
+                          href={normalized}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-2 block truncate text-sm font-medium text-sky-600 hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300"
+                        >
+                          {raw}
+                        </a>
+                        );
+                      })() : (
+                        <p className="mt-2 text-sm text-slate-500 dark:text-gray-400">Not provided</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </SectionCard>

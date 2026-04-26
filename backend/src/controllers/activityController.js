@@ -578,8 +578,21 @@ export async function getStudentActivityByAdmin(req, res) {
     const { currentStreak, bestStreak } = calculateStreaks();
     const totalActiveDays = Object.keys(activityMap).length;
 
-    // Determine learning scope for this student (semesters/subjects/videos assigned)
-    const { allowedSemesterIds, totalCourses, totalVideosTotal, validTopicIds } = await computeLearningScopeForStudent(student);
+    // Determine learning scope for this student (semesters/subjects/videos assigned).
+    // If learning metadata is inconsistent, keep compiler/profile stats working.
+    let allowedSemesterIds = [];
+    let totalCourses = 0;
+    let totalVideosTotal = 0;
+    let validTopicIds = [];
+    try {
+      const learningScope = await computeLearningScopeForStudent(student);
+      allowedSemesterIds = learningScope.allowedSemesterIds || [];
+      totalCourses = learningScope.totalCourses || 0;
+      totalVideosTotal = learningScope.totalVideosTotal || 0;
+      validTopicIds = learningScope.validTopicIds || [];
+    } catch (scopeError) {
+      console.error('[getStudentStats] Failed to compute learning scope:', scopeError);
+    }
 
     // 4. Get total videos watched (all time) within the allowed semesters and valid topics only
     const videoWatchMatch = {
@@ -651,6 +664,7 @@ export async function getStudentStats(req, res) {
     // Find the student in unified User collection
     const student = await User.findById(studentId);
     if (!student) throw new HttpError(404, 'Student not found');
+    const acceptedStatuses = ['AC', 'Accepted'];
 
     // Determine learning scope for this student (semesters/subjects/videos assigned)
     const { allowedSemesterIds, totalCourses, totalVideosTotal, validTopicIds } = await computeLearningScopeForStudent(student);
@@ -691,7 +705,7 @@ export async function getStudentStats(req, res) {
     const totalVideosWatched = videosWatched[0]?.totalVideos || 0;
 
     // 3. Get total compiler problems solved and submission health
-    const [compilerSummaryAgg, solvedByDifficultyAgg, attemptedProblemsAgg, statusBreakdownAgg, languageBreakdownAgg, recentSubmissionsAgg, recentSolvedProblemsAgg] = await Promise.all([
+    const [compilerSummaryAgg, solvedProblemsAgg, attemptedProblemsAgg, statusBreakdownAgg, languageBreakdownAgg, recentSubmissionsAgg] = await Promise.all([
       Submission.aggregate([
         {
           $match: {
@@ -705,12 +719,7 @@ export async function getStudentStats(req, res) {
             totalSubmissions: { $sum: 1 },
             acceptedAttempts: {
               $sum: {
-                $cond: [{ $eq: ['$status', 'AC'] }, 1, 0],
-              },
-            },
-            solvedProblems: {
-              $addToSet: {
-                $cond: [{ $eq: ['$status', 'AC'] }, '$problem', '$$REMOVE'],
+                $cond: [{ $in: ['$status', acceptedStatuses] }, 1, 0],
               },
             },
           },
@@ -721,22 +730,19 @@ export async function getStudentStats(req, res) {
           $match: {
             user: student._id,
             mode: 'submit',
-            status: 'AC',
+            status: { $in: acceptedStatuses },
           },
         },
         {
           $group: {
-            _id: {
-              problem: '$problem',
-              difficulty: '$problemSnapshot.difficulty',
-            },
+            _id: '$problem',
+            title: { $first: '$problemSnapshot.title' },
+            difficulty: { $first: '$problemSnapshot.difficulty' },
+            acceptedAt: { $max: '$createdAt' },
           },
         },
         {
-          $group: {
-            _id: '$_id.difficulty',
-            count: { $sum: 1 },
-          },
+          $sort: { acceptedAt: -1 },
         },
       ]),
       Submission.aggregate([
@@ -794,32 +800,6 @@ export async function getStudentStats(req, res) {
         .limit(6)
         .select('status language executionTimeMs createdAt problemSnapshot')
         .lean(),
-      Submission.aggregate([
-        {
-          $match: {
-            user: student._id,
-            mode: 'submit',
-            status: 'AC',
-          },
-        },
-        {
-          $sort: { createdAt: -1 },
-        },
-        {
-          $group: {
-            _id: '$problem',
-            title: { $first: '$problemSnapshot.title' },
-            difficulty: { $first: '$problemSnapshot.difficulty' },
-            acceptedAt: { $first: '$createdAt' },
-          },
-        },
-        {
-          $sort: { acceptedAt: -1 },
-        },
-        {
-          $limit: 5,
-        },
-      ]),
     ]);
 
     // 4. Get total watch time in hours within allowed semesters
@@ -836,9 +816,9 @@ export async function getStudentStats(req, res) {
     ]);
     const totalWatchTimeHours = watchTimeData[0] ? Math.round((watchTimeData[0].totalSeconds / 3600) * 10) / 10 : 0;
     const compilerSummary = compilerSummaryAgg[0] || {};
-    const solvedByDifficulty = solvedByDifficultyAgg.reduce((acc, entry) => {
-      const key = String(entry._id || 'Easy').toLowerCase();
-      acc[key] = entry.count || 0;
+    const solvedByDifficulty = solvedProblemsAgg.reduce((acc, entry) => {
+      const key = String(entry.difficulty || 'Easy').toLowerCase();
+      acc[key] = (acc[key] || 0) + 1;
       return acc;
     }, { easy: 0, medium: 0, hard: 0 });
     const statusBreakdown = statusBreakdownAgg.reduce((acc, entry) => {
@@ -852,8 +832,8 @@ export async function getStudentStats(req, res) {
     const mostUsedLanguage = languagesUsed[0]?.language || null;
     const totalSubmissions = compilerSummary?.totalSubmissions || 0;
     const acceptedAttempts = compilerSummary?.acceptedAttempts || 0;
-    const totalQuestionsSolved = Array.isArray(compilerSummary?.solvedProblems) ? compilerSummary.solvedProblems.length : 0;
-    const totalQuestionsAttempted = attemptedProblemsAgg[0]?.count || 0;
+    const totalQuestionsSolved = solvedProblemsAgg.length;
+    const totalQuestionsAttempted = Math.max(attemptedProblemsAgg[0]?.count || 0, totalQuestionsSolved);
     const attemptRate = totalQuestionsAttempted > 0
       ? Math.round((totalQuestionsSolved / totalQuestionsAttempted) * 1000) / 10
       : 0;
@@ -877,7 +857,7 @@ export async function getStudentStats(req, res) {
         statusBreakdown,
         languagesUsed,
         mostUsedLanguage,
-        recentSolvedProblems: recentSolvedProblemsAgg.map((entry) => ({
+        recentSolvedProblems: solvedProblemsAgg.slice(0, 5).map((entry) => ({
           title: entry.title || 'Untitled Problem',
           difficulty: entry.difficulty || 'Easy',
           acceptedAt: entry.acceptedAt || null,

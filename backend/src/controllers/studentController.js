@@ -62,7 +62,7 @@ export async function listAllStudents(req, res) {
     const sort = sortOrder === 'desc' || sortOrder === '-1' ? -1 : 1;
     
     const students = await User.find(query)
-      .select('name email studentId course branch college semester group teacherIds avatarUrl createdAt isSpecialStudent')
+      .select('name email studentId course branch college semester group teacherIds avatarUrl createdAt isSpecialStudent bio linkedinUrl githubUrl portfolioUrl')
       .sort({ createdAt: sort })
       .lean();
     
@@ -88,7 +88,7 @@ export async function getStudentById(req, res) {
       : { _id: studentId, role: 'student' };
 
     const student = await User.findOne(query)
-      .select('name email studentId course branch college semester group teacherIds avatarUrl createdAt isSpecialStudent')
+      .select('name email studentId course branch college semester group teacherIds avatarUrl createdAt isSpecialStudent bio linkedinUrl githubUrl portfolioUrl')
       .lean();
 
     if (!student) {
@@ -116,7 +116,7 @@ export async function exportStudentsCsv(req, res) {
       : { role: 'student' };
     
     const students = await User.find(baseQuery)
-      .select('name email studentId course branch college semester group teacherIds')
+      .select('name email studentId course branch college semester group teacherIds bio linkedinUrl githubUrl portfolioUrl')
       .sort({ createdAt: 1 }) // Oldest first (Excel order)
       .lean();
     
@@ -745,7 +745,7 @@ export async function listAllSpecialStudents(req, res) {
         path: 'specialEvents',
         select: 'name isSpecial coordinatorId createdAt'
       })
-      .select('name email studentId course branch college semester group specialEvents createdAt teacherIds avatarUrl')
+      .select('name email studentId course branch college semester group specialEvents createdAt teacherIds avatarUrl bio linkedinUrl githubUrl portfolioUrl')
       .sort({ createdAt: sort })
       .lean();
     // Fetch all coordinators once to avoid per-student queries
@@ -853,7 +853,7 @@ export async function listSpecialStudentsByEvent(req, res) {
     }
     
     const specialStudents = await User.find({ isSpecialStudent: true, specialEvents: eventId })
-      .select('name email studentId course branch college semester group createdAt teacherIds')
+      .select('name email studentId course branch college semester group createdAt teacherIds bio linkedinUrl githubUrl portfolioUrl')
       .sort({ createdAt: -1 })
       .lean();
     
@@ -907,7 +907,7 @@ export async function deleteStudent(req, res) {
 export async function updateStudent(req, res) {
   try {
     const { studentId } = req.params;
-    const { name, email, studentId: sid, course, branch, college, semester, group, teacherId } = req.body;
+    const { name, email, studentId: sid, course, branch, college, semester, group, teacherId, bio, linkedinUrl, githubUrl, portfolioUrl } = req.body;
     
     // Find student
     const student = await User.findOne({ _id: studentId, role: 'student' });
@@ -925,6 +925,10 @@ export async function updateStudent(req, res) {
     if (college) student.college = college;
     if (semester) student.semester = semester;
     if (group !== undefined) student.group = group;
+    if (bio !== undefined) student.bio = typeof bio === 'string' ? bio.trim() : '';
+    if (linkedinUrl !== undefined) student.linkedinUrl = typeof linkedinUrl === 'string' ? linkedinUrl.trim() : '';
+    if (githubUrl !== undefined) student.githubUrl = typeof githubUrl === 'string' ? githubUrl.trim() : '';
+    if (portfolioUrl !== undefined) student.portfolioUrl = typeof portfolioUrl === 'string' ? portfolioUrl.trim() : '';
     
     // Handle teacherId - can be comma-separated string or array
     if (teacherId !== undefined) {
@@ -957,7 +961,11 @@ export async function updateStudent(req, res) {
         college: student.college,
         semester: student.semester,
         group: student.group,
-        teacherId: Array.isArray(student.teacherIds) ? student.teacherIds.join(', ') : ''
+        teacherId: Array.isArray(student.teacherIds) ? student.teacherIds.join(', ') : '',
+        bio: student.bio || '',
+        linkedinUrl: student.linkedinUrl || '',
+        githubUrl: student.githubUrl || '',
+        portfolioUrl: student.portfolioUrl || '',
       }
     });
   } catch (err) {

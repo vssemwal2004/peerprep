@@ -258,6 +258,10 @@ export default function StudentDirectory() {
       course: student.course || '',
       branch: student.branch || '',
       college: student.college || '',
+      bio: student.bio || '',
+      linkedinUrl: student.linkedinUrl || '',
+      githubUrl: student.githubUrl || '',
+      portfolioUrl: student.portfolioUrl || '',
       semester: student.semester || '',
       group: student.group || '',
       teacherId: student.teacherId || ''
@@ -270,10 +274,11 @@ export default function StudentDirectory() {
     setIsSaving(true);
     try {
       const updated = await api.updateStudent(editingStudent._id, editForm);
+      const updatedStudent = updated?.student || { ...editingStudent, ...editForm };
       
       // Update local state
       const updateList = (list) => list.map(s => 
-        s._id === editingStudent._id ? { ...s, ...editForm } : s
+        s._id === editingStudent._id ? { ...s, ...updatedStudent } : s
       );
       
       if (activeTab === "students") {
@@ -921,6 +926,43 @@ export default function StudentDirectory() {
                         type="text"
                         value={editForm.college}
                         onChange={(e) => setEditForm({ ...editForm, college: e.target.value })}
+                        className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-slate-900 dark:text-gray-100 focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-400 focus:border-transparent"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-slate-700 dark:text-gray-300 mb-1">Bio</label>
+                      <textarea
+                        rows="4"
+                        value={editForm.bio || ''}
+                        onChange={(e) => setEditForm({ ...editForm, bio: e.target.value })}
+                        className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-slate-900 dark:text-gray-100 focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-400 focus:border-transparent resize-none"
+                        placeholder="Professional student summary, coding focus, or target role"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-gray-300 mb-1">LinkedIn URL</label>
+                      <input
+                        type="url"
+                        value={editForm.linkedinUrl || ''}
+                        onChange={(e) => setEditForm({ ...editForm, linkedinUrl: e.target.value })}
+                        className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-slate-900 dark:text-gray-100 focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-400 focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-gray-300 mb-1">GitHub URL</label>
+                      <input
+                        type="url"
+                        value={editForm.githubUrl || ''}
+                        onChange={(e) => setEditForm({ ...editForm, githubUrl: e.target.value })}
+                        className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-slate-900 dark:text-gray-100 focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-400 focus:border-transparent"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-slate-700 dark:text-gray-300 mb-1">Portfolio URL</label>
+                      <input
+                        type="url"
+                        value={editForm.portfolioUrl || ''}
+                        onChange={(e) => setEditForm({ ...editForm, portfolioUrl: e.target.value })}
                         className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-slate-900 dark:text-gray-100 focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-400 focus:border-transparent"
                       />
                     </div>

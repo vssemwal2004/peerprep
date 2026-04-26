@@ -176,9 +176,9 @@ export const api = {
     fd.append('avatar', file);
     return request('/auth/me/avatar', { method: 'PUT', formData: fd });
   },
-  getStudentActivity: () => request('/auth/activity'),
-  debugStudentActivity: () => request('/auth/activity/debug'),
-  getStudentStats: () => request('/auth/stats'),
+  getStudentActivity: () => request('/auth/activity', { skipCache: true }),
+  debugStudentActivity: () => request('/auth/activity/debug', { skipCache: true }),
+  getStudentStats: () => request('/auth/stats', { skipCache: true }),
   login: (identifier, password) => request('/auth/login', { method: 'POST', body: { identifier, password } }),
   logout: () => request('/auth/logout', { method: 'POST' }),
   changePassword: (currentPassword, newPassword) => request('/auth/password/change', { method: 'POST', body: { currentPassword, newPassword, confirmPassword: newPassword } }),

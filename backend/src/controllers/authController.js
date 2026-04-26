@@ -168,10 +168,15 @@ export async function me(req, res) {
   const response = { 
     _id: u._id, 
     email: u.email, 
+    username: u.username || '',
     name: u.name, 
     role: u.role, 
     avatarUrl: u.avatarUrl,
     isSpecialStudent: Boolean(u.isSpecialStudent),
+    bio: u.bio || '',
+    linkedinUrl: u.linkedinUrl || '',
+    githubUrl: u.githubUrl || '',
+    portfolioUrl: u.portfolioUrl || '',
   };
   
   // Add role-specific fields
@@ -209,8 +214,19 @@ export async function updateMe(req, res) {
   const u = req.user;
   if (!u) return res.status(401).json({ error: 'Unauthorized' });
   
-  const { name, course, branch, college } = req.body || {};
+  const { username, name, course, branch, college, bio, linkedinUrl, githubUrl, portfolioUrl } = req.body || {};
   const trim = (v) => (typeof v === 'string' ? v.trim() : undefined);
+  const normalizeUsername = (value) => {
+    if (value === undefined) return undefined;
+    const normalized = String(value)
+      .trim()
+      .replace(/^@+/, '')
+      .replace(/\s+/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]/g, '')
+      .slice(0, 32);
+    return normalized;
+  };
   
   // All users can update their name
   const updates = {};
@@ -220,9 +236,17 @@ export async function updateMe(req, res) {
   
   // Only students can update additional fields
   if (u.role === 'student') {
+    if (username !== undefined) {
+      const normalizedUsername = normalizeUsername(username);
+      updates.username = normalizedUsername || undefined;
+    }
     if (course !== undefined) updates.course = trim(course);
     if (branch !== undefined) updates.branch = trim(branch);
     if (college !== undefined) updates.college = trim(college);
+    if (bio !== undefined) updates.bio = trim(bio);
+    if (linkedinUrl !== undefined) updates.linkedinUrl = trim(linkedinUrl);
+    if (githubUrl !== undefined) updates.githubUrl = trim(githubUrl);
+    if (portfolioUrl !== undefined) updates.portfolioUrl = trim(portfolioUrl);
   }
   
   // Fetch the actual Mongoose document (req.user is lean object)
@@ -246,7 +270,20 @@ export async function updateMe(req, res) {
   });
   
   // Return response based on role
-  const response = { message: 'Profile updated', user: { _id: userDoc._id, name: userDoc.name, email: userDoc.email, role: userDoc.role } };
+  const response = {
+    message: 'Profile updated',
+    user: {
+      _id: userDoc._id,
+      name: userDoc.name,
+      email: userDoc.email,
+      role: userDoc.role,
+      username: userDoc.username || '',
+      bio: userDoc.bio || '',
+      linkedinUrl: userDoc.linkedinUrl || '',
+      githubUrl: userDoc.githubUrl || '',
+      portfolioUrl: userDoc.portfolioUrl || '',
+    },
+  };
   if (userDoc.role === 'student') {
     response.user.studentId = userDoc.studentId;
     response.user.course = userDoc.course;

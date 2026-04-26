@@ -8,6 +8,7 @@ import User from '../models/User.js';
 import StudentAnalytics from '../models/StudentAnalytics.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const ACCEPTED_STATUSES = ['AC', 'Accepted'];
 
 const round = (value) => Number((value || 0).toFixed(2));
 const clamp = (value, min = 0, max = 100) => Math.min(max, Math.max(min, value));
@@ -118,7 +119,7 @@ async function buildProblemMetrics(studentId) {
         $group: {
           _id: null,
           attempts: { $sum: 1 },
-          accepted: { $sum: { $cond: [{ $eq: ['$status', 'AC'] }, 1, 0] } },
+          accepted: { $sum: { $cond: [{ $in: ['$status', ACCEPTED_STATUSES] }, 1, 0] } },
         },
       },
     ]),
@@ -143,7 +144,7 @@ async function buildProblemMetrics(studentId) {
         $group: {
           _id: '$tags',
           attempts: { $sum: 1 },
-          accepted: { $sum: { $cond: [{ $eq: ['$status', 'AC'] }, 1, 0] } },
+          accepted: { $sum: { $cond: [{ $in: ['$status', ACCEPTED_STATUSES] }, 1, 0] } },
         },
       },
       { $sort: { attempts: -1 } },

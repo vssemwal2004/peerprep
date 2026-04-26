@@ -2,9 +2,25 @@ import { io } from 'socket.io-client';
 
 // Determine Socket URL: use environment variable, or detect production, or fallback to localhost
 const getSocketURL = () => {
-  // If VITE_API_URL is set, use it
-  if (import.meta.env.VITE_API_URL) {
-    return import.meta.env.VITE_API_URL.replace('/api', '');
+  const configuredBase = import.meta.env.VITE_SOCKET_URL
+    || import.meta.env.VITE_API_URL
+    || import.meta.env.VITE_API_BASE;
+
+  // Prefer an explicit config, and normalize common ".../api" base URLs.
+  if (configuredBase) {
+    const raw = String(configuredBase).trim();
+    if (!raw) return 'http://localhost:4000';
+    try {
+      const url = new URL(raw);
+      if (url.pathname === '/api' || url.pathname === '/api/') {
+        url.pathname = '/';
+      }
+      url.search = '';
+      url.hash = '';
+      return url.toString().replace(/\/$/, '');
+    } catch {
+      return raw.replace(/\/api\/?$/, '');
+    }
   }
   
   // If running on production domain, use production URL

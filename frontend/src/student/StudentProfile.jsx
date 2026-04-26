@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  Activity,
+  ArrowUpRight,
+  ClipboardList,
   BookOpen,
   Camera,
   CheckCircle2,
@@ -9,25 +10,21 @@ import {
   Code2,
   Flame,
   GitBranch,
-  Hash,
-  Layers3,
+  Github,
+  Globe,
+  GraduationCap,
+  Linkedin,
   Mail,
   MapPin,
-  PlayCircle,
+  MessageSquare,
+  Target,
   Trophy,
-  UserCheck,
+  UserRound,
   X,
 } from 'lucide-react';
 import ContributionCalendar from '../components/ContributionCalendar';
 import { api } from '../utils/api';
 import socketService from '../utils/socket';
-
-const SECTION_LINKS = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'activity', label: 'Activity' },
-  { id: 'performance', label: 'Performance' },
-  { id: 'recent', label: 'Recent' },
-];
 
 function formatDateTime(value) {
   if (!value) return 'Just now';
@@ -44,17 +41,17 @@ function formatDuration(value) {
 }
 
 function difficultyClasses(difficulty) {
-  if (difficulty === 'Hard') return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300';
-  if (difficulty === 'Medium') return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300';
-  return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300';
+  if (difficulty === 'Hard') return 'border-rose-200 bg-rose-50 text-rose-700';
+  if (difficulty === 'Medium') return 'border-amber-200 bg-amber-50 text-amber-700';
+  return 'border-emerald-200 bg-emerald-50 text-emerald-700';
 }
 
 function statusClasses(status) {
-  if (status === 'AC') return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300';
-  if (status === 'WA') return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300';
-  if (status === 'TLE') return 'border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-800 dark:bg-orange-900/20 dark:text-orange-300';
-  if (status === 'CE' || status === 'RE') return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300';
-  return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300';
+  if (status === 'AC') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+  if (status === 'WA') return 'border-amber-200 bg-amber-50 text-amber-700';
+  if (status === 'TLE') return 'border-orange-200 bg-orange-50 text-orange-700';
+  if (status === 'CE' || status === 'RE') return 'border-rose-200 bg-rose-50 text-rose-700';
+  return 'border-slate-200 bg-slate-50 text-slate-600';
 }
 
 function AnimatedMetric({ value, suffix = '', decimals = 0, className = '' }) {
@@ -63,7 +60,7 @@ function AnimatedMetric({ value, suffix = '', decimals = 0, className = '' }) {
   useEffect(() => {
     const numericValue = Number(value || 0);
     const safeValue = Number.isFinite(numericValue) ? numericValue : 0;
-    const duration = 650;
+    const duration = 600;
     const startValue = displayValue;
     const startedAt = performance.now();
     let frameId = 0;
@@ -80,7 +77,7 @@ function AnimatedMetric({ value, suffix = '', decimals = 0, className = '' }) {
 
     frameId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frameId);
-  }, [value]);
+  }, [displayValue, value]);
 
   return (
     <span className={className}>
@@ -90,88 +87,40 @@ function AnimatedMetric({ value, suffix = '', decimals = 0, className = '' }) {
   );
 }
 
-function SectionPanel({ id, title, subtitle, children, className = '' }) {
+function Panel({ title, subtitle, children, className = '' }) {
   return (
-    <section
-      id={id}
-      className={`rounded-[28px] border border-slate-200/80 bg-white/90 p-5 shadow-[0_24px_80px_-48px_rgba(15,23,42,0.35)] backdrop-blur dark:border-gray-700 dark:bg-gray-900/80 ${className}`}
-    >
+    <section className={`rounded-[24px] border border-slate-200 bg-white shadow-[0_18px_48px_-36px_rgba(15,23,42,0.22)] ${className}`}>
       {(title || subtitle) && (
-        <div className="mb-5 flex items-end justify-between gap-4">
-          <div>
-            {title ? <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{title}</h2> : null}
-            {subtitle ? <p className="mt-1 text-sm text-slate-500 dark:text-gray-400">{subtitle}</p> : null}
-          </div>
+        <div className="border-b border-slate-100 px-4 py-3">
+          {title ? <h2 className="text-xs font-semibold text-slate-900">{title}</h2> : null}
+          {subtitle ? <p className="mt-1 text-xs text-slate-500">{subtitle}</p> : null}
         </div>
       )}
-      {children}
+      <div className="p-4">{children}</div>
     </section>
   );
 }
 
-function PillNav() {
-  const handleJump = (id) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+function CompactStatCard({ label, value, helper, icon, tone = 'slate', suffix = '', decimals = 0 }) {
+  const tones = {
+    emerald: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+    amber: 'bg-amber-50 text-amber-700 border-amber-100',
+    rose: 'bg-rose-50 text-rose-700 border-rose-100',
+    sky: 'bg-sky-50 text-sky-700 border-sky-100',
+    slate: 'bg-slate-50 text-slate-700 border-slate-100',
   };
 
   return (
-    <div className="sticky top-[76px] z-20 overflow-x-auto">
-      <div className="inline-flex min-w-full items-center gap-2 rounded-full border border-slate-200/80 bg-white/85 p-2 shadow-[0_18px_50px_-40px_rgba(15,23,42,0.45)] backdrop-blur dark:border-gray-700 dark:bg-gray-900/85">
-        {SECTION_LINKS.map((section) => (
-          <button
-            key={section.id}
-            type="button"
-            onClick={() => handleJump(section.id)}
-            className="rounded-full border border-transparent bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-600 transition-colors hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-sky-700 dark:hover:bg-sky-900/20 dark:hover:text-sky-300"
-          >
-            {section.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function InfoTile({ icon, label, value }) {
-  return (
-    <div className="rounded-2xl border border-white/70 bg-white/75 p-4 shadow-[0_18px_45px_-36px_rgba(14,116,144,0.4)] backdrop-blur dark:border-gray-700 dark:bg-gray-800/80">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-300">
-          {icon}
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">{label}</p>
-          <p className="mt-1 truncate text-sm font-semibold text-slate-800 dark:text-white">{value || 'Not provided'}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function HeroMetricCard({ label, value, helper, suffix = '', decimals = 0, tone }) {
-  return (
-    <div className={`rounded-[24px] border p-4 ${tone}`}>
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] opacity-80">{label}</p>
-      <div className="mt-3 text-3xl font-bold">
-        <AnimatedMetric value={value} suffix={suffix} decimals={decimals} />
-      </div>
-      <p className="mt-1 text-xs opacity-80">{helper}</p>
-    </div>
-  );
-}
-
-function MetricCard({ label, value, helper, icon, suffix = '', decimals = 0, accent }) {
-  return (
-    <div className="rounded-[24px] border border-slate-200/80 bg-white p-5 shadow-[0_24px_70px_-48px_rgba(15,23,42,0.45)] dark:border-gray-700 dark:bg-gray-900">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">{label}</p>
-          <div className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">
+    <div className="rounded-[20px] border border-slate-200 bg-white p-3 shadow-[0_12px_30px_-24px_rgba(15,23,42,0.2)] transition-transform duration-200 hover:-translate-y-0.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</p>
+          <div className="mt-2 text-xl font-bold text-slate-900">
             <AnimatedMetric value={value} suffix={suffix} decimals={decimals} />
           </div>
-          <p className="mt-2 text-sm text-slate-500 dark:text-gray-400">{helper}</p>
+          <p className="mt-1 text-xs text-slate-500">{helper}</p>
         </div>
-        <div className={`flex h-12 w-12 items-center justify-center rounded-2xl ${accent}`}>
+        <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border ${tones[tone] || tones.slate}`}>
           {icon}
         </div>
       </div>
@@ -179,21 +128,259 @@ function MetricCard({ label, value, helper, icon, suffix = '', decimals = 0, acc
   );
 }
 
-function ProgressTrack({ label, value, max, tone, suffix = '' }) {
-  const safeValue = Number(value || 0);
-  const safeMax = Math.max(Number(max || 0), 1);
-  const width = Math.min((safeValue / safeMax) * 100, 100);
+function InsightCard({ label, value, helper, icon, suffix = '', decimals = 0 }) {
+  return (
+    <div className="rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-4 transition-colors hover:bg-white">
+      <div className="flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-slate-700 shadow-[0_8px_20px_-14px_rgba(15,23,42,0.28)]">
+          {icon}
+        </div>
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</p>
+          <p className="mt-1 text-lg font-bold text-slate-900">
+            <AnimatedMetric value={value} suffix={suffix} decimals={decimals} />
+          </p>
+          <p className="text-xs text-slate-500">{helper}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MiniProfileRow({ icon, label, value }) {
+  return (
+    <div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/75 px-3.5 py-3">
+      <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-xl bg-white text-slate-700 shadow-[0_8px_18px_-14px_rgba(15,23,42,0.22)]">
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</p>
+        <p className="mt-1 text-sm font-medium text-slate-700">{value || 'Not provided'}</p>
+      </div>
+    </div>
+  );
+}
+
+function SocialButton({ href, icon, label }) {
+  const normalizedHref = (() => {
+    const raw = typeof href === 'string' ? href.trim() : '';
+    if (!raw) return '';
+    if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(raw)) return raw;
+    if (raw.startsWith('//')) return `https:${raw}`;
+    return `https://${raw}`;
+  })();
+
+  if (!normalizedHref) {
+    return (
+      <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-300">
+        {icon}
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-3 text-sm">
-        <span className="font-medium text-slate-700 dark:text-gray-200">{label}</span>
-        <span className="font-semibold text-slate-900 dark:text-white">
-          <AnimatedMetric value={safeValue} suffix={suffix} decimals={suffix === '%' ? 1 : 0} />
-        </span>
+    <a
+      href={normalizedHref}
+      target="_blank"
+      rel="noreferrer"
+      aria-label={label}
+      className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-[0_8px_18px_-14px_rgba(15,23,42,0.2)] transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:text-slate-950"
+    >
+      {icon}
+    </a>
+  );
+}
+
+function ProfileField({ label, value, onChange, placeholder = '', multiline = false, type = 'text', disabled = false }) {
+  const sharedClassName = disabled
+    ? 'w-full cursor-not-allowed rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 outline-none placeholder:text-slate-400'
+    : 'w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition-all placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100';
+
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</span>
+      {multiline ? (
+        <textarea
+          rows={4}
+          value={value}
+          onChange={onChange}
+          disabled={disabled}
+          placeholder={placeholder}
+          className={`${sharedClassName} resize-none`}
+        />
+      ) : (
+        <input
+          type={type}
+          value={value}
+          onChange={onChange}
+          disabled={disabled}
+          placeholder={placeholder}
+          className={sharedClassName}
+        />
+      )}
+    </label>
+  );
+}
+
+function LeetCodeProgressCard({
+  totalSolved,
+  totalAttempted,
+  attempting,
+  easySolved,
+  mediumSolved,
+  hardSolved,
+}) {
+  const [showBeats, setShowBeats] = useState(false);
+  const [activeDifficulty, setActiveDifficulty] = useState('');
+  const ratio = Math.min(totalSolved / Math.max(totalAttempted, 1), 1);
+  const ringRadius = 70;
+  const circumference = 2 * Math.PI * ringRadius;
+  const beats = Math.max(1, Math.min(99.9, Number((ratio * 100).toFixed(2))));
+  const difficultyDetails = [
+    {
+      label: 'Easy',
+      shortLabel: 'Easy',
+      value: easySolved,
+      color: '#0f766e',
+      softColor: '#ccfbf1',
+      accentClass: 'text-teal-700 bg-teal-50 border-teal-100',
+      beats: Math.max(1, Math.min(99.9, Number(((easySolved / Math.max(totalSolved || 1, 1)) * 100).toFixed(2)))),
+    },
+    {
+      label: 'Medium',
+      shortLabel: 'Med.',
+      value: mediumSolved,
+      color: '#d97706',
+      softColor: '#fef3c7',
+      accentClass: 'text-amber-700 bg-amber-50 border-amber-100',
+      beats: Math.max(1, Math.min(99.9, Number(((mediumSolved / Math.max(totalSolved || 1, 1)) * 100).toFixed(2)))),
+    },
+    {
+      label: 'Hard',
+      shortLabel: 'Hard',
+      value: hardSolved,
+      color: '#e11d48',
+      softColor: '#ffe4e6',
+      accentClass: 'text-rose-700 bg-rose-50 border-rose-100',
+      beats: Math.max(1, Math.min(99.9, Number(((hardSolved / Math.max(totalSolved || 1, 1)) * 100).toFixed(2)))),
+    },
+  ];
+  const segments = [
+    { value: easySolved, color: '#14b8a6' },
+    { value: mediumSolved, color: '#f59e0b' },
+    { value: hardSolved, color: '#f43f5e' },
+  ];
+  const totalSegmentValue = Math.max(easySolved + mediumSolved + hardSolved, 1);
+  let offsetCursor = 0;
+  const hoveredDifficulty = difficultyDetails.find((item) => item.label === activeDifficulty) || null;
+  const headlineLabel = hoveredDifficulty ? hoveredDifficulty.label : (showBeats ? 'Solved Share' : 'Solved');
+  const headlineValue = hoveredDifficulty ? hoveredDifficulty.beats : beats;
+  const headlineColor = hoveredDifficulty?.color || '#0f172a';
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_200px]">
+      <div className="flex items-center justify-center rounded-[22px] border border-slate-200 bg-[radial-gradient(circle_at_top,#f0fdfa_0%,#fbfdff_38%,#f6f9fc_100%)] p-4">
+        <div
+          className="relative flex items-center justify-center"
+          onMouseEnter={() => setShowBeats(true)}
+          onMouseLeave={() => {
+            setShowBeats(false);
+            setActiveDifficulty('');
+          }}
+        >
+          <svg viewBox="0 0 180 180" className="-rotate-90 h-[200px] w-[200px]">
+            <circle
+              cx="90"
+              cy="90"
+              r={ringRadius}
+              stroke="#e5e7eb"
+              strokeWidth="8"
+              fill="none"
+              strokeLinecap="round"
+            />
+            <circle
+              cx="90"
+              cy="90"
+              r={ringRadius}
+              stroke="#c7f0ee"
+              strokeWidth="8"
+              fill="none"
+              strokeLinecap="round"
+              strokeDasharray={circumference}
+              strokeDashoffset={circumference * (1 - ratio)}
+            />
+            {segments.map((segment, index) => {
+              const segmentLength = circumference * (segment.value / totalSegmentValue);
+              const strokeDasharray = `${Math.max(segmentLength - 8, 0)} ${circumference}`;
+              const node = (
+                <circle
+                  key={segment.color}
+                  cx="90"
+                  cy="90"
+                  r={ringRadius}
+                  stroke={segment.color}
+                  strokeWidth="8"
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeDasharray={strokeDasharray}
+                  strokeDashoffset={-offsetCursor}
+                />
+              );
+              offsetCursor += segmentLength;
+              return node;
+            })}
+          </svg>
+          <div className="absolute inset-0 flex -translate-y-1 flex-col items-center justify-center px-4 text-center leading-tight">
+            <div className="text-[12px] font-medium text-slate-700">{headlineLabel}</div>
+
+            {showBeats || hoveredDifficulty ? (
+              <div className="mt-1.5 flex items-end justify-center gap-1.5 font-bold tracking-tight leading-none tabular-nums">
+                <span className="text-[28px] sm:text-[32px]" style={{ color: headlineColor }}>
+                  {headlineValue}
+                </span>
+                <span className="pb-[2px] text-lg font-semibold text-slate-500">%</span>
+              </div>
+            ) : (
+              <div className="mt-1.5 flex max-w-[150px] items-baseline justify-center gap-0.5 whitespace-nowrap font-bold tracking-tight leading-none tabular-nums">
+                <span className="text-[clamp(22px,4.2vw,34px)] text-slate-950">{totalSolved}</span>
+                <span className="text-[clamp(16px,3.2vw,22px)] font-semibold text-slate-400">/</span>
+                <span className="text-[clamp(16px,3.2vw,22px)] font-semibold text-slate-400">{totalAttempted}</span>
+              </div>
+            )}
+
+            {!showBeats && !hoveredDifficulty && (
+              <div className="mt-1.5 flex items-center gap-2 text-teal-600">
+                <CheckCircle2 className="h-4 w-4" />
+                <span className="text-sm font-semibold">Solved</span>
+              </div>
+            )}
+
+            <div className="mt-1.5 text-[11px] font-medium text-slate-500">{attempting} Attempting</div>
+          </div>
+        </div>
       </div>
-      <div className="h-2.5 rounded-full bg-slate-100 dark:bg-gray-800">
-        <div className={`h-2.5 rounded-full ${tone}`} style={{ width: `${Math.max(width, safeValue ? 10 : 0)}%` }} />
+
+      <div className="grid gap-3">
+        {difficultyDetails.map((item) => (
+          <div
+            key={item.label}
+            onMouseEnter={() => {
+              setShowBeats(false);
+              setActiveDifficulty(item.label);
+            }}
+            onMouseLeave={() => setActiveDifficulty('')}
+            className={`rounded-[18px] border px-3 py-3 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_32px_-24px_rgba(15,23,42,0.25)] ${item.accentClass}`}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-sm font-semibold">{item.shortLabel}</div>
+              <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+            </div>
+            <div className="mt-1 text-xl font-bold">
+              {item.value}
+              <span className="ml-1 text-sm font-medium text-slate-500">solved</span>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -201,8 +388,33 @@ function ProgressTrack({ label, value, max, tone, suffix = '' }) {
 
 function EmptyState({ message }) {
   return (
-    <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500 dark:border-gray-700 dark:text-gray-400">
+    <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500">
       {message}
+    </div>
+  );
+}
+
+function ProfessionalTrackCard({ label, value, helper, icon, tone = 'slate' }) {
+  const tones = {
+    sky: 'bg-sky-50 border-sky-100 text-sky-700',
+    amber: 'bg-amber-50 border-amber-100 text-amber-700',
+    emerald: 'bg-emerald-50 border-emerald-100 text-emerald-700',
+    rose: 'bg-rose-50 border-rose-100 text-rose-700',
+    slate: 'bg-slate-50 border-slate-100 text-slate-700',
+  };
+
+  return (
+    <div className="rounded-[20px] border border-slate-200 bg-white p-3 shadow-[0_12px_30px_-24px_rgba(15,23,42,0.18)]">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</p>
+          <p className="mt-1.5 text-xl font-bold text-slate-950">{value}</p>
+          <p className="mt-1 text-xs text-slate-500">{helper}</p>
+        </div>
+        <div className={`flex h-9 w-9 items-center justify-center rounded-2xl border ${tones[tone] || tones.slate}`}>
+          {icon}
+        </div>
+      </div>
     </div>
   );
 }
@@ -211,15 +423,36 @@ export default function StudentProfile() {
   const [user, setUser] = useState(null);
   const [avatarFile, setAvatarFile] = useState(null);
   const [avatarPreview, setAvatarPreview] = useState(null);
+  const [profileForm, setProfileForm] = useState({
+    username: '',
+    name: '',
+    course: '',
+    branch: '',
+    college: '',
+    bio: '',
+    linkedinUrl: '',
+    githubUrl: '',
+    portfolioUrl: '',
+  });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [activity, setActivity] = useState({});
   const [activityStats, setActivityStats] = useState(null);
   const [stats, setStats] = useState(null);
+  const [analysis, setAnalysis] = useState(null);
+  const [problemStatusSummary, setProblemStatusSummary] = useState({
+    loaded: false,
+    solvedCount: 0,
+    attemptedCount: 0,
+    solvedByDifficulty: { easy: 0, medium: 0, hard: 0 },
+  });
   const [loading, setLoading] = useState(true);
   const [loadingActivity, setLoadingActivity] = useState(false);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
   const isMountedRef = useRef(true);
+  const lastMetricsRefreshAtRef = useRef(0);
 
   const loadActivityData = async (showSpinner = false) => {
     if (showSpinner && isMountedRef.current) {
@@ -243,12 +476,74 @@ export default function StudentProfile() {
 
   const loadStats = async () => {
     try {
-      const data = await api.getStudentStats();
+      const [statsResult, analysisResult, problemsResult] = await Promise.allSettled([
+        api.getStudentStats(),
+        api.getStudentAnalysis(true),
+        api.listStudentProblems({ page: 1, limit: 100, sortBy: 'updatedAt', sortOrder: 'desc' }),
+      ]);
+
+      const data = statsResult.status === 'fulfilled' ? statsResult.value : null;
+      const analysisData = analysisResult.status === 'fulfilled' ? analysisResult.value : null;
+      const firstProblemsPage = problemsResult.status === 'fulfilled' ? problemsResult.value : null;
+      const problemsLoaded = problemsResult.status === 'fulfilled';
+
+      let solvedCountFromProblems = 0;
+      let attemptedCountFromProblems = 0;
+      let solvedEasyFromProblems = 0;
+      let solvedMediumFromProblems = 0;
+      let solvedHardFromProblems = 0;
+      if (firstProblemsPage?.problems) {
+        const pages = Number(firstProblemsPage?.pagination?.pages || 1);
+        let allProblems = [...firstProblemsPage.problems];
+        if (pages > 1) {
+          const remainingPages = await Promise.allSettled(
+            Array.from({ length: pages - 1 }, (_, index) => (
+              api.listStudentProblems({
+                page: index + 2,
+                limit: 100,
+                sortBy: 'updatedAt',
+                sortOrder: 'desc',
+              })
+            ))
+          );
+          remainingPages.forEach((pageResult) => {
+            if (pageResult.status !== 'fulfilled') return;
+            if (pageResult.value?.problems) allProblems = allProblems.concat(pageResult.value.problems);
+          });
+        }
+
+        const solvedProblems = allProblems.filter((problem) => problem?.studentStatus === 'Solved');
+        solvedCountFromProblems = solvedProblems.length;
+        attemptedCountFromProblems = allProblems.filter((problem) => ['Solved', 'Unsolved'].includes(problem?.studentStatus)).length;
+
+        solvedEasyFromProblems = solvedProblems.filter((problem) => problem?.difficulty === 'Easy').length;
+        solvedMediumFromProblems = solvedProblems.filter((problem) => problem?.difficulty === 'Medium').length;
+        solvedHardFromProblems = solvedProblems.filter((problem) => problem?.difficulty === 'Hard').length;
+      }
+
       if (!isMountedRef.current) return;
-      setStats(data.stats || null);
+      setStats(data?.stats || null);
+      setAnalysis(analysisData?.analysis || null);
+      setProblemStatusSummary({
+        loaded: problemsLoaded,
+        solvedCount: solvedCountFromProblems,
+        attemptedCount: attemptedCountFromProblems,
+        solvedByDifficulty: {
+          easy: solvedEasyFromProblems,
+          medium: solvedMediumFromProblems,
+          hard: solvedHardFromProblems,
+        },
+      });
     } catch {
       if (!isMountedRef.current) return;
       setStats(null);
+      setAnalysis(null);
+      setProblemStatusSummary({
+        loaded: false,
+        solvedCount: 0,
+        attemptedCount: 0,
+        solvedByDifficulty: { easy: 0, medium: 0, hard: 0 },
+      });
     }
   };
 
@@ -257,6 +552,13 @@ export default function StudentProfile() {
       loadStats(),
       loadActivityData(withActivitySpinner),
     ]);
+  };
+
+  const safeRefreshMetrics = ({ withActivitySpinner = false } = {}) => {
+    const now = Date.now();
+    if (now - lastMetricsRefreshAtRef.current < 1500) return;
+    lastMetricsRefreshAtRef.current = now;
+    void refreshMetrics({ withActivitySpinner });
   };
 
   useEffect(() => {
@@ -268,6 +570,17 @@ export default function StudentProfile() {
         const me = await api.me();
         if (!isMountedRef.current) return;
         setUser(me);
+        setProfileForm({
+          username: me?.username || '',
+          name: me?.name || '',
+          course: me?.course || '',
+          branch: me?.branch || '',
+          college: me?.college || '',
+          bio: me?.bio || '',
+          linkedinUrl: me?.linkedinUrl || '',
+          githubUrl: me?.githubUrl || '',
+          portfolioUrl: me?.portfolioUrl || '',
+        });
         await refreshMetrics({ withActivitySpinner: true });
       } catch (loadError) {
         if (!isMountedRef.current) return;
@@ -290,11 +603,15 @@ export default function StudentProfile() {
 
     socketService.connect();
     const handleLearningUpdate = () => {
-      void refreshMetrics();
+      safeRefreshMetrics();
     };
     const handleCompilerUpdate = (submission) => {
       if (String(submission?.userId || '') !== String(user._id)) return;
-      void refreshMetrics();
+
+      // Only refresh once the submission is finalized; avoids spam while queued/running.
+      const status = String(submission?.status || '').toUpperCase();
+      if (status === 'PENDING' || status === 'RUNNING') return;
+      safeRefreshMetrics();
     };
 
     socketService.on('learning-updated', handleLearningUpdate);
@@ -307,13 +624,29 @@ export default function StudentProfile() {
   }, [user?._id]);
 
   useEffect(() => {
+    if (!user?._id) return undefined;
+
+    const handleFocus = () => safeRefreshMetrics();
+    const handleVisibilityChange = () => {
+      if (!document.hidden) safeRefreshMetrics();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [user?._id]);
+
+  useEffect(() => {
     const now = new Date();
     const nextMidnight = new Date(now);
     nextMidnight.setDate(nextMidnight.getDate() + 1);
     nextMidnight.setHours(0, 0, 0, 0);
 
     const timer = setTimeout(() => {
-      void refreshMetrics();
+      safeRefreshMetrics();
     }, Math.max(nextMidnight.getTime() - now.getTime(), 0));
 
     return () => clearTimeout(timer);
@@ -348,6 +681,30 @@ export default function StudentProfile() {
     setSuccess('');
   };
 
+  const openEditModal = () => {
+    setError('');
+    setSuccess('');
+    setProfileForm({
+      username: user?.username || '',
+      name: user?.name || '',
+      course: user?.course || '',
+      branch: user?.branch || '',
+      college: user?.college || '',
+      bio: user?.bio || '',
+      linkedinUrl: user?.linkedinUrl || '',
+      githubUrl: user?.githubUrl || '',
+      portfolioUrl: user?.portfolioUrl || '',
+    });
+    setShowEditModal(true);
+  };
+
+  const closeEditModal = () => {
+    if (savingProfile) return;
+    setShowEditModal(false);
+    setError('');
+    setSuccess('');
+  };
+
   const handleUpdatePhoto = async () => {
     if (!avatarFile) {
       setError('Please select a photo first.');
@@ -370,129 +727,191 @@ export default function StudentProfile() {
     }
   };
 
-  const summaryLine = useMemo(() => {
-    const solved = stats?.totalQuestionsSolved || 0;
-    const videos = stats?.totalVideosWatched || 0;
+  const handleUpdateProfile = async () => {
+    setSavingProfile(true);
+    setError('');
+    setSuccess('');
+    try {
+      const normalizeUrlForSave = (value) => {
+        const raw = typeof value === 'string' ? value.trim() : '';
+        if (!raw) return '';
+        if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(raw)) return raw;
+        if (raw.startsWith('//')) return `https:${raw}`;
+        return `https://${raw}`;
+      };
+
+      const response = await api.updateMyProfile({
+        username: profileForm.username,
+        bio: profileForm.bio,
+        linkedinUrl: normalizeUrlForSave(profileForm.linkedinUrl),
+        githubUrl: normalizeUrlForSave(profileForm.githubUrl),
+        portfolioUrl: normalizeUrlForSave(profileForm.portfolioUrl),
+      });
+      const updatedUser = response?.user || response;
+      if (!isMountedRef.current) return;
+      setUser((prev) => ({
+        ...(prev || {}),
+        ...updatedUser,
+      }));
+      setProfileForm({
+        username: updatedUser?.username || '',
+        name: updatedUser?.name || '',
+        course: updatedUser?.course || '',
+        branch: updatedUser?.branch || '',
+        college: updatedUser?.college || '',
+        bio: updatedUser?.bio || '',
+        linkedinUrl: updatedUser?.linkedinUrl || '',
+        githubUrl: updatedUser?.githubUrl || '',
+        portfolioUrl: updatedUser?.portfolioUrl || '',
+      });
+      setSuccess('Profile details updated successfully.');
+      setTimeout(() => {
+        if (isMountedRef.current) {
+          setShowEditModal(false);
+          setSuccess('');
+        }
+      }, 900);
+    } catch (updateError) {
+      if (!isMountedRef.current) return;
+      setError(updateError.message || 'Failed to update profile.');
+    } finally {
+      if (isMountedRef.current) {
+        setSavingProfile(false);
+      }
+    }
+  };
+
+  const handle = useMemo(() => {
+    const base = user?.username || user?.email?.split('@')[0] || user?.studentId || user?.name || 'student';
+    const normalized = String(base)
+      .trim()
+      .replace(/^@+/, '')
+      .replace(/\s+/g, '')
+      .toLowerCase();
+    return `@${normalized}`;
+  }, [user?.email, user?.name, user?.studentId, user?.username]);
+
+  const codingLevel = useMemo(() => {
+    const solved = problemStatusSummary.loaded
+      ? Number(problemStatusSummary.solvedCount || 0)
+      : Number(stats?.totalQuestionsSolved || 0);
+    if (solved >= 250) return 'Elite Solver';
+    if (solved >= 120) return 'Advanced Coder';
+    if (solved >= 50) return 'Rising Solver';
+    return 'Learning Sprint';
+  }, [problemStatusSummary.loaded, problemStatusSummary.solvedCount, stats?.totalQuestionsSolved]);
+
+  const shortBio = useMemo(() => {
+    if (user?.bio?.trim()) {
+      return user.bio.trim();
+    }
+    const language = stats?.mostUsedLanguage ? `${stats.mostUsedLanguage} first` : 'consistent practice';
     const streak = activityStats?.currentStreak || 0;
-    return `PeerPrep is tracking ${solved} solved problems, ${videos} completed videos, and a ${streak}-day learning streak for you right now.`;
-  }, [activityStats?.currentStreak, stats?.totalQuestionsSolved, stats?.totalVideosWatched]);
+    return `Focused on data structures, problem solving, and ${language}. Currently building a ${streak}-day momentum streak on PeerPrep.`;
+  }, [activityStats?.currentStreak, stats?.mostUsedLanguage, user?.bio]);
 
-  const heroMetrics = useMemo(() => ([
-    {
-      label: 'Questions Solved',
-      value: stats?.totalQuestionsSolved || 0,
-      helper: 'Accepted coding problems',
-      tone: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300',
-    },
-    {
-      label: 'Acceptance Rate',
-      value: stats?.acceptanceRate || 0,
-      helper: 'Accepted submission ratio',
-      suffix: '%',
-      decimals: 1,
-      tone: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300',
-    },
-    {
-      label: 'Current Streak',
-      value: activityStats?.currentStreak || 0,
-      helper: 'Days in a row',
-      suffix: 'd',
-      tone: 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300',
-    },
-    {
-      label: 'Best Streak',
-      value: activityStats?.bestStreak || 0,
-      helper: 'Longest active run',
-      suffix: 'd',
-      tone: 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-900/20 dark:text-violet-300',
-    },
-  ]), [activityStats?.bestStreak, activityStats?.currentStreak, stats?.acceptanceRate, stats?.totalQuestionsSolved]);
+  const analysisOverview = analysis?.overview || {};
+  const analysisAssessments = analysis?.assessments || {};
+  const analysisInterviews = analysis?.interviews || {};
+  const analysisLearning = analysis?.learning || {};
 
-  const overviewMetrics = useMemo(() => ([
-    {
-      label: 'Questions Attempted',
-      value: stats?.totalQuestionsAttempted || 0,
-      helper: 'Unique problems tried',
-      icon: <Code2 className="h-5 w-5" />,
-      accent: 'bg-violet-50 text-violet-700 dark:bg-violet-900/20 dark:text-violet-300',
-    },
-    {
-      label: 'Total Submissions',
-      value: stats?.totalSubmissions || 0,
-      helper: 'All coding attempts',
-      icon: <Layers3 className="h-5 w-5" />,
-      accent: 'bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-300',
-    },
-    {
-      label: 'Accepted Submissions',
-      value: stats?.acceptedSubmissions || 0,
-      helper: 'Green verdict count',
-      icon: <CheckCircle2 className="h-5 w-5" />,
-      accent: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300',
-    },
-    {
-      label: 'Question Success Rate',
-      value: stats?.questionSuccessRate || 0,
-      helper: 'Solved vs attempted',
-      icon: <Trophy className="h-5 w-5" />,
-      suffix: '%',
-      decimals: 1,
-      accent: 'bg-cyan-50 text-cyan-700 dark:bg-cyan-900/20 dark:text-cyan-300',
-    },
-    {
-      label: 'Courses Enrolled',
-      value: stats?.totalCoursesEnrolled || 0,
-      helper: 'Assigned learning tracks',
-      icon: <BookOpen className="h-5 w-5" />,
-      accent: 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300',
-    },
-    {
-      label: 'Videos Watched',
-      value: stats?.totalVideosWatched || 0,
-      helper: 'Completed learning videos',
-      icon: <PlayCircle className="h-5 w-5" />,
-      accent: 'bg-pink-50 text-pink-700 dark:bg-pink-900/20 dark:text-pink-300',
-    },
-    {
-      label: 'Watch Time',
-      value: stats?.totalWatchTimeHours || 0,
-      helper: 'Learning hours invested',
-      icon: <Clock3 className="h-5 w-5" />,
-      suffix: 'h',
-      decimals: 1,
-      accent: 'bg-orange-50 text-orange-700 dark:bg-orange-900/20 dark:text-orange-300',
-    },
-    {
-      label: 'Active Days',
-      value: activityStats?.totalActiveDays || 0,
-      helper: 'Tracked days this year',
-      icon: <Flame className="h-5 w-5" />,
-      accent: 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300',
-    },
-  ]), [
-    activityStats?.totalActiveDays,
-    stats?.acceptedSubmissions,
-    stats?.questionSuccessRate,
-    stats?.totalCoursesEnrolled,
+  const insightCards = useMemo(() => {
+    const languagesUsed = stats?.languagesUsed?.length || 0;
+    return [
+      {
+        label: 'Assessment Average',
+        value: analysisAssessments?.avgScore || 0,
+        helper: 'Current test baseline',
+        icon: <ClipboardList className="h-4 w-4" />,
+        suffix: '%',
+        decimals: 1,
+      },
+      {
+        label: 'Interview Score',
+        value: analysisInterviews?.avgScore || 0,
+        helper: 'Feedback average',
+        icon: <MessageSquare className="h-4 w-4" />,
+        suffix: '%',
+        decimals: 0,
+      },
+      {
+        label: 'Languages Used',
+        value: languagesUsed,
+        helper: stats?.mostUsedLanguage ? `${stats.mostUsedLanguage} leads` : 'No language data',
+        icon: <Code2 className="h-4 w-4" />,
+      },
+      {
+        label: 'Upcoming Interviews',
+        value: analysisInterviews?.pending || 0,
+        helper: 'Scheduled or pending',
+        icon: <Clock3 className="h-4 w-4" />,
+      },
+    ];
+  }, [analysisAssessments?.avgScore, analysisInterviews?.avgScore, analysisInterviews?.pending, stats?.languagesUsed?.length, stats?.mostUsedLanguage]);
+
+  const codingTotals = useMemo(() => {
+    const easySolved = problemStatusSummary.loaded
+      ? Number(problemStatusSummary.solvedByDifficulty?.easy || 0)
+      : Number(stats?.solvedByDifficulty?.easy || 0);
+    const mediumSolved = problemStatusSummary.loaded
+      ? Number(problemStatusSummary.solvedByDifficulty?.medium || 0)
+      : Number(stats?.solvedByDifficulty?.medium || 0);
+    const hardSolved = problemStatusSummary.loaded
+      ? Number(problemStatusSummary.solvedByDifficulty?.hard || 0)
+      : Number(stats?.solvedByDifficulty?.hard || 0);
+
+    const totalSolved = problemStatusSummary.loaded
+      ? Number(problemStatusSummary.solvedCount || 0)
+      : Math.max(
+        Number(stats?.totalQuestionsSolved || stats?.problemsSolved || 0),
+        Number(analysis?.problems?.solved || 0),
+      );
+
+    const totalAttempted = problemStatusSummary.loaded
+      ? Math.max(Number(problemStatusSummary.attemptedCount || 0), totalSolved, 1)
+      : Math.max(
+        Number(stats?.totalQuestionsAttempted || 0),
+        Number(analysis?.problems?.attempts || 0),
+        totalSolved,
+        1,
+      );
+    const attempting = Math.max(totalAttempted - totalSolved, 0);
+    return {
+      totalSolved,
+      totalAttempted,
+      attempting,
+      easySolved,
+      mediumSolved,
+      hardSolved,
+    };
+  }, [
+    analysis?.problems?.attempts,
+    analysis?.problems?.solved,
+    problemStatusSummary.loaded,
+    problemStatusSummary.attemptedCount,
+    problemStatusSummary.solvedByDifficulty?.easy,
+    problemStatusSummary.solvedByDifficulty?.medium,
+    problemStatusSummary.solvedByDifficulty?.hard,
+    problemStatusSummary.solvedCount,
+    stats?.solvedByDifficulty?.easy,
+    stats?.solvedByDifficulty?.hard,
+    stats?.solvedByDifficulty?.medium,
     stats?.totalQuestionsAttempted,
-    stats?.totalSubmissions,
-    stats?.totalVideosWatched,
-    stats?.totalWatchTimeHours,
+    stats?.totalQuestionsSolved,
+    stats?.problemsSolved,
   ]);
 
-  const solvedMax = Math.max(
-    stats?.solvedByDifficulty?.easy || 0,
-    stats?.solvedByDifficulty?.medium || 0,
-    stats?.solvedByDifficulty?.hard || 0,
-    1,
-  );
-  const videoTotal = Math.max(activityStats?.totalVideosTotal || 0, stats?.totalVideosWatched || 0, 1);
+  const socialLinks = useMemo(() => ([
+    { label: 'LinkedIn', href: user?.linkedinUrl || '', icon: <Linkedin className="h-4 w-4" /> },
+    { label: 'GitHub', href: user?.githubUrl || '', icon: <Github className="h-4 w-4" /> },
+    { label: 'Portfolio', href: user?.portfolioUrl || '', icon: <Globe className="h-4 w-4" /> },
+  ]), [user?.githubUrl, user?.linkedinUrl, user?.portfolioUrl]);
 
   if (loading && !user) {
     return (
-      <div className="min-h-screen bg-slate-50 pt-16 dark:bg-gray-950">
+      <div className="min-h-screen bg-[#f6f8fb] pt-16">
         <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-          <div className="h-[520px] animate-pulse rounded-[32px] bg-slate-200 dark:bg-gray-800" />
+          <div className="h-[520px] animate-pulse rounded-[32px] bg-slate-200" />
         </div>
       </div>
     );
@@ -500,274 +919,307 @@ export default function StudentProfile() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-slate-50 pt-16 dark:bg-gray-950">
+      <div className="min-h-screen bg-[#f6f8fb] pt-16">
         <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
-          <SectionPanel title="Profile Unavailable" subtitle={error || 'We could not load your profile right now.'}>
+          <Panel title="Profile Unavailable" subtitle={error || 'We could not load your profile right now.'}>
             <EmptyState message="Please refresh the page and try again." />
-          </SectionPanel>
+          </Panel>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(186,230,253,0.35),transparent_32%),radial-gradient(circle_at_top_right,rgba(167,243,208,0.22),transparent_26%),linear-gradient(180deg,#f8fbff_0%,#eef6ff_45%,#f8fafc_100%)] pt-16 dark:bg-gray-950">
+    <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#f4f7fb_52%,#f8fafc_100%)] pt-16">
       <motion.div
-        initial={{ opacity: 0, y: 18 }}
+        initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: 'easeOut' }}
-        className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6"
+        transition={{ duration: 0.3, ease: 'easeOut' }}
+        className="mx-auto max-w-7xl px-4 py-6 sm:px-6"
       >
-        <section className="relative overflow-hidden rounded-[36px] border border-sky-100 bg-white/92 p-6 shadow-[0_30px_120px_-72px_rgba(14,116,144,0.55)] backdrop-blur dark:border-gray-700 dark:bg-gray-900/88">
-          <div className="absolute -left-16 top-0 h-56 w-56 rounded-full bg-sky-200/45 blur-3xl dark:bg-sky-700/20" />
-          <div className="absolute right-0 top-0 h-52 w-52 rounded-full bg-emerald-200/35 blur-3xl dark:bg-emerald-700/15" />
-          <div className="absolute bottom-0 left-1/3 h-44 w-44 rounded-full bg-indigo-200/25 blur-3xl dark:bg-indigo-700/15" />
-
-          <div className="relative grid gap-8 xl:grid-cols-[minmax(0,1.35fr)_360px]">
-            <div className="space-y-6">
-              <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
-                <div className="relative shrink-0">
-                  {user.avatarUrl ? (
-                    <img
-                      src={user.avatarUrl}
-                      alt={user.name}
-                      className="h-28 w-28 rounded-[28px] border-4 border-white object-cover shadow-xl dark:border-gray-800"
-                    />
-                  ) : (
-                    <div className="flex h-28 w-28 items-center justify-center rounded-[28px] border-4 border-white bg-gradient-to-br from-sky-500 via-blue-600 to-indigo-600 text-4xl font-bold text-white shadow-xl dark:border-gray-800">
-                      {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={openPhotoModal}
-                    className="absolute -bottom-1 -right-1 rounded-2xl border-2 border-white bg-white p-2.5 text-sky-600 shadow-lg hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-800 dark:text-sky-300 dark:hover:bg-gray-700"
-                  >
-                    <Camera className="h-4 w-4" />
-                  </button>
-                </div>
-
-                <div className="min-w-0 space-y-3">
-                  <div>
-                    <p className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300">
-                      PeerPrep Student Profile
-                    </p>
-                    <h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-900 dark:text-white">{user.name || 'Student'}</h1>
-                    <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600 dark:text-gray-300">{summaryLine}</p>
+        <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+          <aside className="xl:sticky xl:top-[88px] xl:self-start">
+            <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_22px_60px_-42px_rgba(15,23,42,0.28)]">
+              <div className="h-24 bg-[linear-gradient(135deg,#0f172a_0%,#12323d_38%,#0f766e_100%)]" />
+              <div className="px-5 pb-5">
+                <div className="-mt-12 flex items-end justify-between gap-3">
+                  <div className="relative">
+                    {user.avatarUrl ? (
+                      <img
+                        src={user.avatarUrl}
+                        alt={user.name}
+                        className="h-24 w-24 rounded-full border-4 border-white object-cover shadow-[0_18px_36px_-20px_rgba(15,23,42,0.35)]"
+                      />
+                    ) : (
+                      <div className="flex h-24 w-24 items-center justify-center rounded-full border-4 border-white bg-[linear-gradient(135deg,#0f172a_0%,#334155_100%)] text-3xl font-bold text-white shadow-[0_18px_36px_-20px_rgba(15,23,42,0.35)]">
+                        {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={openPhotoModal}
+                      className="absolute -bottom-1 -right-1 flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-[0_10px_22px_-14px_rgba(15,23,42,0.28)] transition-colors hover:bg-slate-50"
+                      aria-label="Edit profile photo"
+                    >
+                      <Camera className="h-4 w-4" />
+                    </button>
                   </div>
 
-                  <div className="flex flex-wrap gap-2 text-sm text-slate-600 dark:text-gray-300">
-                    <span className="rounded-full bg-slate-100 px-3 py-1.5 font-medium dark:bg-gray-800">
-                      #{user.studentId || 'Student ID'}
-                    </span>
-                    <span className="rounded-full bg-slate-100 px-3 py-1.5 font-medium dark:bg-gray-800">
-                      Semester {user.semester || '-'}
-                    </span>
-                    <span className="rounded-full bg-slate-100 px-3 py-1.5 font-medium dark:bg-gray-800">
-                      {stats?.mostUsedLanguage ? `${stats.mostUsedLanguage} primary` : 'No primary language yet'}
-                    </span>
-                  </div>
+                  <span className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                    {codingLevel}
+                  </span>
                 </div>
-              </div>
 
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                <InfoTile icon={<Mail className="h-5 w-5" />} label="Email" value={user.email} />
-                <InfoTile icon={<BookOpen className="h-5 w-5" />} label="Course" value={user.course} />
-                <InfoTile icon={<GitBranch className="h-5 w-5" />} label="Branch" value={user.branch} />
-                <InfoTile icon={<MapPin className="h-5 w-5" />} label="College" value={user.college} />
-                <InfoTile icon={<UserCheck className="h-5 w-5" />} label="Coordinator" value={user.teacherId || 'Not assigned'} />
-                <InfoTile icon={<Hash className="h-5 w-5" />} label="Semester" value={user.semester ? `Semester ${user.semester}` : 'Not provided'} />
+                <div className="mt-4">
+                  <h1 className="text-xl font-bold text-slate-950">{user.name || 'Student'}</h1>
+                  <p className="mt-1 text-sm font-medium text-slate-500">{handle}</p>
+                  <p className="mt-3 text-sm leading-6 text-slate-600">{shortBio}</p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={openEditModal}
+                  className="mt-5 inline-flex w-full items-center justify-center rounded-2xl bg-sky-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-sky-500"
+                >
+                  Edit Profile
+                </button>
+
+                <div className="mt-5 flex items-center gap-2">
+                  {socialLinks.map((item) => (
+                    <SocialButton key={item.label} {...item} />
+                  ))}
+                </div>
+
+                <div className="mt-5 grid gap-3">
+                  <MiniProfileRow icon={<GraduationCap className="h-4 w-4" />} label="College" value={user.college} />
+                  <MiniProfileRow icon={<BookOpen className="h-4 w-4" />} label="Course" value={user.course} />
+                  <MiniProfileRow icon={<GitBranch className="h-4 w-4" />} label="Branch" value={user.branch} />
+                  <MiniProfileRow icon={<UserRound className="h-4 w-4" />} label="Student ID" value={user.studentId} />
+                  <MiniProfileRow icon={<MapPin className="h-4 w-4" />} label="Semester" value={user.semester ? `Semester ${user.semester}` : ''} />
+                  <MiniProfileRow icon={<Mail className="h-4 w-4" />} label="Email" value={user.email} />
+                </div>
               </div>
             </div>
+          </aside>
 
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-              {heroMetrics.map((item) => (
-                <HeroMetricCard key={item.label} {...item} />
+          <main className="space-y-6">
+            <section className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
+              <Panel
+                title="Coding Progress"
+                subtitle="A compact PeerPrep coding snapshot with live solved totals and difficulty breakdown."
+              >
+                <LeetCodeProgressCard {...codingTotals} />
+              </Panel>
+
+              <Panel
+                title="PeerPrep Progress"
+                subtitle="Real product activity across assessments, interviews, learning, and platform consistency."
+              >
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <ProfessionalTrackCard
+                    label="Assessment Reports"
+                    value={analysisOverview?.avgScore ? `${Math.round(analysisAssessments?.avgScore || 0)}%` : (analysisAssessments?.attempts || 0)}
+                    helper={analysisAssessments?.attempts ? `${analysisAssessments.attempts} submitted attempts` : 'No assessment activity yet'}
+                    icon={<ClipboardList className="h-4 w-4" />}
+                    tone="amber"
+                  />
+                  <ProfessionalTrackCard
+                    label="Interview Feedback"
+                    value={Math.round(analysisInterviews?.avgScore || 0)}
+                    helper={analysisInterviews?.total ? `${analysisInterviews.total} completed sessions` : 'No interview feedback yet'}
+                    icon={<MessageSquare className="h-4 w-4" />}
+                    tone="sky"
+                  />
+                  <ProfessionalTrackCard
+                    label="Learning Modules"
+                    value={`${Math.round(analysisLearning?.completionPercent || 0)}%`}
+                    helper={`${analysisLearning?.completedTopics || 0} topics completed`}
+                    icon={<BookOpen className="h-4 w-4" />}
+                    tone="emerald"
+                  />
+                  <ProfessionalTrackCard
+                    label="Active Momentum"
+                    value={`${activityStats?.currentStreak || 0}d`}
+                    helper={`${activityStats?.totalActiveDays || 0} tracked active days`}
+                    icon={<Flame className="h-4 w-4" />}
+                    tone="rose"
+                  />
+                </div>
+              </Panel>
+            </section>
+
+            <Panel
+              title="Activity Heatmap"
+              subtitle="Year-round coding rhythm inspired by competitive coding dashboards, tuned to the PeerPrep product style."
+            >
+              {loadingActivity ? (
+                <div className="py-12 text-center">
+                  <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-slate-900 border-t-transparent" />
+                  <p className="mt-4 text-sm text-slate-500">Loading activity...</p>
+                </div>
+              ) : (
+                <ContributionCalendar
+                  title=""
+                  activity={activity}
+                  tooltipFormatter={({ value, formattedDate }) => `${value} tracked activities on ${formattedDate}`}
+                  legendLabels={{
+                    none: 'No submissions',
+                    low: '1-2 submissions',
+                    medium: '3-4 submissions',
+                    high: '5-7 submissions',
+                    highest: '8+ submissions',
+                  }}
+                />
+              )}
+            </Panel>
+
+            <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {insightCards.map((item) => (
+                <InsightCard key={item.label} {...item} />
               ))}
-            </div>
-          </div>
-        </section>
+            </section>
 
-        <PillNav />
-
-        <div id="overview" className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {overviewMetrics.map((item) => (
-            <MetricCard key={item.label} {...item} />
-          ))}
-        </div>
-
-        <div id="activity" className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_380px]">
-          <SectionPanel title="Practice Calendar" subtitle="Your year-round activity pattern across learning and compiler work.">
-            {loadingActivity ? (
-              <div className="py-12 text-center">
-                <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-sky-600 border-t-transparent" />
-                <p className="mt-4 text-sm text-slate-500 dark:text-gray-400">Loading activity...</p>
-              </div>
-            ) : (
-              <ContributionCalendar
-                activity={activity}
-                title="Practice Calendar"
-                tooltipFormatter={({ value, formattedDate }) => `${value} tracked activities on ${formattedDate}`}
-              />
-            )}
-          </SectionPanel>
-
-          <SectionPanel title="Activity Signals" subtitle="Consistency, momentum, and routine quality across your PeerPrep journey.">
-            <div className="space-y-5">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-gray-700 dark:bg-gray-800/70">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Current Streak</p>
-                  <div className="mt-2 text-3xl font-bold text-slate-900 dark:text-white">
-                    <AnimatedMetric value={activityStats?.currentStreak || 0} suffix="d" />
-                  </div>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Days in a row</p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-gray-700 dark:bg-gray-800/70">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Best Streak</p>
-                  <div className="mt-2 text-3xl font-bold text-slate-900 dark:text-white">
-                    <AnimatedMetric value={activityStats?.bestStreak || 0} suffix="d" />
-                  </div>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Best run recorded</p>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <ProgressTrack
-                  label="Solved by attempted questions"
-                  value={stats?.questionSuccessRate || 0}
-                  max={100}
-                  suffix="%"
-                  tone="bg-gradient-to-r from-emerald-500 to-lime-400"
-                />
-                <ProgressTrack
-                  label="Active days this year"
-                  value={activityStats?.totalActiveDays || 0}
-                  max={activityStats?.totalDaysInRange || 365}
-                  tone="bg-gradient-to-r from-sky-500 to-cyan-400"
-                />
-                <ProgressTrack
-                  label="Video completion progress"
-                  value={stats?.totalVideosWatched || 0}
-                  max={videoTotal}
-                  tone="bg-gradient-to-r from-pink-500 to-rose-400"
-                />
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-gray-700 dark:bg-gray-800/70">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Most Used Language</p>
-                <p className="mt-2 text-xl font-bold capitalize text-slate-900 dark:text-white">{stats?.mostUsedLanguage || 'N/A'}</p>
-                <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Based on your coding submissions.</p>
-              </div>
-            </div>
-          </SectionPanel>
-        </div>
-
-        <div id="performance" className="grid gap-6 xl:grid-cols-3">
-          <SectionPanel title="Solved by Difficulty" subtitle="How your accepted problems are distributed.">
-            <div className="space-y-4">
-              <ProgressTrack label="Easy" value={stats?.solvedByDifficulty?.easy || 0} max={solvedMax} tone="bg-emerald-500" />
-              <ProgressTrack label="Medium" value={stats?.solvedByDifficulty?.medium || 0} max={solvedMax} tone="bg-amber-500" />
-              <ProgressTrack label="Hard" value={stats?.solvedByDifficulty?.hard || 0} max={solvedMax} tone="bg-rose-500" />
-            </div>
-          </SectionPanel>
-
-          <SectionPanel title="Verdict Overview" subtitle="Submission quality across your coding activity.">
-            <div className="space-y-3">
-              {[
-                { label: 'Accepted', key: 'AC' },
-                { label: 'Wrong Answer', key: 'WA' },
-                { label: 'Time Limit Exceeded', key: 'TLE' },
-                { label: 'Runtime / Compile', key: 'RE' },
-              ].map((item) => {
-                const value = item.key === 'RE'
-                  ? (stats?.statusBreakdown?.RE || 0) + (stats?.statusBreakdown?.CE || 0)
-                  : (stats?.statusBreakdown?.[item.key] || 0);
-
-                return (
-                  <div key={item.label} className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/70">
-                    <span className="text-sm text-slate-700 dark:text-gray-200">{item.label}</span>
-                    <span className="text-lg font-semibold text-slate-900 dark:text-white">
-                      <AnimatedMetric value={value} />
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </SectionPanel>
-
-          <SectionPanel title="Languages Used" subtitle="Your coding stack inside the compiler.">
-            {(stats?.languagesUsed || []).length === 0 ? (
-              <EmptyState message="No compiler activity yet." />
-            ) : (
-              <div className="space-y-3">
-                {stats.languagesUsed.slice(0, 5).map((item) => (
-                  <div key={item.language} className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/70">
-                    <span className="text-sm capitalize text-slate-700 dark:text-gray-200">{item.language}</span>
-                    <span className="text-lg font-semibold text-slate-900 dark:text-white">
-                      <AnimatedMetric value={item.count} />
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </SectionPanel>
-        </div>
-
-        <div id="recent" className="grid gap-6 xl:grid-cols-2">
-          <SectionPanel title="Recent Solved Questions" subtitle="Your latest accepted coding wins.">
-            {(stats?.recentSolvedProblems || []).length === 0 ? (
-              <EmptyState message="Solve a problem to start building your accepted history." />
-            ) : (
-              <div className="space-y-3">
-                {stats.recentSolvedProblems.map((problem, index) => (
-                  <div key={`${problem.title}-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/70">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-800 dark:text-white">{problem.title}</p>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Solved on {formatDateTime(problem.acceptedAt)}</p>
+            <section className="grid gap-6 xl:grid-cols-2">
+              <Panel title="Recent Solved Questions" subtitle="Latest accepted milestones.">
+                {(stats?.recentSolvedProblems || []).length === 0 ? (
+                  <EmptyState message="Solve a problem to start building your accepted history." />
+                ) : (
+                  <div className="space-y-3">
+                    {stats.recentSolvedProblems.map((problem, index) => (
+                      <div key={`${problem.title}-${index}`} className="rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-3 transition-colors hover:bg-white">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-slate-900">{problem.title}</p>
+                            <p className="mt-1 text-xs text-slate-500">Solved on {formatDateTime(problem.acceptedAt)}</p>
+                          </div>
+                          <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${difficultyClasses(problem.difficulty)}`}>
+                            {problem.difficulty}
+                          </span>
+                        </div>
                       </div>
-                      <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${difficultyClasses(problem.difficulty)}`}>
-                        {problem.difficulty}
-                      </span>
-                    </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
-          </SectionPanel>
+                )}
+              </Panel>
 
-          <SectionPanel title="Recent Submissions" subtitle="Latest coding attempts with verdict and runtime.">
-            {(stats?.recentSubmissions || []).length === 0 ? (
-              <EmptyState message="Your recent submissions will appear here once you start solving problems." />
-            ) : (
-              <div className="space-y-3">
-                {stats.recentSubmissions.map((submission, index) => (
-                  <div key={`${submission.problemTitle}-${submission.createdAt}-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/70">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-slate-800 dark:text-white">{submission.problemTitle}</p>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">
-                          {submission.language} | {formatDuration(submission.executionTimeMs)} | {formatDateTime(submission.createdAt)}
-                        </p>
+              <Panel title="Recent Submissions" subtitle="Latest coding attempts with verdict and runtime.">
+                {(stats?.recentSubmissions || []).length === 0 ? (
+                  <EmptyState message="Your recent submissions will appear here once you start solving problems." />
+                ) : (
+                  <div className="space-y-3">
+                    {stats.recentSubmissions.map((submission, index) => (
+                      <div key={`${submission.problemTitle}-${submission.createdAt}-${index}`} className="rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-3 transition-colors hover:bg-white">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-slate-900">{submission.problemTitle}</p>
+                            <p className="mt-1 text-xs text-slate-500">
+                              {submission.language} | {formatDuration(submission.executionTimeMs)} | {formatDateTime(submission.createdAt)}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${difficultyClasses(submission.difficulty)}`}>
+                              {submission.difficulty}
+                            </span>
+                            <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusClasses(submission.status)}`}>
+                              {submission.status}
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${difficultyClasses(submission.difficulty)}`}>
-                          {submission.difficulty}
-                        </span>
-                        <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusClasses(submission.status)}`}>
-                          {submission.status}
-                        </span>
-                      </div>
-                    </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
-          </SectionPanel>
+                )}
+              </Panel>
+            </section>
+          </main>
         </div>
       </motion.div>
 
       <AnimatePresence>
+        {showEditModal && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={closeEditModal}
+              className="fixed inset-0 z-50 bg-slate-950/55 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 18 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 18 }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            >
+              <div className="w-full max-w-3xl overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl">
+                <div className="flex items-center justify-between bg-[linear-gradient(135deg,#0f172a_0%,#12323d_42%,#0f766e_100%)] px-6 py-4 text-white">
+                  <div>
+                    <h2 className="text-lg font-semibold">Edit Student Profile</h2>
+                    <p className="mt-1 text-sm text-white/75">Keep your PeerPrep identity, bio, and social links updated across student and admin views.</p>
+                  </div>
+                  <button type="button" onClick={closeEditModal} className="rounded-xl p-2 hover:bg-white/15">
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                <div className="space-y-5 bg-slate-50/70 p-6">
+                  {error ? (
+                    <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                      {error}
+                    </div>
+                  ) : null}
+                  {success ? (
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                      {success}
+                    </div>
+                  ) : null}
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <ProfileField
+                      label="Username"
+                      value={profileForm.username}
+                      onChange={(e) => setProfileForm((prev) => ({ ...prev, username: e.target.value }))}
+                      placeholder="your-handle"
+                    />
+                    <ProfileField label="Full Name" value={profileForm.name} placeholder="Your full name" disabled />
+                    <ProfileField label="College" value={profileForm.college} placeholder="Your college or university" disabled />
+                    <ProfileField label="Course" value={profileForm.course} placeholder="B.Tech, MCA, etc." disabled />
+                    <ProfileField label="Branch" value={profileForm.branch} placeholder="CSE, IT, AIML..." disabled />
+                  </div>
+
+                  <ProfileField
+                    label="Bio"
+                    multiline
+                    value={profileForm.bio}
+                    onChange={(e) => setProfileForm((prev) => ({ ...prev, bio: e.target.value }))}
+                    placeholder="Short professional summary, coding focus, or career goal"
+                  />
+
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <ProfileField label="LinkedIn URL" type="url" value={profileForm.linkedinUrl} onChange={(e) => setProfileForm((prev) => ({ ...prev, linkedinUrl: e.target.value }))} placeholder="https://linkedin.com/in/..." />
+                    <ProfileField label="GitHub URL" type="url" value={profileForm.githubUrl} onChange={(e) => setProfileForm((prev) => ({ ...prev, githubUrl: e.target.value }))} placeholder="https://github.com/..." />
+                    <ProfileField label="Portfolio URL" type="url" value={profileForm.portfolioUrl} onChange={(e) => setProfileForm((prev) => ({ ...prev, portfolioUrl: e.target.value }))} placeholder="https://yourportfolio.com" />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-3 border-t border-slate-200 bg-white px-6 py-4">
+                  <button type="button" onClick={closeEditModal} className="rounded-full border border-slate-300 px-5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleUpdateProfile}
+                    disabled={savingProfile}
+                    className="rounded-full bg-sky-600 px-5 py-2 text-sm font-semibold text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {savingProfile ? 'Saving...' : 'Save Profile'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+
         {showPhotoModal && (
           <>
             <motion.div
@@ -783,8 +1235,8 @@ export default function StudentProfile() {
               exit={{ opacity: 0, scale: 0.96, y: 18 }}
               className="fixed inset-0 z-50 flex items-center justify-center p-4"
             >
-              <div className="w-full max-w-md overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900">
-                <div className="flex items-center justify-between bg-gradient-to-r from-sky-600 via-blue-600 to-indigo-600 px-6 py-4 text-white">
+              <div className="w-full max-w-md overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl">
+                <div className="flex items-center justify-between bg-[linear-gradient(135deg,#0f172a_0%,#334155_100%)] px-6 py-4 text-white">
                   <h2 className="text-lg font-semibold">Update Profile Photo</h2>
                   <button type="button" onClick={closePhotoModal} className="rounded-xl p-2 hover:bg-white/15">
                     <X className="h-5 w-5" />
@@ -793,23 +1245,23 @@ export default function StudentProfile() {
 
                 <div className="space-y-4 p-6">
                   {error ? (
-                    <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300">
+                    <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
                       {error}
                     </div>
                   ) : null}
                   {success ? (
-                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300">
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
                       {success}
                     </div>
                   ) : null}
 
                   <div className="flex flex-col items-center text-center">
                     {avatarPreview ? (
-                      <img src={avatarPreview} alt="Preview" className="h-32 w-32 rounded-full border-4 border-sky-500 object-cover shadow-lg" />
+                      <img src={avatarPreview} alt="Preview" className="h-32 w-32 rounded-full border-4 border-slate-200 object-cover shadow-lg" />
                     ) : user.avatarUrl ? (
-                      <img src={user.avatarUrl} alt={user.name} className="h-32 w-32 rounded-full border-4 border-slate-200 object-cover shadow-lg dark:border-gray-700" />
+                      <img src={user.avatarUrl} alt={user.name} className="h-32 w-32 rounded-full border-4 border-slate-200 object-cover shadow-lg" />
                     ) : (
-                      <div className="flex h-32 w-32 items-center justify-center rounded-full border-4 border-slate-200 bg-gradient-to-br from-sky-500 to-indigo-600 text-4xl font-bold text-white shadow-lg dark:border-gray-700">
+                      <div className="flex h-32 w-32 items-center justify-center rounded-full border-4 border-slate-200 bg-[linear-gradient(135deg,#0f172a_0%,#334155_100%)] text-4xl font-bold text-white shadow-lg">
                         {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
                       </div>
                     )}
@@ -819,14 +1271,14 @@ export default function StudentProfile() {
                       Choose Photo
                       <input type="file" accept="image/*" onChange={onAvatarChange} className="hidden" />
                     </label>
-                    <p className="mt-3 text-sm text-slate-600 dark:text-gray-300">
+                    <p className="mt-3 text-sm text-slate-600">
                       {avatarFile ? avatarFile.name : 'Square image recommended, at least 256 x 256 px.'}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4 dark:border-gray-700 dark:bg-gray-800/60">
-                  <button type="button" onClick={closePhotoModal} className="rounded-full border border-slate-300 px-5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
+                <div className="flex items-center justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+                  <button type="button" onClick={closePhotoModal} className="rounded-full border border-slate-300 px-5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
                     Cancel
                   </button>
                   <button

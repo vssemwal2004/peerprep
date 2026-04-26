@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 
 const userSchema = new mongoose.Schema({
   role: { type: String, enum: ['admin', 'student', 'coordinator'], default: 'student' },
+  username: { type: String, unique: true, sparse: true, trim: true, maxlength: 32 },
   name: String,
   email: { type: String, unique: true, sparse: true },
   studentId: { type: String, unique: true, sparse: true },
@@ -38,6 +39,10 @@ const userSchema = new mongoose.Schema({
   // Additional fields
   avatarUrl: String,
   department: String, // For coordinators
+  bio: { type: String, trim: true, maxlength: 280 },
+  linkedinUrl: { type: String, trim: true },
+  githubUrl: { type: String, trim: true },
+  portfolioUrl: { type: String, trim: true },
 }, { timestamps: true });
 
 userSchema.methods.verifyPassword = async function (pw) {
