@@ -1,7 +1,8 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   ChevronLeft,
+  ChevronRight,
   ChevronDown,
   Play,
   Send,
@@ -9,6 +10,7 @@ import {
   Tag,
   Building2,
   PanelLeftOpen,
+  PanelRightOpen,
 } from 'lucide-react';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
@@ -23,6 +25,8 @@ import {
 import { RichTextPreview } from '../admin/compiler/CompilerContentPreview';
 import {
   buildProblemDrafts,
+  getCodeValidationMessage,
+  getStarterCodeForLanguage,
   loadProblemDrafts,
   saveProblemDrafts,
   studentStatusBadgeClass,
@@ -47,7 +51,7 @@ function LeftPanelTabs({
     : (verdictTone === 'danger' ? 'text-rose-600 dark:text-rose-300' : 'text-slate-500 dark:text-gray-400');
 
   return (
-    <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 pt-2 dark:border-gray-700 dark:bg-gray-900">
+    <div className="sticky top-0 z-20 flex flex-none items-center justify-between gap-3 border-b border-slate-200/70 bg-white/92 px-5 pt-3 backdrop-blur-sm dark:border-gray-800 dark:bg-gray-900/92">
       <div className="flex items-center gap-4">
         <button
           type="button"
@@ -188,7 +192,7 @@ function Histogram({ values, highlightValue, formatLabel, markerLabel = 'You' })
   const [hover, setHover] = useState(null);
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-gray-700 dark:bg-gray-900">
+    <div className="rounded-[26px] bg-white/78 px-4 py-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:bg-gray-900/80">
       <div className="relative">
         <div className="absolute inset-0 pointer-events-none">
           {[yMax, yMax / 2].map((tick) => {
@@ -247,7 +251,7 @@ function Histogram({ values, highlightValue, formatLabel, markerLabel = 'You' })
             style={{ left: `calc(${hover.x}px + 2.25rem)` }}
           >
             <div className="relative -translate-x-1/2">
-              <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+              <div className="rounded-xl bg-white px-3 py-2 text-xs text-slate-700 shadow-[0_10px_28px_rgba(15,23,42,0.12)] dark:bg-gray-900 dark:text-gray-200">
                 {`${hover.percent.toFixed(2)}% of solutions used ${Math.round(hover.value)} ms of runtime`}
               </div>
             </div>
@@ -342,9 +346,9 @@ function ProblemDescriptionPanel({ problem }) {
             {(problem.sampleTestCases || []).map((testCase, index) => (
               <div
                 key={index}
-                className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900"
+                className="overflow-hidden rounded-[24px] bg-white/80 shadow-[0_10px_30px_rgba(15,23,42,0.04)] dark:bg-gray-900/85"
               >
-                <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
+                <div className="flex items-center justify-between gap-3 bg-slate-50/85 px-4 py-3 dark:bg-gray-800/85">
                   <div className="text-sm font-semibold text-slate-900 dark:text-gray-100">Example {index + 1}</div>
                 </div>
 
@@ -376,7 +380,7 @@ function ProblemDescriptionPanel({ problem }) {
         )}
 
         {(topics.length > 0 || companies.length > 0) && (
-          <section className="divide-y divide-slate-200 rounded-xl border border-slate-200 dark:divide-gray-700 dark:border-gray-700">
+          <section className="divide-y divide-slate-200/70 rounded-[22px] bg-slate-50/80 dark:divide-gray-700 dark:bg-gray-800/70">
             {topics.length > 0 && (
               <div>
                 <button
@@ -498,11 +502,11 @@ function SubmissionDetail({ submission }) {
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
+        <div className="rounded-[24px] bg-slate-50/85 p-4 dark:bg-gray-800/85">
           <div className="text-xs font-semibold text-slate-500 dark:text-gray-400">Runtime</div>
           <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-gray-100">{formatDuration(submission.executionTimeMs || 0)}</div>
         </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
+        <div className="rounded-[24px] bg-slate-50/85 p-4 dark:bg-gray-800/85">
           <div className="text-xs font-semibold text-slate-500 dark:text-gray-400">Memory</div>
           <div className="mt-2 text-2xl font-bold text-slate-900 dark:text-gray-100">
             {submission.memoryUsedKb ? `${(submission.memoryUsedKb / 1024).toFixed(2)} MB` : '—'}
@@ -513,7 +517,7 @@ function SubmissionDetail({ submission }) {
       {testCaseBars.length > 0 && (
         <div className="space-y-2">
           <div className="text-xs font-semibold text-slate-500 dark:text-gray-400">Runtime Distribution</div>
-          <div className="flex h-16 items-end gap-0.5 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800">
+          <div className="flex h-16 items-end gap-0.5 overflow-hidden rounded-[24px] bg-slate-50/85 px-3 py-2 dark:bg-gray-800/85">
             {testCaseBars.slice(0, 120).map((entry) => {
               const h = maxCaseTime > 0
                 ? Math.max(10, Math.round((Number(entry.executionTimeMs || 0) / maxCaseTime) * 100))
@@ -564,7 +568,7 @@ function SubmissionList({ loading, submissions, selectedId, onSelect, onOpenDeta
 
   return (
     <div className="px-5 py-5">
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+      <div className="overflow-hidden rounded-[26px] bg-white/82 shadow-[0_10px_30px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:bg-gray-900/82">
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <colgroup>
@@ -622,7 +626,7 @@ function SubmissionList({ loading, submissions, selectedId, onSelect, onOpenDeta
                     </td>
 
                     <td className="px-4 py-3">
-                      <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+                      <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-[0_4px_14px_rgba(15,23,42,0.04)] dark:bg-gray-900 dark:text-gray-200">
                         {getLanguageLabel(submission.language)}
                       </span>
                     </td>
@@ -785,7 +789,7 @@ function AcceptancePanel({ submissions, selectedId, onBack }) {
       </div>
 
       {isAccepted && (
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+        <div className="overflow-hidden rounded-[26px] bg-white/82 shadow-[0_10px_30px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:bg-gray-900/82">
           <div className="grid gap-0 md:grid-cols-2">
             <div className="space-y-1 bg-slate-50 px-5 py-5 dark:bg-gray-800">
               <div className="text-sm font-semibold text-slate-700 dark:text-gray-200">Runtime</div>
@@ -824,14 +828,14 @@ function AcceptancePanel({ submissions, selectedId, onBack }) {
       )}
 
       {isCompileError && (compileText || stderrText) && (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-800 shadow-sm dark:border-rose-800 dark:bg-rose-900/10 dark:text-rose-200">
+        <div className="rounded-[24px] bg-rose-50 px-5 py-4 text-sm text-rose-800 shadow-[0_12px_24px_rgba(244,63,94,0.06)] dark:bg-rose-900/10 dark:text-rose-200">
           <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">{compileText || stderrText}</pre>
         </div>
       )}
 
       {isWrongAnswer && (
         <div className="space-y-4">
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-800 shadow-sm dark:border-rose-800 dark:bg-rose-900/10 dark:text-rose-200">
+          <div className="rounded-[24px] bg-rose-50 px-5 py-4 text-sm text-rose-800 shadow-[0_12px_24px_rgba(244,63,94,0.06)] dark:bg-rose-900/10 dark:text-rose-200">
             One of the judge test cases did not match the expected output.
           </div>
 
@@ -852,7 +856,7 @@ function AcceptancePanel({ submissions, selectedId, onBack }) {
             <span className="text-slate-300 dark:text-gray-600">|</span>
             <span className="text-slate-600 dark:text-gray-300">{getLanguageLabel(selected.language)}</span>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+          <div className="rounded-[24px] bg-white/82 px-4 py-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)] dark:bg-gray-900/82">
             <CodeWithLineNumbers code={codeText} />
           </div>
         </div>
@@ -863,6 +867,7 @@ function AcceptancePanel({ submissions, selectedId, onBack }) {
 
 export default function ProblemSolver() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const toast = useToast();
   const splitContainerRef = useRef(null);
   const dragFrameRef = useRef(null);
@@ -874,9 +879,11 @@ export default function ProblemSolver() {
   const [activeLeftTab, setActiveLeftTab] = useState('description');
   const [activeConsoleTab, setActiveConsoleTab] = useState('testcase');
   const [mobileView, setMobileView] = useState('description');
+  const [problemListOpen, setProblemListOpen] = useState(false);
   const [leftWidth, setLeftWidth] = useState(null);
   const [language, setLanguage] = useState('python');
   const [drafts, setDrafts] = useState({});
+  const [problemList, setProblemList] = useState([]);
   const [testCases, setTestCases] = useState([]);
   const [activeTestCaseId, setActiveTestCaseId] = useState(null);
   const [lastRunInput, setLastRunInput] = useState('');
@@ -1001,7 +1008,7 @@ export default function ProblemSolver() {
 
   const clampLeftWidth = useCallback((nextWidth) => {
     const minLeft = 320;
-    const minRight = 420;
+    const minRight = 520;
     const splitterWidth = 12;
     const container = splitContainerRef.current;
     if (!container) {
@@ -1020,7 +1027,7 @@ export default function ProblemSolver() {
 
     const ensureWidthInBounds = () => {
       const rect = container.getBoundingClientRect();
-      const defaultWidth = rect.width > 0 ? rect.width * 0.46 : 520;
+      const defaultWidth = rect.width > 0 ? rect.width * 0.4 : 500;
       setLeftWidth((previous) => clampLeftWidth(previous ?? defaultWidth));
     };
 
@@ -1081,6 +1088,33 @@ export default function ProblemSolver() {
   }, [id, toast]);
 
   useEffect(() => {
+    let isMounted = true;
+
+    const loadProblemList = async () => {
+      try {
+        const response = await api.listStudentProblems({
+          sortBy: 'updatedAt',
+          sortOrder: 'desc',
+          page: 1,
+          limit: 200,
+        });
+        if (isMounted) {
+          setProblemList(response.problems || []);
+        }
+      } catch {
+        if (isMounted) {
+          setProblemList([]);
+        }
+      }
+    };
+
+    loadProblemList();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
     if (problem?._id) {
       saveProblemDrafts(problem._id, drafts);
     }
@@ -1137,6 +1171,22 @@ export default function ProblemSolver() {
     return 'neutral';
   })();
 
+  const currentProblemIndex = useMemo(() => (
+    problemList.findIndex((entry) => String(entry._id) === String(id))
+  ), [id, problemList]);
+
+  const previousProblem = currentProblemIndex > 0 ? problemList[currentProblemIndex - 1] : null;
+  const nextProblem = currentProblemIndex >= 0 ? problemList[currentProblemIndex + 1] : null;
+
+  const openProblemById = useCallback((problemId) => {
+    if (!problemId || String(problemId) === String(id)) {
+      setProblemListOpen(false);
+      return;
+    }
+    setProblemListOpen(false);
+    navigate(`/problems/${problemId}`);
+  }, [id, navigate]);
+
   const updateDraft = (nextCode) => {
     setDrafts((previous) => ({
       ...previous,
@@ -1187,6 +1237,16 @@ export default function ProblemSolver() {
       return;
     }
 
+    const validationMessage = getCodeValidationMessage(
+      activeCode,
+      getStarterCodeForLanguage(problem, language),
+      'run',
+    );
+    if (validationMessage) {
+      toast.error(validationMessage);
+      return;
+    }
+
     const selectedCase = activeTestCase;
     const runInput = selectedCase?.input ?? '';
 
@@ -1200,6 +1260,9 @@ export default function ProblemSolver() {
         language,
         sourceCode: activeCode,
         customInput: runInput,
+        ...(selectedCase?.expectedOutput !== null && selectedCase?.expectedOutput !== undefined
+          ? { expectedOutput: selectedCase.expectedOutput }
+          : {}),
       });
 
       let completedRun = queuedJob;
@@ -1215,15 +1278,15 @@ export default function ProblemSolver() {
       const matchedSubmission = queuedJob?.jobId
         ? nextSubmissions.find((submission) => String(submission.jobId || '') === String(queuedJob.jobId))
         : null;
+      const responsePayload = completedRun?.result?.response || completedRun;
 
       if (matchedSubmission) {
-        setResult(matchedSubmission);
-        setSelectedSubmissionId(matchedSubmission._id);
-        toast.success(`Run finished with status ${statusLabel(matchedSubmission.status)}`);
-      } else {
-        const responsePayload = completedRun?.result?.response || completedRun;
         setResult(responsePayload);
-        toast.success(`Run finished with status ${responsePayload?.status?.description || 'Completed'}`);
+        setSelectedSubmissionId(matchedSubmission._id);
+        toast.success(`Run finished with status ${responsePayload?.status || statusLabel(matchedSubmission.status)}`);
+      } else {
+        setResult(responsePayload);
+        toast.success(`Run finished with status ${responsePayload?.status || 'Completed'}`);
       }
 
       if (selectedCase?.kind === 'custom' && problem.hasReferenceSolution) {
@@ -1250,6 +1313,16 @@ export default function ProblemSolver() {
 
   const handleSubmit = () => {
     if (!problem) {
+      return;
+    }
+
+    const validationMessage = getCodeValidationMessage(
+      activeCode,
+      getStarterCodeForLanguage(problem, language),
+      'submit',
+    );
+    if (validationMessage) {
+      toast.error(validationMessage);
       return;
     }
 
@@ -1371,24 +1444,53 @@ export default function ProblemSolver() {
   }
 
   return (
-    <div className="h-screen overflow-hidden">
+    <div className="h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.10),_transparent_34%),linear-gradient(180deg,_#f8fbff_0%,_#eff6ff_45%,_#f8fafc_100%)] dark:bg-[linear-gradient(180deg,_#0f172a_0%,_#111827_100%)]">
       <div className="flex h-full min-h-0 flex-col">
-        <header className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2 dark:border-gray-700 dark:bg-gray-900">
+        <header className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-3 bg-white/86 px-4 py-3 shadow-[0_8px_22px_rgba(15,23,42,0.035)] backdrop-blur-xl dark:bg-gray-900/88">
           <div className="flex items-center gap-2">
-            <Link
-              to="/problems"
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+            <button
+              type="button"
+              onClick={() => navigate(-1)}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white/90 text-slate-800 shadow-[0_8px_18px_rgba(15,23,42,0.035)] transition-colors hover:bg-white dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+              aria-label="Go back"
             >
               <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setProblemListOpen((previous) => !previous)}
+              className="inline-flex items-center gap-2 rounded-xl bg-white/90 px-3 py-1.5 text-sm font-semibold text-slate-800 shadow-[0_8px_18px_rgba(15,23,42,0.035)] transition-colors hover:bg-white dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+            >
+              {problemListOpen ? <PanelRightOpen className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
               Problem List
-            </Link>
+            </button>
+            <div className="hidden items-center gap-1 rounded-xl bg-white/90 p-1 shadow-[0_8px_18px_rgba(15,23,42,0.035)] dark:bg-gray-900 lg:inline-flex">
+              <button
+                type="button"
+                onClick={() => previousProblem && openProblemById(previousProblem._id)}
+                disabled={!previousProblem}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-35 dark:text-gray-200 dark:hover:bg-gray-800"
+                aria-label="Previous problem"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => nextProblem && openProblemById(nextProblem._id)}
+                disabled={!nextProblem}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-35 dark:text-gray-200 dark:hover:bg-gray-800"
+                aria-label="Next problem"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
             <select
               value={language}
               onChange={(event) => setLanguage(event.target.value)}
-              className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"
+              className="rounded-xl bg-white/85 px-2.5 py-1.5 text-xs font-semibold text-slate-700 outline-none shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-colors focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-400 dark:bg-gray-800 dark:text-gray-200 dark:focus:ring-sky-500"
             >
               {(problem.supportedLanguages || []).map((supportedLanguage) => (
                 <option key={supportedLanguage} value={supportedLanguage}>
@@ -1419,13 +1521,13 @@ export default function ProblemSolver() {
               type="button"
               onClick={resetCode}
               disabled={isRunning || isSubmitting}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+              className="inline-flex items-center gap-2 rounded-xl bg-white/90 px-3 py-2 text-xs font-semibold text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.03)] transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
             >
               <RotateCcw className="h-3.5 w-3.5" />
               Reset
             </button>
 
-            <div className="flex items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1 shadow-sm dark:border-gray-700 dark:bg-gray-900 lg:hidden">
+            <div className="flex items-center gap-1 rounded-2xl bg-white/90 p-1 shadow-[0_8px_20px_rgba(15,23,42,0.04)] dark:bg-gray-900 lg:hidden">
               <button
                 type="button"
                 onClick={() => setMobileView('description')}
@@ -1444,13 +1546,81 @@ export default function ProblemSolver() {
           </div>
         </header>
 
-        <div
-          ref={splitContainerRef}
-          className="hidden min-h-0 flex-1 overflow-hidden border-b border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900 lg:flex"
-        >
+        <div className="relative hidden min-h-0 flex-1 overflow-hidden px-3 pb-3 pt-2 lg:flex">
+          {problemListOpen && (
+            <>
+              <button
+                type="button"
+                onClick={() => setProblemListOpen(false)}
+                className="absolute inset-0 z-30 cursor-default bg-transparent"
+                aria-label="Close problem list"
+              />
+              <aside className="absolute inset-y-0 left-0 z-40 flex w-[35vw] min-w-[340px] max-w-[460px] flex-col overflow-hidden rounded-r-[30px] bg-white shadow-[0_16px_40px_rgba(15,23,42,0.12)] dark:bg-gray-900">
+              <div className="border-b border-slate-200/70 px-5 py-4 dark:border-gray-800">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-gray-100">Problem Navigator</p>
+                    <p className="text-xs text-slate-500 dark:text-gray-400">{problemList.length} questions</p>
+                  </div>
+                  <div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1 dark:bg-gray-800">
+                    <button
+                      type="button"
+                      onClick={() => previousProblem && openProblemById(previousProblem._id)}
+                      disabled={!previousProblem}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-700 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-35 dark:text-gray-200 dark:hover:bg-gray-700"
+                      aria-label="Previous question"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => nextProblem && openProblemById(nextProblem._id)}
+                      disabled={!nextProblem}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-700 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-35 dark:text-gray-200 dark:hover:bg-gray-700"
+                      aria-label="Next question"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+                <div className="space-y-2">
+                  {problemList.map((entry, index) => {
+                    const active = String(entry._id) === String(id);
+                    return (
+                      <button
+                        key={entry._id}
+                        type="button"
+                        onClick={() => openProblemById(entry._id)}
+                        className={`flex w-full items-start justify-between gap-3 rounded-2xl px-4 py-3 text-left transition-colors ${active ? 'bg-sky-50 text-sky-900 ring-1 ring-sky-200 dark:bg-sky-900/20 dark:text-sky-100 dark:ring-sky-800' : 'bg-white/78 text-slate-700 hover:bg-slate-50 dark:bg-gray-950/40 dark:text-gray-200 dark:hover:bg-gray-800/80'}`}
+                      >
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">
+                            Question {index + 1}
+                          </p>
+                          <p className="mt-1 truncate text-sm font-semibold">{entry.title}</p>
+                        </div>
+                        <div className="shrink-0">
+                          <DifficultyBadge difficulty={entry.difficulty} />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              </aside>
+            </>
+          )}
+
+          <div
+            ref={splitContainerRef}
+            className="min-h-0 flex flex-1 overflow-hidden"
+          >
           <section
             style={{ width: leftWidth ? `${leftWidth}px` : undefined, flexBasis: leftWidth ? `${leftWidth}px` : undefined, willChange: 'width' }}
-            className="flex shrink-0 min-w-[320px] flex-col border-r border-slate-200 dark:border-gray-700"
+            className="flex shrink-0 min-w-[320px] flex-col overflow-hidden rounded-[30px] bg-white/84 shadow-[0_10px_32px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:bg-gray-900/84"
           >
             <LeftPanelTabs
               activeTab={activeLeftTab}
@@ -1459,7 +1629,7 @@ export default function ProblemSolver() {
               verdictTone={verdictTabTone}
               verdictDisabled={!verdictForTab}
             />
-            <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="min-h-0 flex-1 overflow-y-auto scroll-smooth">
               {activeLeftTab === 'description' ? (
                 <ProblemDescriptionPanel problem={problem} />
               ) : activeLeftTab === 'submissions' ? (
@@ -1483,16 +1653,16 @@ export default function ProblemSolver() {
           <button
             type="button"
             onPointerDown={handleResizeStart}
-            className="group relative flex w-3 shrink-0 cursor-col-resize touch-none select-none items-center justify-center bg-slate-50 transition-colors hover:bg-slate-100 dark:bg-gray-900 dark:hover:bg-gray-800"
+            className="group relative mx-2 flex w-4 shrink-0 cursor-col-resize touch-none select-none items-center justify-center transition-colors"
             aria-label="Resize panels"
           >
-            <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-slate-200 dark:bg-gray-700" />
-            <div className="relative z-10 rounded-full border border-slate-200 bg-white p-1 text-slate-400 shadow-sm transition-colors group-hover:text-sky-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-500">
+            <div className="absolute inset-y-5 left-1/2 w-px -translate-x-1/2 rounded-full bg-slate-200/90 dark:bg-gray-700" />
+            <div className="relative z-10 rounded-full bg-white/92 p-1 text-slate-400 shadow-[0_10px_20px_rgba(15,23,42,0.06)] transition-colors group-hover:text-sky-500 dark:bg-gray-900 dark:text-gray-500">
               <PanelLeftOpen className="h-3.5 w-3.5 rotate-90" />
             </div>
           </button>
 
-          <section className="min-w-[420px] min-h-0 flex-1">
+          <section className="min-w-[520px] min-h-0 flex-1">
             <CodeEditor
               supportedLanguages={problem.supportedLanguages || []}
               language={language}
@@ -1518,10 +1688,11 @@ export default function ProblemSolver() {
               showToolbar={false}
             />
           </section>
+          </div>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-4 lg:hidden">
-          <div className={`overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900 ${mobileView === 'description' ? 'block' : 'hidden'}`}>
+        <div className="min-h-0 flex-1 space-y-4 px-3 pb-3 pt-2 lg:hidden">
+          <div className={`overflow-hidden rounded-[28px] bg-white/84 shadow-[0_10px_32px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:bg-gray-900/84 ${mobileView === 'description' ? 'block' : 'hidden'}`}>
             <LeftPanelTabs
               activeTab={activeLeftTab}
               onTabChange={setActiveLeftTab}
@@ -1529,7 +1700,7 @@ export default function ProblemSolver() {
               verdictTone={verdictTabTone}
               verdictDisabled={!verdictForTab}
             />
-            <div className="max-h-[calc(100vh-14rem)] overflow-y-auto">
+            <div className="max-h-[calc(100vh-14rem)] overflow-y-auto scroll-smooth">
               {activeLeftTab === 'description' ? (
                 <ProblemDescriptionPanel problem={problem} />
               ) : activeLeftTab === 'submissions' ? (

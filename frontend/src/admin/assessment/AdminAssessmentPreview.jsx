@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Clock, ArrowLeft } from 'lucide-react';
 import { api } from '../../utils/api';
 import { useToast } from '../../components/CustomToast';
@@ -16,6 +16,8 @@ const formatTime = (ms) => {
 export default function AdminAssessmentPreview() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
   const toast = useToast();
   const [assessment, setAssessment] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -84,7 +86,7 @@ export default function AdminAssessmentPreview() {
           </div>
           <button
             type="button"
-            onClick={() => navigate(`/admin/assessment/${assessment._id}/edit`)}
+            onClick={() => navigate(`${rolePrefix}/assessment/${assessment._id}/edit`)}
             className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
           >
             <ArrowLeft className="h-3.5 w-3.5" />

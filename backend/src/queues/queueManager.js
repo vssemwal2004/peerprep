@@ -12,6 +12,8 @@ const QUEUE_NAMES = {
 };
 
 let commandClientPromise = null;
+let blockingMoveCommand = null;
+let loggedBlockingMoveFallback = false;
 
 function flattenHash(fields) {
   return Object.entries(fields || {}).flatMap(([field, value]) => [String(field), String(value)]);
@@ -134,7 +136,8 @@ async function loadJobRecord(client, jobId) {
 export async function fetchNextQueueJob(queueName, blockingClient, commandClient) {
   const waitingKey = queueKey(queueName, 'waiting');
   const processingKey = queueKey(queueName, 'processing');
-  const response = await blockingClient.sendCommand([
+
+  const moveWithBlmove = () => blockingClient.sendCommand([
     'BLMOVE',
     waitingKey,
     processingKey,
@@ -142,6 +145,39 @@ export async function fetchNextQueueJob(queueName, blockingClient, commandClient
     'LEFT',
     '0',
   ]);
+
+  const moveWithBrpoplpush = () => blockingClient.sendCommand([
+    'BRPOPLPUSH',
+    waitingKey,
+    processingKey,
+    '0',
+  ]);
+
+  let response;
+  if (blockingMoveCommand === 'BRPOPLPUSH') {
+    response = await moveWithBrpoplpush();
+  } else if (blockingMoveCommand === 'BLMOVE') {
+    response = await moveWithBlmove();
+  } else {
+    try {
+      response = await moveWithBlmove();
+      blockingMoveCommand = 'BLMOVE';
+    } catch (error) {
+      const message = String(error?.message || '');
+      const lower = message.toLowerCase();
+      const isUnknownBlmove = lower.includes('unknown command') && lower.includes('blmove');
+      if (!isUnknownBlmove) {
+        throw error;
+      }
+
+      blockingMoveCommand = 'BRPOPLPUSH';
+      if (!loggedBlockingMoveFallback) {
+        console.warn('[QueueManager] Redis/Valkey does not support BLMOVE; falling back to BRPOPLPUSH. (Upgrade Redis to 6.2+ to enable BLMOVE.)');
+        loggedBlockingMoveFallback = true;
+      }
+      response = await moveWithBrpoplpush();
+    }
+  }
 
   if (!response) {
     return null;

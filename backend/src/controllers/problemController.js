@@ -5,6 +5,7 @@ import { HttpError } from '../utils/errors.js';
 import { sanitizeSearchQuery, sanitizeString, validateObjectId, validatePagination } from '../utils/validators.js';
 import { refreshProblemStats, serializeProblem, serializeSubmission, serializeStudentSubmission } from './compilerHelpers.js';
 import { runJudge0 } from '../services/executionService.js';
+import { removeProblemFromLibrary, syncProblemToLibrary } from '../services/questionLibraryService.js';
 import { parseBulkCasePair } from '../utils/testcaseBulkParser.js';
 import { isS3TestcaseStorageEnabled, readS3TextObject, uploadS3TextObject } from '../utils/s3.js';
 
@@ -944,6 +945,7 @@ export async function createProblem(req, res) {
   }
 
   await refreshProblemStats(problem._id);
+  await syncProblemToLibrary(await Problem.findById(problem._id).lean());
 
   const { serializedProblem } = await loadProblemShape(problem._id);
   res.status(201).json(serializedProblem);
@@ -1010,6 +1012,7 @@ export async function updateProblem(req, res) {
   }
 
   await refreshProblemStats(existingProblem._id);
+  await syncProblemToLibrary(await Problem.findById(existingProblem._id).lean());
 
   const { serializedProblem } = await loadProblemShape(existingProblem._id);
   res.json(serializedProblem);
@@ -1028,6 +1031,7 @@ export async function deleteProblem(req, res) {
     Submission.deleteMany({ problem: problem._id }),
     Problem.findByIdAndDelete(problem._id),
   ]);
+  await removeProblemFromLibrary(problem._id);
 
   res.json({ success: true });
 }
@@ -1066,6 +1070,7 @@ export async function updateProblemStatus(req, res) {
   problem.status = nextStatus;
   problem.updatedBy = req.user._id;
   await problem.save();
+  await syncProblemToLibrary(await Problem.findById(problem._id).lean());
 
   const { serializedProblem } = await loadProblemShape(problem._id, {
     includeHiddenTestCases: true,

@@ -6,7 +6,7 @@ import User from '../models/User.js';
 dotenv.config();
 
 async function connect() {
-  const uri = process.env.MONGO_URI || 'mongodb://localhost:27017/interview_system';
+  const uri = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/interview_system';
   await mongoose.connect(uri, { autoIndex: false });
 }
 

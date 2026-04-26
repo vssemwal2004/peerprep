@@ -14,6 +14,12 @@ const TYPE_LABELS = {
   one_line: 'One-word Questions',
 };
 
+const SOURCE_LABELS = {
+  assessment: 'Assessment',
+  compiler: 'Compiler',
+  manual: 'Manual',
+};
+
 function labelForType(type = '') {
   return TYPE_LABELS[type] || `${String(type || 'other').replace(/_/g, ' ')} Questions`;
 }
@@ -233,7 +239,7 @@ export default function QuestionLibrary() {
                 {selectionMode ? 'Add Questions from Library' : 'Question Library'}
               </h1>
               <p className="text-xs text-slate-500 dark:text-gray-400">
-                Fast search, organized categories, and permanent storage for assessment questions.
+                Fast search and live syncing for assessment, compiler, MCQ, and written questions.
               </p>
             </div>
           </div>
@@ -337,7 +343,7 @@ export default function QuestionLibrary() {
             <div>Question</div>
             <div>Type</div>
             <div>Tags</div>
-            <div>Source Assessment</div>
+            <div>Source</div>
             <div>Updated</div>
             {!selectionMode ? <div className="text-right">View</div> : null}
           </div>
@@ -370,11 +376,16 @@ export default function QuestionLibrary() {
                 )}
                 <div>
                   <div className="font-semibold text-slate-800 dark:text-gray-100">{question.questionText || 'Untitled Question'}</div>
-                  <div className="mt-1 text-[11px] text-slate-500 dark:text-gray-400">{question.sectionName || 'General'}</div>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-gray-400">
+                    <span>{question.sectionName || 'General'}</span>
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 font-semibold text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                      {SOURCE_LABELS[question.sourceType] || 'Library'}
+                    </span>
+                  </div>
                 </div>
                 <div className="text-xs font-semibold text-slate-700 dark:text-gray-200">{labelForType(question.questionType).replace(' Questions', '')}</div>
                 <div className="text-xs text-slate-500 dark:text-gray-400">{question.tags?.join(', ') || '-'}</div>
-                <div className="text-xs text-slate-500 dark:text-gray-400">{question.sourceAssessmentTitle || '-'}</div>
+                <div className="text-xs text-slate-500 dark:text-gray-400">{question.sourceTitle || question.sourceAssessmentTitle || '-'}</div>
                 <div className="text-xs text-slate-500 dark:text-gray-400">{question.updatedAt ? new Date(question.updatedAt).toLocaleDateString() : '-'}</div>
                 {!selectionMode && (
                   <div className="flex justify-end">
@@ -460,14 +471,19 @@ export default function QuestionLibrary() {
                       <div className="mt-1 font-semibold text-slate-800 dark:text-white">{labelForType(activeQuestion.questionType)}</div>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
-                      <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Source Assessment</div>
-                      <div className="mt-1 font-semibold text-slate-800 dark:text-white">{activeQuestion.sourceAssessmentTitle || '-'}</div>
+                      <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Source</div>
+                      <div className="mt-1 font-semibold text-slate-800 dark:text-white">{activeQuestion.sourceTitle || activeQuestion.sourceAssessmentTitle || '-'}</div>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
-                      <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Updated</div>
-                      <div className="mt-1 font-semibold text-slate-800 dark:text-white">
-                        {activeQuestion.updatedAt ? new Date(activeQuestion.updatedAt).toLocaleString() : '-'}
-                      </div>
+                      <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Source Type</div>
+                      <div className="mt-1 font-semibold text-slate-800 dark:text-white">{SOURCE_LABELS[activeQuestion.sourceType] || 'Library'}</div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                    <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Updated</div>
+                    <div className="mt-1 font-semibold text-slate-800 dark:text-white">
+                      {activeQuestion.updatedAt ? new Date(activeQuestion.updatedAt).toLocaleString() : '-'}
                     </div>
                   </div>
 

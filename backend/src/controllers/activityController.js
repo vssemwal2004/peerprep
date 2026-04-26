@@ -691,7 +691,7 @@ export async function getStudentStats(req, res) {
     const totalVideosWatched = videosWatched[0]?.totalVideos || 0;
 
     // 3. Get total compiler problems solved and submission health
-    const [compilerSummary, solvedByDifficultyAgg, attemptedProblemsAgg, statusBreakdownAgg, languageBreakdownAgg, recentSubmissionsAgg, recentSolvedProblemsAgg] = await Promise.all([
+    const [compilerSummaryAgg, solvedByDifficultyAgg, attemptedProblemsAgg, statusBreakdownAgg, languageBreakdownAgg, recentSubmissionsAgg, recentSolvedProblemsAgg] = await Promise.all([
       Submission.aggregate([
         {
           $match: {
@@ -835,6 +835,7 @@ export async function getStudentStats(req, res) {
       }
     ]);
     const totalWatchTimeHours = watchTimeData[0] ? Math.round((watchTimeData[0].totalSeconds / 3600) * 10) / 10 : 0;
+    const compilerSummary = compilerSummaryAgg[0] || {};
     const solvedByDifficulty = solvedByDifficultyAgg.reduce((acc, entry) => {
       const key = String(entry._id || 'Easy').toLowerCase();
       acc[key] = entry.count || 0;

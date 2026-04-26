@@ -1,5 +1,6 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { api } from '../utils/api';
@@ -70,7 +71,10 @@ const toLocalIsoMinutes = (value) => {
 export default function CreateAssessment() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const toast = useToast();
+
+  const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
 
   const [currentId, setCurrentId] = useState(id || null);
   const [activeStep, setActiveStep] = useState('basic');
@@ -262,14 +266,14 @@ export default function CreateAssessment() {
       status: existingDraft?.status || ((problemData?.previewValidated ?? problemData?.previewTested) ? 'Validated' : 'Draft'),
     });
 
-    const returnTo = currentId ? `/admin/assessment/${currentId}/edit` : '/admin/assessment/create';
+    const returnTo = currentId ? `${rolePrefix}/assessment/${currentId}/edit` : `${rolePrefix}/assessment/create`;
     const query = new URLSearchParams({
       assessment: assessmentKey,
       section: String(sectionIndex),
       question: String(questionIndex),
       return: returnTo,
     });
-    navigate(`/admin/assessment/coding-question/${editorId}?${query.toString()}`);
+    navigate(`${rolePrefix}/assessment/coding-question/${editorId}?${query.toString()}`);
   };
 
   const handleOpenProblemLibrary = async () => {
@@ -283,13 +287,13 @@ export default function CreateAssessment() {
       csvState,
       version,
     });
-    const returnTo = currentId ? `/admin/assessment/${currentId}/edit` : '/admin/assessment/create';
+    const returnTo = currentId ? `${rolePrefix}/assessment/${currentId}/edit` : `${rolePrefix}/assessment/create`;
     const query = new URLSearchParams({
       mode: 'select',
       assessment: assessmentKey,
       return: returnTo,
     });
-    navigate(`/admin/library?${query.toString()}`);
+    navigate(`${rolePrefix}/library?${query.toString()}`);
   };
 
   useEffect(() => {
@@ -577,7 +581,7 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
         const newId = response.assessmentId;
         setCurrentId(newId);
         if (!redirect) {
-          navigate(`/admin/assessment/${newId}/edit`, { replace: true });
+          navigate(`${rolePrefix}/assessment/${newId}/edit`, { replace: true });
         }
         if (!silent && !redirect) toast.success('Draft created');
       }
@@ -586,7 +590,7 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
       if (redirect) {
         toast.success('Draft saved');
         clearAssessmentDraft(assessmentKey);
-        navigate('/admin/assessment');
+        navigate(`${rolePrefix}/assessment`);
       }
     } catch (err) {
       setAutoSaveStatus('Draft save failed');
@@ -629,7 +633,7 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
       }
       toast.success('Assessment published');
       clearAssessmentDraft(assessmentKey);
-      navigate('/admin/assessment');
+      navigate(`${rolePrefix}/assessment`);
       return true;
     } catch (err) {
       toast.error(err.message || 'Failed to publish assessment');
@@ -847,7 +851,7 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
           {currentId && (
             <button
               type="button"
-              onClick={() => navigate(`/admin/assessment/preview/${currentId}`)}
+              onClick={() => navigate(`${rolePrefix}/assessment/preview/${currentId}`)}
               className="mb-3 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
             >
               Open Fullscreen Preview
@@ -903,7 +907,7 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={() => navigate('/admin/assessment')}
+              onClick={() => navigate(`${rolePrefix}/assessment`)}
               className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:hover:bg-gray-800"
             >
               <ArrowLeft className="h-4 w-4" />

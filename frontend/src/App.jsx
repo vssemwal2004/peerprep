@@ -285,6 +285,7 @@ function AppContent() {
         <Route path="/admin/assessment/reports" element={<AdminShell><AssessmentReports /></AdminShell>} />
         <Route path="/admin/assessment/rules" element={<AdminShell><AssessmentRules /></AdminShell>} />
         <Route path="/admin/library" element={<AdminShell><QuestionLibrary /></AdminShell>} />
+        <Route path="/admin/library/add-question" element={<AdminShell><AddQuestionToLibrary /></AdminShell>} />
         <Route path="/admin/assessment/select-problem" element={<AdminShell><SelectProblemFromLibrary /></AdminShell>} />
         <Route path="/admin/assessment/preview/:id" element={<AdminShell layout={false}><AdminAssessmentPreview /></AdminShell>} />
         <Route path="/admin/assessment/coding-question/:tempId" element={<AdminShell><CodingQuestionEditorPage /></AdminShell>} />
@@ -318,7 +319,11 @@ function AppContent() {
         {/* Extended Coordinator Features */}
         <Route path="/coordinator/assessment" element={<CoordinatorShell><AssessmentDashboard /></CoordinatorShell>} />
         <Route path="/coordinator/assessment/create" element={<CoordinatorShell><CreateAssessment /></CoordinatorShell>} />
+        <Route path="/coordinator/assessment/:id/edit" element={<CoordinatorShell><CreateAssessment /></CoordinatorShell>} />
         <Route path="/coordinator/assessment/reports" element={<CoordinatorShell><AssessmentReports /></CoordinatorShell>} />
+        <Route path="/coordinator/assessment/preview/:id" element={<CoordinatorShell layout={false}><AdminAssessmentPreview /></CoordinatorShell>} />
+        <Route path="/coordinator/assessment/coding-question/:tempId" element={<CoordinatorShell><CodingQuestionEditorPage /></CoordinatorShell>} />
+        <Route path="/coordinator/assessment/coding-question/:tempId/preview/:id" element={<CoordinatorShell><AssessmentCodingPreview /></CoordinatorShell>} />
         <Route path="/coordinator/library" element={<CoordinatorShell><QuestionLibrary /></CoordinatorShell>} />
         <Route path="/coordinator/library/add-question" element={<CoordinatorShell><AddQuestionToLibrary /></CoordinatorShell>} />
         <Route path="/coordinator/announcements/add" element={<CoordinatorShell><AnnouncementCreate /></CoordinatorShell>} />

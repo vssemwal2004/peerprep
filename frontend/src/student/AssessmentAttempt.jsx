@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import CodeEditor from './CodeEditor';
 import { RichTextPreview } from '../admin/compiler/CompilerContentPreview';
+import { getCodeValidationMessage, getStarterCodeForLanguage } from './problemUtils';
 
 const formatTime = (ms) => {
   if (ms <= 0) return '00:00';
@@ -722,8 +723,13 @@ export default function AssessmentAttempt() {
     const supported = codingData?.supportedLanguages?.length ? codingData.supportedLanguages : ['python'];
     const language = answersMap[key]?.language || supported[0];
     const sourceCode = answersMap[key]?.code || '';
-    if (!sourceCode.trim()) {
-      toast.error('Please enter code before running.');
+    const validationMessage = getCodeValidationMessage(
+      sourceCode,
+      getStarterCodeForLanguage(codingData, language),
+      'run',
+    );
+    if (validationMessage) {
+      toast.error(validationMessage);
       return;
     }
 
@@ -740,6 +746,9 @@ export default function AssessmentAttempt() {
       language,
       sourceCode,
       customInput: runInput,
+      ...(activeTestCase?.expectedOutput !== null && activeTestCase?.expectedOutput !== undefined
+        ? { expectedOutput: activeTestCase.expectedOutput }
+        : {}),
       assessmentId: assessment?._id,
     }).then(async (queuedJob) => {
       let completedRun = queuedJob;
@@ -754,7 +763,7 @@ export default function AssessmentAttempt() {
       const response = completedRun?.result?.response || completedRun;
       setCodeResultMap((prev) => ({ ...prev, [key]: response }));
       setActiveConsoleTab('result');
-      toast.success(`Run finished with status ${response.status?.description || 'Completed'}`);
+      toast.success(`Run finished with status ${response.status || 'Completed'}`);
 
       if (activeTestCase?.kind === 'custom') {
         api.getStudentExpectedOutput(problemId, {
@@ -799,8 +808,13 @@ export default function AssessmentAttempt() {
     const supported = codingData?.supportedLanguages?.length ? codingData.supportedLanguages : ['python'];
     const language = answersMap[key]?.language || supported[0];
     const sourceCode = answersMap[key]?.code || '';
-    if (!sourceCode.trim()) {
-      toast.error('Please enter code before submitting.');
+    const validationMessage = getCodeValidationMessage(
+      sourceCode,
+      getStarterCodeForLanguage(codingData, language),
+      'submit',
+    );
+    if (validationMessage) {
+      toast.error(validationMessage);
       return;
     }
 

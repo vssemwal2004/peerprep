@@ -122,12 +122,36 @@ export function validateProblemLanguage(problem, languageKey) {
   }
 }
 
-export function validateSourceCode(sourceCode) {
+function getProblemStarterCode(problem, languageKey = '') {
+  const templates = problem?.codeTemplates instanceof Map
+    ? Object.fromEntries(problem.codeTemplates.entries())
+    : (problem?.codeTemplates && typeof problem.codeTemplates === 'object' ? problem.codeTemplates : {});
+
+  return String(templates?.[languageKey] ?? '');
+}
+
+export function validateSourceCode(sourceCode, { starterCode = '', action = 'submit' } = {}) {
   const normalizedSourceCode = sanitizeExecutionText(sourceCode, MAX_SOURCE_CODE_SIZE_BYTES, 'Source code');
   if (!normalizedSourceCode.trim()) {
     throw new HttpError(400, 'Source code is required.');
   }
+
+  const normalizedStarterCode = starterCode
+    ? sanitizeExecutionText(starterCode, MAX_SOURCE_CODE_SIZE_BYTES, 'Starter code')
+    : '';
+  if (normalizedStarterCode.trim() && normalizedSourceCode.trim() === normalizedStarterCode.trim()) {
+    const actionLabel = action === 'run' ? 'running' : 'submitting';
+    throw new HttpError(400, `Please write or modify the starter code before ${actionLabel} this problem.`);
+  }
+
   return normalizedSourceCode;
+}
+
+function validateProblemSourceCode(problem, languageKey, sourceCode, { action = 'submit' } = {}) {
+  return validateSourceCode(sourceCode, {
+    starterCode: getProblemStarterCode(problem, languageKey),
+    action,
+  });
 }
 
 export function pickReferenceSolution(problem, preferredLanguageKey = '') {
@@ -290,6 +314,7 @@ async function loadSubmissionTestCases(problem) {
 function buildSubmitApiResponse(executionResult) {
   if (executionResult.status === 'AC') {
     return {
+      mode: 'submit',
       status: 'Accepted',
       passed: executionResult.totalTestCases,
       total: executionResult.totalTestCases,
@@ -300,6 +325,7 @@ function buildSubmitApiResponse(executionResult) {
 
   if (executionResult.status === 'WA') {
     return {
+      mode: 'submit',
       status: 'Wrong Answer',
       passed: executionResult.passedTestCases || 0,
       total: executionResult.totalTestCases || 0,
@@ -318,6 +344,7 @@ function buildSubmitApiResponse(executionResult) {
 
   if (executionResult.status === 'CE') {
     return {
+      mode: 'submit',
       status: 'Compilation Error',
       error: executionResult.compileOutput || 'Compilation failed.',
       time: roundNumber(executionResult.executionTimeMs / 1000, 3),
@@ -327,6 +354,7 @@ function buildSubmitApiResponse(executionResult) {
 
   if (executionResult.status === 'TLE') {
     return {
+      mode: 'submit',
       status: 'Time Limit Exceeded',
       passed: executionResult.passedTestCases || 0,
       total: executionResult.totalTestCases || 0,
@@ -336,6 +364,7 @@ function buildSubmitApiResponse(executionResult) {
   }
 
   return {
+    mode: 'submit',
     status: 'Runtime Error',
     error: executionResult.stderr || 'Execution failed.',
     passed: executionResult.passedTestCases || 0,
@@ -345,23 +374,201 @@ function buildSubmitApiResponse(executionResult) {
   };
 }
 
-async function executeRunPayload({ sourceCode, languageId, standardInput, problem }) {
-  const judgeResult = await runJudge0(sourceCode, languageId, standardInput, buildJudge0Options(problem));
-  const responsePayload = buildRunResponse(judgeResult);
+async function resolveRunExpectedOutput({
+  problem,
+  standardInput,
+  preferredLanguageKey = '',
+  providedExpectedOutput,
+}) {
+  if (providedExpectedOutput !== undefined && providedExpectedOutput !== null) {
+    return sanitizeExecutionText(providedExpectedOutput, MAX_TESTCASE_TEXT_BYTES, 'Expected output');
+  }
+
+  const reference = pickReferenceSolution(problem, preferredLanguageKey);
+  if (!reference) {
+    return null;
+  }
+
+  const referenceLanguageId = KEY_TO_LANGUAGE_ID[reference.languageKey];
+  if (!referenceLanguageId) {
+    return null;
+  }
+
+  const judgeResult = await runJudge0(
+    reference.sourceCode,
+    referenceLanguageId,
+    standardInput,
+    buildJudge0Options(problem),
+  );
+
+  const evaluation = evaluateSubmissionResult(judgeResult, judgeResult.stdout || '');
+  if (evaluation.internalStatus !== 'AC') {
+    throw new HttpError(502, 'Expected output is currently unavailable for this run.');
+  }
+
+  return judgeResult.stdout || '';
+}
+
+function buildRunApiResponse(executionResult, { standardInput = '', expectedOutput = null } = {}) {
+  if (executionResult.status === 'AC') {
+    return {
+      mode: 'run',
+      status: 'Accepted',
+      input: standardInput,
+      output: executionResult.output || '',
+      expectedOutput: expectedOutput ?? '',
+      passed: 1,
+      total: 1,
+      time: roundNumber(executionResult.executionTimeMs / 1000, 3),
+      memory: executionResult.memoryUsedKb || 0,
+    };
+  }
+
+  if (executionResult.status === 'WA') {
+    return {
+      mode: 'run',
+      status: 'Wrong Answer',
+      input: standardInput,
+      output: executionResult.output || executionResult.failedCase?.actualOutput || '',
+      expectedOutput: executionResult.failedCase?.expectedOutput ?? expectedOutput ?? '',
+      passed: executionResult.passedTestCases || 0,
+      total: executionResult.totalTestCases || 1,
+      time: roundNumber(executionResult.executionTimeMs / 1000, 3),
+      memory: executionResult.memoryUsedKb || 0,
+      failedTestCase: executionResult.failedCase
+        ? {
+          index: executionResult.failedCase.index,
+          input: executionResult.failedCase.input || standardInput,
+          expected: executionResult.failedCase.expectedOutput || '',
+          actual: executionResult.failedCase.actualOutput || '',
+        }
+        : undefined,
+    };
+  }
+
+  if (executionResult.status === 'CE') {
+    return {
+      mode: 'run',
+      status: 'Compilation Error',
+      input: standardInput,
+      output: executionResult.output || '',
+      expectedOutput: expectedOutput ?? '',
+      error: executionResult.compileOutput || 'Compilation failed.',
+      passed: 0,
+      total: 1,
+      time: roundNumber(executionResult.executionTimeMs / 1000, 3),
+      memory: executionResult.memoryUsedKb || 0,
+    };
+  }
+
+  if (executionResult.status === 'TLE') {
+    return {
+      mode: 'run',
+      status: 'Time Limit Exceeded',
+      input: standardInput,
+      output: executionResult.output || '',
+      expectedOutput: expectedOutput ?? '',
+      passed: 0,
+      total: 1,
+      time: roundNumber(executionResult.executionTimeMs / 1000, 3),
+      memory: executionResult.memoryUsedKb || 0,
+    };
+  }
+
   return {
-    response: responsePayload,
-    submissionStatus: mapRunStatusCode(judgeResult),
-    persisted: {
-      status: mapRunStatusCode(judgeResult),
-      output: responsePayload.stdout,
-      stderr: responsePayload.stderr,
-      compileOutput: responsePayload.compile_output,
-      executionTimeMs: secondsToMilliseconds(responsePayload.time),
-      memoryUsedKb: responsePayload.memory,
-      totalTestCases: 0,
-      passedTestCases: 0,
-      provider: 'judge0-ce',
-    },
+    mode: 'run',
+    status: 'Runtime Error',
+    input: standardInput,
+    output: executionResult.output || '',
+    expectedOutput: expectedOutput ?? '',
+    error: executionResult.stderr || 'Execution failed.',
+    passed: 0,
+    total: 1,
+    time: roundNumber(executionResult.executionTimeMs / 1000, 3),
+    memory: executionResult.memoryUsedKb || 0,
+  };
+}
+
+async function executeRunPayload({
+  sourceCode,
+  languageId,
+  languageKey,
+  standardInput,
+  problem,
+  expectedOutput,
+}) {
+  const judgeResult = await runJudge0(sourceCode, languageId, standardInput, buildJudge0Options(problem));
+  const resolvedExpectedOutput = await resolveRunExpectedOutput({
+    problem,
+    standardInput,
+    preferredLanguageKey: languageKey,
+    providedExpectedOutput: expectedOutput,
+  });
+
+  if (resolvedExpectedOutput === null) {
+    const responsePayload = buildRunResponse(judgeResult);
+    return {
+      response: {
+        mode: 'run',
+        status: responsePayload.status?.description || 'Completed',
+        input: standardInput,
+        output: responsePayload.stdout || '',
+        expectedOutput: '',
+        error: responsePayload.compile_output || responsePayload.stderr || '',
+        time: responsePayload.time,
+        memory: responsePayload.memory,
+      },
+      submissionStatus: mapRunStatusCode(judgeResult),
+      persisted: {
+        status: mapRunStatusCode(judgeResult),
+        output: responsePayload.stdout,
+        stderr: responsePayload.stderr,
+        compileOutput: responsePayload.compile_output,
+        executionTimeMs: secondsToMilliseconds(responsePayload.time),
+        memoryUsedKb: responsePayload.memory,
+        totalTestCases: 0,
+        passedTestCases: 0,
+        provider: 'judge0-ce',
+      },
+    };
+  }
+
+  const evaluation = evaluateSubmissionResult(judgeResult, resolvedExpectedOutput);
+  const persisted = {
+    status: evaluation.internalStatus,
+    output: judgeResult.stdout || '',
+    stderr: evaluation.internalStatus === 'RE' ? (evaluation.error || '') : '',
+    compileOutput: evaluation.internalStatus === 'CE' ? (evaluation.error || '') : '',
+    executionTimeMs: secondsToMilliseconds(judgeResult.time),
+    memoryUsedKb: Math.trunc(Number(judgeResult.memory || 0)),
+    totalTestCases: 1,
+    passedTestCases: evaluation.internalStatus === 'AC' ? 1 : 0,
+    failedCase: evaluation.internalStatus === 'WA'
+      ? {
+        index: 1,
+        input: standardInput,
+        expectedOutput: resolvedExpectedOutput,
+        actualOutput: evaluation.actualOutput || judgeResult.stdout || '',
+      }
+      : undefined,
+    testCaseResults: [{
+      index: 1,
+      status: evaluation.internalStatus,
+      input: standardInput,
+      expectedOutput: resolvedExpectedOutput,
+      actualOutput: judgeResult.stdout || '',
+      executionTimeMs: secondsToMilliseconds(judgeResult.time),
+    }],
+    provider: 'judge0-ce',
+  };
+
+  return {
+    response: buildRunApiResponse(persisted, {
+      standardInput,
+      expectedOutput: resolvedExpectedOutput,
+    }),
+    submissionStatus: evaluation.internalStatus,
+    persisted,
   };
 }
 
@@ -450,6 +657,7 @@ async function buildCompilerQueueJob({
   languageKey,
   sourceCode,
   standardInput = '',
+  expectedOutput = undefined,
 }) {
   const jobRecord = await createExecutionJobRecord({
     jobId: submission?.jobId,
@@ -476,6 +684,7 @@ async function buildCompilerQueueJob({
     languageKey,
     sourceCode,
     standardInput,
+    expectedOutput,
   }, {
     jobId: jobRecord.jobId,
     attempts: DEFAULT_ATTEMPTS,
@@ -488,17 +697,21 @@ async function buildCompilerQueueJob({
 
 export async function enqueueCompilerRunJob({ user, body }) {
   const { languageId, languageKey } = resolveLanguageRequest(body);
-  const sourceCode = validateSourceCode(body.source_code);
   const standardInput = sanitizeExecutionText(body.stdin, MAX_STDIN_SIZE_BYTES, 'Input');
   const problemId = String(body.problemId || '').trim();
   const assessmentId = String(body.assessmentId || '').trim();
+  const expectedOutput = body.expectedOutput !== undefined && body.expectedOutput !== null
+    ? sanitizeExecutionText(body.expectedOutput, MAX_TESTCASE_TEXT_BYTES, 'Expected output')
+    : undefined;
 
   let problem = null;
   let submission = null;
+  let sourceCode = '';
 
   if (problemId) {
     problem = await resolveActiveProblem(problemId, { userId: user?._id, assessmentId });
     validateProblemLanguage(problem, languageKey);
+    sourceCode = validateProblemSourceCode(problem, languageKey, body.source_code, { action: 'run' });
     const jobId = undefined;
     submission = await createTrackedSubmission({
       jobId,
@@ -510,6 +723,8 @@ export async function enqueueCompilerRunJob({ user, body }) {
       customInput: standardInput,
       assessmentId: assessmentId || null,
     });
+  } else {
+    sourceCode = validateSourceCode(body.source_code, { action: 'run' });
   }
 
   const queue = assessmentId ? assessmentQueue : compilerQueue;
@@ -535,6 +750,7 @@ export async function enqueueCompilerRunJob({ user, body }) {
     languageKey,
     sourceCode,
     standardInput,
+    expectedOutput,
   });
 }
 
@@ -542,9 +758,9 @@ export async function enqueueCompilerSubmitJob({ user, body }) {
   const problemId = String(body.problemId || '').trim();
   const assessmentId = String(body.assessmentId || '').trim();
   const { languageId, languageKey } = resolveLanguageRequest(body);
-  const sourceCode = validateSourceCode(body.source_code);
   const problem = await resolveActiveProblem(problemId, { userId: user?._id, assessmentId });
   validateProblemLanguage(problem, languageKey);
+  const sourceCode = validateProblemSourceCode(problem, languageKey, body.source_code, { action: 'submit' });
 
   const submission = await createTrackedSubmission({
     user,
@@ -751,7 +967,9 @@ export async function processCompilerExecutionJob(job) {
     assessmentId,
     userId,
     languageId,
+    languageKey,
     sourceCode,
+    expectedOutput,
     standardInput = '',
   } = job.data || {};
 
@@ -759,6 +977,13 @@ export async function processCompilerExecutionJob(job) {
     const problem = problemId
       ? await resolveActiveProblem(problemId, { userId, assessmentId })
       : null;
+    const validatedSourceCode = problem
+      ? validateProblemSourceCode(problem, languageKey, sourceCode, {
+        action: job.name === 'run' || job.name === 'assessment-code-run' ? 'run' : 'submit',
+      })
+      : validateSourceCode(sourceCode, {
+        action: job.name === 'run' || job.name === 'assessment-code-run' ? 'run' : 'submit',
+      });
 
     if (submissionId) {
       await markSubmissionRunning(submissionId);
@@ -766,10 +991,12 @@ export async function processCompilerExecutionJob(job) {
 
     if (job.name === 'run' || job.name === 'assessment-code-run') {
       const runResult = await executeRunPayload({
-        sourceCode,
+        sourceCode: validatedSourceCode,
         languageId,
+        languageKey,
         standardInput,
         problem,
+        expectedOutput,
       });
 
       if (submissionId) {
@@ -788,7 +1015,7 @@ export async function processCompilerExecutionJob(job) {
     }
 
     const submitResult = await executeSubmitPayload({
-      sourceCode,
+      sourceCode: validatedSourceCode,
       languageId,
       problem,
     });
@@ -902,6 +1129,7 @@ async function processAssessmentFinalCodingJob(job) {
     sectionIndex,
     questionIndex,
     languageId,
+    languageKey,
     sourceCode,
   } = job.data || {};
 
@@ -926,7 +1154,7 @@ async function processAssessmentFinalCodingJob(job) {
     }
 
     const submitResult = await executeSubmitPayload({
-      sourceCode,
+      sourceCode: validateProblemSourceCode(problem, languageKey, sourceCode, { action: 'submit' }),
       languageId,
       problem,
     });
@@ -960,13 +1188,17 @@ async function processAssessmentFinalCodingJob(job) {
     await markExecutionJobCompleted(executionJobId, resultPayload);
     return resultPayload;
   } catch (error) {
+    const executionVerdict = isFinalAttempt
+      ? ((error?.status === 400) ? 'CE' : 'FAILED')
+      : 'PENDING';
+
     const submission = await updateAssessmentAnswerExecutionState({
       assessmentSubmissionId,
       sectionIndex,
       questionIndex,
       executionJobId,
       executionStatus: isFinalAttempt ? 'failed' : 'queued',
-      executionVerdict: isFinalAttempt ? 'FAILED' : 'PENDING',
+      executionVerdict,
       executionResult: isFinalAttempt ? { error: error.message || 'Execution failed unexpectedly.' } : null,
     });
 

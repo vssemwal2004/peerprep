@@ -69,6 +69,30 @@ export function buildProblemDrafts(problem, storedDrafts = {}) {
   }, {});
 }
 
+function normalizeCodeForComparison(value) {
+  return String(value ?? '').replace(/\r\n/g, '\n').trim();
+}
+
+export function getStarterCodeForLanguage(problemLike, language) {
+  return String(problemLike?.codeTemplates?.[language] ?? '');
+}
+
+export function getCodeValidationMessage(sourceCode, starterCode = '', action = 'submit') {
+  const normalizedSource = normalizeCodeForComparison(sourceCode);
+  if (!normalizedSource) {
+    const actionLabel = action === 'run' ? 'running' : 'submitting';
+    return `Please enter code before ${actionLabel}.`;
+  }
+
+  const normalizedStarter = normalizeCodeForComparison(starterCode);
+  if (normalizedStarter && normalizedSource === normalizedStarter) {
+    const actionLabel = action === 'run' ? 'run' : 'submit';
+    return `Please modify the starter code before you ${actionLabel}.`;
+  }
+
+  return '';
+}
+
 export function studentStatusBadgeClass(status) {
   return status === 'Solved'
     ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800'
@@ -80,7 +104,7 @@ export function buildTagsParam(tags) {
 }
 
 export function isRunExecutionResult(result) {
-  return Boolean(result?.status && typeof result.status === 'object' && 'id' in result.status);
+  return Boolean(result?.mode === 'run' || (result?.status && typeof result.status === 'object' && 'id' in result.status));
 }
 
 export function verdictBadgeClass(status) {
@@ -104,6 +128,23 @@ export function summarizeExecutionResult(result) {
   }
 
   if (isRunExecutionResult(result)) {
+    if (result?.mode === 'run' && typeof result.status === 'string') {
+      switch (result.status) {
+        case 'Accepted':
+          return 'Your run matched the expected output for this testcase.';
+        case 'Wrong Answer':
+          return 'Your run output did not match the expected output for this testcase.';
+        case 'Compilation Error':
+          return 'Compilation failed before the testcase could run.';
+        case 'Runtime Error':
+          return 'The program crashed while running this testcase.';
+        case 'Time Limit Exceeded':
+          return 'The program exceeded the allowed time on this testcase.';
+        default:
+          return 'Run completed with judge feedback.';
+      }
+    }
+
     if (result.compile_output) {
       return 'Compilation failed. Review the compiler output below.';
     }

@@ -2,8 +2,16 @@ import mongoose from 'mongoose';
 
 const questionLibrarySchema = new mongoose.Schema({
   sourceKey: { type: String, required: true, unique: true, trim: true },
+  sourceType: {
+    type: String,
+    enum: ['assessment', 'compiler', 'manual'],
+    default: 'assessment',
+    index: true,
+  },
   sourceAssessmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Assessment', index: true },
   sourceAssessmentTitle: { type: String, default: '', trim: true },
+  sourceProblemId: { type: mongoose.Schema.Types.ObjectId, ref: 'Problem', index: true },
+  sourceProblemTitle: { type: String, default: '', trim: true },
   sourceQuestionId: { type: String, default: '', trim: true },
   sectionName: { type: String, default: '', trim: true },
   questionType: { type: String, required: true, trim: true },
@@ -19,6 +27,7 @@ const questionLibrarySchema = new mongoose.Schema({
 
 questionLibrarySchema.index({ questionType: 1, createdAt: -1 });
 questionLibrarySchema.index({ tags: 1, createdAt: -1 });
+questionLibrarySchema.index({ sourceType: 1, createdAt: -1 });
 questionLibrarySchema.index({ searchPrefixes: 1 });
 
 export default mongoose.model('QuestionLibrary', questionLibrarySchema);

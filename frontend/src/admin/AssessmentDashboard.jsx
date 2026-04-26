@@ -1,6 +1,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
@@ -19,6 +19,8 @@ const formatDateTime = (value) => (value ? new Date(value).toLocaleString() : '-
 
 export default function AssessmentDashboard() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
   const toast = useToast();
   const [assessments, setAssessments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -119,7 +121,7 @@ export default function AssessmentDashboard() {
           </div>
           <button
             type="button"
-            onClick={() => navigate('/admin/assessment/create')}
+            onClick={() => navigate(`${rolePrefix}/assessment/create`)}
             className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-500"
           >
             <Plus className="h-4 w-4" />
@@ -225,7 +227,7 @@ export default function AssessmentDashboard() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => navigate(`/admin/assessment/${assessment._id}/edit`)}
+                            onClick={() => navigate(`${rolePrefix}/assessment/${assessment._id}/edit`)}
                             className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
                           >
                             <Pencil className="h-3.5 w-3.5" />

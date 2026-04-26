@@ -1,8 +1,8 @@
 import mongoose from 'mongoose';
 import QuestionLibrary from '../models/QuestionLibrary.js';
 import {
-  backfillQuestionLibraryIfEmpty,
   buildLibrarySearchMatch,
+  ensureQuestionLibrarySynchronized,
   formatLibraryQuestionSummary,
   buildSearchPrefixes,
 } from '../services/questionLibraryService.js';
@@ -17,7 +17,7 @@ function normalizeTag(tag = '') {
 
 export async function listLibraryQuestions(req, res) {
   try {
-    await backfillQuestionLibraryIfEmpty();
+    await ensureQuestionLibrarySynchronized();
 
     const {
       type = '',
@@ -64,8 +64,8 @@ export async function listLibraryQuestions(req, res) {
         { $group: { _id: '$questionType', count: { $sum: 1 } } },
         { $sort: { _id: 1 } },
       ]),
-      QuestionLibrary.distinct('tags'),
-      QuestionLibrary.distinct('difficulty', { difficulty: { $ne: '' } }),
+      QuestionLibrary.distinct('tags', baseMatch),
+      QuestionLibrary.distinct('difficulty', { ...baseMatch, difficulty: { $ne: '' } }),
     ]);
 
     res.json({
@@ -90,13 +90,18 @@ export async function listLibraryQuestions(req, res) {
 
 export async function getLibraryQuestion(req, res) {
   try {
-    await backfillQuestionLibraryIfEmpty();
+    await ensureQuestionLibrarySynchronized();
     const { id } = req.params;
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ error: 'Invalid library question id' });
     }
 
-    const question = await QuestionLibrary.findById(id).lean();
+    const query = { _id: id };
+    if (req.user?.role === 'coordinator') {
+      query.createdBy = req.user._id;
+    }
+
+    const question = await QuestionLibrary.findOne(query).lean();
     if (!question) return res.status(404).json({ error: 'Library question not found' });
 
     res.json({
@@ -113,14 +118,19 @@ export async function getLibraryQuestion(req, res) {
 
 export async function resolveLibraryQuestions(req, res) {
   try {
-    await backfillQuestionLibraryIfEmpty();
+    await ensureQuestionLibrarySynchronized();
     const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
     const validIds = ids.filter((id) => mongoose.Types.ObjectId.isValid(id));
     if (!validIds.length) {
       return res.json({ questions: [] });
     }
 
-    const questions = await QuestionLibrary.find({ _id: { $in: validIds } })
+    const query = { _id: { $in: validIds } };
+    if (req.user?.role === 'coordinator') {
+      query.createdBy = req.user._id;
+    }
+
+    const questions = await QuestionLibrary.find(query)
       .sort({ updatedAt: -1 })
       .lean();
 
@@ -159,6 +169,7 @@ export async function createLibraryQuestion(req, res) {
 
     const newQuestion = new QuestionLibrary({
       sourceKey,
+      sourceType: 'manual',
       sourceAssessmentTitle: 'Direct Added',
       sectionName: 'General',
       questionType: type,
@@ -213,6 +224,7 @@ export async function createLibraryQuestionsBulk(req, res) {
 
       return {
         sourceKey,
+        sourceType: 'manual',
         sourceAssessmentTitle: 'Direct Added',
         sectionName: 'General',
         questionType: type,

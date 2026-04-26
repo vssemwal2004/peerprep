@@ -578,7 +578,13 @@ export const api = {
     return request(`/compiler/problems?${params.toString()}`, { skipCache: true });
   },
   getStudentProblem: (problemId) => request(`/compiler/problems/${problemId}`, { skipCache: true }),
-  runStudentProblem: (problemId, { language, sourceCode, customInput = '', assessmentId = '' }) => {
+  runStudentProblem: (problemId, {
+    language,
+    sourceCode,
+    customInput = '',
+    expectedOutput,
+    assessmentId = '',
+  }) => {
     return request('/compiler/run', {
       method: 'POST',
       body: {
@@ -586,6 +592,7 @@ export const api = {
         source_code: sourceCode,
         language_id: getJudge0LanguageId(language),
         stdin: customInput,
+        ...(expectedOutput !== undefined ? { expectedOutput } : {}),
         ...(assessmentId ? { assessmentId } : {}),
       },
     });

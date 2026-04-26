@@ -6,7 +6,7 @@ import User from '../models/User.js';
 import { sendOnboardingEmail, sendAssessmentNotificationEmail } from '../utils/mailer.js';
 import { createNotification, createNotifications } from '../services/notificationService.js';
 import { enqueueAssessmentCodingEvaluationJobs } from '../services/compilerExecutionWorkflowService.js';
-import { syncAssessmentQuestionsToLibrary } from '../services/questionLibraryService.js';
+import { removeAssessmentQuestionsFromLibrary, syncAssessmentQuestionsToLibrary } from '../services/questionLibraryService.js';
 import { logActivity } from './adminActivityController.js';
 
 function buildSimpleChanges(before = {}, after = {}, keys = []) {
@@ -1007,6 +1007,7 @@ export async function deleteAssessment(req, res) {
     const { id } = req.params;
     const assessment = await Assessment.findByIdAndDelete(id);
     if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
+    await removeAssessmentQuestionsFromLibrary(id);
 
     await AssessmentSubmission.deleteMany({ assessmentId: id });
 
