@@ -41,6 +41,8 @@ export default function AdminCompilerDashboard() {
 
   const sectionMeta = sections.find((section) => section.key === activeSection);
 
+  const showHeaderCard = !pathname.includes('/compiler/problems');
+
   const renderContent = () => {
     if (pathname.includes('/compiler/create') || pathname.includes('/edit')) return <CreateProblem />;
     if (pathname.includes('/preview')) return <AdminTestCompiler />;
@@ -55,20 +57,24 @@ export default function AdminCompilerDashboard() {
 
       <div className={`transition-all duration-300 ${isExpanded ? 'md:pl-[272px]' : 'md:pl-[80px]'}`}>
         <div className="px-4 py-5 sm:px-6 lg:px-8">
-          <div className="mb-6 rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400 dark:text-gray-500">{rolePrefix === '/coordinator' ? 'Coordinator' : 'Admin'} Compiler Module</p>
-                <h1 className="mt-1 text-2xl font-bold text-slate-900 dark:text-gray-100">{sectionMeta?.label}</h1>
-                <p className="mt-2 max-w-2xl text-sm text-slate-500 dark:text-gray-400">{sectionMeta?.caption}</p>
-              </div>
-              <div className="flex flex-wrap gap-2 md:hidden">
-                {sections.map((section) => (
-                  <Link key={section.key} to={section.to} className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${activeSection === section.key ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-gray-800 dark:text-gray-300'}`}>{section.label}</Link>
-                ))}
+          {showHeaderCard ? (
+            <div className="mb-6 rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400 dark:text-gray-500">{rolePrefix === '/coordinator' ? 'Coordinator' : 'Admin'} Compiler Module</p>
+                  <h1 className="mt-1 text-2xl font-bold text-slate-900 dark:text-gray-100">{sectionMeta?.label}</h1>
+                  <p className="mt-2 max-w-2xl text-sm text-slate-500 dark:text-gray-400">{sectionMeta?.caption}</p>
+                </div>
+                <div className="flex flex-wrap gap-2 md:hidden">
+                  {sections.map((section) => (
+                    <Link key={section.key} to={section.to} className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${activeSection === section.key ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-gray-800 dark:text-gray-300'}`}>{section.label}</Link>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="pt-1" />
+          )}
           <Suspense fallback={<LoadingBlock />}><div>{renderContent()}</div></Suspense>
         </div>
       </div>

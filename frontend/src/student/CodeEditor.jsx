@@ -84,8 +84,17 @@ export default function CodeEditor({
   const rootRef = useRef(null);
   const toolbarRef = useRef(null);
   const splitterRef = useRef(null);
+  const editorContainerRef = useRef(null);
+  const consoleContainerRef = useRef(null);
   const [consoleHeight, setConsoleHeight] = useState(220);
   const [editorHeight, setEditorHeight] = useState(320);
+
+  const readNumberStyle = (styles, property) => {
+    if (!styles) return 0;
+    const raw = styles.getPropertyValue(property);
+    const value = Number.parseFloat(raw);
+    return Number.isFinite(value) ? value : 0;
+  };
 
   const clampConsoleHeight = (height) => {
     const min = 128;
@@ -99,12 +108,19 @@ export default function CodeEditor({
     const toolbarRect = toolbarRef.current?.getBoundingClientRect();
     const splitterRect = splitterRef.current?.getBoundingClientRect();
 
+    const editorStyles = editorContainerRef.current ? window.getComputedStyle(editorContainerRef.current) : null;
+    const consoleStyles = consoleContainerRef.current ? window.getComputedStyle(consoleContainerRef.current) : null;
+
     const toolbarH = toolbarRect?.height || 0;
     const splitterH = splitterRect?.height || 0;
     const consoleH = clampConsoleHeight(consoleHeight);
 
-    // Keep the console close to the editor so the testcase/result panel starts sooner.
-    const reserved = toolbarH + splitterH + consoleH + 12;
+    const editorChrome = readNumberStyle(editorStyles, 'padding-top') + readNumberStyle(editorStyles, 'padding-bottom');
+    const consoleChrome = readNumberStyle(consoleStyles, 'margin-top') + readNumberStyle(consoleStyles, 'margin-bottom');
+
+    // Reserve fixed chrome (padding/margins) so height calculations converge even
+    // when the editor container is content-sized (prevents runaway growth).
+    const reserved = toolbarH + splitterH + consoleH + editorChrome + consoleChrome;
     const next = Math.max(260, Math.floor(rootRect.height - reserved));
     setEditorHeight(next);
   };
@@ -277,7 +293,7 @@ export default function CodeEditor({
         <div ref={toolbarRef} />
       )}
 
-      <div className="relative z-0 min-h-0 flex-1 bg-transparent px-4 pb-1 pt-1">
+      <div ref={editorContainerRef} className="relative z-0 min-h-0 flex-1 bg-transparent px-4 pb-1 pt-1">
         <MonacoCodeEditor
           language={language}
           value={code}
@@ -298,6 +314,7 @@ export default function CodeEditor({
       </button>
 
       <div
+        ref={consoleContainerRef}
         className="relative z-20 mx-3 mb-3 flex min-h-0 flex-col overflow-hidden rounded-[24px] bg-white px-4 pb-3 pt-1.5 dark:bg-gray-900"
         style={{ height: clampConsoleHeight(consoleHeight) }}
       >
@@ -328,7 +345,7 @@ export default function CodeEditor({
 
         <div className="min-h-0 flex-1 overflow-y-auto scroll-smooth pt-2.5">
           {activeConsoleTab === 'testcase' ? (
-            <div className="space-y-3">
+            <div className="space-y-3 text-slate-700 dark:text-gray-200">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-gray-100">
                   <TerminalSquare className="h-4 w-4 text-sky-500" />
@@ -365,16 +382,26 @@ export default function CodeEditor({
                 </div>
               )}
 
-              <textarea
-                value={activeTestCase?.input ?? customInput ?? ''}
-                onChange={(event) => {
-                  if (!activeTestCase) return;
-                  onTestCaseInputChange?.(activeTestCase.id, event.target.value);
-                }}
-                readOnly={activeTestCase?.kind === 'sample'}
-                placeholder="Provide stdin for the selected testcase."
-                className="h-36 w-full resize-none rounded-[22px] bg-white/88 px-4 py-3 font-mono text-xs text-slate-700 outline-none shadow-[inset_0_0_0_1px_rgba(226,232,240,0.7)] transition-colors focus:bg-white focus:ring-2 focus:ring-sky-400 read-only:opacity-80 dark:bg-gray-900/86 dark:text-gray-200 dark:shadow-[inset_0_0_0_1px_rgba(55,65,81,0.75)] dark:focus:ring-sky-500"
-              />
+              <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 p-3 dark:border-gray-700 dark:bg-gray-800/70">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">
+                    {activeTestCase?.kind === 'sample' ? 'Sample Testcase' : 'Custom Testcase'}
+                  </div>
+                  {activeTestCase?.expectedOutput !== null && activeTestCase?.expectedOutput !== undefined ? (
+                    <div className="text-[11px] text-slate-500 dark:text-gray-400">Expected output available</div>
+                  ) : null}
+                </div>
+                <textarea
+                  value={activeTestCase?.input ?? customInput ?? ''}
+                  onChange={(event) => {
+                    if (!activeTestCase) return;
+                    onTestCaseInputChange?.(activeTestCase.id, event.target.value);
+                  }}
+                  readOnly={activeTestCase?.kind === 'sample'}
+                  placeholder="Provide stdin for the selected testcase."
+                  className="h-36 w-full resize-none rounded-[18px] bg-white/88 px-4 py-3 font-mono text-xs text-slate-700 outline-none shadow-[inset_0_0_0_1px_rgba(226,232,240,0.7)] transition-colors focus:bg-white focus:ring-2 focus:ring-sky-400 read-only:opacity-80 dark:bg-gray-900/90 dark:text-gray-200 dark:shadow-[inset_0_0_0_1px_rgba(55,65,81,0.85)] dark:focus:ring-sky-500"
+                />
+              </div>
               <p className="text-xs text-slate-500 dark:text-gray-400">
                 Run executes the selected testcase. Submit ignores testcases and runs hidden tests only.
               </p>

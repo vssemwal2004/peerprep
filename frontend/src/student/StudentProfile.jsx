@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowUpRight,
@@ -25,6 +25,9 @@ import {
 import ContributionCalendar from '../components/ContributionCalendar';
 import { api } from '../utils/api';
 import socketService from '../utils/socket';
+import { getLearnerBadge } from './profileBadge';
+
+const MotionDiv = motion.div;
 
 function formatDateTime(value) {
   if (!value) return 'Just now';
@@ -41,17 +44,17 @@ function formatDuration(value) {
 }
 
 function difficultyClasses(difficulty) {
-  if (difficulty === 'Hard') return 'border-rose-200 bg-rose-50 text-rose-700';
-  if (difficulty === 'Medium') return 'border-amber-200 bg-amber-50 text-amber-700';
-  return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+  if (difficulty === 'Hard') return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300';
+  if (difficulty === 'Medium') return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300';
+  return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300';
 }
 
 function statusClasses(status) {
-  if (status === 'AC') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
-  if (status === 'WA') return 'border-amber-200 bg-amber-50 text-amber-700';
-  if (status === 'TLE') return 'border-orange-200 bg-orange-50 text-orange-700';
-  if (status === 'CE' || status === 'RE') return 'border-rose-200 bg-rose-50 text-rose-700';
-  return 'border-slate-200 bg-slate-50 text-slate-600';
+  if (status === 'AC') return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300';
+  if (status === 'WA') return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300';
+  if (status === 'TLE') return 'border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-800 dark:bg-orange-900/20 dark:text-orange-300';
+  if (status === 'CE' || status === 'RE') return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300';
+  return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300';
 }
 
 function AnimatedMetric({ value, suffix = '', decimals = 0, className = '' }) {
@@ -89,11 +92,11 @@ function AnimatedMetric({ value, suffix = '', decimals = 0, className = '' }) {
 
 function Panel({ title, subtitle, children, className = '' }) {
   return (
-    <section className={`rounded-[24px] border border-slate-200 bg-white shadow-[0_18px_48px_-36px_rgba(15,23,42,0.22)] ${className}`}>
+    <section className={`rounded-[24px] border border-slate-200 bg-white shadow-[0_18px_48px_-36px_rgba(15,23,42,0.22)] dark:border-gray-800 dark:bg-gray-900 dark:shadow-[0_18px_48px_-36px_rgba(2,6,23,0.7)] ${className}`}>
       {(title || subtitle) && (
-        <div className="border-b border-slate-100 px-4 py-3">
-          {title ? <h2 className="text-xs font-semibold text-slate-900">{title}</h2> : null}
-          {subtitle ? <p className="mt-1 text-xs text-slate-500">{subtitle}</p> : null}
+        <div className="border-b border-slate-100 px-4 py-3 dark:border-gray-800">
+          {title ? <h2 className="text-xs font-semibold text-slate-900 dark:text-gray-100">{title}</h2> : null}
+          {subtitle ? <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">{subtitle}</p> : null}
         </div>
       )}
       <div className="p-4">{children}</div>
@@ -103,22 +106,22 @@ function Panel({ title, subtitle, children, className = '' }) {
 
 function CompactStatCard({ label, value, helper, icon, tone = 'slate', suffix = '', decimals = 0 }) {
   const tones = {
-    emerald: 'bg-emerald-50 text-emerald-700 border-emerald-100',
-    amber: 'bg-amber-50 text-amber-700 border-amber-100',
-    rose: 'bg-rose-50 text-rose-700 border-rose-100',
-    sky: 'bg-sky-50 text-sky-700 border-sky-100',
-    slate: 'bg-slate-50 text-slate-700 border-slate-100',
+    emerald: 'bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800',
+    amber: 'bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800',
+    rose: 'bg-rose-50 text-rose-700 border-rose-100 dark:bg-rose-900/20 dark:text-rose-300 dark:border-rose-800',
+    sky: 'bg-sky-50 text-sky-700 border-sky-100 dark:bg-sky-900/20 dark:text-sky-300 dark:border-sky-800',
+    slate: 'bg-slate-50 text-slate-700 border-slate-100 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700',
   };
 
   return (
-    <div className="rounded-[20px] border border-slate-200 bg-white p-3 shadow-[0_12px_30px_-24px_rgba(15,23,42,0.2)] transition-transform duration-200 hover:-translate-y-0.5">
+    <div className="rounded-[20px] border border-slate-200 bg-white p-3 shadow-[0_12px_30px_-24px_rgba(15,23,42,0.2)] transition-transform duration-200 hover:-translate-y-0.5 dark:border-gray-800 dark:bg-gray-900">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</p>
-          <div className="mt-2 text-xl font-bold text-slate-900">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">{label}</p>
+          <div className="mt-2 text-xl font-bold text-slate-900 dark:text-gray-100">
             <AnimatedMetric value={value} suffix={suffix} decimals={decimals} />
           </div>
-          <p className="mt-1 text-xs text-slate-500">{helper}</p>
+          <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">{helper}</p>
         </div>
         <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border ${tones[tone] || tones.slate}`}>
           {icon}
@@ -130,17 +133,17 @@ function CompactStatCard({ label, value, helper, icon, tone = 'slate', suffix = 
 
 function InsightCard({ label, value, helper, icon, suffix = '', decimals = 0 }) {
   return (
-    <div className="rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-4 transition-colors hover:bg-white">
+    <div className="rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-4 transition-colors hover:bg-white dark:border-gray-800 dark:bg-gray-900/80 dark:hover:bg-gray-900">
       <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-slate-700 shadow-[0_8px_20px_-14px_rgba(15,23,42,0.28)]">
+        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-slate-700 shadow-[0_8px_20px_-14px_rgba(15,23,42,0.28)] dark:bg-gray-800 dark:text-gray-100">
           {icon}
         </div>
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</p>
-          <p className="mt-1 text-lg font-bold text-slate-900">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">{label}</p>
+          <p className="mt-1 text-lg font-bold text-slate-900 dark:text-gray-100">
             <AnimatedMetric value={value} suffix={suffix} decimals={decimals} />
           </p>
-          <p className="text-xs text-slate-500">{helper}</p>
+          <p className="text-xs text-slate-500 dark:text-gray-400">{helper}</p>
         </div>
       </div>
     </div>
@@ -149,13 +152,13 @@ function InsightCard({ label, value, helper, icon, suffix = '', decimals = 0 }) 
 
 function MiniProfileRow({ icon, label, value }) {
   return (
-    <div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/75 px-3.5 py-3">
-      <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-xl bg-white text-slate-700 shadow-[0_8px_18px_-14px_rgba(15,23,42,0.22)]">
+    <div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/75 px-3.5 py-3 dark:border-gray-800 dark:bg-gray-800/80">
+      <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-xl bg-white text-slate-700 shadow-[0_8px_18px_-14px_rgba(15,23,42,0.22)] dark:bg-gray-900 dark:text-gray-100">
         {icon}
       </div>
       <div className="min-w-0">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</p>
-        <p className="mt-1 text-sm font-medium text-slate-700">{value || 'Not provided'}</p>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">{label}</p>
+        <p className="mt-1 text-sm font-medium text-slate-700 dark:text-gray-200">{value || 'Not provided'}</p>
       </div>
     </div>
   );
@@ -172,7 +175,7 @@ function SocialButton({ href, icon, label }) {
 
   if (!normalizedHref) {
     return (
-      <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-300">
+      <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-600">
         {icon}
       </div>
     );
@@ -184,7 +187,7 @@ function SocialButton({ href, icon, label }) {
       target="_blank"
       rel="noreferrer"
       aria-label={label}
-      className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-[0_8px_18px_-14px_rgba(15,23,42,0.2)] transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:text-slate-950"
+      className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-[0_8px_18px_-14px_rgba(15,23,42,0.2)] transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:text-slate-950 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-gray-600 dark:hover:text-white"
     >
       {icon}
     </a>
@@ -193,12 +196,12 @@ function SocialButton({ href, icon, label }) {
 
 function ProfileField({ label, value, onChange, placeholder = '', multiline = false, type = 'text', disabled = false }) {
   const sharedClassName = disabled
-    ? 'w-full cursor-not-allowed rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 outline-none placeholder:text-slate-400'
-    : 'w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition-all placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100';
+    ? 'w-full cursor-not-allowed rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 outline-none placeholder:text-slate-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:placeholder:text-gray-500'
+    : 'w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition-all placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:placeholder:text-gray-500 dark:focus:border-sky-500 dark:focus:ring-sky-900/40';
 
   return (
     <label className="block">
-      <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</span>
+      <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">{label}</span>
       {multiline ? (
         <textarea
           rows={4}
@@ -279,7 +282,7 @@ function LeetCodeProgressCard({
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_200px]">
-      <div className="flex items-center justify-center rounded-[22px] border border-slate-200 bg-[radial-gradient(circle_at_top,#f0fdfa_0%,#fbfdff_38%,#f6f9fc_100%)] p-4">
+      <div className="flex items-center justify-center rounded-[22px] border border-slate-200 bg-[radial-gradient(circle_at_top,#f0fdfa_0%,#fbfdff_38%,#f6f9fc_100%)] p-4 dark:border-gray-800 dark:bg-[radial-gradient(circle_at_top,#0f2f2f_0%,#0f172a_38%,#020617_100%)]">
         <div
           className="relative flex items-center justify-center"
           onMouseEnter={() => setShowBeats(true)}
@@ -309,7 +312,7 @@ function LeetCodeProgressCard({
               strokeDasharray={circumference}
               strokeDashoffset={circumference * (1 - ratio)}
             />
-            {segments.map((segment, index) => {
+            {segments.map((segment) => {
               const segmentLength = circumference * (segment.value / totalSegmentValue);
               const strokeDasharray = `${Math.max(segmentLength - 8, 0)} ${circumference}`;
               const node = (
@@ -331,20 +334,20 @@ function LeetCodeProgressCard({
             })}
           </svg>
           <div className="absolute inset-0 flex -translate-y-1 flex-col items-center justify-center px-4 text-center leading-tight">
-            <div className="text-[12px] font-medium text-slate-700">{headlineLabel}</div>
+            <div className="text-[12px] font-medium text-slate-700 dark:text-gray-300">{headlineLabel}</div>
 
             {showBeats || hoveredDifficulty ? (
               <div className="mt-1.5 flex items-end justify-center gap-1.5 font-bold tracking-tight leading-none tabular-nums">
                 <span className="text-[28px] sm:text-[32px]" style={{ color: headlineColor }}>
                   {headlineValue}
                 </span>
-                <span className="pb-[2px] text-lg font-semibold text-slate-500">%</span>
+                <span className="pb-[2px] text-lg font-semibold text-slate-500 dark:text-gray-400">%</span>
               </div>
             ) : (
               <div className="mt-1.5 flex max-w-[150px] items-baseline justify-center gap-0.5 whitespace-nowrap font-bold tracking-tight leading-none tabular-nums">
-                <span className="text-[clamp(22px,4.2vw,34px)] text-slate-950">{totalSolved}</span>
-                <span className="text-[clamp(16px,3.2vw,22px)] font-semibold text-slate-400">/</span>
-                <span className="text-[clamp(16px,3.2vw,22px)] font-semibold text-slate-400">{totalProblems}</span>
+                <span className="text-[clamp(22px,4.2vw,34px)] text-slate-950 dark:text-white">{totalSolved}</span>
+                <span className="text-[clamp(16px,3.2vw,22px)] font-semibold text-slate-400 dark:text-gray-500">/</span>
+                <span className="text-[clamp(16px,3.2vw,22px)] font-semibold text-slate-400 dark:text-gray-500">{totalProblems}</span>
               </div>
             )}
 
@@ -355,7 +358,7 @@ function LeetCodeProgressCard({
               </div>
             )}
 
-            <div className="mt-1.5 text-[11px] font-medium text-slate-500">{totalAttempts} Total Attempts</div>
+            <div className="mt-1.5 text-[11px] font-medium text-slate-500 dark:text-gray-400">{totalAttempts} Total Attempts</div>
           </div>
         </div>
       </div>
@@ -369,7 +372,7 @@ function LeetCodeProgressCard({
               setActiveDifficulty(item.label);
             }}
             onMouseLeave={() => setActiveDifficulty('')}
-            className={`rounded-[18px] border px-3 py-3 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_32px_-24px_rgba(15,23,42,0.25)] ${item.accentClass}`}
+            className={`rounded-[18px] border px-3 py-3 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_32px_-24px_rgba(15,23,42,0.25)] dark:hover:shadow-[0_16px_32px_-24px_rgba(2,6,23,0.75)] ${item.accentClass}`}
           >
             <div className="flex items-center justify-between gap-3">
               <div className="text-sm font-semibold">{item.shortLabel}</div>
@@ -377,7 +380,7 @@ function LeetCodeProgressCard({
             </div>
             <div className="mt-1 text-xl font-bold">
               {item.value}
-              <span className="ml-1 text-sm font-medium text-slate-500">solved</span>
+              <span className="ml-1 text-sm font-medium text-slate-500 dark:text-gray-400">solved</span>
             </div>
           </div>
         ))}
@@ -388,7 +391,7 @@ function LeetCodeProgressCard({
 
 function EmptyState({ message }) {
   return (
-    <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500">
+    <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500 dark:border-gray-700 dark:text-gray-400">
       {message}
     </div>
   );
@@ -396,20 +399,20 @@ function EmptyState({ message }) {
 
 function ProfessionalTrackCard({ label, value, helper, icon, tone = 'slate' }) {
   const tones = {
-    sky: 'bg-sky-50 border-sky-100 text-sky-700',
-    amber: 'bg-amber-50 border-amber-100 text-amber-700',
-    emerald: 'bg-emerald-50 border-emerald-100 text-emerald-700',
-    rose: 'bg-rose-50 border-rose-100 text-rose-700',
-    slate: 'bg-slate-50 border-slate-100 text-slate-700',
+    sky: 'bg-sky-50 border-sky-100 text-sky-700 dark:bg-sky-900/20 dark:border-sky-800 dark:text-sky-300',
+    amber: 'bg-amber-50 border-amber-100 text-amber-700 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-300',
+    emerald: 'bg-emerald-50 border-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:border-emerald-800 dark:text-emerald-300',
+    rose: 'bg-rose-50 border-rose-100 text-rose-700 dark:bg-rose-900/20 dark:border-rose-800 dark:text-rose-300',
+    slate: 'bg-slate-50 border-slate-100 text-slate-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-200',
   };
 
   return (
-    <div className="rounded-[20px] border border-slate-200 bg-white p-3 shadow-[0_12px_30px_-24px_rgba(15,23,42,0.18)]">
+    <div className="rounded-[20px] border border-slate-200 bg-white p-3 shadow-[0_12px_30px_-24px_rgba(15,23,42,0.18)] dark:border-gray-800 dark:bg-gray-900">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</p>
-          <p className="mt-1.5 text-xl font-bold text-slate-950">{value}</p>
-          <p className="mt-1 text-xs text-slate-500">{helper}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">{label}</p>
+          <p className="mt-1.5 text-xl font-bold text-slate-950 dark:text-gray-100">{value}</p>
+          <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">{helper}</p>
         </div>
         <div className={`flex h-9 w-9 items-center justify-center rounded-2xl border ${tones[tone] || tones.slate}`}>
           {icon}
@@ -454,8 +457,9 @@ export default function StudentProfile() {
   const [savingProfile, setSavingProfile] = useState(false);
   const isMountedRef = useRef(true);
   const lastMetricsRefreshAtRef = useRef(0);
+  const metricsRefreshTimerRef = useRef(null);
 
-  const loadActivityData = async (showSpinner = false) => {
+  const loadActivityData = useCallback(async (showSpinner = false) => {
     if (showSpinner && isMountedRef.current) {
       setLoadingActivity(true);
     }
@@ -473,9 +477,9 @@ export default function StudentProfile() {
         setLoadingActivity(false);
       }
     }
-  };
+  }, []);
 
-  const loadStats = async () => {
+  const loadStats = useCallback(async () => {
     try {
       const [statsResult, analysisResult, problemsResult] = await Promise.allSettled([
         api.getStudentStats(),
@@ -492,6 +496,8 @@ export default function StudentProfile() {
       let fallbackSolvedCount = 0;
       let fallbackAttemptCount = 0;
       let fallbackSolvedByDifficulty = { easy: 0, medium: 0, hard: 0 };
+      let fallbackRecentSolvedProblems = [];
+      let fallbackRecentSubmissions = [];
 
       const shouldUseProblemFallback = problemsLoaded
         && Number(firstProblemsPage?.pagination?.total || 0) > 0
@@ -532,9 +538,18 @@ export default function StudentProfile() {
           return acc;
         }, { easy: 0, medium: 0, hard: 0 });
 
+        fallbackRecentSolvedProblems = solvedProblems
+          .map((problem) => ({
+            title: problem?.title || 'Untitled Problem',
+            difficulty: problem?.difficulty || 'Easy',
+            acceptedAt: problem?.updatedAt || problem?.createdAt || null,
+          }))
+          .sort((a, b) => new Date(b.acceptedAt || 0).getTime() - new Date(a.acceptedAt || 0).getTime())
+          .slice(0, 5);
+
         const submissionTotals = await Promise.allSettled(
           allProblems.map((problem) => (
-            api.listStudentProblemSubmissions(problem._id, { page: 1, limit: 1 })
+            api.listStudentProblemSubmissions(problem._id, { page: 1, limit: 3 })
           ))
         );
 
@@ -542,10 +557,42 @@ export default function StudentProfile() {
           if (submissionResult.status !== 'fulfilled') return total;
           return total + Number(submissionResult.value?.pagination?.total || 0);
         }, 0);
+
+        fallbackRecentSubmissions = submissionTotals
+          .flatMap((submissionResult) => {
+            if (submissionResult.status !== 'fulfilled') return [];
+            return Array.isArray(submissionResult.value?.submissions) ? submissionResult.value.submissions : [];
+          })
+          .map((submission) => ({
+            problemTitle: submission?.problemSnapshot?.title || submission?.problemTitle || 'Untitled Problem',
+            difficulty: submission?.problemSnapshot?.difficulty || submission?.difficulty || 'Easy',
+            status: submission?.status || 'PENDING',
+            language: submission?.language || 'python',
+            executionTimeMs: submission?.executionTimeMs || 0,
+            createdAt: submission?.createdAt || submission?.updatedAt || null,
+            mode: submission?.mode || 'submit',
+          }))
+          .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+          .slice(0, 8);
       }
 
       if (!isMountedRef.current) return;
-      setStats(statsPayload || null);
+      const enrichedStats = statsPayload
+        ? {
+          ...statsPayload,
+          recentSolvedProblems: Array.isArray(statsPayload.recentSolvedProblems) && statsPayload.recentSolvedProblems.length > 0
+            ? statsPayload.recentSolvedProblems
+            : fallbackRecentSolvedProblems,
+          recentSubmissions: Array.isArray(statsPayload.recentSubmissions) && statsPayload.recentSubmissions.length > 0
+            ? statsPayload.recentSubmissions
+            : fallbackRecentSubmissions,
+        }
+        : {
+          recentSolvedProblems: fallbackRecentSolvedProblems,
+          recentSubmissions: fallbackRecentSubmissions,
+        };
+
+      setStats(enrichedStats);
       setAnalysis(analysisData?.analysis || null);
       setProblemStatusSummary({
         loaded: problemsLoaded,
@@ -580,21 +627,36 @@ export default function StudentProfile() {
         solvedByDifficulty: { easy: 0, medium: 0, hard: 0 },
       });
     }
-  };
+  }, []);
 
-  const refreshMetrics = async ({ withActivitySpinner = false } = {}) => {
+  const refreshMetrics = useCallback(async ({ withActivitySpinner = false } = {}) => {
     await Promise.all([
       loadStats(),
       loadActivityData(withActivitySpinner),
     ]);
-  };
+  }, [loadActivityData, loadStats]);
 
-  const safeRefreshMetrics = ({ withActivitySpinner = false } = {}) => {
+  const safeRefreshMetrics = useCallback(({ withActivitySpinner = false, force = false } = {}) => {
     const now = Date.now();
-    if (now - lastMetricsRefreshAtRef.current < 1500) return;
-    lastMetricsRefreshAtRef.current = now;
-    void refreshMetrics({ withActivitySpinner });
-  };
+    const cooldownMs = 1500;
+    const elapsed = now - lastMetricsRefreshAtRef.current;
+
+    if (force || elapsed >= cooldownMs) {
+      lastMetricsRefreshAtRef.current = now;
+      if (metricsRefreshTimerRef.current) {
+        clearTimeout(metricsRefreshTimerRef.current);
+        metricsRefreshTimerRef.current = null;
+      }
+      void refreshMetrics({ withActivitySpinner });
+      return;
+    }
+
+    if (metricsRefreshTimerRef.current) return;
+    metricsRefreshTimerRef.current = setTimeout(() => {
+      metricsRefreshTimerRef.current = null;
+      safeRefreshMetrics({ withActivitySpinner, force: true });
+    }, Math.max(cooldownMs - elapsed + 50, 50));
+  }, [refreshMetrics]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -630,8 +692,12 @@ export default function StudentProfile() {
     loadProfile();
     return () => {
       isMountedRef.current = false;
+      if (metricsRefreshTimerRef.current) {
+        clearTimeout(metricsRefreshTimerRef.current);
+        metricsRefreshTimerRef.current = null;
+      }
     };
-  }, []);
+  }, [refreshMetrics]);
 
   useEffect(() => {
     if (!user?._id) return undefined;
@@ -646,7 +712,7 @@ export default function StudentProfile() {
       // Only refresh once the submission is finalized; avoids spam while queued/running.
       const status = String(submission?.status || '').toUpperCase();
       if (status === 'PENDING' || status === 'RUNNING') return;
-      safeRefreshMetrics();
+      safeRefreshMetrics({ force: true });
     };
 
     socketService.on('learning-updated', handleLearningUpdate);
@@ -656,7 +722,7 @@ export default function StudentProfile() {
       socketService.off('learning-updated', handleLearningUpdate);
       socketService.off('compiler-submission-updated', handleCompilerUpdate);
     };
-  }, [user?._id]);
+  }, [safeRefreshMetrics, user?._id]);
 
   useEffect(() => {
     if (!user?._id) return undefined;
@@ -672,7 +738,7 @@ export default function StudentProfile() {
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [user?._id]);
+  }, [safeRefreshMetrics, user?._id]);
 
   useEffect(() => {
     const now = new Date();
@@ -685,7 +751,7 @@ export default function StudentProfile() {
     }, Math.max(nextMidnight.getTime() - now.getTime(), 0));
 
     return () => clearTimeout(timer);
-  }, [activityStats?.currentStreak, stats?.totalSubmissions]);
+  }, [activityStats?.currentStreak, safeRefreshMetrics, stats?.totalSubmissions]);
 
   const onAvatarChange = (event) => {
     const file = event.target.files?.[0] || null;
@@ -826,15 +892,32 @@ export default function StudentProfile() {
     return `@${normalized}`;
   }, [user?.email, user?.name, user?.studentId, user?.username]);
 
-  const codingLevel = useMemo(() => {
+  const analysisOverview = analysis?.overview || {};
+  const analysisAssessments = analysis?.assessments || {};
+  const analysisInterviews = analysis?.interviews || {};
+  const analysisLearning = analysis?.learning || {};
+
+  const performanceTitle = useMemo(() => {
     const solved = problemStatusSummary.loaded
       ? Number(problemStatusSummary.solvedCount || 0)
       : Number(stats?.totalQuestionsSolved || 0);
-    if (solved >= 250) return 'Elite Solver';
-    if (solved >= 120) return 'Advanced Coder';
-    if (solved >= 50) return 'Rising Solver';
-    return 'Learning Sprint';
-  }, [problemStatusSummary.loaded, problemStatusSummary.solvedCount, stats?.totalQuestionsSolved]);
+    const streak = Number(activityStats?.currentStreak || 0);
+    const assessmentScore = Number(analysisAssessments?.avgScore || 0);
+    const interviewScore = Number(analysisInterviews?.avgScore || 0);
+    return getLearnerBadge({
+      solvedCount: solved,
+      streak,
+      assessmentScore,
+      interviewScore,
+    });
+  }, [
+    activityStats?.currentStreak,
+    analysisAssessments?.avgScore,
+    analysisInterviews?.avgScore,
+    problemStatusSummary.loaded,
+    problemStatusSummary.solvedCount,
+    stats?.totalQuestionsSolved,
+  ]);
 
   const shortBio = useMemo(() => {
     if (user?.bio?.trim()) {
@@ -844,11 +927,6 @@ export default function StudentProfile() {
     const streak = activityStats?.currentStreak || 0;
     return `Focused on data structures, problem solving, and ${language}. Currently building a ${streak}-day momentum streak on PeerPrep.`;
   }, [activityStats?.currentStreak, stats?.mostUsedLanguage, user?.bio]);
-
-  const analysisOverview = analysis?.overview || {};
-  const analysisAssessments = analysis?.assessments || {};
-  const analysisInterviews = analysis?.interviews || {};
-  const analysisLearning = analysis?.learning || {};
 
   const insightCards = useMemo(() => {
     const languagesUsed = stats?.languagesUsed?.length || 0;
@@ -947,9 +1025,9 @@ export default function StudentProfile() {
 
   if (loading && !user) {
     return (
-      <div className="min-h-screen bg-[#f6f8fb] pt-16">
+      <div className="min-h-screen bg-[#f6f8fb] pt-16 dark:bg-slate-950">
         <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-          <div className="h-[520px] animate-pulse rounded-[32px] bg-slate-200" />
+          <div className="h-[520px] animate-pulse rounded-[32px] bg-slate-200 dark:bg-gray-800" />
         </div>
       </div>
     );
@@ -957,7 +1035,7 @@ export default function StudentProfile() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-[#f6f8fb] pt-16">
+      <div className="min-h-screen bg-[#f6f8fb] pt-16 dark:bg-slate-950">
         <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
           <Panel title="Profile Unavailable" subtitle={error || 'We could not load your profile right now.'}>
             <EmptyState message="Please refresh the page and try again." />
@@ -968,8 +1046,8 @@ export default function StudentProfile() {
   }
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#f4f7fb_52%,#f8fafc_100%)] pt-16">
-      <motion.div
+    <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#f4f7fb_52%,#f8fafc_100%)] pt-16 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_52%,#020617_100%)]">
+      <MotionDiv
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, ease: 'easeOut' }}
@@ -977,7 +1055,7 @@ export default function StudentProfile() {
       >
         <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
           <aside className="xl:sticky xl:top-[88px] xl:self-start">
-            <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_22px_60px_-42px_rgba(15,23,42,0.28)]">
+            <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_22px_60px_-42px_rgba(15,23,42,0.28)] dark:border-gray-800 dark:bg-gray-900 dark:shadow-[0_22px_60px_-42px_rgba(2,6,23,0.8)]">
               <div className="h-24 bg-[linear-gradient(135deg,#0f172a_0%,#12323d_38%,#0f766e_100%)]" />
               <div className="px-5 pb-5">
                 <div className="-mt-12 flex items-end justify-between gap-3">
@@ -986,32 +1064,35 @@ export default function StudentProfile() {
                       <img
                         src={user.avatarUrl}
                         alt={user.name}
-                        className="h-24 w-24 rounded-full border-4 border-white object-cover shadow-[0_18px_36px_-20px_rgba(15,23,42,0.35)]"
+                        className="h-24 w-24 rounded-full border-4 border-white object-cover shadow-[0_18px_36px_-20px_rgba(15,23,42,0.35)] dark:border-gray-900"
                       />
                     ) : (
-                      <div className="flex h-24 w-24 items-center justify-center rounded-full border-4 border-white bg-[linear-gradient(135deg,#0f172a_0%,#334155_100%)] text-3xl font-bold text-white shadow-[0_18px_36px_-20px_rgba(15,23,42,0.35)]">
+                      <div className="flex h-24 w-24 items-center justify-center rounded-full border-4 border-white bg-[linear-gradient(135deg,#0f172a_0%,#334155_100%)] text-3xl font-bold text-white shadow-[0_18px_36px_-20px_rgba(15,23,42,0.35)] dark:border-gray-900">
                         {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
                       </div>
                     )}
                     <button
                       type="button"
                       onClick={openPhotoModal}
-                      className="absolute -bottom-1 -right-1 flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-[0_10px_22px_-14px_rgba(15,23,42,0.28)] transition-colors hover:bg-slate-50"
+                      className="absolute -bottom-1 -right-1 flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-[0_10px_22px_-14px_rgba(15,23,42,0.28)] transition-colors hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
                       aria-label="Edit profile photo"
                     >
                       <Camera className="h-4 w-4" />
                     </button>
                   </div>
 
-                  <span className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">
-                    {codingLevel}
-                  </span>
+                  <div className="text-right">
+                    <span className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300">
+                      {performanceTitle.title}
+                    </span>
+                    <p className="mt-2 max-w-[180px] text-xs leading-5 text-slate-500 dark:text-gray-400">{performanceTitle.helper}</p>
+                  </div>
                 </div>
 
                 <div className="mt-4">
-                  <h1 className="text-xl font-bold text-slate-950">{user.name || 'Student'}</h1>
-                  <p className="mt-1 text-sm font-medium text-slate-500">{handle}</p>
-                  <p className="mt-3 text-sm leading-6 text-slate-600">{shortBio}</p>
+                  <h1 className="text-xl font-bold text-slate-950 dark:text-gray-100">{user.name || 'Student'}</h1>
+                  <p className="mt-1 text-sm font-medium text-slate-500 dark:text-gray-400">{handle}</p>
+                  <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-gray-300">{shortBio}</p>
                 </div>
 
                 <button
@@ -1092,13 +1173,14 @@ export default function StudentProfile() {
             >
               {loadingActivity ? (
                 <div className="py-12 text-center">
-                  <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-slate-900 border-t-transparent" />
-                  <p className="mt-4 text-sm text-slate-500">Loading activity...</p>
+                  <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-slate-900 border-t-transparent dark:border-gray-200 dark:border-t-transparent" />
+                  <p className="mt-4 text-sm text-slate-500 dark:text-gray-400">Loading activity...</p>
                 </div>
               ) : (
                 <ContributionCalendar
                   title=""
                   activity={activity}
+                  stats={activityStats}
                   tooltipFormatter={({ value, formattedDate }) => `${value} tracked activities on ${formattedDate}`}
                   legendLabels={{
                     none: 'No submissions',
@@ -1122,13 +1204,13 @@ export default function StudentProfile() {
                 {(stats?.recentSolvedProblems || []).length === 0 ? (
                   <EmptyState message="Solve a problem to start building your accepted history." />
                 ) : (
-                  <div className="space-y-3">
-                    {stats.recentSolvedProblems.map((problem, index) => (
-                      <div key={`${problem.title}-${index}`} className="rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-3 transition-colors hover:bg-white">
+                <div className="space-y-3">
+                  {stats.recentSolvedProblems.map((problem, index) => (
+                      <div key={`${problem.title}-${index}`} className="rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-3 transition-colors hover:bg-white dark:border-gray-800 dark:bg-gray-800/80 dark:hover:bg-gray-800">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-slate-900">{problem.title}</p>
-                            <p className="mt-1 text-xs text-slate-500">Solved on {formatDateTime(problem.acceptedAt)}</p>
+                            <p className="truncate text-sm font-semibold text-slate-900 dark:text-gray-100">{problem.title}</p>
+                            <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Solved on {formatDateTime(problem.acceptedAt)}</p>
                           </div>
                           <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${difficultyClasses(problem.difficulty)}`}>
                             {problem.difficulty}
@@ -1146,12 +1228,12 @@ export default function StudentProfile() {
                 ) : (
                   <div className="space-y-3">
                     {stats.recentSubmissions.map((submission, index) => (
-                      <div key={`${submission.problemTitle}-${submission.createdAt}-${index}`} className="rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-3 transition-colors hover:bg-white">
+                      <div key={`${submission.problemTitle}-${submission.createdAt}-${index}`} className="rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-3 transition-colors hover:bg-white dark:border-gray-800 dark:bg-gray-800/80 dark:hover:bg-gray-800">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-slate-900">{submission.problemTitle}</p>
-                            <p className="mt-1 text-xs text-slate-500">
-                              {submission.language} | {formatDuration(submission.executionTimeMs)} | {formatDateTime(submission.createdAt)}
+                            <p className="truncate text-sm font-semibold text-slate-900 dark:text-gray-100">{submission.problemTitle}</p>
+                            <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">
+                              {(submission.mode === 'run' ? 'Run' : 'Submit')} | {submission.language} | {formatDuration(submission.executionTimeMs)} | {formatDateTime(submission.createdAt)}
                             </p>
                           </div>
                           <div className="flex items-center gap-2">
@@ -1171,25 +1253,25 @@ export default function StudentProfile() {
             </section>
           </main>
         </div>
-      </motion.div>
+      </MotionDiv>
 
       <AnimatePresence>
         {showEditModal && (
           <>
-            <motion.div
+            <MotionDiv
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={closeEditModal}
               className="fixed inset-0 z-50 bg-slate-950/55 backdrop-blur-sm"
             />
-            <motion.div
+            <MotionDiv
               initial={{ opacity: 0, scale: 0.96, y: 18 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 18 }}
               className="fixed inset-0 z-50 flex items-center justify-center p-4"
             >
-              <div className="w-full max-w-3xl overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl">
+              <div className="w-full max-w-3xl overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900">
                 <div className="flex items-center justify-between bg-[linear-gradient(135deg,#0f172a_0%,#12323d_42%,#0f766e_100%)] px-6 py-4 text-white">
                   <div>
                     <h2 className="text-lg font-semibold">Edit Student Profile</h2>
@@ -1200,14 +1282,14 @@ export default function StudentProfile() {
                   </button>
                 </div>
 
-                <div className="space-y-5 bg-slate-50/70 p-6">
+                <div className="space-y-5 bg-slate-50/70 p-6 dark:bg-gray-900/80">
                   {error ? (
-                    <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                    <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300">
                       {error}
                     </div>
                   ) : null}
                   {success ? (
-                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300">
                       {success}
                     </div>
                   ) : null}
@@ -1240,8 +1322,8 @@ export default function StudentProfile() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-end gap-3 border-t border-slate-200 bg-white px-6 py-4">
-                  <button type="button" onClick={closeEditModal} className="rounded-full border border-slate-300 px-5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
+                <div className="flex items-center justify-end gap-3 border-t border-slate-200 bg-white px-6 py-4 dark:border-gray-800 dark:bg-gray-900">
+                  <button type="button" onClick={closeEditModal} className="rounded-full border border-slate-300 px-5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
                     Cancel
                   </button>
                   <button
@@ -1254,26 +1336,26 @@ export default function StudentProfile() {
                   </button>
                 </div>
               </div>
-            </motion.div>
+            </MotionDiv>
           </>
         )}
 
         {showPhotoModal && (
           <>
-            <motion.div
+            <MotionDiv
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={closePhotoModal}
               className="fixed inset-0 z-50 bg-slate-950/55 backdrop-blur-sm"
             />
-            <motion.div
+            <MotionDiv
               initial={{ opacity: 0, scale: 0.96, y: 18 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 18 }}
               className="fixed inset-0 z-50 flex items-center justify-center p-4"
             >
-              <div className="w-full max-w-md overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl">
+              <div className="w-full max-w-md overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900">
                 <div className="flex items-center justify-between bg-[linear-gradient(135deg,#0f172a_0%,#334155_100%)] px-6 py-4 text-white">
                   <h2 className="text-lg font-semibold">Update Profile Photo</h2>
                   <button type="button" onClick={closePhotoModal} className="rounded-xl p-2 hover:bg-white/15">
@@ -1283,23 +1365,23 @@ export default function StudentProfile() {
 
                 <div className="space-y-4 p-6">
                   {error ? (
-                    <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                    <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300">
                       {error}
                     </div>
                   ) : null}
                   {success ? (
-                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300">
                       {success}
                     </div>
                   ) : null}
 
                   <div className="flex flex-col items-center text-center">
                     {avatarPreview ? (
-                      <img src={avatarPreview} alt="Preview" className="h-32 w-32 rounded-full border-4 border-slate-200 object-cover shadow-lg" />
+                      <img src={avatarPreview} alt="Preview" className="h-32 w-32 rounded-full border-4 border-slate-200 object-cover shadow-lg dark:border-gray-700" />
                     ) : user.avatarUrl ? (
-                      <img src={user.avatarUrl} alt={user.name} className="h-32 w-32 rounded-full border-4 border-slate-200 object-cover shadow-lg" />
+                      <img src={user.avatarUrl} alt={user.name} className="h-32 w-32 rounded-full border-4 border-slate-200 object-cover shadow-lg dark:border-gray-700" />
                     ) : (
-                      <div className="flex h-32 w-32 items-center justify-center rounded-full border-4 border-slate-200 bg-[linear-gradient(135deg,#0f172a_0%,#334155_100%)] text-4xl font-bold text-white shadow-lg">
+                      <div className="flex h-32 w-32 items-center justify-center rounded-full border-4 border-slate-200 bg-[linear-gradient(135deg,#0f172a_0%,#334155_100%)] text-4xl font-bold text-white shadow-lg dark:border-gray-700">
                         {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
                       </div>
                     )}
@@ -1309,14 +1391,14 @@ export default function StudentProfile() {
                       Choose Photo
                       <input type="file" accept="image/*" onChange={onAvatarChange} className="hidden" />
                     </label>
-                    <p className="mt-3 text-sm text-slate-600">
+                    <p className="mt-3 text-sm text-slate-600 dark:text-gray-300">
                       {avatarFile ? avatarFile.name : 'Square image recommended, at least 256 x 256 px.'}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
-                  <button type="button" onClick={closePhotoModal} className="rounded-full border border-slate-300 px-5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
+                <div className="flex items-center justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4 dark:border-gray-800 dark:bg-gray-900">
+                  <button type="button" onClick={closePhotoModal} className="rounded-full border border-slate-300 px-5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
                     Cancel
                   </button>
                   <button
@@ -1329,7 +1411,7 @@ export default function StudentProfile() {
                   </button>
                 </div>
               </div>
-            </motion.div>
+            </MotionDiv>
           </>
         )}
       </AnimatePresence>

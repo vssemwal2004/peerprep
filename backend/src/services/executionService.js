@@ -11,8 +11,9 @@ const JUDGE0_BASE_URLS = String(process.env.JUDGE0_BASE_URLS || JUDGE0_BASE_URL)
 const MAX_SOURCE_CODE_SIZE_BYTES = 50 * 1024;
 const MAX_STDIN_SIZE_BYTES = 64 * 1024;
 const MAX_TESTCASE_TEXT_BYTES = 64 * 1024;
-const POLL_DELAY_MS = 1000;
-const POLL_MAX_ATTEMPTS = 10;
+const INITIAL_POLL_DELAY_MS = Number(process.env.JUDGE0_INITIAL_POLL_DELAY_MS || 150);
+const POLL_DELAY_MS = Number(process.env.JUDGE0_POLL_DELAY_MS || 250);
+const POLL_MAX_ATTEMPTS = Number(process.env.JUDGE0_POLL_MAX_ATTEMPTS || 40);
 const JUDGE0_REQUEST_TIMEOUT_MS = Number(process.env.JUDGE0_REQUEST_TIMEOUT_MS || 15000);
 const DEFAULT_TIME_LIMIT_SECONDS = 2;
 const DEFAULT_MEMORY_LIMIT_KB = 256 * 1024;
@@ -290,7 +291,7 @@ export async function runJudge0(sourceCodeInput, languageId, stdin = '', options
 
   let latestResult = null;
   for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt += 1) {
-    await sleep(POLL_DELAY_MS);
+    await sleep(attempt === 0 ? INITIAL_POLL_DELAY_MS : POLL_DELAY_MS);
     latestResult = await judge0Request(`/submissions/${createSubmissionResponse.token}?base64_encoded=true`);
     const normalized = normalizeJudge0Result(latestResult);
     if ((normalized.status?.id || 0) > 2) {

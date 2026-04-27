@@ -666,7 +666,18 @@ function beatsPercentLowerIsBetter(value, dataset) {
 }
 
 function AcceptancePanel({ submissions, selectedId, onBack }) {
-  if (!submissions || submissions.length === 0) {
+  const rows = Array.isArray(submissions) ? submissions : [];
+  const selected = rows.find((entry) => String(entry._id) === String(selectedId)) || rows[0] || null;
+  const analysisRef = useRef(null);
+  const solutionRef = useRef(null);
+  const [activeShortcut, setActiveShortcut] = useState('analysis');
+
+  useEffect(() => {
+    const target = activeShortcut === 'solution' ? solutionRef.current : analysisRef.current;
+    target?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [activeShortcut, selected?._id]);
+
+  if (!selected) {
     return (
       <div className="px-5 py-5">
         <EmptyState
@@ -677,9 +688,8 @@ function AcceptancePanel({ submissions, selectedId, onBack }) {
     );
   }
 
-  const selected = submissions.find((entry) => String(entry._id) === String(selectedId)) || submissions[0];
   const languageKey = selected.language;
-  const peer = submissions
+  const peer = rows
     .filter((entry) => entry.mode === 'submit' && entry.language === languageKey)
     .filter((entry) => Number(entry.executionTimeMs || 0) > 0 || Number(entry.memoryUsedKb || 0) > 0);
 
@@ -773,14 +783,16 @@ function AcceptancePanel({ submissions, selectedId, onBack }) {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            className="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+            onClick={() => setActiveShortcut('analysis')}
+            className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${activeShortcut === 'analysis' ? 'bg-slate-900 text-white dark:bg-sky-600' : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'}`}
           >
             Analysis
           </button>
           {isAccepted && (
             <button
               type="button"
-              className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 dark:bg-emerald-600 dark:hover:bg-emerald-500"
+              onClick={() => setActiveShortcut('solution')}
+              className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${activeShortcut === 'solution' ? 'bg-emerald-600 text-white hover:bg-emerald-500 dark:bg-emerald-600 dark:hover:bg-emerald-500' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-200 dark:hover:bg-emerald-900/30'}`}
             >
               Solution
             </button>
@@ -789,7 +801,10 @@ function AcceptancePanel({ submissions, selectedId, onBack }) {
       </div>
 
       {isAccepted && (
-        <div className="overflow-hidden rounded-[26px] bg-white/82 shadow-[0_10px_30px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:bg-gray-900/82">
+        <div
+          ref={analysisRef}
+          className={`overflow-hidden rounded-[26px] bg-white/82 shadow-[0_10px_30px_rgba(15,23,42,0.04)] backdrop-blur-sm transition-all dark:bg-gray-900/82 ${activeShortcut === 'analysis' ? 'ring-2 ring-sky-300/70 dark:ring-sky-500/40' : ''}`}
+        >
           <div className="grid gap-0 md:grid-cols-2">
             <div className="space-y-1 bg-slate-50 px-5 py-5 dark:bg-gray-800">
               <div className="text-sm font-semibold text-slate-700 dark:text-gray-200">Runtime</div>
@@ -850,7 +865,10 @@ function AcceptancePanel({ submissions, selectedId, onBack }) {
       )}
 
       {codeText && (
-        <div className="space-y-2">
+        <div
+          ref={solutionRef}
+          className={`space-y-2 rounded-[26px] transition-all ${activeShortcut === 'solution' ? 'ring-2 ring-emerald-300/70 dark:ring-emerald-500/40' : ''}`}
+        >
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-500 dark:text-gray-400">
             <span>Code</span>
             <span className="text-slate-300 dark:text-gray-600">|</span>

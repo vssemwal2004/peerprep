@@ -10,6 +10,9 @@ const submissionCaseResultSchema = new mongoose.Schema({
   expectedOutput: String,
   actualOutput: String,
   executionTimeMs: Number,
+  memoryUsedKb: Number,
+  stderr: String,
+  compileOutput: String,
 }, { _id: false });
 
 const failedCaseSchema = new mongoose.Schema({

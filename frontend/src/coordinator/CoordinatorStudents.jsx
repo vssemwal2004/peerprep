@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../utils/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, Users, Loader2, X, Download } from "lucide-react";
@@ -7,6 +8,7 @@ import Fuse from "fuse.js";
 import ContributionCalendar from "../components/ContributionCalendar";
 
 export default function CoordinatorStudents() {
+  const navigate = useNavigate();
   const [students, setStudents] = useState([]);
   const [filteredStudents, setFilteredStudents] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -97,13 +99,7 @@ export default function CoordinatorStudents() {
   };
 
   const openStudentProfile = async (student) => {
-    setSelectedStudent(student);
-    setShowModal(true);
-    setSelectedYear(new Date().getFullYear());
-    
-    // Load real activity data for current year and stats
-    await loadStudentActivity(student._id, new Date().getFullYear());
-    await loadStudentStats(student._id);
+    navigate(`/coordinator/students/${student._id}`);
   };
 
   const loadStudentActivity = async (studentId, year) => {

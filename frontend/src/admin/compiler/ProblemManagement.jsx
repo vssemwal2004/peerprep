@@ -1,6 +1,6 @@
-import { useDeferredValue, useEffect, useState } from 'react';
+import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Search, Trash2 } from 'lucide-react';
+import { ArrowRight, MoreVertical, Search, Trash2 } from 'lucide-react';
 import { api } from '../../utils/api';
 import { useToast } from '../../components/CustomToast';
 import { formatDate, formatPercent } from './compilerUtils';
@@ -20,6 +20,43 @@ export default function ProblemManagement() {
   const [loading, setLoading] = useState(true);
   const [response, setResponse] = useState({ problems: [], pagination: { page: 1, pages: 1, total: 0 } });
   const deferredSearch = useDeferredValue(searchQuery);
+  const menuRef = useRef(null);
+  const [openMenu, setOpenMenu] = useState(null);
+
+  const closeMenu = () => setOpenMenu(null);
+
+  useEffect(() => {
+    if (!openMenu) return undefined;
+
+    const handlePointerDown = (event) => {
+      const button = event.target.closest(`[data-actions-menu-button="${openMenu.id}"]`);
+      if (button) return;
+      if (menuRef.current && menuRef.current.contains(event.target)) return;
+      closeMenu();
+    };
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        closeMenu();
+      }
+    };
+
+    const handleScrollOrResize = () => {
+      closeMenu();
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('scroll', handleScrollOrResize, true);
+    window.addEventListener('resize', handleScrollOrResize);
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+      window.removeEventListener('resize', handleScrollOrResize);
+    };
+  }, [openMenu]);
 
   useEffect(() => {
     let isMounted = true;
@@ -86,6 +123,22 @@ export default function ProblemManagement() {
   const problems = response.problems || [];
   const pagination = response.pagination || { page: 1, pages: 1, total: 0 };
 
+  const openMenuFor = (problemId, event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    setOpenMenu((previous) => {
+      if (previous?.id === problemId) return null;
+      return {
+        id: problemId,
+        top: rect.bottom + 8,
+        left: rect.right,
+      };
+    });
+  };
+
+  const menuItemClassName = 'flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm font-semibold transition-colors';
+
   return (
     <SectionCard
       title="Problem Management"
@@ -147,11 +200,77 @@ export default function ProblemManagement() {
                       </span>
                     </td>
                     <td className="px-4 py-4">
-                      <div className="flex flex-wrap gap-2">
-                        <button type="button" onClick={() => navigate(`${rolePrefix}/compiler/${problem._id}/edit`)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Edit</button>
-                        <button type="button" onClick={() => navigate(`${rolePrefix}/compiler/${problem._id}/preview`)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Preview</button>
-                        <button type="button" onClick={() => handleToggleStatus(problem)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">{(String(problem.status || '').toLowerCase() === 'published' || String(problem.status || '').toLowerCase() === 'active') ? 'Unpublish' : 'Publish'}</button>
-                        <button type="button" onClick={() => handleDelete(problem._id)} className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-600 transition-colors hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-900/20"><Trash2 className="h-3.5 w-3.5" />Delete</button>
+                      <div className="flex items-center justify-end">
+                        <button
+                          type="button"
+                          data-actions-menu-button={problem._id}
+                          onClick={(event) => openMenuFor(problem._id, event)}
+                          aria-haspopup="menu"
+                          aria-expanded={openMenu?.id === problem._id}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+                          title="Actions"
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </button>
+
+                        {openMenu?.id === problem._id ? (
+                          <div className="fixed z-50" style={{ top: openMenu.top, left: openMenu.left }}>
+                            <div
+                              ref={menuRef}
+                              role="menu"
+                              className="w-52 -translate-x-full rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_18px_46px_rgba(15,23,42,0.16)] dark:border-gray-700 dark:bg-gray-900"
+                            >
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onClick={() => {
+                                  closeMenu();
+                                  navigate(`${rolePrefix}/compiler/${problem._id}/edit`);
+                                }}
+                                className={`${menuItemClassName} text-slate-700 hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800`}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onClick={() => {
+                                  closeMenu();
+                                  navigate(`${rolePrefix}/compiler/${problem._id}/preview`);
+                                }}
+                                className={`${menuItemClassName} text-slate-700 hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800`}
+                              >
+                                Preview
+                              </button>
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onClick={() => {
+                                  closeMenu();
+                                  handleToggleStatus(problem);
+                                }}
+                                className={`${menuItemClassName} text-slate-700 hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800`}
+                              >
+                                {(String(problem.status || '').toLowerCase() === 'published' || String(problem.status || '').toLowerCase() === 'active') ? 'Unpublish' : 'Publish'}
+                              </button>
+                              <div className="my-2 h-px bg-slate-200 dark:bg-gray-700" />
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onClick={() => {
+                                  closeMenu();
+                                  handleDelete(problem._id);
+                                }}
+                                className={`${menuItemClassName} text-rose-600 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-900/20`}
+                              >
+                                <span className="inline-flex items-center gap-2">
+                                  <Trash2 className="h-4 w-4" />
+                                  Delete
+                                </span>
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
                     </td>
                   </tr>

@@ -139,6 +139,32 @@ function ensureObjectId(id, fieldName) {
   }
 }
 
+function normalizeProblemTitleText(value) {
+  return String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function ensureUniqueProblemTitle(title, excludeProblemId = null) {
+  const normalizedTitle = normalizeProblemTitleText(title);
+  if (!normalizedTitle) {
+    return;
+  }
+
+  const duplicate = await Problem.findOne({
+    ...(excludeProblemId ? { _id: { $ne: excludeProblemId } } : {}),
+    title: { $regex: `^${escapeRegex(normalizedTitle)}$`, $options: 'i' },
+  }).select('_id title');
+
+  if (duplicate) {
+    throw new HttpError(409, `A compiler problem named "${duplicate.title}" already exists. Use a unique question title.`);
+  }
+}
+
 function normalizeUniqueList(values) {
   const seen = new Map();
 
@@ -358,7 +384,7 @@ function buildProblemPayload(
     existingHiddenBulkCaseCount = 0,
   } = {},
 ) {
-  const title = sanitizeString(req.body.title, 200);
+  const title = normalizeProblemTitleText(sanitizeString(req.body.title, 200));
   if (!title) {
     throw new HttpError(400, 'Problem title is required.');
   }
@@ -898,6 +924,7 @@ export async function getProblemDetail(req, res) {
 
 export async function createProblem(req, res) {
   const payload = buildProblemPayload(req);
+  await ensureUniqueProblemTitle(payload.problem.title);
 
   if (payload.problem.status === 'published') {
     throw new HttpError(400, 'Preview testing is required before publishing a problem.');
@@ -968,6 +995,7 @@ export async function updateProblem(req, res) {
     existingHiddenTestCaseCount,
     existingHiddenBulkCaseCount: Number(existingProblem.hiddenTestSource?.caseCount || 0),
   });
+  await ensureUniqueProblemTitle(payload.problem.title, existingProblem._id);
   const canRetainPreviewStatus = payload.problem.status === 'published' && (existingProblem.previewValidated ?? existingProblem.previewTested);
 
   Object.assign(existingProblem, {
@@ -1178,20 +1206,33 @@ export async function runProblemCode(req, res) {
       executionTimeMs: secondsToMilliseconds(judgeResult.time),
       memoryUsedKb: Math.trunc(Number(judgeResult.memory || 0)),
       provider: 'judge0-ce',
-      totalTestCases: 0,
-      passedTestCases: 0,
+      totalTestCases: 1,
+      passedTestCases: evaluation.status === 'AC' ? 1 : 0,
+      testCaseResults: [{
+        index: 1,
+        status: evaluation.status,
+        input: customInput,
+        expectedOutput: '',
+        actualOutput: judgeResult.stdout || '',
+        executionTimeMs: secondsToMilliseconds(judgeResult.time),
+        memoryUsedKb: Math.trunc(Number(judgeResult.memory || 0)),
+        stderr: evaluation.status === 'RE' || evaluation.status === 'TLE' ? (evaluation.error || '') : '',
+        compileOutput: evaluation.status === 'CE' ? (evaluation.error || '') : '',
+      }],
     };
 
     await finalizeSubmission(req, submission, result);
-    if (result.status === 'AC') {
-      await Problem.findByIdAndUpdate(problem._id, {
-        $set: {
-          previewValidated: true,
-          previewTested: true,
-        },
-      });
-    }
-    await refreshProblemStats(problem._id);
+    void Promise.all([
+      result.status === 'AC'
+        ? Problem.findByIdAndUpdate(problem._id, {
+          $set: {
+            previewValidated: true,
+            previewTested: true,
+          },
+        })
+        : Promise.resolve(),
+      refreshProblemStats(problem._id),
+    ]).catch(() => {});
 
     res.json(buildSubmissionResponse(req, submission));
   } catch (error) {
@@ -1202,10 +1243,10 @@ export async function runProblemCode(req, res) {
       executionTimeMs: 0,
       memoryUsedKb: 0,
       provider: 'judge0-ce',
-      totalTestCases: 0,
+      totalTestCases: 1,
       passedTestCases: 0,
     });
-    await refreshProblemStats(problem._id);
+    void refreshProblemStats(problem._id).catch(() => {});
     throw error;
   }
 }
@@ -1287,9 +1328,10 @@ export async function submitProblemCode(req, res) {
       const evaluation = evaluateJudge0Case(judgeResult, testCase.output || '');
       const executionTimeMs = secondsToMilliseconds(judgeResult.time);
       const actualOutput = judgeResult.stdout || '';
+      const memoryUsedKb = Math.trunc(Number(judgeResult.memory || 0));
 
       totalExecutionTimeSeconds += Number(judgeResult.time || 0);
-      peakMemoryKb = Math.max(peakMemoryKb, Math.trunc(Number(judgeResult.memory || 0)));
+      peakMemoryKb = Math.max(peakMemoryKb, memoryUsedKb);
 
       testCaseResults.push({
         index: index + 1,
@@ -1298,6 +1340,9 @@ export async function submitProblemCode(req, res) {
         expectedOutput: testCase.output || '',
         actualOutput,
         executionTimeMs,
+        memoryUsedKb,
+        stderr: evaluation.status === 'RE' || evaluation.status === 'TLE' ? (evaluation.error || '') : '',
+        compileOutput: evaluation.status === 'CE' ? (evaluation.error || '') : '',
       });
 
       if (evaluation.status !== 'AC') {
@@ -1333,15 +1378,17 @@ export async function submitProblemCode(req, res) {
     };
 
     await finalizeSubmission(req, submission, result);
-    if (result.status === 'AC') {
-      await Problem.findByIdAndUpdate(problem._id, {
-        $set: {
-          previewValidated: true,
-          previewTested: true,
-        },
-      });
-    }
-    await refreshProblemStats(problem._id);
+    void Promise.all([
+      result.status === 'AC'
+        ? Problem.findByIdAndUpdate(problem._id, {
+          $set: {
+            previewValidated: true,
+            previewTested: true,
+          },
+        })
+        : Promise.resolve(),
+      refreshProblemStats(problem._id),
+    ]).catch(() => {});
 
     res.json(buildSubmissionResponse(req, submission));
   } catch (error) {
@@ -1355,7 +1402,7 @@ export async function submitProblemCode(req, res) {
       totalTestCases: hiddenTestCases.length,
       passedTestCases: 0,
     });
-    await refreshProblemStats(problem._id);
+    void refreshProblemStats(problem._id).catch(() => {});
     throw error;
   }
 }

@@ -558,6 +558,9 @@ async function executeRunPayload({
       expectedOutput: resolvedExpectedOutput,
       actualOutput: judgeResult.stdout || '',
       executionTimeMs: secondsToMilliseconds(judgeResult.time),
+      memoryUsedKb: Math.trunc(Number(judgeResult.memory || 0)),
+      stderr: evaluation.internalStatus === 'RE' || evaluation.internalStatus === 'TLE' ? (evaluation.error || '') : '',
+      compileOutput: evaluation.internalStatus === 'CE' ? (evaluation.error || '') : '',
     }],
     provider: 'judge0-ce',
   };
@@ -597,6 +600,9 @@ async function executeSubmitPayload({ sourceCode, languageId, problem }) {
       expectedOutput: testCase.output || '',
       actualOutput: judgeResult.stdout || '',
       executionTimeMs,
+      memoryUsedKb,
+      stderr: evaluation.internalStatus === 'RE' || evaluation.internalStatus === 'TLE' ? (evaluation.error || '') : '',
+      compileOutput: evaluation.internalStatus === 'CE' ? (evaluation.error || '') : '',
     });
 
     if (evaluation.internalStatus !== 'AC') {

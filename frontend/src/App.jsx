@@ -308,6 +308,7 @@ function AppContent() {
         <Route path="/coordinator/interviews" element={<CoordinatorShell><CoordinatorEventDetail /></CoordinatorShell>} />
         <Route path="/coordinator/event/:id" element={<CoordinatorShell><CoordinatorEventDetail /></CoordinatorShell>} />
         <Route path="/coordinator/students" element={<CoordinatorShell><CoordinatorStudents /></CoordinatorShell>} />
+        <Route path="/coordinator/students/:studentId" element={<CoordinatorShell><AdminStudentProfile /></CoordinatorShell>} />
         <Route path="/coordinator/subjects" element={<CoordinatorShell><SemesterManagement /></CoordinatorShell>} />
         <Route path="/coordinator/database" element={<CoordinatorShell><CoordinatorDatabase /></CoordinatorShell>} />
         <Route path="/coordinator/feedback" element={<CoordinatorShell><CoordinatorFeedback /></CoordinatorShell>} />

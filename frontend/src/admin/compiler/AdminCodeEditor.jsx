@@ -16,6 +16,35 @@ function createDrafts(problem) {
   }, {});
 }
 
+function statusLabel(status) {
+  const normalized = String(status || '').toUpperCase();
+  if (normalized === 'AC') return 'Accepted';
+  if (normalized === 'WA') return 'Wrong Answer';
+  if (normalized === 'TLE') return 'Time Limit Exceeded';
+  if (normalized === 'RE') return 'Runtime Error';
+  if (normalized === 'CE') return 'Compilation Error';
+  return status || 'Result';
+}
+
+function formatMemoryMb(value) {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric) || numeric <= 0) return '—';
+  return `${(numeric / 1024).toFixed(2)} MB`;
+}
+
+function DetailBlock({ label, value, tone = 'default' }) {
+  const toneClass = tone === 'error'
+    ? 'border-rose-200 bg-rose-50 text-rose-900 dark:border-rose-800 dark:bg-rose-900/10 dark:text-rose-100'
+    : 'border-slate-200 bg-slate-50 text-slate-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100';
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">{label}</p>
+      <pre className={`overflow-x-auto whitespace-pre-wrap rounded-xl border px-3 py-2 text-xs ${toneClass}`}>{value || '(empty)'}</pre>
+    </div>
+  );
+}
+
 export default function AdminCodeEditor({ problem }) {
   const toast = useToast();
   const [language, setLanguage] = useState(problem?.supportedLanguages?.[0] || 'python');
@@ -172,26 +201,60 @@ export default function AdminCodeEditor({ problem }) {
             <h4 className="text-sm font-semibold text-slate-800 dark:text-gray-100">Output & Results</h4>
             {result?.status && (
               <span className={`rounded-full px-3 py-1 text-xs font-semibold ${submissionStatusClass(result.status)}`}>
-                {result.status}
+                {statusLabel(result.status)}
               </span>
             )}
           </div>
 
           <p className="mt-2 text-sm text-slate-500 dark:text-gray-400">{summaryLabel}</p>
 
-          <div className="mt-4 rounded-xl bg-slate-950 px-4 py-4 text-xs text-slate-100">
-            <pre className="overflow-x-auto whitespace-pre-wrap">
-              {result?.output || result?.stderr || 'Run or submit to inspect the output.'}
-            </pre>
-          </div>
-
           {result && (
-            <div className="mt-4 flex flex-wrap gap-3 text-xs text-slate-500 dark:text-gray-400">
-              <span>Language: {getLanguageLabel(language)}</span>
-              <span>Execution: {formatDuration(result.executionTimeMs)}</span>
-              {result.totalTestCases > 0 && (
-                <span>Passed {result.passedTestCases}/{result.totalTestCases} cases</span>
-              )}
+            <>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-gray-700 dark:bg-gray-800/80">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Language</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-gray-100">{getLanguageLabel(language)}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-gray-700 dark:bg-gray-800/80">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Execution</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-gray-100">{formatDuration(result.executionTimeMs)}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-gray-700 dark:bg-gray-800/80">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Memory</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-gray-100">{formatMemoryMb(result.memoryUsedKb)}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-gray-700 dark:bg-gray-800/80">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Passed</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-gray-100">{result.passedTestCases || 0}/{result.totalTestCases || 0}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-gray-700 dark:bg-gray-800/80">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Time Limit</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-gray-100">{problem.timeLimitSeconds || 2}s</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-gray-700 dark:bg-gray-800/80">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Memory Limit</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-gray-100">{problem.memoryLimitMb || 256} MB</p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3">
+                <DetailBlock label="Output" value={result.output || ''} />
+                {(result.stderr || result.compileOutput) ? (
+                  <DetailBlock
+                    label={result.compileOutput ? 'Compile Output' : 'Errors'}
+                    value={result.compileOutput || result.stderr || ''}
+                    tone="error"
+                  />
+                ) : null}
+              </div>
+            </>
+          )}
+
+          {!result && (
+            <div className="mt-4 rounded-xl bg-slate-950 px-4 py-4 text-xs text-slate-100">
+              <pre className="overflow-x-auto whitespace-pre-wrap">
+                Run or submit to inspect the output.
+              </pre>
             </div>
           )}
 
@@ -218,16 +281,32 @@ export default function AdminCodeEditor({ problem }) {
           )}
 
           {result?.testCaseResults?.length > 0 && (
-            <div className="mt-4 space-y-2">
+            <div className="mt-4 space-y-3">
               {result.testCaseResults.map((testCaseResult) => (
-                <div key={`${testCaseResult.index}-${testCaseResult.status}`} className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2 dark:border-gray-700">
-                  <div>
-                    <p className="text-sm font-medium text-slate-700 dark:text-gray-200">Test Case {testCaseResult.index}</p>
-                    <p className="text-xs text-slate-500 dark:text-gray-400">{formatDuration(testCaseResult.executionTimeMs)}</p>
+                <div key={`${testCaseResult.index}-${testCaseResult.status}`} className="space-y-3 rounded-xl border border-slate-200 px-3 py-3 dark:border-gray-700">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium text-slate-700 dark:text-gray-200">Test Case {testCaseResult.index}</p>
+                      <p className="text-xs text-slate-500 dark:text-gray-400">
+                        {formatDuration(testCaseResult.executionTimeMs)} | {formatMemoryMb(testCaseResult.memoryUsedKb)}
+                      </p>
+                    </div>
+                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${submissionStatusClass(testCaseResult.status)}`}>
+                      {statusLabel(testCaseResult.status)}
+                    </span>
                   </div>
-                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${submissionStatusClass(testCaseResult.status)}`}>
-                    {testCaseResult.status}
-                  </span>
+                  <DetailBlock label="Input" value={testCaseResult.input || ''} />
+                  {testCaseResult.expectedOutput !== undefined ? (
+                    <DetailBlock label="Expected Output" value={testCaseResult.expectedOutput || ''} />
+                  ) : null}
+                  <DetailBlock label="Actual Output" value={testCaseResult.actualOutput || ''} />
+                  {(testCaseResult.stderr || testCaseResult.compileOutput) ? (
+                    <DetailBlock
+                      label={testCaseResult.compileOutput ? 'Compile Output' : 'Errors'}
+                      value={testCaseResult.compileOutput || testCaseResult.stderr || ''}
+                      tone="error"
+                    />
+                  ) : null}
                 </div>
               ))}
             </div>

@@ -4,6 +4,8 @@ import Submission from '../models/Submission.js';
 import User from '../models/User.js';
 import StudentActivity from '../models/StudentActivity.js';
 import Subject from '../models/Subject.js';
+import Feedback from '../models/Feedback.js';
+import AssessmentSubmission from '../models/AssessmentSubmission.js';
 import { HttpError } from '../utils/errors.js';
 
 // Format seconds into a human-readable watch time string (e.g. "3m 45s", "1h 02m")
@@ -711,7 +713,20 @@ export async function getStudentStats(req, res) {
     const totalVideosWatched = videosWatched[0]?.totalVideos || 0;
 
     // 3. Get total compiler problems solved and submission health
-    const [compilerSummaryAgg, solvedProblemsAgg, attemptedProblemsAgg, statusBreakdownAgg, languageBreakdownAgg, recentSubmissionsAgg] = await Promise.all([
+    const [
+      compilerSummaryAgg,
+      solvedProblemsAgg,
+      attemptedProblemsAgg,
+      statusBreakdownAgg,
+      languageBreakdownAgg,
+      recentSubmissionsAgg,
+      assessmentSummaryAgg,
+      recentAssessmentsAgg,
+      interviewFeedbackAgg,
+      recentFeedbackAgg,
+      interviewPairsAgg,
+      feedbackGivenAgg,
+    ] = await Promise.all([
       Submission.aggregate([
         {
           $match: {
@@ -814,12 +829,126 @@ export async function getStudentStats(req, res) {
       ]),
       Submission.find({
         user: student._id,
-        mode: 'submit',
+        mode: { $in: ['submit', 'run'] },
       })
         .sort({ createdAt: -1 })
-        .limit(6)
-        .select('status language executionTimeMs createdAt problemSnapshot')
+        .limit(8)
+        .select('status language executionTimeMs createdAt problemSnapshot mode')
         .lean(),
+      AssessmentSubmission.aggregate([
+        {
+          $match: {
+            studentId: student._id,
+            status: 'submitted',
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            attempts: { $sum: 1 },
+            avgScore: { $avg: '$score' },
+            avgAccuracy: { $avg: '$accuracy' },
+            highestScore: { $max: '$score' },
+            latestSubmittedAt: { $max: '$submittedAt' },
+          },
+        },
+      ]),
+      AssessmentSubmission.find({
+        studentId: student._id,
+        status: 'submitted',
+      })
+        .sort({ submittedAt: -1 })
+        .limit(5)
+        .select('score accuracy submittedAt assessmentId')
+        .lean(),
+      Feedback.aggregate([
+        {
+          $match: { to: student._id },
+        },
+        {
+          $group: {
+            _id: null,
+            totalReceived: { $sum: 1 },
+            avgScore: { $avg: '$marks' },
+            avgIntegrity: { $avg: '$integrity' },
+            avgCommunication: { $avg: '$communication' },
+            avgPreparedness: { $avg: '$preparedness' },
+            avgProblemSolving: { $avg: '$problemSolving' },
+            avgAttitude: { $avg: '$attitude' },
+            latestReceivedAt: { $max: '$createdAt' },
+          },
+        },
+      ]),
+      Feedback.find({ to: student._id })
+        .sort({ createdAt: -1 })
+        .limit(6)
+        .populate('from', 'name email')
+        .populate('event', 'name')
+        .select('marks comments suggestions createdAt from event integrity communication preparedness problemSolving attitude')
+        .lean(),
+      Pair.aggregate([
+        {
+          $match: {
+            $or: [
+              { interviewer: student._id },
+              { interviewee: student._id },
+            ],
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: 1 },
+            asInterviewer: {
+              $sum: {
+                $cond: [{ $eq: ['$interviewer', student._id] }, 1, 0],
+              },
+            },
+            asInterviewee: {
+              $sum: {
+                $cond: [{ $eq: ['$interviewee', student._id] }, 1, 0],
+              },
+            },
+            completed: {
+              $sum: {
+                $cond: [{ $eq: ['$status', 'completed'] }, 1, 0],
+              },
+            },
+            scheduled: {
+              $sum: {
+                $cond: [{ $eq: ['$status', 'scheduled'] }, 1, 0],
+              },
+            },
+            pending: {
+              $sum: {
+                $cond: [{ $eq: ['$status', 'pending'] }, 1, 0],
+              },
+            },
+            rejected: {
+              $sum: {
+                $cond: [{ $eq: ['$status', 'rejected'] }, 1, 0],
+              },
+            },
+            latestInterviewAt: {
+              $max: {
+                $ifNull: ['$finalConfirmedTime', '$updatedAt'],
+              },
+            },
+          },
+        },
+      ]),
+      Feedback.aggregate([
+        {
+          $match: { from: student._id },
+        },
+        {
+          $group: {
+            _id: null,
+            totalGiven: { $sum: 1 },
+            latestGivenAt: { $max: '$createdAt' },
+          },
+        },
+      ]),
     ]);
 
     // 4. Get total watch time in hours within allowed semesters
@@ -857,6 +986,10 @@ export async function getStudentStats(req, res) {
     const attemptRate = totalQuestionsAttempted > 0
       ? Math.round((totalQuestionsSolved / totalQuestionsAttempted) * 1000) / 10
       : 0;
+    const assessmentSummary = assessmentSummaryAgg[0] || {};
+    const interviewSummary = interviewFeedbackAgg[0] || {};
+    const interviewPairsSummary = interviewPairsAgg[0] || {};
+    const feedbackGivenSummary = feedbackGivenAgg[0] || {};
 
     res.json({
       success: true,
@@ -889,6 +1022,53 @@ export async function getStudentStats(req, res) {
           language: submission.language,
           executionTimeMs: submission.executionTimeMs || 0,
           createdAt: submission.createdAt,
+          mode: submission.mode || 'submit',
+        })),
+        assessmentMetrics: {
+          attempts: assessmentSummary.attempts || 0,
+          avgScore: Math.round((assessmentSummary.avgScore || 0) * 10) / 10,
+          avgAccuracy: Math.round((assessmentSummary.avgAccuracy || 0) * 10) / 10,
+          highestScore: Math.round((assessmentSummary.highestScore || 0) * 10) / 10,
+          latestSubmittedAt: assessmentSummary.latestSubmittedAt || null,
+        },
+        recentAssessments: recentAssessmentsAgg.map((entry) => ({
+          assessmentId: entry.assessmentId || null,
+          score: Math.round((entry.score || 0) * 10) / 10,
+          accuracy: Math.round((entry.accuracy || 0) * 10) / 10,
+          submittedAt: entry.submittedAt || null,
+        })),
+        interviewMetrics: {
+          totalPairs: interviewPairsSummary.total || 0,
+          asInterviewer: interviewPairsSummary.asInterviewer || 0,
+          asInterviewee: interviewPairsSummary.asInterviewee || 0,
+          completed: interviewPairsSummary.completed || 0,
+          scheduled: interviewPairsSummary.scheduled || 0,
+          pending: interviewPairsSummary.pending || 0,
+          rejected: interviewPairsSummary.rejected || 0,
+          latestInterviewAt: interviewPairsSummary.latestInterviewAt || null,
+          feedbackReceived: interviewSummary.totalReceived || 0,
+          feedbackGiven: feedbackGivenSummary.totalGiven || 0,
+          avgScore: Math.round((interviewSummary.avgScore || 0) * 10) / 10,
+          avgIntegrity: Math.round((interviewSummary.avgIntegrity || 0) * 10) / 10,
+          avgCommunication: Math.round((interviewSummary.avgCommunication || 0) * 10) / 10,
+          avgPreparedness: Math.round((interviewSummary.avgPreparedness || 0) * 10) / 10,
+          avgProblemSolving: Math.round((interviewSummary.avgProblemSolving || 0) * 10) / 10,
+          avgAttitude: Math.round((interviewSummary.avgAttitude || 0) * 10) / 10,
+          latestFeedbackAt: interviewSummary.latestReceivedAt || null,
+          latestFeedbackGivenAt: feedbackGivenSummary.latestGivenAt || null,
+        },
+        recentFeedback: recentFeedbackAgg.map((entry) => ({
+          fromName: entry.from?.name || entry.from?.email || 'Unknown Reviewer',
+          eventName: entry.event?.name || 'Interview Event',
+          marks: entry.marks || 0,
+          comments: entry.comments || '',
+          suggestions: entry.suggestions || '',
+          createdAt: entry.createdAt || null,
+          integrity: entry.integrity || 0,
+          communication: entry.communication || 0,
+          preparedness: entry.preparedness || 0,
+          problemSolving: entry.problemSolving || 0,
+          attitude: entry.attitude || 0,
         })),
       }
     });
