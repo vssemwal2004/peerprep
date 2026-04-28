@@ -104,7 +104,6 @@ export function buildProblemFormData(problemForm, status) {
   formData.append('visibility', problemForm.visibility || 'public');
   formData.append('supportedLanguages', JSON.stringify(problemForm.supportedLanguages || []));
   formData.append('codeTemplates', JSON.stringify(problemForm.codeTemplates || {}));
-  formData.append('referenceSolutions', JSON.stringify(problemForm.referenceSolutions || {}));
   formData.append('inputFormat', problemForm.inputFormat || '');
   formData.append('outputFormat', problemForm.outputFormat || '');
   formData.append('constraints', problemForm.constraints || '');
@@ -131,6 +130,12 @@ export function buildProblemFormData(problemForm, status) {
     });
   }
 
+  return formData;
+}
+
+export function buildPreviewApprovalFormData(problemForm) {
+  const formData = new FormData();
+  formData.append('referenceSolutions', JSON.stringify(problemForm.referenceSolutions || {}));
   return formData;
 }
 

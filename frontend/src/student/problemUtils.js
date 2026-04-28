@@ -128,10 +128,39 @@ export function summarizeExecutionResult(result) {
   }
 
   if (isRunExecutionResult(result)) {
+    if (Array.isArray(result?.caseResults) && result.caseResults.length > 0) {
+      const passed = Number(result?.passed || 0);
+      const total = Number(result?.total || result.caseResults.length || 0);
+
+      if (result.status === 'Passed') {
+        return `Passed all ${total} run testcase${total === 1 ? '' : 's'}.`;
+      }
+
+      if (result.status === 'Failed') {
+        return `Passed ${passed} of ${total} run testcase${total === 1 ? '' : 's'}. Review the failed case below.`;
+      }
+
+      if (result.status === 'Run Completed') {
+        return `Run completed on ${total} testcase${total === 1 ? '' : 's'}. Review each output below.`;
+      }
+
+      if (passed === total) {
+        return `Accepted on all ${total} run testcases.`;
+      }
+
+      return `Passed ${passed} of ${total} run testcases. Review the case-by-case results below.`;
+    }
+
     if (result?.mode === 'run' && typeof result.status === 'string') {
       switch (result.status) {
         case 'Accepted':
           return 'Your run matched the expected output for this testcase.';
+        case 'Passed':
+          return 'Your run matched the expected output.';
+        case 'Failed':
+          return 'Your run output did not match the expected output.';
+        case 'Run Completed':
+          return 'Run completed. Review your output below.';
         case 'Wrong Answer':
           return 'Your run output did not match the expected output for this testcase.';
         case 'Compilation Error':

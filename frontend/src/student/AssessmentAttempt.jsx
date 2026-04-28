@@ -1347,21 +1347,6 @@ export default function AssessmentAttempt() {
                       || null;
                     const expectedOutputForRun = activeTestCase?.expectedOutput ?? null;
 
-                    const handleAddCustomTestCase = () => {
-                      const newId = `custom-${Date.now()}`;
-                      setTestCaseMap((prev) => {
-                        const existing = prev[key] || baseTestCases;
-                        return {
-                          ...prev,
-                          [key]: [
-                            ...existing,
-                            { id: newId, kind: 'custom', input: '', expectedOutput: null },
-                          ],
-                        };
-                      });
-                      setActiveTestCaseMap((prev) => ({ ...prev, [key]: newId }));
-                    };
-
                     const handleTestCaseInputChange = (testCaseId, nextInput) => {
                       setTestCaseMap((prev) => {
                         const existing = prev[key] || baseTestCases;
@@ -1385,7 +1370,6 @@ export default function AssessmentAttempt() {
                         testCases={testCases}
                         activeTestCaseId={activeTestCaseId}
                         onActiveTestCaseChange={(nextId) => setActiveTestCaseMap((prev) => ({ ...prev, [key]: nextId }))}
-                        onAddCustomTestCase={handleAddCustomTestCase}
                         onTestCaseInputChange={handleTestCaseInputChange}
                         expectedOutputForRun={expectedOutputForRun}
                         runInputUsed={runInputUsed}

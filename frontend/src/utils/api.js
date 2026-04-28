@@ -506,6 +506,7 @@ export const api = {
   deleteCompilerProblem: (problemId) => request(`/compiler/problems/${problemId}`, { method: 'DELETE' }),
   getCompilerProblem: (problemId) => request(`/compiler/problems/${problemId}`, { skipCache: true }),
   runCompilerPreview: (formData) => request('/compiler/problems/preview/run', { method: 'POST', formData }),
+  approveCompilerProblemPreview: (problemId, formData) => request(`/compiler/problems/${problemId}/preview/approve`, { method: 'POST', formData }),
   runCompilerProblem: (problemId, { language, sourceCode, customInput = '' }) => {
     const fd = new FormData();
     fd.append('language', language);
@@ -583,6 +584,7 @@ export const api = {
     sourceCode,
     customInput = '',
     expectedOutput,
+    testCases,
     assessmentId = '',
   }) => {
     return request('/compiler/run', {
@@ -593,6 +595,7 @@ export const api = {
         language_id: getJudge0LanguageId(language),
         stdin: customInput,
         ...(expectedOutput !== undefined ? { expectedOutput } : {}),
+        ...(Array.isArray(testCases) ? { testCases } : {}),
         ...(assessmentId ? { assessmentId } : {}),
       },
     });

@@ -8,6 +8,7 @@ import MonacoCodeEditor from './MonacoCodeEditor';
 import { ProblemStatementPreview } from './CompilerContentPreview';
 import {
   COMPILER_LANGUAGES,
+  buildPreviewApprovalFormData,
   buildProblemFormData,
   createDefaultProblemForm,
   createEmptyHiddenTestCase,
@@ -110,9 +111,11 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
   const [currentStatus, setCurrentStatus] = useState('draft');
   const [previewValidated, setPreviewValidated] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isApprovingPreview, setIsApprovingPreview] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState('');
+  const [previewReviewResult, setPreviewReviewResult] = useState(null);
   const autoSaveRef = useRef(null);
   const assessmentKey = assessmentContext?.assessmentKey || 'new';
   const rolePrefix = window.location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
@@ -195,6 +198,7 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
   const activeTemplate = form.codeTemplates[activeLanguage] || '';
   const activeReferenceSolution = form.referenceSolutions?.[activeLanguage] || '';
   const hasTemplate = form.supportedLanguages.some((language) => String(form.codeTemplates?.[language] || '').trim());
+  const hasOfficialSolution = form.supportedLanguages.some((language) => String(form.referenceSolutions?.[language] || '').trim());
   const canAddToAssessment = isAssessment && previewValidated && visibleSampleCount > 0 && hiddenCount > 0 && hasTemplate;
   const validationStatus = previewValidated ? (canAddToAssessment ? 'Ready' : 'Validated') : 'Draft';
 
@@ -232,6 +236,7 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
       referenceSolutions: { ...(previous.referenceSolutions || {}), [activeLanguage]: nextSolution },
     }));
     setIsDirty(true);
+    setPreviewValidated(false);
   };
 
   const updateSampleTestCase = (index, field, value) => {
@@ -269,16 +274,19 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
         ? await api.updateCompilerProblem(currentProblemId, payload)
         : await api.createCompilerProblem(payload);
 
-      setCurrentProblemId(response._id);
-      setCurrentStatus(response.status || status);
-      setPreviewValidated(Boolean(response.previewValidated ?? response.previewTested));
-      setForm({
+      const nextForm = {
         ...createProblemFormFromProblem(response),
+        referenceSolutions: form.referenceSolutions || {},
         hiddenTestFiles: [],
         hiddenBulkInputFile: null,
         hiddenBulkOutputFile: null,
         previewValidated: Boolean(response.previewValidated ?? response.previewTested),
-      });
+      };
+
+      setCurrentProblemId(response._id);
+      setCurrentStatus(response.status || status);
+      setPreviewValidated(Boolean(response.previewValidated ?? response.previewTested));
+      setForm(nextForm);
       setActiveLanguage((previous) => {
         if (response.supportedLanguages?.includes(previous)) {
           return previous;
@@ -293,7 +301,7 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
           sectionIndex: assessmentContext?.sectionIndex,
           questionIndex: assessmentContext?.questionIndex,
           problemId: response._id,
-          form: createProblemFormFromProblem(response),
+          form: nextForm,
           problemData: response,
           previewValidated: Boolean(response.previewValidated ?? response.previewTested),
           status: (response.previewValidated ?? response.previewTested) ? 'Validated' : 'Draft',
@@ -375,7 +383,73 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
   };
 
   const openPreview = async () => {
-    await persistProblem('draft', { redirectToPreview: true });
+    if (!hasOfficialSolution) {
+      toast.error('Official solution is required before preview approval.');
+      return;
+    }
+
+    const draftResponse = currentProblemId
+      ? await persistProblem('draft', { silent: true })
+      : await persistProblem('draft', { silent: true });
+    const problemId = draftResponse?._id || currentProblemId;
+
+    if (!problemId) {
+      toast.error('Save the draft before preview approval.');
+      return;
+    }
+
+    setIsApprovingPreview(true);
+    try {
+      const approval = await api.approveCompilerProblemPreview(problemId, buildPreviewApprovalFormData(form));
+      setPreviewReviewResult(approval);
+
+      if (!approval?.success) {
+        setPreviewValidated(false);
+        toast.error(approval?.message || 'Official solution failed preview approval.');
+        return;
+      }
+
+      const approvedProblem = approval.problem;
+      const nextForm = {
+        ...createProblemFormFromProblem(approvedProblem),
+        referenceSolutions: approvedProblem?.referenceSolutions || form.referenceSolutions || {},
+        hiddenTestFiles: [],
+        hiddenBulkInputFile: null,
+        hiddenBulkOutputFile: null,
+        previewValidated: true,
+      };
+
+      setForm(nextForm);
+      setCurrentProblemId(approvedProblem?._id || problemId);
+      setCurrentStatus(approvedProblem?.status || currentStatus);
+      setPreviewValidated(true);
+      setIsDirty(false);
+
+      if (isAssessment && editorId) {
+        saveCodingDraft(editorId, {
+          assessmentKey,
+          sectionIndex: assessmentContext?.sectionIndex,
+          questionIndex: assessmentContext?.questionIndex,
+          problemId: approvedProblem._id,
+          form: nextForm,
+          problemData: approvedProblem,
+          previewValidated: true,
+          status: 'Validated',
+        });
+      }
+
+      toast.success(approval?.message || 'Official solution approved successfully.');
+
+      if (isAssessment) {
+        navigate(`${rolePrefix}/assessment/coding-question/${editorId}/preview/${approvedProblem._id}?return=${encodeURIComponent(assessmentReturnTo)}`);
+      } else {
+        navigate(`${rolePrefix}/compiler/${approvedProblem._id}/preview`);
+      }
+    } catch (error) {
+      toast.error(error.message || 'Failed to review official solution.');
+    } finally {
+      setIsApprovingPreview(false);
+    }
   };
 
   const handleAddToAssessment = async () => {
@@ -634,12 +708,46 @@ if (!isValidated || publishedProblem.status !== 'published') {
                   <div className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700">
                     <p className="text-sm font-semibold text-slate-800 dark:text-gray-100">Parsed hidden tests</p>
                     <div className="mt-3 space-y-3">
-                      {form.hiddenTestUploadMode === 'pairs' ? form.hiddenTestCases.filter((item) => item.input || item.output).map((testCase, index) => (
-                        <div key={`preview-hidden-${index}`} className="rounded-xl bg-slate-50 p-3 text-xs dark:bg-gray-800">
-                          <p className="font-semibold text-slate-700 dark:text-gray-200">Hidden {index + 1}</p>
-                          <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-slate-600 dark:text-gray-300">{testCase.input || '(empty input)'}</pre>
-                        </div>
-                      )) : <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600 dark:bg-gray-800 dark:text-gray-300">Bulk files will be parsed server-side using delimiter <code>{form.hiddenBulkDelimiter || '###CASE###'}</code>.</div>}
+                      {form.hiddenTestUploadMode === 'pairs' ? (
+                        <>
+                          {/* Show uploaded file pairs when available */}
+                          {hiddenPairs.pairs.length > 0 && (
+                            <div className="space-y-2">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">From uploaded files</p>
+                              {hiddenPairs.pairs.filter((pair) => pair.complete).map((pair) => (
+                                <div key={`preview-file-hidden-${pair.key}`} className="rounded-xl bg-slate-50 p-3 text-xs dark:bg-gray-800">
+                                  <p className="font-semibold text-slate-700 dark:text-gray-200">File Pair {pair.key}</p>
+                                  <p className="mt-1 text-slate-500 dark:text-gray-400">{pair.input} / {pair.output}</p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {/* Show manually entered hidden test cases */}
+                          {form.hiddenTestCases.filter((item) => item.input || item.output).length > 0 && (
+                            <div className="space-y-2">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">Manual entries</p>
+                              {form.hiddenTestCases.filter((item) => item.input || item.output).map((testCase, index) => (
+                                <div key={`preview-manual-hidden-${index}`} className="rounded-xl bg-slate-50 p-3 text-xs dark:bg-gray-800">
+                                  <p className="font-semibold text-slate-700 dark:text-gray-200">Hidden {index + 1}</p>
+                                  <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-slate-600 dark:text-gray-300">{testCase.input || '(empty input)'}</pre>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {/* Show existing server-side cases */}
+                          {hiddenPairs.pairs.length === 0 && form.hiddenTestCases.filter((item) => item.input || item.output).length === 0 && (form.existingHiddenTestCaseCount || 0) > 0 && (
+                            <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600 dark:bg-gray-800 dark:text-gray-300">
+                              {form.existingHiddenTestCaseCount} hidden test case{form.existingHiddenTestCaseCount === 1 ? '' : 's'} saved on the server.
+                            </div>
+                          )}
+                          {/* Empty state */}
+                          {hiddenPairs.pairs.length === 0 && form.hiddenTestCases.filter((item) => item.input || item.output).length === 0 && (form.existingHiddenTestCaseCount || 0) === 0 && (
+                            <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-500 dark:bg-gray-800 dark:text-gray-400">
+                              No hidden test cases added yet. Upload files or add manually above.
+                            </div>
+                          )}
+                        </>
+                      ) : <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600 dark:bg-gray-800 dark:text-gray-300">Bulk files will be parsed server-side using delimiter <code>{form.hiddenBulkDelimiter || '###CASE###'}</code>.</div>}
                     </div>
                   </div>
                 </div>
@@ -669,7 +777,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
               <MonacoCodeEditor language={activeLanguage} value={activeTemplate} onChange={updateTemplate} height={380} />
             </SectionCard>
 
-            <SectionCard title="Reference Solutions" subtitle="Optional private solutions for internal validation and expected-output generation.">
+            <SectionCard title="Official Solution" subtitle="Required private solution used for preview approval and student expected-output generation.">
               <div className="mb-4 flex flex-wrap gap-2">{form.supportedLanguages.map((languageId) => <button key={languageId} type="button" onClick={() => setActiveLanguage(languageId)} className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${activeLanguage === languageId ? 'bg-slate-900 text-white dark:bg-sky-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}>{getLanguageLabel(languageId)}</button>)}</div>
               <MonacoCodeEditor language={activeLanguage} value={activeReferenceSolution} onChange={updateReferenceSolution} height={280} />
             </SectionCard>
@@ -707,9 +815,68 @@ if (!isValidated || publishedProblem.status !== 'published') {
                 <span className={hasTemplate ? 'text-emerald-600' : 'text-rose-500'}>{hasTemplate ? 'Ready' : 'Missing'}</span>
               </div>
               <div className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2 dark:border-gray-700">
+                <span>Official solution provided</span>
+                <span className={hasOfficialSolution ? 'text-emerald-600' : 'text-rose-500'}>{hasOfficialSolution ? 'Ready' : 'Missing'}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2 dark:border-gray-700">
                 <span>Preview validation run</span>
                 <span className={previewValidated ? 'text-emerald-600' : 'text-rose-500'}>{previewValidated ? 'Done' : 'Pending'}</span>
               </div>
+            </div>
+          </SectionCard>
+        ) : null}
+
+        {previewReviewResult?.results?.length > 0 ? (
+          <SectionCard title="Preview Review" subtitle="Judge0 validation of the official solution against internal testcases.">
+            <div className="space-y-4">
+              {previewReviewResult.results.map((languageResult) => (
+                <div key={languageResult.language} className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-gray-100">{getLanguageLabel(languageResult.language)}</p>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">
+                        Passed {languageResult.passedTestCases || 0} / {languageResult.totalTestCases || 0} internal testcases
+                      </p>
+                    </div>
+                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                      languageResult.status === 'AC'
+                        ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+                        : languageResult.status === 'WA'
+                          ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'
+                          : 'bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300'
+                    }`}>
+                      {languageResult.status === 'AC' ? 'Approved' : (languageResult.failedCase?.label || languageResult.status)}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    {(languageResult.testCaseResults || []).map((entry) => (
+                      <div key={`${languageResult.language}-${entry.index}`} className="rounded-xl bg-slate-50 p-3 text-xs dark:bg-gray-800">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <p className="font-semibold text-slate-700 dark:text-gray-200">Case {entry.index}</p>
+                          <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                            entry.status === 'AC'
+                              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+                              : entry.status === 'WA'
+                                ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'
+                                : 'bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300'
+                          }`}>
+                            {entry.label}
+                          </span>
+                        </div>
+                        {entry.compileOutput ? <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-rose-600 dark:text-rose-300">{entry.compileOutput}</pre> : null}
+                        {!entry.compileOutput && entry.stderr ? <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-rose-600 dark:text-rose-300">{entry.stderr}</pre> : null}
+                        {!entry.compileOutput && !entry.stderr && entry.status === 'WA' ? (
+                          <div className="mt-2 grid gap-3 md:grid-cols-2">
+                            <pre className="overflow-x-auto whitespace-pre-wrap rounded-lg bg-white px-3 py-2 text-slate-700 dark:bg-gray-900 dark:text-gray-200">{entry.actualOutput || '(empty output)'}</pre>
+                            <pre className="overflow-x-auto whitespace-pre-wrap rounded-lg bg-white px-3 py-2 text-slate-700 dark:bg-gray-900 dark:text-gray-200">{entry.expectedOutput || '(empty output)'}</pre>
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           </SectionCard>
         ) : null}
@@ -740,15 +907,15 @@ if (!isValidated || publishedProblem.status !== 'published') {
           <div className="flex flex-wrap gap-3">
             {isAssessment ? (
               <>
-                <button type="button" onClick={() => persistProblem('draft')} disabled={isSaving} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"><Save className="h-4 w-4" />{isSaving ? 'Saving...' : 'Save Draft'}</button>
-                <button type="button" onClick={openPreview} disabled={isSaving} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-sky-600 dark:hover:bg-sky-500 dark:disabled:bg-gray-700"><Eye className="h-4 w-4" />{isSaving ? 'Saving...' : 'Run Test / Validate'}</button>
+                <button type="button" onClick={() => persistProblem('draft')} disabled={isSaving || isApprovingPreview} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"><Save className="h-4 w-4" />{isSaving ? 'Saving...' : 'Save Draft'}</button>
+                <button type="button" onClick={openPreview} disabled={isSaving || isApprovingPreview} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-sky-600 dark:hover:bg-sky-500 dark:disabled:bg-gray-700"><Eye className="h-4 w-4" />{isApprovingPreview ? 'Reviewing...' : 'Preview / Review'}</button>
                 <button type="button" onClick={handleAddToAssessment} disabled={isSaving || !canAddToAssessment} title={!canAddToAssessment ? 'Complete validation checks before adding.' : ''} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"><FilePlus2 className="h-4 w-4" />Add to Assessment</button>
               </>
             ) : (
               <>
-                <button type="button" onClick={openPreview} disabled={isSaving || isDeleting} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-sky-600 dark:hover:bg-sky-500 dark:disabled:bg-gray-700"><Eye className="h-4 w-4" />{isSaving ? 'Saving...' : 'Preview'}</button>
-                <button type="button" onClick={() => persistProblem('draft')} disabled={isSaving || isDeleting} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"><Save className="h-4 w-4" />{isSaving ? 'Saving...' : 'Save Draft'}</button>
-                <button type="button" onClick={() => persistProblem('published')} disabled={isSaving || isDeleting || !previewValidated || !currentProblemId} title={!previewValidated ? 'Preview testing is required before publishing.' : ''} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"><FilePlus2 className="h-4 w-4" />{isSaving ? (isEditMode ? 'Updating...' : 'Publishing...') : (isEditMode ? 'Update Problem' : 'Publish')}</button>
+                <button type="button" onClick={openPreview} disabled={isSaving || isDeleting || isApprovingPreview} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-sky-600 dark:hover:bg-sky-500 dark:disabled:bg-gray-700"><Eye className="h-4 w-4" />{isApprovingPreview ? 'Reviewing...' : 'Preview / Review'}</button>
+                <button type="button" onClick={() => persistProblem('draft')} disabled={isSaving || isDeleting || isApprovingPreview} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"><Save className="h-4 w-4" />{isSaving ? 'Saving...' : 'Save Draft'}</button>
+                <button type="button" onClick={() => persistProblem('published')} disabled={isSaving || isDeleting || isApprovingPreview || !previewValidated || !currentProblemId} title={!previewValidated ? 'Preview approval is required before publishing.' : ''} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"><FilePlus2 className="h-4 w-4" />{isSaving ? (isEditMode ? 'Updating...' : 'Publishing...') : (isEditMode ? 'Update Problem' : 'Publish')}</button>
                 {currentProblemId ? <button type="button" onClick={handleDelete} disabled={isDeleting || isSaving} className="inline-flex items-center gap-2 rounded-xl border border-rose-200 px-4 py-2.5 text-sm font-semibold text-rose-600 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-900/20"><Trash2 className="h-4 w-4" />{isDeleting ? 'Deleting...' : 'Delete Problem'}</button> : null}
               </>
             )}
@@ -756,7 +923,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
           {isAssessment && !canAddToAssessment ? (
             <p className="mt-3 text-xs text-amber-600 dark:text-amber-300">Preview validation and required testcases/templates must be completed before adding to the assessment.</p>
           ) : null}
-          {!isAssessment && !previewValidated ? <p className="mt-3 text-xs text-amber-600 dark:text-amber-300">Publishing stays disabled until the admin completes at least one successful preview run or submit.</p> : null}
+          {!isAssessment && !previewValidated ? <p className="mt-3 text-xs text-amber-600 dark:text-amber-300">Publishing stays disabled until Preview / Review approves the official solution against internal testcases.</p> : null}
         </SectionCard>
       </div>
 

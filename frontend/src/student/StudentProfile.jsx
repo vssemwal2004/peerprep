@@ -574,6 +574,29 @@ export default function StudentProfile() {
           }))
           .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
           .slice(0, 8);
+
+        // Build fallback language breakdown from submissions
+        const fallbackLanguageMap = {};
+        fallbackRecentSubmissions.forEach((sub) => {
+          const lang = sub.language || 'unknown';
+          fallbackLanguageMap[lang] = (fallbackLanguageMap[lang] || 0) + 1;
+        });
+        // Also check all problems for broader language coverage
+        submissionTotals.forEach((submissionResult) => {
+          if (submissionResult.status !== 'fulfilled') return;
+          const subs = Array.isArray(submissionResult.value?.submissions) ? submissionResult.value.submissions : [];
+          subs.forEach((sub) => {
+            const lang = sub?.language || 'unknown';
+            fallbackLanguageMap[lang] = (fallbackLanguageMap[lang] || 0) + 1;
+          });
+        });
+        const fallbackLanguagesUsed = Object.entries(fallbackLanguageMap)
+          .map(([language, count]) => ({ language, count }))
+          .sort((a, b) => b.count - a.count);
+        const fallbackMostUsedLanguage = fallbackLanguagesUsed[0]?.language || null;
+
+        // Store these fallbacks for later use
+        Object.assign(fallbackRecentSubmissions, { __fallbackLanguagesUsed: fallbackLanguagesUsed, __fallbackMostUsedLanguage: fallbackMostUsedLanguage });
       }
 
       if (!isMountedRef.current) return;
@@ -586,10 +609,18 @@ export default function StudentProfile() {
           recentSubmissions: Array.isArray(statsPayload.recentSubmissions) && statsPayload.recentSubmissions.length > 0
             ? statsPayload.recentSubmissions
             : fallbackRecentSubmissions,
+          // Ensure languagesUsed is always populated
+          languagesUsed: Array.isArray(statsPayload.languagesUsed) && statsPayload.languagesUsed.length > 0
+            ? statsPayload.languagesUsed
+            : (fallbackRecentSubmissions?.__fallbackLanguagesUsed || []),
+          mostUsedLanguage: statsPayload.mostUsedLanguage
+            || (fallbackRecentSubmissions?.__fallbackMostUsedLanguage || null),
         }
         : {
           recentSolvedProblems: fallbackRecentSolvedProblems,
           recentSubmissions: fallbackRecentSubmissions,
+          languagesUsed: fallbackRecentSubmissions?.__fallbackLanguagesUsed || [],
+          mostUsedLanguage: fallbackRecentSubmissions?.__fallbackMostUsedLanguage || null,
         };
 
       setStats(enrichedStats);
@@ -930,6 +961,31 @@ export default function StudentProfile() {
 
   const insightCards = useMemo(() => {
     const languagesUsed = stats?.languagesUsed?.length || 0;
+    // Build a dynamic helper for the language card
+    const languageHelper = (() => {
+      if (stats?.mostUsedLanguage) {
+        return `${stats.mostUsedLanguage} leads`;
+      }
+      // Try to infer from recent submissions
+      if (stats?.recentSubmissions?.length > 0) {
+        const langMap = {};
+        stats.recentSubmissions.forEach((sub) => {
+          const lang = sub?.language;
+          if (lang) langMap[lang] = (langMap[lang] || 0) + 1;
+        });
+        const sorted = Object.entries(langMap).sort(([, a], [, b]) => b - a);
+        if (sorted.length > 0) return `${sorted[0][0]} leads`;
+      }
+      return 'Start solving to track';
+    })();
+    // Also dynamically compute language count from submissions if not in stats
+    const effectiveLanguageCount = languagesUsed > 0
+      ? languagesUsed
+      : (() => {
+        if (!stats?.recentSubmissions?.length) return 0;
+        const uniqueLangs = new Set(stats.recentSubmissions.map((s) => s?.language).filter(Boolean));
+        return uniqueLangs.size;
+      })();
     return [
       {
         label: 'Assessment Average',
@@ -949,8 +1005,8 @@ export default function StudentProfile() {
       },
       {
         label: 'Languages Used',
-        value: languagesUsed,
-        helper: stats?.mostUsedLanguage ? `${stats.mostUsedLanguage} leads` : 'No language data',
+        value: effectiveLanguageCount,
+        helper: languageHelper,
         icon: <Code2 className="h-4 w-4" />,
       },
       {
@@ -960,7 +1016,7 @@ export default function StudentProfile() {
         icon: <Clock3 className="h-4 w-4" />,
       },
     ];
-  }, [analysisAssessments?.avgScore, analysisInterviews?.avgScore, analysisInterviews?.pending, stats?.languagesUsed?.length, stats?.mostUsedLanguage]);
+  }, [analysisAssessments?.avgScore, analysisInterviews?.avgScore, analysisInterviews?.pending, stats?.languagesUsed?.length, stats?.mostUsedLanguage, stats?.recentSubmissions]);
 
   const codingTotals = useMemo(() => {
     const easySolved = problemStatusSummary.loaded
@@ -1198,6 +1254,65 @@ export default function StudentProfile() {
                 <InsightCard key={item.label} {...item} />
               ))}
             </section>
+
+            {/* Language Proficiency Breakdown */}
+            {(() => {
+              const langs = Array.isArray(stats?.languagesUsed) && stats.languagesUsed.length > 0
+                ? stats.languagesUsed
+                : (() => {
+                  if (!stats?.recentSubmissions?.length) return [];
+                  const langMap = {};
+                  stats.recentSubmissions.forEach((sub) => {
+                    const lang = sub?.language;
+                    if (lang) langMap[lang] = (langMap[lang] || 0) + 1;
+                  });
+                  return Object.entries(langMap)
+                    .map(([language, count]) => ({ language, count }))
+                    .sort((a, b) => b.count - a.count);
+                })();
+              const maxCount = Math.max(1, ...langs.map((l) => l.count));
+              const langColors = {
+                python: { bg: 'bg-sky-500', text: 'text-sky-700 dark:text-sky-300', border: 'border-sky-200 dark:border-sky-800' },
+                javascript: { bg: 'bg-amber-500', text: 'text-amber-700 dark:text-amber-300', border: 'border-amber-200 dark:border-amber-800' },
+                java: { bg: 'bg-orange-500', text: 'text-orange-700 dark:text-orange-300', border: 'border-orange-200 dark:border-orange-800' },
+                cpp: { bg: 'bg-violet-500', text: 'text-violet-700 dark:text-violet-300', border: 'border-violet-200 dark:border-violet-800' },
+                c: { bg: 'bg-slate-500', text: 'text-slate-700 dark:text-slate-300', border: 'border-slate-200 dark:border-slate-700' },
+              };
+              const defaultColor = { bg: 'bg-teal-500', text: 'text-teal-700 dark:text-teal-300', border: 'border-teal-200 dark:border-teal-800' };
+              if (langs.length === 0) return null;
+              return (
+                <Panel title="Language Proficiency" subtitle="Programming languages used across all submissions, ranked by usage.">
+                  <div className="space-y-3">
+                    {langs.map((item) => {
+                      const color = langColors[item.language?.toLowerCase()] || defaultColor;
+                      const percent = Math.round((item.count / maxCount) * 100);
+                      const displayName = item.language
+                        ? item.language.charAt(0).toUpperCase() + item.language.slice(1)
+                        : 'Unknown';
+                      return (
+                        <div key={item.language} className={`rounded-[18px] border ${color.border} bg-slate-50/80 px-4 py-3 transition-colors hover:bg-white dark:bg-gray-800/80 dark:hover:bg-gray-800`}>
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className={`h-3 w-3 shrink-0 rounded-full ${color.bg}`} />
+                              <span className={`text-sm font-semibold ${color.text}`}>{displayName}</span>
+                            </div>
+                            <span className="text-xs font-medium text-slate-500 dark:text-gray-400">
+                              {item.count} submission{item.count === 1 ? '' : 's'}
+                            </span>
+                          </div>
+                          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-gray-700">
+                            <div
+                              className={`h-full rounded-full ${color.bg} transition-all duration-500`}
+                              style={{ width: `${percent}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </Panel>
+              );
+            })()}
 
             <section className="grid gap-6 xl:grid-cols-2">
               <Panel title="Recent Solved Questions" subtitle="Latest accepted milestones.">

@@ -238,7 +238,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
     <aside
       onMouseEnter={onExpand}
       onMouseLeave={onCollapse}
-      className="fixed left-0 top-20 z-40 h-[calc(100vh-5rem)] overflow-hidden border-r border-slate-200 bg-white/95 shadow-sm backdrop-blur transition-[width] duration-300 dark:border-gray-700 dark:bg-gray-900/95"
+      className="fixed left-0 top-[var(--app-navbar-height,5rem)] z-40 h-[calc(100vh-var(--app-navbar-height,5rem))] overflow-hidden border-r border-slate-200 bg-white/95 shadow-sm backdrop-blur transition-[width] duration-300 dark:border-gray-700 dark:bg-gray-900/95"
       style={{ width: 'var(--admin-sidebar-width)' }}
     >
       <div className="flex h-full flex-col gap-1.5 overflow-y-auto px-2 py-3">

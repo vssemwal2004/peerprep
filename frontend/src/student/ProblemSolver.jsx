@@ -460,15 +460,6 @@ function statusLabel(status) {
   return status || 'Result';
 }
 
-function normalizeComparableText(value) {
-  return String(value ?? '')
-    .replace(/\r\n/g, '\n')
-    .split('\n')
-    .map((line) => line.replace(/[ \t]+/g, ' ').trim())
-    .join('\n')
-    .trim();
-}
-
 function SubmissionDetail({ submission }) {
   if (!submission) return null;
 
@@ -1224,32 +1215,6 @@ export default function ProblemSolver() {
     setResult(null);
   };
 
-  const handleAddCustomTestCase = () => {
-    const newId = `custom-${Date.now()}`;
-    setTestCases((previous) => ([
-      ...(Array.isArray(previous) ? previous : []),
-      {
-        id: newId,
-        kind: 'custom',
-        input: '',
-        expectedOutput: null,
-      },
-    ]));
-    setActiveTestCaseId(newId);
-  };
-
-  const handleTestCaseInputChange = (testCaseId, nextInput) => {
-    setTestCases((previous) => (Array.isArray(previous) ? previous.map((entry) => {
-      if (String(entry.id) !== String(testCaseId)) return entry;
-      if (entry.kind === 'sample') return entry;
-      return {
-        ...entry,
-        input: nextInput,
-        expectedOutput: null,
-      };
-    }) : previous));
-  };
-
   const handleRun = async () => {
     if (!problem) {
       return;
@@ -1267,9 +1232,21 @@ export default function ProblemSolver() {
 
     const selectedCase = activeTestCase;
     const runInput = selectedCase?.input ?? '';
+    const runCases = (Array.isArray(testCases) && testCases.length > 0 ? testCases : [selectedCase])
+      .filter(Boolean)
+      .map((entry, index) => ({
+        id: entry.id || `case-${index + 1}`,
+        label: `Case ${index + 1}`,
+        kind: 'sample',
+        input: String(entry.input ?? ''),
+        ...(entry.expectedOutput !== null && entry.expectedOutput !== undefined
+          ? { expectedOutput: String(entry.expectedOutput ?? '') }
+          : {}),
+      }));
 
     setLastRunInput(runInput);
     setLastRunCaseId(selectedCase?.id || null);
+    setResult(null);
 
     setIsRunning(true);
     setActiveConsoleTab('result');
@@ -1278,9 +1255,7 @@ export default function ProblemSolver() {
         language,
         sourceCode: activeCode,
         customInput: runInput,
-        ...(selectedCase?.expectedOutput !== null && selectedCase?.expectedOutput !== undefined
-          ? { expectedOutput: selectedCase.expectedOutput }
-          : {}),
+        testCases: runCases,
       });
 
       let completedRun = queuedJob;
@@ -1297,7 +1272,6 @@ export default function ProblemSolver() {
         ? nextSubmissions.find((submission) => String(submission.jobId || '') === String(queuedJob.jobId))
         : null;
       const responsePayload = completedRun?.result?.response || completedRun;
-
       if (matchedSubmission) {
         setResult(responsePayload);
         setSelectedSubmissionId(matchedSubmission._id);
@@ -1307,21 +1281,6 @@ export default function ProblemSolver() {
         toast.success(`Run finished with status ${responsePayload?.status || 'Completed'}`);
       }
 
-      if (selectedCase?.kind === 'custom' && problem.hasReferenceSolution) {
-        api.getStudentExpectedOutput(problem._id, { language, customInput: runInput })
-          .then((expected) => {
-            if (expected && typeof expected.expectedOutput === 'string') {
-              setTestCases((previous) => (Array.isArray(previous) ? previous.map((entry) => (
-                String(entry.id) === String(selectedCase.id)
-                  ? { ...entry, expectedOutput: expected.expectedOutput }
-                  : entry
-              )) : previous));
-            }
-          })
-          .catch(() => {
-            // Expected output is optional; ignore failures.
-          });
-      }
     } catch (error) {
       toast.error(error.message || 'Failed to run code.');
     } finally {
@@ -1695,8 +1654,6 @@ export default function ProblemSolver() {
               testCases={testCases}
               activeTestCaseId={activeTestCaseId}
               onActiveTestCaseChange={setActiveTestCaseId}
-              onAddCustomTestCase={handleAddCustomTestCase}
-              onTestCaseInputChange={handleTestCaseInputChange}
               runInputUsed={lastRunCaseId ? lastRunInput : null}
               expectedOutputForRun={expectedOutputForRun}
               activeConsoleTab={activeConsoleTab}
@@ -1754,8 +1711,6 @@ export default function ProblemSolver() {
               testCases={testCases}
               activeTestCaseId={activeTestCaseId}
               onActiveTestCaseChange={setActiveTestCaseId}
-              onAddCustomTestCase={handleAddCustomTestCase}
-              onTestCaseInputChange={handleTestCaseInputChange}
               runInputUsed={lastRunCaseId ? lastRunInput : null}
               expectedOutputForRun={expectedOutputForRun}
               activeConsoleTab={activeConsoleTab}

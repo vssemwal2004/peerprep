@@ -51,7 +51,7 @@ export default function AdminCompilerDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-white pt-20 dark:bg-gray-900">
+    <div className="min-h-screen bg-white pt-[var(--app-navbar-height,5rem)] dark:bg-gray-900">
       <div>
         <div className={isPreviewRoute ? 'p-0' : 'px-4 py-5 sm:px-6 lg:px-8'}>
           {showHeaderCard ? (

@@ -375,38 +375,13 @@ function buildSubmitApiResponse(executionResult) {
 }
 
 async function resolveRunExpectedOutput({
-  problem,
-  standardInput,
-  preferredLanguageKey = '',
   providedExpectedOutput,
 }) {
   if (providedExpectedOutput !== undefined && providedExpectedOutput !== null) {
     return sanitizeExecutionText(providedExpectedOutput, MAX_TESTCASE_TEXT_BYTES, 'Expected output');
   }
 
-  const reference = pickReferenceSolution(problem, preferredLanguageKey);
-  if (!reference) {
-    return null;
-  }
-
-  const referenceLanguageId = KEY_TO_LANGUAGE_ID[reference.languageKey];
-  if (!referenceLanguageId) {
-    return null;
-  }
-
-  const judgeResult = await runJudge0(
-    reference.sourceCode,
-    referenceLanguageId,
-    standardInput,
-    buildJudge0Options(problem),
-  );
-
-  const evaluation = evaluateSubmissionResult(judgeResult, judgeResult.stdout || '');
-  if (evaluation.internalStatus !== 'AC') {
-    throw new HttpError(502, 'Expected output is currently unavailable for this run.');
-  }
-
-  return judgeResult.stdout || '';
+  return null;
 }
 
 function buildRunApiResponse(executionResult, { standardInput = '', expectedOutput = null } = {}) {
@@ -489,28 +464,171 @@ function buildRunApiResponse(executionResult, { standardInput = '', expectedOutp
   };
 }
 
+function normalizeRunStatus(status) {
+  if (status === 'AC') return 'Passed';
+  if (status === 'WA') return 'Failed';
+  if (status === 'CE') return 'Compilation Error';
+  if (status === 'RE') return 'Runtime Error';
+  if (status === 'TLE') return 'Time Limit Exceeded';
+  return status || 'Run Completed';
+}
+
+function cleanRunText(value) {
+  return String(value ?? '').replace(/\r\n/g, '\n').trim();
+}
+
+function buildRunCaseResult({
+  id,
+  label,
+  input,
+  expectedOutput,
+  judgeResult,
+  evaluation,
+}) {
+  const internalStatus = evaluation?.internalStatus || mapRunStatusCode(judgeResult);
+  const output = cleanRunText(judgeResult.stdout);
+  const normalizedExpectedOutput = expectedOutput === null || expectedOutput === undefined
+    ? null
+    : cleanRunText(expectedOutput);
+  const compileOutput = internalStatus === 'CE'
+    ? cleanRunText(evaluation?.error || judgeResult.compile_output || '')
+    : cleanRunText(judgeResult.compile_output || '');
+  const errorOutput = internalStatus === 'RE' || internalStatus === 'TLE'
+    ? cleanRunText(evaluation?.error || judgeResult.stderr || judgeResult.message || '')
+    : cleanRunText(judgeResult.stderr || '');
+
+  return {
+    id,
+    label,
+    status: normalizedExpectedOutput === null && internalStatus === 'AC'
+      ? 'Run Completed'
+      : normalizeRunStatus(internalStatus),
+    internalStatus,
+    input,
+    output,
+    stdout: output,
+    expectedOutput: normalizedExpectedOutput,
+    error: compileOutput || errorOutput || '',
+    compileOutput,
+    stderr: errorOutput,
+    time: roundNumber(Number(judgeResult.time || 0), 3),
+    memory: Math.trunc(Number(judgeResult.memory || 0)),
+  };
+}
+
+function buildPersistedRunCase(entry, index) {
+  return {
+    index: index + 1,
+    status: entry.internalStatus || 'AC',
+    input: entry.input || '',
+    expectedOutput: entry.expectedOutput ?? '',
+    actualOutput: entry.output || '',
+    executionTimeMs: secondsToMilliseconds(entry.time),
+    memoryUsedKb: Math.trunc(Number(entry.memory || 0)),
+    stderr: entry.stderr || '',
+    compileOutput: entry.compileOutput || '',
+  };
+}
+
+async function executeRunCasesPayload({
+  sourceCode,
+  languageId,
+  problem,
+  runTestCases,
+}) {
+  const judge0Options = buildJudge0Options(problem);
+  const caseResults = [];
+
+  for (let index = 0; index < runTestCases.length; index += 1) {
+    const testCase = runTestCases[index];
+    const input = sanitizeExecutionText(testCase.input ?? '', MAX_STDIN_SIZE_BYTES, `Run testcase input #${index + 1}`);
+    const providedExpectedOutput = testCase.expectedOutput !== undefined && testCase.expectedOutput !== null
+      ? sanitizeExecutionText(testCase.expectedOutput, MAX_TESTCASE_TEXT_BYTES, `Run testcase expected output #${index + 1}`)
+      : undefined;
+    const judgeResult = await runJudge0(sourceCode, languageId, input, judge0Options);
+    const resolvedExpectedOutput = await resolveRunExpectedOutput({
+      providedExpectedOutput,
+    });
+    const evaluation = resolvedExpectedOutput === null
+      ? null
+      : evaluateSubmissionResult(judgeResult, resolvedExpectedOutput);
+
+    caseResults.push(buildRunCaseResult({
+      id: String(testCase.id || `case-${index + 1}`),
+      label: String(testCase.label || `Case ${index + 1}`),
+      input,
+      expectedOutput: resolvedExpectedOutput,
+      judgeResult,
+      evaluation,
+    }));
+  }
+
+  const totalTimeSeconds = caseResults.reduce((sum, entry) => sum + Number(entry.time || 0), 0);
+  const peakMemoryKb = caseResults.reduce((max, entry) => Math.max(max, Number(entry.memory || 0)), 0);
+  const hasComparableCases = caseResults.some((entry) => entry.expectedOutput !== null && entry.expectedOutput !== undefined);
+  const failedCase = caseResults.find((entry) => !['Passed', 'Run Completed'].includes(entry.status));
+  const passed = caseResults.filter((entry) => ['Passed', 'Run Completed'].includes(entry.status)).length;
+  const finalStatus = failedCase
+    ? 'Failed'
+    : (hasComparableCases && caseResults.every((entry) => entry.status === 'Passed') ? 'Passed' : 'Run Completed');
+  const persistedStatus = failedCase?.internalStatus || 'AC';
+
+  const persistedCaseResults = caseResults.map(buildPersistedRunCase);
+  const persisted = {
+    status: persistedStatus,
+    output: failedCase?.output || caseResults[caseResults.length - 1]?.output || '',
+    stderr: failedCase?.stderr || '',
+    compileOutput: failedCase?.compileOutput || '',
+    executionTimeMs: secondsToMilliseconds(totalTimeSeconds),
+    memoryUsedKb: peakMemoryKb,
+    totalTestCases: caseResults.length,
+    passedTestCases: passed,
+    failedCase: failedCase
+      ? {
+        index: caseResults.findIndex((entry) => entry.id === failedCase.id) + 1,
+        input: failedCase.input || '',
+        expectedOutput: failedCase.expectedOutput ?? '',
+        actualOutput: failedCase.output || '',
+      }
+      : undefined,
+    testCaseResults: persistedCaseResults,
+    provider: 'judge0-ce',
+  };
+
+  return {
+    response: {
+      mode: 'run',
+      status: finalStatus,
+      passed,
+      total: caseResults.length,
+      time: roundNumber(totalTimeSeconds, 3),
+      memory: peakMemoryKb,
+      caseResults,
+    },
+    submissionStatus: persisted.status,
+    persisted,
+  };
+}
+
 async function executeRunPayload({
   sourceCode,
   languageId,
-  languageKey,
   standardInput,
   problem,
   expectedOutput,
 }) {
   const judgeResult = await runJudge0(sourceCode, languageId, standardInput, buildJudge0Options(problem));
   const resolvedExpectedOutput = await resolveRunExpectedOutput({
-    problem,
-    standardInput,
-    preferredLanguageKey: languageKey,
     providedExpectedOutput: expectedOutput,
   });
 
   if (resolvedExpectedOutput === null) {
     const responsePayload = buildRunResponse(judgeResult);
+    const statusCode = mapRunStatusCode(judgeResult);
     return {
       response: {
         mode: 'run',
-        status: responsePayload.status?.description || 'Completed',
+        status: statusCode === 'AC' ? 'Run Completed' : (responsePayload.status?.description || 'Run Completed'),
         input: standardInput,
         output: responsePayload.stdout || '',
         expectedOutput: '',
@@ -518,9 +636,9 @@ async function executeRunPayload({
         time: responsePayload.time,
         memory: responsePayload.memory,
       },
-      submissionStatus: mapRunStatusCode(judgeResult),
+      submissionStatus: statusCode,
       persisted: {
-        status: mapRunStatusCode(judgeResult),
+        status: statusCode,
         output: responsePayload.stdout,
         stderr: responsePayload.stderr,
         compileOutput: responsePayload.compile_output,
@@ -664,6 +782,7 @@ async function buildCompilerQueueJob({
   sourceCode,
   standardInput = '',
   expectedOutput = undefined,
+  runTestCases = [],
 }) {
   const jobRecord = await createExecutionJobRecord({
     jobId: submission?.jobId,
@@ -691,6 +810,7 @@ async function buildCompilerQueueJob({
     sourceCode,
     standardInput,
     expectedOutput,
+    runTestCases,
   }, {
     jobId: jobRecord.jobId,
     attempts: DEFAULT_ATTEMPTS,
@@ -709,6 +829,16 @@ export async function enqueueCompilerRunJob({ user, body }) {
   const expectedOutput = body.expectedOutput !== undefined && body.expectedOutput !== null
     ? sanitizeExecutionText(body.expectedOutput, MAX_TESTCASE_TEXT_BYTES, 'Expected output')
     : undefined;
+  const runTestCases = Array.isArray(body.testCases)
+    ? body.testCases.slice(0, 12).map((entry, index) => ({
+      id: String(entry?.id || `case-${index + 1}`),
+      label: String(entry?.label || `Case ${index + 1}`),
+      input: sanitizeExecutionText(entry?.input ?? '', MAX_STDIN_SIZE_BYTES, `Run testcase input #${index + 1}`),
+      expectedOutput: entry?.expectedOutput !== undefined && entry?.expectedOutput !== null
+        ? sanitizeExecutionText(entry.expectedOutput, MAX_TESTCASE_TEXT_BYTES, `Run testcase expected output #${index + 1}`)
+        : undefined,
+    }))
+    : [];
 
   let problem = null;
   let submission = null;
@@ -757,6 +887,7 @@ export async function enqueueCompilerRunJob({ user, body }) {
     sourceCode,
     standardInput,
     expectedOutput,
+    runTestCases,
   });
 }
 
@@ -976,6 +1107,7 @@ export async function processCompilerExecutionJob(job) {
     languageKey,
     sourceCode,
     expectedOutput,
+    runTestCases = [],
     standardInput = '',
   } = job.data || {};
 
@@ -996,14 +1128,20 @@ export async function processCompilerExecutionJob(job) {
     }
 
     if (job.name === 'run' || job.name === 'assessment-code-run') {
-      const runResult = await executeRunPayload({
-        sourceCode: validatedSourceCode,
-        languageId,
-        languageKey,
-        standardInput,
-        problem,
-        expectedOutput,
-      });
+      const runResult = Array.isArray(runTestCases) && runTestCases.length > 0
+        ? await executeRunCasesPayload({
+          sourceCode: validatedSourceCode,
+          languageId,
+          problem,
+          runTestCases,
+        })
+        : await executeRunPayload({
+          sourceCode: validatedSourceCode,
+          languageId,
+          standardInput,
+          problem,
+          expectedOutput,
+        });
 
       if (submissionId) {
         await finalizeTrackedSubmission(submissionId, runResult.persisted);

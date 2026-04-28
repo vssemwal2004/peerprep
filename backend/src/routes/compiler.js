@@ -9,6 +9,7 @@ import {
   compilerSubmitLimiter,
 } from '../middleware/rateLimiter.js';
 import {
+  approveProblemPreview,
   createProblem,
   deleteProblem,
   getCompilerOverview,
@@ -50,6 +51,7 @@ router.get('/analytics', requireAdminOrCoordinator, getAdminCompilerAnalytics);
 router.get('/student/:id', requireAdminOrCoordinator, getCompilerStudentAnalytics);
 router.get('/problems/overview', requireAdminOrCoordinator, getCompilerOverview);
 router.post('/problems/preview/run', requireAdminOrCoordinator, upload.none(), previewRunProblem);
+router.post('/problems/:id/preview/approve', requireAdminOrCoordinator, upload.none(), approveProblemPreview);
 router.get('/problems', requireAdminCoordinatorOrStudent, listProblems);
 router.post('/problems', requireAdminOrCoordinator, upload.any(), createProblem);
 router.get('/problems/:id/submissions', requireStudent, listProblemSubmissions);

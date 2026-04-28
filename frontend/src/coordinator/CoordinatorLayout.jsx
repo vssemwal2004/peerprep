@@ -123,7 +123,10 @@ export default function CoordinatorLayout({ children }) {
   const sidebarWidth = isSidebarExpanded ? '14rem' : '4rem';
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-gray-900" style={{ '--admin-sidebar-width': sidebarWidth }}>
+    <div
+      className="min-h-screen bg-slate-50 dark:bg-gray-900"
+      style={{ '--admin-sidebar-width': sidebarWidth, '--app-navbar-height': '5rem' }}
+    >
       <CoordinatorTopNavbar />
       <GlobalSidebar
         role="coordinator"

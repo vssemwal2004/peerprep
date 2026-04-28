@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Play, RotateCcw, Send, TerminalSquare } from 'lucide-react';
 import MonacoCodeEditor from '../admin/compiler/MonacoCodeEditor';
 import { formatDuration, getLanguageLabel } from '../admin/compiler/compilerUtils';
@@ -25,28 +25,6 @@ function ResultValue({ value }) {
   );
 }
 
-function ResultPanel({ title, content, tone = 'default' }) {
-  const normalized = String(content ?? '').trimEnd();
-  if (!normalized) {
-    return null;
-  }
-
-  const toneStyles = tone === 'error'
-    ? 'bg-rose-50 text-rose-800 dark:bg-rose-900/10 dark:text-rose-200'
-    : 'bg-slate-50 text-slate-800 dark:bg-gray-800 dark:text-gray-100';
-
-  return (
-    <div className="w-full space-y-2">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">
-        {title}
-      </p>
-      <div className={`rounded-[22px] px-4 py-3 text-xs ${toneStyles}`}>
-        <pre className="whitespace-pre-wrap break-words font-mono leading-relaxed">{normalized}</pre>
-      </div>
-    </div>
-  );
-}
-
 function normalizeComparableText(value) {
   return String(value ?? '')
     .replace(/\r\n/g, '\n')
@@ -54,6 +32,47 @@ function normalizeComparableText(value) {
     .map((line) => line.replace(/[ \t]+/g, ' ').trim())
     .join('\n')
     .trim();
+}
+
+function hasValue(value) {
+  return value !== null && value !== undefined;
+}
+
+function hasText(value) {
+  return String(value ?? '').length > 0;
+}
+
+function getCompileOutput(entry) {
+  return entry?.compileOutput ?? entry?.compile_output ?? '';
+}
+
+function getErrorOutput(entry) {
+  return entry?.error ?? entry?.stderr ?? '';
+}
+
+function normalizeRunCaseStatus(status) {
+  if (status === 'AC' || status === 'Accepted' || status === 'Passed') return 'Passed';
+  if (status === 'WA' || status === 'Wrong Answer' || status === 'Failed') return 'Failed';
+  if (status === 'CE' || status === 'Compilation Error') return 'Compilation Error';
+  if (status === 'RE' || status === 'Runtime Error') return 'Runtime Error';
+  if (status === 'TLE' || status === 'Time Limit Exceeded') return 'Time Limit Exceeded';
+  if (status === 'Run Completed') return 'Passed';
+  return status || 'Run Completed';
+}
+
+function isPassedStatus(status) {
+  return normalizeRunCaseStatus(status) === 'Passed';
+}
+
+function runStatusTone(status) {
+  const normalized = normalizeRunCaseStatus(status);
+  if (normalized === 'Passed') {
+    return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300';
+  }
+  if (normalized === 'Failed') {
+    return 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300';
+  }
+  return 'bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300';
 }
 
 export default function CodeEditor({
@@ -66,7 +85,6 @@ export default function CodeEditor({
   testCases = [],
   activeTestCaseId = null,
   onActiveTestCaseChange,
-  onAddCustomTestCase,
   onTestCaseInputChange,
   expectedOutputForRun = null,
   runInputUsed = null,
@@ -85,9 +103,9 @@ export default function CodeEditor({
   const splitterRef = useRef(null);
   const editorContainerRef = useRef(null);
   const consoleContainerRef = useRef(null);
-  const [consoleHeight, setConsoleHeight] = useState(220);
-  const [editorHeight, setEditorHeight] = useState(320);
-  const MIN_EDITOR_HEIGHT = 260;
+  const [consoleHeight, setConsoleHeight] = useState(132);
+  const [editorHeight, setEditorHeight] = useState(440);
+  const MIN_EDITOR_HEIGHT = 360;
 
   const getLayoutRect = () => {
     const root = rootRef.current;
@@ -110,7 +128,7 @@ export default function CodeEditor({
   };
 
   const clampConsoleHeight = (height) => {
-    const min = 128;
+    const min = 96;
 
     if (!rootRef.current) {
       return Math.min(520, Math.max(min, height));
@@ -232,6 +250,7 @@ export default function CodeEditor({
 
   const isRunResult = isRunExecutionResult(result);
   const summary = summarizeExecutionResult(result);
+  const runCaseResults = Array.isArray(result?.caseResults) ? result.caseResults : [];
 
   const activeTestCase = (() => {
     if (!Array.isArray(testCases) || testCases.length === 0) return null;
@@ -241,15 +260,30 @@ export default function CodeEditor({
 
   const runDerivedVerdict = (() => {
     if (!result || !isRunResult) return null;
+    const hasExpectedOutput = hasValue(expectedOutputForRun);
+    const compileOutput = getCompileOutput(result);
+    const errorOutput = getErrorOutput(result);
+
+    if (
+      result?.mode === 'run'
+      && hasExpectedOutput
+      && !compileOutput
+      && !errorOutput
+    ) {
+      const actual = normalizeComparableText(result.output ?? result.stdout ?? '');
+      const expected = normalizeComparableText(expectedOutputForRun || '');
+      return actual === expected ? 'Accepted' : 'Wrong Answer';
+    }
+
     if (result?.mode === 'run' && typeof result.status === 'string') {
       return result.status;
     }
-    if (result.compile_output) return 'Compilation Error';
+    if (compileOutput) return 'Compilation Error';
     if (result.status?.id === 5) return 'Time Limit Exceeded';
-    if (result.stderr) return 'Runtime Error';
+    if (errorOutput) return 'Runtime Error';
 
-    if (expectedOutputForRun !== null && expectedOutputForRun !== undefined) {
-      const actual = normalizeComparableText(result.stdout || '');
+    if (hasExpectedOutput) {
+      const actual = normalizeComparableText(result.output ?? result.stdout ?? '');
       const expected = normalizeComparableText(expectedOutputForRun || '');
       return actual === expected ? 'Accepted' : 'Wrong Answer';
     }
@@ -260,6 +294,9 @@ export default function CodeEditor({
   const verdictLabel = (() => {
     if (!result) return '';
     if (isRunResult) {
+      if (runCaseResults.length > 0) {
+        return runCaseResults.every((entry) => isPassedStatus(entry.status)) ? 'Passed' : 'Failed';
+      }
       return runDerivedVerdict || 'Run Result';
     }
     return result.status || 'Result';
@@ -274,26 +311,34 @@ export default function CodeEditor({
   const headerStatusTone = (() => {
     if (!verdictLabel) return 'text-slate-800 dark:text-gray-100';
     const lower = String(verdictLabel).toLowerCase();
-    if (lower.includes('accepted')) return 'text-emerald-600 dark:text-emerald-300';
+    if (lower.includes('accepted') || lower.includes('passed')) return 'text-emerald-600 dark:text-emerald-300';
     if (lower.includes('error') || lower.includes('compilation') || lower.includes('runtime')) return 'text-rose-600 dark:text-rose-300';
-    if (lower.includes('wrong') || lower.includes('time')) return 'text-amber-600 dark:text-amber-300';
+    if (lower.includes('wrong') || lower.includes('time') || lower.includes('failed')) return 'text-amber-600 dark:text-amber-300';
     return 'text-slate-800 dark:text-gray-100';
   })();
 
   const effectiveSummary = (() => {
     if (!result) return summary;
+    const compileOutput = getCompileOutput(result);
+    const errorOutput = getErrorOutput(result);
     if (
       isRunResult
-      && expectedOutputForRun !== null
-      && expectedOutputForRun !== undefined
-      && !result.compile_output
-      && !result.stderr
+      && hasValue(expectedOutputForRun)
+      && !compileOutput
+      && !errorOutput
     ) {
       return runDerivedVerdict === 'Accepted'
         ? 'Accepted on this example.'
         : 'Output does not match the expected output for this example.';
     }
     return summary;
+  })();
+
+  const singleRunExpectedOutput = (() => {
+    if (hasValue(result?.expectedOutput) && hasText(result.expectedOutput)) {
+      return result.expectedOutput;
+    }
+    return expectedOutputForRun;
   })();
 
   return (
@@ -304,7 +349,7 @@ export default function CodeEditor({
       {showToolbar ? (
         <div
           ref={toolbarRef}
-          className="flex flex-wrap items-center justify-between gap-2 bg-white/88 px-3 py-3 backdrop-blur-sm dark:bg-gray-900/88"
+          className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/70 bg-white/88 px-3 py-2.5 backdrop-blur-sm dark:border-gray-800 dark:bg-gray-900/88"
         >
           <div className="flex flex-wrap items-center gap-3">
             <select
@@ -356,7 +401,7 @@ export default function CodeEditor({
 
       <div
         ref={editorContainerRef}
-        className="relative z-0 min-h-0 bg-transparent px-4 pb-1 pt-1"
+        className="relative z-0 min-h-0 bg-transparent px-3 pb-0.5 pt-0.5"
         style={{ height: editorHeight }}
       >
         <MonacoCodeEditor
@@ -371,7 +416,7 @@ export default function CodeEditor({
         type="button"
         ref={splitterRef}
         onPointerDown={handleConsoleResizeStart}
-        className="group relative z-20 mx-4 flex h-3 w-auto cursor-row-resize items-center justify-center transition-colors"
+        className="group relative z-20 mx-3 flex h-2.5 w-auto cursor-row-resize items-center justify-center transition-colors"
         aria-label="Resize testcase panel"
       >
         <div className="absolute left-0 right-0 top-1/2 h-px -translate-y-1/2 bg-slate-200/80 dark:bg-gray-700" />
@@ -380,7 +425,7 @@ export default function CodeEditor({
 
       <div
         ref={consoleContainerRef}
-        className="relative z-20 mx-3 mb-3 flex min-h-0 flex-col overflow-hidden rounded-[24px] bg-white px-4 pb-3 pt-1.5 dark:bg-gray-900"
+        className="relative z-20 mx-3 mb-2 flex min-h-0 flex-col overflow-hidden rounded-[24px] bg-white px-4 pb-2 pt-1 dark:bg-gray-900"
         style={{ height: clampConsoleHeight(consoleHeight) }}
       >
         <div className="flex flex-none items-end gap-6 overflow-x-auto bg-white pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden dark:bg-gray-900">
@@ -408,25 +453,14 @@ export default function CodeEditor({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto scroll-smooth pt-2.5">
+        <div className="min-h-0 flex-1 overflow-y-auto scroll-smooth pt-2">
           {activeConsoleTab === 'testcase' ? (
-            <div className="space-y-3 text-slate-700 dark:text-gray-200">
+            <div className="space-y-2.5 text-slate-700 dark:text-gray-200">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-gray-100">
                   <TerminalSquare className="h-4 w-4 text-sky-500" />
                   Testcase
                 </div>
-
-                {typeof onAddCustomTestCase === 'function' && (
-                  <button
-                    type="button"
-                    onClick={onAddCustomTestCase}
-                    className="inline-flex h-8 items-center justify-center rounded-xl bg-white px-3 text-xs font-semibold text-slate-700 shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-colors hover:bg-slate-50 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
-                    title="Add custom testcase"
-                  >
-                    +
-                  </button>
-                )}
               </div>
 
               {Array.isArray(testCases) && testCases.length > 0 && (
@@ -450,26 +484,30 @@ export default function CodeEditor({
               <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 p-3 dark:border-gray-700 dark:bg-gray-800/70">
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">
-                    {activeTestCase?.kind === 'sample' ? 'Sample Testcase' : 'Custom Testcase'}
+                    Sample Testcase
                   </div>
-                  {activeTestCase?.expectedOutput !== null && activeTestCase?.expectedOutput !== undefined ? (
+                  {hasValue(activeTestCase?.expectedOutput) ? (
                     <div className="text-[11px] text-slate-500 dark:text-gray-400">Expected output available</div>
                   ) : null}
                 </div>
                 <textarea
                   value={activeTestCase?.input ?? customInput ?? ''}
                   onChange={(event) => {
-                    if (!activeTestCase) return;
+                    if (!activeTestCase || activeTestCase.kind === 'sample') return;
                     onTestCaseInputChange?.(activeTestCase.id, event.target.value);
                   }}
-                  readOnly={activeTestCase?.kind === 'sample'}
-                  placeholder="Provide stdin for the selected testcase."
-                  className="h-36 w-full resize-none rounded-[18px] bg-white/88 px-4 py-3 font-mono text-xs text-slate-700 outline-none shadow-[inset_0_0_0_1px_rgba(226,232,240,0.7)] transition-colors focus:bg-white focus:ring-2 focus:ring-sky-400 read-only:opacity-80 dark:bg-gray-900/90 dark:text-gray-200 dark:shadow-[inset_0_0_0_1px_rgba(55,65,81,0.85)] dark:focus:ring-sky-500"
+                  readOnly={!onTestCaseInputChange || activeTestCase?.kind === 'sample'}
+                  placeholder="Sample input will appear here."
+                  className="h-20 w-full resize-none rounded-[18px] bg-white/88 px-4 py-3 font-mono text-xs text-slate-700 outline-none shadow-[inset_0_0_0_1px_rgba(226,232,240,0.7)] transition-colors focus:bg-white focus:ring-2 focus:ring-sky-400 read-only:opacity-80 dark:bg-gray-900/90 dark:text-gray-200 dark:shadow-[inset_0_0_0_1px_rgba(55,65,81,0.85)] dark:focus:ring-sky-500"
                 />
+                {hasValue(activeTestCase?.expectedOutput) && (
+                  <div className="mt-3 rounded-[18px] bg-white/88 px-4 py-3 shadow-[inset_0_0_0_1px_rgba(226,232,240,0.7)] dark:bg-gray-900/90 dark:shadow-[inset_0_0_0_1px_rgba(55,65,81,0.85)]">
+                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Expected Output</div>
+                    <ResultValue value={activeTestCase.expectedOutput || ''} />
+                  </div>
+                )}
               </div>
-              <p className="text-xs text-slate-500 dark:text-gray-400">
-                Run executes the selected testcase. Submit ignores testcases and runs hidden tests only.
-              </p>
+
             </div>
           ) : (
             <div className="space-y-4">
@@ -496,25 +534,101 @@ export default function CodeEditor({
                 </div>
               )}
 
-              {result && isRunResult && (
+              {result && isRunResult && runCaseResults.length >= 1 && (
+                <div className="space-y-3">
+                  <div className="flex flex-wrap gap-2">
+                    {runCaseResults.map((entry, index) => {
+                      const entryStatus = normalizeRunCaseStatus(entry.status);
+                      const toneClass = runStatusTone(entry.status);
+
+                      return (
+                        <div
+                          key={entry.id || `run-case-${index + 1}`}
+                          className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:bg-gray-800 dark:text-gray-200"
+                        >
+                          <span>{entry.label || `Case ${index + 1}`}</span>
+                          <span className={`ml-2 rounded-full px-2 py-0.5 text-[11px] ${toneClass}`}>{entryStatus}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="space-y-3">
+                    {runCaseResults.map((entry, index) => (
+                      (() => {
+                        const compileOutput = getCompileOutput(entry);
+                        const errorOutput = getErrorOutput(entry);
+                        const hasExpected = hasValue(entry.expectedOutput);
+                        const entryStatus = normalizeRunCaseStatus(entry.status);
+
+                        return (
+                          <div
+                            key={entry.id || `run-case-card-${index + 1}`}
+                            className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/50"
+                          >
+                            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-semibold text-slate-900 dark:text-gray-100">
+                                  {entry.label || `Case ${index + 1}`}
+                                </span>
+                                <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${runStatusTone(entry.status)}`}>
+                                  Status: {entryStatus}
+                                </span>
+                              </div>
+
+                              <div className="flex flex-wrap gap-3 text-xs text-slate-500 dark:text-gray-400">
+                                <span>Runtime: {formatDuration(Number(entry.time || 0) * 1000)}</span>
+                                <span>Memory: {Number(entry.memory || 0)} KB</span>
+                              </div>
+                            </div>
+
+                            <div className="grid gap-4 lg:grid-cols-2">
+                              <LcBlock label="Input">
+                                <ResultValue value={entry.input || ''} />
+                              </LcBlock>
+                              <LcBlock label="Your Output">
+                                <ResultValue value={(entry.output ?? entry.stdout) || ''} />
+                              </LcBlock>
+
+                              <LcBlock label="Expected Output">
+                                <ResultValue value={hasExpected ? entry.expectedOutput || '' : 'Expected output unavailable.'} />
+                              </LcBlock>
+
+                              {(compileOutput || errorOutput) && (
+                                <div className="lg:col-span-2">
+                                  <LcBlock label={compileOutput || entryStatus === 'Compilation Error' ? 'Compile Output' : 'Errors'}>
+                                    <ResultValue value={compileOutput || errorOutput || ''} />
+                                  </LcBlock>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {result && isRunResult && runCaseResults.length === 0 && (
                 <>
                   <div className="grid gap-4 lg:grid-cols-2">
                     <LcBlock label="Input">
                       <ResultValue value={result.input ?? runInputUsed ?? customInput} />
                     </LcBlock>
-                    <LcBlock label={(result.expectedOutput !== null && result.expectedOutput !== undefined) || (expectedOutputForRun !== null && expectedOutputForRun !== undefined) ? 'Your Output' : 'Output'}>
+                    <LcBlock label={singleRunExpectedOutput !== null && singleRunExpectedOutput !== undefined ? 'Your Output' : 'Output'}>
                       <ResultValue value={(result.output ?? result.stdout) || ''} />
                     </LcBlock>
 
-                    {((result.expectedOutput !== null && result.expectedOutput !== undefined) || (expectedOutputForRun !== null && expectedOutputForRun !== undefined)) && !(result.compile_output || result.error) && !result.stderr && (
+                    {hasValue(singleRunExpectedOutput) && !(getCompileOutput(result) || getErrorOutput(result)) && (
                       <LcBlock label="Expected">
-                        <ResultValue value={(result.expectedOutput ?? expectedOutputForRun) || ''} />
+                        <ResultValue value={singleRunExpectedOutput || ''} />
                       </LcBlock>
                     )}
-                    {(result.compile_output || result.stderr || result.error) && (
+                    {(getCompileOutput(result) || getErrorOutput(result)) && (
                       <div className="lg:col-span-2">
-                        <LcBlock label={result.compile_output || result.status === 'Compilation Error' ? 'Compile Output' : 'Errors'}>
-                          <ResultValue value={result.compile_output || result.error || result.stderr || ''} />
+                        <LcBlock label={getCompileOutput(result) || result.status === 'Compilation Error' ? 'Compile Output' : 'Errors'}>
+                          <ResultValue value={getCompileOutput(result) || getErrorOutput(result) || ''} />
                         </LcBlock>
                       </div>
                     )}

@@ -1,13 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  ArrowLeft,
   Building2,
   ChevronDown,
   PanelLeftOpen,
-  Play,
-  RotateCcw,
-  Send,
   Tag,
 } from 'lucide-react';
 import { api } from '../../utils/api';
@@ -290,6 +286,33 @@ function normalizeRunResult(response, activeCase) {
   };
 }
 
+function aggregateRunResults(caseResults) {
+  const normalizedResults = Array.isArray(caseResults) ? caseResults : [];
+  const firstFailure = normalizedResults.find((entry) => entry.status !== 'Accepted');
+  const status = firstFailure?.status || (normalizedResults.length > 0 ? 'Accepted' : 'Run Result');
+  const totalTime = normalizedResults.reduce((sum, entry) => sum + Number(entry.time || 0), 0);
+  const maxMemory = normalizedResults.reduce((max, entry) => Math.max(max, Number(entry.memory || 0)), 0);
+  const passed = normalizedResults.filter((entry) => entry.status === 'Accepted').length;
+
+  return {
+    mode: 'run',
+    status,
+    time: totalTime,
+    memory: maxMemory,
+    total: normalizedResults.length,
+    passed,
+    caseResults: normalizedResults,
+    output: normalizedResults[0]?.output || '',
+    stdout: normalizedResults[0]?.stdout || '',
+    input: normalizedResults[0]?.input || '',
+    expectedOutput: normalizedResults[0]?.expectedOutput ?? null,
+    compile_output: firstFailure?.compile_output || normalizedResults[0]?.compile_output || '',
+    compileOutput: firstFailure?.compileOutput || normalizedResults[0]?.compileOutput || '',
+    stderr: firstFailure?.stderr || normalizedResults[0]?.stderr || '',
+    error: firstFailure?.error || normalizedResults[0]?.error || '',
+  };
+}
+
 function normalizeSubmitResult(response) {
   return {
     status: statusLabel(response?.status),
@@ -378,15 +401,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
     return testCases.find((entry) => String(entry.id) === String(activeTestCaseId)) || testCases[0];
   }, [activeTestCaseId, testCases]);
 
-  const persistedPreviewValidated = Boolean(problem?.previewValidated ?? problem?.previewTested);
-
-  const previewValidated = useMemo(() => {
-    if (!result) return persistedPreviewValidated;
-    const normalizedStatus = typeof result.status === 'string' ? result.status : statusLabel(result.status);
-    const upper = String(normalizedStatus || '').toUpperCase();
-    if (upper === 'AC') return true;
-    return String(normalizedStatus || '').toLowerCase().includes('accepted');
-  }, [persistedPreviewValidated, result]);
+  const previewValidated = Boolean(problem?.previewValidated ?? problem?.previewTested);
 
   const verdictStatus = useMemo(() => {
     if (!result) return '';
@@ -447,19 +462,30 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
     setActiveConsoleTab('result');
 
     try {
-      const response = await api.runCompilerProblem(problem._id, {
-        language,
-        sourceCode: activeCode,
-        customInput: activeTestCase?.input || '',
-      });
-      const normalized = normalizeRunResult(response, activeTestCase);
+      const runnableCases = Array.isArray(testCases) && testCases.length > 0
+        ? testCases
+        : [activeTestCase].filter(Boolean);
+
+      const responses = await Promise.all(
+        runnableCases.map(async (testCase, index) => {
+          const response = await api.runCompilerProblem(problem._id, {
+            language,
+            sourceCode: activeCode,
+            customInput: testCase?.input || '',
+          });
+
+          return {
+            ...normalizeRunResult(response, testCase),
+            id: testCase?.id || `case-${index + 1}`,
+            label: `Case ${index + 1}`,
+            kind: testCase?.kind || 'custom',
+          };
+        })
+      );
+
+      const normalized = aggregateRunResults(responses);
       setResult(normalized);
-      setProblem((previous) => (
-        response?.status === 'AC' && previous
-          ? { ...previous, previewValidated: true, previewTested: true }
-          : previous
-      ));
-      toast.success(`Run finished with verdict ${normalized.status}.`);
+      toast.success(`Run finished. Passed ${normalized.passed}/${normalized.total} cases.`);
     } catch (error) {
       toast.error(error.message || 'Failed to run code.');
     } finally {
@@ -486,11 +512,9 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
       });
       const normalized = normalizeSubmitResult(response);
       setResult(normalized);
-      setProblem((previous) => (
-        response?.status === 'AC' && previous
-          ? { ...previous, previewValidated: true, previewTested: true }
-          : previous
-      ));
+      if (response?.status === 'AC') {
+        setProblem((prev) => prev ? { ...prev, previewValidated: true, previewTested: true } : prev);
+      }
       toast.success(`Submission finished with verdict ${normalized.status}.`);
     } catch (error) {
       toast.error(error.message || 'Failed to submit code.');
@@ -568,121 +592,53 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
     );
   }
 
+  const statusBadgeClass = verdictTone === 'success'
+    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+    : verdictTone === 'danger'
+      ? 'bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300'
+      : previewValidated
+        ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+        : 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300';
+
   return (
-    <div className="h-[calc(100vh-9rem)] w-full min-h-[640px] overflow-hidden rounded-[30px] bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.10),_transparent_34%),linear-gradient(180deg,_#f8fbff_0%,_#eff6ff_45%,_#f8fafc_100%)] shadow-[0_16px_45px_rgba(15,23,42,0.06)] dark:bg-[linear-gradient(180deg,_#0f172a_0%,_#111827_100%)]">
+    <div className="h-[calc(100vh-var(--app-navbar-height,5rem))] min-h-[680px] w-full overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.10),_transparent_34%),linear-gradient(180deg,_#f8fbff_0%,_#eff6ff_45%,_#f8fafc_100%)] shadow-[0_16px_45px_rgba(15,23,42,0.06)] dark:bg-[linear-gradient(180deg,_#0f172a_0%,_#111827_100%)]">
       <div className="flex h-full min-h-0 flex-col">
-        <header className="sticky top-0 z-40 flex flex-nowrap items-center justify-between gap-2 overflow-x-auto bg-white/86 px-3 py-2 shadow-[0_8px_22px_rgba(15,23,42,0.035)] backdrop-blur-xl [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden dark:bg-gray-900/88">
-          <div className="flex min-w-0 flex-none items-center gap-2">
-            <button
-              type="button"
-              onClick={() => navigate(backTo || `${rolePrefix}/compiler/problems`)}
-              className="inline-flex h-9 items-center justify-center gap-2 rounded-xl bg-white/90 px-3 text-slate-800 shadow-[0_8px_18px_rgba(15,23,42,0.035)] transition-colors hover:bg-white dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
-              aria-label="Go back"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              <span className="hidden text-sm font-semibold sm:inline">{backLabel}</span>
-            </button>
-
-            <div className="hidden min-w-0 lg:block">
-              <p className="truncate text-sm font-semibold text-slate-900 dark:text-gray-100">{problem.title}</p>
-              <p className="text-xs text-slate-500 dark:text-gray-400">
-                {previewValidated ? 'Preview validation completed' : 'Preview validation required before publish'}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-none items-center gap-2">
-            <select
-              value={language}
-              onChange={(event) => setLanguage(event.target.value)}
-              className="rounded-xl bg-white/85 px-2.5 py-1 text-xs font-semibold text-slate-700 outline-none shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-colors focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-400 dark:bg-gray-800 dark:text-gray-200 dark:focus:ring-sky-500"
-            >
-              {(problem.supportedLanguages || []).map((supportedLanguage) => (
-                <option key={supportedLanguage} value={supportedLanguage}>
-                  {getLanguageLabel(supportedLanguage)}
-                </option>
-              ))}
-            </select>
-
-            <button
-              type="button"
-              onClick={handleRun}
-              disabled={isRunning || isSubmitting}
-              className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-sky-600 dark:hover:bg-sky-500 dark:disabled:bg-gray-700"
-            >
-              <Play className="h-3.5 w-3.5" />
-              {isRunning ? 'Running...' : 'Run'}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={isRunning || isSubmitting}
-              className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"
-            >
-              <Send className="h-3.5 w-3.5" />
-              {isSubmitting ? 'Submitting...' : 'Submit'}
-            </button>
-
-            <button
-              type="button"
-              onClick={resetCode}
-              disabled={isRunning || isSubmitting}
-              className="inline-flex items-center gap-2 rounded-xl bg-white/90 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.03)] transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              Reset
-            </button>
-
-            <button
-              type="button"
-              onClick={() => navigate(editTo || `${rolePrefix}/compiler/${problem._id}/edit`)}
-              className="hidden rounded-xl bg-white/90 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.03)] transition-colors hover:bg-white dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 lg:inline-flex"
-            >
-              {editLabel}
-            </button>
-
-            <div className="flex items-center gap-1 rounded-2xl bg-white/90 p-1 shadow-[0_8px_20px_rgba(15,23,42,0.04)] dark:bg-gray-900 lg:hidden">
-              <button
-                type="button"
-                onClick={() => setMobileView('description')}
-                className={`rounded-xl px-3 py-1.5 text-sm font-semibold transition-colors ${mobileView === 'description' ? 'bg-sky-600 text-white' : 'text-slate-600 hover:bg-slate-50 dark:text-gray-300 dark:hover:bg-gray-800'}`}
-              >
-                Description
-              </button>
-              <button
-                type="button"
-                onClick={() => setMobileView('editor')}
-                className={`rounded-xl px-3 py-1.5 text-sm font-semibold transition-colors ${mobileView === 'editor' ? 'bg-sky-600 text-white' : 'text-slate-600 hover:bg-slate-50 dark:text-gray-300 dark:hover:bg-gray-800'}`}
-              >
-                Editor
-              </button>
-            </div>
-          </div>
-        </header>
-
-        <div className="relative hidden min-h-0 flex-1 overflow-hidden px-3 pb-3 pt-2 lg:flex">
+        <div className="relative hidden h-full min-h-0 flex-1 overflow-hidden px-3 py-3 lg:flex">
 
           <div
             ref={splitContainerRef}
-            className="mx-auto grid min-h-0 w-full flex-1 grid-cols-[auto_16px_minmax(0,1fr)] overflow-hidden"
+            className="mx-auto grid h-full min-h-0 w-full flex-1 grid-cols-[auto_16px_minmax(0,1fr)] overflow-hidden"
           >
             <section
               style={{
-                width: leftWidth === null ? 'clamp(320px, 40vw, 680px)' : `${leftWidth}px`,
-                flexBasis: leftWidth === null ? 'clamp(320px, 40vw, 680px)' : `${leftWidth}px`,
+                width: leftWidth === null ? 'clamp(300px, 38vw, 620px)' : `${leftWidth}px`,
                 willChange: 'width',
               }}
-              className="flex shrink-0 min-w-[320px] flex-col overflow-hidden rounded-[30px] bg-white/84 shadow-[0_10px_32px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:bg-gray-900/84"
+              className="flex h-full min-w-[280px] shrink-0 flex-col overflow-hidden rounded-[30px] bg-white/84 shadow-[0_10px_32px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:bg-gray-900/84"
             >
-              <div className="border-b border-slate-200/70 bg-white/92 px-5 py-3 backdrop-blur-sm dark:border-gray-800 dark:bg-gray-900/92">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-gray-100">Problem Details</p>
-                    <p className={`mt-1 inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${verdictTone === 'success' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300' : verdictTone === 'danger' ? 'bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300' : 'bg-slate-100 text-slate-600 dark:bg-gray-800 dark:text-gray-300'}`}>
-                      {verdictStatus || (previewValidated ? 'Preview Passed' : 'Ready for Validation')}
-                    </p>
-                  </div>
+              <div className="flex flex-none items-center justify-between gap-3 border-b border-slate-200/70 px-5 py-3 dark:border-gray-800">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-slate-900 dark:text-gray-100">{problem.title}</p>
+                  <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusBadgeClass}`}>
+                    {verdictStatus || (previewValidated ? 'Preview Passed' : 'Validation Pending')}
+                  </span>
+                </div>
+
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => navigate(backTo || `${rolePrefix}/compiler/problems`)}
+                    className="rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                  >
+                    {backLabel}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigate(editTo || `${rolePrefix}/compiler/${problem._id}/edit`)}
+                    className="rounded-xl bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.03)] transition-colors hover:bg-slate-50 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                  >
+                    {editLabel}
+                  </button>
                 </div>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain scroll-smooth">
@@ -702,7 +658,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
               </div>
             </button>
 
-            <section className="min-h-0 min-w-0 overflow-hidden">
+            <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
               <CodeEditor
                 supportedLanguages={problem.supportedLanguages || []}
                 language={language}
@@ -713,7 +669,6 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
                 testCases={testCases}
                 activeTestCaseId={activeTestCaseId}
                 onActiveTestCaseChange={setActiveTestCaseId}
-                onAddCustomTestCase={handleAddCustomTestCase}
                 onTestCaseInputChange={handleTestCaseInputChange}
                 expectedOutputForRun={activeTestCase?.expectedOutput ?? null}
                 runInputUsed={activeTestCase?.input || ''}
@@ -725,15 +680,60 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
                 onRun={handleRun}
                 onSubmit={handleSubmit}
                 onReset={resetCode}
-                showToolbar={false}
+                showToolbar
               />
             </section>
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-4 px-3 pb-3 pt-2 lg:hidden">
+        <div className="min-h-0 flex-1 space-y-3 px-3 py-3 lg:hidden">
+          <div className="rounded-[24px] bg-white/88 px-3 py-3 shadow-[0_10px_32px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:bg-gray-900/88">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-900 dark:text-gray-100">{problem.title}</p>
+                <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusBadgeClass}`}>
+                  {verdictStatus || (previewValidated ? 'Preview Passed' : 'Validation Pending')}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => navigate(backTo || `${rolePrefix}/compiler/problems`)}
+                  className="rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                >
+                  {backLabel}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate(editTo || `${rolePrefix}/compiler/${problem._id}/edit`)}
+                  className="rounded-xl bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.03)] transition-colors hover:bg-slate-50 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                >
+                  {editLabel}
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-3 flex items-center gap-1 rounded-2xl bg-slate-100 p-1 dark:bg-gray-800">
+              <button
+                type="button"
+                onClick={() => setMobileView('description')}
+                className={`flex-1 rounded-xl px-3 py-1.5 text-sm font-semibold transition-colors ${mobileView === 'description' ? 'bg-sky-600 text-white' : 'text-slate-600 hover:bg-white dark:text-gray-300 dark:hover:bg-gray-700'}`}
+              >
+                Description
+              </button>
+              <button
+                type="button"
+                onClick={() => setMobileView('editor')}
+                className={`flex-1 rounded-xl px-3 py-1.5 text-sm font-semibold transition-colors ${mobileView === 'editor' ? 'bg-sky-600 text-white' : 'text-slate-600 hover:bg-white dark:text-gray-300 dark:hover:bg-gray-700'}`}
+              >
+                Editor
+              </button>
+            </div>
+          </div>
+
           <div className={`overflow-hidden rounded-[28px] bg-white/84 shadow-[0_10px_32px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:bg-gray-900/84 ${mobileView === 'description' ? 'block' : 'hidden'}`}>
-            <div className="max-h-[calc(100vh-14rem)] overflow-y-auto overflow-x-hidden overscroll-contain scroll-smooth">
+            <div className="max-h-[calc(100vh-15rem)] overflow-y-auto overflow-x-hidden overscroll-contain scroll-smooth">
               <ProblemDescriptionPanel problem={problem} previewValidated={previewValidated} />
             </div>
           </div>
@@ -749,7 +749,6 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
               testCases={testCases}
               activeTestCaseId={activeTestCaseId}
               onActiveTestCaseChange={setActiveTestCaseId}
-              onAddCustomTestCase={handleAddCustomTestCase}
               onTestCaseInputChange={handleTestCaseInputChange}
               expectedOutputForRun={activeTestCase?.expectedOutput ?? null}
               runInputUsed={activeTestCase?.input || ''}
@@ -761,7 +760,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
               onRun={handleRun}
               onSubmit={handleSubmit}
               onReset={resetCode}
-              showToolbar={false}
+              showToolbar
             />
           </div>
         </div>
