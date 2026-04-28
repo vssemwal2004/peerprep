@@ -1,7 +1,6 @@
-import { lazy, Suspense, useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { BarChart3, FileCode2, LayoutDashboard, PlusSquare, TerminalSquare } from 'lucide-react';
-import CompilerSidebar from './CompilerSidebar';
 
 const CompilerOverview = lazy(() => import('./CompilerOverview'));
 const CreateProblem = lazy(() => import('./CreateProblem'));
@@ -16,8 +15,8 @@ const LoadingBlock = () => (
 );
 export default function AdminCompilerDashboard() {
   const location = useLocation();
-  const [isExpanded, setIsExpanded] = useState(false);
   const pathname = location.pathname;
+  const isPreviewRoute = pathname.includes('/preview');
 
   const rolePrefix = pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
 
@@ -41,7 +40,7 @@ export default function AdminCompilerDashboard() {
 
   const sectionMeta = sections.find((section) => section.key === activeSection);
 
-  const showHeaderCard = !pathname.includes('/compiler/problems');
+  const showHeaderCard = !pathname.includes('/compiler/problems') && !pathname.includes('/preview');
 
   const renderContent = () => {
     if (pathname.includes('/compiler/create') || pathname.includes('/edit')) return <CreateProblem />;
@@ -53,10 +52,8 @@ export default function AdminCompilerDashboard() {
 
   return (
     <div className="min-h-screen bg-white pt-20 dark:bg-gray-900">
-      <CompilerSidebar items={sections} activeSection={activeSection} isExpanded={isExpanded} onExpand={() => setIsExpanded(true)} onCollapse={() => setIsExpanded(false)} />
-
-      <div className={`transition-all duration-300 ${isExpanded ? 'md:pl-[272px]' : 'md:pl-[80px]'}`}>
-        <div className="px-4 py-5 sm:px-6 lg:px-8">
+      <div>
+        <div className={isPreviewRoute ? 'p-0' : 'px-4 py-5 sm:px-6 lg:px-8'}>
           {showHeaderCard ? (
             <div className="mb-6 rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
               <div className="flex flex-wrap items-start justify-between gap-4">

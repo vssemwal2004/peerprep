@@ -5,7 +5,6 @@ import { formatDuration, getLanguageLabel } from '../admin/compiler/compilerUtil
 import {
   isRunExecutionResult,
   summarizeExecutionResult,
-  verdictBadgeClass,
 } from './problemUtils';
 
 function LcBlock({ label, children }) {
@@ -88,6 +87,20 @@ export default function CodeEditor({
   const consoleContainerRef = useRef(null);
   const [consoleHeight, setConsoleHeight] = useState(220);
   const [editorHeight, setEditorHeight] = useState(320);
+  const MIN_EDITOR_HEIGHT = 260;
+
+  const getLayoutRect = () => {
+    const root = rootRef.current;
+    if (!root) return null;
+
+    const parent = root.parentElement;
+    const candidate = parent?.getBoundingClientRect?.();
+    if (candidate && Number.isFinite(candidate.height) && candidate.height > 0) {
+      return candidate;
+    }
+
+    return root.getBoundingClientRect();
+  };
 
   const readNumberStyle = (styles, property) => {
     if (!styles) return 0;
@@ -98,13 +111,42 @@ export default function CodeEditor({
 
   const clampConsoleHeight = (height) => {
     const min = 128;
-    const max = rootRef.current ? Math.max(180, rootRef.current.getBoundingClientRect().height - 220) : 520;
+
+    if (!rootRef.current) {
+      return Math.min(520, Math.max(min, height));
+    }
+
+    const layoutRect = getLayoutRect();
+    const toolbarRect = toolbarRef.current?.getBoundingClientRect();
+    const splitterRect = splitterRef.current?.getBoundingClientRect();
+
+    const editorStyles = editorContainerRef.current ? window.getComputedStyle(editorContainerRef.current) : null;
+    const consoleStyles = consoleContainerRef.current ? window.getComputedStyle(consoleContainerRef.current) : null;
+
+    const toolbarH = toolbarRect?.height || 0;
+    const splitterH = splitterRect?.height || 0;
+    const editorChrome = readNumberStyle(editorStyles, 'padding-top') + readNumberStyle(editorStyles, 'padding-bottom');
+    const consoleChrome =
+      readNumberStyle(consoleStyles, 'margin-top')
+      + readNumberStyle(consoleStyles, 'margin-bottom')
+      + readNumberStyle(consoleStyles, 'padding-top')
+      + readNumberStyle(consoleStyles, 'padding-bottom')
+      + readNumberStyle(consoleStyles, 'border-top-width')
+      + readNumberStyle(consoleStyles, 'border-bottom-width');
+
+    // Keep the console height bounded even if the root container is content-sized.
+    // Use both root height and viewport height; take the tighter constraint.
+    const bottomGutter = 24;
+    const maxByRoot = (layoutRect?.height || 0) - (toolbarH + splitterH + editorChrome + consoleChrome + MIN_EDITOR_HEIGHT);
+    const maxByViewport = window.innerHeight - ((layoutRect?.top || 0) + bottomGutter) - (toolbarH + splitterH + editorChrome + consoleChrome + MIN_EDITOR_HEIGHT);
+    const max = Math.max(180, Math.min(Number.isFinite(maxByRoot) ? maxByRoot : 520, Number.isFinite(maxByViewport) ? maxByViewport : 520));
+
     return Math.min(max, Math.max(min, height));
   };
 
   const recomputeEditorHeight = () => {
     if (!rootRef.current) return;
-    const rootRect = rootRef.current.getBoundingClientRect();
+    const layoutRect = getLayoutRect();
     const toolbarRect = toolbarRef.current?.getBoundingClientRect();
     const splitterRect = splitterRef.current?.getBoundingClientRect();
 
@@ -116,12 +158,18 @@ export default function CodeEditor({
     const consoleH = clampConsoleHeight(consoleHeight);
 
     const editorChrome = readNumberStyle(editorStyles, 'padding-top') + readNumberStyle(editorStyles, 'padding-bottom');
-    const consoleChrome = readNumberStyle(consoleStyles, 'margin-top') + readNumberStyle(consoleStyles, 'margin-bottom');
+    const consoleChrome =
+      readNumberStyle(consoleStyles, 'margin-top')
+      + readNumberStyle(consoleStyles, 'margin-bottom')
+      + readNumberStyle(consoleStyles, 'padding-top')
+      + readNumberStyle(consoleStyles, 'padding-bottom')
+      + readNumberStyle(consoleStyles, 'border-top-width')
+      + readNumberStyle(consoleStyles, 'border-bottom-width');
 
     // Reserve fixed chrome (padding/margins) so height calculations converge even
     // when the editor container is content-sized (prevents runaway growth).
     const reserved = toolbarH + splitterH + consoleH + editorChrome + consoleChrome;
-    const next = Math.max(260, Math.floor(rootRect.height - reserved));
+    const next = Math.max(MIN_EDITOR_HEIGHT, Math.floor((layoutRect?.height || 0) - reserved));
     setEditorHeight(next);
   };
 
@@ -132,7 +180,10 @@ export default function CodeEditor({
     const observer = new ResizeObserver(() => {
       recomputeEditorHeight();
     });
-    observer.observe(rootRef.current);
+      observer.observe(rootRef.current);
+      if (rootRef.current.parentElement) {
+        observer.observe(rootRef.current.parentElement);
+      }
 
     return () => observer.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -146,6 +197,12 @@ export default function CodeEditor({
   const handleConsoleResizeStart = (event) => {
     if (!rootRef.current) return;
     event.preventDefault();
+
+    try {
+      event.currentTarget?.setPointerCapture?.(event.pointerId);
+    } catch {
+      // Ignore pointer capture failures.
+    }
 
     const startY = event.clientY;
     const startHeight = consoleHeight;
@@ -163,10 +220,14 @@ export default function CodeEditor({
       document.body.style.cursor = '';
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+      window.removeEventListener('lostpointercapture', handlePointerUp);
     };
 
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+    window.addEventListener('lostpointercapture', handlePointerUp);
   };
 
   const isRunResult = isRunExecutionResult(result);
@@ -238,7 +299,7 @@ export default function CodeEditor({
   return (
     <div
       ref={rootRef}
-      className="flex h-full min-h-[520px] flex-col overflow-hidden rounded-[30px] bg-white/84 shadow-[0_10px_32px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:bg-gray-900/84"
+      className="flex h-full min-h-0 flex-col overflow-hidden rounded-[30px] bg-white/84 shadow-[0_10px_32px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:bg-gray-900/84"
     >
       {showToolbar ? (
         <div
@@ -293,12 +354,16 @@ export default function CodeEditor({
         <div ref={toolbarRef} />
       )}
 
-      <div ref={editorContainerRef} className="relative z-0 min-h-0 flex-1 bg-transparent px-4 pb-1 pt-1">
+      <div
+        ref={editorContainerRef}
+        className="relative z-0 min-h-0 bg-transparent px-4 pb-1 pt-1"
+        style={{ height: editorHeight }}
+      >
         <MonacoCodeEditor
           language={language}
           value={code}
           onChange={onCodeChange}
-          height={editorHeight}
+          height="100%"
         />
       </div>
 
@@ -318,7 +383,7 @@ export default function CodeEditor({
         className="relative z-20 mx-3 mb-3 flex min-h-0 flex-col overflow-hidden rounded-[24px] bg-white px-4 pb-3 pt-1.5 dark:bg-gray-900"
         style={{ height: clampConsoleHeight(consoleHeight) }}
       >
-        <div className="flex flex-none items-end gap-6 overflow-x-auto bg-white pr-1 dark:bg-gray-900">
+        <div className="flex flex-none items-end gap-6 overflow-x-auto bg-white pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden dark:bg-gray-900">
           <button
             type="button"
             onClick={() => onConsoleTabChange('testcase')}
@@ -365,7 +430,7 @@ export default function CodeEditor({
               </div>
 
               {Array.isArray(testCases) && testCases.length > 0 && (
-                <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                   {testCases.map((entry, index) => {
                     const isActive = activeTestCase && String(entry.id) === String(activeTestCase.id);
                     return (

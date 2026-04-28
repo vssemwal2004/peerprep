@@ -5,7 +5,6 @@ import {
   Building2,
   ChevronDown,
   PanelLeftOpen,
-  PanelRightOpen,
   Play,
   RotateCcw,
   Send,
@@ -338,7 +337,6 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [leftWidth, setLeftWidth] = useState(null);
   const [mobileView, setMobileView] = useState('description');
-  const [detailsOpen, setDetailsOpen] = useState(false);
 
   const splitContainerRef = useRef(null);
   const dragFrameRef = useRef(null);
@@ -380,7 +378,15 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
     return testCases.find((entry) => String(entry.id) === String(activeTestCaseId)) || testCases[0];
   }, [activeTestCaseId, testCases]);
 
-  const previewValidated = Boolean(problem?.previewValidated ?? problem?.previewTested);
+  const persistedPreviewValidated = Boolean(problem?.previewValidated ?? problem?.previewTested);
+
+  const previewValidated = useMemo(() => {
+    if (!result) return persistedPreviewValidated;
+    const normalizedStatus = typeof result.status === 'string' ? result.status : statusLabel(result.status);
+    const upper = String(normalizedStatus || '').toUpperCase();
+    if (upper === 'AC') return true;
+    return String(normalizedStatus || '').toLowerCase().includes('accepted');
+  }, [persistedPreviewValidated, result]);
 
   const verdictStatus = useMemo(() => {
     if (!result) return '';
@@ -563,27 +569,18 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
   }
 
   return (
-    <div className="min-h-[calc(100vh-9rem)] overflow-hidden rounded-[30px] bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.10),_transparent_34%),linear-gradient(180deg,_#f8fbff_0%,_#eff6ff_45%,_#f8fafc_100%)] shadow-[0_16px_45px_rgba(15,23,42,0.06)] dark:bg-[linear-gradient(180deg,_#0f172a_0%,_#111827_100%)]">
-      <div className="flex min-h-[calc(100vh-9rem)] flex-col">
-        <header className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-3 bg-white/86 px-4 py-3 shadow-[0_8px_22px_rgba(15,23,42,0.035)] backdrop-blur-xl dark:bg-gray-900/88">
-          <div className="flex items-center gap-2">
+    <div className="h-[calc(100vh-9rem)] w-full min-h-[640px] overflow-hidden rounded-[30px] bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.10),_transparent_34%),linear-gradient(180deg,_#f8fbff_0%,_#eff6ff_45%,_#f8fafc_100%)] shadow-[0_16px_45px_rgba(15,23,42,0.06)] dark:bg-[linear-gradient(180deg,_#0f172a_0%,_#111827_100%)]">
+      <div className="flex h-full min-h-0 flex-col">
+        <header className="sticky top-0 z-40 flex flex-nowrap items-center justify-between gap-2 overflow-x-auto bg-white/86 px-3 py-2 shadow-[0_8px_22px_rgba(15,23,42,0.035)] backdrop-blur-xl [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden dark:bg-gray-900/88">
+          <div className="flex min-w-0 flex-none items-center gap-2">
             <button
               type="button"
               onClick={() => navigate(backTo || `${rolePrefix}/compiler/problems`)}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-white/90 px-3 text-slate-800 shadow-[0_8px_18px_rgba(15,23,42,0.035)] transition-colors hover:bg-white dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-xl bg-white/90 px-3 text-slate-800 shadow-[0_8px_18px_rgba(15,23,42,0.035)] transition-colors hover:bg-white dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
               aria-label="Go back"
             >
               <ArrowLeft className="h-4 w-4" />
               <span className="hidden text-sm font-semibold sm:inline">{backLabel}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setDetailsOpen((previous) => !previous)}
-              className="hidden items-center gap-2 rounded-xl bg-white/90 px-3 py-1.5 text-sm font-semibold text-slate-800 shadow-[0_8px_18px_rgba(15,23,42,0.035)] transition-colors hover:bg-white dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800 lg:inline-flex"
-            >
-              {detailsOpen ? <PanelRightOpen className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
-              Details
             </button>
 
             <div className="hidden min-w-0 lg:block">
@@ -594,11 +591,11 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-none items-center gap-2">
             <select
               value={language}
               onChange={(event) => setLanguage(event.target.value)}
-              className="rounded-xl bg-white/85 px-2.5 py-1.5 text-xs font-semibold text-slate-700 outline-none shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-colors focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-400 dark:bg-gray-800 dark:text-gray-200 dark:focus:ring-sky-500"
+              className="rounded-xl bg-white/85 px-2.5 py-1 text-xs font-semibold text-slate-700 outline-none shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-colors focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-400 dark:bg-gray-800 dark:text-gray-200 dark:focus:ring-sky-500"
             >
               {(problem.supportedLanguages || []).map((supportedLanguage) => (
                 <option key={supportedLanguage} value={supportedLanguage}>
@@ -611,7 +608,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
               type="button"
               onClick={handleRun}
               disabled={isRunning || isSubmitting}
-              className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-sky-600 dark:hover:bg-sky-500 dark:disabled:bg-gray-700"
+              className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-sky-600 dark:hover:bg-sky-500 dark:disabled:bg-gray-700"
             >
               <Play className="h-3.5 w-3.5" />
               {isRunning ? 'Running...' : 'Run'}
@@ -621,7 +618,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
               type="button"
               onClick={handleSubmit}
               disabled={isRunning || isSubmitting}
-              className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"
+              className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"
             >
               <Send className="h-3.5 w-3.5" />
               {isSubmitting ? 'Submitting...' : 'Submit'}
@@ -631,7 +628,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
               type="button"
               onClick={resetCode}
               disabled={isRunning || isSubmitting}
-              className="inline-flex items-center gap-2 rounded-xl bg-white/90 px-3 py-2 text-xs font-semibold text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.03)] transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+              className="inline-flex items-center gap-2 rounded-xl bg-white/90 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.03)] transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
             >
               <RotateCcw className="h-3.5 w-3.5" />
               Reset
@@ -640,7 +637,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
             <button
               type="button"
               onClick={() => navigate(editTo || `${rolePrefix}/compiler/${problem._id}/edit`)}
-              className="hidden rounded-xl bg-white/90 px-3 py-2 text-xs font-semibold text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.03)] transition-colors hover:bg-white dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 lg:inline-flex"
+              className="hidden rounded-xl bg-white/90 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.03)] transition-colors hover:bg-white dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 lg:inline-flex"
             >
               {editLabel}
             </button>
@@ -665,39 +662,6 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
         </header>
 
         <div className="relative hidden min-h-0 flex-1 overflow-hidden px-3 pb-3 pt-2 lg:flex">
-          {detailsOpen ? (
-            <>
-              <button
-                type="button"
-                onClick={() => setDetailsOpen(false)}
-                className="absolute inset-0 z-30 cursor-default bg-transparent"
-                aria-label="Close details panel"
-              />
-              <aside className="absolute inset-y-0 left-0 z-40 flex w-[35vw] min-w-[340px] max-w-[460px] flex-col overflow-hidden rounded-r-[30px] bg-white shadow-[0_16px_40px_rgba(15,23,42,0.12)] dark:bg-gray-900">
-                <div className="border-b border-slate-200/70 px-5 py-4 dark:border-gray-800">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-gray-100">Preview Details</p>
-                      <p className={`mt-1 inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${previewBadgeClass(previewValidated)}`}>
-                        {previewValidated ? 'Preview Passed' : 'Preview Required'}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => navigate(editTo || `${rolePrefix}/compiler/${problem._id}/edit`)}
-                      className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-                    >
-                      {editLabel}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="min-h-0 flex-1 overflow-y-auto">
-                  <ProblemDescriptionPanel problem={problem} previewValidated={previewValidated} />
-                </div>
-              </aside>
-            </>
-          ) : null}
 
           <div
             ref={splitContainerRef}
@@ -719,16 +683,9 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
                       {verdictStatus || (previewValidated ? 'Preview Passed' : 'Ready for Validation')}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setDetailsOpen(true)}
-                    className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-                  >
-                    Open Side Panel
-                  </button>
                 </div>
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto scroll-smooth">
+              <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain scroll-smooth">
                 <ProblemDescriptionPanel problem={problem} previewValidated={previewValidated} />
               </div>
             </section>
@@ -776,7 +733,9 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
 
         <div className="min-h-0 flex-1 space-y-4 px-3 pb-3 pt-2 lg:hidden">
           <div className={`overflow-hidden rounded-[28px] bg-white/84 shadow-[0_10px_32px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:bg-gray-900/84 ${mobileView === 'description' ? 'block' : 'hidden'}`}>
-            <ProblemDescriptionPanel problem={problem} previewValidated={previewValidated} />
+            <div className="max-h-[calc(100vh-14rem)] overflow-y-auto overflow-x-hidden overscroll-contain scroll-smooth">
+              <ProblemDescriptionPanel problem={problem} previewValidated={previewValidated} />
+            </div>
           </div>
 
           <div className={`${mobileView === 'editor' ? 'block' : 'hidden'}`}>
