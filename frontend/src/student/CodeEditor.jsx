@@ -317,28 +317,44 @@ export default function CodeEditor({
     return 'text-slate-800 dark:text-gray-100';
   })();
 
-  const effectiveSummary = (() => {
-    if (!result) return summary;
-    const compileOutput = getCompileOutput(result);
-    const errorOutput = getErrorOutput(result);
-    if (
-      isRunResult
-      && hasValue(expectedOutputForRun)
-      && !compileOutput
-      && !errorOutput
-    ) {
-      return runDerivedVerdict === 'Accepted'
-        ? 'Accepted on this example.'
-        : 'Output does not match the expected output for this example.';
-    }
-    return summary;
-  })();
-
   const singleRunExpectedOutput = (() => {
     if (hasValue(result?.expectedOutput) && hasText(result.expectedOutput)) {
       return result.expectedOutput;
     }
     return expectedOutputForRun;
+  })();
+
+  const effectiveSummary = (() => {
+    if (!result) return summary;
+    const compileOutput = getCompileOutput(result);
+    const errorOutput = getErrorOutput(result);
+    if (!isRunResult || compileOutput || errorOutput) return summary;
+
+    // When the backend provides per-case verdicts, trust those over the
+    // locally-selected expected output (which can change after a run).
+    if (runCaseResults.length > 0) {
+      const allPassed = runCaseResults.every((entry) => isPassedStatus(entry.status));
+      if (allPassed) return 'Accepted on this example.';
+
+      const comparable = runCaseResults.find((entry) => hasValue(entry.expectedOutput)) || runCaseResults[0];
+      if (!hasValue(comparable?.expectedOutput)) return summary;
+
+      const actual = normalizeComparableText(comparable.output ?? comparable.stdout ?? '');
+      const expected = normalizeComparableText(comparable.expectedOutput ?? '');
+      return actual === expected
+        ? 'Accepted on this example.'
+        : 'Output does not match the expected output for this example.';
+    }
+
+    if (hasValue(singleRunExpectedOutput)) {
+      const actual = normalizeComparableText(result.output ?? result.stdout ?? '');
+      const expected = normalizeComparableText(singleRunExpectedOutput ?? '');
+      return actual === expected
+        ? 'Accepted on this example.'
+        : 'Output does not match the expected output for this example.';
+    }
+
+    return summary;
   })();
 
   return (
