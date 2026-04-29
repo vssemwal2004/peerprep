@@ -52,16 +52,6 @@ function createPreviewTestCases(problem) {
   ];
 }
 
-function createCustomCase(nextIndex) {
-  return {
-    id: `custom-${nextIndex}`,
-    kind: 'custom',
-    input: '',
-    expectedOutput: '',
-    explanation: '',
-  };
-}
-
 function statusLabel(status) {
   const normalized = String(status || '').toUpperCase();
   if (normalized === 'AC') return 'Accepted';
@@ -358,6 +348,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
   const [result, setResult] = useState(null);
   const [isRunning, setIsRunning] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isApprovingPublish, setIsApprovingPublish] = useState(false);
   const [leftWidth, setLeftWidth] = useState(null);
   const [mobileView, setMobileView] = useState('description');
 
@@ -416,21 +407,22 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
     return 'neutral';
   }, [verdictStatus]);
 
+  const isAcceptedSubmission = useMemo(() => {
+    if (!result) return false;
+    // Run mode only checks sample/custom cases, not hidden judge tests.
+    if (result?.mode === 'run') return false;
+    return String(verdictStatus || '').toLowerCase().includes('accepted');
+  }, [result, verdictStatus]);
+
+  const canApprovePublish = Boolean(problem?._id)
+    && (isAcceptedSubmission || previewValidated)
+    && String(problem?.status || 'draft').toLowerCase() !== 'published';
+
   const updateDraft = (nextCode) => {
     setDrafts((previous) => ({
       ...previous,
       [language]: nextCode,
     }));
-  };
-
-  const handleAddCustomTestCase = () => {
-    setTestCases((previous) => {
-      const nextCustomIndex = previous.filter((entry) => entry.kind === 'custom').length + 1;
-      const nextCase = createCustomCase(nextCustomIndex);
-      setActiveTestCaseId(nextCase.id);
-      return [...previous, nextCase];
-    });
-    setActiveConsoleTab('testcase');
   };
 
   const handleTestCaseInputChange = (testCaseId, nextInput) => {
@@ -520,6 +512,37 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
       toast.error(error.message || 'Failed to submit code.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleApproveToPublish = async () => {
+    if (!problem?._id) return;
+    if (!isAcceptedSubmission && !previewValidated) {
+      toast.error('Submit an Accepted solution in preview before approving to publish.');
+      return;
+    }
+
+    setIsApprovingPublish(true);
+    try {
+      // Persist preview validation using the currently accepted solution (stored privately server-side).
+      const fd = new FormData();
+      fd.append('referenceSolutions', JSON.stringify({ [language]: activeCode }));
+
+      const approval = await api.approveCompilerProblemPreview(problem._id, fd);
+      if (!approval?.success) {
+        toast.error(approval?.message || 'Approval failed.');
+        return;
+      }
+
+      await api.updateCompilerProblemStatus(problem._id, 'published');
+      const refreshed = await api.getCompilerProblem(problem._id);
+      setProblem(refreshed);
+
+      toast.success('Approved and published successfully.');
+    } catch (error) {
+      toast.error(error.message || 'Failed to approve and publish.');
+    } finally {
+      setIsApprovingPublish(false);
     }
   };
 
@@ -639,6 +662,17 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
                   >
                     {editLabel}
                   </button>
+                  {canApprovePublish ? (
+                    <button
+                      type="button"
+                      onClick={handleApproveToPublish}
+                      disabled={isApprovingPublish || isSubmitting || isRunning}
+                      className="rounded-xl bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"
+                      title={!isAcceptedSubmission && !previewValidated ? 'Submit an Accepted solution to enable approval.' : ''}
+                    >
+                      {isApprovingPublish ? 'Approving...' : 'Approve to Publish'}
+                    </button>
+                  ) : null}
                 </div>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain scroll-smooth">

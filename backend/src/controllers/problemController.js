@@ -1232,7 +1232,7 @@ export async function updateProblemStatus(req, res) {
       throw new HttpError(400, 'Preview testing is required before publishing a problem.');
     }
     if (countReferenceSolutions(problem.referenceSolutions) === 0) {
-      throw new HttpError(400, 'Official solution approval is required before publishing a problem.');
+      throw new HttpError(400, 'Preview approval is required before publishing a problem.');
     }
     if (!problem.publishedAt) {
       problem.publishedAt = new Date();
@@ -1311,7 +1311,7 @@ export async function approveProblemPreview(req, res) {
   const referenceSolutions = normalizeReferenceSolutions(req.body.referenceSolutions, supportedLanguages);
 
   if (!referenceSolutions || Object.keys(referenceSolutions).length === 0) {
-    throw new HttpError(400, 'Official solution is required before preview approval.');
+    throw new HttpError(400, 'Solution code is required before preview approval.');
   }
 
   const hiddenTestCases = await loadHiddenExecutionTestCases(problem);
@@ -1323,7 +1323,7 @@ export async function approveProblemPreview(req, res) {
     }));
 
   if (languagesToValidate.length === 0) {
-    throw new HttpError(400, 'Official solution is required before preview approval.');
+    throw new HttpError(400, 'Solution code is required before preview approval.');
   }
 
   const results = [];
@@ -1356,7 +1356,7 @@ export async function approveProblemPreview(req, res) {
       approved: false,
       previewValidated: false,
       results,
-      message: 'Official solution failed preview validation.',
+      message: 'Solution failed preview validation.',
     });
   }
 
@@ -1378,7 +1378,7 @@ export async function approveProblemPreview(req, res) {
     previewValidated: true,
     results,
     problem: serializedProblem,
-    message: 'Official solution passed all internal testcases.',
+    message: 'Solution passed all internal testcases.',
   });
 }
 

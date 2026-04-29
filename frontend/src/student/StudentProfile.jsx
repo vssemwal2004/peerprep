@@ -1346,7 +1346,13 @@ export default function StudentProfile() {
                       <div key={`${submission.problemTitle}-${submission.createdAt}-${index}`} className="rounded-[20px] border border-slate-200 bg-slate-50/80 px-4 py-3 transition-colors hover:bg-white dark:border-gray-800 dark:bg-gray-800/80 dark:hover:bg-gray-800">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-slate-900 dark:text-gray-100">{submission.problemTitle}</p>
+                            <p className="truncate text-sm font-semibold text-slate-900 dark:text-gray-100">
+                              {submission?.problemTitle
+                                || submission?.problemSnapshot?.title
+                                || submission?.problem?.title
+                                || submission?.title
+                                || 'Untitled Problem'}
+                            </p>
                             <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">
                               {(submission.mode === 'run' ? 'Run' : 'Submit')} | {submission.language} | {formatDuration(submission.executionTimeMs)} | {formatDateTime(submission.createdAt)}
                             </p>

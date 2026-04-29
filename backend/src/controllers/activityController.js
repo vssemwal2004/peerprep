@@ -833,7 +833,8 @@ export async function getStudentStats(req, res) {
       })
         .sort({ createdAt: -1 })
         .limit(8)
-        .select('status language executionTimeMs createdAt problemSnapshot mode')
+        .select('status language executionTimeMs createdAt problemSnapshot mode problem')
+        .populate('problem', 'title difficulty')
         .lean(),
       AssessmentSubmission.aggregate([
         {
@@ -1016,8 +1017,8 @@ export async function getStudentStats(req, res) {
           acceptedAt: entry.acceptedAt || null,
         })),
         recentSubmissions: recentSubmissionsAgg.map((submission) => ({
-          problemTitle: submission.problemSnapshot?.title || 'Untitled Problem',
-          difficulty: submission.problemSnapshot?.difficulty || 'Easy',
+          problemTitle: submission.problemSnapshot?.title || submission.problem?.title || 'Untitled Problem',
+          difficulty: submission.problemSnapshot?.difficulty || submission.problem?.difficulty || 'Easy',
           status: submission.status,
           language: submission.language,
           executionTimeMs: submission.executionTimeMs || 0,
