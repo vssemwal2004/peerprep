@@ -6,19 +6,25 @@ import {
   ArrowRight,
   Award,
   BarChart3,
+  BookOpen,
   Bot,
   BrainCircuit,
+  BriefcaseBusiness,
+  CalendarCheck,
   CheckCircle2,
   ClipboardList,
   Clock,
   Code2,
+  Gauge,
   GraduationCap,
   Layers3,
+  LineChart,
   MessageSquare,
-  Sparkles,
+  ShieldCheck,
   Target,
   TrendingUp,
   X,
+  Zap,
 } from "lucide-react";
 import {
   Area,
@@ -30,6 +36,11 @@ import {
   LabelList,
   Pie,
   PieChart,
+  PolarAngleAxis,
+  PolarGrid,
+  PolarRadiusAxis,
+  Radar,
+  RadarChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -42,10 +53,10 @@ import socketService from "../utils/socket";
 void motion;
 
 const TOP_TABS = [
-  { key: "problems", label: "Problems" },
-  { key: "assessments", label: "Assessments" },
-  { key: "interviews", label: "Interviews" },
-  { key: "learning", label: "Learning" },
+  { key: "problems", label: "Problems", Icon: Code2 },
+  { key: "assessments", label: "Assessments", Icon: ClipboardList },
+  { key: "interviews", label: "Interviews", Icon: MessageSquare },
+  { key: "learning", label: "Learning", Icon: BookOpen },
 ];
 
 const PROBLEM_VIEWS = [
@@ -140,7 +151,7 @@ function insightTone(tone = "sky") {
 function SectionCard({ children, className = "" }) {
   return (
     <div
-      className={`rounded-[28px] border border-slate-200/80 bg-white/90 shadow-sm dark:border-gray-700/70 dark:bg-gray-900/60 ${className}`}
+      className={`rounded-[22px] border border-slate-200 bg-white shadow-[0_18px_48px_-38px_rgba(15,23,42,0.28)] dark:border-gray-800 dark:bg-gray-900 ${className}`}
     >
       {children}
     </div>
@@ -182,7 +193,7 @@ function StatCard({ label, value, helper, Icon, tone = "sky" }) {
   return (
     <motion.div
       {...fadeUp(0)}
-      className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md dark:border-gray-700/70 dark:bg-gray-900/55"
+      className="rounded-[20px] border border-slate-200 bg-white p-4 shadow-[0_12px_32px_-26px_rgba(15,23,42,0.26)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_18px_42px_-28px_rgba(15,23,42,0.3)] dark:border-gray-800 dark:bg-gray-900"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -291,6 +302,7 @@ function ChartTooltip({ active, payload, label, suffix = "" }) {
     "Value";
   const item = payload[0];
   const tone = item?.fill || item?.color || "#38bdf8";
+  const displayValue = item?.value ?? item?.payload?.score ?? item?.payload?.count ?? item?.payload?.accuracy ?? 0;
 
   return (
     <div className="min-w-[148px] rounded-2xl border border-slate-200/80 bg-white/95 px-3 py-3 shadow-[0_18px_45px_-38px_rgba(15,23,42,0.35)] backdrop-blur dark:border-gray-700/80 dark:bg-gray-950/95">
@@ -302,7 +314,7 @@ function ChartTooltip({ active, payload, label, suffix = "" }) {
         <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: tone }} />
         <span className="font-medium">Value</span>
         <span className="ml-auto text-sm font-black text-slate-900 dark:text-white">
-          {item?.value}
+          {displayValue}
           {suffix}
         </span>
       </div>
@@ -313,7 +325,7 @@ function ChartTooltip({ active, payload, label, suffix = "" }) {
 function ChartShell({ children, className = "" }) {
   return (
     <div
-      className={`overflow-hidden rounded-3xl border border-slate-200/70 bg-gradient-to-br from-slate-50 via-white to-sky-50/40 p-5 shadow-[0_18px_45px_-40px_rgba(15,23,42,0.28)] dark:border-gray-700/60 dark:bg-gradient-to-br dark:from-gray-900/80 dark:via-gray-900/60 dark:to-sky-500/5 ${className}`}
+      className={`overflow-hidden rounded-[22px] border border-slate-200 bg-[linear-gradient(135deg,#f8fafc_0%,#ffffff_48%,#f0f9ff_100%)] p-5 shadow-[0_18px_45px_-40px_rgba(15,23,42,0.28)] dark:border-gray-800 dark:bg-[linear-gradient(135deg,#111827_0%,#0f172a_52%,#082f49_100%)] ${className}`}
     >
       {children}
     </div>
@@ -364,6 +376,205 @@ function CompareMeter({
         </div>
       </div>
     </div>
+  );
+}
+
+function AnalyticsBrandMark() {
+  return (
+    <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] border border-sky-100 bg-sky-50 text-sky-700 shadow-[0_16px_36px_-28px_rgba(2,132,199,0.55)] dark:border-sky-800 dark:bg-sky-900/25 dark:text-sky-300">
+      <div className="absolute inset-1 rounded-[14px] border border-white/80 dark:border-white/10" />
+      <LineChart className="relative h-5 w-5" />
+    </div>
+  );
+}
+
+function HealthStrip({ items }) {
+  return (
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      {items.map((item) => (
+        <div
+          key={item.label}
+          className="rounded-[18px] border border-slate-200 bg-slate-50/80 px-4 py-3 transition-colors hover:bg-white dark:border-gray-800 dark:bg-gray-800/70 dark:hover:bg-gray-800"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">
+                {item.label}
+              </p>
+              <p className="mt-1 truncate text-lg font-black text-slate-950 dark:text-white">{item.value}</p>
+            </div>
+            <div className={`flex h-9 w-9 items-center justify-center rounded-2xl ${cardTone(item.tone)}`}>
+              <item.Icon className="h-4 w-4" />
+            </div>
+          </div>
+          <p className="mt-2 text-xs leading-relaxed text-slate-500 dark:text-gray-400">{item.helper}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ScoreRadar({ data }) {
+  return (
+    <ChartShell className="p-4">
+      <div className="h-[260px]">
+        {data.length ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <RadarChart data={data} outerRadius={88}>
+              <PolarGrid stroke="#cbd5e1" strokeOpacity={0.38} />
+              <PolarAngleAxis dataKey="label" tick={{ fontSize: 11, fill: "#64748b", fontWeight: 600 }} />
+              <PolarRadiusAxis angle={90} domain={[0, 100]} tick={false} axisLine={false} />
+              <Radar
+                dataKey="score"
+                stroke="#0ea5e9"
+                strokeWidth={2.5}
+                fill="#38bdf8"
+                fillOpacity={0.24}
+                isAnimationActive
+                animationDuration={900}
+              />
+              <Tooltip content={<ChartTooltip suffix="%" />} />
+            </RadarChart>
+          </ResponsiveContainer>
+        ) : (
+          <EmptyState text="Score profile appears after your first tracked activity." />
+        )}
+      </div>
+    </ChartShell>
+  );
+}
+
+function ExecutiveSummary({
+  overallScore,
+  overallStatus,
+  moduleScoreData,
+  overview,
+  consistency,
+  derived,
+  topicData,
+  strongestTopic,
+  weakestTopic,
+  onAnalyze,
+}) {
+  const statusStyle = STATUS_STYLES[overallStatus] || STATUS_STYLES.Improving;
+  const activeModules = moduleScoreData.filter((item) => item.score > 0).length;
+  const solvedTopics = topicData.filter((topic) => topic.attempts > 0).length;
+  const weeklyLoad = (consistency.weeklyActivity || []).reduce((sum, item) => sum + Number(item.count || 0), 0);
+  const healthItems = [
+    {
+      label: "Active Modules",
+      value: `${activeModules}/4`,
+      helper: "Problems, tests, interviews, and learning tracked together.",
+      Icon: ShieldCheck,
+      tone: "sky",
+    },
+    {
+      label: "Topic Coverage",
+      value: solvedTopics,
+      helper: `${strongestTopic?.topic || "No strong topic yet"} is currently the best signal.`,
+      Icon: Layers3,
+      tone: "emerald",
+    },
+    {
+      label: "Weekly Activity",
+      value: weeklyLoad,
+      helper: "Recent tracked actions across learning and solving.",
+      Icon: CalendarCheck,
+      tone: "amber",
+    },
+    {
+      label: "Readiness Risk",
+      value: weakestTopic?.topic || "Balanced",
+      helper: weakestTopic ? `${Math.round(weakestTopic.accuracy || 0)}% accuracy needs attention.` : "No urgent weak topic detected.",
+      Icon: AlertTriangle,
+      tone: "slate",
+    },
+  ];
+
+  return (
+    <SectionCard className="overflow-hidden">
+      <div className="grid gap-0 xl:grid-cols-[minmax(0,1.12fr)_minmax(360px,0.88fr)]">
+        <div className="relative border-b border-slate-200 bg-[linear-gradient(135deg,#f8fafc_0%,#ffffff_48%,#e0f2fe_100%)] p-5 dark:border-gray-800 dark:bg-[linear-gradient(135deg,#020617_0%,#111827_52%,#082f49_100%)] sm:p-6 xl:border-b-0 xl:border-r">
+          <div className="pointer-events-none absolute right-0 top-0 h-48 w-48 rounded-full bg-sky-200/35 blur-3xl dark:bg-sky-500/10" />
+          <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+            <div className="max-w-2xl">
+              <div className="flex items-center gap-3">
+                <AnalyticsBrandMark />
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700 dark:text-sky-300">
+                    PeerPrep Intelligence
+                  </p>
+                  <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-950 dark:text-white sm:text-3xl">
+                    Student performance command center
+                  </h1>
+                </div>
+              </div>
+              <p className="mt-4 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-gray-300">
+                A production-grade analytics workspace for DSA progress, assessment trend, interview readiness, and learning discipline.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${statusStyle.pill}`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${statusStyle.dot}`} />
+                  {overallStatus}
+                </span>
+                <Badge tone="emerald">Streak {overview.streak || consistency.currentStreak || 0}d</Badge>
+                <Badge tone="amber">Consistency {derived.consistencyScore || 0}%</Badge>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <div className="relative flex h-[110px] w-[110px] items-center justify-center">
+                <ScoreRing score={overallScore} size={110} stroke={9} />
+                <div className="absolute text-center">
+                  <div className="text-3xl font-black text-slate-950 dark:text-white">{overallScore}%</div>
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">
+                    Overall
+                  </div>
+                </div>
+              </div>
+              <motion.button
+                onClick={onAnalyze}
+                whileHover={{ scale: 1.02, y: -1 }}
+                whileTap={{ scale: 0.98 }}
+                className="group inline-flex items-center gap-2 rounded-2xl bg-sky-600 px-4 py-3 text-sm font-bold text-white shadow-[0_18px_42px_-28px_rgba(2,132,199,0.8)] hover:bg-sky-500"
+              >
+                <Bot className="h-4 w-4" />
+                Analyze
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+              </motion.button>
+            </div>
+          </div>
+
+          <div className="relative mt-6">
+            <HealthStrip items={healthItems} />
+          </div>
+        </div>
+
+        <div className="p-5 sm:p-6">
+          <SectionHeader
+            eyebrow="Portfolio Shape"
+            title="Readiness profile"
+            subtitle="A balanced scorecard across the four signals that matter for placement readiness."
+          />
+          <div className="mt-5">
+            <ScoreRadar data={moduleScoreData} />
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {moduleScoreData.map((item) => (
+              <div key={item.label} className="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-3 dark:border-gray-800 dark:bg-gray-800/70">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-700 dark:text-gray-200">{item.label}</span>
+                  <span className="font-black text-slate-950 dark:text-white">{item.score}%</span>
+                </div>
+                <div className="mt-2">
+                  <ProgressBar value={item.score} colorClass={item.colorClass} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </SectionCard>
   );
 }
 
@@ -1604,7 +1815,7 @@ export default function StudentAnalytics() {
 
   const formatTopicTick = useCallback((value) => {
     const label = String(value || "");
-    return label.length > 18 ? `${label.slice(0, 16)}…` : label;
+    return label.length > 18 ? `${label.slice(0, 16)}...` : label;
   }, []);
   const strongTopics = useMemo(
     () => topicData.filter((topic) => topic.level === "strong"),
@@ -1624,6 +1835,13 @@ export default function StudentAnalytics() {
   );
   const highestAccuracyTopic = useMemo(
     () => topicData.reduce((best, topic) => (topic.accuracy > (best?.accuracy || 0) ? topic : best), null),
+    [topicData]
+  );
+  const weakestTopic = useMemo(
+    () =>
+      topicData
+        .filter((topic) => Number(topic.attempts || 0) > 0)
+        .reduce((weakest, topic) => (weakest === null || topic.accuracy < weakest.accuracy ? topic : weakest), null),
     [topicData]
   );
 
@@ -1699,6 +1917,31 @@ export default function StudentAnalytics() {
   }, [assessments.avgScore, interviews.avgScore, learning.completionPercent, problems.accuracy]);
 
   const overallStatus = statusLabel(overallScore);
+  const moduleScoreData = useMemo(
+    () => [
+      {
+        label: "Problems",
+        score: Math.round(problems.accuracy || 0),
+        colorClass: "bg-sky-500",
+      },
+      {
+        label: "Assessments",
+        score: Math.round(assessments.avgScore || 0),
+        colorClass: "bg-emerald-500",
+      },
+      {
+        label: "Interviews",
+        score: Math.round(interviews.avgScore || 0),
+        colorClass: "bg-amber-500",
+      },
+      {
+        label: "Learning",
+        score: Math.round(learning.completionPercent || 0),
+        colorClass: "bg-slate-700 dark:bg-gray-300",
+      },
+    ],
+    [assessments.avgScore, interviews.avgScore, learning.completionPercent, problems.accuracy]
+  );
 
   const handleCompanyChange = async (companyId) => {
     setSelectedCompany(companyId);
@@ -1833,89 +2076,53 @@ export default function StudentAnalytics() {
   }
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-br from-sky-50/70 via-white to-slate-50 dark:from-gray-950 dark:via-gray-950 dark:to-gray-900 pt-20 pb-14">
+    <div className="min-h-screen w-full bg-[linear-gradient(180deg,#f0f9ff_0%,#ffffff_34%,#f8fafc_100%)] pt-20 pb-14 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_42%,#111827_100%)]">
       <div className="w-full px-4 sm:px-6 lg:px-10">
-        <SectionCard className="overflow-hidden">
-          <div className="relative px-6 py-6 sm:px-8">
-            <div className="pointer-events-none absolute inset-y-0 right-0 w-1/3 bg-gradient-to-l from-sky-100/60 to-transparent blur-3xl dark:from-sky-500/10" />
+        <ExecutiveSummary
+          overallScore={overallScore}
+          overallStatus={overallStatus}
+          moduleScoreData={moduleScoreData}
+          overview={overview}
+          consistency={consistency}
+          derived={derived}
+          topicData={topicData}
+          strongestTopic={highestAccuracyTopic}
+          weakestTopic={weakestTopic}
+          onAnalyze={() => setShowAnalyze(true)}
+        />
 
-            <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-              <div className="max-w-2xl">
-                <div className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Student Analysis
-                </div>
-                <h1 className="mt-4 text-3xl font-black tracking-tight text-slate-900 dark:text-white sm:text-4xl">
-                  Understand your performance without the noise
-                </h1>
-                <p className="mt-3 max-w-xl text-sm leading-relaxed text-slate-600 dark:text-gray-300 sm:text-base">
-                  A simpler, startup-style analytics page that shows what you are good at, what is weak, and what to do next.
-                </p>
-              </div>
+        <motion.div {...fadeUp(0.05)} className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard label="Total Attempts" value={overview.totalAttempts || 0} helper="Problems and assessments" Icon={Gauge} tone="sky" />
+          <StatCard label="Average Score" value={`${Math.round(overview.avgScore || 0)}%`} helper="Across active modules" Icon={TrendingUp} tone="emerald" />
+          <StatCard label="Interview Score" value={Math.round(overview.interviewScore || 0)} helper="Feedback average" Icon={BriefcaseBusiness} tone="amber" />
+          <StatCard label="Learning Progress" value={`${Math.round(learning.completionPercent || 0)}%`} helper="Module completion" Icon={Zap} tone="slate" />
+        </motion.div>
 
-              <div className="flex items-center gap-4">
-                <div className="relative flex h-[96px] w-[96px] items-center justify-center">
-                  <ScoreRing score={overallScore} size={96} stroke={8} />
-                  <div className="absolute text-center">
-                    <div className="text-2xl font-black text-slate-900 dark:text-white">{overallScore}%</div>
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-gray-500">
-                      Overall
-                    </div>
-                  </div>
-                </div>
-                <motion.button
-                  onClick={() => setShowAnalyze(true)}
-                  whileHover={{ scale: 1.03, y: -1 }}
-                  whileTap={{ scale: 0.98 }}
-                  className="group relative inline-flex items-center gap-2 overflow-hidden rounded-2xl bg-gradient-to-b from-sky-400 via-sky-500 to-blue-600 px-5 py-3 text-sm font-bold text-white ring-1 ring-white/20 shadow-[0_18px_45px_-32px_rgba(2,132,199,0.65)]"
-                >
-                  <span className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/20 via-white/8 to-transparent" />
-                  <Bot className="relative z-10 h-4 w-4 text-white/90" />
-                  <span className="relative z-10">Analyze Performance</span>
-                  <ArrowRight className="relative z-10 h-4 w-4 transition-transform group-hover:translate-x-1" />
-                </motion.button>
-              </div>
-            </div>
-
-            <div className="relative mt-7 flex flex-col gap-4 border-t border-slate-200/70 pt-5 dark:border-gray-800 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex flex-wrap items-center gap-6">
-                {TOP_TABS.map((tab) => (
-                  <button
-                    key={tab.key}
-                    onClick={() => setActiveTab(tab.key)}
-                    className={`relative pb-3 text-sm font-semibold transition-colors ${
-                      activeTab === tab.key
-                        ? "text-slate-900 dark:text-white"
-                        : "text-slate-500 hover:text-slate-700 dark:text-gray-400 dark:hover:text-gray-200"
-                    }`}
-                  >
-                    {tab.label}
-                    {activeTab === tab.key ? (
-                      <motion.span
-                        layoutId="analysisUnderline"
-                        className="absolute inset-x-0 bottom-0 h-[3px] rounded-full bg-sky-500"
-                        transition={{ type: "spring", stiffness: 380, damping: 32 }}
-                      />
-                    ) : null}
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <Badge tone="emerald">Streak {overview.streak || 0}d</Badge>
-                <Badge tone="amber">Consistency {derived.consistencyScore || 0}%</Badge>
-                <Badge>{overallStatus}</Badge>
-              </div>
-            </div>
+        <SectionCard className="mt-5 p-3">
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            {TOP_TABS.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`relative flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-bold transition-all ${
+                  activeTab === tab.key
+                    ? "bg-sky-600 text-white shadow-[0_16px_34px_-24px_rgba(2,132,199,0.75)]"
+                    : "bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:bg-gray-800/75 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white"
+                }`}
+              >
+                <tab.Icon className="h-4 w-4" />
+                {tab.label}
+                {activeTab === tab.key ? (
+                  <motion.span
+                    layoutId="analysisActiveTab"
+                    className="absolute inset-0 rounded-2xl ring-2 ring-sky-200/70 dark:ring-sky-400/20"
+                    transition={{ type: "spring", stiffness: 380, damping: 32 }}
+                  />
+                ) : null}
+              </button>
+            ))}
           </div>
         </SectionCard>
-
-        <motion.div {...fadeUp(0.05)} className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Total Attempts" value={overview.totalAttempts || 0} helper="Problems and assessments" Icon={Target} tone="sky" />
-          <StatCard label="Average Score" value={`${Math.round(overview.avgScore || 0)}%`} helper="Across active modules" Icon={TrendingUp} tone="emerald" />
-          <StatCard label="Interview Score" value={Math.round(overview.interviewScore || 0)} helper="Feedback average" Icon={MessageSquare} tone="amber" />
-          <StatCard label="Learning Progress" value={`${Math.round(learning.completionPercent || 0)}%`} helper="Module completion" Icon={GraduationCap} tone="slate" />
-        </motion.div>
 
         {loading ? (
           <SectionCard className="mt-6 flex h-64 items-center justify-center p-6 text-sm text-slate-500 dark:text-gray-400">

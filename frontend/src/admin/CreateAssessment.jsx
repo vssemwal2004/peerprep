@@ -5,7 +5,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
-import { ArrowLeft, ClipboardList, Save, Send, AlertCircle, Plus } from 'lucide-react';
+import { ArrowLeft, ClipboardList, Save, Send, AlertCircle, Plus, Eye, EyeOff, Hash, Lock, Shield, Globe, Copy, Camera, Volume2, Monitor, Shuffle, Droplet, Navigation, Layers, Timer, RotateCcw, CheckSquare, Clock, Unlock } from 'lucide-react';
 import { SectionCard } from './compiler/CompilerUi';
 import RichTextEditor from './compiler/RichTextEditor';
 import { createDefaultProblemForm, createProblemFormFromProblem } from './compiler/compilerUtils';
@@ -19,11 +19,67 @@ import { loadAssessmentDraft, saveAssessmentDraft, clearAssessmentDraft } from '
 import { consumeProblemSelections, consumeQuestionSelections } from './assessment/assessmentProblemSelectionStore';
 import DateTimePicker from '../components/DateTimePicker';
 
+const PREDEFINED_TEST_TYPES = [
+  'MCQ',
+  'Coding',
+  'Aptitude',
+  'Technical',
+  'Behavioral',
+  'Other',
+];
+
+const DEFAULT_INSTRUCTIONS = [
+  'Read all questions carefully before attempting.',
+  'Do not refresh or close the browser window during the test.',
+  'Each question carries the marks mentioned alongside it.',
+  'For MCQ questions, only one option is correct unless stated otherwise.',
+  'Negative marking (if applicable) will be mentioned in each section.',
+  'You must complete the test within the given time duration.',
+  'Coding submissions will be auto-evaluated against hidden test cases.',
+  'You may use scratch paper for rough calculations; it will not be evaluated.',
+  'Copying, sharing answers, or using external resources is strictly prohibited.',
+  'Any suspicious activity may result in automatic disqualification.',
+  'Ensure a stable internet connection throughout the assessment.',
+  'Submit your test before the timer expires; auto-submit will trigger at the end.',
+  'Contact support immediately if you face any technical issues.',
+  'All answers are final once submitted; review carefully before submitting.',
+  'Your webcam or screen may be recorded for proctoring purposes.',
+];
+
+const CUSTOM_TEST_TYPES_KEY = 'peerprep_custom_test_types';
+
+function loadCustomTestTypes() {
+  try {
+    return JSON.parse(localStorage.getItem(CUSTOM_TEST_TYPES_KEY) || '[]');
+  } catch { return []; }
+}
+
+function saveCustomTestType(type) {
+  const existing = loadCustomTestTypes();
+  if (!existing.includes(type)) {
+    const updated = [...existing, type];
+    localStorage.setItem(CUSTOM_TEST_TYPES_KEY, JSON.stringify(updated));
+  }
+}
+
+const ASSESSMENT_IDS_KEY = 'peerprep_used_assessment_ids';
+
+function generateUniqueAssessmentId() {
+  const used = JSON.parse(localStorage.getItem(ASSESSMENT_IDS_KEY) || '[]');
+  let id;
+  do {
+    id = String(Math.floor(100000 + Math.random() * 900000));
+  } while (used.includes(id));
+  localStorage.setItem(ASSESSMENT_IDS_KEY, JSON.stringify([...used, id]));
+  return id;
+}
+
 const steps = [
   { id: 'basic', label: 'Basic Info', description: 'Title, description, instructions.' },
   { id: 'target', label: 'Target Students', description: 'Choose audience and upload or select.' },
   { id: 'schedule', label: 'Schedule', description: 'Timing, duration, limits.' },
   { id: 'sections', label: 'Sections & Questions', description: 'Build assessment sections.' },
+  { id: 'settings', label: 'Settings', description: 'Security, visibility, access control.' },
   { id: 'preview', label: 'Preview & Publish', description: 'Review and finalize.' },
 ];
 
@@ -90,6 +146,13 @@ export default function CreateAssessment() {
     targetMode: 'all',
     sendEmail: true,
     lifecycleStatus: 'draft',
+    testType: '',
+    assessmentId: generateUniqueAssessmentId(),
+    isVisible: true,
+    customInstructions: [],
+    passwordEnabled: false,
+    passwordValue: '',
+    settings: {},
   });
   const [sections, setSections] = useState([]);
   const [selectedStudents, setSelectedStudents] = useState([]);
@@ -100,6 +163,10 @@ export default function CreateAssessment() {
   const [autoSaveStatus, setAutoSaveStatus] = useState('');
   const [version, setVersion] = useState(1);
   const [showPublishModal, setShowPublishModal] = useState(false);
+  const [customTestTypes, setCustomTestTypes] = useState(loadCustomTestTypes);
+  const [showCustomTypeInput, setShowCustomTypeInput] = useState(false);
+  const [newCustomTypeInput, setNewCustomTypeInput] = useState('');
+  const [newCustomInstruction, setNewCustomInstruction] = useState('');
 
   const autoSaveRef = useRef(null);
   const draftLoadedRef = useRef(false);
@@ -350,6 +417,10 @@ export default function CreateAssessment() {
           targetMode: resolvedTargetMode,
           lifecycleStatus: assessment.lifecycleStatus || 'draft',
           sendEmail: true,
+          testType: assessment.testType || '',
+          assessmentId: assessment.assessmentId || prev.assessmentId,
+          isVisible: assessment.isVisible !== false,
+          customInstructions: Array.isArray(assessment.customInstructions) ? assessment.customInstructions : [],
         }));
         setVersion(assessment.version || 1);
         if (resolvedTargetMode === 'csv') {
@@ -564,6 +635,13 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
       sections: normalizedSections,
       lifecycleStatus,
       sendEmail: form.sendEmail,
+      testType: form.testType || '',
+      assessmentId: form.assessmentId || '',
+      isVisible: form.isVisible !== false,
+      customInstructions: form.customInstructions || [],
+      passwordEnabled: Boolean(form.passwordEnabled),
+      password: form.passwordEnabled ? (form.passwordValue || '') : '',
+      settings: form.settings || {},
     };
   };
 
@@ -575,11 +653,27 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
     try {
       if (currentId) {
         await api.updateAssessment(currentId, payload);
+        // Log update activity
+        api.logActivity({
+          actionType: 'UPDATE',
+          targetType: 'ASSESSMENT',
+          targetId: currentId,
+          description: `Assessment draft updated: "${form.title || 'Untitled'}" (ID: ${form.assessmentId || currentId})`,
+          metadata: { assessmentId: form.assessmentId, testType: form.testType, isVisible: form.isVisible },
+        }).catch(() => {});
         if (!silent && !redirect) toast.success('Draft updated');
       } else {
         const response = await api.createAssessment(payload);
         const newId = response.assessmentId;
         setCurrentId(newId);
+        // Log create activity
+        api.logActivity({
+          actionType: 'CREATE',
+          targetType: 'ASSESSMENT',
+          targetId: newId,
+          description: `New assessment draft created: "${form.title || 'Untitled'}" (ID: ${form.assessmentId || newId})`,
+          metadata: { assessmentId: form.assessmentId, testType: form.testType, isVisible: form.isVisible },
+        }).catch(() => {});
         if (!redirect) {
           navigate(`${rolePrefix}/assessment/${newId}/edit`, { replace: true });
         }
@@ -626,11 +720,27 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
     setLoading(true);
     try {
       const payload = buildPayload('published');
+      let publishedId = currentId;
       if (currentId) {
         await api.updateAssessment(currentId, payload);
       } else {
-        await api.createAssessment(payload);
+        const res = await api.createAssessment(payload);
+        publishedId = res.assessmentId;
       }
+      // Log publish activity
+      api.logActivity({
+        actionType: 'UPDATE',
+        targetType: 'ASSESSMENT',
+        targetId: publishedId,
+        description: `Assessment published: "${form.title}" (ID: ${form.assessmentId || publishedId}) — Type: ${form.testType || 'N/A'}, Visible: ${form.isVisible ? 'Yes' : 'No'}`,
+        metadata: {
+          assessmentId: form.assessmentId,
+          testType: form.testType,
+          isVisible: form.isVisible,
+          totalQuestions: assessmentValidation.totalQuestions,
+          targetMode: form.targetMode,
+        },
+      }).catch(() => {});
       toast.success('Assessment published');
       clearAssessmentDraft(assessmentKey);
       navigate(`${rolePrefix}/assessment`);
@@ -668,41 +778,197 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
   const stepIndex = steps.findIndex((step) => step.id === activeStep);
   const stepMeta = steps[stepIndex] || steps[0];
 
+  const allTestTypes = [...PREDEFINED_TEST_TYPES.filter((t) => t !== 'Other'), ...customTestTypes, 'Other'];
+
+  const handleTestTypeChange = (value) => {
+    if (value === 'Other') {
+      setShowCustomTypeInput(true);
+      updateForm({ testType: 'Other' });
+    } else {
+      setShowCustomTypeInput(false);
+      updateForm({ testType: value });
+    }
+  };
+
+  const handleAddCustomType = () => {
+    const trimmed = newCustomTypeInput.trim();
+    if (!trimmed) return;
+    saveCustomTestType(trimmed);
+    const updated = loadCustomTestTypes();
+    setCustomTestTypes(updated);
+    updateForm({ testType: trimmed });
+    setShowCustomTypeInput(false);
+    setNewCustomTypeInput('');
+  };
+
+  const handleAddCustomInstruction = () => {
+    const trimmed = newCustomInstruction.trim();
+    if (!trimmed) return;
+    const next = [...(form.customInstructions || []), trimmed];
+    updateForm({ customInstructions: next });
+    setNewCustomInstruction('');
+  };
+
+  const handleRemoveCustomInstruction = (idx) => {
+    const next = (form.customInstructions || []).filter((_, i) => i !== idx);
+    updateForm({ customInstructions: next });
+  };
+
   const stepContent = {
     basic: (
-      <SectionCard title="Basic Information" subtitle="Define core details for the assessment.">
-        <div className="grid gap-4 md:grid-cols-2">
-          <div>
-            <label className="text-xs text-slate-500 dark:text-gray-400">Title</label>
-            <input
-              value={form.title}
-              onChange={(e) => updateForm({ title: e.target.value })}
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-              placeholder="Assessment title"
-            />
+      <div className="space-y-6">
+        {/* Assessment ID + Visibility Row */}
+        <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-sky-100 bg-sky-50/60 px-5 py-4 dark:border-sky-900/40 dark:bg-sky-900/10">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-600 text-white shadow-sm">
+              <Hash className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-sky-600 dark:text-sky-400">Assessment ID</p>
+              <p className="text-lg font-bold text-slate-800 dark:text-white">{form.assessmentId}</p>
+            </div>
           </div>
-          <div>
-            <label className="text-xs text-slate-500 dark:text-gray-400">Short Description</label>
-            <input
-              value={form.description}
-              onChange={(e) => updateForm({ description: e.target.value })}
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-              placeholder="Brief summary for admins"
-            />
+          <div className="ml-auto flex items-center gap-3">
+            <span className="text-xs font-semibold text-slate-600 dark:text-gray-300">Visibility</span>
+            <button
+              type="button"
+              onClick={() => updateForm({ isVisible: !form.isVisible })}
+              className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors focus:outline-none ${
+                form.isVisible ? 'bg-sky-600' : 'bg-slate-300 dark:bg-gray-600'
+              }`}
+            >
+              <span
+                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                  form.isVisible ? 'translate-x-8' : 'translate-x-1'
+                }`}
+              />
+            </button>
+            <span className={`flex items-center gap-1 text-xs font-semibold ${
+              form.isVisible ? 'text-sky-600 dark:text-sky-400' : 'text-slate-400 dark:text-gray-500'
+            }`}>
+              {form.isVisible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+              {form.isVisible ? 'Visible' : 'Hidden'}
+            </span>
           </div>
-          <div className="md:col-span-2">
-            <label className="text-xs text-slate-500 dark:text-gray-400">Instructions (Rich Text)</label>
-            <div className="mt-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-              <RichTextEditor
-                value={form.instructions}
-                onChange={(content) => updateForm({ instructions: content })}
-                rows={10}
-                placeholder="Provide instructions, policies, and rules for students."
+        </div>
+
+        <SectionCard title="Basic Information" subtitle="Define core details for the assessment.">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="text-xs font-medium text-slate-500 dark:text-gray-400">Test Name</label>
+              <input
+                value={form.title}
+                onChange={(e) => updateForm({ title: e.target.value })}
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                placeholder="e.g. Java Developer Round 1"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-500 dark:text-gray-400">Test Type</label>
+              <select
+                value={form.testType}
+                onChange={(e) => handleTestTypeChange(e.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+              >
+                <option value="">-- Select Test Type --</option>
+                {allTestTypes.map((type) => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
+              {showCustomTypeInput && (
+                <div className="mt-2 flex gap-2">
+                  <input
+                    value={newCustomTypeInput}
+                    onChange={(e) => setNewCustomTypeInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddCustomType()}
+                    className="flex-1 rounded-xl border border-sky-300 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-sky-500 dark:border-sky-600 dark:bg-gray-900 dark:text-gray-200"
+                    placeholder="Enter custom test type…"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddCustomType}
+                    className="rounded-xl bg-sky-600 px-3 py-2 text-xs font-semibold text-white hover:bg-sky-500"
+                  >
+                    Add
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="md:col-span-2">
+              <label className="text-xs font-medium text-slate-500 dark:text-gray-400">Short Description</label>
+              <input
+                value={form.description}
+                onChange={(e) => updateForm({ description: e.target.value })}
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                placeholder="Brief summary for admins"
               />
             </div>
           </div>
-        </div>
-      </SectionCard>
+        </SectionCard>
+
+        {/* Instructions Section */}
+        <SectionCard title="Instructions" subtitle="Default instructions are always shown. Add custom ones below.">
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-5 py-4 dark:border-gray-700 dark:bg-gray-800/60">
+              <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.15em] text-slate-400 dark:text-gray-500">Default Instructions</p>
+              <ol className="space-y-2">
+                {DEFAULT_INSTRUCTIONS.map((instruction, i) => (
+                  <li key={i} className="flex items-start gap-3 text-sm text-slate-700 dark:text-gray-300">
+                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-sky-100 text-[10px] font-bold text-sky-600 dark:bg-sky-900/40 dark:text-sky-400">
+                      {i + 1}
+                    </span>
+                    {instruction}
+                  </li>
+                ))}
+              </ol>
+            </div>
+
+            {/* Custom Instructions */}
+            {(form.customInstructions || []).length > 0 && (
+              <div className="rounded-2xl border border-sky-100 bg-sky-50/60 px-5 py-4 dark:border-sky-900/30 dark:bg-sky-900/10">
+                <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.15em] text-sky-600 dark:text-sky-400">Custom Instructions</p>
+                <ol className="space-y-2">
+                  {(form.customInstructions || []).map((instr, i) => (
+                    <li key={i} className="flex items-start justify-between gap-3 text-sm text-slate-700 dark:text-gray-300">
+                      <span className="flex items-start gap-3">
+                        <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-sky-100 text-[10px] font-bold text-sky-600 dark:bg-sky-900/40 dark:text-sky-400">
+                          {DEFAULT_INSTRUCTIONS.length + i + 1}
+                        </span>
+                        {instr}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveCustomInstruction(i)}
+                        className="shrink-0 text-xs text-rose-500 hover:text-rose-700"
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <input
+                value={newCustomInstruction}
+                onChange={(e) => setNewCustomInstruction(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleAddCustomInstruction()}
+                className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                placeholder="Add a custom instruction…"
+              />
+              <button
+                type="button"
+                onClick={handleAddCustomInstruction}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-500"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add
+              </button>
+            </div>
+          </div>
+        </SectionCard>
+      </div>
     ),
     target: (
       <SectionCard title="Target Students" subtitle="Choose how you want to assign this assessment.">
@@ -816,23 +1082,58 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
       </SectionCard>
     ),
     sections: (
-      <SectionCard title="Sections & Questions" subtitle="Create structured sections with rich question builders.">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
-          <div>
-            <div className="text-xs font-semibold text-slate-700 dark:text-gray-100">Question Library</div>
-            <div className="mt-1 text-[11px] text-slate-500 dark:text-gray-400">
-              Reuse questions across all types and let the builder group them into sections automatically.
+      <div className="space-y-5">
+        {/* 3-Box Action Bar */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {/* Box 1: Add Section */}
+          <button
+            type="button"
+            onClick={() => {
+              const addSectionEvent = new CustomEvent('sectionbuilder:addsection');
+              document.dispatchEvent(addSectionEvent);
+            }}
+            className="group flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-sky-300 bg-sky-50/60 px-5 py-6 text-center transition-all hover:border-sky-500 hover:bg-sky-100/70 dark:border-sky-700 dark:bg-sky-900/10 dark:hover:bg-sky-900/20"
+          >
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-600 text-white shadow-sm transition-transform group-hover:scale-110">
+              <Plus className="h-5 w-5" />
             </div>
-          </div>
+            <div>
+              <p className="text-sm font-semibold text-sky-700 dark:text-sky-300">Add Section</p>
+              <p className="mt-0.5 text-[11px] text-sky-500 dark:text-sky-400">Create a new question section</p>
+            </div>
+          </button>
+
+          {/* Box 2: Add Questions from Library */}
           <button
             type="button"
             onClick={() => handleOpenProblemLibrary()}
-            className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-3 py-2 text-xs font-semibold text-white hover:bg-sky-500"
+            className="group flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/60 px-5 py-6 text-center transition-all hover:border-sky-400 hover:bg-sky-50/70 dark:border-gray-600 dark:bg-gray-800/40 dark:hover:border-sky-600 dark:hover:bg-sky-900/10"
           >
-            <Plus className="h-3.5 w-3.5" />
-            Add Questions from Library
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-sky-200 bg-white text-sky-600 shadow-sm transition-transform group-hover:scale-110 dark:border-sky-800 dark:bg-gray-900">
+              <ClipboardList className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-slate-700 dark:text-gray-200">Question Library</p>
+              <p className="mt-0.5 text-[11px] text-slate-500 dark:text-gray-400">Pick from saved questions</p>
+            </div>
           </button>
+
+          {/* Box 3: Quick Stats */}
+          <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-6 text-center shadow-sm dark:border-gray-700 dark:bg-gray-900">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-gray-800 dark:text-gray-300">
+              <AlertCircle className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-lg font-bold text-slate-800 dark:text-white">
+                {sections.reduce((t, s) => t + (s.questions?.length || 0), 0)}
+              </p>
+              <p className="text-[11px] text-slate-500 dark:text-gray-400">
+                {sections.length} section{sections.length !== 1 ? 's' : ''} &middot; Questions total
+              </p>
+            </div>
+          </div>
         </div>
+
         <SectionBuilder
           sections={sections}
           onChange={updateSections}
@@ -843,8 +1144,151 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
             error: (message) => toast.error(message),
           }}
         />
-      </SectionCard>
+      </div>
     ),
+    settings: (() => {
+      const s = form.settings || {};
+      const upd = (key, val) => updateForm({ settings: { ...s, [key]: val } });
+
+      const Toggle = ({ value, onChange }) => (
+        <button
+          type="button"
+          onClick={() => onChange(!value)}
+          className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none ${
+            value ? 'bg-sky-600' : 'bg-slate-300 dark:bg-gray-600'
+          }`}
+        >
+          <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+            value ? 'translate-x-6' : 'translate-x-1'
+          }`} />
+        </button>
+      );
+
+      const SettingRow = ({ icon, title, desc, value, onChange }) => (
+        <div className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-400">
+              {icon}
+            </div>
+            <div>
+              <p className="text-sm font-medium text-slate-800 dark:text-gray-100">{title}</p>
+              <p className="text-xs text-slate-500 dark:text-gray-400">{desc}</p>
+            </div>
+          </div>
+          <Toggle value={Boolean(value)} onChange={onChange} />
+        </div>
+      );
+
+      const Divider = () => <div className="h-px bg-slate-100 dark:bg-gray-700" />;
+
+      return (
+        <div className="space-y-5">
+          {/* Password Protection */}
+          <SectionCard title="Password Protection" subtitle="Restrict access by requiring a password before the test starts.">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400">
+                    <Lock className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-slate-800 dark:text-gray-100">Enable Password</p>
+                    <p className="text-xs text-slate-500 dark:text-gray-400">
+                      {form.passwordEnabled ? 'Password required to access test' : 'Anyone with the link can access'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => updateForm({ passwordEnabled: !form.passwordEnabled })}
+                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+                    form.passwordEnabled ? 'bg-sky-600' : 'bg-slate-300 dark:bg-gray-600'
+                  }`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                    form.passwordEnabled ? 'translate-x-6' : 'translate-x-1'
+                  }`} />
+                </button>
+              </div>
+
+              {form.passwordEnabled && (
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-gray-400">Assessment Password</label>
+                  <div className="relative mt-1">
+                    <input
+                      type="text"
+                      value={form.passwordValue || ''}
+                      onChange={(e) => updateForm({ passwordValue: e.target.value })}
+                      placeholder="Set a password for this assessment…"
+                      className="w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-amber-400 dark:border-amber-800 dark:bg-gray-900 dark:text-gray-200"
+                    />
+                    <Lock className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-amber-400" />
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-slate-500 dark:text-gray-400">Candidates must enter this password before starting the test.</p>
+                </div>
+              )}
+
+              <div className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
+                form.passwordEnabled
+                  ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300'
+                  : 'border-slate-200 bg-slate-50 text-slate-500 dark:border-gray-700 dark:bg-gray-800'
+              }`}>
+                {form.passwordEnabled ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+                Status: {form.passwordEnabled ? 'Password Protected' : 'No Password Set'}
+              </div>
+            </div>
+          </SectionCard>
+
+          {/* Proctoring & Anti-Cheating */}
+          <SectionCard title="Proctoring & Anti-Cheating" subtitle="Prevent malpractice and maintain test integrity.">
+            <div className="divide-y divide-slate-100 dark:divide-gray-700">
+              <SettingRow icon={<Monitor className="h-4 w-4" />} title="Enable Fullscreen Mode" desc="Forces the browser into fullscreen when the test starts." value={s.enableFullscreen} onChange={(v) => upd('enableFullscreen', v)} />
+              <SettingRow icon={<Copy className="h-4 w-4" />} title="Disable Copy-Paste" desc="Prevents copying content or pasting answers." value={s.disableCopyPaste} onChange={(v) => upd('disableCopyPaste', v)} />
+              <SettingRow icon={<Shield className="h-4 w-4" />} title="Tab Switch Detection" desc="Flags candidates who switch browser tabs during the test." value={s.tabSwitchDetection} onChange={(v) => upd('tabSwitchDetection', v)} />
+              <SettingRow icon={<Droplet className="h-4 w-4" />} title="Question Watermarking" desc="Embeds candidate name/ID on each question to deter screenshots." value={s.questionWatermark} onChange={(v) => upd('questionWatermark', v)} />
+              <SettingRow icon={<Shuffle className="h-4 w-4" />} title="Random Question Shuffle" desc="Randomizes question order per candidate." value={s.randomShuffle} onChange={(v) => upd('randomShuffle', v)} />
+              <SettingRow icon={<Camera className="h-4 w-4" />} title="Camera Monitoring" desc="Enables webcam capture during the assessment session." value={s.cameraMonitoring} onChange={(v) => upd('cameraMonitoring', v)} />
+              <SettingRow icon={<Volume2 className="h-4 w-4" />} title="Audio Monitoring" desc="Records audio during the test for proctoring review." value={s.audioMonitoring} onChange={(v) => upd('audioMonitoring', v)} />
+            </div>
+          </SectionCard>
+
+          {/* Candidate Behavior */}
+          <SectionCard title="Candidate Behavior" subtitle="Control how candidates navigate and interact during the test.">
+            <div className="divide-y divide-slate-100 dark:divide-gray-700">
+              <SettingRow icon={<Timer className="h-4 w-4" />} title="Auto-Submit on Time End" desc="Automatically submits answers when the timer reaches zero." value={s.autoSubmitOnEnd} onChange={(v) => upd('autoSubmitOnEnd', v)} />
+              <SettingRow icon={<Globe className="h-4 w-4" />} title="Prevent Multiple Tabs" desc="Blocks opening of additional browser tabs while in the test." value={s.preventMultipleTabs} onChange={(v) => upd('preventMultipleTabs', v)} />
+              <SettingRow icon={<Navigation className="h-4 w-4" />} title="Restrict Question Navigation" desc="Prevents candidates from jumping back to previous questions." value={s.restrictNavigation} onChange={(v) => upd('restrictNavigation', v)} />
+              <SettingRow icon={<Layers className="h-4 w-4" />} title="Section-wise Locking" desc="Locks a section once the candidate moves to the next one." value={s.sectionWiseLock} onChange={(v) => upd('sectionWiseLock', v)} />
+            </div>
+          </SectionCard>
+
+          {/* Result & Attempt Settings */}
+          <SectionCard title="Results & Attempts" subtitle="Control how and when candidates see their results.">
+            <div className="space-y-4">
+              <div className="divide-y divide-slate-100 dark:divide-gray-700">
+                <SettingRow icon={<CheckSquare className="h-4 w-4" />} title="Show Results After Submission" desc="Candidates can see their score immediately after submitting." value={s.showResultsAfterSubmit !== false} onChange={(v) => upd('showResultsAfterSubmit', v)} />
+                <SettingRow icon={<RotateCcw className="h-4 w-4" />} title="Allow Retake" desc="Permits candidates to attempt the test again (subject to attempt limit)." value={s.allowRetake} onChange={(v) => upd('allowRetake', v)} />
+              </div>
+
+              {s.showResultsAfterSubmit === false && (
+                <div>
+                  <label className="text-xs font-medium text-slate-500 dark:text-gray-400">Result Visibility Delay (hours)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={s.resultDelayHours || 0}
+                    onChange={(e) => upd('resultDelayHours', Number(e.target.value))}
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                    placeholder="e.g. 24 (show results after 24 hours)"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500 dark:text-gray-400">Results will be visible to candidates after this many hours post-submission.</p>
+                </div>
+              )}
+            </div>
+          </SectionCard>
+        </div>
+      );
+    })(),
     preview: (
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
