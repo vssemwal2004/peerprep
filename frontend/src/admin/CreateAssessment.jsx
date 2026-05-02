@@ -1148,144 +1148,290 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
     ),
     settings: (() => {
       const s = form.settings || {};
-      const upd = (key, val) => updateForm({ settings: { ...s, [key]: val } });
+      const upd = (key, val) => updateForm({ settings: { ...(form.settings || {}), [key]: val } });
 
       const Toggle = ({ value, onChange }) => (
-        <button
-          type="button"
-          onClick={() => onChange(!value)}
-          className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none ${
-            value ? 'bg-sky-600' : 'bg-slate-300 dark:bg-gray-600'
-          }`}
-        >
-          <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-            value ? 'translate-x-6' : 'translate-x-1'
-          }`} />
+        <button type="button" onClick={() => onChange(!value)}
+          className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none ${value ? 'bg-sky-600' : 'bg-slate-300 dark:bg-gray-600'}`}>
+          <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${value ? 'translate-x-6' : 'translate-x-1'}`} />
         </button>
       );
 
-      const SettingRow = ({ icon, title, desc, value, onChange }) => (
-        <div className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-400">
-              {icon}
-            </div>
-            <div>
-              <p className="text-sm font-medium text-slate-800 dark:text-gray-100">{title}</p>
-              <p className="text-xs text-slate-500 dark:text-gray-400">{desc}</p>
-            </div>
-          </div>
-          <Toggle value={Boolean(value)} onChange={onChange} />
+      const NumInput = ({ value, onChange, min = 0, max, placeholder, unit }) => (
+        <div className="flex items-center gap-2">
+          <input type="number" min={min} max={max} value={value ?? ''} onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))}
+            placeholder={placeholder}
+            className="w-24 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
+          {unit && <span className="text-xs text-slate-400">{unit}</span>}
         </div>
       );
 
-      const Divider = () => <div className="h-px bg-slate-100 dark:bg-gray-700" />;
+      const Row = ({ icon, iconBg = 'bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-400', title, desc, badge, children, toggleKey, expandKey }) => {
+        const enabled = Boolean(s[toggleKey]);
+        return (
+          <div className={`rounded-xl border px-4 py-3.5 transition-colors ${enabled || !toggleKey ? 'border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900' : 'border-slate-100 bg-slate-50/60 dark:border-gray-800 dark:bg-gray-800/40'}`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${iconBg}`}>{icon}</div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-semibold text-slate-800 dark:text-gray-100">{title}</p>
+                    {badge && <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${badge === 'recommended' ? 'bg-emerald-100 text-emerald-700' : badge === 'strict' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>{badge}</span>}
+                  </div>
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-gray-400">{desc}</p>
+                </div>
+              </div>
+              {toggleKey && <Toggle value={enabled} onChange={(v) => upd(toggleKey, v)} />}
+            </div>
+            {(enabled || !toggleKey) && children && <div className="mt-3 border-t border-slate-100 pt-3 dark:border-gray-700">{children}</div>}
+          </div>
+        );
+      };
+
+      const FieldRow = ({ label, children }) => (
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-xs text-slate-600 dark:text-gray-300">{label}</span>
+          {children}
+        </div>
+      );
 
       return (
-        <div className="space-y-5">
-          {/* Password Protection */}
-          <SectionCard title="Password Protection" subtitle="Restrict access by requiring a password before the test starts.">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400">
-                    <Lock className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-slate-800 dark:text-gray-100">Enable Password</p>
-                    <p className="text-xs text-slate-500 dark:text-gray-400">
-                      {form.passwordEnabled ? 'Password required to access test' : 'Anyone with the link can access'}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => updateForm({ passwordEnabled: !form.passwordEnabled })}
-                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
-                    form.passwordEnabled ? 'bg-sky-600' : 'bg-slate-300 dark:bg-gray-600'
-                  }`}
-                >
-                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                    form.passwordEnabled ? 'translate-x-6' : 'translate-x-1'
-                  }`} />
-                </button>
-              </div>
+        <div className="space-y-6">
+          {/* Quick Summary Bar */}
+          <div className="flex flex-wrap gap-2 rounded-2xl border border-sky-100 bg-sky-50/60 px-5 py-3 dark:border-sky-900/30 dark:bg-sky-900/10">
+            {[
+              { label: 'Password', active: form.passwordEnabled, icon: <Lock className="h-3 w-3" /> },
+              { label: 'Fullscreen', active: s.enableFullscreen, icon: <Monitor className="h-3 w-3" /> },
+              { label: 'Tab Guard', active: s.tabSwitchDetection, icon: <Shield className="h-3 w-3" /> },
+              { label: 'Camera', active: s.cameraMonitoring, icon: <Camera className="h-3 w-3" /> },
+              { label: 'Copy Block', active: s.disableCopyPaste, icon: <Copy className="h-3 w-3" /> },
+              { label: 'Shuffle', active: s.randomShuffle, icon: <Shuffle className="h-3 w-3" /> },
+              { label: 'Auto-Submit', active: s.autoSubmitOnEnd, icon: <Timer className="h-3 w-3" /> },
+            ].map(({ label, active, icon }) => (
+              <span key={label} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${active ? 'border-sky-300 bg-sky-100 text-sky-700 dark:border-sky-700 dark:bg-sky-900/30 dark:text-sky-300' : 'border-slate-200 bg-white text-slate-400 dark:border-gray-700 dark:bg-gray-900'}`}>
+                {icon}{label}
+              </span>
+            ))}
+            <span className="ml-auto text-[11px] text-sky-600 dark:text-sky-400">
+              {[form.passwordEnabled, s.enableFullscreen, s.tabSwitchDetection, s.cameraMonitoring, s.disableCopyPaste, s.randomShuffle, s.autoSubmitOnEnd].filter(Boolean).length} / 7 active
+            </span>
+          </div>
 
-              {form.passwordEnabled && (
-                <div>
-                  <label className="text-xs font-medium text-slate-500 dark:text-gray-400">Assessment Password</label>
-                  <div className="relative mt-1">
-                    <input
-                      type="text"
-                      value={form.passwordValue || ''}
-                      onChange={(e) => updateForm({ passwordValue: e.target.value })}
-                      placeholder="Set a password for this assessment…"
-                      className="w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-amber-400 dark:border-amber-800 dark:bg-gray-900 dark:text-gray-200"
-                    />
-                    <Lock className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-amber-400" />
+          {/* ── PASSWORD PROTECTION ── */}
+          <div>
+            <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-gray-500">
+              <Lock className="h-3.5 w-3.5" /> Access Control
+            </h3>
+            <div className="space-y-3">
+              <Row icon={<Lock className="h-4 w-4" />} iconBg="bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400"
+                title="Password Protection" desc="Candidates must enter a password to begin the test." badge="recommended" toggleKey="__password__"
+              >
+                {null}
+              </Row>
+              {/* Password outside Row since it binds to form not settings */}
+              <div className="rounded-xl border border-slate-200 bg-white px-4 py-3.5 dark:border-gray-700 dark:bg-gray-900">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400"><Lock className="h-4 w-4" /></div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800 dark:text-gray-100">Enable Password</p>
+                      <p className="mt-0.5 text-xs text-slate-500 dark:text-gray-400">{form.passwordEnabled ? 'Candidates must enter password before starting.' : 'Test is open — no password required.'}</p>
+                    </div>
                   </div>
-                  <p className="mt-1.5 text-[11px] text-slate-500 dark:text-gray-400">Candidates must enter this password before starting the test.</p>
+                  <Toggle value={Boolean(form.passwordEnabled)} onChange={(v) => updateForm({ passwordEnabled: v })} />
                 </div>
+                {form.passwordEnabled && (
+                  <div className="mt-3 space-y-2 border-t border-slate-100 pt-3 dark:border-gray-700">
+                    <FieldRow label="Password">
+                      <input type="text" value={form.passwordValue || ''} onChange={(e) => updateForm({ passwordValue: e.target.value })}
+                        placeholder="e.g. Secure@2024"
+                        className="w-48 rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-amber-400 dark:border-amber-800 dark:bg-gray-900 dark:text-gray-200" />
+                    </FieldRow>
+                  </div>
+                )}
+              </div>
+              <Row icon={<Globe className="h-4 w-4" />} iconBg="bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-gray-300"
+                title="Test Visibility" desc={form.isVisible ? 'Test is visible to students on their dashboard.' : 'Test is hidden — only admins can see it.'}>
+                <FieldRow label="Current Status">
+                  <button type="button" onClick={() => updateForm({ isVisible: !form.isVisible })}
+                    className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${form.isVisible ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'border-slate-200 bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
+                    {form.isVisible ? <><Eye className="h-3.5 w-3.5" /> Visible</> : <><EyeOff className="h-3.5 w-3.5" /> Hidden</>}
+                  </button>
+                </FieldRow>
+              </Row>
+            </div>
+          </div>
+
+          {/* ── PROCTORING ── */}
+          <div>
+            <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-gray-500">
+              <Shield className="h-3.5 w-3.5" /> Proctoring & Anti-Cheating
+            </h3>
+            <div className="space-y-3">
+              <Row icon={<Monitor className="h-4 w-4" />} title="Fullscreen Mode" desc="Forces browser into fullscreen. Exiting fullscreen triggers a warning." badge="recommended" toggleKey="enableFullscreen">
+                <FieldRow label="Auto-exit if fullscreen abandoned for (seconds)">
+                  <NumInput value={s.fullscreenTimeoutSec} onChange={(v) => upd('fullscreenTimeoutSec', v)} min={5} max={60} placeholder="30" unit="sec" />
+                </FieldRow>
+              </Row>
+
+              <Row icon={<Shield className="h-4 w-4" />} iconBg="bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-400"
+                title="Tab Switch / Focus Loss Detection" desc="Tracks every time a candidate switches tabs or leaves the test window." badge="strict" toggleKey="tabSwitchDetection">
+                <div className="space-y-3">
+                  <FieldRow label="Max allowed tab switches before auto-submit">
+                    <NumInput value={s.tabSwitchLimit} onChange={(v) => upd('tabSwitchLimit', v)} min={1} max={20} placeholder="3" unit="times" />
+                  </FieldRow>
+                  <FieldRow label="Warn candidate at switch #">
+                    <NumInput value={s.tabSwitchWarnAt} onChange={(v) => upd('tabSwitchWarnAt', v)} min={1} placeholder="1" unit="switch" />
+                  </FieldRow>
+                  <FieldRow label="Action on limit reached">
+                    <select value={s.tabSwitchAction || 'warn'} onChange={(e) => upd('tabSwitchAction', e.target.value)}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                      <option value="warn">Show warning only</option>
+                      <option value="autosubmit">Auto-submit test</option>
+                      <option value="terminate">Terminate & disqualify</option>
+                    </select>
+                  </FieldRow>
+                </div>
+              </Row>
+
+              <Row icon={<Copy className="h-4 w-4" />} title="Disable Copy-Paste" desc="Blocks Ctrl+C, Ctrl+V and right-click context menu inside the test." badge="recommended" toggleKey="disableCopyPaste">
+                <FieldRow label="Block right-click context menu">
+                  <Toggle value={Boolean(s.blockRightClick)} onChange={(v) => upd('blockRightClick', v)} />
+                </FieldRow>
+              </Row>
+
+              <Row icon={<Droplet className="h-4 w-4" />} iconBg="bg-purple-50 text-purple-600 dark:bg-purple-900/20 dark:text-purple-400"
+                title="Question Watermarking" desc="Overlays candidate name/ID on every question to deter screenshot sharing." toggleKey="questionWatermark">
+                <FieldRow label="Watermark opacity (%)">
+                  <NumInput value={s.watermarkOpacity} onChange={(v) => upd('watermarkOpacity', v)} min={5} max={50} placeholder="15" unit="%" />
+                </FieldRow>
+              </Row>
+
+              <Row icon={<Shuffle className="h-4 w-4" />} title="Random Question Shuffle" desc="Randomizes question order uniquely per candidate on test start." toggleKey="randomShuffle">
+                <FieldRow label="Also shuffle answer options (MCQ)">
+                  <Toggle value={Boolean(s.shuffleOptions)} onChange={(v) => upd('shuffleOptions', v)} />
+                </FieldRow>
+              </Row>
+
+              <Row icon={<Camera className="h-4 w-4" />} iconBg="bg-indigo-50 text-indigo-600 dark:bg-indigo-900/20 dark:text-indigo-400"
+                title="Camera Monitoring" desc="Captures periodic snapshots via webcam for proctoring review." toggleKey="cameraMonitoring">
+                <div className="space-y-3">
+                  <FieldRow label="Snapshot interval">
+                    <NumInput value={s.cameraSnapshotInterval} onChange={(v) => upd('cameraSnapshotInterval', v)} min={30} placeholder="120" unit="sec" />
+                  </FieldRow>
+                  <FieldRow label="Alert admin on face not detected">
+                    <Toggle value={Boolean(s.cameraFaceAlert)} onChange={(v) => upd('cameraFaceAlert', v)} />
+                  </FieldRow>
+                </div>
+              </Row>
+
+              <Row icon={<Volume2 className="h-4 w-4" />} iconBg="bg-teal-50 text-teal-600 dark:bg-teal-900/20 dark:text-teal-400"
+                title="Audio Monitoring" desc="Records ambient audio during the session for suspicious sound detection." toggleKey="audioMonitoring">
+                <FieldRow label="Flag if noise threshold exceeded (dB)">
+                  <NumInput value={s.audioNoiseThreshold} onChange={(v) => upd('audioNoiseThreshold', v)} min={10} max={100} placeholder="60" unit="dB" />
+                </FieldRow>
+              </Row>
+            </div>
+          </div>
+
+          {/* ── CANDIDATE BEHAVIOR ── */}
+          <div>
+            <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-gray-500">
+              <Navigation className="h-3.5 w-3.5" /> Candidate Behavior
+            </h3>
+            <div className="space-y-3">
+              <Row icon={<Timer className="h-4 w-4" />} iconBg="bg-orange-50 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400"
+                title="Auto-Submit on Timer End" desc="Automatically submits the test when the timer reaches zero." badge="recommended" toggleKey="autoSubmitOnEnd">
+                <FieldRow label="Warn candidate before auto-submit (minutes)">
+                  <NumInput value={s.autoSubmitWarnMin} onChange={(v) => upd('autoSubmitWarnMin', v)} min={1} max={30} placeholder="5" unit="min" />
+                </FieldRow>
+              </Row>
+
+              <Row icon={<Globe className="h-4 w-4" />} title="Prevent Multiple Tabs / Windows" desc="Detects and blocks attempts to open the test in multiple browser tabs." toggleKey="preventMultipleTabs" />
+
+              <Row icon={<Navigation className="h-4 w-4" />} title="Restrict Backward Navigation" desc="Prevents candidates from revisiting previously answered questions." toggleKey="restrictNavigation">
+                <FieldRow label="Allow reviewing within same section">
+                  <Toggle value={Boolean(s.allowSectionReview)} onChange={(v) => upd('allowSectionReview', v)} />
+                </FieldRow>
+              </Row>
+
+              <Row icon={<Layers className="h-4 w-4" />} iconBg="bg-cyan-50 text-cyan-600 dark:bg-cyan-900/20 dark:text-cyan-400"
+                title="Section-wise Time Locking" desc="Each section has its own time limit; once time is up, that section locks automatically." toggleKey="sectionWiseLock">
+                <FieldRow label="Grace period before lock (seconds)">
+                  <NumInput value={s.sectionGraceSec} onChange={(v) => upd('sectionGraceSec', v)} min={0} max={120} placeholder="10" unit="sec" />
+                </FieldRow>
+              </Row>
+
+              <Row icon={<Clock className="h-4 w-4" />} iconBg="bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-gray-300"
+                title="Idle Candidate Detection" desc="Flags a candidate if no interaction is detected for a configurable period." toggleKey="idleDetection">
+                <div className="space-y-3">
+                  <FieldRow label="Idle threshold (minutes)">
+                    <NumInput value={s.idleThresholdMin} onChange={(v) => upd('idleThresholdMin', v)} min={1} max={30} placeholder="5" unit="min" />
+                  </FieldRow>
+                  <FieldRow label="Action on idle">
+                    <select value={s.idleAction || 'warn'} onChange={(e) => upd('idleAction', e.target.value)}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                      <option value="warn">Show warning popup</option>
+                      <option value="pause">Pause timer</option>
+                      <option value="autosubmit">Auto-submit test</option>
+                    </select>
+                  </FieldRow>
+                </div>
+              </Row>
+            </div>
+          </div>
+
+          {/* ── SCORING & RESULTS ── */}
+          <div>
+            <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-gray-500">
+              <CheckSquare className="h-3.5 w-3.5" /> Scoring & Results
+            </h3>
+            <div className="space-y-3">
+              <Row icon={<CheckSquare className="h-4 w-4" />} iconBg="bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400"
+                title="Show Score After Submission" desc="Candidates see their total score immediately after submitting." toggleKey="showResultsAfterSubmit">
+                {s.showResultsAfterSubmit && (
+                  <div className="space-y-3">
+                    <FieldRow label="Show correct answers">
+                      <Toggle value={Boolean(s.showCorrectAnswers)} onChange={(v) => upd('showCorrectAnswers', v)} />
+                    </FieldRow>
+                    <FieldRow label="Show section-wise breakdown">
+                      <Toggle value={Boolean(s.showSectionBreakdown)} onChange={(v) => upd('showSectionBreakdown', v)} />
+                    </FieldRow>
+                    <FieldRow label="Show percentile rank">
+                      <Toggle value={Boolean(s.showPercentile)} onChange={(v) => upd('showPercentile', v)} />
+                    </FieldRow>
+                  </div>
+                )}
+              </Row>
+
+              {!s.showResultsAfterSubmit && (
+                <Row icon={<Clock className="h-4 w-4" />} iconBg="bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400"
+                  title="Delayed Result Release" desc="Hold results and release them manually or after a set delay.">
+                  <FieldRow label="Release results after (hours)">
+                    <NumInput value={s.resultDelayHours} onChange={(v) => upd('resultDelayHours', v)} min={0} placeholder="24" unit="hrs" />
+                  </FieldRow>
+                </Row>
               )}
 
-              <div className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
-                form.passwordEnabled
-                  ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300'
-                  : 'border-slate-200 bg-slate-50 text-slate-500 dark:border-gray-700 dark:bg-gray-800'
-              }`}>
-                {form.passwordEnabled ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
-                Status: {form.passwordEnabled ? 'Password Protected' : 'No Password Set'}
-              </div>
-            </div>
-          </SectionCard>
+              <Row icon={<RotateCcw className="h-4 w-4" />} title="Allow Retake" desc="Permit candidates to re-attempt the test (respects attempt limit in Schedule)." toggleKey="allowRetake">
+                <FieldRow label="Minimum gap between attempts (hours)">
+                  <NumInput value={s.retakeGapHours} onChange={(v) => upd('retakeGapHours', v)} min={0} placeholder="0" unit="hrs" />
+                </FieldRow>
+              </Row>
 
-          {/* Proctoring & Anti-Cheating */}
-          <SectionCard title="Proctoring & Anti-Cheating" subtitle="Prevent malpractice and maintain test integrity.">
-            <div className="divide-y divide-slate-100 dark:divide-gray-700">
-              <SettingRow icon={<Monitor className="h-4 w-4" />} title="Enable Fullscreen Mode" desc="Forces the browser into fullscreen when the test starts." value={s.enableFullscreen} onChange={(v) => upd('enableFullscreen', v)} />
-              <SettingRow icon={<Copy className="h-4 w-4" />} title="Disable Copy-Paste" desc="Prevents copying content or pasting answers." value={s.disableCopyPaste} onChange={(v) => upd('disableCopyPaste', v)} />
-              <SettingRow icon={<Shield className="h-4 w-4" />} title="Tab Switch Detection" desc="Flags candidates who switch browser tabs during the test." value={s.tabSwitchDetection} onChange={(v) => upd('tabSwitchDetection', v)} />
-              <SettingRow icon={<Droplet className="h-4 w-4" />} title="Question Watermarking" desc="Embeds candidate name/ID on each question to deter screenshots." value={s.questionWatermark} onChange={(v) => upd('questionWatermark', v)} />
-              <SettingRow icon={<Shuffle className="h-4 w-4" />} title="Random Question Shuffle" desc="Randomizes question order per candidate." value={s.randomShuffle} onChange={(v) => upd('randomShuffle', v)} />
-              <SettingRow icon={<Camera className="h-4 w-4" />} title="Camera Monitoring" desc="Enables webcam capture during the assessment session." value={s.cameraMonitoring} onChange={(v) => upd('cameraMonitoring', v)} />
-              <SettingRow icon={<Volume2 className="h-4 w-4" />} title="Audio Monitoring" desc="Records audio during the test for proctoring review." value={s.audioMonitoring} onChange={(v) => upd('audioMonitoring', v)} />
-            </div>
-          </SectionCard>
-
-          {/* Candidate Behavior */}
-          <SectionCard title="Candidate Behavior" subtitle="Control how candidates navigate and interact during the test.">
-            <div className="divide-y divide-slate-100 dark:divide-gray-700">
-              <SettingRow icon={<Timer className="h-4 w-4" />} title="Auto-Submit on Time End" desc="Automatically submits answers when the timer reaches zero." value={s.autoSubmitOnEnd} onChange={(v) => upd('autoSubmitOnEnd', v)} />
-              <SettingRow icon={<Globe className="h-4 w-4" />} title="Prevent Multiple Tabs" desc="Blocks opening of additional browser tabs while in the test." value={s.preventMultipleTabs} onChange={(v) => upd('preventMultipleTabs', v)} />
-              <SettingRow icon={<Navigation className="h-4 w-4" />} title="Restrict Question Navigation" desc="Prevents candidates from jumping back to previous questions." value={s.restrictNavigation} onChange={(v) => upd('restrictNavigation', v)} />
-              <SettingRow icon={<Layers className="h-4 w-4" />} title="Section-wise Locking" desc="Locks a section once the candidate moves to the next one." value={s.sectionWiseLock} onChange={(v) => upd('sectionWiseLock', v)} />
-            </div>
-          </SectionCard>
-
-          {/* Result & Attempt Settings */}
-          <SectionCard title="Results & Attempts" subtitle="Control how and when candidates see their results.">
-            <div className="space-y-4">
-              <div className="divide-y divide-slate-100 dark:divide-gray-700">
-                <SettingRow icon={<CheckSquare className="h-4 w-4" />} title="Show Results After Submission" desc="Candidates can see their score immediately after submitting." value={s.showResultsAfterSubmit !== false} onChange={(v) => upd('showResultsAfterSubmit', v)} />
-                <SettingRow icon={<RotateCcw className="h-4 w-4" />} title="Allow Retake" desc="Permits candidates to attempt the test again (subject to attempt limit)." value={s.allowRetake} onChange={(v) => upd('allowRetake', v)} />
-              </div>
-
-              {s.showResultsAfterSubmit === false && (
-                <div>
-                  <label className="text-xs font-medium text-slate-500 dark:text-gray-400">Result Visibility Delay (hours)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={s.resultDelayHours || 0}
-                    onChange={(e) => upd('resultDelayHours', Number(e.target.value))}
-                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-                    placeholder="e.g. 24 (show results after 24 hours)"
-                  />
-                  <p className="mt-1 text-[11px] text-slate-500 dark:text-gray-400">Results will be visible to candidates after this many hours post-submission.</p>
+              <Row icon={<AlertCircle className="h-4 w-4" />} iconBg="bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-400"
+                title="Negative Marking" desc="Deduct marks for wrong answers in MCQ sections." toggleKey="negativeMarking">
+                <div className="space-y-3">
+                  <FieldRow label="Marks deducted per wrong answer">
+                    <NumInput value={s.negativeMarkValue} onChange={(v) => upd('negativeMarkValue', v)} min={0} placeholder="0.25" unit="marks" />
+                  </FieldRow>
+                  <FieldRow label="Apply to coding questions too">
+                    <Toggle value={Boolean(s.negativeCoding)} onChange={(v) => upd('negativeCoding', v)} />
+                  </FieldRow>
                 </div>
-              )}
+              </Row>
             </div>
-          </SectionCard>
+          </div>
         </div>
       );
     })(),
