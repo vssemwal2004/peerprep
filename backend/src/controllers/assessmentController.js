@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import bcrypt from 'bcrypt';
 import Assessment from '../models/Assessment.js';
 import AssessmentSubmission from '../models/AssessmentSubmission.js';
 import Problem from '../models/Problem.js';
@@ -79,6 +80,55 @@ function computeAllowedEnd(assessment, startedAt) {
 }
 
 const ASSESSMENT_EXPIRY_GRACE_MS = 24 * 60 * 60 * 1000;
+
+function sanitizeAssessmentForResponse(assessment) {
+  if (!assessment) return assessment;
+  const source = typeof assessment.toObject === 'function' ? assessment.toObject() : { ...assessment };
+  delete source.passwordHash;
+  return source;
+}
+
+async function applyAssessmentPassword(assessment, { passwordEnabled, password } = {}) {
+  if (passwordEnabled === undefined && password === undefined) return;
+
+  if (passwordEnabled !== undefined) {
+    assessment.passwordEnabled = Boolean(passwordEnabled);
+    if (!assessment.passwordEnabled) {
+      assessment.passwordHash = undefined;
+      return;
+    }
+  }
+
+  if (!assessment.passwordEnabled) return;
+
+  const nextPassword = typeof password === 'string' ? password.trim() : '';
+  if (nextPassword) {
+    assessment.passwordHash = await User.hashPassword(nextPassword);
+  }
+}
+
+async function ensureAssessmentPasswordUnlocked(assessment, submission, password) {
+  if (!assessment.passwordEnabled) return { ok: true };
+  if (!assessment.passwordHash) return { ok: false, status: 403, error: 'Assessment password is not set. Please contact your admin.' };
+  if (submission?.passwordVerifiedAt) return { ok: true };
+
+  const providedPassword = typeof password === 'string' ? password : '';
+  if (!providedPassword) return { ok: false, status: 401, error: 'Assessment password is required.' };
+
+  const matched = await bcrypt.compare(providedPassword, assessment.passwordHash);
+  if (!matched) return { ok: false, status: 401, error: 'Incorrect assessment password.' };
+  return { ok: true };
+}
+
+async function verifyAssessmentPassword(assessment, password) {
+  if (!assessment.passwordEnabled) return { ok: true };
+  if (!assessment.passwordHash) return { ok: false, status: 403, error: 'Assessment password is not set. Please contact your admin.' };
+  const providedPassword = typeof password === 'string' ? password : '';
+  if (!providedPassword) return { ok: false, status: 401, error: 'Assessment password is required.' };
+  const matched = await bcrypt.compare(providedPassword, assessment.passwordHash);
+  if (!matched) return { ok: false, status: 401, error: 'Incorrect assessment password.' };
+  return { ok: true };
+}
 
 function hasMeaningfulValue(value) {
   if (value === undefined || value === null) return false;
@@ -535,6 +585,13 @@ export async function createAssessment(req, res) {
       allowLateSubmission,
       attemptLimit,
       sendEmail,
+      assessmentId,
+      testType,
+      isVisible,
+      customInstructions,
+      settings,
+      passwordEnabled,
+      password,
     } = req.body || {};
 
     const normalizedSections = normalizeAssessmentSections(sections);
@@ -603,7 +660,7 @@ export async function createAssessment(req, res) {
       await validatePublishedAssessmentSections(normalizedSections);
     }
 
-    const assessment = await Assessment.create({
+    const assessment = new Assessment({
       title: title || '',
       description: description || '',
       instructions: instructions || '',
@@ -621,9 +678,21 @@ export async function createAssessment(req, res) {
       lifecycleStatus: normalizedLifecycle,
       allowLateSubmission: Boolean(allowLateSubmission),
       attemptLimit: attemptLimitNum || 1,
+      assessmentId: assessmentId || '',
+      testType: testType || '',
+      isVisible: isVisible !== false,
+      customInstructions: Array.isArray(customInstructions) ? customInstructions : [],
+      settings: settings && typeof settings === 'object' ? settings : {},
       version: 1,
       versionUpdatedAt: new Date(),
     });
+
+    await applyAssessmentPassword(assessment, { passwordEnabled, password });
+    if (!isDraft && assessment.passwordEnabled && !assessment.passwordHash) {
+      return res.status(400).json({ error: 'Password is required when password protection is enabled.' });
+    }
+
+    await assessment.save();
 
     await syncAssessmentQuestionsToLibrary(assessment);
 
@@ -741,7 +810,7 @@ export async function listAssessments(req, res) {
           : (a.assignedStudents?.length || 0));
 
       return {
-        ...a,
+        ...sanitizeAssessmentForResponse(a),
         status,
         assignedCount,
         attempts: countsByAssessment.get(String(a._id))?.count || 0,
@@ -761,7 +830,7 @@ export async function getAssessment(req, res) {
     const assessment = await Assessment.findById(id).populate('assignedStudents', 'name email studentId').lean();
     if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
     const status = computeStatus(new Date(), assessment);
-    res.json({ assessment: { ...assessment, status } });
+    res.json({ assessment: { ...sanitizeAssessmentForResponse(assessment), status } });
   } catch (err) {
     console.error('Error fetching assessment:', err);
     res.status(500).json({ error: 'Failed to load assessment' });
@@ -786,10 +855,18 @@ export async function updateAssessment(req, res) {
       allowLateSubmission,
       attemptLimit,
       sendEmail,
+      assessmentId,
+      testType,
+      isVisible,
+      customInstructions,
+      settings,
+      passwordEnabled,
+      password,
     } = req.body || {};
 
     const assessment = await Assessment.findById(id);
     if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
+    const previousPasswordHash = assessment.passwordHash || '';
 
     const beforeSnapshot = {
       title: assessment.title,
@@ -822,6 +899,16 @@ export async function updateAssessment(req, res) {
       }
       assessment.attemptLimit = attemptLimitNum;
     }
+    if (assessmentId !== undefined) assessment.assessmentId = assessmentId || '';
+    if (testType !== undefined) assessment.testType = testType || '';
+    if (isVisible !== undefined) assessment.isVisible = isVisible !== false;
+    if (customInstructions !== undefined) {
+      assessment.customInstructions = Array.isArray(customInstructions) ? customInstructions : [];
+    }
+    if (settings !== undefined) {
+      assessment.settings = settings && typeof settings === 'object' ? settings : {};
+    }
+    await applyAssessmentPassword(assessment, { passwordEnabled, password });
 
     if (startTime) {
       const start = parseDate(startTime);
@@ -835,6 +922,10 @@ export async function updateAssessment(req, res) {
     }
 
     const isDraft = assessment.lifecycleStatus === 'draft';
+
+    if (!isDraft && assessment.passwordEnabled && !assessment.passwordHash) {
+      return res.status(400).json({ error: 'Password is required when password protection is enabled.' });
+    }
 
     if (!isDraft && (!assessment.title || !assessment.startTime || !assessment.endTime || !assessment.duration)) {
       return res.status(400).json({ error: 'Title, startTime, endTime, and duration are required.' });
@@ -907,6 +998,15 @@ export async function updateAssessment(req, res) {
     assessment.versionUpdatedAt = new Date();
 
     await assessment.save();
+    if ((assessment.passwordHash || '') !== previousPasswordHash) {
+      await AssessmentSubmission.updateMany(
+        {
+          assessmentId: assessment._id,
+          status: { $in: ['not_started', 'incomplete'] },
+        },
+        { $unset: { passwordVerifiedAt: '' } },
+      );
+    }
     await syncAssessmentQuestionsToLibrary(assessment);
 
     const afterSnapshot = {
@@ -1034,6 +1134,7 @@ export async function listStudentAssessments(req, res) {
     const studentId = req.user._id;
     const assessments = await Assessment.find({
       lifecycleStatus: { $ne: 'draft' },
+      isVisible: { $ne: false },
       startTime: { $ne: null },
       endTime: { $ne: null },
       $or: [
@@ -1058,6 +1159,8 @@ export async function listStudentAssessments(req, res) {
         _id: a._id,
         title: a.title,
         description: a.description,
+        instructions: a.instructions || '',
+        customInstructions: a.customInstructions || [],
         startTime: a.startTime,
         endTime: a.endTime,
         duration: a.duration,
@@ -1065,6 +1168,8 @@ export async function listStudentAssessments(req, res) {
         totalQuestions: countQuestions(a.sections || []),
         assessmentType: a.assessmentType || 'mixed',
         attemptLimit: a.attemptLimit,
+        passwordEnabled: Boolean(a.passwordEnabled),
+        settings: a.settings || {},
         status,
         submittedAt: submission?.submittedAt,
       };
@@ -1085,6 +1190,7 @@ export async function getStudentAssessmentDashboard(req, res) {
     const [assessments, studentSubmissions, leaderboardRows] = await Promise.all([
       Assessment.find({
         lifecycleStatus: { $ne: 'draft' },
+        isVisible: { $ne: false },
         startTime: { $ne: null },
         endTime: { $ne: null },
         $or: [
@@ -1155,12 +1261,16 @@ export async function getStudentAssessmentDashboard(req, res) {
           _id: assessment._id,
           title: assessment.title || 'Untitled Assessment',
           description: assessment.description || '',
+          instructions: assessment.instructions || '',
+          customInstructions: assessment.customInstructions || [],
           startTime: assessment.startTime,
           endTime: assessment.endTime,
           duration: assessment.duration || 0,
           totalMarks,
           totalQuestions,
           assessmentType: assessment.assessmentType || 'mixed',
+          passwordEnabled: Boolean(assessment.passwordEnabled),
+          settings: assessment.settings || {},
           status,
           actionLabel: submission?.status === 'in_progress' ? 'Continue' : 'Start',
           hasSubmissionInProgress: submission?.status === 'in_progress',
@@ -1265,6 +1375,11 @@ export async function getStudentAssessment(req, res) {
 
     let submission = await AssessmentSubmission.findOne({ assessmentId: id, studentId });
 
+    const passwordCheck = await ensureAssessmentPasswordUnlocked(assessment, submission);
+    if (!passwordCheck.ok) {
+      return res.status(passwordCheck.status).json({ error: passwordCheck.error });
+    }
+
     if (now > assessment.endTime && !submission) {
       return res.status(403).json({ error: 'Assessment window has closed.', serverTime: now, endTime: assessment.endTime });
     }
@@ -1278,8 +1393,7 @@ export async function getStudentAssessment(req, res) {
       submission = await AssessmentSubmission.create({
         assessmentId: id,
         studentId,
-        startedAt: now,
-        status: 'in_progress',
+        status: 'not_started',
         attemptCount: 0,
       });
     }
@@ -1294,7 +1408,7 @@ export async function getStudentAssessment(req, res) {
     }
 
     res.json({
-      assessment,
+      assessment: sanitizeAssessmentForResponse(assessment),
       submission,
       serverTime: now,
       allowedEnd,
@@ -1302,6 +1416,117 @@ export async function getStudentAssessment(req, res) {
   } catch (err) {
     console.error('Error fetching student assessment:', err);
     res.status(500).json({ error: 'Failed to load assessment' });
+  }
+}
+
+export async function startStudentAssessment(req, res) {
+  try {
+    const { id } = req.params;
+    const { password } = req.body || {};
+    const studentId = req.user._id;
+
+    const assessment = await Assessment.findById(id);
+    if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
+    if (assessment.lifecycleStatus === 'draft') {
+      return res.status(403).json({ error: 'Assessment is not published yet.' });
+    }
+    if (!assessment.startTime || !assessment.endTime || !assessment.duration) {
+      return res.status(400).json({ error: 'Assessment schedule is incomplete.' });
+    }
+
+    const isAssigned = assessment.targetType === 'all' || (assessment.assignedStudents || []).some(s => s.toString() === studentId.toString());
+    if (!isAssigned) return res.status(403).json({ error: 'Not assigned to this assessment.' });
+
+    const now = new Date();
+    if (now < assessment.startTime) {
+      return res.status(403).json({ error: 'Assessment has not started yet.', serverTime: now, startTime: assessment.startTime });
+    }
+    if (now > assessment.endTime) {
+      return res.status(403).json({ error: 'Assessment window has closed.', serverTime: now, endTime: assessment.endTime });
+    }
+
+    let submission = await AssessmentSubmission.findOne({ assessmentId: id, studentId });
+    const attemptLimit = assessment.attemptLimit || 1;
+    if (submission?.status === 'submitted' && submission.attemptCount >= attemptLimit) {
+      return res.status(403).json({ error: 'No attempts remaining for this assessment.' });
+    }
+
+    const passwordCheck = await verifyAssessmentPassword(assessment, password);
+    if (!passwordCheck.ok) {
+      return res.status(passwordCheck.status).json({ error: passwordCheck.error });
+    }
+
+    if (!submission) {
+      submission = await AssessmentSubmission.create({
+        assessmentId: id,
+        studentId,
+        passwordVerifiedAt: assessment.passwordEnabled ? now : undefined,
+        status: 'not_started',
+        attemptCount: 0,
+      });
+    } else if (assessment.passwordEnabled && !submission.passwordVerifiedAt) {
+      submission.passwordVerifiedAt = now;
+      await submission.save();
+    }
+
+    res.json({
+      message: 'Assessment unlocked',
+      assessment: sanitizeAssessmentForResponse(assessment),
+      submission,
+      serverTime: now,
+      allowedEnd: computeAllowedEnd(assessment, submission.startedAt || now),
+    });
+  } catch (err) {
+    console.error('Error starting student assessment:', err);
+    res.status(500).json({ error: 'Failed to start assessment' });
+  }
+}
+
+export async function beginStudentAssessment(req, res) {
+  try {
+    const { id } = req.params;
+    const studentId = req.user._id;
+    const now = new Date();
+
+    const assessment = await Assessment.findById(id);
+    if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
+    if (assessment.lifecycleStatus === 'draft') return res.status(403).json({ error: 'Assessment is not published yet.' });
+    if (!assessment.startTime || !assessment.endTime || !assessment.duration) {
+      return res.status(400).json({ error: 'Assessment schedule is incomplete.' });
+    }
+    const isAssigned = assessment.targetType === 'all' || (assessment.assignedStudents || []).some(s => s.toString() === studentId.toString());
+    if (!isAssigned) return res.status(403).json({ error: 'Not assigned to this assessment.' });
+    if (now < assessment.startTime) return res.status(403).json({ error: 'Assessment has not started yet.', serverTime: now, startTime: assessment.startTime });
+    if (now > assessment.endTime) return res.status(403).json({ error: 'Assessment window has closed.', serverTime: now, endTime: assessment.endTime });
+
+    let submission = await AssessmentSubmission.findOne({ assessmentId: id, studentId });
+    const passwordCheck = await ensureAssessmentPasswordUnlocked(assessment, submission);
+    if (!passwordCheck.ok) return res.status(passwordCheck.status).json({ error: passwordCheck.error });
+
+    if (!submission) {
+      submission = await AssessmentSubmission.create({
+        assessmentId: id,
+        studentId,
+        startedAt: now,
+        status: 'in_progress',
+        attemptCount: 0,
+      });
+    } else if (!submission.startedAt || submission.status === 'not_started') {
+      submission.startedAt = now;
+      submission.status = 'in_progress';
+      await submission.save();
+    }
+
+    const allowedEnd = computeAllowedEnd(assessment, submission.startedAt || now);
+    return res.json({
+      message: 'Assessment started',
+      submission,
+      serverTime: now,
+      allowedEnd,
+    });
+  } catch (err) {
+    console.error('Error beginning student assessment:', err);
+    return res.status(500).json({ error: 'Failed to begin assessment' });
   }
 }
 
@@ -1339,6 +1564,11 @@ export async function submitAssessment(req, res) {
     }
 
     let submission = await AssessmentSubmission.findOne({ assessmentId, studentId });
+
+    const passwordCheck = await ensureAssessmentPasswordUnlocked(assessment, submission);
+    if (!passwordCheck.ok) {
+      return res.status(passwordCheck.status).json({ error: passwordCheck.error });
+    }
 
     if (now > assessment.endTime && !submission) {
       return res.status(403).json({ error: 'Assessment window has closed.' });
@@ -1564,8 +1794,14 @@ export async function getAssessmentReports(req, res) {
             $add: [
               { $ifNull: ['$tabSwitches', 0] },
               { $ifNull: ['$fullscreenExits', 0] },
+              { $ifNull: ['$cameraFlags', 0] },
+              { $ifNull: ['$copyPasteCount', 0] },
             ],
           },
+          tabSwitches: { $ifNull: ['$tabSwitches', 0] },
+          fullscreenExits: { $ifNull: ['$fullscreenExits', 0] },
+          cameraFlags: { $ifNull: ['$cameraFlags', 0] },
+          copyPasteCount: { $ifNull: ['$copyPasteCount', 0] },
         },
       },
     ]);
@@ -1707,3 +1943,97 @@ export async function exportAssessmentReports(req, res) {
 }
 
 
+
+export async function logStudentViolation(req, res) {
+  try {
+    const { id } = req.params;
+    const studentId = req.user._id;
+    const { type, message, meta } = req.body || {};
+    const VALID = ['tab_switch', 'fullscreen_exit', 'camera_loss', 'copy_paste', 'context_menu', 'auto_submit', 'other'];
+    if (!type || !VALID.includes(type)) return res.status(400).json({ error: 'Valid violation type required.' });
+    const submission = await AssessmentSubmission.findOne({ assessmentId: id, studentId });
+    if (!submission) return res.status(404).json({ error: 'Submission not found.' });
+    if (submission.status === 'submitted') return res.json({ ok: true });
+    const assessment = await Assessment.findById(id).select('settings').lean();
+    if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
+    submission.violationLog = submission.violationLog || [];
+    submission.violationLog.push({ type, message: message || '', at: new Date(), meta: meta || {} });
+    if (type === 'tab_switch') submission.tabSwitches = (submission.tabSwitches || 0) + 1;
+    if (type === 'fullscreen_exit') submission.fullscreenExits = (submission.fullscreenExits || 0) + 1;
+    if (type === 'camera_loss') submission.cameraFlags = (submission.cameraFlags || 0) + 1;
+    if (type === 'copy_paste' || type === 'context_menu') submission.copyPasteCount = (submission.copyPasteCount || 0) + 1;
+    const settings = assessment.settings || {};
+    const tabLimit = typeof settings.tabSwitchLimit === 'number' ? settings.tabSwitchLimit : null;
+    const maxWarnings = typeof settings.maxWarnings === 'number' ? settings.maxWarnings : null;
+    const autoSubmitEnabled = settings.autoSubmitOnViolation === true
+      || settings.tabSwitchAction === 'autosubmit'
+      || settings.tabSwitchAction === 'terminate';
+    let shouldAutoSubmit = false;
+    if (autoSubmitEnabled) {
+      const total = (submission.tabSwitches || 0) + (submission.fullscreenExits || 0) + (submission.cameraFlags || 0);
+      if (type === 'tab_switch' && tabLimit !== null && submission.tabSwitches >= tabLimit) shouldAutoSubmit = true;
+      if (maxWarnings !== null && total >= maxWarnings) shouldAutoSubmit = true;
+    }
+    if (shouldAutoSubmit) {
+      submission.violationLog.push({
+        type: 'auto_submit',
+        message: 'Assessment auto-submitted after violation limit was reached.',
+        at: new Date(),
+        meta: { trigger: type },
+      });
+    }
+    await submission.save();
+    return res.json({
+      ok: true,
+      tabSwitches: submission.tabSwitches,
+      fullscreenExits: submission.fullscreenExits,
+      cameraFlags: submission.cameraFlags,
+      copyPasteCount: submission.copyPasteCount,
+      autoSubmit: shouldAutoSubmit,
+    });
+  } catch (err) {
+    console.error('Error logging violation:', err);
+    return res.status(500).json({ error: 'Failed to log violation.' });
+  }
+}
+
+export async function getSubmissionViolations(req, res) {
+  try {
+    const { submissionId } = req.params;
+    const submission = await AssessmentSubmission.findById(submissionId)
+      .populate('studentId', 'name email studentId')
+      .select('violationLog tabSwitches fullscreenExits copyPasteCount cameraFlags status startedAt submittedAt studentId assessmentId')
+      .lean();
+    if (!submission) return res.status(404).json({ error: 'Submission not found.' });
+    if (req.user && req.user.role === 'coordinator') {
+      const assessment = await Assessment.findById(submission.assessmentId).select('createdBy').lean();
+      if (!assessment || String(assessment.createdBy) !== String(req.user._id)) {
+        return res.status(403).json({ error: 'Access denied.' });
+      }
+    }
+    const timeline = (submission.violationLog || [])
+      .map((e) => ({ ...e, source: 'log' }))
+      .sort((a, b) => new Date(a.at) - new Date(b.at));
+    return res.json({
+      submission: {
+        studentName: (submission.studentId && submission.studentId.name) || 'Unknown',
+        studentEmail: (submission.studentId && submission.studentId.email) || '',
+        studentRollNo: (submission.studentId && submission.studentId.studentId) || '',
+        status: submission.status,
+        startedAt: submission.startedAt,
+        submittedAt: submission.submittedAt,
+      },
+      counters: {
+        tabSwitches: submission.tabSwitches || 0,
+        fullscreenExits: submission.fullscreenExits || 0,
+        copyPasteCount: submission.copyPasteCount || 0,
+        cameraFlags: submission.cameraFlags || 0,
+        totalViolations: (submission.tabSwitches || 0) + (submission.fullscreenExits || 0) + (submission.cameraFlags || 0) + (submission.copyPasteCount || 0),
+      },
+      timeline,
+    });
+  } catch (err) {
+    console.error('Error fetching violations:', err);
+    return res.status(500).json({ error: 'Failed to fetch violations.' });
+  }
+}

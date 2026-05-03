@@ -76,6 +76,13 @@ const assessmentSchema = new mongoose.Schema({
   version: { type: Number, default: 1 },
   versionUpdatedAt: { type: Date },
   assessmentType: { type: String, default: 'mixed' },
+  assessmentId: { type: String, trim: true },
+  testType: { type: String, trim: true },
+  isVisible: { type: Boolean, default: true },
+  customInstructions: { type: [String], default: [] },
+  settings: { type: mongoose.Schema.Types.Mixed, default: {} },
+  passwordEnabled: { type: Boolean, default: false },
+  passwordHash: { type: String },
   sections: { type: [sectionSchema], default: [] },
   totalMarks: { type: Number, default: 0 },
 }, { timestamps: true });

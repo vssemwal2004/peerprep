@@ -370,9 +370,13 @@ export const api = {
   // Assessments (Student)
   listStudentAssessments: () => request('/student/assessments'),
   getStudentAssessmentDashboard: () => request('/student/assessment-dashboard'),
+  startStudentAssessment: (id, password = '') => request(`/student/assessment/${id}/start`, { method: 'POST', body: { password } }),
+  beginStudentAssessment: (id) => request(`/student/assessment/${id}/begin`, { method: 'POST' }),
   getStudentAssessment: (id) => request(`/student/assessment/${id}`),
+  logStudentAssessmentViolation: (id, body) => request(`/student/assessment/${id}/violations`, { method: 'POST', body }),
   submitStudentAssessment: (body) => request('/student/assessment/submit', { method: 'POST', body }),
   getStudentAssessmentRules: () => request('/student/assessment/rules', { skipCache: true }),
+  getSubmissionViolations: (submissionId) => request(`/admin/assessment/submissions/${submissionId}/violations`, { skipCache: true }),
 
   // Pairing
 

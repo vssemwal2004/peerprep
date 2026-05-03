@@ -8,6 +8,7 @@ import {
   deleteAssessment,
   getAssessmentReports,
   exportAssessmentReports,
+  getSubmissionViolations,
 } from '../controllers/assessmentController.js';
 import { getAssessmentRules, upsertAssessmentRules } from '../controllers/assessmentRulesController.js';
 import {
@@ -24,6 +25,7 @@ router.post('/assessment/create', requireAuth, requireAdminOrCoordinator, create
 router.get('/assessment/list', requireAuth, requireAdminOrCoordinator, listAssessments);
 router.get('/assessment/reports', requireAuth, requireAdminOrCoordinator, getAssessmentReports);
 router.get('/assessment/reports/export', requireAuth, requireAdminOrCoordinator, exportAssessmentReports);
+router.get('/assessment/submissions/:submissionId/violations', requireAuth, requireAdminOrCoordinator, getSubmissionViolations);
 router.get('/assessment/rules', requireAuth, requireAdmin, getAssessmentRules);
 router.put('/assessment/rules', requireAuth, requireAdmin, upsertAssessmentRules);
 router.get('/library/questions', requireAuth, requireAdminOrCoordinator, listLibraryQuestions);

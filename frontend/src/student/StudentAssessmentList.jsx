@@ -4,6 +4,7 @@ import AssessmentModuleLayout from './assessment-dashboard/AssessmentModuleLayou
 import AssessmentCard from './assessment-dashboard/AssessmentCard';
 import AssessmentLaunchModal from './assessment-dashboard/AssessmentLaunchModal';
 import { useStudentAssessmentDashboardData } from './assessment-dashboard/useStudentAssessmentDashboardData';
+import { api } from '../utils/api';
 
 function EmptyState({ text }) {
   return (
@@ -68,8 +69,9 @@ export default function StudentAssessmentList() {
         assessment={launchAssessment}
         open={Boolean(launchAssessment)}
         onClose={() => setLaunchAssessment(null)}
-        onConfirm={() => {
+        onConfirm={async (password) => {
           if (!launchAssessment) return;
+          await api.startStudentAssessment(launchAssessment._id, password);
           navigate(`/student/assessment/${launchAssessment._id}${launchAssessment.hasSubmissionInProgress ? '' : '?start=1'}`);
         }}
       />

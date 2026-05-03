@@ -1,4 +1,4 @@
-﻿import mongoose from 'mongoose';
+import mongoose from 'mongoose';
 
 const answerSchema = new mongoose.Schema({
   sectionIndex: { type: Number, required: true },
@@ -28,6 +28,7 @@ const assessmentSubmissionSchema = new mongoose.Schema({
   accuracy: { type: Number },
   timeTakenSec: { type: Number },
   startedAt: { type: Date },
+  passwordVerifiedAt: { type: Date },
   submittedAt: { type: Date },
   status: { type: String, enum: ['not_started', 'in_progress', 'submitted', 'expired', 'violation', 'incomplete'], default: 'not_started' },
   lastSavedAt: { type: Date },
@@ -36,6 +37,7 @@ const assessmentSubmissionSchema = new mongoose.Schema({
   copyPasteCount: { type: Number, default: 0 },
   cameraFlags: { type: Number, default: 0 },
   violations: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  violationLog: { type: [mongoose.Schema.Types.Mixed], default: [] },
   attemptCount: { type: Number, default: 0 },
   isLate: { type: Boolean, default: false },
   lastIp: { type: String },

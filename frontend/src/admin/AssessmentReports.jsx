@@ -1,7 +1,7 @@
-﻿import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
-import { Download, Filter } from 'lucide-react';
+import { Download, Filter, ShieldAlert, X } from 'lucide-react';
 import DateTimePicker from '../components/DateTimePicker';
 
 const statusOptions = [
@@ -46,6 +46,8 @@ export default function AssessmentReports() {
   const [summary, setSummary] = useState({ avgScore: 0, maxScore: 0, minScore: 0, passCount: 0, failCount: 0 });
   const [pagination, setPagination] = useState({ page: 1, limit: 25, total: 0 });
   const [loading, setLoading] = useState(true);
+  const [violationReport, setViolationReport] = useState(null);
+  const [violationsLoading, setViolationsLoading] = useState(false);
 
   const selectedAssessment = useMemo(() => assessments.find((a) => String(a._id) === String(filters.assessmentId)), [assessments, filters.assessmentId]);
 
@@ -85,6 +87,18 @@ export default function AssessmentReports() {
       await api.exportAssessmentReports(filters);
     } catch (err) {
       toast.error(err.message || 'Failed to export report');
+    }
+  };
+
+  const openViolationReport = async (submissionId) => {
+    setViolationsLoading(true);
+    try {
+      const data = await api.getSubmissionViolations(submissionId);
+      setViolationReport(data);
+    } catch (err) {
+      toast.error(err.message || 'Failed to load violation report');
+    } finally {
+      setViolationsLoading(false);
     }
   };
 
@@ -277,7 +291,16 @@ export default function AssessmentReports() {
                       <td className="px-4 py-3">{row.score ?? '-'}</td>
                       <td className="px-4 py-3">{row.accuracy ?? 0}%</td>
                       <td className="px-4 py-3">{row.timeTakenSec ?? 0}s</td>
-                      <td className="px-4 py-3">{row.violationCount ?? 0}</td>
+                      <td className="px-4 py-3">
+                        <button
+                          type="button"
+                          onClick={() => openViolationReport(row._id)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                        >
+                          <ShieldAlert className="h-3.5 w-3.5" />
+                          {row.violationCount ?? 0}
+                        </button>
+                      </td>
                       <td className="px-4 py-3">
                         <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
                           {row.status || 'in_progress'}
@@ -312,6 +335,68 @@ export default function AssessmentReports() {
           </div>
         </div>
       </div>
+      {(violationReport || violationsLoading) && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/40 px-4 py-6">
+          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Violation Report</h2>
+                <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">
+                  {violationReport?.submission?.studentName || 'Loading...'} · {violationReport?.submission?.studentRollNo || ''}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setViolationReport(null);
+                  setViolationsLoading(false);
+                }}
+                className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:hover:bg-gray-800"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {violationsLoading ? (
+              <div className="py-10 text-center text-sm text-slate-500">Loading report...</div>
+            ) : (
+              <>
+                <div className="mt-5 grid gap-3 sm:grid-cols-4">
+                  {[
+                    ['Tab switches', violationReport?.counters?.tabSwitches || 0],
+                    ['Fullscreen exits', violationReport?.counters?.fullscreenExits || 0],
+                    ['Camera flags', violationReport?.counters?.cameraFlags || 0],
+                    ['Copy blocks', violationReport?.counters?.copyPasteCount || 0],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-gray-700 dark:bg-gray-800">
+                      <div className="text-[11px] font-semibold uppercase text-slate-400">{label}</div>
+                      <div className="mt-1 text-xl font-bold text-slate-900 dark:text-white">{value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-5 max-h-80 overflow-y-auto rounded-xl border border-slate-200 dark:border-gray-700">
+                  {(violationReport?.timeline || []).length === 0 ? (
+                    <div className="px-4 py-8 text-center text-sm text-slate-500">No violation timeline recorded.</div>
+                  ) : (
+                    <div className="divide-y divide-slate-100 dark:divide-gray-800">
+                      {violationReport.timeline.map((item, index) => (
+                        <div key={`${item.type}-${item.at}-${index}`} className="px-4 py-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-xs font-semibold uppercase text-slate-700 dark:text-gray-200">{String(item.type || '').replace(/_/g, ' ')}</span>
+                            <span className="text-[11px] text-slate-400">{formatDateTime(item.at)}</span>
+                          </div>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">{item.message || 'Violation recorded.'}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

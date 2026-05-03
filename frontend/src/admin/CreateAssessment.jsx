@@ -124,6 +124,76 @@ const toLocalIsoMinutes = (value) => {
   return `${year}-${month}-${day}T${hours}:${minutes}`;
 };
 
+function Toggle({ value, onChange }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!value)}
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none ${value ? 'bg-sky-600' : 'bg-slate-300 dark:bg-gray-600'}`}
+    >
+      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${value ? 'translate-x-6' : 'translate-x-1'}`} />
+    </button>
+  );
+}
+
+function NumInput({ value, onChange, min = 0, max, placeholder, unit }) {
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        type="number"
+        min={min}
+        max={max}
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))}
+        placeholder={placeholder}
+        className="w-24 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+      />
+      {unit && <span className="text-xs text-slate-400">{unit}</span>}
+    </div>
+  );
+}
+
+function FieldRow({ label, children }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="text-xs text-slate-600 dark:text-gray-300">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+function Row({
+  icon,
+  iconBg = 'bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-400',
+  title,
+  desc,
+  badge,
+  children,
+  toggleKey,
+  settings,
+  onSettingChange,
+}) {
+  const enabled = Boolean(settings?.[toggleKey]);
+  return (
+    <div className={`rounded-xl border px-4 py-3.5 transition-colors ${enabled || !toggleKey ? 'border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900' : 'border-slate-100 bg-slate-50/60 dark:border-gray-800 dark:bg-gray-800/40'}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${iconBg}`}>{icon}</div>
+          <div>
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-semibold text-slate-800 dark:text-gray-100">{title}</p>
+              {badge && <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${badge === 'recommended' ? 'bg-emerald-100 text-emerald-700' : badge === 'strict' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>{badge}</span>}
+            </div>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-gray-400">{desc}</p>
+          </div>
+        </div>
+        {toggleKey && <Toggle value={enabled} onChange={(v) => onSettingChange?.(toggleKey, v)} />}
+      </div>
+      {(enabled || !toggleKey) && children && <div className="mt-3 border-t border-slate-100 pt-3 dark:border-gray-700">{children}</div>}
+    </div>
+  );
+}
+
 export default function CreateAssessment() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -421,6 +491,9 @@ export default function CreateAssessment() {
           assessmentId: assessment.assessmentId || prev.assessmentId,
           isVisible: assessment.isVisible !== false,
           customInstructions: Array.isArray(assessment.customInstructions) ? assessment.customInstructions : [],
+          passwordEnabled: Boolean(assessment.passwordEnabled),
+          passwordValue: '',
+          settings: assessment.settings && typeof assessment.settings === 'object' ? assessment.settings : {},
         }));
         setVersion(assessment.version || 1);
         if (resolvedTargetMode === 'csv') {
@@ -699,6 +772,22 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
     if (!form.title || !form.startTime || !form.endTime || !form.duration) {
       toast.error('Please complete title, start/end time, and duration before publishing.');
       return false;
+    }
+    if (form.passwordEnabled && !currentId && !String(form.passwordValue || '').trim()) {
+      toast.error('Enter an assessment password before publishing.');
+      return false;
+    }
+    if (form.passwordEnabled && currentId && !String(form.passwordValue || '').trim()) {
+      try {
+        const existing = await api.getAssessmentById(currentId);
+        if (!existing?.assessment?.passwordEnabled) {
+          toast.error('Enter an assessment password before publishing.');
+          return false;
+        }
+      } catch {
+        toast.error('Unable to verify the existing password setup. Please enter a password.');
+        return false;
+      }
     }
     if (assessmentValidation.totalQuestions === 0 || assessmentValidation.emptySection) {
       toast.error('Add at least one question and ensure no sections are empty before publishing.');
@@ -1149,51 +1238,7 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
     settings: (() => {
       const s = form.settings || {};
       const upd = (key, val) => updateForm({ settings: { ...(form.settings || {}), [key]: val } });
-
-      const Toggle = ({ value, onChange }) => (
-        <button type="button" onClick={() => onChange(!value)}
-          className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none ${value ? 'bg-sky-600' : 'bg-slate-300 dark:bg-gray-600'}`}>
-          <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${value ? 'translate-x-6' : 'translate-x-1'}`} />
-        </button>
-      );
-
-      const NumInput = ({ value, onChange, min = 0, max, placeholder, unit }) => (
-        <div className="flex items-center gap-2">
-          <input type="number" min={min} max={max} value={value ?? ''} onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))}
-            placeholder={placeholder}
-            className="w-24 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
-          {unit && <span className="text-xs text-slate-400">{unit}</span>}
-        </div>
-      );
-
-      const Row = ({ icon, iconBg = 'bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-400', title, desc, badge, children, toggleKey, expandKey }) => {
-        const enabled = Boolean(s[toggleKey]);
-        return (
-          <div className={`rounded-xl border px-4 py-3.5 transition-colors ${enabled || !toggleKey ? 'border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900' : 'border-slate-100 bg-slate-50/60 dark:border-gray-800 dark:bg-gray-800/40'}`}>
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-start gap-3">
-                <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${iconBg}`}>{icon}</div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-semibold text-slate-800 dark:text-gray-100">{title}</p>
-                    {badge && <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${badge === 'recommended' ? 'bg-emerald-100 text-emerald-700' : badge === 'strict' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>{badge}</span>}
-                  </div>
-                  <p className="mt-0.5 text-xs text-slate-500 dark:text-gray-400">{desc}</p>
-                </div>
-              </div>
-              {toggleKey && <Toggle value={enabled} onChange={(v) => upd(toggleKey, v)} />}
-            </div>
-            {(enabled || !toggleKey) && children && <div className="mt-3 border-t border-slate-100 pt-3 dark:border-gray-700">{children}</div>}
-          </div>
-        );
-      };
-
-      const FieldRow = ({ label, children }) => (
-        <div className="flex items-center justify-between gap-4">
-          <span className="text-xs text-slate-600 dark:text-gray-300">{label}</span>
-          {children}
-        </div>
-      );
+      const rowProps = { settings: s, onSettingChange: upd };
 
       return (
         <div className="space-y-6">
@@ -1223,8 +1268,8 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
               <Lock className="h-3.5 w-3.5" /> Access Control
             </h3>
             <div className="space-y-3">
-              <Row icon={<Lock className="h-4 w-4" />} iconBg="bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400"
-                title="Password Protection" desc="Candidates must enter a password to begin the test." badge="recommended" toggleKey="__password__"
+              <Row {...rowProps} icon={<Lock className="h-4 w-4" />} iconBg="bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400"
+                title="Password Protection" desc="Candidates must enter a password to begin the test." badge="recommended"
               >
                 {null}
               </Row>
@@ -1250,7 +1295,7 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
                   </div>
                 )}
               </div>
-              <Row icon={<Globe className="h-4 w-4" />} iconBg="bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-gray-300"
+              <Row {...rowProps} icon={<Globe className="h-4 w-4" />} iconBg="bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-gray-300"
                 title="Test Visibility" desc={form.isVisible ? 'Test is visible to students on their dashboard.' : 'Test is hidden — only admins can see it.'}>
                 <FieldRow label="Current Status">
                   <button type="button" onClick={() => updateForm({ isVisible: !form.isVisible })}
@@ -1268,13 +1313,13 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
               <Shield className="h-3.5 w-3.5" /> Proctoring & Anti-Cheating
             </h3>
             <div className="space-y-3">
-              <Row icon={<Monitor className="h-4 w-4" />} title="Fullscreen Mode" desc="Forces browser into fullscreen. Exiting fullscreen triggers a warning." badge="recommended" toggleKey="enableFullscreen">
+              <Row {...rowProps} icon={<Monitor className="h-4 w-4" />} title="Fullscreen Mode" desc="Forces browser into fullscreen. Exiting fullscreen triggers a warning." badge="recommended" toggleKey="enableFullscreen">
                 <FieldRow label="Auto-exit if fullscreen abandoned for (seconds)">
                   <NumInput value={s.fullscreenTimeoutSec} onChange={(v) => upd('fullscreenTimeoutSec', v)} min={5} max={60} placeholder="30" unit="sec" />
                 </FieldRow>
               </Row>
 
-              <Row icon={<Shield className="h-4 w-4" />} iconBg="bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-400"
+              <Row {...rowProps} icon={<Shield className="h-4 w-4" />} iconBg="bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-400"
                 title="Tab Switch / Focus Loss Detection" desc="Tracks every time a candidate switches tabs or leaves the test window." badge="strict" toggleKey="tabSwitchDetection">
                 <div className="space-y-3">
                   <FieldRow label="Max allowed tab switches before auto-submit">
@@ -1294,26 +1339,26 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
                 </div>
               </Row>
 
-              <Row icon={<Copy className="h-4 w-4" />} title="Disable Copy-Paste" desc="Blocks Ctrl+C, Ctrl+V and right-click context menu inside the test." badge="recommended" toggleKey="disableCopyPaste">
+              <Row {...rowProps} icon={<Copy className="h-4 w-4" />} title="Disable Copy-Paste" desc="Blocks Ctrl+C, Ctrl+V and right-click context menu inside the test." badge="recommended" toggleKey="disableCopyPaste">
                 <FieldRow label="Block right-click context menu">
                   <Toggle value={Boolean(s.blockRightClick)} onChange={(v) => upd('blockRightClick', v)} />
                 </FieldRow>
               </Row>
 
-              <Row icon={<Droplet className="h-4 w-4" />} iconBg="bg-purple-50 text-purple-600 dark:bg-purple-900/20 dark:text-purple-400"
+              <Row {...rowProps} icon={<Droplet className="h-4 w-4" />} iconBg="bg-purple-50 text-purple-600 dark:bg-purple-900/20 dark:text-purple-400"
                 title="Question Watermarking" desc="Overlays candidate name/ID on every question to deter screenshot sharing." toggleKey="questionWatermark">
                 <FieldRow label="Watermark opacity (%)">
                   <NumInput value={s.watermarkOpacity} onChange={(v) => upd('watermarkOpacity', v)} min={5} max={50} placeholder="15" unit="%" />
                 </FieldRow>
               </Row>
 
-              <Row icon={<Shuffle className="h-4 w-4" />} title="Random Question Shuffle" desc="Randomizes question order uniquely per candidate on test start." toggleKey="randomShuffle">
+              <Row {...rowProps} icon={<Shuffle className="h-4 w-4" />} title="Random Question Shuffle" desc="Randomizes question order uniquely per candidate on test start." toggleKey="randomShuffle">
                 <FieldRow label="Also shuffle answer options (MCQ)">
                   <Toggle value={Boolean(s.shuffleOptions)} onChange={(v) => upd('shuffleOptions', v)} />
                 </FieldRow>
               </Row>
 
-              <Row icon={<Camera className="h-4 w-4" />} iconBg="bg-indigo-50 text-indigo-600 dark:bg-indigo-900/20 dark:text-indigo-400"
+              <Row {...rowProps} icon={<Camera className="h-4 w-4" />} iconBg="bg-indigo-50 text-indigo-600 dark:bg-indigo-900/20 dark:text-indigo-400"
                 title="Camera Monitoring" desc="Captures periodic snapshots via webcam for proctoring review." toggleKey="cameraMonitoring">
                 <div className="space-y-3">
                   <FieldRow label="Snapshot interval">
@@ -1325,7 +1370,7 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
                 </div>
               </Row>
 
-              <Row icon={<Volume2 className="h-4 w-4" />} iconBg="bg-teal-50 text-teal-600 dark:bg-teal-900/20 dark:text-teal-400"
+              <Row {...rowProps} icon={<Volume2 className="h-4 w-4" />} iconBg="bg-teal-50 text-teal-600 dark:bg-teal-900/20 dark:text-teal-400"
                 title="Audio Monitoring" desc="Records ambient audio during the session for suspicious sound detection." toggleKey="audioMonitoring">
                 <FieldRow label="Flag if noise threshold exceeded (dB)">
                   <NumInput value={s.audioNoiseThreshold} onChange={(v) => upd('audioNoiseThreshold', v)} min={10} max={100} placeholder="60" unit="dB" />
@@ -1340,29 +1385,29 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
               <Navigation className="h-3.5 w-3.5" /> Candidate Behavior
             </h3>
             <div className="space-y-3">
-              <Row icon={<Timer className="h-4 w-4" />} iconBg="bg-orange-50 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400"
+              <Row {...rowProps} icon={<Timer className="h-4 w-4" />} iconBg="bg-orange-50 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400"
                 title="Auto-Submit on Timer End" desc="Automatically submits the test when the timer reaches zero." badge="recommended" toggleKey="autoSubmitOnEnd">
                 <FieldRow label="Warn candidate before auto-submit (minutes)">
                   <NumInput value={s.autoSubmitWarnMin} onChange={(v) => upd('autoSubmitWarnMin', v)} min={1} max={30} placeholder="5" unit="min" />
                 </FieldRow>
               </Row>
 
-              <Row icon={<Globe className="h-4 w-4" />} title="Prevent Multiple Tabs / Windows" desc="Detects and blocks attempts to open the test in multiple browser tabs." toggleKey="preventMultipleTabs" />
+              <Row {...rowProps} icon={<Globe className="h-4 w-4" />} title="Prevent Multiple Tabs / Windows" desc="Detects and blocks attempts to open the test in multiple browser tabs." toggleKey="preventMultipleTabs" />
 
-              <Row icon={<Navigation className="h-4 w-4" />} title="Restrict Backward Navigation" desc="Prevents candidates from revisiting previously answered questions." toggleKey="restrictNavigation">
+              <Row {...rowProps} icon={<Navigation className="h-4 w-4" />} title="Restrict Backward Navigation" desc="Prevents candidates from revisiting previously answered questions." toggleKey="restrictNavigation">
                 <FieldRow label="Allow reviewing within same section">
                   <Toggle value={Boolean(s.allowSectionReview)} onChange={(v) => upd('allowSectionReview', v)} />
                 </FieldRow>
               </Row>
 
-              <Row icon={<Layers className="h-4 w-4" />} iconBg="bg-cyan-50 text-cyan-600 dark:bg-cyan-900/20 dark:text-cyan-400"
+              <Row {...rowProps} icon={<Layers className="h-4 w-4" />} iconBg="bg-cyan-50 text-cyan-600 dark:bg-cyan-900/20 dark:text-cyan-400"
                 title="Section-wise Time Locking" desc="Each section has its own time limit; once time is up, that section locks automatically." toggleKey="sectionWiseLock">
                 <FieldRow label="Grace period before lock (seconds)">
                   <NumInput value={s.sectionGraceSec} onChange={(v) => upd('sectionGraceSec', v)} min={0} max={120} placeholder="10" unit="sec" />
                 </FieldRow>
               </Row>
 
-              <Row icon={<Clock className="h-4 w-4" />} iconBg="bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-gray-300"
+              <Row {...rowProps} icon={<Clock className="h-4 w-4" />} iconBg="bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-gray-300"
                 title="Idle Candidate Detection" desc="Flags a candidate if no interaction is detected for a configurable period." toggleKey="idleDetection">
                 <div className="space-y-3">
                   <FieldRow label="Idle threshold (minutes)">
@@ -1387,7 +1432,7 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
               <CheckSquare className="h-3.5 w-3.5" /> Scoring & Results
             </h3>
             <div className="space-y-3">
-              <Row icon={<CheckSquare className="h-4 w-4" />} iconBg="bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400"
+              <Row {...rowProps} icon={<CheckSquare className="h-4 w-4" />} iconBg="bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400"
                 title="Show Score After Submission" desc="Candidates see their total score immediately after submitting." toggleKey="showResultsAfterSubmit">
                 {s.showResultsAfterSubmit && (
                   <div className="space-y-3">
@@ -1405,7 +1450,7 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
               </Row>
 
               {!s.showResultsAfterSubmit && (
-                <Row icon={<Clock className="h-4 w-4" />} iconBg="bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400"
+                <Row {...rowProps} icon={<Clock className="h-4 w-4" />} iconBg="bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400"
                   title="Delayed Result Release" desc="Hold results and release them manually or after a set delay.">
                   <FieldRow label="Release results after (hours)">
                     <NumInput value={s.resultDelayHours} onChange={(v) => upd('resultDelayHours', v)} min={0} placeholder="24" unit="hrs" />
@@ -1413,13 +1458,13 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
                 </Row>
               )}
 
-              <Row icon={<RotateCcw className="h-4 w-4" />} title="Allow Retake" desc="Permit candidates to re-attempt the test (respects attempt limit in Schedule)." toggleKey="allowRetake">
+              <Row {...rowProps} icon={<RotateCcw className="h-4 w-4" />} title="Allow Retake" desc="Permit candidates to re-attempt the test (respects attempt limit in Schedule)." toggleKey="allowRetake">
                 <FieldRow label="Minimum gap between attempts (hours)">
                   <NumInput value={s.retakeGapHours} onChange={(v) => upd('retakeGapHours', v)} min={0} placeholder="0" unit="hrs" />
                 </FieldRow>
               </Row>
 
-              <Row icon={<AlertCircle className="h-4 w-4" />} iconBg="bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-400"
+              <Row {...rowProps} icon={<AlertCircle className="h-4 w-4" />} iconBg="bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-400"
                 title="Negative Marking" desc="Deduct marks for wrong answers in MCQ sections." toggleKey="negativeMarking">
                 <div className="space-y-3">
                   <FieldRow label="Marks deducted per wrong answer">

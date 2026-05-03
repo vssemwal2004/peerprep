@@ -1,4 +1,4 @@
-﻿
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../utils/api';
@@ -90,6 +90,8 @@ export default function AssessmentAttempt() {
   const [rulesTitle, setRulesTitle] = useState('Assessment Rules');
   const [rulesLoading, setRulesLoading] = useState(false);
   const [cameraIndicator, setCameraIndicator] = useState('idle');
+  const [detectedTabs, setDetectedTabs] = useState([]);
+  const [securityNotice, setSecurityNotice] = useState('');
   const [leftWidth, setLeftWidth] = useState(420);
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [sidebarPinned, setSidebarPinned] = useState(false);
@@ -105,12 +107,50 @@ export default function AssessmentAttempt() {
   const dragFrameRef = useRef(null);
   const streamRef = useRef(null);
   const lastViolationRef = useRef(0);
-  const faceTimerRef = useRef(null);
+  const lastDuplicateTabViolationRef = useRef(0);
   const lastIsCodingRef = useRef(false);
+  const fullscreenExitTimerRef = useRef(null);
+  const idleTimerRef = useRef(null);
+  const lastActivityRef = useRef(Date.now());
+  const tabInstanceIdRef = useRef(
+    typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `tab-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  );
+  const rulesSeenStorageKey = `peerprep_assessment_rules_seen:${id}`;
 
   const answerKey = (sectionIndex, questionIndex) => `${sectionIndex}-${questionIndex}`;
   const isSubmitted = submission?.status === 'submitted';
   const secureActive = phase === 'active' && !isSubmitted;
+  const securitySettings = assessment?.settings || {};
+  const fullscreenRequired = Boolean(securitySettings.enableFullscreen);
+  const cameraRequired = Boolean(securitySettings.cameraMonitoring);
+  const tabGuardEnabled = Boolean(securitySettings.tabSwitchDetection);
+  const copyBlockEnabled = Boolean(securitySettings.disableCopyPaste);
+  const preventMultipleTabs = Boolean(securitySettings.preventMultipleTabs);
+  const blockRightClick = copyBlockEnabled && securitySettings.blockRightClick !== false;
+  const tabSwitchLimit = Number(securitySettings.tabSwitchLimit || 0);
+  const tabSwitchWarnAt = Number(securitySettings.tabSwitchWarnAt || 1);
+  const tabSwitchAction = securitySettings.tabSwitchAction || 'warn';
+  const autoSubmitOnEnd = securitySettings.autoSubmitOnEnd !== false;
+  const restrictNavigation = Boolean(securitySettings.restrictNavigation);
+  const allowSectionReview = securitySettings.allowSectionReview !== false;
+  const fullscreenTimeoutSec = Number(securitySettings.fullscreenTimeoutSec || 0);
+  const idleDetection = Boolean(securitySettings.idleDetection);
+  const idleThresholdMs = Math.max(1, Number(securitySettings.idleThresholdMin || 5)) * 60 * 1000;
+  const idleAction = securitySettings.idleAction || 'warn';
+  const finalRules = useMemo(() => {
+    const rules = [];
+    if (fullscreenRequired) rules.push({ type: 'bullet', text: 'Fullscreen mode must remain active during the test.' });
+    if (tabGuardEnabled) rules.push({ type: 'bullet', text: `Tab switching is monitored${tabSwitchLimit ? ` with a limit of ${tabSwitchLimit}` : ''}.` });
+    if (cameraRequired) rules.push({ type: 'bullet', text: 'Camera monitoring must remain enabled and your face should stay visible.' });
+    if (copyBlockEnabled) rules.push({ type: 'bullet', text: 'Copy, paste, print, page source, and restricted shortcuts are blocked.' });
+    if (preventMultipleTabs) rules.push({ type: 'bullet', text: 'Only one assessment tab may remain open.' });
+    if (securitySettings.randomShuffle) rules.push({ type: 'bullet', text: 'Questions may appear in a randomized order.' });
+    if (securitySettings.autoSubmitOnEnd) rules.push({ type: 'bullet', text: 'The test auto-submits when the timer ends.' });
+    if (securitySettings.restrictNavigation) rules.push({ type: 'bullet', text: 'Backward navigation may be restricted by the assessment rules.' });
+    return rules;
+  }, [fullscreenRequired, tabGuardEnabled, tabSwitchLimit, cameraRequired, copyBlockEnabled, preventMultipleTabs, securitySettings]);
   const currentSectionForLayout = assessment?.sections?.[activeSection];
   const isCodingForLayout = currentSectionForLayout?.type === 'coding';
 
@@ -147,6 +187,7 @@ export default function AssessmentAttempt() {
   const currentQuestionNumber = currentFlatIndex >= 0 ? currentFlatIndex + 1 : 1;
   const hasPrevQuestion = currentFlatIndex > 0;
   const hasNextQuestion = currentFlatIndex >= 0 && currentFlatIndex < totalQuestions - 1;
+  const hasAllowedPrevQuestion = hasPrevQuestion && (!restrictNavigation || allowSectionReview);
 
   const questionStatus = useCallback((secIdx, qIdx) => {
     const key = `${secIdx}-${qIdx}`;
@@ -184,7 +225,7 @@ export default function AssessmentAttempt() {
       unanswered,
     };
   }, [flatQuestions, markedMap, totalQuestions, questionStatus]);
-  const totalViolations = tabSwitches + fullscreenExits;
+  const totalViolations = tabSwitches + fullscreenExits + cameraFlags + copyPasteCount;
 
   const clampLeftWidth = (value) => {
     if (!splitContainerRef.current) return value;
@@ -195,13 +236,13 @@ export default function AssessmentAttempt() {
   };
 
   const handleSave = useCallback(async () => {
-    if (!assessment || isSubmitted) return;
+    if (!assessment || isSubmitted || phase !== 'active') return;
     setSaving(true);
     try {
       await api.submitStudentAssessment({
         assessmentId: assessment._id,
         answers: answersArray,
-        status: phase === 'violation' ? 'violation' : 'in_progress',
+        status: 'in_progress',
         tabSwitches,
         fullscreenExits,
         copyPasteCount,
@@ -238,16 +279,18 @@ export default function AssessmentAttempt() {
     }
   }, [assessment, answersArray, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violations, toast, navigate]);
 
-  const recordViolation = useCallback((type, message) => {
-    if (isSubmitted) return;
-    if (!['tab_switch', 'fullscreen_exit'].includes(type)) return;
+  const recordViolation = useCallback(async (type, message, meta = {}) => {
+    if (isSubmitted || !assessment?._id) return;
+    if (!['tab_switch', 'fullscreen_exit', 'camera_loss', 'copy_paste', 'context_menu', 'other'].includes(type)) return;
     const now = Date.now();
-    if (now - lastViolationRef.current < 3000) return;
-    lastViolationRef.current = now;
+    if (type !== 'tab_switch') {
+      if (now - lastViolationRef.current < 3000) return;
+      lastViolationRef.current = now;
+    }
 
     setViolations((prev) => ([
       ...prev,
-      { type, message, at: new Date().toISOString() },
+      { type, message, at: new Date().toISOString(), meta },
     ]));
     if (type === 'tab_switch') {
       setTabSwitches((prev) => prev + 1);
@@ -255,13 +298,45 @@ export default function AssessmentAttempt() {
     if (type === 'fullscreen_exit') {
       setFullscreenExits((prev) => prev + 1);
     }
+    if (type === 'camera_loss') {
+      setCameraFlags((prev) => prev + 1);
+    }
+    if (type === 'copy_paste' || type === 'context_menu') {
+      setCopyPasteCount((prev) => prev + 1);
+    }
     setViolationMessage(message);
-    setIsPaused(true);
-    setPhase('violation');
+    setSecurityNotice(message);
+
+    const projectedTabSwitches = type === 'tab_switch' ? tabSwitches + 1 : tabSwitches;
+    const shouldPauseForTabSwitch = type === 'tab_switch'
+      && tabSwitchAction !== 'warn'
+      && (!tabSwitchLimit || projectedTabSwitches >= tabSwitchLimit);
+    const shouldPauseForFullscreen = type === 'fullscreen_exit';
+    const shouldPauseForBlockedAction = (type === 'copy_paste' || type === 'context_menu') && securitySettings.copyPasteAction === 'pause';
+    if (shouldPauseForTabSwitch || shouldPauseForFullscreen || shouldPauseForBlockedAction) {
+      setIsPaused(true);
+      setPhase('violation');
+    } else if (type !== 'camera_loss') {
+      toast.info(message);
+    }
+    try {
+      const result = await api.logStudentAssessmentViolation(assessment._id, { type, message, meta });
+      if (typeof result?.tabSwitches === 'number') setTabSwitches(result.tabSwitches);
+      if (typeof result?.fullscreenExits === 'number') setFullscreenExits(result.fullscreenExits);
+      if (typeof result?.cameraFlags === 'number') setCameraFlags(result.cameraFlags);
+      if (typeof result?.copyPasteCount === 'number') setCopyPasteCount(result.copyPasteCount);
+      if (result?.autoSubmit) {
+        toast.error('Violation limit reached. Assessment auto-submitted.');
+        await handleSubmit(true);
+        return;
+      }
+    } catch {
+      // The local violation list is still saved by the periodic assessment save.
+    }
     setTimeout(() => {
       handleSave();
     }, 0);
-  }, [isSubmitted, handleSave]);
+  }, [isSubmitted, assessment?._id, tabSwitches, tabSwitchAction, tabSwitchLimit, securitySettings.copyPasteAction, handleSave, handleSubmit, toast]);
 
   const handleResizeStart = (event) => {
     if (!splitContainerRef.current) return;
@@ -333,6 +408,8 @@ export default function AssessmentAttempt() {
       setAllowedEndTime(allowedEnd);
       setAssessment(data.assessment);
       setSubmission(data.submission);
+      const locallySawRules = localStorage.getItem(rulesSeenStorageKey) === '1';
+      setHasSeenRules(Boolean(data.submission?.startedAt) || locallySawRules);
 
       const initialAnswers = {};
       (data.submission?.answers || []).forEach((ans) => {
@@ -349,7 +426,7 @@ export default function AssessmentAttempt() {
       setCameraFlags(data.submission?.cameraFlags || 0);
       setViolations(data.submission?.violations || []);
 
-      if (data.submission?.status === 'submitted') {
+      if (data.submission?.status === 'submitted' || (data.submission?.status === 'in_progress' && data.submission?.startedAt)) {
         setPhase('active');
       } else {
         setPhase('validation');
@@ -360,12 +437,73 @@ export default function AssessmentAttempt() {
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, rulesSeenStorageKey]);
 
   useEffect(() => {
     loadAssessment();
     loadRules();
   }, [loadAssessment, loadRules]);
+
+  useEffect(() => {
+    if (!assessment?._id) return undefined;
+    const key = `peerprep_assessment_tabs:${assessment._id}`;
+    const instanceId = tabInstanceIdRef.current;
+
+    const readTabs = () => {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(key) || '{}');
+        const now = Date.now();
+        const activeEntries = Object.entries(parsed)
+          .filter(([, value]) => value?.lastSeen && now - value.lastSeen < 6000)
+          .map(([id, value]) => ({
+            id,
+            title: value.title || 'Assessment tab',
+            path: value.path || '',
+            lastSeen: value.lastSeen,
+            current: id === instanceId,
+          }));
+        setDetectedTabs(activeEntries.sort((a, b) => Number(b.current) - Number(a.current)));
+        return Object.fromEntries(activeEntries.map((entry) => [entry.id, {
+          title: entry.title,
+          path: entry.path,
+          lastSeen: entry.lastSeen,
+        }]));
+      } catch {
+        setDetectedTabs([{ id: instanceId, title: assessment.title || 'Assessment tab', path: window.location.pathname, lastSeen: Date.now(), current: true }]);
+        return {};
+      }
+    };
+
+    const writeHeartbeat = () => {
+      const active = readTabs();
+      active[instanceId] = {
+        title: assessment.title || 'Assessment tab',
+        path: window.location.pathname,
+        lastSeen: Date.now(),
+      };
+      localStorage.setItem(key, JSON.stringify(active));
+      readTabs();
+    };
+
+    writeHeartbeat();
+    const interval = setInterval(writeHeartbeat, 2000);
+    const handleStorage = (event) => {
+      if (event.key === key) readTabs();
+    };
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', handleStorage);
+      try {
+        const active = JSON.parse(localStorage.getItem(key) || '{}');
+        delete active[instanceId];
+        localStorage.setItem(key, JSON.stringify(active));
+      } catch {
+        // Ignore localStorage cleanup errors.
+      }
+    };
+  }, [assessment?._id, assessment?.title]);
 
   useEffect(() => {
     if (!assessment) return;
@@ -392,7 +530,7 @@ export default function AssessmentAttempt() {
   }, [isCodingForLayout, activeSection, activeQuestion]);
 
   useEffect(() => {
-    if (!assessment || !allowedEndTime || isPaused) return undefined;
+    if (!assessment || !allowedEndTime || isPaused || phase !== 'active') return undefined;
     const timer = setInterval(() => {
       const now = Date.now() + offset;
       const startedAt = submission?.startedAt ? new Date(submission.startedAt).getTime() : now;
@@ -400,12 +538,12 @@ export default function AssessmentAttempt() {
       const cappedEnd = Math.min(allowedEndTime, startedAt + durationMs);
       const remaining = cappedEnd - now;
       setTimeLeft(remaining);
-      if (remaining <= 0 && submission?.status !== 'submitted') {
+      if (remaining <= 0 && submission?.status !== 'submitted' && autoSubmitOnEnd) {
         handleSubmit(true);
       }
     }, 1000);
     return () => clearInterval(timer);
-  }, [assessment, submission, offset, allowedEndTime, isPaused, handleSubmit]);
+  }, [assessment, submission, offset, allowedEndTime, isPaused, phase, autoSubmitOnEnd, handleSubmit]);
 
   useEffect(() => {
     if (!secureActive || isSubmitted) return undefined;
@@ -416,35 +554,54 @@ export default function AssessmentAttempt() {
   }, [secureActive, isSubmitted, handleSave]);
 
   useEffect(() => {
-    if (!secureActive) return undefined;
+    if (!secureActive || !tabGuardEnabled) return undefined;
     const handleVisibility = () => {
       if (document.hidden) {
-        recordViolation('tab_switch', 'Violation detected. Tab switching is not allowed.');
+        void recordViolation('tab_switch', 'Tab switch detected. Return to the assessment window.', {
+          limit: tabSwitchLimit || null,
+          warnAt: tabSwitchWarnAt || null,
+          action: tabSwitchAction,
+        });
       }
     };
     document.addEventListener('visibilitychange', handleVisibility);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [secureActive, recordViolation]);
+  }, [secureActive, tabGuardEnabled, tabSwitchLimit, tabSwitchWarnAt, tabSwitchAction, recordViolation]);
+
   useEffect(() => {
-    if (!secureActive) return undefined;
+    if (!secureActive || !preventMultipleTabs) return;
+    const duplicateCount = detectedTabs.filter((tab) => !tab.current).length;
+    if (duplicateCount > 0 && Date.now() - lastDuplicateTabViolationRef.current > 8000) {
+      lastDuplicateTabViolationRef.current = Date.now();
+      void recordViolation('tab_switch', 'Duplicate assessment tab detected. Close all other assessment tabs.', {
+        duplicateCount,
+        source: 'duplicate_tab_guard',
+      });
+    }
+  }, [secureActive, preventMultipleTabs, detectedTabs, recordViolation]);
+
+  useEffect(() => {
+    if (!secureActive || !copyBlockEnabled) return undefined;
     const handleCopy = (event) => {
       event.preventDefault();
-      setCopyPasteCount((prev) => prev + 1);
+      void recordViolation('copy_paste', 'Copy action blocked by assessment rules.');
     };
     const handlePaste = (event) => {
       event.preventDefault();
-      setCopyPasteCount((prev) => prev + 1);
+      void recordViolation('copy_paste', 'Paste action blocked by assessment rules.');
     };
     const handleContextMenu = (event) => {
+      if (!blockRightClick) return;
       event.preventDefault();
+      void recordViolation('context_menu', 'Right-click menu blocked by assessment rules.');
     };
     const handleKeydown = (event) => {
       const key = event.key?.toLowerCase();
       if ((event.ctrlKey || event.metaKey) && ['c', 'v', 'x', 'a', 's', 'p', 'u', 'r'].includes(key)) {
         event.preventDefault();
-        setCopyPasteCount((prev) => prev + 1);
+        void recordViolation('copy_paste', 'Restricted keyboard shortcut blocked.');
       }
     };
     document.addEventListener('copy', handleCopy);
@@ -457,7 +614,42 @@ export default function AssessmentAttempt() {
       document.removeEventListener('contextmenu', handleContextMenu);
       document.removeEventListener('keydown', handleKeydown);
     };
-  }, [secureActive]);
+  }, [secureActive, copyBlockEnabled, blockRightClick, recordViolation]);
+
+  useEffect(() => {
+    if (!secureActive || !idleDetection) return undefined;
+    const markActivity = () => {
+      lastActivityRef.current = Date.now();
+    };
+    const checkIdle = () => {
+      const idleFor = Date.now() - lastActivityRef.current;
+      if (idleFor < idleThresholdMs) return;
+      lastActivityRef.current = Date.now();
+      const message = 'No activity detected. Please stay active in the assessment window.';
+      void recordViolation('other', message, {
+        source: 'idle_detection',
+        idleForMs: idleFor,
+        action: idleAction,
+      });
+      if (idleAction === 'pause') {
+        setIsPaused(true);
+        setPhase('violation');
+      }
+      if (idleAction === 'autosubmit') {
+        void handleSubmit(true);
+      }
+    };
+    ['mousemove', 'keydown', 'click', 'scroll', 'pointerdown', 'touchstart'].forEach((eventName) => {
+      window.addEventListener(eventName, markActivity, { passive: true });
+    });
+    idleTimerRef.current = setInterval(checkIdle, 5000);
+    return () => {
+      ['mousemove', 'keydown', 'click', 'scroll', 'pointerdown', 'touchstart'].forEach((eventName) => {
+        window.removeEventListener(eventName, markActivity);
+      });
+      if (idleTimerRef.current) clearInterval(idleTimerRef.current);
+    };
+  }, [secureActive, idleDetection, idleThresholdMs, idleAction, handleSubmit, recordViolation]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -473,17 +665,31 @@ export default function AssessmentAttempt() {
   }, []);
 
   useEffect(() => {
-    if (!secureActive) return undefined;
+    if (!secureActive || !fullscreenRequired) return undefined;
     const handleFullscreenEnforcement = () => {
       if (!document.fullscreenElement) {
-        recordViolation('fullscreen_exit', 'Fullscreen mode is required during the assessment.');
+        void recordViolation('fullscreen_exit', 'Fullscreen mode is required during the assessment.', {
+          timeoutSec: fullscreenTimeoutSec || null,
+        });
+        if (fullscreenTimeoutSec > 0) {
+          if (fullscreenExitTimerRef.current) clearTimeout(fullscreenExitTimerRef.current);
+          fullscreenExitTimerRef.current = setTimeout(() => {
+            if (!document.fullscreenElement && !isSubmitted) {
+              void handleSubmit(true);
+            }
+          }, fullscreenTimeoutSec * 1000);
+        }
+      } else if (fullscreenExitTimerRef.current) {
+        clearTimeout(fullscreenExitTimerRef.current);
+        fullscreenExitTimerRef.current = null;
       }
     };
     document.addEventListener('fullscreenchange', handleFullscreenEnforcement);
     return () => {
       document.removeEventListener('fullscreenchange', handleFullscreenEnforcement);
+      if (fullscreenExitTimerRef.current) clearTimeout(fullscreenExitTimerRef.current);
     };
-  }, [secureActive, recordViolation]);
+  }, [secureActive, fullscreenRequired, fullscreenTimeoutSec, isSubmitted, handleSubmit, recordViolation]);
 
   useEffect(() => {
     if (phase !== 'validation') return;
@@ -491,13 +697,13 @@ export default function AssessmentAttempt() {
     setValidationState({
       fullscreen: Boolean(document.fullscreenElement),
       environment: false,
-      camera: Boolean(streamRef.current),
-      face: false,
+      camera: !cameraRequired || Boolean(streamRef.current),
+      face: !cameraRequired,
       final: false,
     });
     setValidationMessage('');
     setFaceStatus(streamRef.current ? 'detecting' : 'idle');
-  }, [phase]);
+  }, [phase, cameraRequired]);
 
   useEffect(() => {
     if (phase !== 'rules') return undefined;
@@ -512,6 +718,8 @@ export default function AssessmentAttempt() {
       setRulesCountdown((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
+          localStorage.setItem(rulesSeenStorageKey, '1');
+          setHasSeenRules(true);
           setRulesReady(true);
           return 0;
         }
@@ -519,29 +727,18 @@ export default function AssessmentAttempt() {
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [phase, hasSeenRules]);
-
-  useEffect(() => {
-    if (!validationState.camera || validationState.face) return;
-    setFaceStatus('detecting');
-    if (faceTimerRef.current) {
-      clearTimeout(faceTimerRef.current);
-    }
-    faceTimerRef.current = setTimeout(() => {
-      setValidationState((prev) => ({ ...prev, face: true }));
-      setFaceStatus('detected');
-    }, 1800);
-    return () => {
-      if (faceTimerRef.current) {
-        clearTimeout(faceTimerRef.current);
-      }
-    };
-  }, [validationState.camera, validationState.face]);
+  }, [phase, hasSeenRules, rulesSeenStorageKey]);
 
   useEffect(() => {
     if (validationState.camera) return;
     setFaceStatus('idle');
   }, [validationState.camera]);
+
+  useEffect(() => {
+    if (!securityNotice) return undefined;
+    const timer = setTimeout(() => setSecurityNotice(''), 6000);
+    return () => clearTimeout(timer);
+  }, [securityNotice]);
 
   useEffect(() => {
     return () => {
@@ -553,7 +750,7 @@ export default function AssessmentAttempt() {
   }, []);
 
   useEffect(() => {
-    if (!secureActive) {
+    if (!secureActive || !cameraRequired) {
       setCameraIndicator('idle');
       return undefined;
     }
@@ -567,6 +764,7 @@ export default function AssessmentAttempt() {
     const sampleFrame = () => {
       if (!streamRef.current || !video || !canvas || !ctx) {
         setCameraIndicator('warning');
+        void recordViolation('camera_loss', 'Camera feed is not available.');
         return;
       }
       if (video.readyState < 2) return;
@@ -590,13 +788,16 @@ export default function AssessmentAttempt() {
       const variance = sumSq / count - avg * avg;
       const detected = variance > 120;
       setCameraIndicator(detected ? 'normal' : 'warning');
+      if (!detected) {
+        void recordViolation('camera_loss', 'Face or human presence was not clearly detected.');
+      }
     };
     intervalId = setInterval(sampleFrame, 1200);
     sampleFrame();
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
-  }, [secureActive]);
+  }, [secureActive, cameraRequired, recordViolation]);
 
   const updateAnswer = (sectionIndex, questionIndex, value) => {
     setAnswersMap((prev) => ({
@@ -648,64 +849,152 @@ export default function AssessmentAttempt() {
     }
   };
 
+  const verifyHumanPresence = async () => {
+    const video = validationVideoRef.current;
+    if (!video) return false;
+    const waitForFrame = () => new Promise((resolve) => {
+      if (video.readyState >= 2) {
+        resolve(true);
+        return;
+      }
+      const timeout = setTimeout(() => resolve(false), 2500);
+      video.onloadeddata = () => {
+        clearTimeout(timeout);
+        resolve(true);
+      };
+    });
+    const ready = await waitForFrame();
+    if (!ready) return false;
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return false;
+    const width = 160;
+    const height = 90;
+    canvas.width = width;
+    canvas.height = height;
+
+    let detectedFrames = 0;
+    for (let frame = 0; frame < 3; frame += 1) {
+      ctx.drawImage(video, 0, 0, width, height);
+      const { data } = ctx.getImageData(0, 0, width, height);
+      let sum = 0;
+      let sumSq = 0;
+      let count = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const value = (data[i] + data[i + 1] + data[i + 2]) / 3;
+        sum += value;
+        sumSq += value * value;
+        count += 1;
+      }
+      const avg = count ? sum / count : 0;
+      const variance = count ? (sumSq / count) - (avg * avg) : 0;
+      if (variance > 120) detectedFrames += 1;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    return detectedFrames >= 2;
+  };
+
   const handleEnableFullscreen = async () => {
+    if (!fullscreenRequired) {
+      setValidationState((prev) => ({ ...prev, fullscreen: true }));
+      setValidationStep(4);
+      return;
+    }
     await requestFullscreen();
     const fullscreenOk = Boolean(document.fullscreenElement);
     setValidationState((prev) => ({ ...prev, fullscreen: fullscreenOk }));
     if (fullscreenOk) {
-      setValidationStep(2);
+      setValidationStep(4);
       setValidationMessage('');
     }
   };
 
   const handleEnvironmentCheck = () => {
     const focusOk = document.hasFocus() && !document.hidden;
-    setValidationState((prev) => ({ ...prev, environment: focusOk }));
-    if (focusOk) {
+    const duplicateAssessmentTabs = detectedTabs.filter((tab) => !tab.current);
+    const tabsOk = !preventMultipleTabs || duplicateAssessmentTabs.length === 0;
+    const ok = focusOk && tabsOk;
+    setValidationState((prev) => ({ ...prev, environment: ok }));
+    if (ok) {
       setValidationMessage('');
-      setValidationStep(3);
+      setValidationStep(2);
+    } else if (!tabsOk) {
+      setValidationMessage('Close duplicate assessment tabs before continuing. Browser security only allows this platform to detect PeerPrep assessment tabs, not every external tab or application.');
     } else {
       setValidationMessage('We could not confirm focus. Please close other tabs and return to this window.');
     }
   };
 
   const handleCameraCheck = async () => {
+    if (!cameraRequired) {
+      setValidationState((prev) => ({ ...prev, camera: true, face: true }));
+      setFaceStatus('detected');
+      setValidationStep(3);
+      return;
+    }
     const ok = await ensureCamera();
     setValidationState((prev) => ({ ...prev, camera: ok }));
     if (!ok) {
       setValidationMessage('Camera permission is required to proceed.');
     } else {
-      setValidationMessage('');
-      setValidationStep(4);
+      setFaceStatus('detecting');
+      const faceOk = await verifyHumanPresence();
+      setValidationState((prev) => ({ ...prev, face: faceOk }));
+      setFaceStatus(faceOk ? 'detected' : 'idle');
+      if (faceOk) {
+        setValidationMessage('');
+        setValidationStep(3);
+      } else {
+        setValidationMessage('Camera is active, but human presence was not clearly detected. Please center your face and try again.');
+      }
     }
   };
 
   const handleFinalCheck = () => {
-    const fullscreenOk = Boolean(document.fullscreenElement);
+    const fullscreenOk = !fullscreenRequired || Boolean(document.fullscreenElement);
     const focusOk = document.hasFocus() && !document.hidden;
-    const ok = fullscreenOk && focusOk && validationState.camera && validationState.face;
+    const tabsOk = !preventMultipleTabs || detectedTabs.filter((tab) => !tab.current).length === 0;
+    const cameraOk = !cameraRequired || (validationState.camera && validationState.face);
+    const ok = fullscreenOk && focusOk && tabsOk && cameraOk;
     setValidationState((prev) => ({
       ...prev,
       fullscreen: fullscreenOk,
-      environment: focusOk,
+      environment: focusOk && tabsOk,
       final: ok,
     }));
     if (ok) {
       setValidationMessage('');
+    } else if (!tabsOk) {
+      setValidationMessage('A duplicate assessment tab is still active. Close it and run the final check again.');
     } else {
-      setValidationMessage('Please ensure fullscreen, camera, and focus checks are all satisfied.');
+      setValidationMessage('Please ensure all required focus, camera, and fullscreen checks are satisfied.');
     }
   };
 
   const startAssessment = async () => {
-    if (allowedEndTime) {
-      setOffset(allowedEndTime - timeLeft - Date.now());
+    if (!validationState.final) {
+      toast.error('Complete the final system check before starting.');
+      setPhase('validation');
+      return;
     }
-    await requestFullscreen();
-    await ensureCamera();
-    setIsPaused(false);
-    setHasSeenRules(true);
-    setPhase('active');
+    try {
+      if (fullscreenRequired) await requestFullscreen();
+      if (cameraRequired) await ensureCamera();
+      const data = await api.beginStudentAssessment(assessment._id);
+      const serverTime = new Date(data.serverTime).getTime();
+      const allowedEnd = new Date(data.allowedEnd).getTime();
+      setOffset(serverTime - Date.now());
+      setTimeLeft(allowedEnd - serverTime);
+      setAllowedEndTime(allowedEnd);
+      setSubmission(data.submission);
+      setIsPaused(false);
+      localStorage.setItem(rulesSeenStorageKey, '1');
+      setHasSeenRules(true);
+      setPhase('active');
+    } catch (err) {
+      toast.error(err.message || 'Unable to start assessment.');
+    }
   };
 
   const handleRunCoding = () => {
@@ -858,6 +1147,24 @@ export default function AssessmentAttempt() {
     }));
   };
 
+  const canNavigateToQuestion = (sectionIndex, questionIndex) => {
+    if (!restrictNavigation) return true;
+    const targetFlatIndex = flatQuestions.findIndex((item) => item.sectionIndex === sectionIndex && item.questionIndex === questionIndex);
+    if (targetFlatIndex < 0) return false;
+    if (targetFlatIndex >= currentFlatIndex) return true;
+    return allowSectionReview && sectionIndex === activeSection;
+  };
+
+  const navigateToQuestion = (sectionIndex, questionIndex) => {
+    if (!canNavigateToQuestion(sectionIndex, questionIndex)) {
+      toast.info('Backward navigation is restricted for this assessment.');
+      return false;
+    }
+    setActiveSection(sectionIndex);
+    setActiveQuestion(questionIndex);
+    return true;
+  };
+
   const goToNextQuestion = () => {
     const sections = assessment?.sections || [];
     const currentSection = sections[activeSection];
@@ -875,15 +1182,14 @@ export default function AssessmentAttempt() {
   const goToPrevQuestion = () => {
     const sections = assessment?.sections || [];
     if (activeQuestion > 0) {
-      setActiveQuestion((prev) => prev - 1);
+      navigateToQuestion(activeSection, activeQuestion - 1);
       return;
     }
     if (activeSection > 0) {
       const prevSectionIndex = activeSection - 1;
       const prevSection = sections[prevSectionIndex];
       const prevCount = prevSection?.questions?.length || 1;
-      setActiveSection(prevSectionIndex);
-      setActiveQuestion(Math.max(prevCount - 1, 0));
+      navigateToQuestion(prevSectionIndex, Math.max(prevCount - 1, 0));
     }
   };
 
@@ -964,7 +1270,16 @@ export default function AssessmentAttempt() {
     { type: 'bullet', text: 'Do not use keyboard shortcuts' },
     { type: 'bullet', text: 'Complete the test in one session' },
   ];
-  const effectiveRules = rulesBlocks.length ? rulesBlocks : fallbackRules;
+  const assessmentInstructionRules = [
+    ...(assessment.instructions ? [{ type: 'paragraph', text: assessment.instructions }] : []),
+    ...((assessment.customInstructions || []).map((text) => ({ type: 'bullet', text }))),
+  ];
+  const effectiveRules = [
+    ...assessmentInstructionRules,
+    ...(rulesBlocks.length ? rulesBlocks : fallbackRules),
+    ...finalRules,
+  ];
+  const showAssessmentWorkspace = phase === 'active' || isSubmitted;
 
   const questionNavigatorPanel = (
     (() => {
@@ -1067,15 +1382,14 @@ export default function AssessmentAttempt() {
                       : 'bg-rose-500 text-white';
                   const isActive = item.sectionIndex === activeSection && item.questionIndex === activeQuestion;
                   const number = (sectionStarts[item.sectionIndex] || 0) + item.questionIndex + 1;
+                  const canNavigate = canNavigateToQuestion(item.sectionIndex, item.questionIndex);
                   return (
                     <button
                       key={`nav-${item.sectionIndex}-${item.questionIndex}`}
                       type="button"
-                      onClick={() => {
-                        setActiveSection(item.sectionIndex);
-                        setActiveQuestion(item.questionIndex);
-                      }}
-                      className={`h-9 w-9 rounded-lg text-xs font-semibold shadow-sm ${statusTone} ${
+                      onClick={() => navigateToQuestion(item.sectionIndex, item.questionIndex)}
+                      disabled={!canNavigate}
+                      className={`h-9 w-9 rounded-lg text-xs font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${statusTone} ${
                         isActive ? 'ring-2 ring-sky-400 ring-offset-2' : ''
                       }`}
                       aria-label={`Go to question ${number}`}
@@ -1153,14 +1467,29 @@ export default function AssessmentAttempt() {
 
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900 lg:h-screen lg:overflow-hidden">
+      {!showAssessmentWorkspace && (
+        <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 text-center dark:bg-gray-950">
+          <div className="max-w-md">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-300">
+              <ShieldCheck className="h-6 w-6" />
+            </div>
+            <h1 className="mt-4 text-xl font-semibold text-slate-900 dark:text-white">Secure assessment setup</h1>
+            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-gray-300">
+              Complete the required checks and review the rules before the test timer starts.
+            </p>
+          </div>
+        </div>
+      )}
 
+      {showAssessmentWorkspace && (
+      <>
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur shadow-sm dark:border-gray-700 dark:bg-gray-900/95">
         <div className="flex w-full flex-wrap items-center gap-3 px-3 py-3 md:px-4 lg:px-6">
           <div className="flex min-w-[240px] flex-1 items-center gap-3">
             <button
               type="button"
               onClick={goToPrevQuestion}
-              disabled={!hasPrevQuestion}
+              disabled={!hasAllowedPrevQuestion}
               title="Previous question"
               className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
             >
@@ -1310,8 +1639,9 @@ export default function AssessmentAttempt() {
                 <button
                   type="button"
                   onClick={goToPrevQuestion}
+                  disabled={!hasAllowedPrevQuestion}
                   title="Go to previous question"
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Previous
                 </button>
@@ -1482,8 +1812,9 @@ export default function AssessmentAttempt() {
                 <button
                   type="button"
                   onClick={goToPrevQuestion}
+                  disabled={!hasAllowedPrevQuestion}
                   title="Go to previous question"
-                  className="ml-auto rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                  className="ml-auto rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Previous
                 </button>
@@ -1491,6 +1822,8 @@ export default function AssessmentAttempt() {
             </section>
           </div>
         </div>
+      )}
+      </>
       )}
       {phase === 'validation' && !isSubmitted && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
@@ -1507,9 +1840,9 @@ export default function AssessmentAttempt() {
 
             <div className="mt-4 flex flex-wrap gap-2">
               {[
-                { id: 1, title: 'Enable Fullscreen', icon: <Maximize className="h-4 w-4" />, done: validationState.fullscreen },
-                { id: 2, title: 'Clean Environment', icon: <Monitor className="h-4 w-4" />, done: validationState.environment },
-                { id: 3, title: 'Camera Verification', icon: <Video className="h-4 w-4" />, done: validationState.camera && validationState.face },
+                { id: 1, title: 'Clean Environment', icon: <Monitor className="h-4 w-4" />, done: validationState.environment },
+                { id: 2, title: 'Camera Verification', icon: <Video className="h-4 w-4" />, done: validationState.camera && validationState.face },
+                { id: 3, title: 'Fullscreen Mode', icon: <Maximize className="h-4 w-4" />, done: !fullscreenRequired || validationState.fullscreen },
                 { id: 4, title: 'Final System Check', icon: <ShieldCheck className="h-4 w-4" />, done: validationState.final },
               ].map((step) => {
                 const isActive = validationStep === step.id;
@@ -1532,19 +1865,50 @@ export default function AssessmentAttempt() {
             <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-gray-700 dark:bg-gray-800">
               {validationStep === 1 && (
                 <div className="space-y-4">
-                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Step 1: Enable Fullscreen</div>
-                  <p className="text-sm text-slate-600 dark:text-gray-300">Fullscreen mode is required for secure proctoring.</p>
+                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Step 1: Clean Environment Check</div>
+                  <p className="text-sm text-slate-600 dark:text-gray-300">Keep only this assessment tab active. Browser security prevents websites from listing every external tab, app, or extension, so PeerPrep verifies focus and detects duplicate assessment tabs within the platform.</p>
+                  <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
+                    <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-gray-300">
+                      <span>Detected PeerPrep assessment tabs</span>
+                      <span className={detectedTabs.filter((tab) => !tab.current).length === 0 ? 'text-emerald-600' : 'text-rose-600'}>
+                        {detectedTabs.filter((tab) => !tab.current).length === 0 ? 'Clean' : 'Duplicate found'}
+                      </span>
+                    </div>
+                    <div className="grid gap-2">
+                      {(detectedTabs.length ? detectedTabs : [{ id: 'current', title: assessment.title || 'Assessment tab', current: true }]).map((tab) => (
+                        <div key={tab.id} className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-800">
+                          <span className="truncate text-slate-600 dark:text-gray-300">{tab.title}</span>
+                          <span className={tab.current ? 'text-emerald-600' : 'text-rose-600'}>
+                            {tab.current ? 'Current' : 'Close this tab'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="grid gap-2 text-xs text-slate-600 dark:text-gray-300">
+                    {[
+                      ['Current tab focused', document.hasFocus() && !document.hidden],
+                      ['Assessment window visible', !document.hidden],
+                      ['No duplicate assessment tabs', !preventMultipleTabs || detectedTabs.filter((tab) => !tab.current).length === 0],
+                      ['Extra apps/extensions closed by student', validationState.environment],
+                    ].map(([label, ok]) => (
+                      <div key={label} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-900">
+                        <span>{label}</span>
+                        <span className={ok ? 'text-emerald-600' : 'text-amber-600'}>{ok ? 'OK' : 'Pending'}</span>
+                      </div>
+                    ))}
+                  </div>
                   <button
                     type="button"
-                    onClick={handleEnableFullscreen}
+                    onClick={handleEnvironmentCheck}
                     className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white"
                   >
-                    <Maximize className="h-4 w-4" />
-                    Enable Fullscreen
+                    <Monitor className="h-4 w-4" />
+                    Run Environment Check
                   </button>
-                  {validationState.fullscreen && (
+                  {validationState.environment && (
                     <div className="flex items-center gap-2 text-sm text-emerald-600">
-                      <CheckCircle2 className="h-4 w-4" /> Fullscreen enabled.
+                      <CheckCircle2 className="h-4 w-4" /> Environment confirmed.
                     </div>
                   )}
                 </div>
@@ -1552,46 +1916,29 @@ export default function AssessmentAttempt() {
 
               {validationStep === 2 && (
                 <div className="space-y-4">
-                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Step 2: Clean Environment Check</div>
-                  <ul className="list-disc space-y-1 pl-5 text-sm text-slate-600 dark:text-gray-300">
-                    <li>Close all background tabs</li>
-                    <li>Disable browser extensions</li>
-                    <li>Ensure no extra windows are open</li>
-                  </ul>
-                  <button
-                    type="button"
-                    onClick={handleEnvironmentCheck}
-                    className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white"
-                  >
-                    Run Check
-                  </button>
-                  {validationState.environment && (
-                    <div className="flex items-center gap-2 text-sm text-emerald-600">
-                      <CheckCircle2 className="h-4 w-4" /> Environment looks good.
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {validationStep === 3 && (
-                <div className="space-y-4">
-                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Step 3: Camera Verification</div>
-                  <p className="text-sm text-slate-600 dark:text-gray-300">We need camera access for monitoring display only.</p>
-                  <div className="mx-auto w-full max-w-xl">
-                    <div className="relative h-48 w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-900/10 dark:border-gray-700">
-                      <video ref={validationVideoRef} className="h-full w-full object-cover object-center" muted playsInline autoPlay />
-                      <div className="pointer-events-none absolute inset-3 rounded-2xl border-2 border-rose-400/60">
-                        <div className="absolute left-0 right-0 top-1/2 h-0.5 -translate-y-1/2 bg-rose-500/50 animate-pulse" />
+                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Step 2: Camera Verification</div>
+                  {cameraRequired ? (
+                    <>
+                      <p className="text-sm text-slate-600 dark:text-gray-300">Camera access is required by the assessment settings.</p>
+                      <div className="mx-auto w-full max-w-xl">
+                        <div className="relative h-48 w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-900/10 dark:border-gray-700">
+                          <video ref={validationVideoRef} className="h-full w-full object-cover object-center" muted playsInline autoPlay />
+                          <div className="pointer-events-none absolute inset-3 rounded-2xl border-2 border-rose-400/60">
+                            <div className="absolute left-0 right-0 top-1/2 h-0.5 -translate-y-1/2 bg-rose-500/50 animate-pulse" />
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
+                    </>
+                  ) : (
+                    <p className="text-sm text-slate-600 dark:text-gray-300">Camera monitoring is not required for this assessment.</p>
+                  )}
                   <div className="flex flex-wrap items-center gap-3">
                     <button
                       type="button"
                       onClick={handleCameraCheck}
                       className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white"
                     >
-                      Enable Camera
+                      {cameraRequired ? 'Enable Camera' : 'Confirm Camera Step'}
                     </button>
                     <span className="text-xs text-slate-500">
                       {faceStatus === 'detected' ? 'Face detected' : faceStatus === 'detecting' ? 'Detecting face...' : 'Camera not ready'}
@@ -1605,26 +1952,52 @@ export default function AssessmentAttempt() {
                 </div>
               )}
 
+              {validationStep === 3 && (
+                <div className="space-y-4">
+                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Step 3: Fullscreen Mode Activation</div>
+                  <p className="text-sm text-slate-600 dark:text-gray-300">{fullscreenRequired ? 'Fullscreen mode is required and exit attempts will be logged.' : 'Fullscreen is not required by the admin settings for this assessment.'}</p>
+                  <button
+                    type="button"
+                    onClick={handleEnableFullscreen}
+                    className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white"
+                  >
+                    <Maximize className="h-4 w-4" />
+                    {fullscreenRequired ? 'Enable Fullscreen' : 'Confirm Fullscreen Step'}
+                  </button>
+                  {(!fullscreenRequired || validationState.fullscreen) && (
+                    <div className="flex items-center gap-2 text-sm text-emerald-600">
+                      <CheckCircle2 className="h-4 w-4" /> Fullscreen check complete.
+                    </div>
+                  )}
+                </div>
+              )}
+
               {validationStep === 4 && (
                 <div className="space-y-4">
                   <div className="text-sm font-semibold text-slate-800 dark:text-white">Step 4: Final System Check</div>
                   <div className="grid gap-2 text-sm text-slate-600 dark:text-gray-300">
                     <div className="flex items-center justify-between">
                       <span>Fullscreen active</span>
-                      <span className={validationState.fullscreen ? 'text-emerald-600' : 'text-rose-600'}>
-                        {validationState.fullscreen ? 'Yes' : 'No'}
+                      <span className={!fullscreenRequired || validationState.fullscreen ? 'text-emerald-600' : 'text-rose-600'}>
+                        {!fullscreenRequired ? 'Not required' : validationState.fullscreen ? 'Yes' : 'No'}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span>Camera active</span>
-                      <span className={validationState.camera ? 'text-emerald-600' : 'text-rose-600'}>
-                        {validationState.camera ? 'Yes' : 'No'}
+                      <span className={!cameraRequired || validationState.camera ? 'text-emerald-600' : 'text-rose-600'}>
+                        {!cameraRequired ? 'Not required' : validationState.camera ? 'Yes' : 'No'}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span>Page focused</span>
                       <span className={validationState.environment ? 'text-emerald-600' : 'text-rose-600'}>
                         {validationState.environment ? 'Yes' : 'No'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Duplicate assessment tabs</span>
+                      <span className={!preventMultipleTabs || detectedTabs.filter((tab) => !tab.current).length === 0 ? 'text-emerald-600' : 'text-rose-600'}>
+                        {!preventMultipleTabs ? 'Not restricted' : detectedTabs.filter((tab) => !tab.current).length === 0 ? 'None' : 'Close duplicates'}
                       </span>
                     </div>
                   </div>
@@ -1665,7 +2038,7 @@ export default function AssessmentAttempt() {
                   <button
                     type="button"
                     onClick={() => setValidationStep((prev) => Math.min(4, prev + 1))}
-                    disabled={(validationStep === 1 && !validationState.fullscreen) || (validationStep === 2 && !validationState.environment) || (validationStep === 3 && !(validationState.camera && validationState.face))}
+                    disabled={(validationStep === 1 && !validationState.environment) || (validationStep === 2 && cameraRequired && !(validationState.camera && validationState.face)) || (validationStep === 3 && fullscreenRequired && !validationState.fullscreen)}
                     className="rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
                   >
                     Continue
@@ -1858,15 +2231,19 @@ export default function AssessmentAttempt() {
         </div>
       )}
 
-      {secureActive && (
+      {secureActive && (cameraRequired || securityNotice) && (
         <>
           <div className={`fixed bottom-0 left-0 right-0 z-20 flex items-center justify-center px-4 py-2 text-xs font-semibold text-white ${
-            cameraIndicator === 'normal' ? 'bg-emerald-600' : 'bg-rose-600'
+            cameraRequired && cameraIndicator === 'normal' && !securityNotice ? 'bg-emerald-600' : 'bg-rose-600'
           }`}>
-            {cameraIndicator === 'normal' ? 'Face detected' : 'Face not detected, please stay in frame'}
+            {securityNotice || (cameraIndicator === 'normal' ? 'Face detected' : 'Face not detected, please stay in frame')}
           </div>
-          <video ref={monitorVideoRef} className="fixed -left-[9999px] h-1 w-1 opacity-0" muted playsInline autoPlay />
-          <canvas ref={monitorCanvasRef} className="fixed -left-[9999px] h-1 w-1 opacity-0" />
+          {cameraRequired && (
+            <>
+              <video ref={monitorVideoRef} className="fixed -left-[9999px] h-1 w-1 opacity-0" muted playsInline autoPlay />
+              <canvas ref={monitorCanvasRef} className="fixed -left-[9999px] h-1 w-1 opacity-0" />
+            </>
+          )}
         </>
       )}
     </div>
