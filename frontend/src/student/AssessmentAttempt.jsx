@@ -426,7 +426,11 @@ export default function AssessmentAttempt() {
       setCameraFlags(data.submission?.cameraFlags || 0);
       setViolations(data.submission?.violations || []);
 
-      if (data.submission?.status === 'submitted' || (data.submission?.status === 'in_progress' && data.submission?.startedAt)) {
+      const shouldSkipValidation = Boolean(
+        data.submission?.status === 'submitted'
+        || (data.submission?.status === 'in_progress' && data.submission?.startedAt && !data.requiresSecuritySetup),
+      );
+      if (shouldSkipValidation) {
         setPhase('active');
       } else {
         setPhase('validation');
@@ -905,20 +909,34 @@ export default function AssessmentAttempt() {
     const fullscreenOk = Boolean(document.fullscreenElement);
     setValidationState((prev) => ({ ...prev, fullscreen: fullscreenOk }));
     if (fullscreenOk) {
-      setValidationStep(4);
-      setValidationMessage('');
+      try {
+        if (assessment?._id) {
+          await api.markStudentAssessmentSetupStep(assessment._id, 'fullscreen');
+        }
+        setValidationStep(4);
+        setValidationMessage('');
+      } catch (err) {
+        setValidationMessage(err.message || 'Fullscreen step could not be verified by server.');
+      }
     }
   };
 
-  const handleEnvironmentCheck = () => {
+  const handleEnvironmentCheck = async () => {
     const focusOk = document.hasFocus() && !document.hidden;
     const duplicateAssessmentTabs = detectedTabs.filter((tab) => !tab.current);
     const tabsOk = !preventMultipleTabs || duplicateAssessmentTabs.length === 0;
     const ok = focusOk && tabsOk;
     setValidationState((prev) => ({ ...prev, environment: ok }));
     if (ok) {
-      setValidationMessage('');
-      setValidationStep(2);
+      try {
+        if (assessment?._id) {
+          await api.markStudentAssessmentSetupStep(assessment._id, 'environment');
+        }
+        setValidationMessage('');
+        setValidationStep(2);
+      } catch (err) {
+        setValidationMessage(err.message || 'Environment step could not be verified by server.');
+      }
     } else if (!tabsOk) {
       setValidationMessage('Close duplicate assessment tabs before continuing. Browser security only allows this platform to detect PeerPrep assessment tabs, not every external tab or application.');
     } else {
@@ -943,15 +961,22 @@ export default function AssessmentAttempt() {
       setValidationState((prev) => ({ ...prev, face: faceOk }));
       setFaceStatus(faceOk ? 'detected' : 'idle');
       if (faceOk) {
-        setValidationMessage('');
-        setValidationStep(3);
+        try {
+          if (assessment?._id) {
+            await api.markStudentAssessmentSetupStep(assessment._id, 'camera');
+          }
+          setValidationMessage('');
+          setValidationStep(3);
+        } catch (err) {
+          setValidationMessage(err.message || 'Camera step could not be verified by server.');
+        }
       } else {
         setValidationMessage('Camera is active, but human presence was not clearly detected. Please center your face and try again.');
       }
     }
   };
 
-  const handleFinalCheck = () => {
+  const handleFinalCheck = async () => {
     const fullscreenOk = !fullscreenRequired || Boolean(document.fullscreenElement);
     const focusOk = document.hasFocus() && !document.hidden;
     const tabsOk = !preventMultipleTabs || detectedTabs.filter((tab) => !tab.current).length === 0;
@@ -964,7 +989,15 @@ export default function AssessmentAttempt() {
       final: ok,
     }));
     if (ok) {
-      setValidationMessage('');
+      try {
+        if (assessment?._id) {
+          await api.markStudentAssessmentSetupStep(assessment._id, 'final');
+        }
+        setValidationMessage('');
+      } catch (err) {
+        setValidationMessage(err.message || 'Final verification could not be completed.');
+        setValidationState((prev) => ({ ...prev, final: false }));
+      }
     } else if (!tabsOk) {
       setValidationMessage('A duplicate assessment tab is still active. Close it and run the final check again.');
     } else {

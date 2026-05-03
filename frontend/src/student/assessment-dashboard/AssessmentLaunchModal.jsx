@@ -1,18 +1,20 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
-import { CalendarDays, Clock3, Layers3, Lock, X } from 'lucide-react';
+import { CalendarDays, Clock3, Layers3, Lock, ShieldCheck, X } from 'lucide-react';
 import { formatDateTime, formatDurationMinutes } from './assessmentDashboardUtils';
 
-export default function AssessmentLaunchModal({ assessment, open, onClose, onConfirm }) {
+export default function AssessmentLaunchModal({ assessment, open, onClose, onUnlock, onStart }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [step, setStep] = useState('details');
 
   useEffect(() => {
     if (!open) {
       setPassword('');
       setError('');
       setSubmitting(false);
+      setStep('details');
     }
   }, [open]);
 
@@ -37,8 +39,14 @@ export default function AssessmentLaunchModal({ assessment, open, onClose, onCon
     assessment.instructions,
     ...(Array.isArray(assessment.customInstructions) ? assessment.customInstructions : []),
   ].filter((item) => String(item || '').trim());
+  const securitySteps = [
+    'Clean Environment Check',
+    'Camera Verification',
+    'Enable Full Screen',
+    'Final Verification',
+  ];
 
-  const handleConfirm = async () => {
+  const handleUnlock = async () => {
     if (requiresPassword && !password.trim()) {
       setError('Enter the assessment password.');
       return;
@@ -46,9 +54,11 @@ export default function AssessmentLaunchModal({ assessment, open, onClose, onCon
     setSubmitting(true);
     setError('');
     try {
-      await onConfirm(password);
+      await onUnlock(password);
+      setStep('security');
     } catch (err) {
       setError(err.message || 'Unable to start assessment.');
+    } finally {
       setSubmitting(false);
     }
   };
@@ -80,99 +90,140 @@ export default function AssessmentLaunchModal({ assessment, open, onClose, onCon
             <div className="min-h-0 overflow-y-auto px-4 pb-4 pt-5 sm:px-5">
               <div className="pr-10">
                 <div className="inline-flex items-center rounded-full border border-sky-100 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-sky-700 dark:border-sky-400/20 dark:bg-sky-900/20 dark:text-sky-200">
-                  Launch Assessment
+                  {step === 'details' ? 'Launch Assessment' : step === 'security' ? 'Security Setup' : 'Rules & Regulations'}
                 </div>
                 <h3 className="mt-3 break-words text-xl font-black tracking-tight text-slate-950 dark:text-white">
-                  {assessment.title}
+                  {step === 'details' ? assessment.title : step === 'security' ? 'Security Setup' : 'Assessment Rules'}
                 </h3>
                 <p className="mt-1.5 text-sm leading-6 text-slate-500 dark:text-slate-300">
-                  Review the schedule and duration, then continue to secure verification.
+                  {step === 'details'
+                    ? 'Review the schedule and duration, then continue to secure verification.'
+                    : step === 'security'
+                      ? 'Complete all mandatory checks before moving forward.'
+                      : 'Read all admin-defined rules before starting the assessment.'}
                 </p>
               </div>
 
-              <div className="mt-4 grid gap-2.5">
-              <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 dark:border-gray-700 dark:bg-gray-800">
-                <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-400">
-                  <CalendarDays className="h-3.5 w-3.5" />
-                  Schedule
-                </div>
-                <div className="mt-2 text-base font-semibold text-slate-900 dark:text-white">{formatDateTime(assessment.startTime)}</div>
-              </div>
+              {step === 'details' && (
+                <>
+                  <div className="mt-4 grid gap-2.5">
+                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 dark:border-gray-700 dark:bg-gray-800">
+                      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-400">
+                        <CalendarDays className="h-3.5 w-3.5" />
+                        Schedule
+                      </div>
+                      <div className="mt-2 text-base font-semibold text-slate-900 dark:text-white">{formatDateTime(assessment.startTime)}</div>
+                    </div>
 
-              <div className="grid gap-2.5 sm:grid-cols-3">
-                <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 dark:border-gray-700 dark:bg-gray-800">
-                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-400">
-                    <Clock3 className="h-3.5 w-3.5" />
-                    Duration
+                    <div className="grid gap-2.5 sm:grid-cols-3">
+                      <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 dark:border-gray-700 dark:bg-gray-800">
+                        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-400">
+                          <Clock3 className="h-3.5 w-3.5" />
+                          Duration
+                        </div>
+                        <div className="mt-2 text-lg font-black text-slate-950 dark:text-white">{formatDurationMinutes(assessment.duration)}</div>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 dark:border-gray-700 dark:bg-gray-800">
+                        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-400">
+                          <Layers3 className="h-3.5 w-3.5" />
+                          Questions
+                        </div>
+                        <div className="mt-2 text-lg font-black text-slate-950 dark:text-white">{assessment.totalQuestions}</div>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 dark:border-gray-700 dark:bg-gray-800">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-400">
+                          Total Marks
+                        </div>
+                        <div className="mt-2 text-lg font-black text-slate-950 dark:text-white">{assessment.totalMarks}</div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="mt-2 text-lg font-black text-slate-950 dark:text-white">{formatDurationMinutes(assessment.duration)}</div>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 dark:border-gray-700 dark:bg-gray-800">
-                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-400">
-                    <Layers3 className="h-3.5 w-3.5" />
-                    Questions
+
+                  <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 dark:border-gray-700 dark:bg-gray-800">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-400">
+                      Active Rules
+                    </div>
+                    <div className="mt-2 grid max-h-40 gap-1.5 overflow-y-auto pr-1 text-sm text-slate-600 dark:text-gray-300">
+                      {(activeRules.length ? activeRules : ['Standard assessment monitoring']).map((rule) => (
+                        <div key={rule} className="flex items-start gap-2">
+                          <span className="mt-2 h-1.5 w-1.5 rounded-full bg-slate-400" />
+                          <span>{rule}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <div className="mt-2 text-lg font-black text-slate-950 dark:text-white">{assessment.totalQuestions}</div>
+
+                  {requiresPassword && (
+                    <div className="mt-3">
+                      <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-gray-300">
+                        <Lock className="h-3.5 w-3.5" />
+                        Assessment Password
+                      </label>
+                      <input
+                        type="password"
+                        value={password}
+                        onChange={(event) => {
+                          setPassword(event.target.value);
+                          setError('');
+                        }}
+                        placeholder="Enter password"
+                        className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition-colors focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                      />
+                      {error && <p className="mt-2 text-xs font-medium text-rose-600">{error}</p>}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {step === 'security' && (
+                <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 dark:border-gray-700 dark:bg-gray-800">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-gray-100">
+                    <ShieldCheck className="h-4 w-4 text-sky-600" />
+                    Security Checks
+                  </div>
+                  <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-gray-300">
+                    {securitySteps.map((item) => (
+                      <div key={item} className="flex items-start gap-2">
+                        <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-slate-400" />
+                        <span>{item}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 dark:border-gray-700 dark:bg-gray-800">
+              )}
+
+              {step === 'rules' && (
+                <div className="mt-4 rounded-lg border border-slate-200 bg-white px-3 py-3 dark:border-gray-700 dark:bg-gray-800">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-400">
-                    Total Marks
+                    Rules & Regulations
                   </div>
-                  <div className="mt-2 text-lg font-black text-slate-950 dark:text-white">{assessment.totalMarks}</div>
+                  <div className="mt-2 max-h-56 space-y-1.5 overflow-y-auto pr-1 text-sm text-slate-600 dark:text-gray-300">
+                    {(instructionItems.length ? instructionItems : ['Read all rules carefully before starting the assessment.']).map((item, index) => (
+                      <div key={`instruction-${index}`} className="flex items-start gap-2">
+                        <span className="mt-2 h-1.5 w-1.5 rounded-full bg-slate-400" />
+                        <span>{item}</span>
+                      </div>
+                    ))}
+                    {(activeRules.length ? activeRules : ['Standard assessment monitoring']).map((rule) => (
+                      <div key={`active-${rule}`} className="flex items-start gap-2">
+                        <span className="mt-2 h-1.5 w-1.5 rounded-full bg-slate-400" />
+                        <span>{rule}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
-
-            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 dark:border-gray-700 dark:bg-gray-800">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-400">
-                Active Rules
-              </div>
-              <div className="mt-2 grid max-h-40 gap-1.5 overflow-y-auto pr-1 text-sm text-slate-600 dark:text-gray-300">
-                {(activeRules.length ? activeRules : ['Standard assessment monitoring']).map((rule) => (
-                  <div key={rule} className="flex items-start gap-2">
-                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-slate-400" />
-                    <span>{rule}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-3 dark:border-gray-700 dark:bg-gray-800">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-400">
-                Instructions
-              </div>
-              <div className="mt-2 max-h-28 space-y-1.5 overflow-y-auto pr-1 text-sm text-slate-600 dark:text-gray-300">
-                {(instructionItems.length ? instructionItems : ['Read all rules carefully before continuing to verification.']).map((item, index) => (
-                  <div key={`instruction-${index}`} className="flex items-start gap-2">
-                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-slate-400" />
-                    <span>{item}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {requiresPassword && (
-              <div className="mt-3">
-                <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-gray-300">
-                  <Lock className="h-3.5 w-3.5" />
-                  Assessment Password
-                </label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(event) => {
-                    setPassword(event.target.value);
-                    setError('');
-                  }}
-                  placeholder="Enter password"
-                  className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition-colors focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                />
-                {error && <p className="mt-2 text-xs font-medium text-rose-600">{error}</p>}
-              </div>
-            )}
-            </div>
-
             <div className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900 sm:px-5">
+              {step !== 'details' && (
+                <button
+                  type="button"
+                  onClick={() => setStep(step === 'rules' ? 'security' : 'details')}
+                  className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-white"
+                >
+                  Back
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onClose}
@@ -180,14 +231,34 @@ export default function AssessmentLaunchModal({ assessment, open, onClose, onCon
               >
                 Cancel
               </button>
-              <button
-                type="button"
-                onClick={handleConfirm}
-                disabled={submitting}
-                className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_20px_35px_-25px_rgba(15,23,42,0.75)] transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {submitting ? 'Verifying...' : 'Continue'}
-              </button>
+              {step === 'details' && (
+                <button
+                  type="button"
+                  onClick={handleUnlock}
+                  disabled={submitting}
+                  className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_20px_35px_-25px_rgba(15,23,42,0.75)] transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {submitting ? 'Verifying...' : 'Continue'}
+                </button>
+              )}
+              {step === 'security' && (
+                <button
+                  type="button"
+                  onClick={() => setStep('rules')}
+                  className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_20px_35px_-25px_rgba(15,23,42,0.75)] transition-colors hover:bg-slate-800"
+                >
+                  Continue
+                </button>
+              )}
+              {step === 'rules' && (
+                <button
+                  type="button"
+                  onClick={onStart}
+                  className="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_20px_35px_-25px_rgba(5,150,105,0.65)] transition-colors hover:bg-emerald-500"
+                >
+                  {assessment.hasSubmissionInProgress ? 'Continue Test' : 'Start Test'}
+                </button>
+              )}
             </div>
           </motion.div>
         </motion.div>

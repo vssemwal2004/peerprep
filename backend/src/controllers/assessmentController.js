@@ -79,6 +79,36 @@ function computeAllowedEnd(assessment, startedAt) {
   return byDuration < assessment.endTime ? byDuration : assessment.endTime;
 }
 
+function getRequiredSecuritySteps(settings = {}) {
+  const steps = ['environment'];
+  if (settings.cameraMonitoring) steps.push('camera');
+  if (settings.enableFullscreen) steps.push('fullscreen');
+  steps.push('final');
+  return steps;
+}
+
+function getCompletedSecuritySteps(submission = {}) {
+  const progress = submission.securitySetup || {};
+  return ['environment', 'camera', 'fullscreen', 'final'].filter((step) => Boolean(progress[`${step}At`]));
+}
+
+function hasCompletedRequiredSecuritySteps(submission = {}, requiredSteps = []) {
+  const completed = new Set(getCompletedSecuritySteps(submission));
+  return requiredSteps.every((step) => completed.has(step));
+}
+
+function canRecordSecurityStep(step, submission = {}, requiredSteps = []) {
+  if (!requiredSteps.includes(step)) return false;
+  const completed = new Set(getCompletedSecuritySteps(submission));
+  if (completed.has(step)) return true;
+  const targetIndex = requiredSteps.indexOf(step);
+  if (targetIndex <= 0) return true;
+  for (let index = 0; index < targetIndex; index += 1) {
+    if (!completed.has(requiredSteps[index])) return false;
+  }
+  return true;
+}
+
 const ASSESSMENT_EXPIRY_GRACE_MS = 24 * 60 * 60 * 1000;
 
 function sanitizeAssessmentForResponse(assessment) {
@@ -1412,6 +1442,9 @@ export async function getStudentAssessment(req, res) {
       submission,
       serverTime: now,
       allowedEnd,
+      requiresSecuritySetup: Boolean(submission && submission.status !== 'submitted' && !submission.securityCompletedAt),
+      requiredSecuritySteps: getRequiredSecuritySteps(assessment.settings || {}),
+      completedSecuritySteps: getCompletedSecuritySteps(submission),
     });
   } catch (err) {
     console.error('Error fetching student assessment:', err);
@@ -1461,13 +1494,18 @@ export async function startStudentAssessment(req, res) {
         assessmentId: id,
         studentId,
         passwordVerifiedAt: assessment.passwordEnabled ? now : undefined,
+        securitySetup: {},
         status: 'not_started',
         attemptCount: 0,
       });
     } else if (assessment.passwordEnabled && !submission.passwordVerifiedAt) {
       submission.passwordVerifiedAt = now;
-      await submission.save();
     }
+    if (!(submission.status === 'in_progress' && submission.startedAt && submission.securityCompletedAt)) {
+      submission.securitySetup = {};
+      submission.securityCompletedAt = undefined;
+    }
+    await submission.save();
 
     res.json({
       message: 'Assessment unlocked',
@@ -1502,18 +1540,31 @@ export async function beginStudentAssessment(req, res) {
     let submission = await AssessmentSubmission.findOne({ assessmentId: id, studentId });
     const passwordCheck = await ensureAssessmentPasswordUnlocked(assessment, submission);
     if (!passwordCheck.ok) return res.status(passwordCheck.status).json({ error: passwordCheck.error });
+    const requiredSecuritySteps = getRequiredSecuritySteps(assessment.settings || {});
+    if (!hasCompletedRequiredSecuritySteps(submission, requiredSecuritySteps)) {
+      return res.status(403).json({
+        error: 'Complete all required security setup steps before starting the assessment.',
+        requiredSecuritySteps,
+        completedSecuritySteps: getCompletedSecuritySteps(submission),
+      });
+    }
 
     if (!submission) {
       submission = await AssessmentSubmission.create({
         assessmentId: id,
         studentId,
         startedAt: now,
+        securityCompletedAt: now,
         status: 'in_progress',
         attemptCount: 0,
       });
     } else if (!submission.startedAt || submission.status === 'not_started') {
       submission.startedAt = now;
+      submission.securityCompletedAt = submission.securityCompletedAt || now;
       submission.status = 'in_progress';
+      await submission.save();
+    } else if (!submission.securityCompletedAt) {
+      submission.securityCompletedAt = now;
       await submission.save();
     }
 
@@ -1994,6 +2045,65 @@ export async function logStudentViolation(req, res) {
   } catch (err) {
     console.error('Error logging violation:', err);
     return res.status(500).json({ error: 'Failed to log violation.' });
+  }
+}
+
+export async function markStudentAssessmentSetupStep(req, res) {
+  try {
+    const { id } = req.params;
+    const studentId = req.user._id;
+    const { step } = req.body || {};
+    const allowedSteps = new Set(['environment', 'camera', 'fullscreen', 'final']);
+    if (!step || !allowedSteps.has(step)) {
+      return res.status(400).json({ error: 'Valid setup step is required.' });
+    }
+
+    const assessment = await Assessment.findById(id).select('lifecycleStatus startTime endTime duration settings targetType assignedStudents').lean();
+    if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
+    if (assessment.lifecycleStatus === 'draft') return res.status(403).json({ error: 'Assessment is not published yet.' });
+    if (!assessment.startTime || !assessment.endTime || !assessment.duration) {
+      return res.status(400).json({ error: 'Assessment schedule is incomplete.' });
+    }
+    const now = new Date();
+    if (now < assessment.startTime || now > assessment.endTime) {
+      return res.status(403).json({ error: 'Assessment is outside the active time window.' });
+    }
+    const isAssigned = assessment.targetType === 'all'
+      || (assessment.assignedStudents || []).some((entry) => String(entry) === String(studentId));
+    if (!isAssigned) return res.status(403).json({ error: 'Not assigned to this assessment.' });
+
+    const submission = await AssessmentSubmission.findOne({ assessmentId: id, studentId });
+    if (!submission) return res.status(404).json({ error: 'Submission not found. Unlock assessment first.' });
+    const passwordCheck = await ensureAssessmentPasswordUnlocked(assessment, submission);
+    if (!passwordCheck.ok) return res.status(passwordCheck.status).json({ error: passwordCheck.error });
+
+    const requiredSecuritySteps = getRequiredSecuritySteps(assessment.settings || {});
+    if (!canRecordSecurityStep(step, submission, requiredSecuritySteps)) {
+      return res.status(409).json({
+        error: 'Complete previous setup steps before continuing.',
+        requiredSecuritySteps,
+        completedSecuritySteps: getCompletedSecuritySteps(submission),
+      });
+    }
+
+    const currentSetup = submission.securitySetup || {};
+    currentSetup[`${step}At`] = currentSetup[`${step}At`] || now;
+    submission.securitySetup = currentSetup;
+
+    if (step === 'final' && hasCompletedRequiredSecuritySteps(submission, requiredSecuritySteps)) {
+      submission.securityCompletedAt = submission.securityCompletedAt || now;
+    }
+    await submission.save();
+
+    return res.json({
+      ok: true,
+      requiredSecuritySteps,
+      completedSecuritySteps: getCompletedSecuritySteps(submission),
+      canBeginAssessment: hasCompletedRequiredSecuritySteps(submission, requiredSecuritySteps),
+    });
+  } catch (err) {
+    console.error('Error marking setup step:', err);
+    return res.status(500).json({ error: 'Failed to mark setup step.' });
   }
 }
 

@@ -371,6 +371,7 @@ export const api = {
   listStudentAssessments: () => request('/student/assessments'),
   getStudentAssessmentDashboard: () => request('/student/assessment-dashboard'),
   startStudentAssessment: (id, password = '') => request(`/student/assessment/${id}/start`, { method: 'POST', body: { password } }),
+  markStudentAssessmentSetupStep: (id, step) => request(`/student/assessment/${id}/setup-step`, { method: 'POST', body: { step } }),
   beginStudentAssessment: (id) => request(`/student/assessment/${id}/begin`, { method: 'POST' }),
   getStudentAssessment: (id) => request(`/student/assessment/${id}`),
   logStudentAssessmentViolation: (id, body) => request(`/student/assessment/${id}/violations`, { method: 'POST', body }),

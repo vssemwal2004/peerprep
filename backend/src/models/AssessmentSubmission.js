@@ -29,6 +29,8 @@ const assessmentSubmissionSchema = new mongoose.Schema({
   timeTakenSec: { type: Number },
   startedAt: { type: Date },
   passwordVerifiedAt: { type: Date },
+  securitySetup: { type: mongoose.Schema.Types.Mixed, default: {} },
+  securityCompletedAt: { type: Date },
   submittedAt: { type: Date },
   status: { type: String, enum: ['not_started', 'in_progress', 'submitted', 'expired', 'violation', 'incomplete'], default: 'not_started' },
   lastSavedAt: { type: Date },

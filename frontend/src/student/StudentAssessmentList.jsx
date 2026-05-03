@@ -69,10 +69,13 @@ export default function StudentAssessmentList() {
         assessment={launchAssessment}
         open={Boolean(launchAssessment)}
         onClose={() => setLaunchAssessment(null)}
-        onConfirm={async (password) => {
+        onUnlock={async (password) => {
           if (!launchAssessment) return;
           await api.startStudentAssessment(launchAssessment._id, password);
-          navigate(`/student/assessment/${launchAssessment._id}${launchAssessment.hasSubmissionInProgress ? '' : '?start=1'}`);
+        }}
+        onStart={() => {
+          if (!launchAssessment) return;
+          navigate(`/student/assessment/${launchAssessment._id}`);
         }}
       />
     </AssessmentModuleLayout>
