@@ -375,6 +375,16 @@ export default function AssessmentReports() {
                   ))}
                 </div>
 
+                {violationReport?.securitySetup?.location && (
+                  <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                    <div className="mb-1 text-[11px] font-semibold uppercase text-slate-400">Captured Location</div>
+                    <div>Latitude: {Number(violationReport.securitySetup.location.latitude || 0).toFixed(6)}</div>
+                    <div>Longitude: {Number(violationReport.securitySetup.location.longitude || 0).toFixed(6)}</div>
+                    <div>Accuracy: {Math.round(Number(violationReport.securitySetup.location.accuracy || 0))} m</div>
+                    <div>Captured At: {formatDateTime(violationReport.securitySetup.location.capturedAt)}</div>
+                  </div>
+                )}
+
                 <div className="mt-5 max-h-80 overflow-y-auto rounded-xl border border-slate-200 dark:border-gray-700">
                   {(violationReport?.timeline || []).length === 0 ? (
                     <div className="px-4 py-8 text-center text-sm text-slate-500">No violation timeline recorded.</div>

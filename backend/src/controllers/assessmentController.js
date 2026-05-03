@@ -82,6 +82,7 @@ function computeAllowedEnd(assessment, startedAt) {
 function getRequiredSecuritySteps(settings = {}) {
   const steps = ['environment'];
   if (settings.cameraMonitoring) steps.push('camera');
+  if (settings.locationTracking !== false) steps.push('location');
   if (settings.enableFullscreen) steps.push('fullscreen');
   steps.push('final');
   return steps;
@@ -89,7 +90,7 @@ function getRequiredSecuritySteps(settings = {}) {
 
 function getCompletedSecuritySteps(submission = {}) {
   const progress = submission.securitySetup || {};
-  return ['environment', 'camera', 'fullscreen', 'final'].filter((step) => Boolean(progress[`${step}At`]));
+  return ['environment', 'camera', 'fullscreen', 'location', 'final'].filter((step) => Boolean(progress[`${step}At`]));
 }
 
 function hasCompletedRequiredSecuritySteps(submission = {}, requiredSteps = []) {
@@ -2052,8 +2053,8 @@ export async function markStudentAssessmentSetupStep(req, res) {
   try {
     const { id } = req.params;
     const studentId = req.user._id;
-    const { step } = req.body || {};
-    const allowedSteps = new Set(['environment', 'camera', 'fullscreen', 'final']);
+    const { step, meta } = req.body || {};
+    const allowedSteps = new Set(['environment', 'camera', 'fullscreen', 'location', 'final']);
     if (!step || !allowedSteps.has(step)) {
       return res.status(400).json({ error: 'Valid setup step is required.' });
     }
@@ -2088,6 +2089,14 @@ export async function markStudentAssessmentSetupStep(req, res) {
 
     const currentSetup = submission.securitySetup || {};
     currentSetup[`${step}At`] = currentSetup[`${step}At`] || now;
+    if (step === 'location' && meta && typeof meta === 'object') {
+      currentSetup.location = {
+        latitude: Number(meta.latitude),
+        longitude: Number(meta.longitude),
+        accuracy: Number(meta.accuracy),
+        capturedAt: now,
+      };
+    }
     submission.securitySetup = currentSetup;
 
     if (step === 'final' && hasCompletedRequiredSecuritySteps(submission, requiredSecuritySteps)) {
@@ -2100,6 +2109,7 @@ export async function markStudentAssessmentSetupStep(req, res) {
       requiredSecuritySteps,
       completedSecuritySteps: getCompletedSecuritySteps(submission),
       canBeginAssessment: hasCompletedRequiredSecuritySteps(submission, requiredSecuritySteps),
+      location: submission.securitySetup?.location || null,
     });
   } catch (err) {
     console.error('Error marking setup step:', err);
@@ -2112,7 +2122,7 @@ export async function getSubmissionViolations(req, res) {
     const { submissionId } = req.params;
     const submission = await AssessmentSubmission.findById(submissionId)
       .populate('studentId', 'name email studentId')
-      .select('violationLog tabSwitches fullscreenExits copyPasteCount cameraFlags status startedAt submittedAt studentId assessmentId')
+      .select('violationLog tabSwitches fullscreenExits copyPasteCount cameraFlags status startedAt submittedAt studentId assessmentId securitySetup')
       .lean();
     if (!submission) return res.status(404).json({ error: 'Submission not found.' });
     if (req.user && req.user.role === 'coordinator') {
@@ -2141,6 +2151,7 @@ export async function getSubmissionViolations(req, res) {
         totalViolations: (submission.tabSwitches || 0) + (submission.fullscreenExits || 0) + (submission.cameraFlags || 0) + (submission.copyPasteCount || 0),
       },
       timeline,
+      securitySetup: submission.securitySetup || {},
     });
   } catch (err) {
     console.error('Error fetching violations:', err);

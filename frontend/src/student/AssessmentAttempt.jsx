@@ -11,6 +11,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Loader2,
+  MapPin,
   Maximize,
   Monitor,
   Pin,
@@ -71,10 +73,13 @@ export default function AssessmentAttempt() {
     environment: false,
     camera: false,
     face: false,
+    location: false,
     final: false,
   });
   const [validationMessage, setValidationMessage] = useState('');
   const [faceStatus, setFaceStatus] = useState('idle');
+  const [setupCheckingStep, setSetupCheckingStep] = useState('');
+  const [locationData, setLocationData] = useState(null);
   const [isPaused, setIsPaused] = useState(false);
   const [allowedEndTime, setAllowedEndTime] = useState(null);
   const [violationMessage, setViolationMessage] = useState('');
@@ -151,6 +156,41 @@ export default function AssessmentAttempt() {
     if (securitySettings.restrictNavigation) rules.push({ type: 'bullet', text: 'Backward navigation may be restricted by the assessment rules.' });
     return rules;
   }, [fullscreenRequired, tabGuardEnabled, tabSwitchLimit, cameraRequired, copyBlockEnabled, preventMultipleTabs, securitySettings]);
+  const setupSteps = useMemo(() => {
+    const steps = [{ id: 1, key: 'environment', title: 'Clean Environment Check', icon: <Monitor className="h-4 w-4" /> }];
+    if (cameraRequired) steps.push({ id: steps.length + 1, key: 'camera', title: 'Camera Verification', icon: <Video className="h-4 w-4" /> });
+    steps.push({ id: steps.length + 1, key: 'location', title: 'Location Permission', icon: <MapPin className="h-4 w-4" /> });
+    if (fullscreenRequired) steps.push({ id: steps.length + 1, key: 'fullscreen', title: 'Enable Full Screen', icon: <Maximize className="h-4 w-4" /> });
+    steps.push({ id: steps.length + 1, key: 'final', title: 'Final Verification', icon: <ShieldCheck className="h-4 w-4" /> });
+    return steps;
+  }, [cameraRequired, fullscreenRequired]);
+  const setupStepIsDone = useCallback((key) => {
+    if (key === 'environment') return validationState.environment;
+    if (key === 'camera') return validationState.camera && validationState.face;
+    if (key === 'fullscreen') return validationState.fullscreen;
+    if (key === 'location') return validationState.location;
+    if (key === 'final') return validationState.final;
+    return false;
+  }, [validationState]);
+  const currentSetupStepKey = setupSteps.find((item) => item.id === validationStep)?.key || setupSteps[0]?.key;
+  const getSetupStepId = useCallback(
+    (key) => setupSteps.find((item) => item.key === key)?.id || 1,
+    [setupSteps],
+  );
+  const syncCompletedSecuritySteps = useCallback((completedSteps = []) => {
+    const completed = new Set(completedSteps);
+    setValidationState((prev) => ({
+      ...prev,
+      environment: prev.environment || completed.has('environment'),
+      camera: prev.camera || completed.has('camera'),
+      face: prev.face || completed.has('camera'),
+      fullscreen: prev.fullscreen || completed.has('fullscreen'),
+      location: prev.location || completed.has('location'),
+      final: prev.final || completed.has('final'),
+    }));
+    const nextStep = setupSteps.find((item) => !completed.has(item.key));
+    setValidationStep(nextStep?.id || setupSteps.length);
+  }, [setupSteps]);
   const currentSectionForLayout = assessment?.sections?.[activeSection];
   const isCodingForLayout = currentSectionForLayout?.type === 'coding';
 
@@ -308,14 +348,23 @@ export default function AssessmentAttempt() {
     setSecurityNotice(message);
 
     const projectedTabSwitches = type === 'tab_switch' ? tabSwitches + 1 : tabSwitches;
-    const shouldPauseForTabSwitch = type === 'tab_switch'
-      && tabSwitchAction !== 'warn'
-      && (!tabSwitchLimit || projectedTabSwitches >= tabSwitchLimit);
+    const shouldPauseForTabSwitch = type === 'tab_switch';
     const shouldPauseForFullscreen = type === 'fullscreen_exit';
+    const shouldPauseForCamera = type === 'camera_loss';
     const shouldPauseForBlockedAction = (type === 'copy_paste' || type === 'context_menu') && securitySettings.copyPasteAction === 'pause';
-    if (shouldPauseForTabSwitch || shouldPauseForFullscreen || shouldPauseForBlockedAction) {
+    if (shouldPauseForTabSwitch || shouldPauseForFullscreen || shouldPauseForCamera || shouldPauseForBlockedAction) {
+      if (type === 'tab_switch') {
+        setValidationState((prev) => ({ ...prev, environment: false, final: false }));
+        setValidationStep(getSetupStepId('environment'));
+      } else if (type === 'camera_loss') {
+        setValidationState((prev) => ({ ...prev, camera: false, face: false, final: false }));
+        setValidationStep(getSetupStepId('camera'));
+      } else if (type === 'fullscreen_exit') {
+        setValidationState((prev) => ({ ...prev, fullscreen: false, final: false }));
+        setValidationStep(getSetupStepId('fullscreen'));
+      }
       setIsPaused(true);
-      setPhase('violation');
+      setPhase('validation');
     } else if (type !== 'camera_loss') {
       toast.info(message);
     }
@@ -336,7 +385,7 @@ export default function AssessmentAttempt() {
     setTimeout(() => {
       handleSave();
     }, 0);
-  }, [isSubmitted, assessment?._id, tabSwitches, tabSwitchAction, tabSwitchLimit, securitySettings.copyPasteAction, handleSave, handleSubmit, toast]);
+  }, [isSubmitted, assessment?._id, tabSwitches, securitySettings.copyPasteAction, handleSave, handleSubmit, toast, getSetupStepId]);
 
   const handleResizeStart = (event) => {
     if (!splitContainerRef.current) return;
@@ -425,6 +474,8 @@ export default function AssessmentAttempt() {
       setCopyPasteCount(data.submission?.copyPasteCount || 0);
       setCameraFlags(data.submission?.cameraFlags || 0);
       setViolations(data.submission?.violations || []);
+      setLocationData(data.submission?.securitySetup?.location || null);
+      syncCompletedSecuritySteps(data.completedSecuritySteps || []);
 
       const shouldSkipValidation = Boolean(
         data.submission?.status === 'submitted'
@@ -441,12 +492,25 @@ export default function AssessmentAttempt() {
     } finally {
       setLoading(false);
     }
-  }, [id, rulesSeenStorageKey]);
+  }, [id, rulesSeenStorageKey, syncCompletedSecuritySteps]);
 
   useEffect(() => {
     loadAssessment();
     loadRules();
   }, [loadAssessment, loadRules]);
+
+  useEffect(() => {
+    if (phase !== 'validation' || currentSetupStepKey !== 'environment') return undefined;
+    const monitorEnvironment = () => {
+      const focusOk = document.hasFocus() && !document.hidden;
+      const duplicateAssessmentTabs = detectedTabs.filter((tab) => !tab.current);
+      const tabsOk = !preventMultipleTabs || duplicateAssessmentTabs.length === 0;
+      setValidationState((prev) => ({ ...prev, environment: focusOk && tabsOk }));
+    };
+    monitorEnvironment();
+    const interval = setInterval(monitorEnvironment, 1000);
+    return () => clearInterval(interval);
+  }, [phase, currentSetupStepKey, detectedTabs, preventMultipleTabs]);
 
   useEffect(() => {
     if (!assessment?._id) return undefined;
@@ -703,8 +767,10 @@ export default function AssessmentAttempt() {
       environment: false,
       camera: !cameraRequired || Boolean(streamRef.current),
       face: !cameraRequired,
+      location: false,
       final: false,
     });
+    setLocationData(null);
     setValidationMessage('');
     setFaceStatus(streamRef.current ? 'detecting' : 'idle');
   }, [phase, cameraRequired]);
@@ -900,28 +966,32 @@ export default function AssessmentAttempt() {
   };
 
   const handleEnableFullscreen = async () => {
-    if (!fullscreenRequired) {
-      setValidationState((prev) => ({ ...prev, fullscreen: true }));
-      setValidationStep(4);
-      return;
+    setSetupCheckingStep('fullscreen');
+    if (fullscreenRequired) {
+      await requestFullscreen();
     }
-    await requestFullscreen();
-    const fullscreenOk = Boolean(document.fullscreenElement);
+    const fullscreenOk = !fullscreenRequired || Boolean(document.fullscreenElement);
     setValidationState((prev) => ({ ...prev, fullscreen: fullscreenOk }));
     if (fullscreenOk) {
       try {
+        let result = null;
         if (assessment?._id) {
-          await api.markStudentAssessmentSetupStep(assessment._id, 'fullscreen');
+          result = await api.markStudentAssessmentSetupStep(assessment._id, 'fullscreen');
         }
-        setValidationStep(4);
+        syncCompletedSecuritySteps(result?.completedSecuritySteps || ['fullscreen']);
         setValidationMessage('');
       } catch (err) {
         setValidationMessage(err.message || 'Fullscreen step could not be verified by server.');
+      } finally {
+        setSetupCheckingStep('');
       }
+    } else {
+      setSetupCheckingStep('');
     }
   };
 
   const handleEnvironmentCheck = async () => {
+    setSetupCheckingStep('environment');
     const focusOk = document.hasFocus() && !document.hidden;
     const duplicateAssessmentTabs = detectedTabs.filter((tab) => !tab.current);
     const tabsOk = !preventMultipleTabs || duplicateAssessmentTabs.length === 0;
@@ -929,50 +999,91 @@ export default function AssessmentAttempt() {
     setValidationState((prev) => ({ ...prev, environment: ok }));
     if (ok) {
       try {
+        let result = null;
         if (assessment?._id) {
-          await api.markStudentAssessmentSetupStep(assessment._id, 'environment');
+          result = await api.markStudentAssessmentSetupStep(assessment._id, 'environment');
         }
+        syncCompletedSecuritySteps(result?.completedSecuritySteps || ['environment']);
         setValidationMessage('');
-        setValidationStep(2);
       } catch (err) {
         setValidationMessage(err.message || 'Environment step could not be verified by server.');
+      } finally {
+        setSetupCheckingStep('');
       }
     } else if (!tabsOk) {
       setValidationMessage('Close duplicate assessment tabs before continuing. Browser security only allows this platform to detect PeerPrep assessment tabs, not every external tab or application.');
+      setSetupCheckingStep('');
     } else {
       setValidationMessage('We could not confirm focus. Please close other tabs and return to this window.');
+      setSetupCheckingStep('');
     }
   };
 
   const handleCameraCheck = async () => {
-    if (!cameraRequired) {
-      setValidationState((prev) => ({ ...prev, camera: true, face: true }));
-      setFaceStatus('detected');
-      setValidationStep(3);
-      return;
-    }
-    const ok = await ensureCamera();
+    setSetupCheckingStep('camera');
+    const ok = !cameraRequired || await ensureCamera();
     setValidationState((prev) => ({ ...prev, camera: ok }));
     if (!ok) {
       setValidationMessage('Camera permission is required to proceed.');
+      setSetupCheckingStep('');
     } else {
       setFaceStatus('detecting');
-      const faceOk = await verifyHumanPresence();
+      const faceOk = !cameraRequired || await verifyHumanPresence();
       setValidationState((prev) => ({ ...prev, face: faceOk }));
       setFaceStatus(faceOk ? 'detected' : 'idle');
       if (faceOk) {
         try {
+          let result = null;
           if (assessment?._id) {
-            await api.markStudentAssessmentSetupStep(assessment._id, 'camera');
+            result = await api.markStudentAssessmentSetupStep(assessment._id, 'camera');
           }
+          syncCompletedSecuritySteps(result?.completedSecuritySteps || ['camera']);
           setValidationMessage('');
-          setValidationStep(3);
         } catch (err) {
           setValidationMessage(err.message || 'Camera step could not be verified by server.');
+        } finally {
+          setSetupCheckingStep('');
         }
       } else {
         setValidationMessage('Camera is active, but human presence was not clearly detected. Please center your face and try again.');
+        setSetupCheckingStep('');
       }
+    }
+  };
+
+  const handleLocationCheck = async () => {
+    setSetupCheckingStep('location');
+    if (!navigator.geolocation) {
+      setValidationMessage('Location is not supported in this browser.');
+      setSetupCheckingStep('');
+      return;
+    }
+    try {
+      const position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          maximumAge: 0,
+        });
+      });
+      const meta = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+      };
+      let result = null;
+      if (assessment?._id) {
+        result = await api.markStudentAssessmentSetupStep(assessment._id, 'location', meta);
+      }
+      setLocationData(meta);
+      setValidationState((prev) => ({ ...prev, location: true }));
+      syncCompletedSecuritySteps(result?.completedSecuritySteps || ['location']);
+      setValidationMessage('');
+    } catch (err) {
+      setValidationState((prev) => ({ ...prev, location: false }));
+      setValidationMessage(err?.message || 'Location permission is required to continue.');
+    } finally {
+      setSetupCheckingStep('');
     }
   };
 
@@ -981,7 +1092,8 @@ export default function AssessmentAttempt() {
     const focusOk = document.hasFocus() && !document.hidden;
     const tabsOk = !preventMultipleTabs || detectedTabs.filter((tab) => !tab.current).length === 0;
     const cameraOk = !cameraRequired || (validationState.camera && validationState.face);
-    const ok = fullscreenOk && focusOk && tabsOk && cameraOk;
+    const locationOk = Boolean(validationState.location);
+    const ok = fullscreenOk && focusOk && tabsOk && cameraOk && locationOk;
     setValidationState((prev) => ({
       ...prev,
       fullscreen: fullscreenOk,
@@ -990,18 +1102,23 @@ export default function AssessmentAttempt() {
     }));
     if (ok) {
       try {
+        setSetupCheckingStep('final');
+        let result = null;
         if (assessment?._id) {
-          await api.markStudentAssessmentSetupStep(assessment._id, 'final');
+          result = await api.markStudentAssessmentSetupStep(assessment._id, 'final');
         }
+        syncCompletedSecuritySteps(result?.completedSecuritySteps || ['final']);
         setValidationMessage('');
       } catch (err) {
         setValidationMessage(err.message || 'Final verification could not be completed.');
         setValidationState((prev) => ({ ...prev, final: false }));
+      } finally {
+        setSetupCheckingStep('');
       }
     } else if (!tabsOk) {
       setValidationMessage('A duplicate assessment tab is still active. Close it and run the final check again.');
     } else {
-      setValidationMessage('Please ensure all required focus, camera, and fullscreen checks are satisfied.');
+      setValidationMessage('Please ensure all required focus, camera, fullscreen, and location checks are satisfied.');
     }
   };
 
@@ -1860,43 +1977,57 @@ export default function AssessmentAttempt() {
       )}
       {phase === 'validation' && !isSubmitted && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
-          <div className="w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">System Validation</h2>
-                <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Complete each step to enter the secure assessment window.</p>
-              </div>
-              <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
-                Step {validationStep} of 4
-              </div>
-            </div>
-
-            <div className="mt-4 flex flex-wrap gap-2">
-              {[
-                { id: 1, title: 'Clean Environment', icon: <Monitor className="h-4 w-4" />, done: validationState.environment },
-                { id: 2, title: 'Camera Verification', icon: <Video className="h-4 w-4" />, done: validationState.camera && validationState.face },
-                { id: 3, title: 'Fullscreen Mode', icon: <Maximize className="h-4 w-4" />, done: !fullscreenRequired || validationState.fullscreen },
-                { id: 4, title: 'Final System Check', icon: <ShieldCheck className="h-4 w-4" />, done: validationState.final },
-              ].map((step) => {
-                const isActive = validationStep === step.id;
-                return (
-                  <div
-                    key={step.id}
-                    className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold ${
-                      isActive ? 'border-sky-200 bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-600'
-                    }`}
-                  >
-                    <div className={`flex h-7 w-7 items-center justify-center rounded-full ${step.done ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
-                      {step.done ? <CheckCircle2 className="h-4 w-4" /> : step.icon}
-                    </div>
-                    <div>{step.title}</div>
+          <div className="w-full max-w-3xl max-h-[88vh] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+            <div className="px-6 pb-5 pt-6">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="inline-flex rounded-full border border-sky-100 bg-sky-50 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.25em] text-sky-700 dark:border-sky-400/20 dark:bg-sky-900/20 dark:text-sky-200">
+                    Security Setup
                   </div>
-                );
-              })}
+                  <h2 className="mt-5 text-2xl font-black tracking-tight text-slate-950 dark:text-white">Security Setup</h2>
+                  <p className="mt-3 text-base text-slate-500 dark:text-gray-300">Complete all mandatory checks before moving forward.</p>
+                </div>
+                <div className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 dark:bg-gray-800 dark:text-gray-200">
+                  Step {validationStep} of {setupSteps.length}
+                </div>
+              </div>
+
+              <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 px-5 py-5 dark:border-gray-700 dark:bg-gray-800">
+                <div className="flex items-center gap-3 text-base font-semibold text-slate-800 dark:text-gray-100">
+                  <ShieldCheck className="h-5 w-5 text-sky-600" />
+                  Security Checks
+                </div>
+                <div className="mt-5 grid gap-3">
+                  {setupSteps.map((step) => {
+                    const isActive = validationStep === step.id;
+                    const done = setupStepIsDone(step.key);
+                    const locked = step.id > validationStep && !done;
+                    const checking = setupCheckingStep === step.key;
+                    return (
+                      <div
+                        key={step.id}
+                        className={`flex items-center gap-3 text-base ${
+                          done ? 'text-emerald-700 dark:text-emerald-300' : isActive ? 'text-slate-800 dark:text-white' : 'text-slate-500 dark:text-gray-400'
+                        }`}
+                      >
+                        <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
+                          done ? 'bg-emerald-100 text-emerald-600' : isActive ? 'bg-sky-100 text-sky-600' : 'bg-slate-200 text-slate-400 dark:bg-gray-700'
+                        }`}>
+                          {checking ? <Loader2 className="h-4 w-4 animate-spin" /> : done ? <CheckCircle2 className="h-4 w-4" /> : locked ? <span className="h-2 w-2 rounded-full bg-current" /> : step.icon}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-medium">{step.title}</div>
+                          {isActive && !done && <div className="mt-0.5 text-xs text-slate-500 dark:text-gray-400">Run this check to unlock the next step.</div>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
 
-            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-gray-700 dark:bg-gray-800">
-              {validationStep === 1 && (
+            <div className="max-h-[45vh] overflow-y-auto border-t border-slate-200 bg-white px-6 py-5 dark:border-gray-700 dark:bg-gray-900">
+              {currentSetupStepKey === 'environment' && (
                 <div className="space-y-4">
                   <div className="text-sm font-semibold text-slate-800 dark:text-white">Step 1: Clean Environment Check</div>
                   <p className="text-sm text-slate-600 dark:text-gray-300">Keep only this assessment tab active. Browser security prevents websites from listing every external tab, app, or extension, so PeerPrep verifies focus and detects duplicate assessment tabs within the platform.</p>
@@ -1934,9 +2065,10 @@ export default function AssessmentAttempt() {
                   <button
                     type="button"
                     onClick={handleEnvironmentCheck}
-                    className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white"
+                    disabled={Boolean(setupCheckingStep)}
+                    className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <Monitor className="h-4 w-4" />
+                    {setupCheckingStep === 'environment' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Monitor className="h-4 w-4" />}
                     Run Environment Check
                   </button>
                   {validationState.environment && (
@@ -1947,7 +2079,7 @@ export default function AssessmentAttempt() {
                 </div>
               )}
 
-              {validationStep === 2 && (
+              {currentSetupStepKey === 'camera' && (
                 <div className="space-y-4">
                   <div className="text-sm font-semibold text-slate-800 dark:text-white">Step 2: Camera Verification</div>
                   {cameraRequired ? (
@@ -1969,8 +2101,10 @@ export default function AssessmentAttempt() {
                     <button
                       type="button"
                       onClick={handleCameraCheck}
-                      className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white"
+                      disabled={Boolean(setupCheckingStep)}
+                      className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                     >
+                      {setupCheckingStep === 'camera' && <Loader2 className="h-4 w-4 animate-spin" />}
                       {cameraRequired ? 'Enable Camera' : 'Confirm Camera Step'}
                     </button>
                     <span className="text-xs text-slate-500">
@@ -1985,16 +2119,47 @@ export default function AssessmentAttempt() {
                 </div>
               )}
 
-              {validationStep === 3 && (
+              {currentSetupStepKey === 'location' && (
                 <div className="space-y-4">
-                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Step 3: Fullscreen Mode Activation</div>
+                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Step 3: Location Permission</div>
+                  <p className="text-sm text-slate-600 dark:text-gray-300">Allow location access. Coordinates are stored for admin audit.</p>
+                  {locationData ? (
+                    <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+                      <div>Latitude: {Number(locationData.latitude).toFixed(6)}</div>
+                      <div>Longitude: {Number(locationData.longitude).toFixed(6)}</div>
+                      <div>Accuracy: {Math.round(Number(locationData.accuracy || 0))} m</div>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-slate-500 dark:text-gray-400">Location is not captured yet.</div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleLocationCheck}
+                    disabled={Boolean(setupCheckingStep)}
+                    className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {setupCheckingStep === 'location' ? <Loader2 className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}
+                    Allow & Verify Location
+                  </button>
+                  {validationState.location && (
+                    <div className="flex items-center gap-2 text-sm text-emerald-600">
+                      <CheckCircle2 className="h-4 w-4" /> Location verified.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {currentSetupStepKey === 'fullscreen' && (
+                <div className="space-y-4">
+                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Step 4: Fullscreen Mode Activation</div>
                   <p className="text-sm text-slate-600 dark:text-gray-300">{fullscreenRequired ? 'Fullscreen mode is required and exit attempts will be logged.' : 'Fullscreen is not required by the admin settings for this assessment.'}</p>
                   <button
                     type="button"
                     onClick={handleEnableFullscreen}
-                    className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white"
+                    disabled={Boolean(setupCheckingStep)}
+                    className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <Maximize className="h-4 w-4" />
+                    {setupCheckingStep === 'fullscreen' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Maximize className="h-4 w-4" />}
                     {fullscreenRequired ? 'Enable Fullscreen' : 'Confirm Fullscreen Step'}
                   </button>
                   {(!fullscreenRequired || validationState.fullscreen) && (
@@ -2005,9 +2170,9 @@ export default function AssessmentAttempt() {
                 </div>
               )}
 
-              {validationStep === 4 && (
+              {currentSetupStepKey === 'final' && (
                 <div className="space-y-4">
-                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Step 4: Final System Check</div>
+                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Step 5: Final System Check</div>
                   <div className="grid gap-2 text-sm text-slate-600 dark:text-gray-300">
                     <div className="flex items-center justify-between">
                       <span>Fullscreen active</span>
@@ -2033,13 +2198,21 @@ export default function AssessmentAttempt() {
                         {!preventMultipleTabs ? 'Not restricted' : detectedTabs.filter((tab) => !tab.current).length === 0 ? 'None' : 'Close duplicates'}
                       </span>
                     </div>
+                    <div className="flex items-center justify-between">
+                      <span>Location permission</span>
+                      <span className={validationState.location ? 'text-emerald-600' : 'text-rose-600'}>
+                        {validationState.location ? 'Granted' : 'Pending'}
+                      </span>
+                    </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
                     <button
                       type="button"
                       onClick={handleFinalCheck}
-                      className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white"
+                      disabled={Boolean(setupCheckingStep)}
+                      className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                     >
+                      {setupCheckingStep === 'final' && <Loader2 className="h-4 w-4 animate-spin" />}
                       Run Final Check
                     </button>
                     {validationState.final && (
@@ -2067,11 +2240,16 @@ export default function AssessmentAttempt() {
                 >
                   Back
                 </button>
-                {validationStep < 4 ? (
+                {currentSetupStepKey !== 'final' ? (
                   <button
                     type="button"
-                    onClick={() => setValidationStep((prev) => Math.min(4, prev + 1))}
-                    disabled={(validationStep === 1 && !validationState.environment) || (validationStep === 2 && cameraRequired && !(validationState.camera && validationState.face)) || (validationStep === 3 && fullscreenRequired && !validationState.fullscreen)}
+                    onClick={() => setValidationStep((prev) => Math.min(setupSteps.length, prev + 1))}
+                    disabled={
+                      (currentSetupStepKey === 'environment' && !validationState.environment)
+                      || (currentSetupStepKey === 'camera' && !(validationState.camera && validationState.face))
+                      || (currentSetupStepKey === 'fullscreen' && !validationState.fullscreen)
+                      || (currentSetupStepKey === 'location' && !validationState.location)
+                    }
                     className="rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
                   >
                     Continue

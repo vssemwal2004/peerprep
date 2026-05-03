@@ -1,13 +1,25 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { useEffect, useState } from 'react';
-import { CalendarDays, Clock3, Layers3, Lock, ShieldCheck, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { CalendarDays, CheckCircle2, Clock3, Layers3, Loader2, Lock, MapPin, Maximize, Monitor, ShieldCheck, Video, X } from 'lucide-react';
 import { formatDateTime, formatDurationMinutes } from './assessmentDashboardUtils';
+import { api } from '../../utils/api';
 
 export default function AssessmentLaunchModal({ assessment, open, onClose, onUnlock, onStart }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [step, setStep] = useState('details');
+  const [checkingStep, setCheckingStep] = useState('');
+  const [detectedTabs, setDetectedTabs] = useState([]);
+  const [securityState, setSecurityState] = useState({
+    environment: false,
+    camera: false,
+    fullscreen: false,
+    location: false,
+    final: false,
+  });
+  const streamRef = useRef(null);
+  const videoRef = useRef(null);
 
   useEffect(() => {
     if (!open) {
@@ -15,13 +27,24 @@ export default function AssessmentLaunchModal({ assessment, open, onClose, onUnl
       setError('');
       setSubmitting(false);
       setStep('details');
+      setCheckingStep('');
+      setDetectedTabs([]);
+      setSecurityState({
+        environment: false,
+        camera: false,
+        fullscreen: false,
+        location: false,
+        final: false,
+      });
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
     }
   }, [open]);
 
-  if (!assessment) return null;
-
-  const requiresPassword = Boolean(assessment.passwordEnabled);
-  const settings = assessment.settings || {};
+  const requiresPassword = Boolean(assessment?.passwordEnabled);
+  const settings = assessment?.settings || {};
   const activeRules = [
     settings.enableFullscreen && 'Fullscreen enforcement',
     settings.tabSwitchDetection && `Tab switch monitoring${settings.tabSwitchLimit ? ` (${settings.tabSwitchLimit} allowed)` : ''}`,
@@ -36,17 +59,146 @@ export default function AssessmentLaunchModal({ assessment, open, onClose, onUnl
     settings.autoSubmitOnEnd && 'Auto-submit on timer end',
   ].filter(Boolean);
   const instructionItems = [
-    assessment.instructions,
-    ...(Array.isArray(assessment.customInstructions) ? assessment.customInstructions : []),
+    assessment?.instructions,
+    ...(Array.isArray(assessment?.customInstructions) ? assessment.customInstructions : []),
   ].filter((item) => String(item || '').trim());
-  const securitySteps = [
-    'Clean Environment Check',
-    'Camera Verification',
-    'Enable Full Screen',
-    'Final Verification',
-  ];
+  const securitySteps = useMemo(() => ([
+    { key: 'environment', title: '1. Clean Environment Check', required: true },
+    { key: 'camera', title: '2. Camera Verification', required: Boolean(settings.cameraMonitoring) },
+    { key: 'location', title: '3. Location Permission', required: settings.locationTracking !== false },
+    { key: 'fullscreen', title: '4. Fullscreen Enforcement', required: Boolean(settings.enableFullscreen) },
+    { key: 'final', title: '5. Final Verification', required: true },
+  ]), [settings.cameraMonitoring, settings.enableFullscreen, settings.locationTracking]);
+  const requiredKeys = securitySteps.filter((item) => item.required).map((item) => item.key);
+  const nextRequired = requiredKeys.find((key) => !securityState[key]);
+  const canContinueToRules = Boolean(!nextRequired && securityState.final);
+
+  useEffect(() => {
+    if (step !== 'security' || !assessment?._id) return undefined;
+    const storageKey = `peerprep_assessment_tabs:${assessment._id}`;
+    const readTabs = () => {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(storageKey) || '{}');
+        const now = Date.now();
+        const active = Object.entries(parsed)
+          .filter(([, value]) => value?.lastSeen && now - value.lastSeen < 6000)
+          .map(([id, value]) => ({ id, title: value.title || 'Assessment tab', current: value.path === window.location.pathname }));
+        setDetectedTabs(active);
+        const hasExternal = active.some((entry) => !entry.current);
+        const focusOk = document.hasFocus() && !document.hidden;
+        const envOk = focusOk && (!settings.preventMultipleTabs || !hasExternal);
+        setSecurityState((prev) => ({ ...prev, environment: envOk }));
+      } catch {
+        setDetectedTabs([]);
+      }
+    };
+    readTabs();
+    const interval = setInterval(readTabs, 1000);
+    const onVisibility = () => readTabs();
+    window.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [step, assessment?._id, settings.preventMultipleTabs]);
+
+  const markSetupStep = async (stepKey, meta) => {
+    if (!assessment?._id) return;
+    await api.markStudentAssessmentSetupStep(assessment._id, stepKey, meta);
+  };
+
+  const runCameraCheck = async () => {
+    if (!settings.cameraMonitoring) {
+      setSecurityState((prev) => ({ ...prev, camera: true }));
+      return;
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    streamRef.current = stream;
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
+      await videoRef.current.play().catch(() => {});
+    }
+    setSecurityState((prev) => ({ ...prev, camera: true }));
+    await markSetupStep('camera');
+  };
+
+  const runFullscreenCheck = async () => {
+    if (!settings.enableFullscreen) {
+      setSecurityState((prev) => ({ ...prev, fullscreen: true }));
+      return;
+    }
+    if (document.documentElement.requestFullscreen) {
+      await document.documentElement.requestFullscreen();
+    }
+    const ok = Boolean(document.fullscreenElement);
+    setSecurityState((prev) => ({ ...prev, fullscreen: ok }));
+    if (!ok) throw new Error('Fullscreen is required before continuing.');
+    await markSetupStep('fullscreen');
+  };
+
+  const runLocationCheck = async () => {
+    if (settings.locationTracking === false) {
+      setSecurityState((prev) => ({ ...prev, location: true }));
+      return;
+    }
+    if (!navigator.geolocation) throw new Error('Location is not supported on this browser.');
+    const position = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 12000,
+        maximumAge: 0,
+      });
+    });
+    const meta = {
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+      accuracy: position.coords.accuracy,
+    };
+    setSecurityState((prev) => ({ ...prev, location: true }));
+    await markSetupStep('location', meta);
+  };
+
+  const runFinalCheck = async () => {
+    const envOk = securityState.environment;
+    const camOk = !settings.cameraMonitoring || securityState.camera;
+    const fullOk = !settings.enableFullscreen || securityState.fullscreen;
+    const locOk = settings.locationTracking === false || securityState.location;
+    const ok = envOk && camOk && fullOk && locOk;
+    setSecurityState((prev) => ({ ...prev, final: ok }));
+    if (!ok) throw new Error('Complete all required checks before final verification.');
+    await markSetupStep('final');
+  };
+
+  const runCurrentStep = async () => {
+    if (!assessment) return;
+    if (!nextRequired) return;
+    setCheckingStep(nextRequired);
+    setError('');
+    try {
+      if (nextRequired === 'environment') {
+        const hasExternalTabs = detectedTabs.some((entry) => !entry.current);
+        const envOk = document.hasFocus() && !document.hidden && (!settings.preventMultipleTabs || !hasExternalTabs);
+        setSecurityState((prev) => ({ ...prev, environment: envOk }));
+        if (!envOk) throw new Error('Close all extra assessment tabs and keep this window focused.');
+        await markSetupStep('environment');
+      } else if (nextRequired === 'camera') {
+        await runCameraCheck();
+      } else if (nextRequired === 'fullscreen') {
+        await runFullscreenCheck();
+      } else if (nextRequired === 'location') {
+        await runLocationCheck();
+      } else if (nextRequired === 'final') {
+        await runFinalCheck();
+      }
+    } catch (err) {
+      setError(err.message || 'Unable to verify this step.');
+    } finally {
+      setCheckingStep('');
+    }
+  };
 
   const handleUnlock = async () => {
+    if (!assessment) return;
     if (requiresPassword && !password.trim()) {
       setError('Enter the assessment password.');
       return;
@@ -62,6 +214,8 @@ export default function AssessmentLaunchModal({ assessment, open, onClose, onUnl
       setSubmitting(false);
     }
   };
+
+  if (!assessment) return null;
 
   return (
     <AnimatePresence>
@@ -183,12 +337,29 @@ export default function AssessmentLaunchModal({ assessment, open, onClose, onUnl
                   </div>
                   <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-gray-300">
                     {securitySteps.map((item) => (
-                      <div key={item} className="flex items-start gap-2">
-                        <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-slate-400" />
-                        <span>{item}</span>
+                      <div key={item.key} className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 dark:border-gray-700 dark:bg-gray-900">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="font-semibold text-slate-800 dark:text-gray-100">{item.title}</div>
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                            !item.required
+                              ? 'bg-slate-200 text-slate-600 dark:bg-gray-700 dark:text-gray-300'
+                              : securityState[item.key]
+                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                                : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                          }`}>
+                            {!item.required ? 'Skipped' : securityState[item.key] ? 'Verified' : 'Pending'}
+                          </span>
+                        </div>
+                        {item.key === 'environment' && (
+                          <div className="mt-1 text-[11px] text-slate-500 dark:text-gray-400">
+                            {detectedTabs.some((entry) => !entry.current) ? 'Extra assessment tab detected. Close it before continuing.' : 'Environment is being tracked in realtime.'}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
+                  <video ref={videoRef} className="mt-3 h-0 w-0 opacity-0" playsInline muted />
+                  {error && <div className="mt-3 text-xs font-medium text-rose-600">{error}</div>}
                 </div>
               )}
 
@@ -244,10 +415,24 @@ export default function AssessmentLaunchModal({ assessment, open, onClose, onUnl
               {step === 'security' && (
                 <button
                   type="button"
-                  onClick={() => setStep('rules')}
+                  onClick={nextRequired ? runCurrentStep : () => setStep('rules')}
                   className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_20px_35px_-25px_rgba(15,23,42,0.75)] transition-colors hover:bg-slate-800"
+                  disabled={Boolean(checkingStep)}
                 >
-                  Continue
+                  {checkingStep ? (
+                    <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Checking...</span>
+                  ) : nextRequired ? (
+                    <span className="inline-flex items-center gap-2">
+                      {nextRequired === 'environment' && <Monitor className="h-4 w-4" />}
+                      {nextRequired === 'camera' && <Video className="h-4 w-4" />}
+                      {nextRequired === 'fullscreen' && <Maximize className="h-4 w-4" />}
+                      {nextRequired === 'location' && <MapPin className="h-4 w-4" />}
+                      {nextRequired === 'final' && <CheckCircle2 className="h-4 w-4" />}
+                      Verify {nextRequired}
+                    </span>
+                  ) : (
+                    'Continue'
+                  )}
                 </button>
               )}
               {step === 'rules' && (
