@@ -82,7 +82,7 @@ function computeAllowedEnd(assessment, startedAt) {
 function getRequiredSecuritySteps(settings = {}) {
   const steps = ['environment'];
   if (settings.cameraMonitoring) steps.push('camera');
-  if (settings.locationTracking !== false) steps.push('location');
+  if (settings.locationTracking === true) steps.push('location');
   if (settings.enableFullscreen) steps.push('fullscreen');
   steps.push('final');
   return steps;

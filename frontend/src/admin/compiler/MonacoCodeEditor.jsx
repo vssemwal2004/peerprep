@@ -65,6 +65,8 @@ export default function MonacoCodeEditor({
   language,
   height = 420,
   readOnly = false,
+  blockClipboard = false,
+  onSecurityEvent = null,
 }) {
   const containerRef = useRef(null);
   const editorRef = useRef(null);
@@ -125,13 +127,65 @@ export default function MonacoCodeEditor({
             horizontalScrollbarSize: 0,
             alwaysConsumeMouseWheel: false,
           },
+          contextmenu: false,
           roundedSelection: false,
           padding: { top: 14, bottom: 14 },
         });
 
+        const notifySecurityEvent = (type, message, meta = {}) => {
+          if (!blockClipboard) return;
+          onSecurityEvent?.(type, message, meta);
+        };
+
         editor.onDidChangeModelContent(() => {
           onChangeRef.current?.(editor.getValue());
         });
+
+        editor.onKeyDown((event) => {
+          if (!blockClipboard) return;
+          const browserEvent = event.browserEvent;
+          const key = browserEvent?.key?.toLowerCase?.() || '';
+          const ctrlOrMeta = browserEvent?.ctrlKey || browserEvent?.metaKey;
+          const blockedCtrlKey = ctrlOrMeta && ['c', 'v', 'x', 'a', 's', 'p', 'u', 'r'].includes(key);
+          const blockedInsert = key === 'insert' && (browserEvent?.shiftKey || ctrlOrMeta);
+          if (!blockedCtrlKey && !blockedInsert) return;
+          event.preventDefault();
+          event.stopPropagation();
+          browserEvent?.preventDefault?.();
+          browserEvent?.stopPropagation?.();
+          notifySecurityEvent('copy_paste', 'Restricted keyboard shortcut blocked.', {
+            source: 'monaco_keydown',
+            shortcut: [
+              browserEvent?.ctrlKey ? 'Ctrl' : '',
+              browserEvent?.metaKey ? 'Meta' : '',
+              browserEvent?.shiftKey ? 'Shift' : '',
+              browserEvent?.key,
+            ].filter(Boolean).join('+'),
+          });
+        });
+
+        const editorNode = editor.getDomNode?.();
+        if (editorNode) {
+          const stopRestrictedEvent = (browserEvent, type, message, meta = {}) => {
+            if (!blockClipboard) return;
+            browserEvent.preventDefault();
+            browserEvent.stopPropagation();
+            browserEvent.stopImmediatePropagation?.();
+            notifySecurityEvent(type, message, meta);
+          };
+          const listeners = [
+            ['copy', (event) => stopRestrictedEvent(event, 'copy_paste', 'Copy action blocked by assessment rules.', { source: 'monaco_copy' })],
+            ['cut', (event) => stopRestrictedEvent(event, 'copy_paste', 'Cut action blocked by assessment rules.', { source: 'monaco_cut' })],
+            ['paste', (event) => stopRestrictedEvent(event, 'copy_paste', 'Paste action blocked by assessment rules.', { source: 'monaco_paste' })],
+            ['contextmenu', (event) => stopRestrictedEvent(event, 'context_menu', 'Right-click menu blocked by assessment rules.', { source: 'monaco_contextmenu' })],
+            ['drop', (event) => stopRestrictedEvent(event, 'copy_paste', 'Drag/drop content insertion blocked by assessment rules.', { source: 'monaco_drop' })],
+            ['dragstart', (event) => stopRestrictedEvent(event, 'copy_paste', 'Dragging selected content is blocked by assessment rules.', { source: 'monaco_dragstart' })],
+          ];
+          listeners.forEach(([name, handler]) => editorNode.addEventListener(name, handler, true));
+          editor.__peerprepCleanup = () => {
+            listeners.forEach(([name, handler]) => editorNode.removeEventListener(name, handler, true));
+          };
+        }
 
         mutationObserverRef.current = new MutationObserver(() => {
           monaco.editor.setTheme(isDarkMode() ? 'peerprep-dark' : 'peerprep-light');
@@ -166,6 +220,7 @@ export default function MonacoCodeEditor({
       cancelled = true;
       mutationObserverRef.current?.disconnect();
       resizeObserverRef.current?.disconnect();
+      editorRef.current?.__peerprepCleanup?.();
       editorRef.current?.dispose();
       editorRef.current = null;
     };
