@@ -110,6 +110,13 @@ function canRecordSecurityStep(step, submission = {}, requiredSteps = []) {
   return true;
 }
 
+function resetSubmissionSecuritySetup(submission) {
+  if (!submission) return;
+  submission.securitySetup = {};
+  submission.markModified?.('securitySetup');
+  submission.securityCompletedAt = undefined;
+}
+
 const ASSESSMENT_EXPIRY_GRACE_MS = 24 * 60 * 60 * 1000;
 
 function sanitizeAssessmentForResponse(assessment) {
@@ -2149,6 +2156,7 @@ export async function logStudentViolation(req, res) {
     if (action === 'pause') {
       submission.pauseCount = (submission.pauseCount || 0) + 1;
       submission.lastPauseAt = now;
+      resetSubmissionSecuritySetup(submission);
     }
     if (action === 'autosubmit') {
       submission.violationLog.push({
@@ -2219,6 +2227,10 @@ export async function logStudentHeartbeat(req, res) {
         meta: { source: 'heartbeat_inconsistent', status: normalizedStatus },
         submission,
       });
+      if (action === 'pause') {
+        submission.lastPauseAt = now;
+        resetSubmissionSecuritySetup(submission);
+      }
     }
 
     await submission.save();
@@ -2274,7 +2286,9 @@ export async function markStudentAssessmentSetupStep(req, res) {
       });
     }
 
-    const currentSetup = submission.securitySetup || {};
+    const currentSetup = {
+      ...(submission.securitySetup && typeof submission.securitySetup === 'object' ? submission.securitySetup : {}),
+    };
     currentSetup[`${step}At`] = currentSetup[`${step}At`] || now;
     if (step === 'location' && meta && typeof meta === 'object') {
       currentSetup.location = {
@@ -2284,7 +2298,8 @@ export async function markStudentAssessmentSetupStep(req, res) {
         capturedAt: now,
       };
     }
-    submission.securitySetup = currentSetup;
+    submission.set('securitySetup', currentSetup);
+    submission.markModified('securitySetup');
 
     if (step === 'final' && hasCompletedRequiredSecuritySteps(submission, requiredSecuritySteps)) {
       submission.securityCompletedAt = submission.securityCompletedAt || now;
