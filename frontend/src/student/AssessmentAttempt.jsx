@@ -86,29 +86,6 @@ const normalizeAction = (value, fallback = 'warn') => {
   return fallback;
 };
 
-const boolSetting = (settings = {}, keys = [], fallback = false) => {
-  for (const key of keys) {
-    if (!Object.prototype.hasOwnProperty.call(settings, key)) continue;
-    const value = settings[key];
-    if (typeof value === 'boolean') return value;
-    if (typeof value === 'number') return value !== 0;
-    if (typeof value === 'string') {
-      const normalized = value.trim().toLowerCase();
-      if (['true', '1', 'yes', 'on', 'enabled'].includes(normalized)) return true;
-      if (['false', '0', 'no', 'off', 'disabled'].includes(normalized)) return false;
-    }
-  }
-  return fallback;
-};
-
-const numberSetting = (settings = {}, keys = [], fallback = 0) => {
-  for (const key of keys) {
-    const value = Number(settings[key]);
-    if (Number.isFinite(value)) return value;
-  }
-  return fallback;
-};
-
 const getViolationWeight = (settings = {}, type = 'other') => {
   const map = settings.violationWeights || settings.violationWeight || {};
   const aliases = {
@@ -187,7 +164,6 @@ export default function AssessmentAttempt() {
   const [rulesBlocks, setRulesBlocks] = useState([]);
   const [rulesTitle, setRulesTitle] = useState('Assessment Rules');
   const [rulesLoading, setRulesLoading] = useState(false);
-  const [requiredSetupSteps, setRequiredSetupSteps] = useState(['environment', 'final']);
   const [cameraIndicator, setCameraIndicator] = useState('idle');
   const [detectedTabs, setDetectedTabs] = useState([]);
   const [securityNotice, setSecurityNotice] = useState('');
@@ -222,7 +198,6 @@ export default function AssessmentAttempt() {
   const heartbeatFailureRef = useRef(0);
   const thresholdNoticeRef = useRef({});
   const popupThrottleRef = useRef({});
-  const phaseRef = useRef('validation');
   const securityStatusRef = useRef(CSE_STATUS_DEFAULTS);
   const violationScoreRef = useRef(0);
   const pauseCountRef = useRef(0);
@@ -242,23 +217,22 @@ export default function AssessmentAttempt() {
   const isSubmitted = submission?.status === 'submitted';
   const secureActive = phase === 'active' && !isSubmitted;
   const securitySettings = useMemo(() => assessment?.settings || {}, [assessment?.settings]);
-  const fullscreenRequired   = boolSetting(securitySettings, ['enableFullscreen', 'fullscreenRequired', 'fullscreen', 'requireFullscreen'], false);
-  const cameraRequired        = boolSetting(securitySettings, ['cameraMonitoring', 'enableCameraMonitoring', 'cameraRequired', 'camera', 'enableCamera', 'camera_monitoring'], false);
-  const tabGuardEnabled       = boolSetting(securitySettings, ['tabSwitchDetection', 'enableTabSwitchDetection', 'tabSwitching', 'tabGuard', 'detectTabSwitch', 'tab_switch_detection', 'tabSwitch'], false);
-  const copyBlockEnabled      = boolSetting(securitySettings, ['disableCopyPaste', 'blockCopyPaste', 'copyPasteBlocked', 'copyPaste', 'blockClipboard', 'preventCopyPaste', 'disable_copy_paste'], false);
-  const preventMultipleTabs   = boolSetting(securitySettings, ['preventMultipleTabs', 'duplicateTabDetection', 'blockMultipleTabs'], false);
-  const blockRightClick       = copyBlockEnabled && boolSetting(securitySettings, ['blockRightClick'], true);
-  const tabSwitchLimit = numberSetting(securitySettings, ['tabSwitchLimit', 'allowedTabSwitches'], 0);
-  const tabSwitchWarnAt = numberSetting(securitySettings, ['tabSwitchWarnAt'], 1);
+  const fullscreenRequired = Boolean(securitySettings.enableFullscreen);
+  const cameraRequired = Boolean(securitySettings.cameraMonitoring);
+  const tabGuardEnabled = Boolean(securitySettings.tabSwitchDetection);
+  const copyBlockEnabled = Boolean(securitySettings.disableCopyPaste);
+  const preventMultipleTabs = Boolean(securitySettings.preventMultipleTabs);
+  const blockRightClick = copyBlockEnabled && securitySettings.blockRightClick !== false;
+  const tabSwitchLimit = Number(securitySettings.tabSwitchLimit || 0);
+  const tabSwitchWarnAt = Number(securitySettings.tabSwitchWarnAt || 1);
   const tabSwitchAction = securitySettings.tabSwitchAction || 'warn';
   const autoSubmitOnEnd = securitySettings.autoSubmitOnEnd !== false;
-  const restrictNavigation = boolSetting(securitySettings, ['restrictNavigation'], false);
+  const restrictNavigation = Boolean(securitySettings.restrictNavigation);
   const allowSectionReview = securitySettings.allowSectionReview !== false;
   const fullscreenTimeoutSec = Number(securitySettings.fullscreenTimeoutSec || 0);
-  const idleDetection = boolSetting(securitySettings, ['idleDetection'], false);
+  const idleDetection = Boolean(securitySettings.idleDetection);
   const idleThresholdMs = Math.max(1, Number(securitySettings.idleThresholdMin || 5)) * 60 * 1000;
   const idleAction = securitySettings.idleAction || 'warn';
-  const cameraMonitorIntervalMs = Math.max(800, numberSetting(securitySettings, ['cameraMonitorIntervalMs'], 1200));
   const duplicateTabCount = detectedTabs.filter((tab) => !tab.current).length;
   const totalViolations = tabSwitches + fullscreenExits + cameraFlags + copyPasteCount;
   const forcePauseActive = isPaused && phase === 'validation' && !isSubmitted;
@@ -284,11 +258,11 @@ export default function AssessmentAttempt() {
   const setupSteps = useMemo(() => {
     const steps = [{ id: 1, key: 'environment', title: 'Clean Environment Check', icon: <Monitor className="h-4 w-4" /> }];
     if (cameraRequired) steps.push({ id: steps.length + 1, key: 'camera', title: 'Camera Verification', icon: <Video className="h-4 w-4" /> });
-    if (requiredSetupSteps.includes('location')) steps.push({ id: steps.length + 1, key: 'location', title: 'Location Permission', icon: <MapPin className="h-4 w-4" /> });
+    steps.push({ id: steps.length + 1, key: 'location', title: 'Location Permission', icon: <MapPin className="h-4 w-4" /> });
     if (fullscreenRequired) steps.push({ id: steps.length + 1, key: 'fullscreen', title: 'Enable Full Screen', icon: <Maximize className="h-4 w-4" /> });
     steps.push({ id: steps.length + 1, key: 'final', title: 'Final Verification', icon: <ShieldCheck className="h-4 w-4" /> });
     return steps;
-  }, [cameraRequired, fullscreenRequired, requiredSetupSteps]);
+  }, [cameraRequired, fullscreenRequired]);
   const setupStepIsDone = useCallback((key) => {
     if (key === 'environment') return validationState.environment;
     if (key === 'camera') return validationState.camera && validationState.face;
@@ -319,12 +293,7 @@ export default function AssessmentAttempt() {
   const currentSectionForLayout = assessment?.sections?.[activeSection];
   const isCodingForLayout = currentSectionForLayout?.type === 'coding';
   const cameraStatusLine = useMemo(() => {
-    if (!cameraRequired) {
-      return {
-        ok: true,
-        text: 'Camera monitoring is off for this assessment.',
-      };
-    }
+    if (!cameraRequired) return null;
     if (cameraIndicator === 'warning' || securityStatus.cameraActive === false) {
       return {
         ok: false,
@@ -342,38 +311,6 @@ export default function AssessmentAttempt() {
       text: 'Camera monitoring waiting for a stable camera feed.',
     };
   }, [cameraRequired, cameraIndicator, securityStatus.cameraActive, securityNotice]);
-  const copyPasteStatusLine = useMemo(() => {
-    if (!copyBlockEnabled) {
-      return {
-        ok: true,
-        enabled: false,
-        text: 'Copy-paste restriction is off for this assessment.',
-      };
-    }
-    return {
-      ok: copyPasteCount === 0,
-      enabled: true,
-      text: copyPasteCount > 0
-        ? `Copy/paste violation detected ${copyPasteCount} time${copyPasteCount === 1 ? '' : 's'}.`
-        : 'Copy, paste, cut, drag/drop, and restricted shortcuts are blocked.',
-    };
-  }, [copyBlockEnabled, copyPasteCount]);
-  const tabStatusLine = useMemo(() => {
-    if (!tabGuardEnabled) {
-      return {
-        ok: true,
-        enabled: false,
-        text: 'Tab switching monitor is off for this assessment.',
-      };
-    }
-    return {
-      ok: tabSwitches === 0 && securityStatus.tabActive !== false,
-      enabled: true,
-      text: tabSwitches > 0
-        ? `Tab switch violation detected ${tabSwitches} time${tabSwitches === 1 ? '' : 's'}.`
-        : 'Stay on this assessment tab to avoid a violation.',
-    };
-  }, [tabGuardEnabled, tabSwitches, securityStatus.tabActive]);
 
   const answersArray = useMemo(() => (
     Object.entries(answersMap).map(([key, value]) => {
@@ -457,11 +394,6 @@ export default function AssessmentAttempt() {
   useEffect(() => {
     pauseCountRef.current = pauseCount;
   }, [pauseCount]);
-
-  useEffect(() => {
-    phaseRef.current = phase;
-    console.log('[Security] PHASE:', phase, '| secureActive:', phase === "active" && !isSubmitted);
-  }, [phase, isSubmitted]);
   const clampLeftWidth = (value) => {
     if (!splitContainerRef.current) return value;
     const containerWidth = splitContainerRef.current.getBoundingClientRect().width;
@@ -545,10 +477,9 @@ export default function AssessmentAttempt() {
   const showSecurityPopup = useCallback((type, message, meta = {}, result = {}) => {
     const now = Date.now();
     const popupKey = `${type}:${meta.source || 'default'}`;
-    const throttleMs = CAMERA_VIOLATION_TYPES.has(type) ? 12000 : 500;
+    const throttleMs = CAMERA_VIOLATION_TYPES.has(type) ? 12000 : 1200;
     if (now - (popupThrottleRef.current[popupKey] || 0) < throttleMs) return;
 
-    // Only skip non-persistent camera violations; tab/copy/etc always show
     if (CAMERA_VIOLATION_TYPES.has(type) && !meta.persistent) return;
 
     popupThrottleRef.current[popupKey] = now;
@@ -596,11 +527,7 @@ export default function AssessmentAttempt() {
   }, [tabSwitchAction, tabSwitches, tabSwitchLimit]);
 
   const recordViolation = useCallback(async (type, message, meta = {}) => {
-    console.log('[Security] recordViolation called:', type, '| assessment:', assessment?._id, '| isSubmitted:', isSubmitted);
-    if (isSubmitted || !assessment?._id || !CSE_VALID_VIOLATIONS.has(type)) {
-      console.warn('[Security] recordViolation BLOCKED — isSubmitted:', isSubmitted, '| hasId:', Boolean(assessment?._id), '| validType:', CSE_VALID_VIOLATIONS.has(type));
-      return null;
-    }
+    if (isSubmitted || !assessment?._id || !CSE_VALID_VIOLATIONS.has(type)) return null;
     const now = Date.now();
     const throttleKey = `${type}:${meta.source || meta.reason || 'default'}:${meta.escalated ? 'escalated' : 'base'}`;
     const throttleMs = type === 'tab_switch' || meta.escalated ? 700 : 3500;
@@ -758,8 +685,6 @@ export default function AssessmentAttempt() {
       setViolations(data.submission?.violations || []);
       setLocationData(data.submission?.securitySetup?.location || null);
       syncCompletedSecuritySteps(data.completedSecuritySteps || []);
-      setRequiredSetupSteps(data.requiredSecuritySteps || ['environment', 'final']);
-      console.log('[Security] requiredSecuritySteps from backend:', data.requiredSecuritySteps);
 
       const shouldSkipValidation = Boolean(
         data.submission?.status === 'submitted'
@@ -936,19 +861,11 @@ export default function AssessmentAttempt() {
   }, [secureActive, tabGuardEnabled, tabSwitchWarnAt, tabSwitches, securitySettings.maxWarnings, totalViolations, toast]);
 
   useEffect(() => {
-    if (!tabGuardEnabled) return undefined;
+    if (!secureActive || !tabGuardEnabled) return undefined;
     const reportFocusLoss = (source) => {
       const active = document.hasFocus() && !document.hidden;
       setSecurityStatus((prev) => ({ ...prev, tabActive: active }));
-      if (!active && phaseRef.current === 'active' && !isSubmitted) {
-        console.log('[Security] Tab switch detected. Source:', source);
-        showSecurityPopup('tab_switch', 'Tab switch or focus loss detected. Return to the assessment window.', {
-          limit: tabSwitchLimit || null,
-          warnAt: tabSwitchWarnAt || null,
-          action: tabSwitchAction,
-          nextCount: tabSwitches + 1,
-          source,
-        });
+      if (!active) {
         void recordViolation('tab_switch', 'Tab switch or focus loss detected. Return to the assessment window.', {
           limit: tabSwitchLimit || null,
           warnAt: tabSwitchWarnAt || null,
@@ -961,14 +878,8 @@ export default function AssessmentAttempt() {
     const handleVisibility = () => reportFocusLoss('visibilitychange');
     const handleBlur = () => reportFocusLoss('window_blur');
     const handleFocus = () => {
-      setSecurityPopup((prev) => (
-        prev.open && prev.title.toLowerCase().includes('tab switch')
-          ? { ...prev, open: false }
-          : prev
-      ));
       setSecurityStatus((prev) => ({ ...prev, tabActive: document.hasFocus() && !document.hidden }));
     };
-    console.log('[Security] Tab switch listeners attached. tabGuardEnabled:', tabGuardEnabled);
     document.addEventListener('visibilitychange', handleVisibility);
     window.addEventListener('blur', handleBlur);
     window.addEventListener('focus', handleFocus);
@@ -977,7 +888,7 @@ export default function AssessmentAttempt() {
       window.removeEventListener('blur', handleBlur);
       window.removeEventListener('focus', handleFocus);
     };
-  }, [tabGuardEnabled, tabSwitchLimit, tabSwitchWarnAt, tabSwitchAction, tabSwitches, isSubmitted, recordViolation, showSecurityPopup]);
+  }, [secureActive, tabGuardEnabled, tabSwitchLimit, tabSwitchWarnAt, tabSwitchAction, tabSwitches, recordViolation]);
 
   useEffect(() => {
     if (!secureActive || !preventMultipleTabs) return;
@@ -992,22 +903,15 @@ export default function AssessmentAttempt() {
   }, [secureActive, preventMultipleTabs, detectedTabs, recordViolation]);
 
   useEffect(() => {
-    if (!copyBlockEnabled) return undefined;
+    if (!secureActive || !copyBlockEnabled) return undefined;
     const stopRestrictedEvent = (event, type, message, meta = {}) => {
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation?.();
-      if (phaseRef.current === 'active' && !isSubmitted) {
-        console.log('[Security] Copy-paste blocked. Type:', type);
-        showSecurityPopup(type, message, {
-          source: event.type,
-          ...meta,
-        });
-        void recordViolation(type, message, {
-          source: event.type,
-          ...meta,
-        });
-      }
+      void recordViolation(type, message, {
+        source: event.type,
+        ...meta,
+      });
     };
     const handleCopy = (event) => {
       stopRestrictedEvent(event, 'copy_paste', 'Copy action blocked by assessment rules.');
@@ -1052,31 +956,25 @@ export default function AssessmentAttempt() {
       }
     };
     const capture = true;
-    const targets = [window, document, document.body].filter(Boolean);
-    console.log('[Security] Copy-paste listeners attached. copyBlockEnabled:', copyBlockEnabled);
-    targets.forEach((target) => {
-      target.addEventListener('copy', handleCopy, capture);
-      target.addEventListener('cut', handleCut, capture);
-      target.addEventListener('paste', handlePaste, capture);
-      target.addEventListener('contextmenu', handleContextMenu, capture);
-      target.addEventListener('drop', handleDrop, capture);
-      target.addEventListener('dragstart', handleDragStart, capture);
-      target.addEventListener('beforeinput', handleBeforeInput, capture);
-      target.addEventListener('keydown', handleKeydown, capture);
-    });
+    document.addEventListener('copy', handleCopy, capture);
+    document.addEventListener('cut', handleCut, capture);
+    document.addEventListener('paste', handlePaste, capture);
+    document.addEventListener('contextmenu', handleContextMenu, capture);
+    document.addEventListener('drop', handleDrop, capture);
+    document.addEventListener('dragstart', handleDragStart, capture);
+    document.addEventListener('beforeinput', handleBeforeInput, capture);
+    document.addEventListener('keydown', handleKeydown, capture);
     return () => {
-      targets.forEach((target) => {
-        target.removeEventListener('copy', handleCopy, capture);
-        target.removeEventListener('cut', handleCut, capture);
-        target.removeEventListener('paste', handlePaste, capture);
-        target.removeEventListener('contextmenu', handleContextMenu, capture);
-        target.removeEventListener('drop', handleDrop, capture);
-        target.removeEventListener('dragstart', handleDragStart, capture);
-        target.removeEventListener('beforeinput', handleBeforeInput, capture);
-        target.removeEventListener('keydown', handleKeydown, capture);
-      });
+      document.removeEventListener('copy', handleCopy, capture);
+      document.removeEventListener('cut', handleCut, capture);
+      document.removeEventListener('paste', handlePaste, capture);
+      document.removeEventListener('contextmenu', handleContextMenu, capture);
+      document.removeEventListener('drop', handleDrop, capture);
+      document.removeEventListener('dragstart', handleDragStart, capture);
+      document.removeEventListener('beforeinput', handleBeforeInput, capture);
+      document.removeEventListener('keydown', handleKeydown, capture);
     };
-  }, [copyBlockEnabled, blockRightClick, isSubmitted, recordViolation, showSecurityPopup]);
+  }, [secureActive, copyBlockEnabled, blockRightClick, recordViolation]);
 
   useEffect(() => {
     if (!secureActive || !idleDetection) return undefined;
@@ -1233,16 +1131,6 @@ export default function AssessmentAttempt() {
     };
   }, []);
 
-  const attachStream = (stream) => {
-    const videos = [validationVideoRef.current, monitorVideoRef.current];
-    videos.forEach((video) => {
-      if (video && video.srcObject !== stream) {
-        video.srcObject = stream;
-        video.play().catch(() => {});
-      }
-    });
-  };
-
   useEffect(() => {
     if (!secureActive || !cameraRequired) {
       setCameraIndicator('idle');
@@ -1251,58 +1139,11 @@ export default function AssessmentAttempt() {
     }
     let intervalId;
     let cancelled = false;
-    let detachTrackListeners = () => {};
     const video = monitorVideoRef.current;
     const canvas = monitorCanvasRef.current;
     const ctx = canvas?.getContext('2d');
-    const attachTrackListeners = (stream) => {
-      const [track] = stream?.getVideoTracks?.() || [];
-      if (!track) return () => {};
-      const handleTrackIssue = () => {
-        setCameraIndicator('warning');
-        setSecurityStatus((prev) => ({ ...prev, cameraActive: false }));
-        void recordViolation('camera_loss', 'Camera feed stopped or became unavailable.', {
-          source: 'camera_track_state',
-          persistent: true,
-        });
-      };
-      const handleTrackLive = () => {
-        setCameraIndicator('normal');
-        setSecurityStatus((prev) => ({ ...prev, cameraActive: true }));
-      };
-      track.addEventListener?.('ended', handleTrackIssue);
-      track.addEventListener?.('mute', handleTrackIssue);
-      track.addEventListener?.('unmute', handleTrackLive);
-      return () => {
-        track.removeEventListener?.('ended', handleTrackIssue);
-        track.removeEventListener?.('mute', handleTrackIssue);
-        track.removeEventListener?.('unmute', handleTrackLive);
-      };
-    };
     if (streamRef.current) {
       attachStream(streamRef.current);
-      detachTrackListeners = attachTrackListeners(streamRef.current);
-    } else if (navigator.mediaDevices?.getUserMedia) {
-      navigator.mediaDevices.getUserMedia({ video: true })
-        .then((stream) => {
-          if (cancelled) {
-            stream.getTracks().forEach((track) => track.stop());
-            return;
-          }
-          streamRef.current = stream;
-          attachStream(stream);
-          detachTrackListeners = attachTrackListeners(stream);
-          setCameraIndicator('normal');
-          setSecurityStatus((prev) => ({ ...prev, cameraActive: true }));
-        })
-        .catch(() => {
-          setCameraIndicator('warning');
-          setSecurityStatus((prev) => ({ ...prev, cameraActive: false }));
-          void recordViolation('camera_loss', 'Camera permission or camera feed is not available.', {
-            source: 'camera_monitor_start',
-            persistent: true,
-          });
-        });
     }
     if (!faceDetectorRef.current && typeof window !== 'undefined' && 'FaceDetector' in window) {
       try {
@@ -1361,11 +1202,6 @@ export default function AssessmentAttempt() {
         emitCameraViolation('camera_loss', 'Camera feed is not available.');
         return;
       }
-      const [track] = streamRef.current.getVideoTracks?.() || [];
-      if (!track || track.readyState !== 'live' || track.muted) {
-        emitCameraViolation('camera_loss', 'Camera feed is not available.');
-        return;
-      }
       if (video.readyState < 2) return;
       if (faceDetectorRef.current) {
         try {
@@ -1409,14 +1245,13 @@ export default function AssessmentAttempt() {
     };
     intervalId = setInterval(() => {
       void sampleFrame();
-    }, cameraMonitorIntervalMs);
+    }, 1200);
     void sampleFrame();
     return () => {
       cancelled = true;
       if (intervalId) clearInterval(intervalId);
-      detachTrackListeners();
     };
-  }, [secureActive, cameraRequired, cameraMonitorIntervalMs, recordViolation]);
+  }, [secureActive, cameraRequired, recordViolation]);
 
   useEffect(() => {
     if (!secureActive) return undefined;
@@ -1482,6 +1317,16 @@ export default function AssessmentAttempt() {
       });
     }
     return Promise.resolve();
+  };
+
+  const attachStream = (stream) => {
+    const videos = [validationVideoRef.current, monitorVideoRef.current];
+    videos.forEach((video) => {
+      if (video && video.srcObject !== stream) {
+        video.srcObject = stream;
+        video.play().catch(() => {});
+      }
+    });
   };
 
   const ensureCamera = async () => {
@@ -1673,7 +1518,7 @@ export default function AssessmentAttempt() {
     const focusOk = document.hasFocus() && !document.hidden;
     const tabsOk = !preventMultipleTabs || detectedTabs.filter((tab) => !tab.current).length === 0;
     const cameraOk = !cameraRequired || (validationState.camera && validationState.face);
-    const locationOk = !requiredSetupSteps.includes('location') || Boolean(validationState.location);
+    const locationOk = Boolean(validationState.location);
     const ok = fullscreenOk && focusOk && tabsOk && cameraOk && locationOk;
     setValidationState((prev) => ({
       ...prev,
@@ -2180,6 +2025,9 @@ export default function AssessmentAttempt() {
                   <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
                     {saving ? 'Saving progress...' : 'Progress auto-saved'}
                   </div>
+                  <div className="text-[11px] text-slate-500 dark:text-gray-400">
+                    Violations: {totalViolations} - Score: {violationScore}
+                  </div>
                 </div>
               </div>
 
@@ -2217,12 +2065,6 @@ export default function AssessmentAttempt() {
       enabled: cameraRequired,
     },
     {
-      key: 'copy',
-      label: 'Copy/Paste',
-      ok: true,
-      enabled: copyBlockEnabled,
-    },
-    {
       key: 'tab',
       label: 'Tab',
       ok: !tabGuardEnabled || securityStatus.tabActive,
@@ -2235,14 +2077,22 @@ export default function AssessmentAttempt() {
       enabled: idleDetection,
     },
   ];
-  const securityFooterLines = [
-    copyPasteStatusLine,
-    tabStatusLine,
-    cameraStatusLine,
-  ];
 
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900 lg:h-screen lg:overflow-hidden">
+      {!showAssessmentWorkspace && (
+        <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 text-center dark:bg-gray-950">
+          <div className="max-w-md">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-300">
+              <ShieldCheck className="h-6 w-6" />
+            </div>
+            <h1 className="mt-4 text-xl font-semibold text-slate-900 dark:text-white">Secure assessment setup</h1>
+            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-gray-300">
+              Complete the required checks and review the rules before the test timer starts.
+            </p>
+          </div>
+        </div>
+      )}
 
       {showAssessmentWorkspace && (
       <>
@@ -2335,7 +2185,7 @@ export default function AssessmentAttempt() {
         </div>
       </header>
       {isCoding ? (
-        <div className="w-full px-3 py-4 pb-28 md:px-4 lg:px-0 lg:h-[calc(100vh-84px)] lg:overflow-hidden">
+        <div className="w-full px-3 py-4 pb-12 md:px-4 lg:px-0 lg:h-[calc(100vh-84px)] lg:overflow-hidden">
           <div className="flex h-full flex-col gap-4 lg:flex-row lg:min-h-0">
             {questionNavigatorPanel}
             <div className="flex min-h-0 flex-1 flex-col lg:min-h-0">
@@ -2475,12 +2325,6 @@ export default function AssessmentAttempt() {
                         onSubmit={handleSubmitCoding}
                         onReset={handleResetCoding}
                         showToolbar={false}
-                        blockClipboard={copyBlockEnabled && secureActive}
-                        onSecurityEvent={(type, message, meta = {}) => {
-                          if (!copyBlockEnabled || !secureActive) return;
-                          showSecurityPopup(type, message, meta);
-                          void recordViolation(type, message, meta);
-                        }}
                       />
                     );
                   })()}
@@ -2490,7 +2334,7 @@ export default function AssessmentAttempt() {
           </div>
         </div>
       ) : (
-        <div className="w-full px-3 py-4 pb-28 md:px-4 lg:px-6 lg:h-[calc(100vh-84px)] lg:overflow-hidden">
+        <div className="w-full px-3 py-4 pb-12 md:px-4 lg:px-6 lg:h-[calc(100vh-84px)] lg:overflow-hidden">
           <div className="flex h-full flex-col gap-4 lg:flex-row lg:min-h-0">
             {questionNavigatorPanel}
             <section className="flex min-h-0 flex-1 flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900 lg:min-h-0 lg:overflow-y-auto">
@@ -2931,36 +2775,35 @@ export default function AssessmentAttempt() {
         </div>
       )}
 
-      {securityPopup.open && !isSubmitted && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(3px)', padding: '16px' }}>
-          <div style={{
-            width: '100%', maxWidth: 420, borderRadius: 20,
-            background: securityPopup.tone === 'danger' ? '#fff1f2' : '#fffbeb',
-            border: `1.5px solid ${securityPopup.tone === 'danger' ? '#fecdd3' : '#fde68a'}`,
-            boxShadow: '0 24px 64px rgba(0,0,0,0.20)',
-            padding: '28px 28px 22px',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-              <span style={{ fontSize: 22 }}>{securityPopup.tone === 'danger' ? '🚨' : '⚠️'}</span>
-              <span style={{ fontSize: 15, fontWeight: 700, color: securityPopup.tone === 'danger' ? '#9f1239' : '#92400e' }}>
-                {securityPopup.title}
-              </span>
+      {securityPopup.open && secureActive && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/35 px-4 backdrop-blur-[1px]">
+          <div className={`w-full max-w-sm rounded-2xl border bg-white p-4 shadow-2xl dark:bg-gray-900 ${
+            securityPopup.tone === 'danger'
+              ? 'border-rose-200 dark:border-rose-800'
+              : 'border-amber-200 dark:border-amber-800'
+          }`}>
+            <div className={`flex items-center gap-2 text-sm font-semibold ${
+              securityPopup.tone === 'danger'
+                ? 'text-rose-600 dark:text-rose-300'
+                : 'text-amber-600 dark:text-amber-300'
+            }`}>
+              <AlertTriangle className="h-4 w-4" />
+              {securityPopup.title}
             </div>
-            <p style={{ fontSize: 13, color: '#475569', lineHeight: 1.6, margin: '0 0 20px' }}>
+            <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-gray-300">
               {securityPopup.message}
             </p>
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <div className="mt-4 flex justify-end">
               <button
                 type="button"
                 onClick={() => setSecurityPopup((prev) => ({ ...prev, open: false }))}
-                style={{
-                  borderRadius: 10, padding: '8px 24px', fontSize: 13, fontWeight: 600,
-                  cursor: 'pointer', border: 'none',
-                  background: securityPopup.tone === 'danger' ? '#e11d48' : '#d97706',
-                  color: '#fff',
-                }}
+                className={`rounded-xl px-4 py-2 text-xs font-semibold text-white ${
+                  securityPopup.tone === 'danger'
+                    ? 'bg-rose-600 hover:bg-rose-500'
+                    : 'bg-amber-600 hover:bg-amber-500'
+                }`}
               >
-                Understood
+                OK
               </button>
             </div>
           </div>
@@ -3168,29 +3011,52 @@ export default function AssessmentAttempt() {
         </div>
       )}
 
-      {/* Slim camera status indicator — single vertical line on the right edge */}
-      {cameraRequired && !isSubmitted && phase === 'active' && (
-        <div
-          title={cameraStatusLine.ok ? 'Camera: All clear' : 'Camera: Violation detected'}
-          style={{
-            position: 'fixed',
-            top: 0,
-            right: 0,
-            width: 5,
-            height: '100vh',
-            zIndex: 9998,
-            background: cameraStatusLine.ok ? '#22c55e' : '#ef4444',
-            transition: 'background 0.6s ease',
-            boxShadow: cameraStatusLine.ok
-              ? '0 0 12px rgba(34,197,94,0.55)'
-              : '0 0 16px rgba(239,68,68,0.7)',
-          }}
-        />
-      )}
-      {cameraRequired && !isSubmitted && (
+      {secureActive && (
         <>
-          <video ref={monitorVideoRef} className="fixed -left-[9999px] h-1 w-1 opacity-0" muted playsInline autoPlay />
-          <canvas ref={monitorCanvasRef} className="fixed -left-[9999px] h-1 w-1 opacity-0" />
+          <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 shadow-lg backdrop-blur dark:border-gray-700 dark:bg-gray-900/95">
+            {cameraStatusLine && (
+              <div className={`${cameraStatusLine.ok ? 'bg-emerald-500 text-white' : 'bg-rose-600 text-white'}`}>
+                <div className="mx-auto flex max-w-7xl items-center gap-2 px-3 py-1 text-[11px] font-semibold md:px-4">
+                  <span className={`h-2 w-2 rounded-full ${cameraStatusLine.ok ? 'bg-white' : 'bg-rose-100'}`} />
+                  <span className="truncate">{cameraStatusLine.text}</span>
+                </div>
+              </div>
+            )}
+            <div className="px-3 py-2">
+            <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                {securityStatusItems.map((item) => (
+                  <span
+                    key={item.key}
+                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-semibold ${
+                      item.ok
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300'
+                        : 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300'
+                    }`}
+                  >
+                    <span className={`h-2 w-2 rounded-full ${item.ok ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                    {item.label}: {item.enabled ? (item.ok ? 'OK' : 'Violated') : 'Off'}
+                  </span>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 font-semibold text-slate-700 dark:text-gray-200">
+                {securityNotice && <span className="max-w-[48rem] truncate text-rose-600 dark:text-rose-300">{securityNotice}</span>}
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 dark:border-gray-700 dark:bg-gray-800">
+                  Violations {totalViolations}
+                </span>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 dark:border-gray-700 dark:bg-gray-800">
+                  Score {violationScore}
+                </span>
+              </div>
+            </div>
+            </div>
+          </div>
+          {cameraRequired && (
+            <>
+              <video ref={monitorVideoRef} className="fixed -left-[9999px] h-1 w-1 opacity-0" muted playsInline autoPlay />
+              <canvas ref={monitorCanvasRef} className="fixed -left-[9999px] h-1 w-1 opacity-0" />
+            </>
+          )}
         </>
       )}
     </div>

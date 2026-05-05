@@ -237,22 +237,11 @@ export default function CreateAssessment() {
   const [showCustomTypeInput, setShowCustomTypeInput] = useState(false);
   const [newCustomTypeInput, setNewCustomTypeInput] = useState('');
   const [newCustomInstruction, setNewCustomInstruction] = useState('');
-  const [availableDraft, setAvailableDraft] = useState(null);
 
   const autoSaveRef = useRef(null);
   const draftLoadedRef = useRef(false);
   const isSavingRef = useRef(false);
   const assessmentKey = currentId || 'new';
-
-  const applyAssessmentDraft = (draft) => {
-    if (!draft) return;
-    setForm((prev) => ({ ...prev, ...(draft.form || {}) }));
-    setSections(Array.isArray(draft.sections) ? draft.sections : []);
-    setSelectedStudents(Array.isArray(draft.selectedStudents) ? draft.selectedStudents : []);
-    setCsvState(draft.csvState || emptyCsvState);
-    if (draft.version) setVersion(draft.version);
-    setDirty(false);
-  };
 
   const updateForm = (updates) => {
     setForm((prev) => ({ ...prev, ...updates }));
@@ -448,7 +437,11 @@ export default function CreateAssessment() {
     if (id || draftLoadedRef.current) return;
     const draft = loadAssessmentDraft(assessmentKey);
     if (draft) {
-      setAvailableDraft(draft);
+      setForm((prev) => ({ ...prev, ...(draft.form || {}) }));
+      setSections(Array.isArray(draft.sections) ? draft.sections : []);
+      setSelectedStudents(Array.isArray(draft.selectedStudents) ? draft.selectedStudents : []);
+      setCsvState(draft.csvState || emptyCsvState);
+      if (draft.version) setVersion(draft.version);
     }
     draftLoadedRef.current = true;
   }, [assessmentKey, id]);
@@ -908,20 +901,6 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
   const handleRemoveCustomInstruction = (idx) => {
     const next = (form.customInstructions || []).filter((_, i) => i !== idx);
     updateForm({ customInstructions: next });
-  };
-
-  const handleRestorePreviousDraft = () => {
-    if (!availableDraft) return;
-    applyAssessmentDraft(availableDraft);
-    toast.success('Previous draft loaded.');
-    setAvailableDraft(null);
-  };
-
-  const handleDismissPreviousDraft = () => {
-    if (!availableDraft) return;
-    clearAssessmentDraft(assessmentKey);
-    setAvailableDraft(null);
-    toast.success('Previous draft cleared. Starting with a blank assessment.');
   };
 
   const stepContent = {
@@ -1605,37 +1584,6 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
           </div>
           <div className="text-xs font-semibold">Status: {form.lifecycleStatus === 'published' ? 'Published' : 'Draft'}</div>
         </div>
-
-        {!id && availableDraft && (
-          <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-100 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-start gap-3">
-              <Clock className="mt-0.5 h-4 w-4 shrink-0" />
-              <div>
-                <div className="font-semibold">Previous draft found</div>
-                <div className="mt-1 text-xs text-amber-800/90 dark:text-amber-200/90">
-                  New assessment now starts blank by default. Load the previous draft only if you want to continue editing it.
-                </div>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={handleRestorePreviousDraft}
-                className="inline-flex items-center gap-2 rounded-xl bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-500"
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                Load Previous Draft
-              </button>
-              <button
-                type="button"
-                onClick={handleDismissPreviousDraft}
-                className="rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-transparent dark:text-amber-200 dark:hover:bg-amber-900/30"
-              >
-                Start Blank
-              </button>
-            </div>
-          </div>
-        )}
 
         <div className="mt-6 flex flex-wrap gap-2">
           {steps.map((step) => (

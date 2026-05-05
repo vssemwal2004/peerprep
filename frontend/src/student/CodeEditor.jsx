@@ -97,8 +97,6 @@ export default function CodeEditor({
   onSubmit,
   onReset,
   showToolbar = true,
-  blockClipboard = false,
-  onSecurityEvent = null,
 }) {
   const rootRef = useRef(null);
   const toolbarRef = useRef(null);
@@ -427,8 +425,6 @@ export default function CodeEditor({
           value={code}
           onChange={onCodeChange}
           height="100%"
-          blockClipboard={blockClipboard}
-          onSecurityEvent={onSecurityEvent}
         />
       </div>
 
