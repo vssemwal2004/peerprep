@@ -375,6 +375,7 @@ export const api = {
   beginStudentAssessment: (id) => request(`/student/assessment/${id}/begin`, { method: 'POST' }),
   getStudentAssessment: (id) => request(`/student/assessment/${id}`),
   logStudentAssessmentViolation: (id, body) => request(`/student/assessment/${id}/violations`, { method: 'POST', body }),
+  sendStudentAssessmentHeartbeat: (id, body) => request(`/student/assessment/${id}/heartbeat`, { method: 'POST', body, timeoutMs: 6000 }),
   submitStudentAssessment: (body) => request('/student/assessment/submit', { method: 'POST', body }),
   getStudentAssessmentRules: () => request('/student/assessment/rules', { skipCache: true }),
   getSubmissionViolations: (submissionId) => request(`/admin/assessment/submissions/${submissionId}/violations`, { skipCache: true }),

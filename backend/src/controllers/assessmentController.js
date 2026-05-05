@@ -1593,6 +1593,10 @@ export async function submitAssessment(req, res) {
       fullscreenExits,
       copyPasteCount,
       cameraFlags,
+      violationScore,
+      pauseCount,
+      lastPauseAt,
+      securityHeartbeat,
       violations,
     } = req.body || {};
 
@@ -1668,6 +1672,15 @@ export async function submitAssessment(req, res) {
     submission.fullscreenExits = typeof fullscreenExits === 'number' ? fullscreenExits : submission.fullscreenExits;
     submission.copyPasteCount = typeof copyPasteCount === 'number' ? copyPasteCount : submission.copyPasteCount;
     submission.cameraFlags = typeof cameraFlags === 'number' ? cameraFlags : submission.cameraFlags;
+    submission.violationScore = typeof violationScore === 'number' ? Math.max(submission.violationScore || 0, violationScore) : submission.violationScore;
+    submission.pauseCount = typeof pauseCount === 'number' ? Math.max(submission.pauseCount || 0, pauseCount) : submission.pauseCount;
+    if (lastPauseAt) {
+      const parsedLastPauseAt = new Date(lastPauseAt);
+      if (!Number.isNaN(parsedLastPauseAt.getTime())) submission.lastPauseAt = parsedLastPauseAt;
+    }
+    if (securityHeartbeat && typeof securityHeartbeat === 'object') {
+      submission.securityHeartbeat = securityHeartbeat;
+    }
     if (Array.isArray(violations) && violations.length > 0) {
       submission.violations = violations;
     }
@@ -1996,42 +2009,153 @@ export async function exportAssessmentReports(req, res) {
 
 
 
+function numberSetting(settings, keys, fallback = null) {
+  for (const key of keys) {
+    const value = settings?.[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+  }
+  return fallback;
+}
+
+function actionSetting(settings, keys, fallback = 'warn') {
+  for (const key of keys) {
+    const value = settings?.[key];
+    if (['warn', 'pause', 'autosubmit', 'terminate'].includes(value)) {
+      return value === 'terminate' ? 'autosubmit' : value;
+    }
+  }
+  return fallback;
+}
+
+function violationWeight(settings = {}, type = 'other') {
+  const weights = settings.violationWeights || settings.violationWeight || {};
+  const camelByType = {
+    tab_switch: 'tabSwitch',
+    fullscreen_exit: 'fullscreen',
+    camera_loss: 'camera',
+    camera_no_face: 'camera',
+    multiple_faces: 'camera',
+    face_out_of_frame: 'camera',
+    copy_paste: 'copyPaste',
+    context_menu: 'copyPaste',
+    duplicate_tab: 'duplicateTab',
+    idle: 'idle',
+    heartbeat_failure: 'heartbeat',
+    other: 'other',
+  };
+  const camel = camelByType[type] || type;
+  const configured = numberSetting(settings, [
+    `${camel}ViolationWeight`,
+    `${camel}Weight`,
+    `${type}Weight`,
+  ], null);
+  const weighted = Number(weights?.[type] ?? weights?.[camel]);
+  if (configured !== null) return Math.max(0, configured);
+  if (Number.isFinite(weighted)) return Math.max(0, weighted);
+  return 1;
+}
+
+function decideViolationAction({ settings = {}, type, meta = {}, submission }) {
+  const totalWarnings = (submission.tabSwitches || 0)
+    + (submission.fullscreenExits || 0)
+    + (submission.cameraFlags || 0)
+    + (submission.copyPasteCount || 0);
+  const score = submission.violationScore || 0;
+  const maxWarnings = numberSetting(settings, ['maxWarnings'], null);
+  const warnScore = numberSetting(settings, ['violationWarnScore', 'warningScore', 'warnScore'], null);
+  const pauseScore = numberSetting(settings, ['violationPauseScore', 'pauseScore'], null);
+  const autoScore = numberSetting(settings, ['violationAutoSubmitScore', 'autoSubmitScore'], null);
+  const autoSubmitEnabled = settings.autoSubmitOnViolation === true;
+
+  if (autoSubmitEnabled && maxWarnings !== null && totalWarnings >= maxWarnings) return 'autosubmit';
+  if (!autoSubmitEnabled && maxWarnings !== null && totalWarnings >= maxWarnings) return 'pause';
+  if (autoScore !== null && score >= autoScore) return 'autosubmit';
+  if (pauseScore !== null && score >= pauseScore) return 'pause';
+  if (warnScore !== null && score >= warnScore) return 'warn';
+
+  if (type === 'tab_switch') {
+    const tabLimit = numberSetting(settings, ['tabSwitchLimit'], null);
+    if (tabLimit !== null && submission.tabSwitches >= tabLimit) {
+      return actionSetting(settings, ['tabSwitchAction'], autoSubmitEnabled ? 'autosubmit' : 'pause');
+    }
+    const tabWarnAt = numberSetting(settings, ['tabSwitchWarnAt'], null);
+    if (tabWarnAt !== null && submission.tabSwitches >= tabWarnAt) return 'warn';
+  }
+
+  if (type === 'idle') {
+    return actionSetting(settings, ['idleAction'], 'warn');
+  }
+
+  if (type === 'copy_paste' || type === 'context_menu') {
+    return actionSetting(settings, ['copyPasteAction'], 'warn');
+  }
+
+  if (type === 'fullscreen_exit' && meta?.escalated) {
+    return actionSetting(settings, ['fullscreenAction'], autoSubmitEnabled ? 'autosubmit' : 'pause');
+  }
+
+  if (['camera_loss', 'camera_no_face', 'multiple_faces', 'face_out_of_frame'].includes(type) && meta?.persistent) {
+    return actionSetting(settings, ['cameraAction'], autoSubmitEnabled ? 'autosubmit' : 'pause');
+  }
+
+  if (type === 'duplicate_tab') {
+    return actionSetting(settings, ['duplicateTabAction'], autoSubmitEnabled ? 'autosubmit' : 'pause');
+  }
+
+  if (type === 'heartbeat_failure') {
+    return actionSetting(settings, ['heartbeatAction'], 'pause');
+  }
+
+  return 'warn';
+}
+
 export async function logStudentViolation(req, res) {
   try {
     const { id } = req.params;
     const studentId = req.user._id;
     const { type, message, meta } = req.body || {};
-    const VALID = ['tab_switch', 'fullscreen_exit', 'camera_loss', 'copy_paste', 'context_menu', 'auto_submit', 'other'];
+    const VALID = [
+      'tab_switch',
+      'fullscreen_exit',
+      'camera_loss',
+      'camera_no_face',
+      'multiple_faces',
+      'face_out_of_frame',
+      'copy_paste',
+      'context_menu',
+      'duplicate_tab',
+      'idle',
+      'heartbeat_failure',
+      'auto_submit',
+      'other',
+    ];
     if (!type || !VALID.includes(type)) return res.status(400).json({ error: 'Valid violation type required.' });
     const submission = await AssessmentSubmission.findOne({ assessmentId: id, studentId });
     if (!submission) return res.status(404).json({ error: 'Submission not found.' });
     if (submission.status === 'submitted') return res.json({ ok: true });
     const assessment = await Assessment.findById(id).select('settings').lean();
     if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
+    const settings = assessment.settings || {};
+    const now = new Date();
+    const weight = violationWeight(settings, type);
     submission.violationLog = submission.violationLog || [];
-    submission.violationLog.push({ type, message: message || '', at: new Date(), meta: meta || {} });
+    submission.violationLog.push({ type, message: message || '', at: now, meta: { ...(meta || {}), weight } });
     if (type === 'tab_switch') submission.tabSwitches = (submission.tabSwitches || 0) + 1;
     if (type === 'fullscreen_exit') submission.fullscreenExits = (submission.fullscreenExits || 0) + 1;
-    if (type === 'camera_loss') submission.cameraFlags = (submission.cameraFlags || 0) + 1;
+    if (['camera_loss', 'camera_no_face', 'multiple_faces', 'face_out_of_frame'].includes(type)) submission.cameraFlags = (submission.cameraFlags || 0) + 1;
     if (type === 'copy_paste' || type === 'context_menu') submission.copyPasteCount = (submission.copyPasteCount || 0) + 1;
-    const settings = assessment.settings || {};
-    const tabLimit = typeof settings.tabSwitchLimit === 'number' ? settings.tabSwitchLimit : null;
-    const maxWarnings = typeof settings.maxWarnings === 'number' ? settings.maxWarnings : null;
-    const autoSubmitEnabled = settings.autoSubmitOnViolation === true
-      || settings.tabSwitchAction === 'autosubmit'
-      || settings.tabSwitchAction === 'terminate';
-    let shouldAutoSubmit = false;
-    if (autoSubmitEnabled) {
-      const total = (submission.tabSwitches || 0) + (submission.fullscreenExits || 0) + (submission.cameraFlags || 0);
-      if (type === 'tab_switch' && tabLimit !== null && submission.tabSwitches >= tabLimit) shouldAutoSubmit = true;
-      if (maxWarnings !== null && total >= maxWarnings) shouldAutoSubmit = true;
+    submission.violationScore = (submission.violationScore || 0) + weight;
+    const action = decideViolationAction({ settings, type, meta: meta || {}, submission });
+    if (action === 'pause') {
+      submission.pauseCount = (submission.pauseCount || 0) + 1;
+      submission.lastPauseAt = now;
     }
-    if (shouldAutoSubmit) {
+    if (action === 'autosubmit') {
       submission.violationLog.push({
         type: 'auto_submit',
         message: 'Assessment auto-submitted after violation limit was reached.',
-        at: new Date(),
-        meta: { trigger: type },
+        at: now,
+        meta: { trigger: type, score: submission.violationScore },
       });
     }
     await submission.save();
@@ -2041,11 +2165,74 @@ export async function logStudentViolation(req, res) {
       fullscreenExits: submission.fullscreenExits,
       cameraFlags: submission.cameraFlags,
       copyPasteCount: submission.copyPasteCount,
-      autoSubmit: shouldAutoSubmit,
+      violationScore: submission.violationScore,
+      pauseCount: submission.pauseCount,
+      lastPauseAt: submission.lastPauseAt,
+      action,
+      autoSubmit: action === 'autosubmit',
     });
   } catch (err) {
     console.error('Error logging violation:', err);
     return res.status(500).json({ error: 'Failed to log violation.' });
+  }
+}
+
+export async function logStudentHeartbeat(req, res) {
+  try {
+    const { id } = req.params;
+    const studentId = req.user._id;
+    const { status = {}, violationScore, pauseCount, cameraFlags } = req.body || {};
+    const submission = await AssessmentSubmission.findOne({ assessmentId: id, studentId });
+    if (!submission) return res.status(404).json({ error: 'Submission not found.' });
+    if (submission.status === 'submitted') return res.json({ ok: true, action: 'warn' });
+
+    const assessment = await Assessment.findById(id).select('settings').lean();
+    if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
+    const settings = assessment.settings || {};
+    const now = new Date();
+    const normalizedStatus = {
+      fullscreen: Boolean(status.fullscreen),
+      tabActive: Boolean(status.tabActive),
+      cameraActive: Boolean(status.cameraActive),
+      idle: Boolean(status.idle),
+      duplicateTab: Boolean(status.duplicateTab),
+      at: now,
+    };
+
+    submission.securityHeartbeat = normalizedStatus;
+    if (typeof violationScore === 'number') submission.violationScore = Math.max(submission.violationScore || 0, violationScore);
+    if (typeof pauseCount === 'number') submission.pauseCount = Math.max(submission.pauseCount || 0, pauseCount);
+    if (typeof cameraFlags === 'number') submission.cameraFlags = cameraFlags;
+
+    let action = 'warn';
+    let inconsistent = false;
+    if (settings.enableFullscreen && !normalizedStatus.fullscreen) inconsistent = true;
+    if (settings.tabSwitchDetection && !normalizedStatus.tabActive) inconsistent = true;
+    if (settings.cameraMonitoring && !normalizedStatus.cameraActive) inconsistent = true;
+    if (settings.idleDetection && normalizedStatus.idle) inconsistent = true;
+    if (settings.preventMultipleTabs && normalizedStatus.duplicateTab) inconsistent = true;
+
+    if (inconsistent) {
+      action = decideViolationAction({
+        settings,
+        type: 'heartbeat_failure',
+        meta: { source: 'heartbeat_inconsistent', status: normalizedStatus },
+        submission,
+      });
+    }
+
+    await submission.save();
+    return res.json({
+      ok: true,
+      action,
+      inconsistent,
+      violationScore: submission.violationScore || 0,
+      pauseCount: submission.pauseCount || 0,
+      lastPauseAt: submission.lastPauseAt,
+    });
+  } catch (err) {
+    console.error('Error logging heartbeat:', err);
+    return res.status(500).json({ error: 'Failed to log heartbeat.' });
   }
 }
 
@@ -2122,7 +2309,7 @@ export async function getSubmissionViolations(req, res) {
     const { submissionId } = req.params;
     const submission = await AssessmentSubmission.findById(submissionId)
       .populate('studentId', 'name email studentId')
-      .select('violationLog tabSwitches fullscreenExits copyPasteCount cameraFlags status startedAt submittedAt studentId assessmentId securitySetup')
+      .select('violationLog tabSwitches fullscreenExits copyPasteCount cameraFlags violationScore pauseCount lastPauseAt status startedAt submittedAt studentId assessmentId securitySetup securityHeartbeat')
       .lean();
     if (!submission) return res.status(404).json({ error: 'Submission not found.' });
     if (req.user && req.user.role === 'coordinator') {
@@ -2148,10 +2335,14 @@ export async function getSubmissionViolations(req, res) {
         fullscreenExits: submission.fullscreenExits || 0,
         copyPasteCount: submission.copyPasteCount || 0,
         cameraFlags: submission.cameraFlags || 0,
+        violationScore: submission.violationScore || 0,
+        pauseCount: submission.pauseCount || 0,
+        lastPauseAt: submission.lastPauseAt,
         totalViolations: (submission.tabSwitches || 0) + (submission.fullscreenExits || 0) + (submission.cameraFlags || 0) + (submission.copyPasteCount || 0),
       },
       timeline,
       securitySetup: submission.securitySetup || {},
+      securityHeartbeat: submission.securityHeartbeat || {},
     });
   } catch (err) {
     console.error('Error fetching violations:', err);

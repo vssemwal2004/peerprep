@@ -43,6 +43,73 @@ const buildSampleTestCases = (codingData = {}) => {
   }));
 };
 
+const CSE_VALID_VIOLATIONS = new Set([
+  'tab_switch',
+  'fullscreen_exit',
+  'camera_loss',
+  'camera_no_face',
+  'multiple_faces',
+  'face_out_of_frame',
+  'copy_paste',
+  'context_menu',
+  'duplicate_tab',
+  'idle',
+  'heartbeat_failure',
+  'other',
+]);
+
+const CSE_STATUS_DEFAULTS = {
+  fullscreen: true,
+  cameraActive: true,
+  tabActive: true,
+  idle: false,
+  duplicateTab: false,
+};
+
+const CAMERA_VIOLATION_TYPES = new Set([
+  'camera_loss',
+  'camera_no_face',
+  'multiple_faces',
+  'face_out_of_frame',
+]);
+
+const BLOCKED_INPUT_TYPES = new Set([
+  'insertFromPaste',
+  'insertFromDrop',
+  'insertReplacementText',
+]);
+
+const normalizeAction = (value, fallback = 'warn') => {
+  if (value === 'terminate' || value === 'autosubmit') return 'autosubmit';
+  if (value === 'pause') return 'pause';
+  if (value === 'warn') return 'warn';
+  return fallback;
+};
+
+const getViolationWeight = (settings = {}, type = 'other') => {
+  const map = settings.violationWeights || settings.violationWeight || {};
+  const aliases = {
+    tab_switch: 'tabSwitch',
+    fullscreen_exit: 'fullscreen',
+    camera_loss: 'camera',
+    camera_no_face: 'camera',
+    multiple_faces: 'camera',
+    face_out_of_frame: 'camera',
+    copy_paste: 'copyPaste',
+    context_menu: 'copyPaste',
+    duplicate_tab: 'duplicateTab',
+    idle: 'idle',
+    heartbeat_failure: 'heartbeat',
+    other: 'other',
+  };
+  const alias = aliases[type] || type;
+  const direct = Number(settings[`${alias}ViolationWeight`] ?? settings[`${alias}Weight`] ?? settings[`${type}Weight`]);
+  const mapped = Number(map[type] ?? map[alias]);
+  if (Number.isFinite(direct) && direct >= 0) return direct;
+  if (Number.isFinite(mapped) && mapped >= 0) return mapped;
+  return 1;
+};
+
 export default function AssessmentAttempt() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -63,6 +130,9 @@ export default function AssessmentAttempt() {
   const [fullscreenExits, setFullscreenExits] = useState(0);
   const [copyPasteCount, setCopyPasteCount] = useState(0);
   const [cameraFlags, setCameraFlags] = useState(0);
+  const [violationScore, setViolationScore] = useState(0);
+  const [pauseCount, setPauseCount] = useState(0);
+  const [lastPauseAt, setLastPauseAt] = useState(null);
   const [violations, setViolations] = useState([]);
   const [testCaseMap, setTestCaseMap] = useState({});
   const [activeTestCaseMap, setActiveTestCaseMap] = useState({});
@@ -97,6 +167,15 @@ export default function AssessmentAttempt() {
   const [cameraIndicator, setCameraIndicator] = useState('idle');
   const [detectedTabs, setDetectedTabs] = useState([]);
   const [securityNotice, setSecurityNotice] = useState('');
+  const [securityPopup, setSecurityPopup] = useState({
+    open: false,
+    title: '',
+    message: '',
+    tone: 'warning',
+  });
+  const [securityStatus, setSecurityStatus] = useState(CSE_STATUS_DEFAULTS);
+  const [securityAction, setSecurityAction] = useState('warn');
+  const [fullscreenRecovery, setFullscreenRecovery] = useState({ active: false, remaining: 0 });
   const [leftWidth, setLeftWidth] = useState(420);
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [sidebarPinned, setSidebarPinned] = useState(false);
@@ -111,10 +190,19 @@ export default function AssessmentAttempt() {
   const editorPaneRef = useRef(null);
   const dragFrameRef = useRef(null);
   const streamRef = useRef(null);
-  const lastViolationRef = useRef(0);
+  const violationThrottleRef = useRef({});
   const lastDuplicateTabViolationRef = useRef(0);
   const lastIsCodingRef = useRef(false);
   const fullscreenExitTimerRef = useRef(null);
+  const fullscreenCountdownRef = useRef(null);
+  const heartbeatFailureRef = useRef(0);
+  const thresholdNoticeRef = useRef({});
+  const popupThrottleRef = useRef({});
+  const securityStatusRef = useRef(CSE_STATUS_DEFAULTS);
+  const violationScoreRef = useRef(0);
+  const pauseCountRef = useRef(0);
+  const faceDetectorRef = useRef(null);
+  const cameraViolationStreakRef = useRef({ type: '', count: 0, at: 0 });
   const idleTimerRef = useRef(null);
   const lastActivityRef = useRef(Date.now());
   const tabInstanceIdRef = useRef(
@@ -123,11 +211,12 @@ export default function AssessmentAttempt() {
       : `tab-${Date.now()}-${Math.random().toString(16).slice(2)}`,
   );
   const rulesSeenStorageKey = `peerprep_assessment_rules_seen:${id}`;
+  const activeSessionStorageKey = `peerprep_assessment_active_session:${id}`;
 
   const answerKey = (sectionIndex, questionIndex) => `${sectionIndex}-${questionIndex}`;
   const isSubmitted = submission?.status === 'submitted';
   const secureActive = phase === 'active' && !isSubmitted;
-  const securitySettings = assessment?.settings || {};
+  const securitySettings = useMemo(() => assessment?.settings || {}, [assessment?.settings]);
   const fullscreenRequired = Boolean(securitySettings.enableFullscreen);
   const cameraRequired = Boolean(securitySettings.cameraMonitoring);
   const tabGuardEnabled = Boolean(securitySettings.tabSwitchDetection);
@@ -144,6 +233,16 @@ export default function AssessmentAttempt() {
   const idleDetection = Boolean(securitySettings.idleDetection);
   const idleThresholdMs = Math.max(1, Number(securitySettings.idleThresholdMin || 5)) * 60 * 1000;
   const idleAction = securitySettings.idleAction || 'warn';
+  const duplicateTabCount = detectedTabs.filter((tab) => !tab.current).length;
+  const totalViolations = tabSwitches + fullscreenExits + cameraFlags + copyPasteCount;
+  const forcePauseActive = isPaused && phase === 'validation' && !isSubmitted;
+  const securityHeartbeat = useMemo(() => ({
+    fullscreen: !fullscreenRequired || Boolean(document.fullscreenElement),
+    tabActive: !tabGuardEnabled || (document.hasFocus() && !document.hidden),
+    cameraActive: !cameraRequired || (Boolean(streamRef.current) && cameraIndicator !== 'warning'),
+    idle: Boolean(securityStatus.idle),
+    duplicateTab: preventMultipleTabs && duplicateTabCount > 0,
+  }), [fullscreenRequired, tabGuardEnabled, cameraRequired, cameraIndicator, securityStatus.idle, preventMultipleTabs, duplicateTabCount]);
   const finalRules = useMemo(() => {
     const rules = [];
     if (fullscreenRequired) rules.push({ type: 'bullet', text: 'Fullscreen mode must remain active during the test.' });
@@ -193,6 +292,25 @@ export default function AssessmentAttempt() {
   }, [setupSteps]);
   const currentSectionForLayout = assessment?.sections?.[activeSection];
   const isCodingForLayout = currentSectionForLayout?.type === 'coding';
+  const cameraStatusLine = useMemo(() => {
+    if (!cameraRequired) return null;
+    if (cameraIndicator === 'warning' || securityStatus.cameraActive === false) {
+      return {
+        ok: false,
+        text: securityNotice || 'Camera violation detected: please sit properly and keep your face centered.',
+      };
+    }
+    if (streamRef.current || cameraIndicator === 'normal') {
+      return {
+        ok: true,
+        text: 'Camera monitoring active: posture OK.',
+      };
+    }
+    return {
+      ok: false,
+      text: 'Camera monitoring waiting for a stable camera feed.',
+    };
+  }, [cameraRequired, cameraIndicator, securityStatus.cameraActive, securityNotice]);
 
   const answersArray = useMemo(() => (
     Object.entries(answersMap).map(([key, value]) => {
@@ -265,8 +383,17 @@ export default function AssessmentAttempt() {
       unanswered,
     };
   }, [flatQuestions, markedMap, totalQuestions, questionStatus]);
-  const totalViolations = tabSwitches + fullscreenExits + cameraFlags + copyPasteCount;
+  useEffect(() => {
+    securityStatusRef.current = securityStatus;
+  }, [securityStatus]);
 
+  useEffect(() => {
+    violationScoreRef.current = violationScore;
+  }, [violationScore]);
+
+  useEffect(() => {
+    pauseCountRef.current = pauseCount;
+  }, [pauseCount]);
   const clampLeftWidth = (value) => {
     if (!splitContainerRef.current) return value;
     const containerWidth = splitContainerRef.current.getBoundingClientRect().width;
@@ -287,6 +414,10 @@ export default function AssessmentAttempt() {
         fullscreenExits,
         copyPasteCount,
         cameraFlags,
+        violationScore,
+        pauseCount,
+        lastPauseAt,
+        securityHeartbeat,
         violations,
       });
     } catch (err) {
@@ -294,7 +425,7 @@ export default function AssessmentAttempt() {
     } finally {
       setSaving(false);
     }
-  }, [assessment, isSubmitted, answersArray, phase, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violations, toast]);
+  }, [assessment, isSubmitted, answersArray, phase, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violationScore, pauseCount, lastPauseAt, securityHeartbeat, violations, toast]);
 
   const handleSubmit = useCallback(async (auto = false) => {
     if (!assessment) return;
@@ -308,6 +439,10 @@ export default function AssessmentAttempt() {
         fullscreenExits,
         copyPasteCount,
         cameraFlags,
+        violationScore,
+        pauseCount,
+        lastPauseAt,
+        securityHeartbeat,
         violations,
       });
       toast.success(auto ? 'Time is up. Assessment auto-submitted.' : 'Assessment submitted successfully');
@@ -317,75 +452,146 @@ export default function AssessmentAttempt() {
     } finally {
       setSaving(false);
     }
-  }, [assessment, answersArray, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violations, toast, navigate]);
+  }, [assessment, answersArray, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violationScore, pauseCount, lastPauseAt, securityHeartbeat, violations, toast, navigate]);
+
+  const triggerForcePause = useCallback((type, message, serverState = {}) => {
+    const nowIso = serverState.lastPauseAt || new Date().toISOString();
+    setLastPauseAt(nowIso);
+    setPauseCount((prev) => Math.max(prev + 1, Number(serverState.pauseCount || 0)));
+    setViolationMessage(message || 'Security Violation Detected');
+    setSecurityAction('pause');
+    setIsPaused(true);
+    setPhase('validation');
+    if (type === 'camera_loss' || type === 'camera_no_face' || type === 'multiple_faces' || type === 'face_out_of_frame') {
+      setValidationState((prev) => ({ ...prev, camera: false, face: false, final: false }));
+      setValidationStep(getSetupStepId('camera'));
+    } else if (type === 'fullscreen_exit') {
+      setValidationState((prev) => ({ ...prev, fullscreen: false, final: false }));
+      setValidationStep(getSetupStepId('fullscreen'));
+    } else {
+      setValidationState((prev) => ({ ...prev, environment: false, final: false }));
+      setValidationStep(getSetupStepId('environment'));
+    }
+  }, [getSetupStepId]);
+
+  const showSecurityPopup = useCallback((type, message, meta = {}, result = {}) => {
+    const now = Date.now();
+    const popupKey = `${type}:${meta.source || 'default'}`;
+    const throttleMs = CAMERA_VIOLATION_TYPES.has(type) ? 12000 : 1200;
+    if (now - (popupThrottleRef.current[popupKey] || 0) < throttleMs) return;
+
+    if (CAMERA_VIOLATION_TYPES.has(type) && !meta.persistent) return;
+
+    popupThrottleRef.current[popupKey] = now;
+    const currentTabSwitches = Number(result?.tabSwitches ?? meta.nextCount ?? tabSwitches ?? 0);
+    const limit = Number(meta.limit ?? tabSwitchLimit ?? 0);
+    const limitText = limit > 0 ? ` (${Math.min(currentTabSwitches, limit)}/${limit})` : '';
+    const exceeded = limit > 0 && currentTabSwitches >= limit;
+    const configuredAction = normalizeAction(result?.action, tabSwitchAction || 'warn');
+
+    let title = 'Security warning';
+    let text = message || 'Assessment security rule triggered.';
+    let tone = 'warning';
+
+    if (type === 'tab_switch') {
+      title = exceeded ? 'Tab switch limit reached' : 'Tab switch detected';
+      text = exceeded
+        ? `Tab switch limit reached${limitText}. ${configuredAction === 'autosubmit' ? 'The assessment will be submitted according to the admin setting.' : 'Return to the assessment window immediately.'}`
+        : `Tab switch recorded${limitText}. Stay on this assessment tab.`;
+      tone = exceeded ? 'danger' : 'warning';
+    } else if (type === 'copy_paste') {
+      title = 'Copy/paste blocked';
+      text = 'Copy, paste, cut, drag/drop, and restricted clipboard shortcuts are disabled for this assessment.';
+    } else if (type === 'context_menu') {
+      title = 'Right-click blocked';
+      text = 'Right-click is disabled by the assessment security settings.';
+    } else if (CAMERA_VIOLATION_TYPES.has(type)) {
+      title = 'Camera violation detected';
+      text = message || 'Please sit properly and keep your face centered in the camera.';
+      tone = 'danger';
+    } else if (type === 'duplicate_tab') {
+      title = 'Duplicate assessment tab';
+      text = 'Close all other assessment tabs and continue only in this window.';
+      tone = 'danger';
+    } else if (type === 'idle') {
+      title = 'Idle activity warning';
+      text = message || 'No activity detected. Continue working in the assessment window.';
+    }
+
+    setSecurityPopup({
+      open: true,
+      title,
+      message: text,
+      tone,
+    });
+  }, [tabSwitchAction, tabSwitches, tabSwitchLimit]);
 
   const recordViolation = useCallback(async (type, message, meta = {}) => {
-    if (isSubmitted || !assessment?._id) return;
-    if (!['tab_switch', 'fullscreen_exit', 'camera_loss', 'copy_paste', 'context_menu', 'other'].includes(type)) return;
+    if (isSubmitted || !assessment?._id || !CSE_VALID_VIOLATIONS.has(type)) return null;
     const now = Date.now();
-    if (type !== 'tab_switch') {
-      if (now - lastViolationRef.current < 3000) return;
-      lastViolationRef.current = now;
-    }
+    const throttleKey = `${type}:${meta.source || meta.reason || 'default'}:${meta.escalated ? 'escalated' : 'base'}`;
+    const throttleMs = type === 'tab_switch' || meta.escalated ? 700 : 3500;
+    if (now - (violationThrottleRef.current[throttleKey] || 0) < throttleMs) return null;
+    violationThrottleRef.current[throttleKey] = now;
 
-    setViolations((prev) => ([
-      ...prev,
-      { type, message, at: new Date().toISOString(), meta },
-    ]));
-    if (type === 'tab_switch') {
-      setTabSwitches((prev) => prev + 1);
-    }
-    if (type === 'fullscreen_exit') {
-      setFullscreenExits((prev) => prev + 1);
-    }
-    if (type === 'camera_loss') {
-      setCameraFlags((prev) => prev + 1);
-    }
-    if (type === 'copy_paste' || type === 'context_menu') {
-      setCopyPasteCount((prev) => prev + 1);
-    }
+    const weight = getViolationWeight(securitySettings, type);
+    const entry = {
+      type,
+      message,
+      at: new Date().toISOString(),
+      meta: { ...meta, weight },
+    };
+    setViolations((prev) => ([...prev, entry]));
+    setViolationScore((prev) => prev + weight);
     setViolationMessage(message);
     setSecurityNotice(message);
 
-    const projectedTabSwitches = type === 'tab_switch' ? tabSwitches + 1 : tabSwitches;
-    const shouldPauseForTabSwitch = type === 'tab_switch';
-    const shouldPauseForFullscreen = type === 'fullscreen_exit';
-    const shouldPauseForCamera = type === 'camera_loss';
-    const shouldPauseForBlockedAction = (type === 'copy_paste' || type === 'context_menu') && securitySettings.copyPasteAction === 'pause';
-    if (shouldPauseForTabSwitch || shouldPauseForFullscreen || shouldPauseForCamera || shouldPauseForBlockedAction) {
-      if (type === 'tab_switch') {
-        setValidationState((prev) => ({ ...prev, environment: false, final: false }));
-        setValidationStep(getSetupStepId('environment'));
-      } else if (type === 'camera_loss') {
-        setValidationState((prev) => ({ ...prev, camera: false, face: false, final: false }));
-        setValidationStep(getSetupStepId('camera'));
-      } else if (type === 'fullscreen_exit') {
-        setValidationState((prev) => ({ ...prev, fullscreen: false, final: false }));
-        setValidationStep(getSetupStepId('fullscreen'));
-      }
-      setIsPaused(true);
-      setPhase('validation');
-    } else if (type !== 'camera_loss') {
-      toast.info(message);
-    }
+    if (type === 'tab_switch') setTabSwitches((prev) => prev + 1);
+    if (type === 'fullscreen_exit') setFullscreenExits((prev) => prev + 1);
+    if (['camera_loss', 'camera_no_face', 'multiple_faces', 'face_out_of_frame'].includes(type)) setCameraFlags((prev) => prev + 1);
+    if (type === 'copy_paste' || type === 'context_menu') setCopyPasteCount((prev) => prev + 1);
+
     try {
-      const result = await api.logStudentAssessmentViolation(assessment._id, { type, message, meta });
+      const result = await api.logStudentAssessmentViolation(assessment._id, {
+        type,
+        message,
+        timestamp: entry.at,
+        meta: entry.meta,
+      });
       if (typeof result?.tabSwitches === 'number') setTabSwitches(result.tabSwitches);
       if (typeof result?.fullscreenExits === 'number') setFullscreenExits(result.fullscreenExits);
       if (typeof result?.cameraFlags === 'number') setCameraFlags(result.cameraFlags);
       if (typeof result?.copyPasteCount === 'number') setCopyPasteCount(result.copyPasteCount);
-      if (result?.autoSubmit) {
+      if (typeof result?.violationScore === 'number') setViolationScore(result.violationScore);
+      if (typeof result?.pauseCount === 'number') setPauseCount(result.pauseCount);
+      if (result?.lastPauseAt) setLastPauseAt(result.lastPauseAt);
+      const action = normalizeAction(result?.action, result?.autoSubmit ? 'autosubmit' : 'warn');
+      setSecurityAction(action);
+      if (action === 'autosubmit') {
         toast.error('Violation limit reached. Assessment auto-submitted.');
         await handleSubmit(true);
-        return;
+        return result;
       }
+      if (action === 'pause') {
+        triggerForcePause(type, message, result);
+        return result;
+      }
+      showSecurityPopup(type, message, entry.meta, result);
+      const shouldPopup = type !== 'camera_no_face' && type !== 'face_out_of_frame';
+      if (shouldPopup) toast.info(message);
+      return result;
     } catch {
-      // The local violation list is still saved by the periodic assessment save.
+      showSecurityPopup(type, message, entry.meta);
+      if (type === 'heartbeat_failure') {
+        triggerForcePause(type, message);
+      }
+      return null;
+    } finally {
+      setTimeout(() => {
+        handleSave();
+      }, 0);
     }
-    setTimeout(() => {
-      handleSave();
-    }, 0);
-  }, [isSubmitted, assessment?._id, tabSwitches, securitySettings.copyPasteAction, handleSave, handleSubmit, toast, getSetupStepId]);
+  }, [isSubmitted, assessment?._id, securitySettings, handleSave, handleSubmit, toast, triggerForcePause, showSecurityPopup]);
 
   const handleResizeStart = (event) => {
     if (!splitContainerRef.current) return;
@@ -473,6 +679,9 @@ export default function AssessmentAttempt() {
       setFullscreenExits(data.submission?.fullscreenExits || 0);
       setCopyPasteCount(data.submission?.copyPasteCount || 0);
       setCameraFlags(data.submission?.cameraFlags || 0);
+      setViolationScore(data.submission?.violationScore || 0);
+      setPauseCount(data.submission?.pauseCount || 0);
+      setLastPauseAt(data.submission?.lastPauseAt || null);
       setViolations(data.submission?.violations || []);
       setLocationData(data.submission?.securitySetup?.location || null);
       syncCompletedSecuritySteps(data.completedSecuritySteps || []);
@@ -515,6 +724,7 @@ export default function AssessmentAttempt() {
   useEffect(() => {
     if (!assessment?._id) return undefined;
     const key = `peerprep_assessment_tabs:${assessment._id}`;
+    const sessionKey = activeSessionStorageKey;
     const instanceId = tabInstanceIdRef.current;
 
     const readTabs = () => {
@@ -531,6 +741,7 @@ export default function AssessmentAttempt() {
             current: id === instanceId,
           }));
         setDetectedTabs(activeEntries.sort((a, b) => Number(b.current) - Number(a.current)));
+        setSecurityStatus((prev) => ({ ...prev, duplicateTab: preventMultipleTabs && activeEntries.some((entry) => !entry.current) }));
         return Object.fromEntries(activeEntries.map((entry) => [entry.id, {
           title: entry.title,
           path: entry.path,
@@ -550,6 +761,19 @@ export default function AssessmentAttempt() {
         lastSeen: Date.now(),
       };
       localStorage.setItem(key, JSON.stringify(active));
+      if (phase === 'active' && preventMultipleTabs) {
+        const existing = JSON.parse(localStorage.getItem(sessionKey) || '{}');
+        const stale = !existing?.lastSeen || Date.now() - existing.lastSeen > 6500;
+        if (!existing?.instanceId || existing.instanceId === instanceId || stale) {
+          localStorage.setItem(sessionKey, JSON.stringify({
+            sessionId: assessment._id,
+            instanceId,
+            lastSeen: Date.now(),
+          }));
+        } else {
+          setSecurityStatus((prev) => ({ ...prev, duplicateTab: true }));
+        }
+      }
       readTabs();
     };
 
@@ -567,11 +791,13 @@ export default function AssessmentAttempt() {
         const active = JSON.parse(localStorage.getItem(key) || '{}');
         delete active[instanceId];
         localStorage.setItem(key, JSON.stringify(active));
+        const session = JSON.parse(localStorage.getItem(sessionKey) || '{}');
+        if (session?.instanceId === instanceId) localStorage.removeItem(sessionKey);
       } catch {
         // Ignore localStorage cleanup errors.
       }
     };
-  }, [assessment?._id, assessment?.title]);
+  }, [assessment?._id, assessment?.title, activeSessionStorageKey, phase, preventMultipleTabs]);
 
   useEffect(() => {
     if (!assessment) return;
@@ -622,28 +848,54 @@ export default function AssessmentAttempt() {
   }, [secureActive, isSubmitted, handleSave]);
 
   useEffect(() => {
+    if (!secureActive) return;
+    if (tabGuardEnabled && tabSwitchWarnAt > 0 && tabSwitches >= tabSwitchWarnAt && !thresholdNoticeRef.current.tabSwitchWarnAt) {
+      thresholdNoticeRef.current.tabSwitchWarnAt = true;
+      toast.warning?.('Tab switch warning threshold reached.') || toast.info('Tab switch warning threshold reached.');
+    }
+    const maxWarnings = Number(securitySettings.maxWarnings || 0);
+    if (maxWarnings > 0 && totalViolations >= maxWarnings && !thresholdNoticeRef.current.maxWarnings) {
+      thresholdNoticeRef.current.maxWarnings = true;
+      toast.warning?.('Maximum warning threshold reached.') || toast.info('Maximum warning threshold reached.');
+    }
+  }, [secureActive, tabGuardEnabled, tabSwitchWarnAt, tabSwitches, securitySettings.maxWarnings, totalViolations, toast]);
+
+  useEffect(() => {
     if (!secureActive || !tabGuardEnabled) return undefined;
-    const handleVisibility = () => {
-      if (document.hidden) {
-        void recordViolation('tab_switch', 'Tab switch detected. Return to the assessment window.', {
+    const reportFocusLoss = (source) => {
+      const active = document.hasFocus() && !document.hidden;
+      setSecurityStatus((prev) => ({ ...prev, tabActive: active }));
+      if (!active) {
+        void recordViolation('tab_switch', 'Tab switch or focus loss detected. Return to the assessment window.', {
           limit: tabSwitchLimit || null,
           warnAt: tabSwitchWarnAt || null,
           action: tabSwitchAction,
+          nextCount: tabSwitches + 1,
+          source,
         });
       }
     };
+    const handleVisibility = () => reportFocusLoss('visibilitychange');
+    const handleBlur = () => reportFocusLoss('window_blur');
+    const handleFocus = () => {
+      setSecurityStatus((prev) => ({ ...prev, tabActive: document.hasFocus() && !document.hidden }));
+    };
     document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('blur', handleBlur);
+    window.addEventListener('focus', handleFocus);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('blur', handleBlur);
+      window.removeEventListener('focus', handleFocus);
     };
-  }, [secureActive, tabGuardEnabled, tabSwitchLimit, tabSwitchWarnAt, tabSwitchAction, recordViolation]);
+  }, [secureActive, tabGuardEnabled, tabSwitchLimit, tabSwitchWarnAt, tabSwitchAction, tabSwitches, recordViolation]);
 
   useEffect(() => {
     if (!secureActive || !preventMultipleTabs) return;
     const duplicateCount = detectedTabs.filter((tab) => !tab.current).length;
     if (duplicateCount > 0 && Date.now() - lastDuplicateTabViolationRef.current > 8000) {
       lastDuplicateTabViolationRef.current = Date.now();
-      void recordViolation('tab_switch', 'Duplicate assessment tab detected. Close all other assessment tabs.', {
+      void recordViolation('duplicate_tab', 'Duplicate assessment tab detected. Close all other assessment tabs.', {
         duplicateCount,
         source: 'duplicate_tab_guard',
       });
@@ -652,35 +904,75 @@ export default function AssessmentAttempt() {
 
   useEffect(() => {
     if (!secureActive || !copyBlockEnabled) return undefined;
-    const handleCopy = (event) => {
+    const stopRestrictedEvent = (event, type, message, meta = {}) => {
       event.preventDefault();
-      void recordViolation('copy_paste', 'Copy action blocked by assessment rules.');
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+      void recordViolation(type, message, {
+        source: event.type,
+        ...meta,
+      });
+    };
+    const handleCopy = (event) => {
+      stopRestrictedEvent(event, 'copy_paste', 'Copy action blocked by assessment rules.');
+    };
+    const handleCut = (event) => {
+      stopRestrictedEvent(event, 'copy_paste', 'Cut action blocked by assessment rules.');
     };
     const handlePaste = (event) => {
-      event.preventDefault();
-      void recordViolation('copy_paste', 'Paste action blocked by assessment rules.');
+      stopRestrictedEvent(event, 'copy_paste', 'Paste action blocked by assessment rules.');
     };
     const handleContextMenu = (event) => {
       if (!blockRightClick) return;
-      event.preventDefault();
-      void recordViolation('context_menu', 'Right-click menu blocked by assessment rules.');
+      stopRestrictedEvent(event, 'context_menu', 'Right-click menu blocked by assessment rules.');
+    };
+    const handleDrop = (event) => {
+      stopRestrictedEvent(event, 'copy_paste', 'Drag/drop content insertion blocked by assessment rules.');
+    };
+    const handleDragStart = (event) => {
+      stopRestrictedEvent(event, 'copy_paste', 'Dragging selected content is blocked by assessment rules.');
+    };
+    const handleBeforeInput = (event) => {
+      if (BLOCKED_INPUT_TYPES.has(event.inputType)) {
+        stopRestrictedEvent(event, 'copy_paste', 'Paste or drop input blocked by assessment rules.', {
+          inputType: event.inputType,
+        });
+      }
     };
     const handleKeydown = (event) => {
       const key = event.key?.toLowerCase();
-      if ((event.ctrlKey || event.metaKey) && ['c', 'v', 'x', 'a', 's', 'p', 'u', 'r'].includes(key)) {
-        event.preventDefault();
-        void recordViolation('copy_paste', 'Restricted keyboard shortcut blocked.');
+      const ctrlOrMeta = event.ctrlKey || event.metaKey;
+      const blockedCtrlKey = ctrlOrMeta && ['c', 'v', 'x', 'a', 's', 'p', 'u', 'r'].includes(key);
+      const blockedInsert = key === 'insert' && (event.shiftKey || ctrlOrMeta);
+      if (blockedCtrlKey || blockedInsert) {
+        stopRestrictedEvent(event, 'copy_paste', 'Restricted keyboard shortcut blocked.', {
+          shortcut: [
+            event.ctrlKey ? 'Ctrl' : '',
+            event.metaKey ? 'Meta' : '',
+            event.shiftKey ? 'Shift' : '',
+            event.key,
+          ].filter(Boolean).join('+'),
+        });
       }
     };
-    document.addEventListener('copy', handleCopy);
-    document.addEventListener('paste', handlePaste);
-    document.addEventListener('contextmenu', handleContextMenu);
-    document.addEventListener('keydown', handleKeydown);
+    const capture = true;
+    document.addEventListener('copy', handleCopy, capture);
+    document.addEventListener('cut', handleCut, capture);
+    document.addEventListener('paste', handlePaste, capture);
+    document.addEventListener('contextmenu', handleContextMenu, capture);
+    document.addEventListener('drop', handleDrop, capture);
+    document.addEventListener('dragstart', handleDragStart, capture);
+    document.addEventListener('beforeinput', handleBeforeInput, capture);
+    document.addEventListener('keydown', handleKeydown, capture);
     return () => {
-      document.removeEventListener('copy', handleCopy);
-      document.removeEventListener('paste', handlePaste);
-      document.removeEventListener('contextmenu', handleContextMenu);
-      document.removeEventListener('keydown', handleKeydown);
+      document.removeEventListener('copy', handleCopy, capture);
+      document.removeEventListener('cut', handleCut, capture);
+      document.removeEventListener('paste', handlePaste, capture);
+      document.removeEventListener('contextmenu', handleContextMenu, capture);
+      document.removeEventListener('drop', handleDrop, capture);
+      document.removeEventListener('dragstart', handleDragStart, capture);
+      document.removeEventListener('beforeinput', handleBeforeInput, capture);
+      document.removeEventListener('keydown', handleKeydown, capture);
     };
   }, [secureActive, copyBlockEnabled, blockRightClick, recordViolation]);
 
@@ -688,24 +980,19 @@ export default function AssessmentAttempt() {
     if (!secureActive || !idleDetection) return undefined;
     const markActivity = () => {
       lastActivityRef.current = Date.now();
+      setSecurityStatus((prev) => (prev.idle ? { ...prev, idle: false } : prev));
     };
     const checkIdle = () => {
       const idleFor = Date.now() - lastActivityRef.current;
       if (idleFor < idleThresholdMs) return;
       lastActivityRef.current = Date.now();
+      setSecurityStatus((prev) => ({ ...prev, idle: true }));
       const message = 'No activity detected. Please stay active in the assessment window.';
-      void recordViolation('other', message, {
+      void recordViolation('idle', message, {
         source: 'idle_detection',
         idleForMs: idleFor,
         action: idleAction,
       });
-      if (idleAction === 'pause') {
-        setIsPaused(true);
-        setPhase('violation');
-      }
-      if (idleAction === 'autosubmit') {
-        void handleSubmit(true);
-      }
     };
     ['mousemove', 'keydown', 'click', 'scroll', 'pointerdown', 'touchstart'].forEach((eventName) => {
       window.addEventListener(eventName, markActivity, { passive: true });
@@ -717,47 +1004,72 @@ export default function AssessmentAttempt() {
       });
       if (idleTimerRef.current) clearInterval(idleTimerRef.current);
     };
-  }, [secureActive, idleDetection, idleThresholdMs, idleAction, handleSubmit, recordViolation]);
+  }, [secureActive, idleDetection, idleThresholdMs, idleAction, recordViolation]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
+      const active = Boolean(document.fullscreenElement);
       setValidationState((prev) => ({
         ...prev,
-        fullscreen: Boolean(document.fullscreenElement),
+        fullscreen: active,
       }));
+      setSecurityStatus((prev) => ({ ...prev, fullscreen: !fullscreenRequired || active }));
     };
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
-  }, []);
+  }, [fullscreenRequired]);
 
   useEffect(() => {
     if (!secureActive || !fullscreenRequired) return undefined;
     const handleFullscreenEnforcement = () => {
       if (!document.fullscreenElement) {
+        setSecurityStatus((prev) => ({ ...prev, fullscreen: false }));
+        setFullscreenRecovery({ active: true, remaining: fullscreenTimeoutSec || 0 });
         void recordViolation('fullscreen_exit', 'Fullscreen mode is required during the assessment.', {
           timeoutSec: fullscreenTimeoutSec || null,
+          source: 'fullscreenchange',
         });
         if (fullscreenTimeoutSec > 0) {
           if (fullscreenExitTimerRef.current) clearTimeout(fullscreenExitTimerRef.current);
+          if (fullscreenCountdownRef.current) clearInterval(fullscreenCountdownRef.current);
+          const startedAt = Date.now();
+          fullscreenCountdownRef.current = setInterval(() => {
+            const remaining = Math.max(0, fullscreenTimeoutSec - Math.floor((Date.now() - startedAt) / 1000));
+            setFullscreenRecovery((prev) => (prev.active ? { ...prev, remaining } : prev));
+          }, 500);
           fullscreenExitTimerRef.current = setTimeout(() => {
             if (!document.fullscreenElement && !isSubmitted) {
-              void handleSubmit(true);
+              void recordViolation('fullscreen_exit', 'Fullscreen was not restored within the configured timeout.', {
+                timeoutSec: fullscreenTimeoutSec,
+                source: 'fullscreen_timeout',
+                escalated: true,
+              });
             }
           }, fullscreenTimeoutSec * 1000);
+        } else {
+          void recordViolation('fullscreen_exit', 'Fullscreen was not restored immediately.', {
+            source: 'fullscreen_timeout',
+            escalated: true,
+          });
         }
       } else if (fullscreenExitTimerRef.current) {
         clearTimeout(fullscreenExitTimerRef.current);
         fullscreenExitTimerRef.current = null;
+        if (fullscreenCountdownRef.current) clearInterval(fullscreenCountdownRef.current);
+        fullscreenCountdownRef.current = null;
+        setFullscreenRecovery({ active: false, remaining: 0 });
+        setSecurityStatus((prev) => ({ ...prev, fullscreen: true }));
       }
     };
     document.addEventListener('fullscreenchange', handleFullscreenEnforcement);
     return () => {
       document.removeEventListener('fullscreenchange', handleFullscreenEnforcement);
       if (fullscreenExitTimerRef.current) clearTimeout(fullscreenExitTimerRef.current);
+      if (fullscreenCountdownRef.current) clearInterval(fullscreenCountdownRef.current);
     };
-  }, [secureActive, fullscreenRequired, fullscreenTimeoutSec, isSubmitted, handleSubmit, recordViolation]);
+  }, [secureActive, fullscreenRequired, fullscreenTimeoutSec, isSubmitted, recordViolation]);
 
   useEffect(() => {
     if (phase !== 'validation') return;
@@ -822,22 +1134,48 @@ export default function AssessmentAttempt() {
   useEffect(() => {
     if (!secureActive || !cameraRequired) {
       setCameraIndicator('idle');
+      setSecurityStatus((prev) => ({ ...prev, cameraActive: !cameraRequired }));
       return undefined;
     }
     let intervalId;
+    let cancelled = false;
     const video = monitorVideoRef.current;
     const canvas = monitorCanvasRef.current;
     const ctx = canvas?.getContext('2d');
     if (streamRef.current) {
       attachStream(streamRef.current);
     }
-    const sampleFrame = () => {
-      if (!streamRef.current || !video || !canvas || !ctx) {
-        setCameraIndicator('warning');
-        void recordViolation('camera_loss', 'Camera feed is not available.');
-        return;
+    if (!faceDetectorRef.current && typeof window !== 'undefined' && 'FaceDetector' in window) {
+      try {
+        faceDetectorRef.current = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 3 });
+      } catch {
+        faceDetectorRef.current = null;
       }
-      if (video.readyState < 2) return;
+    }
+    const emitCameraViolation = (type, message, meta = {}) => {
+      const streak = cameraViolationStreakRef.current;
+      const sameType = streak.type === type && Date.now() - streak.at < 10000;
+      const nextCount = sameType ? streak.count + 1 : 1;
+      cameraViolationStreakRef.current = { type, count: nextCount, at: Date.now() };
+      setCameraIndicator('warning');
+      setSecurityStatus((prev) => ({ ...prev, cameraActive: false }));
+      void recordViolation(type, message, {
+        ...meta,
+        source: 'camera_monitor',
+        persistent: nextCount >= 3,
+      });
+    };
+    const markCameraNormal = () => {
+      cameraViolationStreakRef.current = { type: '', count: 0, at: Date.now() };
+      setCameraIndicator('normal');
+      setSecurityStatus((prev) => ({ ...prev, cameraActive: true }));
+    };
+    const fallbackPresenceCheck = () => {
+      if (!streamRef.current || !video || !canvas || !ctx) {
+        emitCameraViolation('camera_loss', 'Camera feed is not available.');
+        return false;
+      }
+      if (video.readyState < 2) return null;
       const width = 160;
       const height = 90;
       canvas.width = width;
@@ -856,18 +1194,106 @@ export default function AssessmentAttempt() {
       if (!count) return;
       const avg = sum / count;
       const variance = sumSq / count - avg * avg;
-      const detected = variance > 120;
-      setCameraIndicator(detected ? 'normal' : 'warning');
-      if (!detected) {
-        void recordViolation('camera_loss', 'Face or human presence was not clearly detected.');
+      return { detected: variance > 120, confidence: Math.min(1, variance / 240), variance };
+    };
+    const sampleFrame = async () => {
+      if (cancelled) return;
+      if (!streamRef.current || !video || !canvas || !ctx) {
+        emitCameraViolation('camera_loss', 'Camera feed is not available.');
+        return;
+      }
+      if (video.readyState < 2) return;
+      if (faceDetectorRef.current) {
+        try {
+          const faces = await faceDetectorRef.current.detect(video);
+          if (cancelled) return;
+          if (!faces.length) {
+            emitCameraViolation('camera_no_face', 'No face detected. Please stay in frame.', { confidence: 0.95 });
+            return;
+          }
+          if (faces.length > 1) {
+            emitCameraViolation('multiple_faces', 'Multiple faces detected in camera view.', { faces: faces.length, confidence: 0.95 });
+            return;
+          }
+          const box = faces[0].boundingBox || {};
+          const centerX = (box.x || 0) + (box.width || 0) / 2;
+          const centerY = (box.y || 0) + (box.height || 0) / 2;
+          const offCenter = Math.abs(centerX - video.videoWidth / 2) > video.videoWidth * 0.35
+            || Math.abs(centerY - video.videoHeight / 2) > video.videoHeight * 0.35
+            || (box.width || 0) < video.videoWidth * 0.12;
+          if (offCenter) {
+            emitCameraViolation('face_out_of_frame', 'Face moved away from the camera. Please center yourself.', { confidence: 0.9 });
+            return;
+          }
+          markCameraNormal();
+          return;
+        } catch {
+          faceDetectorRef.current = null;
+        }
+      }
+      const fallback = fallbackPresenceCheck();
+      if (fallback === null) return;
+      if (fallback?.detected) {
+        markCameraNormal();
+      } else {
+        emitCameraViolation('camera_no_face', 'Face or human presence was not clearly detected.', {
+          confidence: fallback?.confidence || 0,
+          variance: fallback?.variance || 0,
+          detector: 'frame_variance_fallback',
+        });
       }
     };
-    intervalId = setInterval(sampleFrame, 1200);
-    sampleFrame();
+    intervalId = setInterval(() => {
+      void sampleFrame();
+    }, 1200);
+    void sampleFrame();
     return () => {
+      cancelled = true;
       if (intervalId) clearInterval(intervalId);
     };
   }, [secureActive, cameraRequired, recordViolation]);
+
+  useEffect(() => {
+    if (!secureActive) return undefined;
+    const sendHeartbeat = async () => {
+      const status = {
+        fullscreen: !fullscreenRequired || Boolean(document.fullscreenElement),
+        tabActive: !tabGuardEnabled || (document.hasFocus() && !document.hidden),
+        cameraActive: !cameraRequired || (Boolean(streamRef.current) && securityStatusRef.current.cameraActive !== false),
+        idle: Boolean(securityStatusRef.current.idle),
+        duplicateTab: Boolean(securityStatusRef.current.duplicateTab),
+      };
+      setSecurityStatus((prev) => ({ ...prev, ...status }));
+      try {
+        const result = await api.sendStudentAssessmentHeartbeat(assessment._id, {
+          status,
+          violationScore: violationScoreRef.current,
+          pauseCount: pauseCountRef.current,
+          cameraFlags,
+        });
+        if (typeof result?.violationScore === 'number') setViolationScore(result.violationScore);
+        if (typeof result?.pauseCount === 'number') setPauseCount(result.pauseCount);
+        if (result?.lastPauseAt) setLastPauseAt(result.lastPauseAt);
+        if (result?.inconsistent) {
+          await recordViolation('heartbeat_failure', 'Security heartbeat reported an inconsistent session state.', {
+            source: 'heartbeat_inconsistent',
+            status,
+          });
+          return;
+        }
+      } catch {
+        if (Date.now() - heartbeatFailureRef.current > 12000) {
+          heartbeatFailureRef.current = Date.now();
+          void recordViolation('heartbeat_failure', 'Security heartbeat failed. Please check your connection.', {
+            source: 'heartbeat_request',
+          });
+        }
+      }
+    };
+    void sendHeartbeat();
+    const interval = setInterval(sendHeartbeat, 5000);
+    return () => clearInterval(interval);
+  }, [secureActive, assessment?._id, fullscreenRequired, tabGuardEnabled, cameraRequired, cameraFlags, handleSubmit, recordViolation, triggerForcePause]);
 
   const updateAnswer = (sectionIndex, questionIndex, value) => {
     setAnswersMap((prev) => ({
@@ -1139,6 +1565,14 @@ export default function AssessmentAttempt() {
       setAllowedEndTime(allowedEnd);
       setSubmission(data.submission);
       setIsPaused(false);
+      setSecurityStatus({
+        fullscreen: !fullscreenRequired || Boolean(document.fullscreenElement),
+        cameraActive: !cameraRequired || Boolean(streamRef.current),
+        tabActive: document.hasFocus() && !document.hidden,
+        idle: false,
+        duplicateTab: false,
+      });
+      setSecurityAction('warn');
       localStorage.setItem(rulesSeenStorageKey, '1');
       setHasSeenRules(true);
       setPhase('active');
@@ -1591,7 +2025,9 @@ export default function AssessmentAttempt() {
                   <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
                     {saving ? 'Saving progress...' : 'Progress auto-saved'}
                   </div>
-                  <div className="text-[11px] text-slate-500 dark:text-gray-400">Violations: {totalViolations}</div>
+                  <div className="text-[11px] text-slate-500 dark:text-gray-400">
+                    Violations: {totalViolations} - Score: {violationScore}
+                  </div>
                 </div>
               </div>
 
@@ -1614,6 +2050,33 @@ export default function AssessmentAttempt() {
       );
     })()
   );
+
+  const securityStatusItems = [
+    {
+      key: 'fullscreen',
+      label: 'Fullscreen',
+      ok: !fullscreenRequired || securityStatus.fullscreen,
+      enabled: fullscreenRequired,
+    },
+    {
+      key: 'camera',
+      label: 'Camera',
+      ok: !cameraRequired || securityStatus.cameraActive,
+      enabled: cameraRequired,
+    },
+    {
+      key: 'tab',
+      label: 'Tab',
+      ok: !tabGuardEnabled || securityStatus.tabActive,
+      enabled: tabGuardEnabled,
+    },
+    {
+      key: 'idle',
+      label: 'Idle',
+      ok: !idleDetection || !securityStatus.idle,
+      enabled: idleDetection,
+    },
+  ];
 
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900 lg:h-screen lg:overflow-hidden">
@@ -2312,6 +2775,41 @@ export default function AssessmentAttempt() {
         </div>
       )}
 
+      {securityPopup.open && secureActive && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/35 px-4 backdrop-blur-[1px]">
+          <div className={`w-full max-w-sm rounded-2xl border bg-white p-4 shadow-2xl dark:bg-gray-900 ${
+            securityPopup.tone === 'danger'
+              ? 'border-rose-200 dark:border-rose-800'
+              : 'border-amber-200 dark:border-amber-800'
+          }`}>
+            <div className={`flex items-center gap-2 text-sm font-semibold ${
+              securityPopup.tone === 'danger'
+                ? 'text-rose-600 dark:text-rose-300'
+                : 'text-amber-600 dark:text-amber-300'
+            }`}>
+              <AlertTriangle className="h-4 w-4" />
+              {securityPopup.title}
+            </div>
+            <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-gray-300">
+              {securityPopup.message}
+            </p>
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSecurityPopup((prev) => ({ ...prev, open: false }))}
+                className={`rounded-xl px-4 py-2 text-xs font-semibold text-white ${
+                  securityPopup.tone === 'danger'
+                    ? 'bg-rose-600 hover:bg-rose-500'
+                    : 'bg-amber-600 hover:bg-amber-500'
+                }`}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {phase === 'rules' && !isSubmitted && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 px-4 py-10">
           <div className="mx-auto w-full max-w-4xl rounded-3xl border border-slate-200 bg-white p-6 shadow-xl dark:border-gray-700 dark:bg-gray-900">
@@ -2442,12 +2940,116 @@ export default function AssessmentAttempt() {
         </div>
       )}
 
-      {secureActive && (cameraRequired || securityNotice) && (
+      {fullscreenRecovery.active && secureActive && (
+        <div className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-950/60 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-2xl border border-rose-200 bg-white p-6 shadow-2xl dark:border-rose-800 dark:bg-gray-900">
+            <div className="flex items-center gap-2 text-rose-600">
+              <AlertTriangle className="h-5 w-5" />
+              <span className="text-sm font-semibold">Fullscreen Required</span>
+            </div>
+            <p className="mt-2 text-sm text-slate-600 dark:text-gray-300">
+              Re-enter fullscreen to continue the assessment. The session will escalate if fullscreen is not restored in time.
+            </p>
+            <div className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300">
+              Time remaining: {fullscreenRecovery.remaining || 0}s
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                await requestFullscreen();
+                const active = Boolean(document.fullscreenElement);
+                setFullscreenRecovery({ active: !active, remaining: active ? 0 : fullscreenRecovery.remaining });
+                setSecurityStatus((prev) => ({ ...prev, fullscreen: !fullscreenRequired || active }));
+              }}
+              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-500"
+            >
+              <Maximize className="h-4 w-4" />
+              Re-enter Fullscreen
+            </button>
+          </div>
+        </div>
+      )}
+
+      {forcePauseActive && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/70 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-xl rounded-2xl border border-rose-200 bg-white p-6 shadow-2xl dark:border-rose-800 dark:bg-gray-900">
+            <div className="flex items-center gap-2 text-rose-600">
+              <AlertTriangle className="h-5 w-5" />
+              <span className="text-sm font-semibold">Security Violation Detected</span>
+            </div>
+            <h2 className="mt-3 text-xl font-semibold text-slate-900 dark:text-white">Assessment paused for re-validation</h2>
+            <p className="mt-2 text-sm text-slate-600 dark:text-gray-300">
+              {violationMessage || 'Security checks must be completed again before you can resume.'}
+            </p>
+            <div className="mt-4 grid gap-3 text-xs text-slate-600 dark:text-gray-300 sm:grid-cols-3">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800">
+                <div className="text-slate-400">Violation score</div>
+                <div className="text-lg font-semibold text-slate-900 dark:text-white">{violationScore}</div>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800">
+                <div className="text-slate-400">Pause count</div>
+                <div className="text-lg font-semibold text-slate-900 dark:text-white">{pauseCount}</div>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800">
+                <div className="text-slate-400">Action</div>
+                <div className="text-lg font-semibold capitalize text-slate-900 dark:text-white">{securityAction}</div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setViolationMessage('');
+                setFullscreenRecovery({ active: false, remaining: 0 });
+                setIsPaused(false);
+                setPhase('validation');
+              }}
+              className="mt-5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-500"
+            >
+              Complete Security Setup
+            </button>
+          </div>
+        </div>
+      )}
+
+      {secureActive && (
         <>
-          <div className={`fixed bottom-0 left-0 right-0 z-20 flex items-center justify-center px-4 py-2 text-xs font-semibold text-white ${
-            cameraRequired && cameraIndicator === 'normal' && !securityNotice ? 'bg-emerald-600' : 'bg-rose-600'
-          }`}>
-            {securityNotice || (cameraIndicator === 'normal' ? 'Face detected' : 'Face not detected, please stay in frame')}
+          <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 shadow-lg backdrop-blur dark:border-gray-700 dark:bg-gray-900/95">
+            {cameraStatusLine && (
+              <div className={`${cameraStatusLine.ok ? 'bg-emerald-500 text-white' : 'bg-rose-600 text-white'}`}>
+                <div className="mx-auto flex max-w-7xl items-center gap-2 px-3 py-1 text-[11px] font-semibold md:px-4">
+                  <span className={`h-2 w-2 rounded-full ${cameraStatusLine.ok ? 'bg-white' : 'bg-rose-100'}`} />
+                  <span className="truncate">{cameraStatusLine.text}</span>
+                </div>
+              </div>
+            )}
+            <div className="px-3 py-2">
+            <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                {securityStatusItems.map((item) => (
+                  <span
+                    key={item.key}
+                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-semibold ${
+                      item.ok
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300'
+                        : 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300'
+                    }`}
+                  >
+                    <span className={`h-2 w-2 rounded-full ${item.ok ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                    {item.label}: {item.enabled ? (item.ok ? 'OK' : 'Violated') : 'Off'}
+                  </span>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 font-semibold text-slate-700 dark:text-gray-200">
+                {securityNotice && <span className="max-w-[48rem] truncate text-rose-600 dark:text-rose-300">{securityNotice}</span>}
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 dark:border-gray-700 dark:bg-gray-800">
+                  Violations {totalViolations}
+                </span>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 dark:border-gray-700 dark:bg-gray-800">
+                  Score {violationScore}
+                </span>
+              </div>
+            </div>
+            </div>
           </div>
           {cameraRequired && (
             <>
