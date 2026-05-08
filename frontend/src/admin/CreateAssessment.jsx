@@ -424,7 +424,7 @@ export default function CreateAssessment() {
     navigate(`${rolePrefix}/compiler/create?${query.toString()}`);
   };
 
-  const handleOpenProblemLibrary = async () => {
+  const handleOpenProblemLibrary = async (sectionType = '') => {
     // Save current draft before navigating to library so data is preserved when returning
     if (dirty) {
       await saveAssessmentDraft(assessmentKey, { form, sections, selectedStudents, csvState, version, activeStep });
@@ -435,6 +435,9 @@ export default function CreateAssessment() {
       assessment: assessmentKey,
       return: returnTo,
     });
+    if (sectionType) {
+      query.set('type', sectionType);
+    }
     navigate(`${rolePrefix}/library?${query.toString()}`);
   };
 

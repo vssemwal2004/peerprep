@@ -9,6 +9,8 @@ const questionTypes = [
   { value: 'coding', label: 'Coding' },
 ];
 
+const typeLabelMap = Object.fromEntries(questionTypes.map((item) => [item.value, item.label]));
+
 const createQuestionId = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
@@ -54,8 +56,38 @@ const emptySection = () => ({
   questions: [emptyQuestion('mcq', 1)],
 });
 
+const truncate = (value, max = 88) => {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  return text.length > max ? `${text.slice(0, max - 1)}...` : text;
+};
+
+const getQuestionPreview = (sectionType, question = {}) => {
+  if (sectionType === 'mcq') {
+    const answer = (question.options || [])[Number(question.correctOptionIndex)];
+    return answer ? `Answer: ${truncate(answer, 56)}` : 'Options not completed';
+  }
+  if (sectionType === 'coding') {
+    const problemData = question.problemDataSnapshot || question.problemData || question.coding?.problemData || question.coding || {};
+    const parts = [
+      problemData.difficulty,
+      problemData.supportedLanguages?.length ? `${problemData.supportedLanguages.length} languages` : '',
+      problemData.sampleTestCases?.length ? `${problemData.sampleTestCases.length} examples` : '',
+    ].filter(Boolean);
+    return parts.join(' • ') || 'Coding prompt not configured';
+  }
+  if (question.expectedAnswer) {
+    return `Expected: ${truncate(question.expectedAnswer, 56)}`;
+  }
+  if (question.keywords?.length) {
+    return `Keywords: ${question.keywords.slice(0, 3).join(', ')}`;
+  }
+  return 'Answer details pending';
+};
+
 export default function SectionBuilder({ sections, onChange, onOpenCodingEditor, onOpenProblemLibrary, onNotify }) {
   const [collapsedSections, setCollapsedSections] = useState({});
+  const [collapsedQuestions, setCollapsedQuestions] = useState({});
   const fileInputRefs = useRef({});
   const sectionRefs = useRef({});
   const [importState, setImportState] = useState({});
@@ -66,6 +98,57 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
       __key: section.__key || `${index}-${section.sectionName || 'section'}`,
     }));
   }, [sections]);
+
+  useEffect(() => {
+    setCollapsedSections((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      sectionsWithIds.forEach((section) => {
+        if (typeof next[section.__key] === 'undefined') {
+          next[section.__key] = true;
+          changed = true;
+        }
+      });
+      Object.keys(next).forEach((key) => {
+        if (!sectionsWithIds.some((section) => section.__key === key)) {
+          delete next[key];
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [sectionsWithIds]);
+
+  useEffect(() => {
+    setCollapsedQuestions((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      sectionsWithIds.forEach((section) => {
+        const questionMap = { ...(next[section.__key] || {}) };
+        (section.questions || []).forEach((question, index) => {
+          const questionKey = question.questionId || `${section.__key}-${index}`;
+          if (typeof questionMap[questionKey] === 'undefined') {
+            questionMap[questionKey] = true;
+            changed = true;
+          }
+        });
+        Object.keys(questionMap).forEach((questionKey) => {
+          if (!(section.questions || []).some((question, index) => (question.questionId || `${section.__key}-${index}`) === questionKey)) {
+            delete questionMap[questionKey];
+            changed = true;
+          }
+        });
+        next[section.__key] = questionMap;
+      });
+      Object.keys(next).forEach((key) => {
+        if (!sectionsWithIds.some((section) => section.__key === key)) {
+          delete next[key];
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [sectionsWithIds]);
 
   const addSection = useCallback(() => {
     onChange([...(sectionsWithIds || []), emptySection()]);
@@ -80,6 +163,20 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
   const updateSection = (index, updates) => {
     const next = sectionsWithIds.map((section, idx) => (idx === index ? { ...section, ...updates } : section));
     onChange(next);
+  };
+
+  const toggleSection = (sectionKey) => {
+    setCollapsedSections((prev) => ({ ...prev, [sectionKey]: !prev[sectionKey] }));
+  };
+
+  const toggleQuestion = (sectionKey, questionKey) => {
+    setCollapsedQuestions((prev) => ({
+      ...prev,
+      [sectionKey]: {
+        ...(prev[sectionKey] || {}),
+        [questionKey]: !prev[sectionKey]?.[questionKey],
+      },
+    }));
   };
 
   const normalizeHeader = (value) => String(value || '')
@@ -108,7 +205,6 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
       ];
 
     if (isMcq) {
-      // Keep headers simple so uploaded templates always match.
       rows[0][5] = 'Correct Answer';
     }
 
@@ -119,7 +215,6 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
       XLSX.utils.book_append_sheet(wb, ws, 'Questions');
       XLSX.writeFile(wb, filename);
     } catch (err) {
-      // If XLSX isn't available for some reason, fail gracefully.
       // eslint-disable-next-line no-console
       console.error(err);
     }
@@ -140,11 +235,10 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
     const questionIdx = getHeaderIndex(normalizedHeaders, ['question', 'questiontext']);
 
     if (questionIdx === -1) {
-      throw new Error('Invalid format: missing required column “Question”. Download the template to see the expected format.');
+      throw new Error('Invalid format: missing required column "Question". Download the template to see the expected format.');
     }
 
     if (sectionType === 'mcq') {
-      // Backward compatible: accept files that still have a Heading column, but do not require/use it.
       const legacyHeadingIdx = getHeaderIndex(normalizedHeaders, ['heading', 'category', 'title']);
       const aIdx = getHeaderIndex(normalizedHeaders, ['optiona', 'option1', 'option 1', 'a']);
       const bIdx = getHeaderIndex(normalizedHeaders, ['optionb', 'option2', 'option 2', 'b']);
@@ -159,7 +253,6 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
       const errors = [];
       for (let r = 1; r < aoa.length; r += 1) {
         const row = aoa[r] || [];
-        // Legacy heading ignored (do not include it in questionText).
         const legacyHeading = legacyHeadingIdx >= 0 ? String(row[legacyHeadingIdx] || '').trim() : '';
         const question = String(row[questionIdx] || '').trim();
         const optA = String(row[aIdx] || '').trim();
@@ -181,16 +274,7 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
         }
 
         const correct = correctRaw.toUpperCase().replace(/^OPTION\s*/i, '').trim();
-        const map = {
-          A: 0,
-          B: 1,
-          C: 2,
-          D: 3,
-          '1': 0,
-          '2': 1,
-          '3': 2,
-          '4': 3,
-        };
+        const map = { A: 0, B: 1, C: 2, D: 3, '1': 0, '2': 1, '3': 2, '4': 3 };
         const correctOptionIndex = map[correct];
         if (typeof correctOptionIndex !== 'number') {
           errors.push(`Row ${r + 1}: Correct Answer must be A/B/C/D or 1/2/3/4.`);
@@ -206,11 +290,10 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
       return { rows: results, errors };
     }
 
-    // short / one_line import
     const headingIdx = getHeaderIndex(normalizedHeaders, ['heading', 'category', 'title']);
     const answerIdx = getHeaderIndex(normalizedHeaders, ['answer', 'expectedanswer']);
     if (answerIdx === -1) {
-      throw new Error('Invalid format: missing required column “Answer”. Download the template to see the expected format.');
+      throw new Error('Invalid format: missing required column "Answer". Download the template to see the expected format.');
     }
 
     const results = [];
@@ -220,10 +303,8 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
       const heading = headingIdx >= 0 ? String(row[headingIdx] || '').trim() : '';
       const question = String(row[questionIdx] || '').trim();
       const answer = String(row[answerIdx] || '').trim();
-
       const allEmpty = !heading && !question && !answer;
       if (allEmpty) continue;
-
       if (!question) {
         errors.push(`Row ${r + 1}: Question is required.`);
         continue;
@@ -232,7 +313,6 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
         errors.push(`Row ${r + 1}: Answer is required.`);
         continue;
       }
-
       results.push({ heading, questionText: question, expectedAnswer: answer });
     }
 
@@ -249,7 +329,7 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
 
     setImportState((prev) => ({
       ...prev,
-      [sectionKey]: { status: 'importing', message: 'Uploading…', imported: 0, errors: [] },
+      [sectionKey]: { status: 'importing', message: 'Uploading...', imported: 0, errors: [] },
     }));
 
     try {
@@ -296,9 +376,14 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
 
       const nextQuestions = [...(section.questions || []), ...importedQuestions];
       updateSection(sectionIndex, { questions: nextQuestions });
-
-      // Ensure admins can immediately see the imported questions.
-      setCollapsedSections((prev) => ({ ...prev, [sectionIndex]: false }));
+      setCollapsedSections((prev) => ({ ...prev, [sectionKey]: false }));
+      setCollapsedQuestions((prev) => ({
+        ...prev,
+        [sectionKey]: {
+          ...(prev[sectionKey] || {}),
+          ...Object.fromEntries(importedQuestions.map((question) => [question.questionId, true])),
+        },
+      }));
       requestAnimationFrame(() => {
         const el = sectionRefs.current?.[sectionKey];
         el?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
@@ -309,11 +394,8 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
         [sectionKey]: { status: errors.length ? 'warning' : 'success', message: `Imported ${importedQuestions.length} questions.`, imported: importedQuestions.length, errors: errors.slice(0, 8) },
       }));
 
-      if (errors.length) {
-        onNotify?.error?.(`Imported ${importedQuestions.length} questions with some errors.`);
-      } else {
-        onNotify?.success?.(`Imported ${importedQuestions.length} questions.`);
-      }
+      if (errors.length) onNotify?.error?.(`Imported ${importedQuestions.length} questions with some errors.`);
+      else onNotify?.success?.(`Imported ${importedQuestions.length} questions.`);
     } catch (err) {
       setImportState((prev) => ({
         ...prev,
@@ -333,8 +415,17 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
   const addQuestion = (sectionIndex) => {
     const section = sectionsWithIds[sectionIndex];
     const marks = Number(section.marksPerQuestion || 1) || 1;
-    const nextQuestions = [...(section.questions || []), emptyQuestion(section.type, marks)];
+    const newQuestion = emptyQuestion(section.type, marks);
+    const nextQuestions = [...(section.questions || []), newQuestion];
     updateSection(sectionIndex, { questions: nextQuestions });
+    setCollapsedSections((prev) => ({ ...prev, [section.__key]: false }));
+    setCollapsedQuestions((prev) => ({
+      ...prev,
+      [section.__key]: {
+        ...(prev[section.__key] || {}),
+        [newQuestion.questionId]: false,
+      },
+    }));
   };
 
   const updateQuestion = (sectionIndex, questionIndex, updates) => {
@@ -354,19 +445,20 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
   const handleTypeChange = (sectionIndex, nextType) => {
     const section = sectionsWithIds[sectionIndex];
     const marks = Number(section.marksPerQuestion || 1) || 1;
-    updateSection(sectionIndex, { type: nextType, questions: [emptyQuestion(nextType, marks)] });
+    updateSection(sectionIndex, {
+      type: nextType,
+      sectionName: section.sectionName || `${typeLabelMap[nextType]} Section`,
+      questions: [emptyQuestion(nextType, marks)],
+    });
   };
 
   const handleMarksChange = (sectionIndex, value) => {
-    // Allow empty string during editing, but convert to number when value exists
     const marks = value === '' ? '' : Number(value);
-    // Only update questions if we have a valid number
     const section = sectionsWithIds[sectionIndex];
-    if (value !== '' && !isNaN(marks) && marks >= 0) {
+    if (value !== '' && !Number.isNaN(marks) && marks >= 0) {
       const nextQuestions = (section.questions || []).map((question) => ({ ...question, points: marks }));
       updateSection(sectionIndex, { marksPerQuestion: marks, questions: nextQuestions });
     } else if (value === '') {
-      // Allow empty field during editing
       updateSection(sectionIndex, { marksPerQuestion: '' });
     }
   };
@@ -374,7 +466,6 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
   const handleMarksBlur = (sectionIndex) => {
     const section = sectionsWithIds[sectionIndex];
     const currentValue = section.marksPerQuestion;
-    // Ensure we have a valid number when field loses focus
     if (currentValue === '' || currentValue === undefined || currentValue === null || Number(currentValue) < 1) {
       const marks = 1;
       const nextQuestions = (section.questions || []).map((question) => ({ ...question, points: marks }));
@@ -383,17 +474,11 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
   };
 
   const renderCodingCard = (sectionIndex, questionIndex, question, section) => {
-    const problemData = question.problemDataSnapshot
-      || question.problemData
-      || question.coding?.problemData
-      || question.coding
-      || {};
+    const problemData = question.problemDataSnapshot || question.problemData || question.coding?.problemData || question.coding || {};
     const previewValidated = Boolean(problemData.previewValidated ?? problemData.previewTested ?? question.coding?.previewValidated ?? question.coding?.previewTested);
     const languageCount = problemData.supportedLanguages?.length || 0;
     const sampleCount = problemData.sampleTestCases?.length || 0;
-    const hiddenCount = problemData.hiddenTestCaseCount
-      || problemData.hiddenTestCases?.length
-      || 0;
+    const hiddenCount = problemData.hiddenTestCaseCount || problemData.hiddenTestCases?.length || 0;
     const hasTemplates = Object.values(problemData.codeTemplates || {}).some((value) => String(value || '').trim());
     const status = previewValidated && sampleCount > 0 && hiddenCount > 0 && hasTemplates
       ? 'Ready'
@@ -411,7 +496,7 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
               {problemData.title || question.questionText || 'Untitled Coding Question'}
             </div>
             <div className="mt-1 text-xs text-slate-500 dark:text-gray-400">
-              {problemData.difficulty || 'Easy'} - {languageCount} languages - {sampleCount} samples - {hiddenCount} hidden
+              {[problemData.difficulty || 'Easy', `${languageCount} languages`, `${sampleCount} samples`, `${hiddenCount} hidden`].join(' • ')}
             </div>
           </div>
           <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${
@@ -425,10 +510,72 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
           </span>
         </div>
 
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-800">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Problem Statement</div>
+            <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-gray-200">
+              {problemData.statement || problemData.description || question.questionText || 'Problem statement not configured yet.'}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-800">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Constraints</div>
+            <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-gray-200">
+              {problemData.constraints || 'Constraints not added yet.'}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-800">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Examples</div>
+            <div className="mt-2 space-y-2">
+              {(problemData.sampleTestCases || []).length ? (
+                (problemData.sampleTestCases || []).map((testCase, idx) => (
+                  <div key={`${question.questionId}-sample-${idx}`} className="rounded-xl border border-slate-200 bg-white p-2 text-xs text-slate-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300">
+                    <div>Input: {testCase.input || '-'}</div>
+                    <div className="mt-1">Output: {testCase.output || '-'}</div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-sm text-slate-500 dark:text-gray-400">No examples added yet.</div>
+              )}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-800">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Test Cases</div>
+            <div className="mt-2 text-sm text-slate-700 dark:text-gray-200">
+              Visible: {sampleCount} • Hidden: {hiddenCount}
+            </div>
+            <div className="mt-2 text-xs text-slate-500 dark:text-gray-400">
+              {previewValidated ? 'Preview validated for this problem.' : 'Preview validation is still pending.'}
+            </div>
+          </div>
+        </div>
+
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <p className="text-xs text-slate-500 dark:text-gray-400">
-            {previewValidated ? 'Preview validated. Ready to add.' : 'Preview validation required before adding.'}
-          </p>
+          <div className="grid gap-3 md:grid-cols-[150px_minmax(0,1fr)]">
+            <div>
+              <label className="text-[11px] text-slate-500 dark:text-gray-400">Points</label>
+              <input
+                type="number"
+                min="1"
+                value={question.points || section.marksPerQuestion || 1}
+                onChange={(e) => updateQuestion(sectionIndex, questionIndex, { points: Number(e.target.value) })}
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] text-slate-500 dark:text-gray-400">Add Tag</label>
+              <input
+                value={(question.tags || problemData.tags || []).join(', ')}
+                onChange={(e) => updateQuestion(sectionIndex, questionIndex, {
+                  tags: e.target.value.split(',').map((tag) => tag.trim()).filter(Boolean),
+                })}
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                placeholder="Company, topic, pattern..."
+              />
+            </div>
+          </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -447,30 +594,6 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
             </button>
           </div>
         </div>
-
-        <div className="mt-4 grid gap-3 md:grid-cols-[150px_minmax(0,1fr)]">
-          <div>
-            <label className="text-[11px] text-slate-500 dark:text-gray-400">Points</label>
-            <input
-              type="number"
-              min="1"
-              value={question.points || section.marksPerQuestion || 1}
-              onChange={(e) => updateQuestion(sectionIndex, questionIndex, { points: Number(e.target.value) })}
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-            />
-          </div>
-          <div>
-            <label className="text-[11px] text-slate-500 dark:text-gray-400">Add Tag</label>
-            <input
-              value={(question.tags || problemData.tags || []).join(', ')}
-              onChange={(e) => updateQuestion(sectionIndex, questionIndex, {
-                tags: e.target.value.split(',').map((tag) => tag.trim()).filter(Boolean),
-              })}
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-              placeholder="Company, topic, pattern..."
-            />
-          </div>
-        </div>
       </div>
     );
   };
@@ -478,45 +601,75 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
   return (
     <div className="space-y-4">
       {sectionsWithIds.map((section, index) => {
-        const isCollapsed = collapsedSections[index];
+        const isCollapsed = collapsedSections[section.__key];
         const isCodingSection = section.type === 'coding';
+        const questionCount = section.questions?.length || 0;
+        const totalMarks = (section.questions || []).reduce((sum, question) => sum + (Number(question.points || section.marksPerQuestion || 0) || 0), 0);
+        const sectionTitle = section.sectionName || `${typeLabelMap[section.type] || 'Question'} Section`;
+
         return (
           <div
             key={section.__key}
             ref={(el) => {
               if (el) sectionRefs.current[section.__key] = el;
             }}
-            className="rounded-2xl border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900"
+            className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_18px_48px_-36px_rgba(15,23,42,0.32)] dark:border-gray-700 dark:bg-gray-900"
           >
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-gray-700">
-              <div className="flex items-center gap-2">
+            <div className="border-b border-slate-200 bg-gradient-to-r from-slate-50 via-white to-sky-50/60 px-4 py-4 dark:border-gray-700 dark:from-gray-900 dark:via-gray-900 dark:to-sky-950/20">
+              <div className="flex flex-wrap items-start justify-between gap-3">
                 <button
                   type="button"
-                  onClick={() => setCollapsedSections((prev) => ({ ...prev, [index]: !prev[index] }))}
-                  className="rounded-lg border border-slate-200 p-1 text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:hover:bg-gray-800"
+                  onClick={() => toggleSection(section.__key)}
+                  className="flex min-w-0 flex-1 items-start gap-3 text-left"
                 >
-                  {isCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+                    {isCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300">
+                        {typeLabelMap[section.type] || section.type}
+                      </span>
+                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+                        {questionCount} question{questionCount !== 1 ? 's' : ''}
+                      </span>
+                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+                        {totalMarks} marks
+                      </span>
+                    </div>
+                    <div className="mt-2 text-base font-semibold text-slate-900 dark:text-white">{sectionTitle}</div>
+                    <div className="mt-1 text-sm text-slate-500 dark:text-gray-400">
+                      {isCodingSection
+                        ? truncate(section.questions?.[0]?.problemDataSnapshot?.title || section.questions?.[0]?.questionText || 'Coding section ready for curated problem selection', 120)
+                        : `${typeLabelMap[section.type] || section.type} section with ${questionCount} question${questionCount !== 1 ? 's' : ''} and ${Number(section.marksPerQuestion || 1) || 1} mark${Number(section.marksPerQuestion || 1) === 1 ? '' : 's'} per question.`}
+                    </div>
+                  </div>
                 </button>
-                <div>
-                  <p className="text-sm font-semibold text-slate-800 dark:text-gray-100">
-                    {section.sectionName || `Section ${index + 1}`}
-                  </p>
-                  <p className="text-xs text-slate-500 dark:text-gray-400">{section.type?.toUpperCase()} - {section.questions?.length || 0} questions</p>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onOpenProblemLibrary?.(section.type)}
+                    className="inline-flex items-center gap-2 rounded-xl border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 transition-colors hover:bg-sky-100 dark:border-sky-700 dark:bg-sky-900/20 dark:text-sky-300 dark:hover:bg-sky-900/40"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add More
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeSection(index)}
+                    className="inline-flex items-center gap-1 rounded-xl border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Remove
+                  </button>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => removeSection(index)}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-rose-600"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Remove Section
-              </button>
             </div>
 
             {!isCollapsed && (
-              <div className="p-4 space-y-4">
-                <div className="grid gap-3 md:grid-cols-3">
+              <div className="space-y-4 p-4">
+                <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 md:grid-cols-3 dark:border-gray-700 dark:bg-gray-800/60">
                   <div>
                     <label className="text-xs text-slate-500 dark:text-gray-400">Section Name</label>
                     <input
@@ -551,7 +704,6 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
                   </div>
                 </div>
 
-                {/* Bulk Import */}
                 {['mcq', 'short', 'one_line'].includes(section.type) && (
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
                     <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-gray-200">
@@ -603,9 +755,7 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
                   return (
                     <div className={`rounded-2xl border px-4 py-3 text-xs ${tone}`}>
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="font-semibold">
-                          {state.status === 'importing' ? 'Importing…' : state.message}
-                        </div>
+                        <div className="font-semibold">{state.status === 'importing' ? 'Importing...' : state.message}</div>
                         {state.status === 'importing' && (
                           <div className="h-4 w-4 animate-spin rounded-full border-2 border-sky-300 border-t-transparent" />
                         )}
@@ -625,55 +775,82 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
                 })()}
 
                 <div className="space-y-3">
-                  {(section.questions || []).map((question, qIndex) => (
-                    section.type === 'coding'
-                      ? (
-                        <div key={question.questionId || `q-${index}-${qIndex}`}>
-                          {renderCodingCard(index, qIndex, question, section)}
-                        </div>
-                      )
-                      : (
-                        <QuestionBuilder
-                          key={question.questionId || `q-${index}-${qIndex}`}
-                          type={section.type}
-                          value={question}
-                          onChange={(updates) => updateQuestion(index, qIndex, updates)}
-                          onRemove={() => removeQuestion(index, qIndex)}
-                          groupName={`mcq-${index}-${qIndex}`}
-                        />
-                      )
-                  ))}
+                  {(section.questions || []).map((question, qIndex) => {
+                    const questionKey = question.questionId || `${section.__key}-${qIndex}`;
+                    const isQuestionCollapsed = collapsedQuestions[section.__key]?.[questionKey] ?? true;
+                    const summaryTitle = truncate(
+                      question.questionText
+                      || question.problemDataSnapshot?.title
+                      || question.problemData?.title
+                      || question.coding?.problemData?.title
+                      || `${typeLabelMap[section.type] || 'Question'} ${qIndex + 1}`,
+                      110,
+                    ) || `${typeLabelMap[section.type] || 'Question'} ${qIndex + 1}`;
+
+                    return (
+                      <div key={questionKey} className="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+                        <button
+                          type="button"
+                          onClick={() => toggleQuestion(section.__key, questionKey)}
+                          className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left hover:bg-slate-50/70 dark:hover:bg-gray-800/40"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                                Q{qIndex + 1}
+                              </span>
+                              <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                                {Number(question.points || section.marksPerQuestion || 1) || 1} pts
+                              </span>
+                            </div>
+                            <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-gray-100">{summaryTitle}</div>
+                            <div className="mt-1 text-xs text-slate-500 dark:text-gray-400">
+                              {getQuestionPreview(section.type, question)}
+                            </div>
+                          </div>
+                          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+                            {isQuestionCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+                          </span>
+                        </button>
+
+                        {!isQuestionCollapsed && (
+                          <div className="border-t border-slate-200 p-4 dark:border-gray-700">
+                            {section.type === 'coding'
+                              ? renderCodingCard(index, qIndex, question, section)
+                              : (
+                                <QuestionBuilder
+                                  type={section.type}
+                                  value={question}
+                                  onChange={(updates) => updateQuestion(index, qIndex, updates)}
+                                  onRemove={() => removeQuestion(index, qIndex)}
+                                  groupName={`mcq-${index}-${qIndex}`}
+                                />
+                              )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
 
-                {isCodingSection ? (
-                  <div className="flex flex-wrap items-center gap-3 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => addQuestion(index)}
-                      className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-sky-500 hover:shadow-md"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      Add Question
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onOpenProblemLibrary?.()}
-                      className="inline-flex items-center gap-2 rounded-xl border border-sky-300 bg-sky-50 px-4 py-2 text-xs font-semibold text-sky-700 transition-all hover:bg-sky-100 dark:border-sky-700 dark:bg-sky-900/20 dark:text-sky-300 dark:hover:bg-sky-900/40"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      Add Questions from Library
-                    </button>
-                  </div>
-                ) : (
+                <div className="flex flex-wrap items-center gap-3 pt-1">
                   <button
                     type="button"
                     onClick={() => addQuestion(index)}
-                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                    className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-sky-500 hover:shadow-md"
                   >
                     <Plus className="h-3.5 w-3.5" />
                     Add Question
                   </button>
-                )}
+                  <button
+                    type="button"
+                    onClick={() => onOpenProblemLibrary?.(section.type)}
+                    className="inline-flex items-center gap-2 rounded-xl border border-sky-300 bg-sky-50 px-4 py-2 text-xs font-semibold text-sky-700 transition-all hover:bg-sky-100 dark:border-sky-700 dark:bg-sky-900/20 dark:text-sky-300 dark:hover:bg-sky-900/40"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add Questions from Library
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -693,5 +870,3 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
     </div>
   );
 }
-
-

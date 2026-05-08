@@ -94,6 +94,7 @@ export default function QuestionLibrary() {
   const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
   const returnTo = params.get('return') || `${rolePrefix}/assessment/create`;
   const initialType = params.get('type') || 'all';
+  const isScopedSelection = selectionMode && initialType && initialType !== 'all';
 
   const [filters, setFilters] = useState({
     type: initialType,
@@ -273,11 +274,15 @@ export default function QuestionLibrary() {
 
         {selectionMode && (
           <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
-            <div className="font-semibold text-slate-800 dark:text-white">Mixed selection is enabled.</div>
+            <div className="font-semibold text-slate-800 dark:text-white">
+              {isScopedSelection ? `${labelForType(initialType)} library` : 'Mixed selection is enabled.'}
+            </div>
             <div className="mt-1">
               {Object.keys(selectionSummary).length
                 ? Object.entries(selectionSummary).map(([type, count]) => `${count} ${labelForType(type)}`).join(' • ')
-                : 'Choose questions across any category. They will be grouped by type automatically when added to the assessment.'}
+                : isScopedSelection
+                  ? `You are adding more ${labelForType(initialType).toLowerCase()} for this section. You can switch tabs if needed, but this view opens scoped to the selected section type.`
+                  : 'Choose questions across any category. They will be grouped by type automatically when added to the assessment.'}
             </div>
           </div>
         )}
