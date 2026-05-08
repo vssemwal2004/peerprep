@@ -1,5 +1,5 @@
-import { lazy, Suspense, useMemo } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { lazy, Suspense, useMemo, useCallback } from 'react';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { BarChart3, FileCode2, LayoutDashboard, PlusSquare, TerminalSquare } from 'lucide-react';
 
 const CompilerOverview = lazy(() => import('./CompilerOverview'));
@@ -15,10 +15,23 @@ const LoadingBlock = () => (
 );
 export default function AdminCompilerDashboard() {
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const pathname = location.pathname;
   const isPreviewRoute = pathname.includes('/preview');
 
   const rolePrefix = pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
+
+  // Read assessment context from URL params
+  const mode = searchParams.get('mode') || 'compiler';
+  const assessmentContext = useMemo(() => {
+    if (mode !== 'assessment') return undefined;
+    return {
+      assessmentKey: searchParams.get('assessment'),
+      sectionIndex: searchParams.get('section') ? parseInt(searchParams.get('section')) : 0,
+      questionIndex: searchParams.get('question') ? parseInt(searchParams.get('question')) : 0,
+      returnTo: searchParams.get('return'),
+    };
+  }, [mode, searchParams]);
 
   const sections = useMemo(() => ([
     { key: 'overview', label: 'Overview', caption: 'Health and recent activity', to: `${rolePrefix}/compiler`, Icon: LayoutDashboard },
@@ -43,7 +56,7 @@ export default function AdminCompilerDashboard() {
   const showHeaderCard = !pathname.includes('/compiler/problems') && !pathname.includes('/preview');
 
   const renderContent = () => {
-    if (pathname.includes('/compiler/create') || pathname.includes('/edit')) return <CreateProblem />;
+    if (pathname.includes('/compiler/create') || pathname.includes('/edit')) return <CreateProblem mode={mode} assessmentContext={assessmentContext} />;
     if (pathname.includes('/preview')) return <AdminTestCompiler />;
     if (pathname.includes('/compiler/problems')) return <ProblemManagement />;
     if (pathname.includes('/compiler/analytics')) return <CompilerAnalytics />;

@@ -20,7 +20,6 @@ import {
   ChevronDown,
   Settings,
   Mail,
-  ShieldCheck,
   Megaphone,
   Building2,
 } from 'lucide-react';
@@ -155,7 +154,6 @@ const buildNavItems = (role = 'admin') => {
         { label: 'Overview', to: '/admin/assessment', icon: ClipboardList },
         { label: 'Add Assessment', to: '/admin/assessment/create', icon: ClipboardList },
         { label: 'Reports', to: '/admin/assessment/reports', icon: ClipboardList },
-        { label: 'Assessment Rules', to: '/admin/assessment/rules', icon: ShieldCheck },
       ],
     },
     {

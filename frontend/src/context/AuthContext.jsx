@@ -3,8 +3,8 @@ import { api } from '../utils/api';
 
 const AuthContext = createContext(null);
 
-// Cache duration: 2 minutes - avoid re-fetching on every route change
-const CACHE_DURATION = 2 * 60 * 1000;
+// Cache duration: 30 minutes - avoid re-fetching to prevent backend session conflicts
+const CACHE_DURATION = 30 * 60 * 1000;
 
 /**
  * AuthProvider - Centralized auth state management

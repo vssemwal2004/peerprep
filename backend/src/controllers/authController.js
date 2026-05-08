@@ -12,6 +12,18 @@ import { validatePasswordStrength, validateEmail, generateSecureToken, hashToken
 import { checkEmailResetLimit, recordEmailResetAttempt } from '../middleware/rateLimiter.js';
 import { createNotification } from '../services/notificationService.js';
 
+function getAuthCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    // Lax is more reliable across normal browsers during localhost dev while
+    // still protecting against most CSRF-style cross-site subrequests.
+    sameSite: 'lax',
+    maxAge: 24 * 60 * 60 * 1000,
+    path: '/',
+  };
+}
+
 // Change password for student (requires current password)
 export async function changePassword(req, res) {
   const { currentPassword, newPassword, confirmPassword } = req.body;
@@ -378,13 +390,7 @@ export async function login(req, res) {
     console.log('[Session] Admin session created:', admin.email, sessionTokenHash.substring(0, 10) + '...');
     
     // SECURITY: Store JWT in HttpOnly cookie instead of sending in response
-    res.cookie('accessToken', token, {
-      httpOnly: true, // Cannot be accessed via JavaScript (XSS protection)
-      secure: process.env.NODE_ENV === 'production', // HTTPS only in production
-      sameSite: 'strict', // CSRF protection
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      path: '/'
-    });
+    res.cookie('accessToken', token, getAuthCookieOptions());
     
     return res.json({ user: { id: admin._id, email: admin.email, role: admin.role, name: admin.name } });
   }
@@ -428,13 +434,7 @@ export async function login(req, res) {
     console.log('[Session] Student session created:', student.email, sessionTokenHash.substring(0, 10) + '...');
     
     // SECURITY: Store JWT in HttpOnly cookie
-    res.cookie('accessToken', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 24 * 60 * 60 * 1000,
-      path: '/'
-    });
+    res.cookie('accessToken', token, getAuthCookieOptions());
     
     return res.json({ user: sanitizeUser(student) });
   }
@@ -457,15 +457,15 @@ export async function login(req, res) {
     // SECURITY: Log successful auth
     logAuthAttempt(req, true, coordinator.email, coordinator._id);
     const token = signToken({ sub: coordinator._id, role: coordinator.role, email: coordinator.email });
+
+    const sessionTokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    coordinator.activeSessionToken = sessionTokenHash;
+    coordinator.activeSessionCreatedAt = new Date();
+    await coordinator.save();
+    console.log('[Session] Coordinator session created:', coordinator.email, sessionTokenHash.substring(0, 10) + '...');
     
     // SECURITY: Store JWT in HttpOnly cookie
-    res.cookie('accessToken', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 24 * 60 * 60 * 1000,
-      path: '/'
-    });
+    res.cookie('accessToken', token, getAuthCookieOptions());
     
     return res.json({ user: sanitizeUser(coordinator) });
   }

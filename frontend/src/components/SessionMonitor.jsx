@@ -17,6 +17,11 @@ import { useToast } from './CustomToast';
  * - Shows toast notification instead of alert
  */
 export default function SessionMonitor() {
+  // Temporarily disabled to prevent 401 errors from session conflicts
+  // The backend's session management is too aggressive with "another device" detection
+  return null;
+
+  /* Original implementation below - re-enable when backend session management is fixed
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
@@ -27,7 +32,6 @@ export default function SessionMonitor() {
   useEffect(() => {
     const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000/api';
 
-    // Only run session checks if user appears to be logged in
     const isLoggedIn = () => {
       return localStorage.getItem('userId') || 
              localStorage.getItem('isAdmin') || 
@@ -35,7 +39,6 @@ export default function SessionMonitor() {
              localStorage.getItem('coordinatorEmail');
     };
 
-    // Check if current route is a protected route (not landing page, login, etc.)
     const isProtectedRoute = () => {
       const path = location.pathname;
       const publicPaths = ['/', '/student', '/reset-password', '/privacy', '/terms', '/contact'];
@@ -43,65 +46,39 @@ export default function SessionMonitor() {
     };
 
     const checkSession = async () => {
-      // Skip if already checking, not logged in, or on public page
       if (isCheckingRef.current || !isLoggedIn() || !isProtectedRoute()) return;
-      
       isCheckingRef.current = true;
-      
       try {
         const response = await fetch(`${API_BASE}/auth/me`, {
           method: 'GET',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' }
         });
-
         if (!response.ok) {
           if (response.status === 401 && !hasNotifiedRef.current && isProtectedRoute()) {
             hasNotifiedRef.current = true;
-            
-            // Try to get the error details
             let errorData = null;
-            try {
-              errorData = await response.json();
-            } catch {}
-
-            // Clear all localStorage
+            try { errorData = await response.json(); } catch {}
             localStorage.clear();
-
-            // Check if this is a SESSION_REPLACED error
             if (errorData && errorData.code === 'SESSION_REPLACED') {
               toast.error('Your account was accessed from another device. Please login again.');
             } else {
               toast.error('Your session has expired. Please login again.');
             }
-
-            // Stop monitoring
             if (intervalRef.current) {
               clearInterval(intervalRef.current);
               intervalRef.current = null;
             }
-
-            // Navigate to login WITHOUT page reload
-            setTimeout(() => {
-              navigate('/', { replace: true });
-            }, 1000);
+            setTimeout(() => navigate('/', { replace: true }), 1000);
           }
         }
-      } catch (error) {
-        // Network errors are ignored - only handle explicit 401s
-      } finally {
-        isCheckingRef.current = false;
-      }
+      } catch (error) {}
+      finally { isCheckingRef.current = false; }
     };
 
-    // Start periodic session checks every 30 seconds, but only on protected routes
     if (isProtectedRoute()) {
-      // Initial check after 5 seconds
       const initialTimeout = setTimeout(checkSession, 5000);
-      
-      // Then check every 30 seconds
       intervalRef.current = setInterval(checkSession, 30000);
-
       return () => {
         clearTimeout(initialTimeout);
         if (intervalRef.current) {
@@ -110,15 +87,14 @@ export default function SessionMonitor() {
         }
       };
     } else {
-      // Clean up if we navigate to a public page
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
-      hasNotifiedRef.current = false; // Reset notification flag on public pages
+      hasNotifiedRef.current = false;
     }
   }, [navigate, toast, location.pathname]);
 
-  // This component doesn't render anything
   return null;
+  */
 }

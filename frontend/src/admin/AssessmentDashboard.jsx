@@ -18,6 +18,14 @@ const statusStyles = {
   Completed: 'bg-slate-200 text-slate-700 border-slate-300',
 };
 
+const tabs = [
+  { id: 'all', label: 'All Assessments' },
+  { id: 'drafts', label: 'Drafts' },
+  { id: 'upcoming', label: 'Upcoming' },
+  { id: 'active', label: 'Active' },
+  { id: 'completed', label: 'Completed' },
+];
+
 const formatDateTime = (value) => (value ? new Date(value).toLocaleString() : '-');
 
 function ThreeDotsMenu({ assessment, onEdit, onDuplicate, onDelete, onToggleVisibility, onEditPassword }) {
@@ -174,6 +182,7 @@ export default function AssessmentDashboard() {
   const [error, setError] = useState('');
   const [selected, setSelected] = useState(null);
   const [passwordTarget, setPasswordTarget] = useState(null);
+  const [activeTab, setActiveTab] = useState('all');
   const [filters, setFilters] = useState({ status: 'All', search: '', startDate: '', endDate: '' });
 
   const loadAssessments = async () => {
@@ -200,6 +209,14 @@ export default function AssessmentDashboard() {
   }, [assessments]);
 
   const filtered = useMemo(() => assessments.filter((a) => {
+    // Filter by active tab
+    let matchesTab = true;
+    if (activeTab === 'drafts') {
+      matchesTab = a.lifecycleStatus === 'draft';
+    } else if (activeTab !== 'all') {
+      matchesTab = a.status === activeTab;
+    }
+
     const matchesStatus = filters.status === 'All' || a.status === filters.status;
     const matchesSearch = !filters.search || a.title?.toLowerCase().includes(filters.search.toLowerCase());
     const startTime = a.startTime ? new Date(a.startTime).getTime() : null;
@@ -207,8 +224,8 @@ export default function AssessmentDashboard() {
     const startFilter = filters.startDate ? new Date(filters.startDate).getTime() : null;
     const endFilter = filters.endDate ? new Date(filters.endDate).getTime() : null;
     const matchesDate = (!startFilter || (startTime && startTime >= startFilter)) && (!endFilter || (endTime && endTime <= endFilter));
-    return matchesStatus && matchesSearch && matchesDate;
-  }), [assessments, filters]);
+    return matchesTab && matchesStatus && matchesSearch && matchesDate;
+  }), [assessments, filters, activeTab]);
 
   const handleDelete = async (id) => {
     if (!confirm('Delete this assessment and all submissions?')) return;
@@ -269,6 +286,22 @@ export default function AssessmentDashboard() {
         </div>
 
         <SectionCard title="Assessment Registry" subtitle="Filter and review assessments by status, timing, and target audience." action={<div className="flex items-center gap-2 text-xs text-slate-500 dark:text-gray-400"><Filter className="h-3.5 w-3.5" /> Filters</div>}>
+          <div className="mb-4 flex flex-wrap gap-2 border-b border-slate-200 pb-3 dark:border-gray-700">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+                  activeTab === tab.id
+                    ? 'bg-sky-600 text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
           <div className="grid gap-3 md:grid-cols-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />

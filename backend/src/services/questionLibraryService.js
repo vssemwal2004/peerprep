@@ -164,6 +164,8 @@ function buildAssessmentLibraryPayload({ assessment, section, question, sectionI
     tags,
     keywords,
     difficulty,
+    status: 'published',
+    visibility: 'public',
     searchPrefixes: buildSearchPrefixes([
       assessment?.title,
       section?.sectionName,
@@ -187,6 +189,8 @@ function buildProblemLibraryPayload(problem = {}, { sampleTestCases = [], hidden
   const tags = normalizeTags(problem.tags || []);
   const keywords = normalizeTags(problem.companyTags || []);
 
+  const normalizedStatus = String(problem.status || '').trim().toLowerCase();
+
   return {
     sourceKey: `problem:${problem._id}`,
     sourceType: 'compiler',
@@ -201,6 +205,8 @@ function buildProblemLibraryPayload(problem = {}, { sampleTestCases = [], hidden
     tags,
     keywords,
     difficulty: String(problem.difficulty || '').trim(),
+    status: normalizedStatus === 'active' ? 'published' : (normalizedStatus || 'draft'),
+    visibility: problem.visibility || 'public',
     searchPrefixes: buildSearchPrefixes([
       problem.title,
       problem.description,
@@ -331,27 +337,36 @@ async function performFullLibrarySync() {
     Problem.find({}).lean(),
   ]);
 
-  for (const assessment of assessments) {
-    // eslint-disable-next-line no-await-in-loop
-    await syncAssessmentQuestionsToLibrary(assessment);
+  // Sync assessments in parallel (batched to avoid overwhelming DB)
+  const BATCH_SIZE = 10;
+  for (let i = 0; i < assessments.length; i += BATCH_SIZE) {
+    const batch = assessments.slice(i, i + BATCH_SIZE);
+    await Promise.all(batch.map((assessment) => syncAssessmentQuestionsToLibrary(assessment)));
   }
 
-  const liveProblemIds = new Set();
-  for (const problem of problems) {
-    liveProblemIds.add(String(problem._id));
-    // eslint-disable-next-line no-await-in-loop
-    await syncProblemToLibrary(problem);
+  // Sync problems in parallel (batched)
+  const liveProblemIds = new Set(problems.map((p) => String(p._id)));
+  for (let i = 0; i < problems.length; i += BATCH_SIZE) {
+    const batch = problems.slice(i, i + BATCH_SIZE);
+    await Promise.all(batch.map((problem) => syncProblemToLibrary(problem)));
   }
 
+  // Remove compiler questions for problems that no longer exist
   await QuestionLibrary.deleteMany({
     sourceType: 'compiler',
     sourceProblemId: {
       $nin: Array.from(liveProblemIds),
     },
   });
+
+  // Cleanup duplicates and draft questions (run in parallel)
+  await Promise.all([
+    cleanupDuplicateLibraryEntries(),
+    cleanupDraftQuestionsFromLibrary(),
+  ]);
 }
 
-export async function ensureQuestionLibrarySynchronized({ force = false } = {}) {
+export async function ensureQuestionLibrarySynchronized({ force = false, blocking = false } = {}) {
   const now = Date.now();
   if (!force && lastFullSyncAt && now - lastFullSyncAt < LIBRARY_SYNC_COOLDOWN_MS) {
     return;
@@ -361,19 +376,68 @@ export async function ensureQuestionLibrarySynchronized({ force = false } = {}) 
     pendingFullSync = performFullLibrarySync()
       .then(() => {
         lastFullSyncAt = Date.now();
+        console.log('[QuestionLibrary] Background sync completed successfully.');
+      })
+      .catch((err) => {
+        console.error('[QuestionLibrary] Background sync error:', err);
       })
       .finally(() => {
         pendingFullSync = null;
       });
   }
 
-  await pendingFullSync;
+  // By default, fire-and-forget — do NOT block the request on sync.
+  // Pass blocking:true only when you need to ensure data is fresh (e.g. admin force-refresh).
+  if (blocking) {
+    await pendingFullSync;
+  }
 }
 
 export async function backfillQuestionLibraryIfEmpty() {
   const existingCount = await QuestionLibrary.estimatedDocumentCount();
   if (existingCount > 0) return;
   await ensureQuestionLibrarySynchronized({ force: true });
+}
+
+export async function cleanupDuplicateLibraryEntries() {
+  // Find and remove duplicate entries with same sourceKey, keeping the most recent
+  const duplicates = await QuestionLibrary.aggregate([
+    {
+      $group: {
+        _id: '$sourceKey',
+        ids: { $push: '$_id' },
+        count: { $sum: 1 },
+      },
+    },
+    { $match: { count: { $gt: 1 } } },
+  ]);
+
+  for (const dup of duplicates) {
+    // Keep the most recent one, delete others
+    const entries = await QuestionLibrary.find({ sourceKey: dup._id })
+      .sort({ updatedAt: -1 })
+      .select('_id')
+      .lean();
+    
+    if (entries.length > 1) {
+      const idsToDelete = entries.slice(1).map((e) => e._id);
+      await QuestionLibrary.deleteMany({ _id: { $in: idsToDelete } });
+      console.log(`[Library Cleanup] Removed ${idsToDelete.length} duplicates for ${dup._id}`);
+    }
+  }
+}
+
+export async function cleanupDraftQuestionsFromLibrary() {
+  // Remove all draft questions from library (only published should be in library)
+  const result = await QuestionLibrary.deleteMany({
+    $or: [
+      { status: { $exists: false } },
+      { status: 'draft' },
+      { status: '' },
+      { status: null },
+    ],
+  });
+  console.log(`[Library Cleanup] Removed ${result.deletedCount} draft/invalid questions`);
 }
 
 export function buildLibrarySearchMatch(search = '') {
@@ -403,6 +467,8 @@ export function formatLibraryQuestionSummary(question = {}) {
     tags: Array.isArray(question.tags) ? question.tags : [],
     keywords: Array.isArray(question.keywords) ? question.keywords : [],
     difficulty: question.difficulty || '',
+    status: question.status || 'published',
+    visibility: question.visibility || 'public',
     createdAt: question.createdAt,
     updatedAt: question.updatedAt,
   };

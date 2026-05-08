@@ -22,8 +22,10 @@ export default function ProblemManagement() {
   const deferredSearch = useDeferredValue(searchQuery);
   const menuRef = useRef(null);
   const [openMenu, setOpenMenu] = useState(null);
+  const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, problem: null, nextVisibility: null });
 
   const closeMenu = () => setOpenMenu(null);
+  const closeConfirmDialog = () => setConfirmDialog({ isOpen: false, problem: null, nextVisibility: null });
 
   useEffect(() => {
     if (!openMenu) return undefined;
@@ -116,6 +118,28 @@ export default function ProblemManagement() {
     }
   };
 
+  const handleToggleVisibilityClick = (problem) => {
+    const currentVisibility = problem.visibility || 'public';
+    const nextVisibility = currentVisibility === 'public' ? 'assessment' : 'public';
+    setConfirmDialog({ isOpen: true, problem, nextVisibility });
+  };
+
+  const confirmToggleVisibility = async () => {
+    const { problem, nextVisibility } = confirmDialog;
+    if (!problem) return;
+    
+    try {
+      await api.updateCompilerProblemVisibility(problem._id, nextVisibility);
+      toast.success(`Visibility changed to ${nextVisibility === 'public' ? 'Public' : 'Private'}.`);
+      const refreshed = await api.listCompilerProblems({ search: deferredSearch, difficulty, status, visibility, sortBy, sortOrder, page, limit: 8 });
+      setResponse(refreshed);
+    } catch (error) {
+      toast.error(error.message || 'Failed to update problem visibility.');
+    } finally {
+      closeConfirmDialog();
+    }
+  };
+
   if (loading) {
     return <LoadingPanel label="Loading problems..." />;
   }
@@ -195,9 +219,28 @@ export default function ProblemManagement() {
                     <td className="px-4 py-4 text-slate-700 dark:text-gray-200">{formatDate(problem.createdAt)}</td>
                     <td className="px-4 py-4"><ProblemStatusBadge status={problem.status} /></td>
                     <td className="px-4 py-4">
-                      <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${problem.visibility === 'assessment' ? 'border border-purple-300 text-purple-700 bg-purple-50 dark:border-purple-700 dark:text-purple-300 dark:bg-purple-900/20' : problem.visibility === 'private' ? 'border border-amber-300 text-amber-700 bg-amber-50 dark:border-amber-700 dark:text-amber-300 dark:bg-amber-900/20' : 'border border-slate-200 text-slate-600 bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800'}`}>
-                        {problem.visibility === 'assessment' ? 'Assessment' : problem.visibility === 'private' ? 'Private' : 'Public'}
-                      </span>
+                      {problem.status === 'published' ? (
+                        <button
+                          type="button"
+                          onClick={() => handleToggleVisibilityClick(problem)}
+                          className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 ${
+                            problem.visibility === 'public'
+                              ? 'bg-sky-600 dark:bg-sky-500'
+                              : 'bg-slate-300 dark:bg-gray-600'
+                          }`}
+                          title={problem.visibility === 'public' ? 'Click to make Private' : 'Click to make Public'}
+                        >
+                          <span
+                            className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                              problem.visibility === 'public' ? 'translate-x-7' : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
+                      ) : (
+                        <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${problem.visibility === 'assessment' ? 'border border-purple-300 text-purple-700 bg-purple-50 dark:border-purple-700 dark:text-purple-300 dark:bg-purple-900/20' : problem.visibility === 'private' ? 'border border-amber-300 text-amber-700 bg-amber-50 dark:border-amber-700 dark:text-amber-300 dark:bg-amber-900/20' : 'border border-slate-200 text-slate-600 bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800'}`}>
+                          {problem.visibility === 'assessment' ? 'Assessment' : problem.visibility === 'private' ? 'Private' : 'Public'}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex items-center justify-end">
@@ -289,6 +332,36 @@ export default function ProblemManagement() {
           <button type="button" onClick={() => setPage((previous) => Math.min(previous + 1, pagination.pages))} disabled={pagination.page >= pagination.pages} className="rounded-xl border border-slate-200 px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700">Next</button>
         </div>
       </div>
+
+      {/* Confirmation Dialog for Visibility Toggle */}
+      {confirmDialog.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-gray-700 dark:bg-gray-900">
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-gray-100">
+              Change Visibility?
+            </h3>
+            <p className="mt-2 text-sm text-slate-600 dark:text-gray-300">
+              Are you sure you want to make this question <strong>{confirmDialog.nextVisibility === 'public' ? 'Public' : 'Private'}</strong>?
+            </p>
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={closeConfirmDialog}
+                className="flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+              >
+                No
+              </button>
+              <button
+                type="button"
+                onClick={confirmToggleVisibility}
+                className="flex-1 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-sky-500"
+              >
+                Yes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </SectionCard>
   );
 }

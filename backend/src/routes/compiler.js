@@ -20,6 +20,7 @@ import {
   submitProblemCode,
   updateProblemStatus,
   updateProblem,
+  updateProblemVisibility,
 } from '../controllers/problemController.js';
 import {
   getAdminCompilerAnalytics,
@@ -58,6 +59,7 @@ router.get('/problems/:id/submissions', requireStudent, listProblemSubmissions);
 router.get('/problems/:id', requireAdminCoordinatorOrStudent, getProblemDetail);
 router.put('/problems/:id', requireAdminOrCoordinator, upload.any(), updateProblem);
 router.patch('/problems/:id/status', requireAdminOrCoordinator, upload.none(), updateProblemStatus);
+router.patch('/problems/:id/visibility', requireAdminOrCoordinator, upload.none(), updateProblemVisibility);
 router.delete('/problems/:id', requireAdminOrCoordinator, deleteProblem);
 router.post('/problems/:id/run', requireAdminOrCoordinator, upload.none(), runProblemCode);
 router.post('/problems/:id/submit', requireAdminOrCoordinator, upload.none(), submitProblemCode);

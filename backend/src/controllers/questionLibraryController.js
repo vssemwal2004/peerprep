@@ -5,6 +5,8 @@ import {
   ensureQuestionLibrarySynchronized,
   formatLibraryQuestionSummary,
   buildSearchPrefixes,
+  cleanupDuplicateLibraryEntries,
+  cleanupDraftQuestionsFromLibrary,
 } from '../services/questionLibraryService.js';
 
 function normalizeType(type = '') {
@@ -17,7 +19,8 @@ function normalizeTag(tag = '') {
 
 export async function listLibraryQuestions(req, res) {
   try {
-    await ensureQuestionLibrarySynchronized();
+    // Trigger background sync (non-blocking) — data is served immediately from DB
+    ensureQuestionLibrarySynchronized();
 
     const {
       type = '',
@@ -34,6 +37,10 @@ export async function listLibraryQuestions(req, res) {
 
     const baseMatch = {
       ...buildLibrarySearchMatch(search),
+      // Always filter to show only published questions (approved), exclude drafts
+      status: 'published',
+      // Show only public and assessment-private questions
+      visibility: { $in: ['public', 'assessment'] },
     };
 
     if (normalizeTag(tag)) {
@@ -46,10 +53,14 @@ export async function listLibraryQuestions(req, res) {
       baseMatch.createdBy = req.user._id;
     }
 
+    const categoryMatch = { ...baseMatch };
     const match = { ...baseMatch };
 
+    // Type filter is applied after baseMatch is set up
+    // Use case-insensitive regex to handle different casing in database
     if (normalizeType(type) && normalizeType(type) !== 'all') {
-      match.questionType = normalizeType(type);
+      const typePattern = new RegExp(`^${normalizeType(type)}$`, 'i');
+      match.questionType = typePattern;
     }
 
     const [questions, total, categories, tags, difficulties] = await Promise.all([
@@ -60,13 +71,15 @@ export async function listLibraryQuestions(req, res) {
         .lean(),
       QuestionLibrary.countDocuments(match),
       QuestionLibrary.aggregate([
-        { $match: baseMatch },
+        { $match: categoryMatch },
         { $group: { _id: '$questionType', count: { $sum: 1 } } },
         { $sort: { _id: 1 } },
       ]),
-      QuestionLibrary.distinct('tags', baseMatch),
-      QuestionLibrary.distinct('difficulty', { ...baseMatch, difficulty: { $ne: '' } }),
+      QuestionLibrary.distinct('tags', categoryMatch),
+      QuestionLibrary.distinct('difficulty', { ...categoryMatch, difficulty: { $ne: '' } }),
     ]);
+
+    const allTotal = categories.reduce((sum, cat) => sum + (cat.count || 0), 0);
 
     res.json({
       questions: questions.map(formatLibraryQuestionSummary),
@@ -77,6 +90,7 @@ export async function listLibraryQuestions(req, res) {
         pages: Math.max(1, Math.ceil(total / limitNum)),
       },
       filters: {
+        total: allTotal,
         categories: categories.map((entry) => ({ type: entry._id, count: entry.count })),
         tags: tags.filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
         difficulties: difficulties.filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
@@ -90,7 +104,7 @@ export async function listLibraryQuestions(req, res) {
 
 export async function getLibraryQuestion(req, res) {
   try {
-    await ensureQuestionLibrarySynchronized();
+    ensureQuestionLibrarySynchronized();
     const { id } = req.params;
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ error: 'Invalid library question id' });
@@ -118,7 +132,7 @@ export async function getLibraryQuestion(req, res) {
 
 export async function resolveLibraryQuestions(req, res) {
   try {
-    await ensureQuestionLibrarySynchronized();
+    ensureQuestionLibrarySynchronized();
     const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
     const validIds = ids.filter((id) => mongoose.Types.ObjectId.isValid(id));
     if (!validIds.length) {
@@ -176,6 +190,8 @@ export async function createLibraryQuestion(req, res) {
       questionText,
       tags,
       keywords,
+      status: 'published',
+      visibility: 'public',
       searchPrefixes,
       questionData: {
         ...question,
@@ -231,6 +247,8 @@ export async function createLibraryQuestionsBulk(req, res) {
         questionText,
         tags,
         keywords,
+        status: 'published',
+        visibility: 'public',
         searchPrefixes,
         questionData: {
           ...question,
@@ -254,5 +272,20 @@ export async function createLibraryQuestionsBulk(req, res) {
   } catch (err) {
     console.error('Error bulk creating library questions:', err);
     res.status(500).json({ error: 'Failed to bulk create library questions' });
+  }
+}
+
+export async function cleanupLibrary(req, res) {
+  try {
+    const removedDuplicates = await cleanupDuplicateLibraryEntries();
+    const removedDrafts = await cleanupDraftQuestionsFromLibrary();
+    res.json({
+      message: 'Library cleanup completed',
+      duplicatesRemoved: removedDuplicates,
+      draftsRemoved: removedDrafts,
+    });
+  } catch (err) {
+    console.error('Error cleaning up library:', err);
+    res.status(500).json({ error: 'Failed to cleanup library' });
   }
 }

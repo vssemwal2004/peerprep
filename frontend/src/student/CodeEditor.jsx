@@ -444,11 +444,11 @@ export default function CodeEditor({
         className="relative z-20 mx-3 mb-2 flex min-h-0 flex-col overflow-hidden rounded-[24px] bg-white px-4 pb-2 pt-1 dark:bg-gray-900"
         style={{ height: clampConsoleHeight(consoleHeight) }}
       >
-        <div className="flex flex-none items-end gap-6 overflow-x-auto bg-white pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden dark:bg-gray-900">
+        <div className="flex flex-none items-center gap-4 overflow-x-auto bg-white [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden dark:bg-gray-900">
           <button
             type="button"
             onClick={() => onConsoleTabChange('testcase')}
-            className={`-mb-px whitespace-nowrap border-b-2 pb-2 pt-2 text-sm font-semibold transition-colors ${
+            className={`whitespace-nowrap border-b-2 py-2 text-xs font-medium transition-colors ${
               activeConsoleTab === 'testcase'
                 ? 'border-sky-600 text-slate-900 dark:border-sky-500 dark:text-gray-100'
                 : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-gray-400 dark:hover:text-gray-200'
@@ -459,7 +459,7 @@ export default function CodeEditor({
           <button
             type="button"
             onClick={() => onConsoleTabChange('result')}
-            className={`-mb-px whitespace-nowrap border-b-2 pb-2 pt-2 text-sm font-semibold transition-colors ${
+            className={`whitespace-nowrap border-b-2 py-2 text-xs font-medium transition-colors ${
               activeConsoleTab === 'result'
                 ? 'border-sky-600 text-slate-900 dark:border-sky-500 dark:text-gray-100'
                 : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-gray-400 dark:hover:text-gray-200'
@@ -471,16 +471,9 @@ export default function CodeEditor({
 
         <div className="min-h-0 flex-1 overflow-y-auto scroll-smooth pt-2">
           {activeConsoleTab === 'testcase' ? (
-            <div className="space-y-2.5 text-slate-700 dark:text-gray-200">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-gray-100">
-                  <TerminalSquare className="h-4 w-4 text-sky-500" />
-                  Testcase
-                </div>
-              </div>
-
+            <div className="space-y-2 text-slate-700 dark:text-gray-200">
               {Array.isArray(testCases) && testCases.length > 0 && (
-                <div className="flex items-center gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <div className="flex items-center gap-1.5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden]">
                   {testCases.map((entry, index) => {
                     const isActive = activeTestCase && String(entry.id) === String(activeTestCase.id);
                     return (
@@ -488,7 +481,7 @@ export default function CodeEditor({
                         key={entry.id}
                         type="button"
                         onClick={() => onActiveTestCaseChange?.(entry.id)}
-                        className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${isActive ? 'bg-slate-900 text-white dark:bg-sky-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}
+                        className={`whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${isActive ? 'bg-slate-800 text-white dark:bg-sky-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}
                       >
                         Case {index + 1}
                       </button>
@@ -497,32 +490,18 @@ export default function CodeEditor({
                 </div>
               )}
 
-              <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 p-3 dark:border-gray-700 dark:bg-gray-800/70">
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">
-                    Sample Testcase
-                  </div>
-                  {hasValue(activeTestCase?.expectedOutput) ? (
-                    <div className="text-[11px] text-slate-500 dark:text-gray-400">Expected output available</div>
-                  ) : null}
+              {hasValue(activeTestCase?.input) && (
+                <div className="rounded-md bg-white px-3 py-2 ring-1 ring-slate-200 dark:bg-gray-900 dark:ring-gray-700">
+                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-gray-500">Input</div>
+                  <ResultValue value={activeTestCase.input || ''} />
                 </div>
-                <textarea
-                  value={activeTestCase?.input ?? customInput ?? ''}
-                  onChange={(event) => {
-                    if (!activeTestCase || activeTestCase.kind === 'sample') return;
-                    onTestCaseInputChange?.(activeTestCase.id, event.target.value);
-                  }}
-                  readOnly={!onTestCaseInputChange || activeTestCase?.kind === 'sample'}
-                  placeholder="Sample input will appear here."
-                  className="h-20 w-full resize-none rounded-[18px] bg-white/88 px-4 py-3 font-mono text-xs text-slate-700 outline-none shadow-[inset_0_0_0_1px_rgba(226,232,240,0.7)] transition-colors focus:bg-white focus:ring-2 focus:ring-sky-400 read-only:opacity-80 dark:bg-gray-900/90 dark:text-gray-200 dark:shadow-[inset_0_0_0_1px_rgba(55,65,81,0.85)] dark:focus:ring-sky-500"
-                />
-                {hasValue(activeTestCase?.expectedOutput) && (
-                  <div className="mt-3 rounded-[18px] bg-white/88 px-4 py-3 shadow-[inset_0_0_0_1px_rgba(226,232,240,0.7)] dark:bg-gray-900/90 dark:shadow-[inset_0_0_0_1px_rgba(55,65,81,0.85)]">
-                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Expected Output</div>
-                    <ResultValue value={activeTestCase.expectedOutput || ''} />
-                  </div>
-                )}
-              </div>
+              )}
+              {hasValue(activeTestCase?.expectedOutput) && (
+                <div className="rounded-md bg-white px-3 py-2 ring-1 ring-slate-200 dark:bg-gray-900 dark:ring-gray-700">
+                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-gray-500">Expected Output</div>
+                  <ResultValue value={activeTestCase.expectedOutput || ''} />
+                </div>
+              )}
 
             </div>
           ) : (

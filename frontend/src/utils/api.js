@@ -335,6 +335,14 @@ export const api = {
     });
     return request(`/admin/assessment/reports${qs.toString() ? `?${qs.toString()}` : ''}`);
   },
+  getAssessmentReportsExportData: (params = {}) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') qs.append(key, String(value));
+    });
+    return request(`/admin/assessment/reports/export-data${qs.toString() ? `?${qs.toString()}` : ''}`, { skipCache: true, timeoutMs: 60000 });
+  },
+  getStudentAssessmentReport: (submissionId) => request(`/admin/assessment/reports/submissions/${submissionId}`, { skipCache: true }),
   exportAssessmentReports: async (params = {}) => {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
@@ -353,8 +361,25 @@ export const api = {
     a.remove();
     URL.revokeObjectURL(url);
   },
-  getAssessmentRulesAdmin: () => request('/admin/assessment/rules', { skipCache: true }),
-  saveAssessmentRulesAdmin: (body) => request('/admin/assessment/rules', { method: 'PUT', body }),
+  exportAssessmentReportsExcel: async (params = {}) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') qs.append(key, String(value));
+    });
+    const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000/api';
+    const res = await fetch(`${API_BASE}/admin/assessment/reports/export/excel${qs.toString() ? `?${qs.toString()}` : ''}`, { credentials: 'include' });
+    if (!res.ok) throw new Error('Failed to export Excel report');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const timestamp = new Date().toISOString().split('T')[0];
+    a.download = `assessment-report-${timestamp}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
   listLibraryQuestions: (params = {}) => {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
@@ -377,7 +402,6 @@ export const api = {
   logStudentAssessmentViolation: (id, body) => request(`/student/assessment/${id}/violations`, { method: 'POST', body }),
   sendStudentAssessmentHeartbeat: (id, body) => request(`/student/assessment/${id}/heartbeat`, { method: 'POST', body, timeoutMs: 6000 }),
   submitStudentAssessment: (body) => request('/student/assessment/submit', { method: 'POST', body }),
-  getStudentAssessmentRules: () => request('/student/assessment/rules', { skipCache: true }),
   getSubmissionViolations: (submissionId) => request(`/admin/assessment/submissions/${submissionId}/violations`, { skipCache: true }),
 
   // Pairing
@@ -504,6 +528,11 @@ export const api = {
   },
   createCompilerProblem: (formData) => request('/compiler/problems', { method: 'POST', formData }),
   updateCompilerProblem: (problemId, formData) => request(`/compiler/problems/${problemId}`, { method: 'PUT', formData }),
+  updateCompilerProblemVisibility: (problemId, visibility) => {
+    const fd = new FormData();
+    fd.append('visibility', visibility);
+    return request(`/compiler/problems/${problemId}/visibility`, { method: 'PATCH', formData: fd });
+  },
   updateCompilerProblemStatus: (problemId, status) => {
     const fd = new FormData();
     fd.append('status', status);

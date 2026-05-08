@@ -1,13 +1,11 @@
 import { Router } from 'express';
 import { requireAuth, requireStudent } from '../middleware/auth.js';
 import { beginStudentAssessment, listStudentAssessments, getStudentAssessment, getStudentAssessmentDashboard, logStudentHeartbeat, logStudentViolation, markStudentAssessmentSetupStep, startStudentAssessment, submitAssessment } from '../controllers/assessmentController.js';
-import { getAssessmentRules } from '../controllers/assessmentRulesController.js';
 
 const router = Router();
 
 router.get('/assessments', requireAuth, requireStudent, listStudentAssessments);
 router.get('/assessment-dashboard', requireAuth, requireStudent, getStudentAssessmentDashboard);
-router.get('/assessment/rules', requireAuth, requireStudent, getAssessmentRules);
 router.post('/assessment/:id/start', requireAuth, requireStudent, startStudentAssessment);
 router.post('/assessment/:id/setup-step', requireAuth, requireStudent, markStudentAssessmentSetupStep);
 router.post('/assessment/:id/begin', requireAuth, requireStudent, beginStudentAssessment);

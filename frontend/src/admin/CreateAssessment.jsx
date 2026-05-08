@@ -76,9 +76,9 @@ function generateUniqueAssessmentId() {
 
 const steps = [
   { id: 'basic', label: 'Basic Info', description: 'Title, description, instructions.' },
-  { id: 'target', label: 'Target Students', description: 'Choose audience and upload or select.' },
   { id: 'schedule', label: 'Schedule', description: 'Timing, duration, limits.' },
   { id: 'sections', label: 'Sections & Questions', description: 'Build assessment sections.' },
+  { id: 'target', label: 'Target Students', description: 'Choose audience and upload or select.' },
   { id: 'settings', label: 'Settings', description: 'Security, visibility, access control.' },
   { id: 'preview', label: 'Preview & Publish', description: 'Review and finalize.' },
 ];
@@ -212,7 +212,6 @@ export default function CreateAssessment() {
     endTime: '',
     duration: 60,
     allowLateSubmission: false,
-    attemptLimit: 1,
     targetMode: 'all',
     sendEmail: true,
     lifecycleStatus: 'draft',
@@ -238,10 +237,21 @@ export default function CreateAssessment() {
   const [newCustomTypeInput, setNewCustomTypeInput] = useState('');
   const [newCustomInstruction, setNewCustomInstruction] = useState('');
 
-  const autoSaveRef = useRef(null);
   const draftLoadedRef = useRef(false);
   const isSavingRef = useRef(false);
-  const assessmentKey = currentId || 'new';
+
+  // Generate a unique session key for new assessments so drafts don't leak across sessions
+  const sessionIdRef = useRef(null);
+  if (!id && !sessionIdRef.current) {
+    const stored = sessionStorage.getItem('peerprep_current_assessment_session');
+    if (stored && stored.startsWith('new_')) {
+      sessionIdRef.current = stored;
+    } else {
+      sessionIdRef.current = `new_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      sessionStorage.setItem('peerprep_current_assessment_session', sessionIdRef.current);
+    }
+  }
+  const assessmentKey = currentId || sessionIdRef.current || 'new';
 
   const updateForm = (updates) => {
     setForm((prev) => ({ ...prev, ...updates }));
@@ -358,8 +368,8 @@ export default function CreateAssessment() {
     const question = section?.questions?.[questionIndex];
     if (!question) return;
 
-    if (currentId && dirty) {
-      await saveDraft(true);
+    if (dirty) {
+      saveAssessmentDraft(assessmentKey, { form, sections, selectedStudents, csvState, version, activeStep });
     }
 
     let editorId = question.codingEditorId
@@ -405,25 +415,20 @@ export default function CreateAssessment() {
 
     const returnTo = currentId ? `${rolePrefix}/assessment/${currentId}/edit` : `${rolePrefix}/assessment/create`;
     const query = new URLSearchParams({
+      mode: 'assessment',
       assessment: assessmentKey,
       section: String(sectionIndex),
       question: String(questionIndex),
       return: returnTo,
     });
-    navigate(`${rolePrefix}/assessment/coding-question/${editorId}?${query.toString()}`);
+    navigate(`${rolePrefix}/compiler/create?${query.toString()}`);
   };
 
   const handleOpenProblemLibrary = async () => {
-    if (currentId && dirty) {
-      await saveDraft(true);
+    // Save current draft before navigating to library so data is preserved when returning
+    if (dirty) {
+      await saveAssessmentDraft(assessmentKey, { form, sections, selectedStudents, csvState, version, activeStep });
     }
-    saveAssessmentDraft(assessmentKey, {
-      form,
-      sections,
-      selectedStudents,
-      csvState,
-      version,
-    });
     const returnTo = currentId ? `${rolePrefix}/assessment/${currentId}/edit` : `${rolePrefix}/assessment/create`;
     const query = new URLSearchParams({
       mode: 'select',
@@ -434,36 +439,37 @@ export default function CreateAssessment() {
   };
 
   useEffect(() => {
-    if (id || draftLoadedRef.current) return;
-    const draft = loadAssessmentDraft(assessmentKey);
-    if (draft) {
-      setForm((prev) => ({ ...prev, ...(draft.form || {}) }));
-      setSections(Array.isArray(draft.sections) ? draft.sections : []);
-      setSelectedStudents(Array.isArray(draft.selectedStudents) ? draft.selectedStudents : []);
-      setCsvState(draft.csvState || emptyCsvState);
-      if (draft.version) setVersion(draft.version);
-    }
-    draftLoadedRef.current = true;
-  }, [assessmentKey, id]);
-
-  useEffect(() => {
-    let mounted = true;
-    const loadStudents = async () => {
-      try {
-        const data = await api.listAllStudents('', 'asc');
-        if (!mounted) return;
-        setAllStudents(data.students || []);
-      } catch {
-        if (!mounted) return;
-        setAllStudents([]);
+    if (!id) {
+      // Creating new assessment - load existing draft for this session if available
+      const draft = loadAssessmentDraft(assessmentKey);
+      if (draft && !draftLoadedRef.current) {
+        draftLoadedRef.current = true;
+        // Only load draft if it has data (don't overwrite with empty draft)
+        if (draft.form && Object.keys(draft.form).length > 0) {
+          setForm((prev) => ({
+            ...prev,
+            ...draft.form,
+            assessmentId: prev.assessmentId,
+          }));
+        }
+        if (draft.sections && draft.sections.length > 0) {
+          setSections(draft.sections);
+        }
+        if (draft.selectedStudents && draft.selectedStudents.length > 0) {
+          setSelectedStudents(draft.selectedStudents);
+        }
+        if (draft.csvState && Object.keys(draft.csvState).length > 0) {
+          setCsvState(draft.csvState);
+        }
+        if (draft.version) {
+          setVersion(draft.version);
+        }
+        if (draft.activeStep && steps.some((s) => s.id === draft.activeStep)) {
+          setActiveStep(draft.activeStep);
+        }
       }
-    };
-    loadStudents();
-    return () => { mounted = false; };
-  }, []);
-
-  useEffect(() => {
-    if (!id) return;
+      return;
+    }
     const loadAssessment = async () => {
       try {
         const data = await api.getAssessmentById(id);
@@ -474,8 +480,14 @@ export default function CreateAssessment() {
           ? ((assessment.draftTargetMode && assessment.draftTargetMode !== 'all') ? assessment.draftTargetMode : fallbackTargetMode)
           : fallbackTargetMode;
         const draftAssigned = Array.isArray(assessment.draftAssignedStudents) ? assessment.draftAssignedStudents : [];
-        setForm((prev) => ({
-          ...prev,
+        const sessionDraft = loadAssessmentDraft(assessmentKey);
+        const draftForm = sessionDraft?.form && typeof sessionDraft.form === 'object' ? sessionDraft.form : null;
+        const draftSections = Array.isArray(sessionDraft?.sections) ? sessionDraft.sections : null;
+        const draftSelectedStudents = Array.isArray(sessionDraft?.selectedStudents) ? sessionDraft.selectedStudents : null;
+        const draftCsvState = sessionDraft?.csvState && typeof sessionDraft.csvState === 'object' ? sessionDraft.csvState : null;
+        const draftVersion = sessionDraft?.version;
+        const draftStep = sessionDraft?.activeStep;
+        const baseForm = {
           title: assessment.title || '',
           description: assessment.description || '',
           instructions: assessment.instructions || '',
@@ -483,37 +495,51 @@ export default function CreateAssessment() {
           endTime: assessment.endTime ? toLocalIsoMinutes(assessment.endTime) : '',
           duration: assessment.duration || 60,
           allowLateSubmission: Boolean(assessment.allowLateSubmission),
-          attemptLimit: assessment.attemptLimit || 1,
           targetMode: resolvedTargetMode,
           lifecycleStatus: assessment.lifecycleStatus || 'draft',
           sendEmail: true,
           testType: assessment.testType || '',
-          assessmentId: assessment.assessmentId || prev.assessmentId,
+          assessmentId: assessment.assessmentId || '',
           isVisible: assessment.isVisible !== false,
           customInstructions: Array.isArray(assessment.customInstructions) ? assessment.customInstructions : [],
           passwordEnabled: Boolean(assessment.passwordEnabled),
           passwordValue: '',
           settings: assessment.settings && typeof assessment.settings === 'object' ? assessment.settings : {},
+        };
+        const effectiveTargetMode = draftForm?.targetMode || resolvedTargetMode;
+
+        setForm((prev) => ({
+          ...prev,
+          ...baseForm,
+          ...(draftForm || {}),
+          assessmentId: draftForm?.assessmentId || baseForm.assessmentId || prev.assessmentId,
         }));
-        setVersion(assessment.version || 1);
-        if (resolvedTargetMode === 'csv') {
-          setCsvState({
+        setVersion(draftVersion || assessment.version || 1);
+
+        if (effectiveTargetMode === 'csv') {
+          setCsvState(draftCsvState ? { ...emptyCsvState, ...draftCsvState } : {
             file: null,
             rows: draftAssigned,
             errors: [],
             summary: draftAssigned.length ? `Draft loaded with ${draftAssigned.length} row(s). Revalidate before publish.` : '',
           });
-          setSelectedStudents([]);
-        } else if (resolvedTargetMode === 'individual') {
-          if (isDraft && draftAssigned.length) {
+          setSelectedStudents(draftSelectedStudents || []);
+        } else if (effectiveTargetMode === 'individual') {
+          if (draftSelectedStudents) {
+            setSelectedStudents(draftSelectedStudents);
+          } else if (isDraft && draftAssigned.length) {
             setSelectedStudents(draftAssigned);
           } else {
             setSelectedStudents(Array.isArray(assessment.assignedStudents) ? assessment.assignedStudents : []);
           }
-          setCsvState(emptyCsvState);
+          setCsvState(draftCsvState ? { ...emptyCsvState, ...draftCsvState } : emptyCsvState);
         } else {
-          setSelectedStudents([]);
-          setCsvState(emptyCsvState);
+          setSelectedStudents(draftSelectedStudents || []);
+          setCsvState(draftCsvState ? { ...emptyCsvState, ...draftCsvState } : emptyCsvState);
+        }
+
+        if (draftStep && steps.some((step) => step.id === draftStep)) {
+          setActiveStep(draftStep);
         }
 
         const mappedSections = (assessment.sections || []).map((section, sectionIndex) => {
@@ -559,9 +585,10 @@ export default function CreateAssessment() {
         });
         const problemSelections = consumeProblemSelections(assessmentKey);
         const librarySelections = consumeQuestionSelections(assessmentKey);
+        const sectionSource = draftSections && draftSections.length ? draftSections : mappedSections;
         let mergedSections = problemSelections.length
-          ? problemSelections.reduce((acc, selection) => addProblemsToSection(acc, selection.sectionIndex, selection.problems || []), mappedSections)
-          : mappedSections;
+          ? problemSelections.reduce((acc, selection) => addProblemsToSection(acc, selection.sectionIndex, selection.problems || []), sectionSource)
+          : sectionSource;
         if (librarySelections.length) {
           mergedSections = librarySelections.reduce(
             (acc, selection) => addLibraryQuestionsToSections(acc, selection.questions || []),
@@ -584,16 +611,7 @@ export default function CreateAssessment() {
     setDirty(true);
   }, [assessmentKey]);
 
-  useEffect(() => {
-    if (!assessmentKey) return;
-    saveAssessmentDraft(assessmentKey, {
-      form,
-      sections,
-      selectedStudents,
-      csvState,
-      version,
-    });
-  }, [assessmentKey, form, sections, selectedStudents, csvState, version]);
+  // Auto-save removed - drafts only save when user explicitly clicks Save Draft button
 
   useEffect(() => {
     if (id) return;
@@ -607,15 +625,6 @@ export default function CreateAssessment() {
       });
       librarySelections.forEach((selection) => {
         next = addLibraryQuestionsToSections(next, selection.questions || []);
-      });
-
-      // Persist immediately so navigation/remount doesn't lose the selection.
-      saveAssessmentDraft(assessmentKey, {
-        form,
-        sections: next,
-        selectedStudents,
-        csvState,
-        version,
       });
 
       return next;
@@ -701,7 +710,6 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
       endTime: form.endTime || null,
       duration: form.duration,
       allowLateSubmission: form.allowLateSubmission,
-      attemptLimit: form.attemptLimit || 1,
       targetType: normalizedTargetType,
       draftTargetMode: form.targetMode,
       assignedStudents: form.targetMode === 'all' ? [] : assignedStudents,
@@ -718,7 +726,7 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
     };
   };
 
-  const saveDraft = async (silent = false, redirect = false) => {
+  const saveDraft = async (silent = false) => {
     if (isSavingRef.current) return;
     isSavingRef.current = true;
     setAutoSaveStatus('Saving draft...');
@@ -734,7 +742,7 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
           description: `Assessment draft updated: "${form.title || 'Untitled'}" (ID: ${form.assessmentId || currentId})`,
           metadata: { assessmentId: form.assessmentId, testType: form.testType, isVisible: form.isVisible },
         }).catch(() => {});
-        if (!silent && !redirect) toast.success('Draft updated');
+        if (!silent) toast.success('Draft updated');
       } else {
         const response = await api.createAssessment(payload);
         const newId = response.assessmentId;
@@ -747,18 +755,12 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
           description: `New assessment draft created: "${form.title || 'Untitled'}" (ID: ${form.assessmentId || newId})`,
           metadata: { assessmentId: form.assessmentId, testType: form.testType, isVisible: form.isVisible },
         }).catch(() => {});
-        if (!redirect) {
-          navigate(`${rolePrefix}/assessment/${newId}/edit`, { replace: true });
-        }
-        if (!silent && !redirect) toast.success('Draft created');
+        if (!silent) toast.success('Draft created');
       }
       setDirty(false);
       setAutoSaveStatus('Draft saved');
-      if (redirect) {
-        toast.success('Draft saved');
-        clearAssessmentDraft(assessmentKey);
-        navigate(`${rolePrefix}/assessment`);
-      }
+      clearAssessmentDraft(assessmentKey);
+      sessionStorage.removeItem('peerprep_current_assessment_session');
     } catch (err) {
       setAutoSaveStatus('Draft save failed');
       if (!silent) toast.error(err.message || 'Failed to save draft');
@@ -832,6 +834,7 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
       }).catch(() => {});
       toast.success('Assessment published');
       clearAssessmentDraft(assessmentKey);
+      sessionStorage.removeItem('peerprep_current_assessment_session');
       navigate(`${rolePrefix}/assessment`);
       return true;
     } catch (err) {
@@ -851,18 +854,9 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
   };
 
   const handleDraftConfirm = async () => {
-    await saveDraft(false, true);
+    await saveDraft(false);
     setShowPublishModal(false);
   };
-
-  useEffect(() => {
-    if (autoSaveRef.current) clearInterval(autoSaveRef.current);
-    autoSaveRef.current = setInterval(() => {
-      if (!dirty) return;
-      saveDraft(true);
-    }, 20000);
-    return () => clearInterval(autoSaveRef.current);
-  }, [dirty, currentId, form, sections, csvState, selectedStudents]);
 
   const stepIndex = steps.findIndex((step) => step.id === activeStep);
   const stepMeta = steps[stepIndex] || steps[0];
@@ -1100,7 +1094,7 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
       </SectionCard>
     ),
     schedule: (
-      <SectionCard title="Schedule & Limits" subtitle="Define timing, duration, and attempt rules.">
+      <SectionCard title="Schedule & Limits" subtitle="Define timing and duration.">
         <div className="grid gap-4 md:grid-cols-2">
           <div>
             <label className="text-xs text-slate-500 dark:text-gray-400">Start Date & Time</label>
@@ -1145,16 +1139,6 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
               min="1"
               value={form.duration}
               onChange={(e) => updateForm({ duration: Number(e.target.value) })}
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-            />
-          </div>
-          <div>
-            <label className="text-xs text-slate-500 dark:text-gray-400">Attempt Limit</label>
-            <input
-              type="number"
-              min="1"
-              value={form.attemptLimit}
-              onChange={(e) => updateForm({ attemptLimit: Number(e.target.value) })}
               className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
             />
           </div>
@@ -1558,7 +1542,7 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => saveDraft(false, true)}
+              onClick={() => saveDraft(false)}
               disabled={loading}
               className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
             >

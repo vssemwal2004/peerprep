@@ -4,10 +4,40 @@ import { HttpError } from '../utils/errors.js';
 import crypto from 'crypto';
 
 /**
+ * Simple in-memory cache for user data to reduce database hits
+ * Cache expires after 60 seconds
+ */
+const userCache = new Map();
+const CACHE_TTL = 60 * 1000; // 60 seconds
+
+function getCachedUser(userId) {
+  const cached = userCache.get(userId);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.user;
+  }
+  userCache.delete(userId);
+  return null;
+}
+
+function setCachedUser(userId, user) {
+  userCache.set(userId, { user, timestamp: Date.now() });
+}
+
+// Clean up expired cache entries every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [userId, cached] of userCache.entries()) {
+    if (now - cached.timestamp > CACHE_TTL) {
+      userCache.delete(userId);
+    }
+  }
+}, 5 * 60 * 1000);
+
+/**
  * SECURITY: JWT Authentication from HttpOnly Cookies
  * 
  * Reads JWT from HttpOnly cookie instead of Authorization header
- * This protects against XSS token theft.
+ * This protects against XSS token theft
  * 
  * WHY SAFE: Preserves all authentication logic, only changes token source
  * Falls back to Authorization header for backwards compatibility during migration
@@ -26,12 +56,20 @@ export async function requireAuth(req, res, next) {
   
   const payload = verifyToken(token);
 
-  // All tokens now resolve to the unified User model
-  // Use lean() + select() for faster query - only fetch needed fields
-  const user = await User.findById(payload.sub)
-    .select('_id email name role semester activeSessionToken passwordChangedAt avatarUrl coordinatorId teacherIds studentId course branch college group department isSpecialStudent')
-    .lean();
-  if (!user) throw new HttpError(401, 'User not found');
+  // Try to get user from cache first
+  let user = getCachedUser(payload.sub);
+  
+  if (!user) {
+    // All tokens now resolve to the unified User model
+    // Use lean() + select() for faster query - only fetch needed fields
+    user = await User.findById(payload.sub)
+      .select('_id email name role semester activeSessionToken passwordChangedAt avatarUrl coordinatorId teacherIds studentId course branch college group department isSpecialStudent')
+      .lean();
+    if (!user) throw new HttpError(401, 'User not found');
+    
+    // Cache the user data
+    setCachedUser(payload.sub, user);
+  }
   
   // SECURITY: Check if this is the active session for this user
   // When user logs in from a new device, old sessions become invalid

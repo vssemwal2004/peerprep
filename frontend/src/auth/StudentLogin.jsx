@@ -5,6 +5,9 @@ import { useAuth } from '../context/AuthContext';
 import { Eye, EyeOff, Mail, Lock, Loader2 } from 'lucide-react';
 import ForgotPasswordModal from './ForgotPasswordModal';
 
+// Small delay to ensure cookie is set before navigation
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const DotLineBackground = () => (
   <div
     className="absolute inset-0"
@@ -94,6 +97,8 @@ export default function StudentLoginPage() {
         localStorage.setItem('userId', res.user.id);
       }
 
+      // Wait a moment for the cookie to be properly set by the browser
+      await delay(100);
       await refreshUser();
 
       if (role === 'admin') {
@@ -265,5 +270,3 @@ export default function StudentLoginPage() {
     </div>
   );
 }
-
-

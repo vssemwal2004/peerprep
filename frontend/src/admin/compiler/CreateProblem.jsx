@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Eye, FilePlus2, Plus, Save, Trash2, Upload, X } from 'lucide-react';
 import { api } from '../../utils/api';
 import { useToast } from '../../components/CustomToast';
@@ -99,14 +99,31 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
   const navigate = useNavigate();
   const toast = useToast();
   const { id, tempId } = useParams();
-  const isAssessment = mode === 'assessment';
-  const editorId = assessmentContext?.tempId || (isAssessment ? tempId : id);
+  const location = useLocation();
+  
+  // Read assessment context from URL params if not provided as prop
+  const urlParams = new URLSearchParams(location.search);
+  const urlMode = urlParams.get('mode');
+  const isAssessmentFromUrl = urlMode === 'assessment';
+  const isAssessment = mode === 'assessment' || isAssessmentFromUrl;
+  
+  const assessmentContextFromUrl = isAssessmentFromUrl ? {
+    tempId: tempId || urlParams.get('tempId'),
+    assessmentKey: urlParams.get('assessment'),
+    sectionIndex: urlParams.get('section') ? parseInt(urlParams.get('section')) : 0,
+    questionIndex: urlParams.get('question') ? parseInt(urlParams.get('question')) : 0,
+    returnTo: urlParams.get('return'),
+  } : {};
+  
+  const finalAssessmentContext = assessmentContext || assessmentContextFromUrl;
+  
+  const editorId = finalAssessmentContext?.tempId || (isAssessment ? tempId : id);
   const isEditMode = !isAssessment && Boolean(id);
   const [loading, setLoading] = useState(isAssessment ? false : isEditMode);
   const [form, setForm] = useState(() => createDefaultProblemForm());
   const [activeTab, setActiveTab] = useState('details');
   const [activeLanguage, setActiveLanguage] = useState('python');
-  const [currentProblemId, setCurrentProblemId] = useState(assessmentContext?.problemId || (isAssessment ? '' : (id || '')));
+  const [currentProblemId, setCurrentProblemId] = useState(finalAssessmentContext?.problemId || (isAssessment ? '' : (id || '')));
   const [currentStatus, setCurrentStatus] = useState('draft');
   const [previewValidated, setPreviewValidated] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -115,9 +132,9 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
   const [isDirty, setIsDirty] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState('');
   const autoSaveRef = useRef(null);
-  const assessmentKey = assessmentContext?.assessmentKey || 'new';
+  const assessmentKey = finalAssessmentContext?.assessmentKey || 'new';
   const rolePrefix = window.location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
-  const assessmentReturnTo = assessmentContext?.returnTo || `${rolePrefix}/assessment`;
+  const assessmentReturnTo = finalAssessmentContext?.returnTo || `${rolePrefix}/assessment`;
 
   useEffect(() => {
     if (isAssessment) {
@@ -179,7 +196,7 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
     return () => {
       isMounted = false;
     };
-  }, [id, isEditMode, toast, isAssessment, editorId]);
+  }, [id, isEditMode, toast, isAssessment, editorId, assessmentKey]);
 
   useEffect(() => {
     if (!form.supportedLanguages.includes(activeLanguage)) {
@@ -196,6 +213,7 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
   const activeTemplate = form.codeTemplates[activeLanguage] || '';
   const hasTemplate = form.supportedLanguages.some((language) => String(form.codeTemplates?.[language] || '').trim());
   const canAddToAssessment = isAssessment && previewValidated && visibleSampleCount > 0 && hiddenCount > 0 && hasTemplate;
+  const canAddToAssessmentDynamic = currentStatus === 'published' && previewValidated && visibleSampleCount > 0 && hiddenCount > 0 && hasTemplate && currentProblemId;
   const validationStatus = previewValidated ? (canAddToAssessment ? 'Ready' : 'Validated') : 'Draft';
 
   const updateField = (field, value) => {
@@ -308,11 +326,7 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
       }
 
       if (redirectToPreview) {
-        if (isAssessment) {
-          navigate(`${rolePrefix}/assessment/coding-question/${editorId}/preview/${response._id}?return=${encodeURIComponent(assessmentReturnTo)}`);
-        } else {
-          navigate(`${rolePrefix}/compiler/${response._id}/preview`);
-        }
+        navigate(`${rolePrefix}/compiler/${response._id}/preview`);
       } else if (!currentProblemId && !isAssessment) {
         navigate(`${rolePrefix}/compiler/${response._id}/edit`, { replace: true });
       }
@@ -379,8 +393,16 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
     }
   };
 
+  const handleOpenPreview = () => {
+    if (!currentProblemId) {
+      toast.error('Save the problem first before opening preview.');
+      return;
+    }
+    navigate(`${rolePrefix}/compiler/${currentProblemId}/preview`);
+  };
+
   const handleAddToAssessment = async () => {
-    if (!canAddToAssessment) {
+    if (!canAddToAssessment && !canAddToAssessmentDynamic) {
       toast.error('Complete validation requirements before adding to the assessment.');
       return;
     }
@@ -408,18 +430,25 @@ if (!isValidated || publishedProblem.status !== 'published') {
       return;
     }
 
-    saveCodingDraft(editorId, {
-      assessmentKey,
-      sectionIndex: assessmentContext?.sectionIndex,
-      questionIndex: assessmentContext?.questionIndex,
-      problemId: publishedProblem._id,
-      form: createProblemFormFromProblem(publishedProblem),
-      problemData: publishedProblem,
-      previewValidated: Boolean(publishedProblem.previewValidated ?? publishedProblem.previewTested),
-      status: 'Ready',
-    });
-    toast.success('Coding question added to assessment.');
-    navigate(assessmentReturnTo);
+    // If in assessment mode, use the existing assessment context
+    if (isAssessment && assessmentContext) {
+      saveCodingDraft(editorId, {
+        assessmentKey,
+        sectionIndex: assessmentContext?.sectionIndex,
+        questionIndex: assessmentContext?.questionIndex,
+        problemId: publishedProblem._id,
+        form: createProblemFormFromProblem(publishedProblem),
+        problemData: publishedProblem,
+        previewValidated: Boolean(publishedProblem.previewValidated ?? publishedProblem.previewTested),
+        status: 'Ready',
+      });
+      toast.success('Coding question added to assessment.');
+      navigate(assessmentReturnTo);
+    } else {
+      // If not in assessment mode, redirect to problem library to select assessment
+      toast.success('Question published! You can now add it to an assessment from the problem library.');
+      navigate(`${rolePrefix}/library`);
+    }
   };
 
   if (loading) {
@@ -453,7 +482,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
             {currentProblemId ? (
               <button
                 type="button"
-                onClick={() => navigate(`${rolePrefix}/compiler/${currentProblemId}/preview`)}
+                onClick={handleOpenPreview}
                 className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
               >
                 <Eye className="h-4 w-4" />
@@ -751,21 +780,33 @@ if (!isValidated || publishedProblem.status !== 'published') {
           subtitle={isAssessment ? 'Save drafts, validate, and add to the assessment.' : 'Save drafts, publish, or cleanly remove the problem from the judge workspace.'}
         >
           {!isAssessment && (
-            <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+            <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-sm font-semibold text-slate-800 dark:text-gray-100">Use for Assessment Only</p>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Assessment-only problems will not appear in the student problem list.</p>
+                  <p className="text-sm font-semibold text-slate-800 dark:text-gray-100">Question Visibility</p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Toggle to make question public or private.</p>
                 </div>
-                <label className="inline-flex items-center gap-2 text-xs font-semibold">
-                  <input
-                    type="checkbox"
-                    checked={form.visibility === 'assessment'}
-                    onChange={(event) => updateField('visibility', event.target.checked ? 'assessment' : 'public')}
-                    className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-                  />
-                  {form.visibility === 'assessment' ? 'Assessment-only' : 'Public'}
-                </label>
+                <button
+                  type="button"
+                  onClick={() => updateField('visibility', form.visibility === 'public' ? 'assessment' : 'public')}
+                  className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold transition-colors ${
+                    form.visibility === 'public'
+                      ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:hover:bg-emerald-900/50'
+                      : 'bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+                  }`}
+                >
+                  {form.visibility === 'public' ? (
+                    <>
+                      <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
+                      Public
+                    </>
+                  ) : (
+                    <>
+                      <span className="h-2 w-2 rounded-full bg-slate-400"></span>
+                      Private
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           )}
@@ -781,6 +822,9 @@ if (!isValidated || publishedProblem.status !== 'published') {
                 <button type="button" onClick={openPreview} disabled={isSaving || isDeleting || isApprovingPreview} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-sky-600 dark:hover:bg-sky-500 dark:disabled:bg-gray-700"><Eye className="h-4 w-4" />{isApprovingPreview ? 'Opening...' : 'Open Preview'}</button>
                 <button type="button" onClick={() => persistProblem('draft')} disabled={isSaving || isDeleting || isApprovingPreview} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"><Save className="h-4 w-4" />{isSaving ? 'Saving...' : 'Save Draft'}</button>
                 <button type="button" onClick={() => persistProblem('published')} disabled={isSaving || isDeleting || isApprovingPreview || !previewValidated || !currentProblemId} title={!previewValidated ? 'Preview validation is required before publishing.' : ''} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"><FilePlus2 className="h-4 w-4" />{isSaving ? (isEditMode ? 'Updating...' : 'Publishing...') : (isEditMode ? 'Update Problem' : 'Publish')}</button>
+                {canAddToAssessmentDynamic && (
+                  <button type="button" onClick={handleAddToAssessment} disabled={isSaving} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"><FilePlus2 className="h-4 w-4" />Add to Assessment</button>
+                )}
                 {currentProblemId ? <button type="button" onClick={handleDelete} disabled={isDeleting || isSaving} className="inline-flex items-center gap-2 rounded-xl border border-rose-200 px-4 py-2.5 text-sm font-semibold text-rose-600 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-900/20"><Trash2 className="h-4 w-4" />{isDeleting ? 'Deleting...' : 'Delete Problem'}</button> : null}
               </>
             )}

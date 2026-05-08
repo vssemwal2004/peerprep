@@ -88,12 +88,12 @@ export default function AssessmentLaunchModal({ assessment, open, onClose, onUnl
                   {step === 'details' ? 'Launch Assessment' : 'Rules & Regulations'}
                 </div>
                 <h3 className="mt-3 break-words text-xl font-black tracking-tight text-slate-950 dark:text-white">
-                  {step === 'details' ? assessment.title : 'Assessment Rules'}
+                  {step === 'details' ? assessment.title : 'Assessment Instructions'}
                 </h3>
                 <p className="mt-1.5 text-sm leading-6 text-slate-500 dark:text-slate-300">
                   {step === 'details'
                     ? 'Review the schedule and duration, then continue to secure verification.'
-                    : 'Read all admin-defined rules before starting the assessment.'}
+                    : 'Read the assessment instructions and monitoring requirements before starting.'}
                 </p>
               </div>
 

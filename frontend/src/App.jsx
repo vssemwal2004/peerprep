@@ -62,11 +62,8 @@ const AdminCompanyBenchmarkAdd = lazy(() => import("./admin/AdminCompanyBenchmar
 const AssessmentDashboard = lazy(() => import("./admin/AssessmentDashboard"));
 const CreateAssessment = lazy(() => import("./admin/CreateAssessment"));
 const AssessmentReports = lazy(() => import("./admin/AssessmentReports"));
-const AssessmentRules = lazy(() => import("./admin/AssessmentRules"));
 const QuestionLibrary = lazy(() => import("./admin/QuestionLibrary"));
 const AddQuestionToLibrary = lazy(() => import("./admin/AddQuestionToLibrary"));
-const CodingQuestionEditorPage = lazy(() => import("./admin/assessment/CodingQuestionEditorPage"));
-const AssessmentCodingPreview = lazy(() => import("./admin/assessment/AssessmentCodingPreview"));
 const SelectProblemFromLibrary = lazy(() => import("./admin/assessment/SelectProblemFromLibrary"));
 const AdminAssessmentPreview = lazy(() => import("./admin/assessment/AdminAssessmentPreview"));
 const AdminEmailTemplates = lazy(() => import("./admin/EmailTemplates"));
@@ -283,13 +280,10 @@ function AppContent() {
         <Route path="/admin/assessment/create" element={<AdminShell><CreateAssessment /></AdminShell>} />
         <Route path="/admin/assessment/:id/edit" element={<AdminShell><CreateAssessment /></AdminShell>} />
         <Route path="/admin/assessment/reports" element={<AdminShell><AssessmentReports /></AdminShell>} />
-        <Route path="/admin/assessment/rules" element={<AdminShell><AssessmentRules /></AdminShell>} />
         <Route path="/admin/library" element={<AdminShell><QuestionLibrary /></AdminShell>} />
         <Route path="/admin/library/add-question" element={<AdminShell><AddQuestionToLibrary /></AdminShell>} />
         <Route path="/admin/assessment/select-problem" element={<AdminShell><SelectProblemFromLibrary /></AdminShell>} />
         <Route path="/admin/assessment/preview/:id" element={<AdminShell layout={false}><AdminAssessmentPreview /></AdminShell>} />
-        <Route path="/admin/assessment/coding-question/:tempId" element={<AdminShell><CodingQuestionEditorPage /></AdminShell>} />
-        <Route path="/admin/assessment/coding-question/:tempId/preview/:id" element={<AdminShell><AssessmentCodingPreview /></AdminShell>} />
         <Route path="/admin/compiler" element={<AdminShell><AdminCompilerDashboard /></AdminShell>} />
         <Route path="/admin/compiler/create" element={<AdminShell><AdminCompilerDashboard /></AdminShell>} />
         <Route path="/admin/compiler/problems" element={<AdminShell><AdminCompilerDashboard /></AdminShell>} />
@@ -323,8 +317,6 @@ function AppContent() {
         <Route path="/coordinator/assessment/:id/edit" element={<CoordinatorShell><CreateAssessment /></CoordinatorShell>} />
         <Route path="/coordinator/assessment/reports" element={<CoordinatorShell><AssessmentReports /></CoordinatorShell>} />
         <Route path="/coordinator/assessment/preview/:id" element={<CoordinatorShell layout={false}><AdminAssessmentPreview /></CoordinatorShell>} />
-        <Route path="/coordinator/assessment/coding-question/:tempId" element={<CoordinatorShell><CodingQuestionEditorPage /></CoordinatorShell>} />
-        <Route path="/coordinator/assessment/coding-question/:tempId/preview/:id" element={<CoordinatorShell><AssessmentCodingPreview /></CoordinatorShell>} />
         <Route path="/coordinator/library" element={<CoordinatorShell><QuestionLibrary /></CoordinatorShell>} />
         <Route path="/coordinator/library/add-question" element={<CoordinatorShell><AddQuestionToLibrary /></CoordinatorShell>} />
         <Route path="/coordinator/announcements/add" element={<CoordinatorShell><AnnouncementCreate /></CoordinatorShell>} />

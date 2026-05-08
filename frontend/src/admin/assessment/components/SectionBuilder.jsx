@@ -358,10 +358,28 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
   };
 
   const handleMarksChange = (sectionIndex, value) => {
-    const marks = Number(value) || 1;
+    // Allow empty string during editing, but convert to number when value exists
+    const marks = value === '' ? '' : Number(value);
+    // Only update questions if we have a valid number
     const section = sectionsWithIds[sectionIndex];
-    const nextQuestions = (section.questions || []).map((question) => ({ ...question, points: marks }));
-    updateSection(sectionIndex, { marksPerQuestion: marks, questions: nextQuestions });
+    if (value !== '' && !isNaN(marks) && marks >= 0) {
+      const nextQuestions = (section.questions || []).map((question) => ({ ...question, points: marks }));
+      updateSection(sectionIndex, { marksPerQuestion: marks, questions: nextQuestions });
+    } else if (value === '') {
+      // Allow empty field during editing
+      updateSection(sectionIndex, { marksPerQuestion: '' });
+    }
+  };
+
+  const handleMarksBlur = (sectionIndex) => {
+    const section = sectionsWithIds[sectionIndex];
+    const currentValue = section.marksPerQuestion;
+    // Ensure we have a valid number when field loses focus
+    if (currentValue === '' || currentValue === undefined || currentValue === null || Number(currentValue) < 1) {
+      const marks = 1;
+      const nextQuestions = (section.questions || []).map((question) => ({ ...question, points: marks }));
+      updateSection(sectionIndex, { marksPerQuestion: marks, questions: nextQuestions });
+    }
   };
 
   const renderCodingCard = (sectionIndex, questionIndex, question, section) => {
@@ -524,8 +542,10 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
                     <input
                       type="number"
                       min="1"
-                      value={section.marksPerQuestion || 1}
+                      value={section.marksPerQuestion ?? ''}
                       onChange={(e) => handleMarksChange(index, e.target.value)}
+                      onBlur={() => handleMarksBlur(index)}
+                      placeholder="1"
                       className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
                     />
                   </div>

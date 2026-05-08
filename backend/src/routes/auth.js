@@ -6,6 +6,15 @@ import { authLimiter, passwordResetLimiter, uploadLimiter } from '../middleware/
 import multer from 'multer';
 const upload = multer();
 
+function getAuthCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+  };
+}
+
 const router = Router();
 
 // SECURITY: Rate limit authentication endpoints
@@ -13,12 +22,7 @@ router.post('/login', authLimiter, login);
 
 // SECURITY: Logout endpoint to clear HttpOnly cookie
 router.post('/logout', (req, res) => {
-  res.clearCookie('accessToken', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    path: '/'
-  });
+  res.clearCookie('accessToken', getAuthCookieOptions());
   res.json({ message: 'Logged out successfully' });
 });
 

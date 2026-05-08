@@ -1205,6 +1205,22 @@ export async function deleteProblem(req, res) {
   res.json({ success: true });
 }
 
+export async function updateProblemVisibility(req, res) {
+  ensureObjectId(req.params.id, 'Problem ID');
+
+  const problem = await Problem.findById(req.params.id);
+  if (!problem || (isCoordinatorRequest(req) && String(problem.createdBy) !== String(req.user._id))) {
+    throw new HttpError(404, 'Problem not found.');
+  }
+
+  const nextVisibility = normalizeVisibility(req.body.visibility);
+  problem.visibility = nextVisibility;
+  await problem.save();
+  await syncProblemToLibrary(problem);
+
+  res.json({ success: true, visibility: nextVisibility });
+}
+
 export async function updateProblemStatus(req, res) {
   ensureObjectId(req.params.id, 'Problem ID');
 

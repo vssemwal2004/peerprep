@@ -162,9 +162,6 @@ export default function AssessmentAttempt() {
   const [rulesCountdown, setRulesCountdown] = useState(30);
   const [rulesReady, setRulesReady] = useState(false);
   const [hasSeenRules, setHasSeenRules] = useState(false);
-  const [rulesBlocks, setRulesBlocks] = useState([]);
-  const [rulesTitle, setRulesTitle] = useState('Assessment Rules');
-  const [rulesLoading, setRulesLoading] = useState(false);
   const [cameraIndicator, setCameraIndicator] = useState('idle');
   const [detectedTabs, setDetectedTabs] = useState([]);
   const [securityNotice, setSecurityNotice] = useState('');
@@ -253,7 +250,7 @@ export default function AssessmentAttempt() {
     if (preventMultipleTabs) rules.push({ type: 'bullet', text: 'Only one assessment tab may remain open.' });
     if (securitySettings.randomShuffle) rules.push({ type: 'bullet', text: 'Questions may appear in a randomized order.' });
     if (securitySettings.autoSubmitOnEnd) rules.push({ type: 'bullet', text: 'The test auto-submits when the timer ends.' });
-    if (securitySettings.restrictNavigation) rules.push({ type: 'bullet', text: 'Backward navigation may be restricted by the assessment rules.' });
+    if (securitySettings.restrictNavigation) rules.push({ type: 'bullet', text: 'Backward navigation may be restricted during this assessment.' });
     return rules;
   }, [fullscreenRequired, tabGuardEnabled, tabSwitchLimit, cameraRequired, copyBlockEnabled, preventMultipleTabs, securitySettings]);
   const setupSteps = useMemo(() => {
@@ -649,21 +646,6 @@ export default function AssessmentAttempt() {
     window.addEventListener('pointerup', handlePointerUp);
   };
 
-  const loadRules = useCallback(async () => {
-    setRulesLoading(true);
-    try {
-      const data = await api.getStudentAssessmentRules();
-      const rules = data?.rules || {};
-      const blocks = Array.isArray(rules.blocks) ? rules.blocks : [];
-      setRulesBlocks(blocks);
-      if (rules.title) setRulesTitle(rules.title);
-    } catch {
-      setRulesBlocks([]);
-    } finally {
-      setRulesLoading(false);
-    }
-  }, []);
-
   const loadAssessment = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -719,8 +701,7 @@ export default function AssessmentAttempt() {
 
   useEffect(() => {
     loadAssessment();
-    loadRules();
-  }, [loadAssessment, loadRules]);
+  }, [loadAssessment]);
 
   useEffect(() => {
     if (phase !== 'validation' || currentSetupStepKey !== 'environment') return undefined;
@@ -1885,7 +1866,7 @@ export default function AssessmentAttempt() {
   ];
   const effectiveRules = [
     ...assessmentInstructionRules,
-    ...(rulesBlocks.length ? rulesBlocks : fallbackRules),
+    ...fallbackRules,
     ...finalRules,
   ];
   const showAssessmentWorkspace = phase === 'active' || isSubmitted;
@@ -2838,7 +2819,7 @@ export default function AssessmentAttempt() {
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
                 <h2 className="text-2xl font-semibold text-slate-900 dark:text-white">Assessment Instructions & Guidelines</h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-gray-400">{rulesTitle}. Please read all sections carefully before you begin.</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-gray-400">Please read all instructions carefully before you begin.</p>
               </div>
             </div>
 
@@ -2874,8 +2855,7 @@ export default function AssessmentAttempt() {
                   Rules & Regulations
                 </div>
                 <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-gray-300">
-                  {rulesLoading && <div className="text-xs text-slate-500">Loading rules...</div>}
-                  {!rulesLoading && effectiveRules.map((block, idx) => (
+                  {effectiveRules.map((block, idx) => (
                     block.type === 'paragraph' ? (
                       <p key={`rule-${idx}`} className="text-sm text-slate-600 dark:text-gray-300">{block.text}</p>
                     ) : (

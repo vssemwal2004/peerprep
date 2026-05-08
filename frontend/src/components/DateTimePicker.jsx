@@ -43,11 +43,11 @@ export default function DateTimePicker({
     const options = {
       enableTime,
       dateFormat: enableTime ? "Y-m-d H:i" : "Y-m-d",
-      time_24hr: false,
+      time_24hr: true,
       closeOnSelect: false,
       minuteIncrement: 1,
       defaultDate: value || null,
-      minDate: min || null,
+      minDate: min || (isEnd ? null : new Date()),
       maxDate: max || null,
       // Keep calendar open unless OK button was clicked
       onClose: (selectedDates, dateStr, instance) => {
@@ -104,13 +104,10 @@ export default function DateTimePicker({
               picked.getMonth() === now.getMonth() &&
               picked.getDate() === now.getDate();
             // Respect event min/max boundaries for defaulting
-            const parseDateStr = (s) => {
-              if (!s) return null;
-              const d = new Date(s);
-              return isNaN(d.getTime()) ? null : d;
-            };
-            const minDateTime = parseDateStr(min);
-            const maxDateTime = parseDateStr(max);
+            const cfgMin = instance.config.minDate;
+            const cfgMax = instance.config.maxDate;
+            const minDateTime = cfgMin ? new Date(cfgMin) : null;
+            const maxDateTime = cfgMax ? new Date(cfgMax) : null;
             const sameAsMinDay = !!(
               minDateTime &&
               picked.getFullYear() === minDateTime.getFullYear() &&
@@ -149,19 +146,8 @@ export default function DateTimePicker({
               return;
             }
 
-            // Start time default: 10:00 or current time if after 10:00, capped at 22:00:00
-            if (sameDayAsNow) {
-              const currentH = now.getHours();
-              if (currentH < 10) picked.setHours(10, 0, 0, 0);
-              else if (
-                currentH > 22 ||
-                (currentH === 22 && now.getMinutes() > 0)
-              )
-                picked.setHours(22, 0, 0, 0);
-              else picked.setHours(currentH, now.getMinutes(), 0, 0);
-            } else {
-              picked.setHours(10, 0, 0, 0);
-            }
+            // Start time default: always use current time
+            picked.setHours(now.getHours(), now.getMinutes(), 0, 0);
             // If selected date is the min boundary day, ensure default is not before event start
             if (sameAsMinDay && minDateTime) {
               if (picked.getTime() < minDateTime.getTime()) {
@@ -192,38 +178,11 @@ export default function DateTimePicker({
             return;
           }
 
-          // Enforce allowed hours window (10:00 - 22:00, minutes past 00 not allowed at 22:00)
+          // For start picker (no min), prevent picking past dates/times
           const now = new Date();
-          const hour = date.getHours();
-          if (
-            hour < 10 ||
-            hour > 22 ||
-            (hour === 22 && date.getMinutes() > 0)
-          ) {
-            // Auto-adjust to nearest valid hour inside window
-            const adjusted = new Date(date.getTime());
-            if (hour < 10) adjusted.setHours(10, 0, 0, 0);
-            else adjusted.setHours(22, 0, 0, 0);
-            instance.setDate(adjusted, true);
-            try {
-              if (instance.updateTimeDisabledStates)
-                instance.updateTimeDisabledStates();
-            } catch {}
-            return;
-          }
-          // For start picker (no min), prevent picking past
           if (!min && date.getTime() <= now.getTime()) {
-            // Move to next allowable future minute within window
+            // Move to next minute
             const future = new Date(now.getTime() + 60 * 1000);
-            if (future.getHours() < 10) future.setHours(10, 0, 0, 0);
-            if (
-              future.getHours() > 22 ||
-              (future.getHours() === 22 && future.getMinutes() > 0)
-            ) {
-              // move to next day 10:00
-              future.setDate(future.getDate() + 1);
-              future.setHours(10, 0, 0, 0);
-            }
             instance.setDate(future, true);
             try {
               if (instance.updateTimeDisabledStates)
@@ -259,6 +218,18 @@ export default function DateTimePicker({
         }
       },
       onReady: (selectedDates, dateStr, instance) => {
+        // Auto-select today's date for start picker if no date is selected, to enable time disabling
+        if (!isEnd && (!instance.selectedDates || instance.selectedDates.length === 0) && !value) {
+          setTimeout(() => {
+            instance.setDate(new Date(), true);
+            // Refresh disabled states after auto-select
+            setTimeout(() => {
+              if (instance.updateTimeDisabledStates) {
+                instance.updateTimeDisabledStates();
+              }
+            }, 50);
+          }, 0);
+        }
         // Track inside vs outside clicks to guard closing
         try {
           const onDocMouseDown = (e) => {
@@ -346,7 +317,7 @@ export default function DateTimePicker({
               width: "200px",
               minWidth: "200px",
               height: "100%",
-              minHeight: "280px",
+              minHeight: "320px",
               padding: "0",
               paddingTop: "0",
               marginTop: "0",
@@ -365,6 +336,7 @@ export default function DateTimePicker({
               flexDirection: "row",
               alignItems: "stretch",
               gap: "0",
+              minHeight: "320px",
             });
 
             // Set calendar width to proper size
@@ -395,7 +367,6 @@ export default function DateTimePicker({
             const hourInput = timeContainer.querySelector(".flatpickr-hour");
             const minuteInput =
               timeContainer.querySelector(".flatpickr-minute");
-            const amPm = timeContainer.querySelector(".flatpickr-am-pm");
             const separator = timeContainer.querySelector(
               ".flatpickr-time-separator"
             );
@@ -404,7 +375,7 @@ export default function DateTimePicker({
               separator.style.display = "none";
             }
 
-            if (hourInput && minuteInput && amPm) {
+            if (hourInput && minuteInput) {
               // Clear and rebuild
               timeContainer.innerHTML = "";
 
@@ -435,13 +406,6 @@ export default function DateTimePicker({
                 "width: 50px; font-size: 11px; font-weight: 600; color: #64748b; text-align: center;";
               labelsContainer.appendChild(minuteLabel);
 
-              const periodLabel = document.createElement("div");
-              periodLabel.textContent = "Period";
-              periodLabel.className = "time-label";
-              periodLabel.style.cssText =
-                "width: 50px; font-size: 11px; font-weight: 600; color: #64748b; text-align: center;";
-              labelsContainer.appendChild(periodLabel);
-
               timeContainer.appendChild(labelsContainer);
 
               // Create columns container
@@ -457,10 +421,10 @@ export default function DateTimePicker({
               const hourScroller = document.createElement("div");
               hourScroller.className = "time-scroller hour-scroller";
               hourScroller.style.cssText =
-                "width: 50px; height: 168px; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; border: 1px solid #e2e8f0; border-radius: 8px; background: #fafafa; position: relative;";
+                "width: 50px; height: 216px; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; border: 1px solid #e2e8f0; border-radius: 8px; background: #fafafa; position: relative;";
 
-              // Generate hours 1-12
-              for (let i = 1; i <= 12; i++) {
+              // Generate hours 00-23
+              for (let i = 0; i <= 23; i++) {
                 const hourOption = document.createElement("div");
                 hourOption.textContent = i.toString().padStart(2, "0");
                 hourOption.className = "time-option";
@@ -478,10 +442,9 @@ export default function DateTimePicker({
                   hourOption.style.fontWeight = "600";
                   // Sync hidden input and apply via Flatpickr API
                   hourInput.value = i;
-                  const period = (amPm.value || "AM").toUpperCase();
                   const minute = parseInt(minuteInput.value || "0", 10);
                   if (typeof applyTime === "function")
-                    applyTime(i, minute, period);
+                    applyTime(i, minute);
                 });
                 hourScroller.appendChild(hourOption);
               }
@@ -503,7 +466,7 @@ export default function DateTimePicker({
               const minuteScroller = document.createElement("div");
               minuteScroller.className = "time-scroller minute-scroller";
               minuteScroller.style.cssText =
-                "width: 50px; height: 168px; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; border: 1px solid #e2e8f0; border-radius: 8px; background: #fafafa; position: relative;";
+                "width: 50px; height: 216px; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; border: 1px solid #e2e8f0; border-radius: 8px; background: #fafafa; position: relative;";
 
               // Generate minutes 00-59
               for (let i = 0; i <= 59; i++) {
@@ -524,44 +487,15 @@ export default function DateTimePicker({
                   minuteOption.style.fontWeight = "600";
                   // Sync hidden input and apply via Flatpickr API
                   minuteInput.value = i;
-                  const h12 = parseInt(hourInput.value || "12", 10);
-                  const period = (amPm.value || "AM").toUpperCase();
+                  const h24 = parseInt(hourInput.value || "0", 10);
                   if (typeof applyTime === "function")
-                    applyTime(h12, i, period);
+                    applyTime(h24, i);
                 });
                 minuteScroller.appendChild(minuteOption);
               }
 
               minuteColumn.appendChild(minuteScroller);
               columnsContainer.appendChild(minuteColumn);
-
-              // AM/PM column (always show both options)
-              const amPmColumn = document.createElement("div");
-              amPmColumn.style.cssText =
-                "display: flex; flex-direction: column; align-items: center;";
-
-              // Keep original amPm input hidden to sync with Flatpickr
-              amPm.style.display = "none";
-              amPmColumn.appendChild(amPm);
-
-              const ampmBox = document.createElement("div");
-              ampmBox.className = "ampm-box";
-              ampmBox.style.cssText =
-                "width: 50px; height: 168px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fafafa; display: flex; flex-direction: column; overflow: hidden;";
-              const amOption = document.createElement("div");
-              amOption.textContent = "AM";
-              amOption.className = "ampm-option";
-              amOption.style.cssText =
-                "flex: 1; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:600; color:#475569; cursor:pointer;";
-              const pmOption = document.createElement("div");
-              pmOption.textContent = "PM";
-              pmOption.className = "ampm-option";
-              pmOption.style.cssText =
-                "flex: 1; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:600; color:#475569; cursor:pointer; border-top:1px solid #e2e8f0;";
-              ampmBox.appendChild(amOption);
-              ampmBox.appendChild(pmOption);
-              amPmColumn.appendChild(ampmBox);
-              columnsContainer.appendChild(amPmColumn);
 
               timeContainer.appendChild(columnsContainer);
 
@@ -575,28 +509,24 @@ export default function DateTimePicker({
                 el.style.background = active ? "#0ea5e9" : "transparent";
                 el.style.color = active ? "#ffffff" : "#475569";
               };
-              // Hide/show a time option (hour/minute)
-              const setHiddenOption = (el, hidden) => {
+              // Disable/enable a time option (hour/minute) - fade instead of hide
+              const setDisabledOption = (el, disabled) => {
                 if (!el) return;
-                el.style.display = hidden ? "none" : "flex";
-                if (!hidden) {
+                el.style.opacity = disabled ? "0.35" : "1";
+                el.style.pointerEvents = disabled ? "none" : "auto";
+                el.style.cursor = disabled ? "not-allowed" : "pointer";
+                el.classList.toggle("disabled", disabled);
+                el.setAttribute("data-disabled", disabled ? "true" : "false");
+                if (!disabled) {
                   el.style.color = "#475569";
                 }
               };
-              // Disable/enable AM or PM (do not hide)
-              const setAmPmDisabled = (el, disabled) => {
-                if (!el) return;
-                el.classList.toggle("disabled", !!disabled);
-                el.style.pointerEvents = disabled ? "none" : "auto";
-                el.style.opacity = "1";
-              };
-
               // Click handlers should also re-evaluate minute disables
               hourScroller
                 .querySelectorAll(".time-option")
                 .forEach((opt, idx) => {
                   opt.addEventListener("click", () => {
-                    updateDisabledStates(idx + 1);
+                    updateDisabledStates(idx);
                   });
                 });
 
@@ -618,51 +548,21 @@ export default function DateTimePicker({
                 }
                 return null;
               };
-              const to24h = (h12, period) => {
-                let h = h12 % 12;
-                if (period === "PM") h += 12;
-                return h;
-              };
-              const applyTime = (h12, m, period) => {
+              const applyTime = (h24, m) => {
                 const base = getBaseDate();
                 if (!base) return; // No prior date to apply time to
-                const h24 = to24h(h12, (period || "AM").toUpperCase());
                 base.setHours(h24, m || 0, 0, 0);
                 instance.setDate(base, true);
               };
-              // AM/PM selection handlers (apply via setDate)
-              const selectPeriod = (period) => {
-                const currentPeriod = (amPm.value || "AM").toUpperCase();
-                // Update visuals regardless
-                amPm.value = period;
-                setActive(amOption, period === "AM");
-                setActive(pmOption, period === "PM");
-                amOption.classList.toggle("active", period === "AM");
-                pmOption.classList.toggle("active", period === "PM");
-                // Avoid re-applying the same period to prevent recursion
-                if (currentPeriod === period) return;
-                const currentHour = parseInt(hourInput.value || "12", 10);
-                const currentMinute = parseInt(minuteInput.value || "0", 10);
-                applyTime(currentHour, currentMinute, period);
-              };
-              amOption.addEventListener("click", () => selectPeriod("AM"));
-              pmOption.addEventListener("click", () => selectPeriod("PM"));
 
-              const getCurrent12h = () => {
+              const getCurrent24h = () => {
                 const now = new Date();
-                const h24 = now.getHours();
-                const period = h24 >= 12 ? "PM" : "AM";
-                let h12 = h24 % 12;
-                if (h12 === 0) h12 = 12;
-                return { h12, period, minute: now.getMinutes(), date: now };
+                return { h24: now.getHours(), minute: now.getMinutes(), date: now };
               };
-              const parseDateStr = (s) => {
-                if (!s) return null;
-                const d = new Date(s);
-                return isNaN(d.getTime()) ? null : d;
-              };
-              const minDateTime = parseDateStr(min);
-              const maxDateTime = parseDateStr(max);
+              const cfgMin = instance.config.minDate;
+              const cfgMax = instance.config.maxDate;
+              const minDateTime = cfgMin ? new Date(cfgMin) : null;
+              const maxDateTime = cfgMax ? new Date(cfgMax) : null;
               const isTodaySelected = () => {
                 const d = instance.selectedDates && instance.selectedDates[0];
                 if (!d) return false;
@@ -691,137 +591,118 @@ export default function DateTimePicker({
                   d.getDate() === maxDateTime.getDate()
                 );
               };
-              const comparePeriod = (a, b) =>
-                a === b ? 0 : a === "AM" ? -1 : 1;
-              const isHourAllowedByWindow = (period, h12) => {
-                if (period === "AM") return h12 >= 10 && h12 <= 11; // 10am, 11am
-                // PM: 12(noon) to 10pm inclusive; 11pm not allowed
-                return h12 === 12 || (h12 >= 1 && h12 <= 10);
+              const isMinDateTimeToday = () => {
+                if (!minDateTime) return false;
+                const n = new Date();
+                return (
+                  minDateTime.getFullYear() === n.getFullYear() &&
+                  minDateTime.getMonth() === n.getMonth() &&
+                  minDateTime.getDate() === n.getDate()
+                );
               };
-
               const updateDisabledStates = () => {
                 const today = isTodaySelected();
-                const nowInfo = getCurrent12h();
-                const selPeriod = (amPm.value || "AM").toUpperCase();
-                const selHour = parseInt(hourInput.value || "12", 10);
+                const nowInfo = getCurrent24h();
+                // Read selected hour from instance.selectedDates if available, otherwise from input
+                const selectedDate = instance.selectedDates && instance.selectedDates[0];
+                const selHour = selectedDate
+                  ? selectedDate.getHours()
+                  : parseInt(hourInput.value || "0", 10);
                 const minDay = isMinDaySelected();
                 const maxDay = isMaxDaySelected();
-                const refPeriod =
-                  minDay && minDateTime
-                    ? minDateTime.getHours() >= 12
-                      ? "PM"
-                      : "AM"
-                    : nowInfo.period;
-                let refHour12;
+                let refHour24;
+                let refMinute;
                 if (minDay && minDateTime) {
-                  const h24 = minDateTime.getHours();
-                  refHour12 = h24 % 12;
-                  if (refHour12 === 0) refHour12 = 12;
+                  if (isEnd) {
+                    // End picker on same day as start: use start time as reference
+                    refHour24 = minDateTime.getHours();
+                    refMinute = minDateTime.getMinutes();
+                  } else {
+                    // Start picker on min day: use current time (not mount time)
+                    refHour24 = nowInfo.h24;
+                    refMinute = nowInfo.minute;
+                  }
+                } else if (today) {
+                  refHour24 = nowInfo.h24;
+                  refMinute = nowInfo.minute;
+                } else if (!isEnd && minDateTime && isMinDateTimeToday()) {
+                  // For start picker with no date selected but minDate is today, use current time
+                  refHour24 = nowInfo.h24;
+                  refMinute = nowInfo.minute;
                 } else {
-                  refHour12 = nowInfo.h12;
+                  refHour24 = 0;
+                  refMinute = 0;
                 }
-                const refMinute =
-                  minDay && minDateTime
-                    ? minDateTime.getMinutes()
-                    : nowInfo.minute;
 
                 // Upper bound reference for max day
-                let maxRefPeriod = null;
-                let maxRefHour12 = null;
+                let maxRefHour24 = null;
                 let maxRefMinute = null;
                 if (maxDay && maxDateTime) {
-                  maxRefPeriod = maxDateTime.getHours() >= 12 ? "PM" : "AM";
-                  const h24 = maxDateTime.getHours();
-                  maxRefHour12 = h24 % 12;
-                  if (maxRefHour12 === 0) maxRefHour12 = 12;
+                  maxRefHour24 = maxDateTime.getHours();
                   maxRefMinute = maxDateTime.getMinutes();
                 }
 
-                // Hours
+                // Hours - 24h format (0-23)
                 hourOptions.forEach((opt, i) => {
-                  const hourVal = i + 1; // 1..12
+                  const hourVal = i; // 0..23
                   let hide = false;
-                  // Allowed window first
-                  if (!isHourAllowedByWindow(selPeriod, hourVal)) hide = true;
                   // Relative to reference (now for start, min for end) when same day
-                  if (!hide && (today || minDay)) {
-                    const rel = comparePeriod(selPeriod, refPeriod);
-                    if (rel < 0) hide = true; // Entire earlier period
-                    else if (rel === 0 && hourVal < refHour12) hide = true; // Earlier hour in same period
+                  if (today || minDay) {
+                    if (hourVal < refHour24) hide = true;
+                  } else if (!isEnd && minDateTime && isMinDateTimeToday()) {
+                    // For start picker with no date selected but minDate is today, use current time
+                    if (hourVal < nowInfo.h24) hide = true;
                   }
                   // Upper bound when same as max day
-                  if (!hide && maxDay && maxRefPeriod) {
-                    const relMax = comparePeriod(selPeriod, maxRefPeriod);
-                    if (relMax > 0)
-                      hide = true; // Entire later period beyond max
-                    else if (relMax === 0 && hourVal > maxRefHour12)
-                      hide = true; // Later hour in same period
+                  if (!hide && maxDay && maxRefHour24 !== null) {
+                    if (hourVal > maxRefHour24) hide = true;
                   }
-                  setHiddenOption(opt, hide);
+                  setDisabledOption(opt, hide);
                 });
 
                 // Minutes
                 minuteOptions.forEach((opt, i) => {
                   let hide = false;
-                  // At 10 PM allow only 00 minute
-                  if (selPeriod === "PM" && selHour === 10) hide = i > 0;
-                  // Relative reference minute only when same period, same hour, and same day/minDay
-                  if (!hide && (today || minDay)) {
-                    const rel = comparePeriod(selPeriod, refPeriod);
-                    if (rel < 0) hide = true;
-                    else if (
-                      rel === 0 &&
-                      selHour === refHour12 &&
-                      i < refMinute
-                    )
+                  // Relative reference minute only when same hour and same day/minDay
+                  if (today || minDay) {
+                    if (selHour < refHour24) {
                       hide = true;
+                    } else if (selHour === refHour24 && i < refMinute) {
+                      hide = true;
+                    }
+                  } else if (!isEnd && minDateTime && isMinDateTimeToday()) {
+                    // For start picker with no date selected but minDate is today, use current time
+                    if (selHour < nowInfo.h24) {
+                      hide = true;
+                    } else if (selHour === nowInfo.h24 && i < nowInfo.minute) {
+                      hide = true;
+                    }
                   }
                   // Upper bound minutes when on max day
-                  if (!hide && maxDay && maxRefPeriod) {
-                    const relMax = comparePeriod(selPeriod, maxRefPeriod);
-                    if (relMax > 0) hide = true;
-                    else if (
-                      relMax === 0 &&
-                      selHour === maxRefHour12 &&
-                      i > maxRefMinute
-                    )
+                  if (!hide && maxDay && maxRefHour24 !== null) {
+                    if (selHour > maxRefHour24) {
                       hide = true;
+                    } else if (selHour === maxRefHour24 && i > maxRefMinute) {
+                      hide = true;
+                    }
                   }
-                  setHiddenOption(opt, hide);
+                  setDisabledOption(opt, hide);
                 });
-
-                // AM/PM disabling rule
-                const allowedAM =
-                  isHourAllowedByWindow("AM", 10) ||
-                  isHourAllowedByWindow("AM", 11);
-                const allowedPM =
-                  isHourAllowedByWindow("PM", 12) ||
-                  isHourAllowedByWindow("PM", 1);
-                let disableAM = !allowedAM;
-                let disablePM = !allowedPM;
-                // Force-disable AM if on min boundary day and boundary time is PM
-                if (minDay && minDateTime && minDateTime.getHours() >= 12) {
-                  disableAM = true;
-                } else if (today || minDay) {
-                  // If reference period is PM and same day, AM becomes invalid
-                  if (refPeriod === "PM") disableAM = true;
-                }
-                if (maxDay && maxDateTime) {
-                  // If maximum period is AM on same day, PM becomes invalid
-                  if (maxRefPeriod === "AM") disablePM = true;
-                }
-                setAmPmDisabled(amOption, disableAM);
-                setAmPmDisabled(pmOption, disablePM);
-                // Only switch if the currently selected period is now disabled
-                if (disableAM && selPeriod === "AM") selectPeriod("PM");
-                if (disablePM && selPeriod === "PM") selectPeriod("AM");
               };
 
               // Expose updater to instance for external calls (onChange)
               instance.updateTimeDisabledStates = updateDisabledStates;
 
-              // Initialize selected AM/PM from input value
-              selectPeriod((amPm.value || "AM").toUpperCase());
+              // Initialize highlight from current selection or inputs
+              const initHour = parseInt(hourInput.value || "0", 10);
+              const initMinute = parseInt(minuteInput.value || "0", 10);
+              if (hourOptions[initHour]) {
+                setActive(hourOptions[initHour], true);
+              }
+              if (minuteOptions[initMinute]) {
+                setActive(minuteOptions[initMinute], true);
+              }
+
               updateDisabledStates();
             }
           }
@@ -1153,34 +1034,12 @@ export default function DateTimePicker({
           border-color: #374151 !important;
         }
         
-        .ampm-box {
-          background: #fafafa;
-          border-color: #e2e8f0;
-        }
-        
-        :root.dark .ampm-box {
-          background: #111827 !important;
-          border-color: #374151 !important;
-        }
-        
-        :root.dark .ampm-box .ampm-option {
-          border-top-color: #374151 !important;
-        }
-        
         /* Time options text - White in dark mode */
         .time-option {
           color: #475569;
         }
         
         :root.dark .time-option {
-          color: #ffffff !important;
-        }
-        
-        .ampm-option {
-          color: #475569;
-        }
-        
-        :root.dark .ampm-option {
           color: #ffffff !important;
         }
         
@@ -1201,50 +1060,31 @@ export default function DateTimePicker({
           color: #ffffff !important;
         }
         
-        .time-option.disabled { 
-          color: #94a3b8 !important; 
-          background: transparent !important; 
-          cursor: default !important; 
-          pointer-events: none !important; 
-          opacity: 0.6 !important; 
+        .time-option.disabled {
+          color: #cbd5e1 !important;
+          background: transparent !important;
+          cursor: not-allowed !important;
+          pointer-events: none !important;
+          opacity: 0.35 !important;
+          font-weight: 400 !important;
+          text-decoration: line-through !important;
         }
-        
+
+        .time-option.disabled:hover {
+          background: transparent !important;
+          color: #cbd5e1 !important;
+          opacity: 0.35 !important;
+        }
+
         :root.dark .time-option.disabled {
-          color: #6b7280 !important;
+          color: #9ca3af !important;
+          opacity: 0.35 !important;
         }
-        
-        .ampm-option { 
-          transition: background 0.2s, color 0.2s; 
-        }
-        
-        .ampm-option:hover { 
-          background: #dbeafe; 
-          color: #0ea5e9; 
-        }
-        
-        :root.dark .ampm-option:hover { 
-          background: #1e3a8a; 
-          color: #ffffff; 
-        }
-        
-        .ampm-option.active { 
-          background: #0ea5e9; 
-          color: #ffffff; 
-        }
-        
-        :root.dark .ampm-option.active { 
-          background: #0284c7; 
-          color: #ffffff; 
-        }
-        
-        .ampm-option.disabled { 
-          background: #e5e7eb !important; 
-          color: #94a3b8 !important; 
-        }
-        
-        :root.dark .ampm-option.disabled { 
-          background: #374151 !important; 
-          color: #6b7280 !important; 
+
+        :root.dark .time-option.disabled:hover {
+          color: #9ca3af !important;
+          background: transparent !important;
+          opacity: 0.35 !important;
         }
         
         /* Gradient fade for scrollers */

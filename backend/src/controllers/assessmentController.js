@@ -264,6 +264,130 @@ function buildAssessmentAttemptAnalytics(assessment = {}, submission = {}) {
   return summary;
 }
 
+function buildSectionBreakdownWithScores(assessment = {}, submission = {}) {
+  const answerMap = new Map();
+  (submission.answers || []).forEach((answer) => {
+    answerMap.set(`${answer.sectionIndex}-${answer.questionIndex}`, answer);
+  });
+
+  return (assessment.sections || []).map((section, sectionIndex) => {
+    const questions = Array.isArray(section.questions) ? section.questions : [];
+    let score = 0;
+    let totalMarks = 0;
+    let correctAnswers = 0;
+    let wrongAnswers = 0;
+    let skippedQuestions = 0;
+    let pendingEvaluationQuestions = 0;
+
+    questions.forEach((question, questionIndex) => {
+      const marks = Number(question?.points ?? question?.marks ?? section.marksPerQuestion ?? 1);
+      totalMarks += marks;
+      const result = evaluateQuestionResponse(question, section, answerMap.get(`${sectionIndex}-${questionIndex}`));
+      if (result === 'correct') {
+        score += marks;
+        correctAnswers += 1;
+      } else if (result === 'wrong') {
+        wrongAnswers += 1;
+      } else if (result === 'pending') {
+        pendingEvaluationQuestions += 1;
+      } else {
+        skippedQuestions += 1;
+      }
+    });
+
+    return {
+      sectionIndex,
+      sectionName: section.sectionName || `Section ${sectionIndex + 1}`,
+      type: section.type || 'mixed',
+      totalQuestions: questions.length,
+      totalMarks,
+      score,
+      correctAnswers,
+      wrongAnswers,
+      skippedQuestions,
+      pendingEvaluationQuestions,
+    };
+  });
+}
+
+function buildQuestionWiseReport(assessment = {}, submission = {}) {
+  const answerMap = new Map();
+  (submission.answers || []).forEach((answer) => {
+    answerMap.set(`${answer.sectionIndex}-${answer.questionIndex}`, answer);
+  });
+
+  const rows = [];
+  (assessment.sections || []).forEach((section, sectionIndex) => {
+    (section.questions || []).forEach((question, questionIndex) => {
+      const answer = answerMap.get(`${sectionIndex}-${questionIndex}`);
+      const result = evaluateQuestionResponse(question, section, answer);
+      const marks = Number(question?.points ?? question?.marks ?? section.marksPerQuestion ?? 1);
+      rows.push({
+        sectionIndex,
+        questionIndex,
+        sectionName: section.sectionName || `Section ${sectionIndex + 1}`,
+        questionText: question?.questionText || `Question ${questionIndex + 1}`,
+        type: question?.type || section?.type || 'mcq',
+        timeSpentSec: 0,
+        isCorrect: result === 'correct',
+        isSkipped: result === 'skipped',
+        marksObtained: result === 'correct' ? marks : 0,
+        maxMarks: marks,
+      });
+    });
+  });
+  return rows;
+}
+
+function parseUserAgentDetails(userAgent = '') {
+  const ua = String(userAgent || '');
+  let browser = 'Unknown';
+  let os = 'Unknown';
+
+  if (/edg/i.test(ua)) browser = 'Edge';
+  else if (/chrome/i.test(ua) && !/edg/i.test(ua)) browser = 'Chrome';
+  else if (/firefox/i.test(ua)) browser = 'Firefox';
+  else if (/safari/i.test(ua) && !/chrome|chromium|edg/i.test(ua)) browser = 'Safari';
+  else if (/opr|opera/i.test(ua)) browser = 'Opera';
+
+  if (/windows nt/i.test(ua)) os = 'Windows';
+  else if (/android/i.test(ua)) os = 'Android';
+  else if (/iphone|ipad|ios/i.test(ua)) os = 'iOS';
+  else if (/mac os x|macintosh/i.test(ua)) os = 'macOS';
+  else if (/linux/i.test(ua)) os = 'Linux';
+
+  return { browser, os };
+}
+
+function stringifyLocation(location = null) {
+  if (!location || typeof location !== 'object') return '';
+  const latitude = Number(location.latitude);
+  const longitude = Number(location.longitude);
+  const accuracy = Number(location.accuracy);
+  const parts = [];
+  if (Number.isFinite(latitude)) parts.push(`Lat ${latitude.toFixed(4)}`);
+  if (Number.isFinite(longitude)) parts.push(`Lng ${longitude.toFixed(4)}`);
+  if (Number.isFinite(accuracy)) parts.push(`±${Math.round(accuracy)}m`);
+  return parts.join(', ');
+}
+
+function stringifySecurityHeartbeat(heartbeat = {}) {
+  if (!heartbeat || typeof heartbeat !== 'object') return '';
+  return Object.entries(heartbeat)
+    .map(([key, value]) => `${key}:${value ? 'ok' : 'flagged'}`)
+    .join(', ');
+}
+
+function buildProctoringFlags(submission = {}) {
+  const flags = [];
+  if (submission.tabSwitches) flags.push(`Tab switches: ${submission.tabSwitches}`);
+  if (submission.fullscreenExits) flags.push(`Fullscreen exits: ${submission.fullscreenExits}`);
+  if (submission.cameraFlags) flags.push(`Camera flags: ${submission.cameraFlags}`);
+  if (submission.copyPasteCount) flags.push(`Copy/Paste blocks: ${submission.copyPasteCount}`);
+  if (submission.pauseCount) flags.push(`Pause events: ${submission.pauseCount}`);
+  return flags.join(' | ');
+}
+
 function computeSubmissionTimeTakenSec(submission = {}) {
   if (Number.isFinite(Number(submission.timeTakenSec)) && Number(submission.timeTakenSec) > 0) {
     return Number(submission.timeTakenSec);
@@ -1763,6 +1887,61 @@ function normalizeScore(value) {
   return Number.isNaN(num) ? null : num;
 }
 
+function parseCsvList(value) {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => parseCsvList(item));
+  }
+  if (value === undefined || value === null) return [];
+  return String(value)
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function escapeRegex(value = '') {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function buildTextRegex(value = '') {
+  const normalized = String(value || '').trim();
+  if (!normalized) return null;
+  return new RegExp(escapeRegex(normalized), 'i');
+}
+
+function deriveAssessmentMetadata(assessment = {}) {
+  const tags = new Set();
+  const categories = new Set();
+
+  (assessment.sections || []).forEach((section) => {
+    (section.questions || []).forEach((question) => {
+      (question.tags || []).forEach((tag) => {
+        const normalized = String(tag || '').trim();
+        if (normalized) tags.add(normalized);
+      });
+
+      const codingCategory = question?.coding?.category || question?.problemDataSnapshot?.category;
+      if (codingCategory) {
+        categories.add(String(codingCategory).trim());
+      }
+    });
+  });
+
+  return {
+    tags: Array.from(tags).sort((a, b) => a.localeCompare(b)),
+    categories: Array.from(categories).sort((a, b) => a.localeCompare(b)),
+  };
+}
+
+function matchesDateRange(value, from, to) {
+  if (!from && !to) return true;
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  if (from && date < from) return false;
+  if (to && date > to) return false;
+  return true;
+}
+
 export async function getAssessmentReports(req, res) {
   try {
     const {
@@ -1770,6 +1949,7 @@ export async function getAssessmentReports(req, res) {
       assessmentType,
       studentId,
       status,
+      hasViolations,
       from,
       to,
       scoreMin,
@@ -1789,6 +1969,22 @@ export async function getAssessmentReports(req, res) {
     const match = {};
     if (assessmentId) match.assessmentId = new mongoose.Types.ObjectId(assessmentId);
     if (status) match.status = status;
+    // Filter for submissions with violations
+    if (hasViolations === 'true' || hasViolations === true) {
+      match.$expr = {
+        $gt: [
+          {
+            $add: [
+              { $ifNull: ['$tabSwitches', 0] },
+              { $ifNull: ['$fullscreenExits', 0] },
+              { $ifNull: ['$cameraFlags', 0] },
+              { $ifNull: ['$copyPasteCount', 0] },
+            ],
+          },
+          0,
+        ],
+      };
+    }
 
     const fromDate = parseReportDate(from);
     const toDate = parseReportDate(to);
@@ -1814,7 +2010,7 @@ export async function getAssessmentReports(req, res) {
       { $unwind: '$student' },
     ];
 
-    const postMatch = {};
+    const postMatch = { 'assessment.lifecycleStatus': { $ne: 'draft' } };
     if (assessmentType) postMatch['assessment.assessmentType'] = assessmentType;
     if (studentId) postMatch['student._id'] = new mongoose.Types.ObjectId(studentId);
     if (req.user?.role === 'coordinator') {
@@ -1822,6 +2018,27 @@ export async function getAssessmentReports(req, res) {
     }
     if (Object.keys(postMatch).length) {
       baseLookup.push({ $match: postMatch });
+    }
+
+    // Create separate base lookup for summary that excludes status filter
+    // Summary should show stats from ALL submissions, not filtered by status
+    const summaryMatch = { ...match };
+    delete summaryMatch.status; // Remove status filter for summary
+    const summaryBaseLookup = [
+      { $match: summaryMatch },
+      { $lookup: { from: 'assessments', localField: 'assessmentId', foreignField: '_id', as: 'assessment' } },
+      { $unwind: '$assessment' },
+      { $lookup: { from: 'users', localField: 'studentId', foreignField: '_id', as: 'student' } },
+      { $unwind: '$student' },
+    ];
+    const summaryPostMatch = { 'assessment.lifecycleStatus': { $ne: 'draft' } };
+    if (assessmentType) summaryPostMatch['assessment.assessmentType'] = assessmentType;
+    if (studentId) summaryPostMatch['student._id'] = new mongoose.Types.ObjectId(studentId);
+    if (req.user?.role === 'coordinator') {
+      summaryPostMatch['assessment.createdBy'] = req.user._id;
+    }
+    if (Object.keys(summaryPostMatch).length) {
+      summaryBaseLookup.push({ $match: summaryPostMatch });
     }
 
     const totalStudents = await AssessmentSubmission.aggregate([
@@ -1879,13 +2096,13 @@ export async function getAssessmentReports(req, res) {
     ]);
 
     const summaryRows = await AssessmentSubmission.aggregate([
-      ...baseLookup,
+      ...summaryBaseLookup,
       {
         $group: {
           _id: null,
-          avgScore: { $avg: '$score' },
-          maxScore: { $max: '$score' },
-          minScore: { $min: '$score' },
+          avgScore: { $avg: { $ifNull: ['$score', 0] } },
+          maxScore: { $max: { $ifNull: ['$score', 0] } },
+          minScore: { $min: { $ifNull: ['$score', 0] } },
           total: { $sum: 1 },
           passCount: {
             $sum: {
@@ -1896,13 +2113,98 @@ export async function getAssessmentReports(req, res) {
               ],
             },
           },
+          avgTimeSec: { $avg: { $ifNull: ['$timeTakenSec', 0] } },
+          fastestTime: { $min: { $ifNull: ['$timeTakenSec', 0] } },
+          totalViolations: {
+            $sum: {
+              $add: [
+                { $ifNull: ['$tabSwitches', 0] },
+                { $ifNull: ['$fullscreenExits', 0] },
+                { $ifNull: ['$cameraFlags', 0] },
+                { $ifNull: ['$copyPasteCount', 0] },
+              ],
+            },
+          },
+          tabSwitches: { $sum: { $ifNull: ['$tabSwitches', 0] } },
+          fullscreenExits: { $sum: { $ifNull: ['$fullscreenExits', 0] } },
+          cameraFlags: { $sum: { $ifNull: ['$cameraFlags', 0] } },
+          copyPasteCount: { $sum: { $ifNull: ['$copyPasteCount', 0] } },
+          score0_25: {
+            $sum: { $cond: [{ $and: [{ $gte: ['$score', 0] }, { $lt: ['$score', 26] }] }, 1, 0] },
+          },
+          score26_50: {
+            $sum: { $cond: [{ $and: [{ $gte: ['$score', 26] }, { $lt: ['$score', 51] }] }, 1, 0] },
+          },
+          score51_75: {
+            $sum: { $cond: [{ $and: [{ $gte: ['$score', 51] }, { $lt: ['$score', 76] }] }, 1, 0] },
+          },
+          score76_90: {
+            $sum: { $cond: [{ $and: [{ $gte: ['$score', 76] }, { $lt: ['$score', 91] }] }, 1, 0] },
+          },
+          score91_100: {
+            $sum: { $cond: [{ $gte: ['$score', 91] }, 1, 0] },
+          },
         },
       },
+    ]);
+
+    // Compute top violators separately
+    const topViolatorsRows = await AssessmentSubmission.aggregate([
+      ...summaryBaseLookup,
+      {
+        $group: {
+          _id: '$studentId',
+          studentName: { $first: '$student.name' },
+          studentId: { $first: '$student.studentId' },
+          violationCount: {
+            $sum: {
+              $add: [
+                { $ifNull: ['$tabSwitches', 0] },
+                { $ifNull: ['$fullscreenExits', 0] },
+                { $ifNull: ['$cameraFlags', 0] },
+                { $ifNull: ['$copyPasteCount', 0] },
+              ],
+            },
+          },
+        },
+      },
+      { $sort: { violationCount: -1 } },
+      { $limit: 5 },
+    ]);
+
+    // Compute violation trend (last 10 days)
+    const violationTrendRows = await AssessmentSubmission.aggregate([
+      ...summaryBaseLookup,
+      {
+        $match: {
+          startedAt: { $exists: true, $ne: null },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: '%Y-%m-%d', date: '$startedAt' },
+          },
+          violationCount: {
+            $sum: {
+              $add: [
+                { $ifNull: ['$tabSwitches', 0] },
+                { $ifNull: ['$fullscreenExits', 0] },
+                { $ifNull: ['$cameraFlags', 0] },
+                { $ifNull: ['$copyPasteCount', 0] },
+              ],
+            },
+          },
+        },
+      },
+      { $sort: { _id: 1 } },
+      { $limit: 10 },
     ]);
     const summary = summaryRows?.[0] || { avgScore: 0, maxScore: 0, minScore: 0, total: 0, passCount: 0 };
     const failCount = Math.max(0, (summary.total || 0) - (summary.passCount || 0));
 
-    const assessmentSummariesMatch = {};
+    const assessmentSummariesMatch = { lifecycleStatus: { $ne: 'draft' } };
+    if (assessmentId) assessmentSummariesMatch._id = new mongoose.Types.ObjectId(assessmentId);
     if (assessmentType) assessmentSummariesMatch.assessmentType = assessmentType;
     if (req.user?.role === 'coordinator') assessmentSummariesMatch.createdBy = req.user._id;
 
@@ -1920,6 +2222,7 @@ export async function getAssessmentReports(req, res) {
         $project: {
           title: 1,
           assessmentType: 1,
+          lifecycleStatus: 1,
           totalQuestions: {
             $sum: {
               $map: {
@@ -1949,6 +2252,22 @@ export async function getAssessmentReports(req, res) {
         minScore: summary.minScore || 0,
         passCount: summary.passCount || 0,
         failCount,
+        avgTimeSec: summary.avgTimeSec || 0,
+        fastestTime: summary.fastestTime || 0,
+        violationCount: summary.totalViolations || 0,
+        tabSwitches: summary.tabSwitches || 0,
+        fullscreenExits: summary.fullscreenExits || 0,
+        cameraFlags: summary.cameraFlags || 0,
+        copyPasteCount: summary.copyPasteCount || 0,
+        scoreDistribution: [
+          summary.score0_25 || 0,
+          summary.score26_50 || 0,
+          summary.score51_75 || 0,
+          summary.score76_90 || 0,
+          summary.score91_100 || 0,
+        ],
+        topViolators: topViolatorsRows || [],
+        violationTrend: violationTrendRows.map((row) => row.violationCount) || [],
       },
       pagination: {
         page: pageNum,
@@ -1959,6 +2278,359 @@ export async function getAssessmentReports(req, res) {
   } catch (err) {
     console.error('Error generating assessment reports:', err);
     res.status(500).json({ error: 'Failed to generate reports' });
+  }
+}
+
+export async function getStudentAssessmentReport(req, res) {
+  try {
+    const { submissionId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(submissionId)) {
+      return res.status(400).json({ error: 'Invalid submissionId' });
+    }
+
+    const submission = await AssessmentSubmission.findById(submissionId).lean();
+    if (!submission) {
+      return res.status(404).json({ error: 'Submission not found' });
+    }
+
+    const assessment = await Assessment.findById(submission.assessmentId).lean();
+    if (!assessment) {
+      return res.status(404).json({ error: 'Assessment not found' });
+    }
+
+    if (req.user?.role === 'coordinator' && String(assessment.createdBy) !== String(req.user._id)) {
+      return res.status(403).json({ error: 'Not authorized to view this report.' });
+    }
+
+    const analytics = buildAssessmentAttemptAnalytics(assessment, submission);
+    const sectionBreakdown = buildSectionBreakdownWithScores(assessment, submission);
+    const questionWise = buildQuestionWiseReport(assessment, submission);
+
+    const totalMarks = Number(assessment.totalMarks || computeTotalMarksFromSections(assessment.sections || []));
+    const score = Number(submission.score || 0);
+    const accuracy = Number.isFinite(Number(submission.accuracy))
+      ? Number(submission.accuracy)
+      : totalMarks > 0
+        ? Number(((score / totalMarks) * 100).toFixed(2))
+        : 0;
+
+    return res.json({
+      submissionId: submission._id,
+      assessmentId: assessment._id,
+      assessmentTitle: assessment.title || 'Untitled Assessment',
+      score,
+      totalMarks,
+      accuracy,
+      timeTakenSec: computeSubmissionTimeTakenSec(submission),
+      correctAnswers: analytics.correctAnswers,
+      wrongAnswers: analytics.wrongAnswers,
+      skippedQuestions: analytics.skippedQuestions,
+      pendingEvaluationQuestions: analytics.pendingEvaluationQuestions,
+      sectionBreakdown,
+      questionWise,
+      securityInfo: {
+        tabSwitches: submission.tabSwitches || 0,
+        fullscreenExits: submission.fullscreenExits || 0,
+        cameraFlags: submission.cameraFlags || 0,
+        copyPasteCount: submission.copyPasteCount || 0,
+        location: submission.securitySetup?.location || null,
+      },
+    });
+  } catch (err) {
+    console.error('Error fetching student assessment report:', err);
+    return res.status(500).json({ error: 'Failed to fetch student assessment report' });
+  }
+}
+
+export async function getAssessmentReportsExportData(req, res) {
+  try {
+    const {
+      assessmentId,
+      assessmentType,
+      studentQuery,
+      status,
+      from,
+      to,
+      scoreMin,
+      scoreMax,
+      passMark = 0.4,
+    } = req.query || {};
+
+    if (assessmentId && !mongoose.Types.ObjectId.isValid(assessmentId)) {
+      return res.status(400).json({ error: 'Invalid assessmentId' });
+    }
+
+    const match = {};
+    if (assessmentId) match.assessmentId = new mongoose.Types.ObjectId(assessmentId);
+    if (status) match.status = status;
+
+    const fromDate = parseReportDate(from);
+    const toDate = parseReportDate(to);
+    if (fromDate || toDate) {
+      match.startedAt = {};
+      if (fromDate) match.startedAt.$gte = fromDate;
+      if (toDate) match.startedAt.$lte = toDate;
+    }
+
+    const minScore = normalizeScore(scoreMin);
+    const maxScore = normalizeScore(scoreMax);
+    if (minScore !== null || maxScore !== null) {
+      match.score = {};
+      if (minScore !== null) match.score.$gte = minScore;
+      if (maxScore !== null) match.score.$lte = maxScore;
+    }
+
+    const pipeline = [
+      { $match: match },
+      { $lookup: { from: 'assessments', localField: 'assessmentId', foreignField: '_id', as: 'assessment' } },
+      { $unwind: '$assessment' },
+      { $lookup: { from: 'users', localField: 'studentId', foreignField: '_id', as: 'student' } },
+      { $unwind: '$student' },
+    ];
+
+    const postMatch = { 'assessment.lifecycleStatus': { $ne: 'draft' } };
+    if (assessmentType) postMatch['assessment.assessmentType'] = assessmentType;
+    if (studentQuery) {
+      const regex = new RegExp(String(studentQuery).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      postMatch.$or = [
+        { 'student.name': regex },
+        { 'student.email': regex },
+        { 'student.studentId': regex },
+      ];
+    }
+    if (req.user?.role === 'coordinator') {
+      postMatch['assessment.createdBy'] = req.user._id;
+    }
+    if (Object.keys(postMatch).length) {
+      pipeline.push({ $match: postMatch });
+    }
+
+    pipeline.push({
+      $project: {
+        _id: 1,
+        assessmentId: 1,
+        studentId: 1,
+        answers: 1,
+        score: 1,
+        maxMarks: 1,
+        accuracy: 1,
+        timeTakenSec: 1,
+        startedAt: 1,
+        submittedAt: 1,
+        status: 1,
+        tabSwitches: { $ifNull: ['$tabSwitches', 0] },
+        fullscreenExits: { $ifNull: ['$fullscreenExits', 0] },
+        copyPasteCount: { $ifNull: ['$copyPasteCount', 0] },
+        cameraFlags: { $ifNull: ['$cameraFlags', 0] },
+        violationScore: { $ifNull: ['$violationScore', 0] },
+        pauseCount: { $ifNull: ['$pauseCount', 0] },
+        lastPauseAt: 1,
+        securityHeartbeat: { $ifNull: ['$securityHeartbeat', {}] },
+        securitySetup: { $ifNull: ['$securitySetup', {}] },
+        violationLog: { $ifNull: ['$violationLog', []] },
+        violations: { $ifNull: ['$violations', []] },
+        attemptCount: { $ifNull: ['$attemptCount', 0] },
+        lastIp: 1,
+        lastUserAgent: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        assessment: {
+          _id: '$assessment._id',
+          title: '$assessment.title',
+          assessmentType: '$assessment.assessmentType',
+          lifecycleStatus: '$assessment.lifecycleStatus',
+          assessmentId: '$assessment.assessmentId',
+          startTime: '$assessment.startTime',
+          endTime: '$assessment.endTime',
+          duration: '$assessment.duration',
+          totalMarks: '$assessment.totalMarks',
+          createdAt: '$assessment.createdAt',
+          sections: '$assessment.sections',
+        },
+        student: {
+          _id: '$student._id',
+          name: '$student.name',
+          email: '$student.email',
+          studentId: '$student.studentId',
+          course: '$student.course',
+          branch: '$student.branch',
+          college: '$student.college',
+          semester: '$student.semester',
+          group: '$student.group',
+        },
+      },
+    });
+
+    const rawRows = await AssessmentSubmission.aggregate(pipeline);
+    const groupedByAssessment = new Map();
+    rawRows.forEach((row) => {
+      const key = String(row.assessment?._id || row.assessmentId);
+      const list = groupedByAssessment.get(key) || [];
+      list.push(row);
+      groupedByAssessment.set(key, list);
+    });
+
+    const exportRows = [];
+    const sectionRows = [];
+    const proctoringRows = [];
+
+    groupedByAssessment.forEach((rows) => {
+      const rankedRows = [...rows].sort((a, b) => {
+        const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+        if (scoreDiff !== 0) return scoreDiff;
+        return computeSubmissionTimeTakenSec(a) - computeSubmissionTimeTakenSec(b);
+      });
+      const rankMap = new Map(rankedRows.map((row, index) => [String(row._id), index + 1]));
+      const totalInAssessment = rankedRows.length || 1;
+
+      rows.forEach((row) => {
+        const assessmentDoc = row.assessment || {};
+        const submissionDoc = {
+          ...row,
+          assessmentId: row.assessmentId,
+          studentId: row.studentId,
+        };
+        const analytics = buildAssessmentAttemptAnalytics(assessmentDoc, submissionDoc);
+        const sectionBreakdown = buildSectionBreakdownWithScores(assessmentDoc, submissionDoc);
+        const questionWise = buildQuestionWiseReport(assessmentDoc, submissionDoc);
+        const totalMarks = Number(assessmentDoc.totalMarks || computeTotalMarksFromSections(assessmentDoc.sections || []));
+        const score = Number(row.score || 0);
+        const accuracy = Number.isFinite(Number(row.accuracy))
+          ? Number(row.accuracy)
+          : totalMarks > 0
+            ? Number(((score / totalMarks) * 100).toFixed(2))
+            : 0;
+        const timeTakenSec = computeSubmissionTimeTakenSec(row);
+        const rank = rankMap.get(String(row._id)) || null;
+        const percentile = totalInAssessment > 0 && rank
+          ? Number((((totalInAssessment - rank) / totalInAssessment) * 100).toFixed(2))
+          : 0;
+        const userAgentDetails = parseUserAgentDetails(row.lastUserAgent);
+        const sectionScoresText = sectionBreakdown.map((section) => `${section.sectionName}: ${section.score}/${section.totalMarks}`).join(' | ');
+        const sectionPerformanceText = sectionBreakdown.map((section) => `${section.sectionName} (${section.correctAnswers}C/${section.wrongAnswers}W/${section.skippedQuestions}S/${section.pendingEvaluationQuestions}P)`).join(' | ');
+        const locationText = stringifyLocation(row.securitySetup?.location || null);
+        const securityHeartbeatText = stringifySecurityHeartbeat(row.securityHeartbeat || {});
+        const proctoringFlagsText = buildProctoringFlags(row);
+        const violationCount = Number(row.tabSwitches || 0) + Number(row.fullscreenExits || 0) + Number(row.cameraFlags || 0) + Number(row.copyPasteCount || 0);
+
+        exportRows.push({
+          submissionId: String(row._id),
+          assessmentId: String(assessmentDoc._id || row.assessmentId),
+          assessmentName: assessmentDoc.title || 'Untitled Assessment',
+          assessmentType: assessmentDoc.assessmentType || 'mixed',
+          assessmentCode: assessmentDoc.assessmentId || '',
+          assessmentStatus: assessmentDoc.lifecycleStatus || 'draft',
+          assessmentStartTime: assessmentDoc.startTime || null,
+          assessmentEndTime: assessmentDoc.endTime || null,
+          assessmentDurationMin: assessmentDoc.duration || 0,
+          assessmentCreatedAt: assessmentDoc.createdAt || null,
+          candidateName: row.student?.name || 'Unknown',
+          candidateEmail: row.student?.email || '',
+          candidateStudentId: row.student?.studentId || '',
+          candidateCourse: row.student?.course || '',
+          candidateBranch: row.student?.branch || '',
+          candidateCollege: row.student?.college || '',
+          candidateSemester: row.student?.semester ?? '',
+          candidateGroup: row.student?.group || '',
+          attemptDate: row.startedAt || row.createdAt || null,
+          submittedAt: row.submittedAt || null,
+          completionStatus: row.status || 'incomplete',
+          attempts: row.attemptCount || 0,
+          attemptHistory: row.attemptCount || 0,
+          score,
+          totalMarks,
+          percentage: accuracy,
+          accuracy,
+          rank,
+          percentile,
+          totalQuestions: analytics.totalQuestions,
+          correctAnswers: analytics.correctAnswers,
+          wrongAnswers: analytics.wrongAnswers,
+          skippedQuestions: analytics.skippedQuestions,
+          pendingEvaluationQuestions: analytics.pendingEvaluationQuestions,
+          completionRate: analytics.totalQuestions > 0
+            ? Number((((analytics.correctAnswers + analytics.wrongAnswers + analytics.pendingEvaluationQuestions) / analytics.totalQuestions) * 100).toFixed(2))
+            : 0,
+          timeSpentSec: timeTakenSec,
+          violationCount,
+          violationScore: Number(row.violationScore || 0),
+          tabSwitches: Number(row.tabSwitches || 0),
+          fullscreenExits: Number(row.fullscreenExits || 0),
+          cameraFlags: Number(row.cameraFlags || 0),
+          copyPasteCount: Number(row.copyPasteCount || 0),
+          pauseCount: Number(row.pauseCount || 0),
+          lastPauseAt: row.lastPauseAt || null,
+          sectionScores: sectionScoresText,
+          sectionPerformance: sectionPerformanceText,
+          deviceBrowser: userAgentDetails.browser,
+          deviceOs: userAgentDetails.os,
+          deviceInfo: `${userAgentDetails.browser} / ${userAgentDetails.os}`,
+          ipAddress: row.lastIp || '',
+          userAgent: row.lastUserAgent || '',
+          securityHeartbeat: securityHeartbeatText,
+          location: locationText,
+          proctoringFlags: proctoringFlagsText,
+          proctoringActivityCount: Array.isArray(row.violationLog) ? row.violationLog.length : 0,
+          questionCount: questionWise.length,
+        });
+
+        sectionBreakdown.forEach((section) => {
+          sectionRows.push({
+            submissionId: String(row._id),
+            candidateName: row.student?.name || 'Unknown',
+            candidateStudentId: row.student?.studentId || '',
+            assessmentName: assessmentDoc.title || 'Untitled Assessment',
+            sectionName: section.sectionName,
+            sectionType: section.type,
+            totalQuestions: section.totalQuestions,
+            score: section.score,
+            totalMarks: section.totalMarks,
+            correctAnswers: section.correctAnswers,
+            wrongAnswers: section.wrongAnswers,
+            skippedQuestions: section.skippedQuestions,
+            pendingEvaluationQuestions: section.pendingEvaluationQuestions,
+          });
+        });
+
+        (row.violationLog || []).forEach((logEntry, logIndex) => {
+          proctoringRows.push({
+            submissionId: String(row._id),
+            candidateName: row.student?.name || 'Unknown',
+            candidateStudentId: row.student?.studentId || '',
+            assessmentName: assessmentDoc.title || 'Untitled Assessment',
+            sequence: logIndex + 1,
+            type: logEntry?.type || 'other',
+            message: logEntry?.message || '',
+            at: logEntry?.at || null,
+            weight: logEntry?.meta?.weight ?? '',
+            meta: JSON.stringify(logEntry?.meta || {}),
+          });
+        });
+      });
+    });
+
+    const summary = {
+      totalAssessments: new Set(exportRows.map((row) => row.assessmentId)).size,
+      totalCandidates: exportRows.length,
+      avgScore: exportRows.length ? Number((exportRows.reduce((sum, row) => sum + Number(row.score || 0), 0) / exportRows.length).toFixed(2)) : 0,
+      maxScore: exportRows.length ? Math.max(...exportRows.map((row) => Number(row.score || 0))) : 0,
+      minScore: exportRows.length ? Math.min(...exportRows.map((row) => Number(row.score || 0))) : 0,
+      passCount: exportRows.filter((row) => row.totalMarks > 0 && row.score >= row.totalMarks * (Number(passMark) || 0.4)).length,
+      failCount: exportRows.filter((row) => !(row.totalMarks > 0 && row.score >= row.totalMarks * (Number(passMark) || 0.4))).length,
+      violationCount: exportRows.reduce((sum, row) => sum + Number(row.violationCount || 0), 0),
+    };
+
+    return res.json({
+      generatedAt: new Date().toISOString(),
+      filters: req.query || {},
+      summary,
+      rows: exportRows,
+      sectionRows,
+      proctoringRows,
+    });
+  } catch (err) {
+    console.error('Error generating assessment report export data:', err);
+    return res.status(500).json({ error: 'Failed to generate assessment report export data' });
   }
 }
 
