@@ -11,6 +11,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Hash,
+  Layers,
   Loader2,
   MapPin,
   Maximize,
@@ -1905,44 +1907,44 @@ export default function AssessmentAttempt() {
             if (!allowCollapse || sidebarPinned) return;
             setSidebarExpanded(false);
           }}
-          className={`flex-none shrink-0 rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900 w-full lg:min-h-0 lg:overflow-y-auto transition-all duration-200 ${
+          className={`flex-none shrink-0 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900 w-full lg:min-h-0 lg:overflow-y-auto transition-all duration-200 ${
             isCollapsed
               ? 'p-1.5 lg:w-14 lg:min-w-[3.5rem]'
-              : 'p-3 lg:w-72 lg:min-w-[18rem]'
+              : 'p-2.5 lg:w-64 lg:min-w-[16rem]'
           }`}
           aria-label="Assessment sidebar"
         >
           <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} gap-2`}> 
             {!isCollapsed && (
-              <div className="text-sm font-semibold text-slate-800 dark:text-white">Navigator</div>
+              <div className="text-xs font-semibold text-slate-800 dark:text-white">Navigator</div>
             )}
             {allowCollapse && (
               <button
                 type="button"
                 onClick={togglePinned}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
                 aria-label={sidebarPinned ? 'Unpin sidebar' : 'Pin sidebar'}
                 title={sidebarPinned ? 'Unpin sidebar' : 'Pin sidebar'}
               >
-                {sidebarPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+                {sidebarPinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
               </button>
             )}
           </div>
 
           {isCollapsed ? (
-            <div className="mt-2 flex flex-col items-center gap-3 text-[10px] text-slate-500">
-              <div className="h-2 w-2 rounded-full bg-emerald-500" title="Answered" />
-              <div className="h-2 w-2 rounded-full bg-rose-500" title="Not Answered" />
-              <div className="h-2 w-2 rounded-full bg-purple-500" title="Marked" />
+            <div className="mt-2 flex flex-col items-center gap-2 text-[10px] text-slate-500">
+              <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" title="Answered" />
+              <div className="h-1.5 w-1.5 rounded-full bg-rose-500" title="Not Answered" />
+              <div className="h-1.5 w-1.5 rounded-full bg-purple-500" title="Marked" />
             </div>
           ) : (
             <>
-              <div className="mt-2 flex flex-wrap gap-2">
+              <div className="mt-2 flex flex-wrap gap-1.5">
                 {hasMcq && (
                   <button
                     type="button"
                     onClick={() => setNavTypeFilter('mcq')}
-                    className={`rounded-full border px-3 py-1 text-[10px] font-semibold ${
+                    className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold ${
                       effectiveFilter === 'mcq' ? 'border-sky-300 bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
                     }`}
                   >
@@ -1953,7 +1955,7 @@ export default function AssessmentAttempt() {
                   <button
                     type="button"
                     onClick={() => setNavTypeFilter('coding')}
-                    className={`rounded-full border px-3 py-1 text-[10px] font-semibold ${
+                    className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold ${
                       effectiveFilter === 'coding' ? 'border-sky-300 bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
                     }`}
                   >
@@ -1962,7 +1964,7 @@ export default function AssessmentAttempt() {
                 )}
               </div>
 
-              <div className="mt-3 grid grid-cols-5 gap-2">
+              <div className="mt-2 grid grid-cols-5 gap-1.5">
                 {navItems.map((item) => {
                   const status = questionStatus(item.sectionIndex, item.questionIndex);
                   const statusTone = status === 'answered'
@@ -1979,7 +1981,7 @@ export default function AssessmentAttempt() {
                       type="button"
                       onClick={() => navigateToQuestion(item.sectionIndex, item.questionIndex)}
                       disabled={!canNavigate}
-                      className={`h-9 w-9 rounded-lg text-xs font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${statusTone} ${
+                      className={`h-7 w-7 rounded-lg text-[10px] font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${statusTone} ${
                         isActive ? 'ring-2 ring-sky-400 ring-offset-2' : ''
                       }`}
                       aria-label={`Go to question ${number}`}
@@ -1991,62 +1993,62 @@ export default function AssessmentAttempt() {
                 })}
               </div>
 
-              <div className="mt-3 flex flex-wrap gap-2 text-[10px] text-slate-600">
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-700">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              <div className="mt-2 flex flex-wrap gap-1.5 text-[9px] text-slate-600">
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-emerald-700">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                   Answered
                 </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-rose-700">
-                  <span className="h-2 w-2 rounded-full bg-rose-500" />
+                <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-1.5 py-0.5 text-rose-700">
+                  <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
                   Not Answered
                 </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2 py-0.5 text-purple-700">
-                  <span className="h-2 w-2 rounded-full bg-purple-500" />
+                <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-1.5 py-0.5 text-purple-700">
+                  <span className="h-1.5 w-1.5 rounded-full bg-purple-500" />
                   Marked
                 </span>
               </div>
 
-              <div className="mt-4 border-t border-slate-200 pt-3 dark:border-gray-700">
-                <div className="text-xs font-semibold text-slate-700 dark:text-gray-200">Progress</div>
-                <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 dark:border-gray-700 dark:bg-gray-800">
-                    <div className="text-[10px] text-slate-500 dark:text-gray-300">Total</div>
-                    <div className="text-base font-semibold text-slate-900 dark:text-white">{progressCounts.total}</div>
+              <div className="mt-3 border-t border-slate-200 pt-2 dark:border-gray-700">
+                <div className="text-[10px] font-semibold text-slate-700 dark:text-gray-200">Progress</div>
+                <div className="mt-1.5 grid grid-cols-2 gap-1.5 text-[10px]">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 dark:border-gray-700 dark:bg-gray-800">
+                    <div className="text-[9px] text-slate-500 dark:text-gray-300">Total</div>
+                    <div className="text-xs font-semibold text-slate-900 dark:text-white">{progressCounts.total}</div>
                   </div>
-                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-2 dark:border-emerald-800 dark:bg-emerald-900/20">
-                    <div className="text-[10px] text-emerald-700 dark:text-emerald-300">Attempted</div>
-                    <div className="text-base font-semibold text-emerald-700 dark:text-emerald-300">{progressCounts.answered}</div>
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 dark:border-emerald-800 dark:bg-emerald-900/20">
+                    <div className="text-[9px] text-emerald-700 dark:text-emerald-300">Attempted</div>
+                    <div className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">{progressCounts.answered}</div>
                   </div>
-                  <div className="rounded-xl border border-rose-200 bg-rose-50 px-2.5 py-2 dark:border-rose-800 dark:bg-rose-900/20">
-                    <div className="text-[10px] text-rose-700 dark:text-rose-300">Not Attempted</div>
-                    <div className="text-base font-semibold text-rose-700 dark:text-rose-300">{progressCounts.unanswered}</div>
+                  <div className="rounded-lg border border-rose-200 bg-rose-50 px-2 py-1.5 dark:border-rose-800 dark:bg-rose-900/20">
+                    <div className="text-[9px] text-rose-700 dark:text-rose-300">Not Attempted</div>
+                    <div className="text-xs font-semibold text-rose-700 dark:text-rose-300">{progressCounts.unanswered}</div>
                   </div>
-                  <div className="rounded-xl border border-purple-200 bg-purple-50 px-2.5 py-2 dark:border-purple-800 dark:bg-purple-900/20">
-                    <div className="text-[10px] text-purple-700 dark:text-purple-300">Marked</div>
-                    <div className="text-base font-semibold text-purple-700 dark:text-purple-300">{progressCounts.review}</div>
+                  <div className="rounded-lg border border-purple-200 bg-purple-50 px-2 py-1.5 dark:border-purple-800 dark:bg-purple-900/20">
+                    <div className="text-[9px] text-purple-700 dark:text-purple-300">Marked</div>
+                    <div className="text-xs font-semibold text-purple-700 dark:text-purple-300">{progressCounts.review}</div>
                   </div>
                 </div>
 
-                <div className="mt-3 space-y-2">
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
-                    {saving ? 'Saving progress...' : 'Progress auto-saved'}
+                <div className="mt-2 space-y-1">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                    {saving ? 'Saving...' : 'Auto-saved'}
                   </div>
-                  <div className="text-[11px] text-slate-500 dark:text-gray-400">
-                    Violations: {totalViolations} - Score: {violationScore}
+                  <div className="text-[10px] text-slate-500 dark:text-gray-400">
+                    Violations: {totalViolations} • Score: {violationScore}
                   </div>
                 </div>
               </div>
 
-              <div className="mt-4 border-t border-slate-200 pt-3 dark:border-gray-700">
+              <div className="mt-3 border-t border-slate-200 pt-2 dark:border-gray-700">
                 <button
                   type="button"
                   onClick={() => setShowSubmitConfirm(true)}
                   disabled={isSubmitted}
-                  className="w-full rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+                  className="w-full rounded-lg bg-emerald-600 px-3 py-1.5 text-[10px] font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
                 >
                   Submit
                 </button>
-                <div className="mt-2 text-[10px] text-slate-500 dark:text-gray-400">
+                <div className="mt-1 text-[9px] text-slate-500 dark:text-gray-400">
                   Submit ends the assessment attempt.
                 </div>
               </div>
@@ -2103,47 +2105,46 @@ export default function AssessmentAttempt() {
       {showAssessmentWorkspace && (
       <>
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur shadow-sm dark:border-gray-700 dark:bg-gray-900/95">
-        <div className="flex w-full flex-wrap items-center gap-3 px-3 py-3 md:px-4 lg:px-6">
-          <div className="flex min-w-[240px] flex-1 items-center gap-3">
+        <div className="flex w-full flex-wrap items-center gap-2 px-3 py-2">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={goToPrevQuestion}
               disabled={!hasAllowedPrevQuestion}
               title="Previous question"
-              className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
             >
-              <ChevronLeft className="h-4 w-4" />
-              Previous
+              <ChevronLeft className="h-3.5 w-3.5" />
+              Prev
             </button>
             <div>
-              <div className="text-xs text-slate-500 dark:text-gray-400">Assessment</div>
-              <div className="text-lg font-semibold text-slate-900 dark:text-white">{assessment.title}</div>
-              <div className="text-[11px] text-slate-500 dark:text-gray-400">{breadcrumbLabel}</div>
+              <div className="text-xs font-semibold text-slate-900 dark:text-white truncate max-w-[200px]">{assessment.title}</div>
+              <div className="text-[10px] text-slate-500 dark:text-gray-400">{breadcrumbLabel}</div>
             </div>
           </div>
-          <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+          <div className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
             Q {currentQuestionNumber}/{totalQuestions || 1}
           </div>
-          <div className="flex min-w-[240px] flex-1 items-center justify-end gap-2">
+          <div className="flex flex-1 items-center justify-end gap-1.5">
             <button
               type="button"
               onClick={goToNextQuestion}
               disabled={!hasNextQuestion}
               title="Next question"
-              className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
             >
               Next
-              <ChevronRight className="h-4 w-4" />
+              <ChevronRight className="h-3.5 w-3.5" />
             </button>
-            <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
-              <Clock className="h-4 w-4" />
+            <div className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+              <Clock className="h-3.5 w-3.5" />
               {formatTime(timeLeft)}
             </div>
             {isCoding && (
               <select
                 value={activeLanguage}
                 onChange={(event) => updateAnswer(activeSection, activeQuestion, { language: event.target.value })}
-                className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
               >
                 {codingLanguages.map((lang) => (
                   <option key={lang} value={lang}>{lang}</option>
@@ -2155,9 +2156,9 @@ export default function AssessmentAttempt() {
                 type="button"
                 onClick={handleRunCoding}
                 disabled={isRunning || isSubmitting || isSubmitted}
-                className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-800 dark:bg-sky-600 dark:hover:bg-sky-500"
+                className="rounded-md bg-slate-900 px-2 py-1 text-[11px] font-semibold text-white hover:bg-slate-800 dark:bg-sky-600 dark:hover:bg-sky-500"
               >
-                {isRunning ? 'Running...' : 'Run Code'}
+                {isRunning ? '...' : 'Run'}
               </button>
             )}
             {isCoding && (
@@ -2165,24 +2166,24 @@ export default function AssessmentAttempt() {
                 type="button"
                 onClick={handleSubmitCoding}
                 disabled={isRunning || isSubmitting || isSubmitted}
-                className="rounded-full bg-sky-600 px-3 py-1 text-xs font-semibold text-white disabled:opacity-50"
+                className="rounded-md bg-sky-600 px-2 py-1 text-[11px] font-semibold text-white disabled:opacity-50"
               >
-                {isSubmitting ? 'Submitting...' : 'Submit Code'}
+                {isSubmitting ? '...' : 'Submit'}
               </button>
             )}
             <button
               type="button"
               onClick={() => handleSubmit(false)}
               disabled={isSubmitted}
-              className="rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white disabled:opacity-50"
+              className="rounded-md bg-emerald-600 px-2 py-1 text-[11px] font-semibold text-white disabled:opacity-50"
             >
-              Submit Assessment
+              Submit
             </button>
             {isCoding && (
               <button
                 type="button"
                 onClick={handleResetCoding}
-                className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                className="rounded-md border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
               >
                 Reset
               </button>
@@ -2191,20 +2192,20 @@ export default function AssessmentAttempt() {
         </div>
       </header>
       {isCoding ? (
-        <div className="w-full px-3 py-4 pb-12 md:px-4 lg:px-0 lg:h-[calc(100vh-84px)] lg:overflow-hidden">
-          <div className="flex h-full flex-col gap-4 lg:flex-row lg:min-h-0">
+        <div className="w-full px-2 py-2 pb-12 md:px-3 lg:px-0 lg:h-[calc(100vh-56px)] lg:overflow-hidden">
+          <div className="flex h-full flex-col gap-2 lg:flex-row lg:min-h-0">
             {questionNavigatorPanel}
             <div className="flex min-h-0 flex-1 flex-col lg:min-h-0">
-              <div ref={splitContainerRef} className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row lg:min-h-0">
+              <div ref={splitContainerRef} className="flex min-h-0 flex-1 flex-col gap-2 lg:flex-row lg:min-h-0">
                 <section
                   ref={problemPaneRef}
                   style={{ width: leftWidth ? `${leftWidth}px` : undefined, flexBasis: leftWidth ? `${leftWidth}px` : undefined }}
-                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900 lg:h-full lg:overflow-y-auto"
+                  className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-900 lg:h-full lg:overflow-y-auto"
                 >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
-                      <div className="text-xs text-slate-500">Section {activeSection + 1} • Coding • Marks {questionMarks}</div>
-                      <div className="text-lg font-semibold text-slate-900 dark:text-white">
+                      <div className="text-[10px] text-slate-500">Section {activeSection + 1} • Coding • Marks {questionMarks}</div>
+                      <div className="text-sm font-semibold text-slate-900 dark:text-white">
                         {question?.questionText || question?.problemDataSnapshot?.title || question?.coding?.problemData?.title || question?.coding?.title}
                       </div>
                     </div>
@@ -2212,18 +2213,18 @@ export default function AssessmentAttempt() {
                       type="button"
                       onClick={toggleMarkForReview}
                       title={isMarked ? 'Unmark review' : 'Mark this question for review'}
-                      className={`rounded-xl border px-3 py-2 text-xs font-semibold ${
+                      className={`rounded-lg border px-2 py-1 text-[10px] font-semibold ${
                         isMarked ? 'border-purple-200 bg-purple-50 text-purple-700' : 'border-slate-200 bg-slate-50 text-slate-600'
                       }`}
                     >
-                      {isMarked ? 'Marked' : 'Mark for Review'}
+                      {isMarked ? 'Marked' : 'Review'}
                     </button>
                   </div>
 
-                  <div className="mt-4 space-y-4 text-sm text-slate-700 dark:text-gray-200">
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-gray-700 dark:bg-gray-800">
-                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Problem Statement</div>
-                      <div className="mt-2">
+                  <div className="mt-2 space-y-2 text-xs text-slate-700 dark:text-gray-200">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-2 dark:border-gray-700 dark:bg-gray-800">
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Problem Statement</div>
+                      <div className="mt-1">
                         {(codingData?.description || codingData?.statement)
                           ? <RichTextPreview content={codingData.description || codingData.statement} />
                           : <div className="text-slate-500">No statement available.</div>}
@@ -2231,7 +2232,7 @@ export default function AssessmentAttempt() {
                     </div>
 
                     {(codingData?.constraints || codingData?.inputFormat || codingData?.outputFormat) && (
-                      <div className="grid gap-3 text-xs text-slate-600 dark:text-gray-300">
+                      <div className="grid gap-2 text-[10px] text-slate-600 dark:text-gray-300">
                         {codingData.constraints && (
                           <div>
                             <div className="font-semibold text-slate-500">Constraints</div>
@@ -2254,21 +2255,21 @@ export default function AssessmentAttempt() {
                     )}
                   </div>
 
-                  <div className="mt-6 flex items-center justify-between">
+                  <div className="mt-3 flex items-center justify-between">
                 <button
                   type="button"
                   onClick={goToPrevQuestion}
                   disabled={!hasAllowedPrevQuestion}
                   title="Go to previous question"
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Previous
+                  Prev
                 </button>
                 <button
                   type="button"
                   onClick={goToNextQuestion}
                   title="Go to next question"
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                  className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-50"
                 >
                   Next
                 </button>
@@ -2340,14 +2341,14 @@ export default function AssessmentAttempt() {
           </div>
         </div>
       ) : (
-        <div className="w-full px-3 py-4 pb-12 md:px-4 lg:px-6 lg:h-[calc(100vh-84px)] lg:overflow-hidden">
-          <div className="flex h-full flex-col gap-4 lg:flex-row lg:min-h-0">
+        <div className="w-full px-2 py-2 pb-12 md:px-3 lg:px-6 lg:h-[calc(100vh-56px)] lg:overflow-hidden">
+          <div className="flex h-full flex-col gap-2 lg:flex-row lg:min-h-0">
             {questionNavigatorPanel}
-            <section className="flex min-h-0 flex-1 flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900 lg:min-h-0 lg:overflow-y-auto">
-              <div className="flex flex-wrap items-start justify-between gap-3">
+            <section className="flex min-h-0 flex-1 flex-col rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-900 lg:min-h-0 lg:overflow-y-auto">
+              <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
-                  <div className="text-xs text-slate-500">Section {activeSection + 1} • MCQ • Marks {questionMarks}</div>
-                  <div className="text-lg font-semibold text-slate-900 dark:text-white">
+                  <div className="text-[10px] text-slate-500">Section {activeSection + 1} • MCQ • Marks {questionMarks}</div>
+                  <div className="text-sm font-semibold text-slate-900 dark:text-white">
                     {question?.questionText || 'Question'}
                   </div>
                 </div>
@@ -2355,16 +2356,16 @@ export default function AssessmentAttempt() {
                   type="button"
                   onClick={toggleMarkForReview}
                   title={isMarked ? 'Unmark review' : 'Mark this question for review'}
-                  className={`rounded-xl border px-3 py-2 text-xs font-semibold ${
+                  className={`rounded-lg border px-2 py-1 text-[10px] font-semibold ${
                     isMarked ? 'border-purple-200 bg-purple-50 text-purple-700' : 'border-slate-200 bg-slate-50 text-slate-600'
                   }`}
                 >
-                  {isMarked ? 'Marked' : 'Mark for Review'}
+                  {isMarked ? 'Marked' : 'Review'}
                 </button>
               </div>
 
               {section?.type === 'mcq' && (
-                <div className="mt-4 space-y-3">
+                <div className="mt-2 space-y-2">
                   {question.options?.map((opt, idx) => {
                     const selected = answersMap[answerKey(activeSection, activeQuestion)]?.answer === idx;
                     const optionLabel = String.fromCharCode(65 + idx);
@@ -2374,18 +2375,18 @@ export default function AssessmentAttempt() {
                         key={`opt-${idx}`}
                         onClick={() => updateAnswer(activeSection, activeQuestion, { answer: idx })}
                         disabled={isSubmitted}
-                        className={`flex w-full items-start gap-3 rounded-xl border px-4 py-3 text-left text-sm transition-colors ${
+                        className={`flex w-full items-start gap-2 rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
                           selected
                             ? 'border-sky-300 bg-sky-50 text-sky-700 shadow-sm'
                             : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
                         }`}
                       >
-                        <span className={`mt-0.5 flex h-6 w-6 items-center justify-center rounded-full border text-[11px] font-semibold ${
+                        <span className={`mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-semibold ${
                           selected ? 'border-sky-500 bg-sky-500 text-white' : 'border-slate-300 text-slate-500'
                         }`}>
                           {optionLabel}
                         </span>
-                        <span className="text-sm text-slate-700">{opt}</span>
+                        <span className="text-xs text-slate-700">{opt}</span>
                       </button>
                     );
                   })}
@@ -2397,7 +2398,7 @@ export default function AssessmentAttempt() {
                   value={answersMap[answerKey(activeSection, activeQuestion)]?.answer || ''}
                   onChange={(e) => updateAnswer(activeSection, activeQuestion, { answer: e.target.value })}
                   rows="6"
-                  className="mt-4 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800 shadow-sm focus:border-sky-300 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+                  className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-800 shadow-sm focus:border-sky-300 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
                   disabled={isSubmitted}
                   placeholder="Type your response here"
                 />
@@ -2814,105 +2815,188 @@ export default function AssessmentAttempt() {
       )}
 
       {phase === 'rules' && !isSubmitted && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 px-4 py-10">
-          <div className="mx-auto w-full max-w-4xl rounded-3xl border border-slate-200 bg-white p-6 shadow-xl dark:border-gray-700 dark:bg-gray-900">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <h2 className="text-2xl font-semibold text-slate-900 dark:text-white">Assessment Instructions & Guidelines</h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-gray-400">Please read all instructions carefully before you begin.</p>
-              </div>
-            </div>
-
-            <div className="mt-6 grid gap-4 lg:grid-cols-2">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-gray-700 dark:bg-gray-800">
-                <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-gray-200">
-                  <BookOpen className="h-4 w-4 text-slate-500" />
-                  Assessment Overview
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-slate-900/45 px-3 py-3 sm:px-4 sm:py-4">
+          <div className="flex h-[calc(100vh-1rem)] w-full max-w-[min(98vw,1500px)] flex-col overflow-hidden rounded-[26px] border border-sky-100 bg-[linear-gradient(180deg,#ffffff_0%,#f7fbff_100%)] p-4 shadow-[0_42px_120px_-54px_rgba(14,165,233,0.35)] dark:border-gray-700 dark:bg-gray-900 sm:h-[calc(100vh-1.5rem)] sm:p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-sky-100 pb-3">
+              <div className="min-w-0 flex-1">
+                <div className="inline-flex items-center gap-2 rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.24em] text-sky-700">
+                  <BookOpen className="h-3 w-3" />
+                  Assessment Briefing
                 </div>
-                <div className="mt-3 grid gap-2 text-sm text-slate-600 dark:text-gray-300">
-                  <div className="flex items-center justify-between">
-                    <span>Total Questions</span>
-                    <span className="font-semibold">{totalQuestions}</span>
+                <h2 className="mt-2.5 text-[1.7rem] font-black tracking-tight text-slate-900 dark:text-white sm:text-[1.85rem]">Assessment Instructions & Guidelines</h2>
+                <p className="mt-1.5 max-w-3xl text-[13px] leading-5 text-slate-500 dark:text-gray-400">
+                  Review the format, section structure, and monitoring rules carefully. This screen is designed to give you a complete pre-start briefing before the assessment begins.
+                </p>
+              </div>
+
+              <div className="flex items-start gap-3 self-start">
+                <div className="min-w-[124px] rounded-2xl border border-sky-100 bg-white px-3.5 py-2.5 text-center shadow-[0_18px_40px_-30px_rgba(14,165,233,0.35)]">
+                  <div className="text-[9px] font-semibold uppercase tracking-[0.22em] text-slate-400">Countdown</div>
+                  <div className={`mt-1.5 text-[2rem] font-black tracking-tight ${rulesReady ? 'text-emerald-600' : 'animate-pulse text-sky-600'}`}>
+                    {rulesCountdown}s
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span>Total Marks</span>
-                    <span className="font-semibold">{assessment.totalMarks || 0}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span>Duration</span>
-                    <span className="font-semibold">{assessment.duration} minutes</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span>Type of Questions</span>
-                    <span className="font-semibold">{assessment.assessmentType || section?.type || 'mixed'}</span>
+                  <div className="mt-1 text-[10px] text-slate-500">
+                    {rulesReady ? 'Start is now enabled' : 'Start unlocks automatically'}
                   </div>
                 </div>
-              </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-gray-700 dark:bg-gray-800">
-                <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-gray-200">
-                  <ShieldCheck className="h-4 w-4 text-slate-500" />
-                  Rules & Regulations
-                </div>
-                <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-gray-300">
-                  {effectiveRules.map((block, idx) => (
-                    block.type === 'paragraph' ? (
-                      <p key={`rule-${idx}`} className="text-sm text-slate-600 dark:text-gray-300">{block.text}</p>
-                    ) : (
-                      <div key={`rule-${idx}`} className="flex items-start gap-2">
-                        <span className="mt-1 h-1.5 w-1.5 rounded-full bg-slate-400" />
-                        <span>{block.text}</span>
-                      </div>
-                    )
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-gray-700 dark:bg-gray-800">
-                <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-gray-200">
-                  <Monitor className="h-4 w-4 text-slate-500" />
-                  System Requirements
-                </div>
-                <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-600 dark:text-gray-300">
-                  <li>Camera access enabled (for monitoring only)</li>
-                  <li>No multiple tabs open</li>
-                  <li>Use a supported browser</li>
-                </ul>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-gray-700 dark:bg-gray-800">
-                <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-gray-200">
-                  <AlertCircle className="h-4 w-4 text-slate-500" />
-                  Important Notes
-                </div>
-                <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-600 dark:text-gray-300">
-                  <li>Your progress is auto-saved</li>
-                  <li>Violations will pause the test</li>
-                </ul>
-              </div>
-            </div>
-
-            <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-              <div className="text-xs text-slate-500 dark:text-gray-400">
-                {rulesReady ? 'You may start once you are ready.' : `Please review the rules. You can start in ${rulesCountdown}s.`}
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => navigate('/student/assessments')}
-                  className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-                >
-                  Exit
-                </button>
                 <button
                   type="button"
                   onClick={startAssessment}
                   disabled={!rulesReady}
-                  className="rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
+                  className={`rounded-2xl px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-all ${
+                    rulesReady
+                      ? 'bg-sky-600 hover:-translate-y-0.5 hover:bg-sky-500'
+                      : 'cursor-not-allowed bg-sky-200 text-sky-50'
+                  }`}
                 >
                   {rulesReady ? 'Start Assessment' : `Start in ${rulesCountdown}s`}
                 </button>
               </div>
+            </div>
+
+            <div className="mt-3 grid min-h-0 flex-1 gap-3 xl:grid-cols-[0.9fr_1.1fr]">
+              <div className="min-h-0 space-y-3 overflow-y-auto pr-1">
+                <div className="rounded-[22px] border border-sky-100 bg-white p-3.5 shadow-[0_20px_48px_-36px_rgba(14,165,233,0.28)]">
+                  <div className="flex items-center gap-2 text-[13px] font-semibold text-slate-700 dark:text-gray-200">
+                    <Layers className="h-4 w-4 text-sky-600" />
+                    Assessment Overview
+                  </div>
+                  <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
+                    {[
+                      ['Total Questions', totalQuestions],
+                      ['Total Marks', assessment.totalMarks || 0],
+                      ['Duration', `${assessment.duration} minutes`],
+                      ['Question Types', assessment.assessmentType || section?.type || 'mixed'],
+                    ].map(([label, value]) => (
+                      <div key={label} className="rounded-xl border border-slate-100 bg-slate-50 px-3.5 py-2.5">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">{label}</div>
+                        <div className="mt-1.5 text-base font-bold text-slate-900 dark:text-white">{value}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-[22px] border border-sky-100 bg-white p-3.5 shadow-[0_20px_48px_-36px_rgba(14,165,233,0.28)]">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 text-[13px] font-semibold text-slate-700 dark:text-gray-200">
+                      <Hash className="h-4 w-4 text-sky-600" />
+                      Section Breakdown
+                    </div>
+                    <div className="rounded-full bg-sky-50 px-3 py-1 text-[11px] font-semibold text-sky-700">
+                      {(assessment.sections || []).length} section{(assessment.sections || []).length !== 1 ? 's' : ''}
+                    </div>
+                  </div>
+
+                  <div className="mt-3 space-y-2.5">
+                    {(assessment.sections || []).map((sec, idx) => {
+                      const questionCount = sec?.questions?.length || 0;
+                      const marksEach = Number(sec?.marksPerQuestion || sec?.questions?.[0]?.points || sec?.questions?.[0]?.marks || 0) || 0;
+                      const totalSectionMarks = Number(sec?.totalMarks || 0) || (questionCount * marksEach);
+                      const sectionType = String(sec?.type || 'mixed').replace(/_/g, ' ');
+                      const sectionLabel = sec?.sectionName || `Section ${idx + 1}`;
+
+                      return (
+                        <div key={`${sectionLabel}-${idx}`} className="rounded-2xl border border-slate-100 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] p-3.5">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-sky-100 text-[11px] font-bold text-sky-700">
+                                  {idx + 1}
+                                </div>
+                                <div>
+                                  <div className="text-[13px] font-semibold text-slate-900 dark:text-white">{sectionLabel}</div>
+                                  <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">{sectionType}</div>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="rounded-full bg-sky-50 px-3 py-1 text-[11px] font-semibold text-sky-700">
+                              {totalSectionMarks} total marks
+                            </div>
+                          </div>
+
+                          <div className="mt-3 grid gap-2.5 sm:grid-cols-3">
+                            <div className="rounded-xl bg-slate-50 px-3 py-2">
+                              <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Questions</div>
+                              <div className="mt-1 text-[13px] font-semibold text-slate-800">{questionCount}</div>
+                            </div>
+                            <div className="rounded-xl bg-slate-50 px-3 py-2">
+                              <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Marks Each</div>
+                              <div className="mt-1 text-[13px] font-semibold text-slate-800">{marksEach}</div>
+                            </div>
+                            <div className="rounded-xl bg-slate-50 px-3 py-2">
+                              <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Section Type</div>
+                              <div className="mt-1 text-[13px] font-semibold capitalize text-slate-800">{sectionType}</div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="min-h-0 space-y-3 overflow-y-auto pr-1">
+                <div className="rounded-[22px] border border-sky-100 bg-white p-3.5 shadow-[0_20px_48px_-36px_rgba(14,165,233,0.28)]">
+                  <div className="flex items-center gap-2 text-[13px] font-semibold text-slate-700 dark:text-gray-200">
+                    <ShieldCheck className="h-4 w-4 text-sky-600" />
+                    Rules & Regulations
+                  </div>
+                  <div className="mt-3 space-y-2 text-[12.5px] text-slate-600 dark:text-gray-300 sm:text-[13px]">
+                    {effectiveRules.map((block, idx) => (
+                      block.type === 'paragraph' ? (
+                        <div key={`rule-${idx}`} className="rounded-xl border border-slate-100 bg-slate-50 px-3.5 py-2.5 font-medium leading-5 tracking-[0.01em]">
+                          {block.text}
+                        </div>
+                      ) : (
+                        <div key={`rule-${idx}`} className="flex items-start gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3.5 py-2.5">
+                          <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-sky-500" />
+                          <span className="font-medium leading-5 tracking-[0.01em] text-slate-700">{block.text}</span>
+                        </div>
+                      )
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                  <div className="rounded-[22px] border border-sky-100 bg-white p-3.5 shadow-[0_20px_48px_-36px_rgba(14,165,233,0.28)]">
+                    <div className="flex items-center gap-2 text-[13px] font-semibold text-slate-700 dark:text-gray-200">
+                      <Monitor className="h-4 w-4 text-sky-600" />
+                      System Requirements
+                    </div>
+                    <ul className="mt-3 space-y-2 text-[12.5px] font-medium text-slate-700 dark:text-gray-300">
+                      <li className="rounded-xl bg-slate-50 px-3 py-2">Camera access enabled for monitoring only</li>
+                      <li className="rounded-xl bg-slate-50 px-3 py-2">Keep only one assessment tab open</li>
+                      <li className="rounded-xl bg-slate-50 px-3 py-2">Use a supported desktop browser</li>
+                    </ul>
+                  </div>
+
+                  <div className="rounded-[22px] border border-sky-100 bg-white p-3.5 shadow-[0_20px_48px_-36px_rgba(14,165,233,0.28)]">
+                    <div className="flex items-center gap-2 text-[13px] font-semibold text-slate-700 dark:text-gray-200">
+                      <AlertCircle className="h-4 w-4 text-sky-600" />
+                      Important Notes
+                    </div>
+                    <ul className="mt-3 space-y-2 text-[12.5px] font-medium text-slate-700 dark:text-gray-300">
+                      <li className="rounded-xl bg-slate-50 px-3 py-2">Your progress is auto-saved continuously</li>
+                      <li className="rounded-xl bg-slate-50 px-3 py-2">Security violations may pause or interrupt the attempt</li>
+                      <li className="rounded-xl bg-slate-50 px-3 py-2">Read every section carefully before the timer begins</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-2.5">
+              <div className={`text-[13px] font-semibold ${rulesReady ? 'text-emerald-700' : 'text-sky-700 animate-pulse'}`}>
+                {rulesReady ? 'Countdown complete. You may begin the assessment now.' : `Starting unlocks in ${rulesCountdown} seconds.`}
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate('/student/assessments')}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                Exit
+              </button>
             </div>
           </div>
         </div>

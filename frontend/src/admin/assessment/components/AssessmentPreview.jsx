@@ -71,62 +71,36 @@ export default function AssessmentPreview({ assessment }) {
         </button>
       </div>
 
-      <div className="mt-6 space-y-4">
-        {sections.map((section, sectionIndex) => (
-          <div key={`${section.sectionName}-${sectionIndex}`} className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-slate-800 dark:text-gray-100">{section.sectionName || `Section ${sectionIndex + 1}`}</h3>
-                <p className="text-xs text-slate-500 dark:text-gray-400">{section.type?.toUpperCase()}</p>
-              </div>
-              <span className="text-xs text-slate-500 dark:text-gray-400">{section.questions?.length || 0} questions</span>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              {(section.questions || []).map((question, qIndex) => (
-                <div key={`q-${sectionIndex}-${qIndex}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm dark:border-gray-700 dark:bg-gray-800">
-                  <div className="text-xs font-semibold text-slate-500 dark:text-gray-400">Question {qIndex + 1}</div>
-                  <div className="mt-2 text-slate-800 dark:text-gray-100">{question.questionText || question?.problemDataSnapshot?.title || question?.coding?.title || 'Question'}</div>
-
-                  {section.type === 'mcq' && (
-                    <div className="mt-3 grid gap-2 md:grid-cols-2">
-                      {(question.options || []).map((opt, idx) => (
-                        <div key={`opt-${idx}`} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
-                          {opt || `Option ${idx + 1}`}
-                        </div>
-                      ))}
-                    </div>
+      <div className="mt-6 space-y-3">
+        {sections.map((section, sectionIndex) => {
+          const questionCount = section.questions?.length || 0;
+          const marksPerQuestion = section.marksPerQuestion || 0;
+          const sectionTotalMarks = questionCount * marksPerQuestion;
+          return (
+            <div key={`${section.sectionName}-${sectionIndex}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-gray-700 dark:bg-gray-800">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-100 text-sky-700 font-semibold dark:bg-sky-900/30 dark:text-sky-400">
+                    {sectionIndex + 1}
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-800 dark:text-gray-100">{section.sectionName || `Section ${sectionIndex + 1}`}</h3>
+                    <p className="text-xs text-slate-500 dark:text-gray-400">{section.type?.toUpperCase()}</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs text-slate-500 dark:text-gray-400">{questionCount} questions</div>
+                  {marksPerQuestion > 0 && (
+                    <div className="text-xs font-semibold text-slate-700 dark:text-gray-200">{marksPerQuestion} marks each</div>
                   )}
-
-                  {(section.type === 'short' || section.type === 'one_line') && (
-                    <div className="mt-3 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs text-slate-400 dark:border-gray-600">
-                      Student response goes here
-                    </div>
-                  )}
-
-                  {section.type === 'coding' && (
-                    <div className="mt-3 space-y-2 text-xs text-slate-500 dark:text-gray-400">
-                      {(() => {
-                        const codingData = question.problemDataSnapshot || question.problemData || question.coding?.problemData || question.coding || {};
-                        return (
-                          <>
-                      <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
-                        <div className="font-semibold text-slate-700 dark:text-gray-200">Problem Preview</div>
-                        <div className="mt-1">{codingData.description ? <RichTextPreview content={codingData.description} /> : 'Problem description will appear here.'}</div>
-                      </div>
-                      <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
-                        Code editor area
-                      </div>
-                          </>
-                        );
-                      })()}
-                    </div>
+                  {sectionTotalMarks > 0 && (
+                    <div className="text-xs font-semibold text-slate-800 dark:text-gray-100">Total: {sectionTotalMarks}</div>
                   )}
                 </div>
-              ))}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

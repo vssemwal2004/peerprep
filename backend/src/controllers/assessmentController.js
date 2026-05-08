@@ -580,6 +580,24 @@ function computeTotalMarksFromSections(sections = []) {
   }, 0);
 }
 
+function buildStudentSectionSummary(sections = []) {
+  if (!Array.isArray(sections)) return [];
+  return sections.map((section, index) => {
+    const questionCount = Array.isArray(section?.questions) ? section.questions.length : 0;
+    const marksPerQuestion = Number(section?.marksPerQuestion || 0)
+      || Number(section?.questions?.[0]?.points || section?.questions?.[0]?.marks || 0)
+      || 0;
+    return {
+      sectionName: section?.sectionName || section?.title || `Section ${index + 1}`,
+      title: section?.title || section?.sectionName || `Section ${index + 1}`,
+      type: section?.type || 'mixed',
+      marksPerQuestion,
+      totalQuestions: questionCount,
+      totalMarks: Number(section?.totalMarks || 0) || (questionCount * marksPerQuestion),
+    };
+  });
+}
+
 async function validatePublishedAssessmentSections(sections = []) {
   if (!Array.isArray(sections) || sections.length === 0) {
     throw new Error('At least one section is required for publishing.');
@@ -1326,6 +1344,8 @@ export async function listStudentAssessments(req, res) {
         startTime: a.startTime,
         endTime: a.endTime,
         duration: a.duration,
+        sections: buildStudentSectionSummary(a.sections || []),
+        totalSections: Array.isArray(a.sections) ? a.sections.length : 0,
         totalMarks: a.totalMarks || computeTotalMarksFromSections(a.sections || []),
         totalQuestions: countQuestions(a.sections || []),
         assessmentType: a.assessmentType || 'mixed',
@@ -1428,6 +1448,8 @@ export async function getStudentAssessmentDashboard(req, res) {
           startTime: assessment.startTime,
           endTime: assessment.endTime,
           duration: assessment.duration || 0,
+          sections: buildStudentSectionSummary(assessment.sections || []),
+          totalSections: Array.isArray(assessment.sections) ? assessment.sections.length : 0,
           totalMarks,
           totalQuestions,
           assessmentType: assessment.assessmentType || 'mixed',
