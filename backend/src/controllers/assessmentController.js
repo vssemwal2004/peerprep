@@ -123,7 +123,80 @@ function sanitizeAssessmentForResponse(assessment) {
   if (!assessment) return assessment;
   const source = typeof assessment.toObject === 'function' ? assessment.toObject() : { ...assessment };
   delete source.passwordHash;
+  source.settings = normalizeAssessmentSettings(source.settings || {});
   return source;
+}
+
+function clampSettingNumber(value, fallback, { min = null, max = null } = {}) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  let next = parsed;
+  if (min !== null) next = Math.max(min, next);
+  if (max !== null) next = Math.min(max, next);
+  return next;
+}
+
+function normalizeAssessmentSettings(settings = {}) {
+  const source = settings && typeof settings === 'object' ? { ...settings } : {};
+  delete source.negativeMarking;
+  delete source.negativeMarkValue;
+  delete source.negativeCoding;
+
+  return {
+    enableFullscreen: Boolean(source.enableFullscreen),
+    fullscreenTimeoutSec: clampSettingNumber(source.fullscreenTimeoutSec, 15, { min: 0, max: 120 }),
+    fullscreenAction: actionSetting(source, ['fullscreenAction'], 'pause'),
+    tabSwitchDetection: Boolean(source.tabSwitchDetection),
+    tabSwitchLimit: clampSettingNumber(source.tabSwitchLimit, 3, { min: 1, max: 50 }),
+    tabSwitchWarnAt: clampSettingNumber(source.tabSwitchWarnAt, 1, { min: 1, max: 50 }),
+    tabSwitchAction: actionSetting(source, ['tabSwitchAction'], 'warn'),
+    disableCopyPaste: Boolean(source.disableCopyPaste),
+    blockRightClick: source.blockRightClick !== false,
+    copyPasteAction: actionSetting(source, ['copyPasteAction'], 'warn'),
+    blockScreenshots: Boolean(source.blockScreenshots),
+    questionWatermark: Boolean(source.questionWatermark),
+    watermarkOpacity: clampSettingNumber(source.watermarkOpacity, 12, { min: 5, max: 40 }),
+    watermarkColor: String(source.watermarkColor || '#cbd5e1'),
+    watermarkAngle: clampSettingNumber(source.watermarkAngle, -45, { min: -75, max: 75 }),
+    watermarkSpacing: clampSettingNumber(source.watermarkSpacing, 220, { min: 120, max: 360 }),
+    watermarkFontSize: clampSettingNumber(source.watermarkFontSize, 24, { min: 14, max: 42 }),
+    watermarkTextType: String(source.watermarkTextType || 'platform'),
+    watermarkCustomText: String(source.watermarkCustomText || '').trim(),
+    randomShuffle: Boolean(source.randomShuffle),
+    shuffleOptions: Boolean(source.shuffleOptions),
+    cameraMonitoring: Boolean(source.cameraMonitoring),
+    cameraSnapshotInterval: clampSettingNumber(source.cameraSnapshotInterval, 120, { min: 15, max: 600 }),
+    cameraFaceAlert: Boolean(source.cameraFaceAlert),
+    cameraAction: actionSetting(source, ['cameraAction'], 'warn'),
+    audioMonitoring: Boolean(source.audioMonitoring),
+    audioNoiseThreshold: clampSettingNumber(source.audioNoiseThreshold, 65, { min: 10, max: 100 }),
+    audioEventCooldownSec: clampSettingNumber(source.audioEventCooldownSec, 20, { min: 5, max: 120 }),
+    autoSubmitOnEnd: source.autoSubmitOnEnd !== false,
+    autoSubmitWarnMin: clampSettingNumber(source.autoSubmitWarnMin, 5, { min: 1, max: 60 }),
+    preventMultipleTabs: Boolean(source.preventMultipleTabs),
+    duplicateTabAction: actionSetting(source, ['duplicateTabAction'], 'pause'),
+    restrictNavigation: Boolean(source.restrictNavigation),
+    allowSectionReview: source.allowSectionReview !== false,
+    sectionWiseLock: Boolean(source.sectionWiseLock),
+    sectionGraceSec: clampSettingNumber(source.sectionGraceSec, 10, { min: 0, max: 300 }),
+    idleDetection: Boolean(source.idleDetection),
+    idleThresholdMin: clampSettingNumber(source.idleThresholdMin, 5, { min: 1, max: 60 }),
+    idleAction: actionSetting(source, ['idleAction'], 'warn'),
+    showResultsAfterSubmit: Boolean(source.showResultsAfterSubmit),
+    showCorrectAnswers: Boolean(source.showCorrectAnswers),
+    showSectionBreakdown: Boolean(source.showSectionBreakdown),
+    showPercentile: Boolean(source.showPercentile),
+    resultDelayHours: clampSettingNumber(source.resultDelayHours, 24, { min: 0, max: 24 * 30 }),
+    allowRetake: Boolean(source.allowRetake),
+    retakeGapHours: clampSettingNumber(source.retakeGapHours, 0, { min: 0, max: 24 * 30 }),
+    locationTracking: source.locationTracking !== false,
+    autoSubmitOnViolation: Boolean(source.autoSubmitOnViolation),
+    maxWarnings: clampSettingNumber(source.maxWarnings, 0, { min: 0, max: 100 }),
+    violationWarnScore: clampSettingNumber(source.violationWarnScore, 0, { min: 0, max: 1000 }),
+    violationPauseScore: clampSettingNumber(source.violationPauseScore, 0, { min: 0, max: 1000 }),
+    violationAutoSubmitScore: clampSettingNumber(source.violationAutoSubmitScore, 0, { min: 0, max: 1000 }),
+    violationWeights: source.violationWeights && typeof source.violationWeights === 'object' ? source.violationWeights : {},
+  };
 }
 
 async function applyAssessmentPassword(assessment, { passwordEnabled, password } = {}) {
@@ -486,11 +559,14 @@ function computeAssessmentType(sections = []) {
 function applyMarksAndTotals(sections = []) {
   const normalizedSections = (sections || []).map((section) => {
     const marksPerQuestion = Number(section?.marksPerQuestion || 1) || 1;
+    const negativeMarksPerQuestion = Math.max(0, Number(section?.negativeMarksPerQuestion || 0) || 0);
     const questions = (section?.questions || []).map((question) => {
       const points = Number(question?.points ?? question?.marks ?? marksPerQuestion) || 1;
+      const negativePoints = Math.max(0, Number(question?.negativePoints ?? question?.negativeMarks ?? negativeMarksPerQuestion) || 0);
       return {
         ...question,
         points,
+        negativePoints,
         marks: points,
       };
     });
@@ -498,6 +574,7 @@ function applyMarksAndTotals(sections = []) {
     return {
       ...section,
       marksPerQuestion,
+      negativeMarksPerQuestion,
       questions,
       totalMarks,
     };
@@ -526,12 +603,15 @@ function scoreAssessment(assessment, answers = []) {
     questions.forEach((question, qIdx) => {
       const questionType = question.type || section.type;
       const points = Number(question.points || question.marks || 0);
+      const negativePoints = Math.max(0, Number(question.negativePoints ?? question.negativeMarks ?? section.negativeMarksPerQuestion ?? 0) || 0);
       maxMarks += points;
       const answer = answerMap.get(`${sIdx}-${qIdx}`);
       if (!answer) return;
       if (questionType === 'mcq') {
         if (Number(answer.answer) === Number(question.correctOptionIndex)) {
           score += points;
+        } else {
+          score -= negativePoints;
         }
       } else if (questionType === 'short' || questionType === 'one_line') {
         const expected = (question.expectedAnswer || '').trim().toLowerCase();
@@ -542,10 +622,15 @@ function scoreAssessment(assessment, answers = []) {
         } else if (Array.isArray(question.keywords) && question.keywords.length > 0) {
           const matched = question.keywords.every((k) => actual.includes(String(k).toLowerCase()));
           if (matched) score += points;
+          else score -= negativePoints;
+        } else if (actual) {
+          score -= negativePoints;
         }
       } else if (questionType === 'coding') {
         if (String(answer.executionVerdict || '').toUpperCase() === 'AC') {
           score += points;
+        } else if (String(answer.code || '').trim()) {
+          score -= negativePoints;
         }
       }
     });
@@ -862,7 +947,7 @@ export async function createAssessment(req, res) {
       testType: testType || '',
       isVisible: isVisible !== false,
       customInstructions: Array.isArray(customInstructions) ? customInstructions : [],
-      settings: settings && typeof settings === 'object' ? settings : {},
+      settings: normalizeAssessmentSettings(settings),
       version: 1,
       versionUpdatedAt: new Date(),
     });
@@ -1086,7 +1171,7 @@ export async function updateAssessment(req, res) {
       assessment.customInstructions = Array.isArray(customInstructions) ? customInstructions : [];
     }
     if (settings !== undefined) {
-      assessment.settings = settings && typeof settings === 'object' ? settings : {};
+      assessment.settings = normalizeAssessmentSettings(settings);
     }
     await applyAssessmentPassword(assessment, { passwordEnabled, password });
 
@@ -2376,6 +2461,7 @@ export async function getAssessmentReportsExportData(req, res) {
       scoreMin,
       scoreMax,
       passMark = 0.4,
+      columns,
     } = req.query || {};
 
     if (assessmentId && !mongoose.Types.ObjectId.isValid(assessmentId)) {
@@ -2483,6 +2569,7 @@ export async function getAssessmentReportsExportData(req, res) {
       },
     });
 
+    const selectedColumnKeys = parseCsvList(columns);
     const rawRows = await AssessmentSubmission.aggregate(pipeline);
     const groupedByAssessment = new Map();
     rawRows.forEach((row) => {
@@ -2642,13 +2729,40 @@ export async function getAssessmentReportsExportData(req, res) {
       violationCount: exportRows.reduce((sum, row) => sum + Number(row.violationCount || 0), 0),
     };
 
+    const availableColumns = new Set();
+    exportRows.forEach((row) => {
+      Object.entries(row || {}).forEach(([key, value]) => {
+        if (value === null || value === undefined) return;
+        if (typeof value === 'string' && !value.trim()) return;
+        availableColumns.add(key);
+      });
+    });
+    if (sectionRows.length) {
+      ['sectionScores', 'sectionPerformance'].forEach((key) => availableColumns.add(key));
+    }
+    if (proctoringRows.length) {
+      ['proctoringFlags', 'proctoringActivityCount', 'securityHeartbeat'].forEach((key) => availableColumns.add(key));
+    }
+
+    let filteredRows = exportRows;
+    if (selectedColumnKeys.length) {
+      filteredRows = exportRows.map((row) => {
+        const next = {};
+        selectedColumnKeys.forEach((key) => {
+          next[key] = row?.[key];
+        });
+        return next;
+      });
+    }
+
     return res.json({
       generatedAt: new Date().toISOString(),
       filters: req.query || {},
       summary,
-      rows: exportRows,
+      rows: filteredRows,
       sectionRows,
       proctoringRows,
+      availableColumns: Array.from(availableColumns),
     });
   } catch (err) {
     console.error('Error generating assessment report export data:', err);
@@ -2908,17 +3022,31 @@ export async function logStudentHeartbeat(req, res) {
 
     let action = 'warn';
     let inconsistent = false;
-    if (settings.enableFullscreen && !normalizedStatus.fullscreen) inconsistent = true;
-    if (settings.tabSwitchDetection && !normalizedStatus.tabActive) inconsistent = true;
-    if (settings.cameraMonitoring && !normalizedStatus.cameraActive) inconsistent = true;
-    if (settings.idleDetection && normalizedStatus.idle) inconsistent = true;
-    if (settings.preventMultipleTabs && normalizedStatus.duplicateTab) inconsistent = true;
+    const inconsistentReasons = [];
+    if (settings.enableFullscreen && !normalizedStatus.fullscreen) {
+      inconsistent = true;
+      inconsistentReasons.push('fullscreen');
+    }
+    if (settings.tabSwitchDetection && !normalizedStatus.tabActive) {
+      inconsistent = true;
+      inconsistentReasons.push('tab');
+    }
+    // Camera no-face / soft camera warnings must never force a security re-check via heartbeat.
+    // Camera issues are handled separately through non-blocking notices and explicit camera violations.
+    if (settings.idleDetection && normalizedStatus.idle) {
+      inconsistent = true;
+      inconsistentReasons.push('idle');
+    }
+    if (settings.preventMultipleTabs && normalizedStatus.duplicateTab) {
+      inconsistent = true;
+      inconsistentReasons.push('duplicate_tab');
+    }
 
     if (inconsistent) {
       action = decideViolationAction({
         settings,
         type: 'heartbeat_failure',
-        meta: { source: 'heartbeat_inconsistent', status: normalizedStatus },
+        meta: { source: 'heartbeat_inconsistent', status: normalizedStatus, reasons: inconsistentReasons },
         submission,
       });
       if (action === 'pause') {
@@ -3010,6 +3138,50 @@ export async function markStudentAssessmentSetupStep(req, res) {
   } catch (err) {
     console.error('Error marking setup step:', err);
     return res.status(500).json({ error: 'Failed to mark setup step.' });
+  }
+}
+
+export async function logStudentMonitoring(req, res) {
+  try {
+    const { id } = req.params;
+    const studentId = req.user._id;
+    const { snapshot, event } = req.body || {};
+    const submission = await AssessmentSubmission.findOne({ assessmentId: id, studentId });
+    if (!submission) return res.status(404).json({ error: 'Submission not found.' });
+    if (submission.status === 'submitted') return res.json({ ok: true });
+
+    if (snapshot && typeof snapshot === 'object') {
+      submission.proctoringSnapshots = Array.isArray(submission.proctoringSnapshots) ? submission.proctoringSnapshots : [];
+      submission.proctoringSnapshots.push({
+        type: String(snapshot.type || 'camera'),
+        capturedAt: snapshot.capturedAt ? new Date(snapshot.capturedAt) : new Date(),
+        dataUrl: String(snapshot.dataUrl || ''),
+        width: Number(snapshot.width || 0),
+        height: Number(snapshot.height || 0),
+      });
+      if (submission.proctoringSnapshots.length > 60) {
+        submission.proctoringSnapshots = submission.proctoringSnapshots.slice(-60);
+      }
+    }
+
+    if (event && typeof event === 'object') {
+      submission.monitoringEvents = Array.isArray(submission.monitoringEvents) ? submission.monitoringEvents : [];
+      submission.monitoringEvents.push({
+        type: String(event.type || 'info'),
+        at: event.at ? new Date(event.at) : new Date(),
+        message: String(event.message || ''),
+        meta: event.meta && typeof event.meta === 'object' ? event.meta : {},
+      });
+      if (submission.monitoringEvents.length > 250) {
+        submission.monitoringEvents = submission.monitoringEvents.slice(-250);
+      }
+    }
+
+    await submission.save();
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Error logging monitoring payload:', err);
+    return res.status(500).json({ error: 'Failed to log monitoring payload.' });
   }
 }
 

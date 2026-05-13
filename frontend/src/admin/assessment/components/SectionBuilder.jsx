@@ -18,7 +18,7 @@ const createQuestionId = () => {
   return `q-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 };
 
-const emptyQuestion = (type, marksPerQuestion = 1) => {
+const emptyQuestion = (type, marksPerQuestion = 1, negativeMarksPerQuestion = 0) => {
   if (type === 'mcq') {
     return {
       questionId: createQuestionId(),
@@ -27,6 +27,7 @@ const emptyQuestion = (type, marksPerQuestion = 1) => {
       options: ['', '', '', ''],
       correctOptionIndex: 0,
       points: marksPerQuestion,
+      negativePoints: negativeMarksPerQuestion,
     };
   }
   if (type === 'coding') {
@@ -37,6 +38,7 @@ const emptyQuestion = (type, marksPerQuestion = 1) => {
       problemId: '',
       problemDataSnapshot: null,
       points: marksPerQuestion,
+      negativePoints: negativeMarksPerQuestion,
     };
   }
   return {
@@ -46,6 +48,7 @@ const emptyQuestion = (type, marksPerQuestion = 1) => {
     expectedAnswer: '',
     keywords: [],
     points: marksPerQuestion,
+    negativePoints: negativeMarksPerQuestion,
   };
 };
 
@@ -53,7 +56,8 @@ const emptySection = () => ({
   sectionName: '',
   type: 'mcq',
   marksPerQuestion: 1,
-  questions: [emptyQuestion('mcq', 1)],
+  negativeMarksPerQuestion: 0,
+  questions: [emptyQuestion('mcq', 1, 0)],
 });
 
 const truncate = (value, max = 88) => {
@@ -350,6 +354,7 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
       }
 
       const marks = Number(section.marksPerQuestion || 1) || 1;
+      const negativeMarks = Number(section.negativeMarksPerQuestion || 0) || 0;
       const importedQuestions = rows.map((row) => {
         const prefixedQuestion = (section.type !== 'mcq' && row.heading)
           ? `${row.heading}\n${row.questionText}`
@@ -362,6 +367,7 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
             options: row.options,
             correctOptionIndex: row.correctOptionIndex,
             points: marks,
+            negativePoints: negativeMarks,
           };
         }
         return {
@@ -371,6 +377,7 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
           expectedAnswer: row.expectedAnswer,
           keywords: [],
           points: marks,
+          negativePoints: negativeMarks,
         };
       });
 
@@ -415,7 +422,8 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
   const addQuestion = (sectionIndex) => {
     const section = sectionsWithIds[sectionIndex];
     const marks = Number(section.marksPerQuestion || 1) || 1;
-    const newQuestion = emptyQuestion(section.type, marks);
+    const negativeMarks = Number(section.negativeMarksPerQuestion || 0) || 0;
+    const newQuestion = emptyQuestion(section.type, marks, negativeMarks);
     const nextQuestions = [...(section.questions || []), newQuestion];
     updateSection(sectionIndex, { questions: nextQuestions });
     setCollapsedSections((prev) => ({ ...prev, [section.__key]: false }));
@@ -439,16 +447,21 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
   const removeQuestion = (sectionIndex, questionIndex) => {
     const section = sectionsWithIds[sectionIndex];
     const filtered = (section.questions || []).filter((_, idx) => idx !== questionIndex);
-    updateSection(sectionIndex, { questions: filtered.length ? filtered : [emptyQuestion(section.type)] });
+    updateSection(sectionIndex, {
+      questions: filtered.length
+        ? filtered
+        : [emptyQuestion(section.type, Number(section.marksPerQuestion || 1) || 1, Number(section.negativeMarksPerQuestion || 0) || 0)],
+    });
   };
 
   const handleTypeChange = (sectionIndex, nextType) => {
     const section = sectionsWithIds[sectionIndex];
     const marks = Number(section.marksPerQuestion || 1) || 1;
+    const negativeMarks = Number(section.negativeMarksPerQuestion || 0) || 0;
     updateSection(sectionIndex, {
       type: nextType,
       sectionName: section.sectionName || `${typeLabelMap[nextType]} Section`,
-      questions: [emptyQuestion(nextType, marks)],
+      questions: [emptyQuestion(nextType, marks, negativeMarks)],
     });
   };
 
@@ -463,6 +476,17 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
     }
   };
 
+  const handleNegativeMarksChange = (sectionIndex, value) => {
+    const negativeMarks = value === '' ? '' : Number(value);
+    const section = sectionsWithIds[sectionIndex];
+    if (value !== '' && !Number.isNaN(negativeMarks) && negativeMarks >= 0) {
+      const nextQuestions = (section.questions || []).map((question) => ({ ...question, negativePoints: negativeMarks }));
+      updateSection(sectionIndex, { negativeMarksPerQuestion: negativeMarks, questions: nextQuestions });
+    } else if (value === '') {
+      updateSection(sectionIndex, { negativeMarksPerQuestion: '' });
+    }
+  };
+
   const handleMarksBlur = (sectionIndex) => {
     const section = sectionsWithIds[sectionIndex];
     const currentValue = section.marksPerQuestion;
@@ -470,6 +494,16 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
       const marks = 1;
       const nextQuestions = (section.questions || []).map((question) => ({ ...question, points: marks }));
       updateSection(sectionIndex, { marksPerQuestion: marks, questions: nextQuestions });
+    }
+  };
+
+  const handleNegativeMarksBlur = (sectionIndex) => {
+    const section = sectionsWithIds[sectionIndex];
+    const currentValue = section.negativeMarksPerQuestion;
+    if (currentValue === '' || currentValue === undefined || currentValue === null || Number(currentValue) < 0) {
+      const negativeMarks = 0;
+      const nextQuestions = (section.questions || []).map((question) => ({ ...question, negativePoints: negativeMarks }));
+      updateSection(sectionIndex, { negativeMarksPerQuestion: negativeMarks, questions: nextQuestions });
     }
   };
 
@@ -553,15 +587,27 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
         </div>
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="grid gap-3 md:grid-cols-[150px_minmax(0,1fr)]">
+          <div className="grid gap-3 md:grid-cols-[150px_150px_minmax(0,1fr)]">
             <div>
-              <label className="text-[11px] text-slate-500 dark:text-gray-400">Points</label>
+              <label className="text-[11px] text-slate-500 dark:text-gray-400">Positive Marks</label>
               <input
                 type="number"
-                min="1"
-                value={question.points || section.marksPerQuestion || 1}
-                onChange={(e) => updateQuestion(sectionIndex, questionIndex, { points: Number(e.target.value) })}
-                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                min="0"
+                step="0.01"
+                value={question.points ?? section.marksPerQuestion ?? 1}
+                onChange={(e) => updateQuestion(sectionIndex, questionIndex, { points: e.target.value === '' ? '' : Number(e.target.value) })}
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] text-slate-500 dark:text-gray-400">Negative Marks</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={question.negativePoints ?? section.negativeMarksPerQuestion ?? 0}
+                onChange={(e) => updateQuestion(sectionIndex, questionIndex, { negativePoints: e.target.value === '' ? '' : Number(e.target.value) })}
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-rose-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
               />
             </div>
             <div>
@@ -604,7 +650,7 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
         const isCollapsed = collapsedSections[section.__key];
         const isCodingSection = section.type === 'coding';
         const questionCount = section.questions?.length || 0;
-        const totalMarks = (section.questions || []).reduce((sum, question) => sum + (Number(question.points || section.marksPerQuestion || 0) || 0), 0);
+                    const totalMarks = (section.questions || []).reduce((sum, question) => sum + (Number(question.points || section.marksPerQuestion || 0) || 0), 0);
         const sectionTitle = section.sectionName || `${typeLabelMap[section.type] || 'Question'} Section`;
 
         return (
@@ -641,7 +687,7 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
                     <div className="mt-1 text-sm text-slate-500 dark:text-gray-400">
                       {isCodingSection
                         ? truncate(section.questions?.[0]?.problemDataSnapshot?.title || section.questions?.[0]?.questionText || 'Coding section ready for curated problem selection', 120)
-                        : `${typeLabelMap[section.type] || section.type} section with ${questionCount} question${questionCount !== 1 ? 's' : ''} and ${Number(section.marksPerQuestion || 1) || 1} mark${Number(section.marksPerQuestion || 1) === 1 ? '' : 's'} per question.`}
+                        : `${typeLabelMap[section.type] || section.type} section with ${questionCount} question${questionCount !== 1 ? 's' : ''}, +${Number(section.marksPerQuestion || 1) || 1} per question, and -${Number(section.negativeMarksPerQuestion || 0) || 0} negative marking.`}
                     </div>
                   </div>
                 </button>
@@ -669,7 +715,7 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
 
             {!isCollapsed && (
               <div className="space-y-4 p-4">
-                <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 md:grid-cols-3 dark:border-gray-700 dark:bg-gray-800/60">
+                <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 md:grid-cols-4 dark:border-gray-700 dark:bg-gray-800/60">
                   <div>
                     <label className="text-xs text-slate-500 dark:text-gray-400">Section Name</label>
                     <input
@@ -691,15 +737,29 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
                     </select>
                   </div>
                   <div>
-                    <label className="text-xs text-slate-500 dark:text-gray-400">Marks per Question</label>
+                    <label className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">+ Marks per Question</label>
                     <input
                       type="number"
-                      min="1"
+                      min="0"
+                      step="0.01"
                       value={section.marksPerQuestion ?? ''}
                       onChange={(e) => handleMarksChange(index, e.target.value)}
                       onBlur={() => handleMarksBlur(index)}
                       placeholder="1"
-                      className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                      className="mt-1 w-full rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-emerald-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                    />
+                  </div>
+                  <div>
+                    <label className="inline-flex items-center rounded-full bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-700 dark:bg-rose-900/20 dark:text-rose-300">- Negative Marks per Question</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={section.negativeMarksPerQuestion ?? ''}
+                      onChange={(e) => handleNegativeMarksChange(index, e.target.value)}
+                      onBlur={() => handleNegativeMarksBlur(index)}
+                      placeholder="0.25"
+                      className="mt-1 w-full rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-rose-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
                     />
                   </div>
                 </div>
@@ -800,7 +860,10 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
                                 Q{qIndex + 1}
                               </span>
                               <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
-                                {Number(question.points || section.marksPerQuestion || 1) || 1} pts
+                                +{Number(question.points || section.marksPerQuestion || 1) || 1}
+                              </span>
+                              <span className="rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-600 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-300">
+                                -{Number(question.negativePoints ?? section.negativeMarksPerQuestion ?? 0) || 0}
                               </span>
                             </div>
                             <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-gray-100">{summaryTitle}</div>
@@ -824,6 +887,8 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
                                   onChange={(updates) => updateQuestion(index, qIndex, updates)}
                                   onRemove={() => removeQuestion(index, qIndex)}
                                   groupName={`mcq-${index}-${qIndex}`}
+                                  defaultPositiveMarks={section.marksPerQuestion ?? 1}
+                                  defaultNegativeMarks={section.negativeMarksPerQuestion ?? 0}
                                 />
                               )}
                           </div>

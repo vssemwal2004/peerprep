@@ -277,6 +277,7 @@ export default function CreateAssessment() {
     ...question,
     questionId: question.questionId || createQuestionId(),
     type: question.type || fallbackType,
+    negativePoints: Number(question.negativePoints ?? question.negativeMarks ?? 0) || 0,
   });
 
   const applyCodingDrafts = (drafts, prevSections) => {
@@ -356,6 +357,7 @@ export default function CreateAssessment() {
         sectionName: LIBRARY_SECTION_LABELS[type] || `${String(type).replace(/_/g, ' ')} Questions`,
         type,
         marksPerQuestion: Number(clonedQuestion.points || clonedQuestion.marks || 1) || 1,
+        negativeMarksPerQuestion: Number(clonedQuestion.negativePoints ?? clonedQuestion.negativeMarks ?? 0) || 0,
         questions: [clonedQuestion],
       });
     });
@@ -437,6 +439,7 @@ export default function CreateAssessment() {
     });
     if (sectionType) {
       query.set('type', sectionType);
+      query.set('lockType', sectionType);
     }
     navigate(`${rolePrefix}/library?${query.toString()}`);
   };
@@ -666,7 +669,7 @@ export default function CreateAssessment() {
     const invalidCoding = codingQuestions.filter((question) => {
       const snapshot = question.problemDataSnapshot || question.problemData || question.coding?.problemData || question.coding || {};
       const normalizedStatus = String(snapshot.status || '').toLowerCase();
-const isPublished = normalizedStatus === 'published' || normalizedStatus === 'active';
+      const isPublished = normalizedStatus === 'published' || normalizedStatus === 'active';
       const isValidated = Boolean(snapshot.previewValidated ?? snapshot.previewTested);
       return !question.problemId || !isPublished || !isValidated;
     });
@@ -744,7 +747,7 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
           targetId: currentId,
           description: `Assessment draft updated: "${form.title || 'Untitled'}" (ID: ${form.assessmentId || currentId})`,
           metadata: { assessmentId: form.assessmentId, testType: form.testType, isVisible: form.isVisible },
-        }).catch(() => {});
+        }).catch(() => { });
         if (!silent) toast.success('Draft updated');
       } else {
         const response = await api.createAssessment(payload);
@@ -757,7 +760,7 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
           targetId: newId,
           description: `New assessment draft created: "${form.title || 'Untitled'}" (ID: ${form.assessmentId || newId})`,
           metadata: { assessmentId: form.assessmentId, testType: form.testType, isVisible: form.isVisible },
-        }).catch(() => {});
+        }).catch(() => { });
         if (!silent) toast.success('Draft created');
       }
       setDirty(false);
@@ -834,7 +837,7 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
           totalQuestions: assessmentValidation.totalQuestions,
           targetMode: form.targetMode,
         },
-      }).catch(() => {});
+      }).catch(() => { });
       toast.success('Assessment published');
       clearAssessmentDraft(assessmentKey);
       sessionStorage.removeItem('peerprep_current_assessment_session');
@@ -919,19 +922,16 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
             <button
               type="button"
               onClick={() => updateForm({ isVisible: !form.isVisible })}
-              className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors focus:outline-none ${
-                form.isVisible ? 'bg-sky-600' : 'bg-slate-300 dark:bg-gray-600'
-              }`}
+              className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors focus:outline-none ${form.isVisible ? 'bg-sky-600' : 'bg-slate-300 dark:bg-gray-600'
+                }`}
             >
               <span
-                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
-                  form.isVisible ? 'translate-x-8' : 'translate-x-1'
-                }`}
+                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${form.isVisible ? 'translate-x-8' : 'translate-x-1'
+                  }`}
               />
             </button>
-            <span className={`flex items-center gap-1 text-xs font-semibold ${
-              form.isVisible ? 'text-sky-600 dark:text-sky-400' : 'text-slate-400 dark:text-gray-500'
-            }`}>
+            <span className={`flex items-center gap-1 text-xs font-semibold ${form.isVisible ? 'text-sky-600 dark:text-sky-400' : 'text-slate-400 dark:text-gray-500'
+              }`}>
               {form.isVisible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
               {form.isVisible ? 'Visible' : 'Hidden'}
             </span>
@@ -1237,6 +1237,7 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
               { label: 'Tab Guard', active: s.tabSwitchDetection, icon: <Shield className="h-3 w-3" /> },
               { label: 'Camera', active: s.cameraMonitoring, icon: <Camera className="h-3 w-3" /> },
               { label: 'Copy Block', active: s.disableCopyPaste, icon: <Copy className="h-3 w-3" /> },
+              { label: 'Shot Guard', active: s.blockScreenshots, icon: <Monitor className="h-3 w-3" /> },
               { label: 'Shuffle', active: s.randomShuffle, icon: <Shuffle className="h-3 w-3" /> },
               { label: 'Auto-Submit', active: s.autoSubmitOnEnd, icon: <Timer className="h-3 w-3" /> },
             ].map(({ label, active, icon }) => (
@@ -1245,7 +1246,7 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
               </span>
             ))}
             <span className="ml-auto text-[11px] text-sky-600 dark:text-sky-400">
-              {[form.passwordEnabled, s.enableFullscreen, s.tabSwitchDetection, s.cameraMonitoring, s.disableCopyPaste, s.randomShuffle, s.autoSubmitOnEnd].filter(Boolean).length} / 7 active
+              {[form.passwordEnabled, s.enableFullscreen, s.tabSwitchDetection, s.cameraMonitoring, s.disableCopyPaste, s.blockScreenshots, s.randomShuffle, s.autoSubmitOnEnd].filter(Boolean).length} / 8 active
             </span>
           </div>
 
@@ -1332,11 +1333,64 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
                 </FieldRow>
               </Row>
 
+              <Row
+                {...rowProps}
+                icon={<Monitor className="h-4 w-4" />}
+                title="Screenshot Shortcut Protection"
+                desc="Shows an immediate warning popup when students try common screenshot shortcuts on Windows or macOS."
+                badge="recommended"
+                toggleKey="blockScreenshots"
+              >
+                <div className="rounded-lg border border-sky-100 bg-sky-50/80 px-3 py-2 text-[11px] leading-5 text-slate-600 dark:border-sky-900/30 dark:bg-sky-900/10 dark:text-gray-300">
+                  Browser limitation: this detects common shortcut attempts like Print Screen and Cmd+Shift+3/4/5, but cannot guarantee blocking every OS-level screenshot path.
+                </div>
+              </Row>
+
               <Row {...rowProps} icon={<Droplet className="h-4 w-4" />} iconBg="bg-purple-50 text-purple-600 dark:bg-purple-900/20 dark:text-purple-400"
                 title="Question Watermarking" desc="Overlays candidate name/ID on every question to deter screenshot sharing." toggleKey="questionWatermark">
-                <FieldRow label="Watermark opacity (%)">
-                  <NumInput value={s.watermarkOpacity} onChange={(v) => upd('watermarkOpacity', v)} min={5} max={50} placeholder="15" unit="%" />
-                </FieldRow>
+                <div className="space-y-3">
+                  <FieldRow label="Watermark text source">
+                    <select value={s.watermarkTextType || 'platform'} onChange={(e) => upd('watermarkTextType', e.target.value)}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                      <option value="platform">Platform Name</option>
+                      <option value="candidate_name">Candidate Name</option>
+                      <option value="candidate_email">Candidate Email</option>
+                      <option value="candidate_id">Candidate ID</option>
+                      <option value="custom">Custom Text</option>
+                    </select>
+                  </FieldRow>
+                  {(s.watermarkTextType || 'platform') === 'custom' && (
+                    <FieldRow label="Custom watermark text">
+                      <input
+                        type="text"
+                        value={s.watermarkCustomText || ''}
+                        onChange={(e) => upd('watermarkCustomText', e.target.value)}
+                        placeholder="PeerPrep"
+                        className="w-48 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                      />
+                    </FieldRow>
+                  )}
+                  <FieldRow label="Watermark opacity (%)">
+                    <NumInput value={s.watermarkOpacity} onChange={(v) => upd('watermarkOpacity', v)} min={5} max={40} placeholder="12" unit="%" />
+                  </FieldRow>
+                  <FieldRow label="Watermark angle">
+                    <NumInput value={s.watermarkAngle} onChange={(v) => upd('watermarkAngle', v)} min={-75} max={75} placeholder="-45" unit="deg" />
+                  </FieldRow>
+                  <FieldRow label="Watermark spacing">
+                    <NumInput value={s.watermarkSpacing} onChange={(v) => upd('watermarkSpacing', v)} min={120} max={360} placeholder="220" unit="px" />
+                  </FieldRow>
+                  <FieldRow label="Font size">
+                    <NumInput value={s.watermarkFontSize} onChange={(v) => upd('watermarkFontSize', v)} min={14} max={42} placeholder="24" unit="px" />
+                  </FieldRow>
+                  <FieldRow label="Text color">
+                    <input
+                      type="color"
+                      value={s.watermarkColor || '#cbd5e1'}
+                      onChange={(e) => upd('watermarkColor', e.target.value)}
+                      className="h-9 w-14 rounded-lg border border-slate-200 bg-white p-1 dark:border-gray-700 dark:bg-gray-800"
+                    />
+                  </FieldRow>
+                </div>
               </Row>
 
               <Row {...rowProps} icon={<Shuffle className="h-4 w-4" />} title="Random Question Shuffle" desc="Randomizes question order uniquely per candidate on test start." toggleKey="randomShuffle">
@@ -1451,17 +1505,6 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
                 </FieldRow>
               </Row>
 
-              <Row {...rowProps} icon={<AlertCircle className="h-4 w-4" />} iconBg="bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-400"
-                title="Negative Marking" desc="Deduct marks for wrong answers in MCQ sections." toggleKey="negativeMarking">
-                <div className="space-y-3">
-                  <FieldRow label="Marks deducted per wrong answer">
-                    <NumInput value={s.negativeMarkValue} onChange={(v) => upd('negativeMarkValue', v)} min={0} placeholder="0.25" unit="marks" />
-                  </FieldRow>
-                  <FieldRow label="Apply to coding questions too">
-                    <Toggle value={Boolean(s.negativeCoding)} onChange={(v) => upd('negativeCoding', v)} />
-                  </FieldRow>
-                </div>
-              </Row>
             </div>
           </div>
         </div>
@@ -1578,11 +1621,10 @@ const isPublished = normalizedStatus === 'published' || normalizedStatus === 'ac
               key={step.id}
               type="button"
               onClick={() => setActiveStep(step.id)}
-              className={`rounded-xl px-4 py-2 text-xs font-semibold transition-colors ${
-                activeStep === step.id
+              className={`rounded-xl px-4 py-2 text-xs font-semibold transition-colors ${activeStep === step.id
                   ? 'bg-sky-600 text-white'
                   : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'
-              }`}
+                }`}
             >
               {step.label}
             </button>

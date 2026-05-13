@@ -1,7 +1,7 @@
 import { Trash2 } from 'lucide-react';
 import CodingQuestionEditor from './CodingQuestionEditor';
 
-export default function QuestionBuilder({ type, value, onChange, onRemove, groupName }) {
+export default function QuestionBuilder({ type, value, onChange, onRemove, groupName, defaultPositiveMarks = 1, defaultNegativeMarks = 0 }) {
   const question = value || {};
 
   const update = (updates) => onChange({ ...question, ...updates });
@@ -101,15 +101,31 @@ export default function QuestionBuilder({ type, value, onChange, onRemove, group
           </div>
         )}
 
-        <div className="grid gap-3 md:grid-cols-[140px_minmax(0,1fr)]">
+        <div className="grid gap-3 md:grid-cols-[140px_160px_minmax(0,1fr)]">
           <div>
-            <label className="text-xs text-slate-500 dark:text-gray-400">Points</label>
+            <label className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
+              + Positive Marks
+            </label>
             <input
               type="number"
-              min="1"
-              value={question.points || 1}
-              onChange={(e) => update({ points: Number(e.target.value) })}
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+              step="0.01"
+              min="0"
+              value={question.points ?? defaultPositiveMarks}
+              onChange={(e) => update({ points: e.target.value === '' ? '' : Number(e.target.value) })}
+              className="mt-1 w-full rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-emerald-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+            />
+          </div>
+          <div>
+            <label className="inline-flex items-center rounded-full bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-700 dark:bg-rose-900/20 dark:text-rose-300">
+              - Negative Marks
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={question.negativePoints ?? defaultNegativeMarks}
+              onChange={(e) => update({ negativePoints: e.target.value === '' ? '' : Number(e.target.value) })}
+              className="mt-1 w-full rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-rose-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
             />
           </div>
           <div>

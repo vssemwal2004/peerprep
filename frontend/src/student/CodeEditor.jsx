@@ -360,12 +360,12 @@ export default function CodeEditor({
   return (
     <div
       ref={rootRef}
-      className="flex h-full min-h-0 flex-col overflow-hidden rounded-[30px] bg-white/84 shadow-[0_10px_32px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:bg-gray-900/84"
+      className="flex h-full min-h-0 flex-col overflow-hidden rounded-[30px] border border-slate-200/80 bg-white/90 shadow-[0_24px_64px_-44px_rgba(15,23,42,0.35)] backdrop-blur-sm dark:border-gray-700 dark:bg-gray-900/88"
     >
       {showToolbar ? (
         <div
           ref={toolbarRef}
-          className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/70 bg-white/88 px-3 py-2.5 backdrop-blur-sm dark:border-gray-800 dark:bg-gray-900/88"
+          className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(248,250,252,0.92)_100%)] px-4 py-3 backdrop-blur-sm dark:border-gray-800 dark:bg-gray-900/88"
         >
           <div className="flex flex-wrap items-center gap-3">
             <select
@@ -417,7 +417,7 @@ export default function CodeEditor({
 
       <div
         ref={editorContainerRef}
-        className="relative z-0 min-h-0 bg-transparent px-3 pb-0.5 pt-0.5"
+        className="relative z-0 min-h-0 bg-transparent px-4 pb-1 pt-1.5"
         style={{ height: editorHeight }}
       >
         <MonacoCodeEditor
@@ -432,7 +432,7 @@ export default function CodeEditor({
         type="button"
         ref={splitterRef}
         onPointerDown={handleConsoleResizeStart}
-        className="group relative z-20 mx-3 flex h-2.5 w-auto cursor-row-resize items-center justify-center transition-colors"
+        className="group relative z-20 mx-4 flex h-3 w-auto cursor-row-resize items-center justify-center transition-colors"
         aria-label="Resize testcase panel"
       >
         <div className="absolute left-0 right-0 top-1/2 h-px -translate-y-1/2 bg-slate-200/80 dark:bg-gray-700" />
@@ -441,7 +441,7 @@ export default function CodeEditor({
 
       <div
         ref={consoleContainerRef}
-        className="relative z-20 mx-3 mb-2 flex min-h-0 flex-col overflow-hidden rounded-[24px] bg-white px-4 pb-2 pt-1 dark:bg-gray-900"
+        className="relative z-20 mx-4 mb-3 flex min-h-0 flex-col overflow-hidden rounded-[24px] border border-slate-200/80 bg-white px-4 pb-3 pt-1 dark:border-gray-700 dark:bg-gray-900"
         style={{ height: clampConsoleHeight(consoleHeight) }}
       >
         <div className="flex flex-none items-center gap-4 overflow-x-auto bg-white [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden dark:bg-gray-900">

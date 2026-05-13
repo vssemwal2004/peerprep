@@ -12,7 +12,6 @@ const TYPE_LABELS = {
   mcq: 'MCQs',
   short: 'Short Questions',
   one_line: 'One-word Questions',
-  one_word: 'One-word Questions',
 };
 
 const SOURCE_LABELS = {
@@ -94,10 +93,10 @@ export default function QuestionLibrary() {
   const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
   const returnTo = params.get('return') || `${rolePrefix}/assessment/create`;
   const initialType = params.get('type') || 'all';
-  const isScopedSelection = selectionMode && initialType && initialType !== 'all';
+  const lockType = params.get('lockType') || '';
 
   const [filters, setFilters] = useState({
-    type: initialType,
+    type: lockType || initialType,
     search: '',
     tag: '',
     difficulty: '',
@@ -107,7 +106,6 @@ export default function QuestionLibrary() {
   const [categories, setCategories] = useState([]);
   const [availableTags, setAvailableTags] = useState([]);
   const [availableDifficulties, setAvailableDifficulties] = useState([]);
-  const [categoryTotal, setCategoryTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
@@ -116,6 +114,7 @@ export default function QuestionLibrary() {
   const [selectedMeta, setSelectedMeta] = useState({});
   const [activeQuestion, setActiveQuestion] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [tagsModal, setTagsModal] = useState({ open: false, questionText: '', tags: [] });
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -124,6 +123,11 @@ export default function QuestionLibrary() {
     }, 160);
     return () => clearTimeout(timer);
   }, [searchInput]);
+
+  useEffect(() => {
+    if (!lockType) return;
+    setFilters((prev) => ({ ...prev, type: lockType }));
+  }, [lockType]);
 
   useEffect(() => {
     let mounted = true;
@@ -143,10 +147,6 @@ export default function QuestionLibrary() {
         setCategories(data.filters?.categories || []);
         setAvailableTags(data.filters?.tags || []);
         setAvailableDifficulties(data.filters?.difficulties || []);
-        const totalFromCategories = (data.filters?.categories || []).reduce(
-          (sum, cat) => sum + (cat.count || 0), 0
-        );
-        setCategoryTotal(Number(data.filters?.total) || totalFromCategories || 0);
         setPages(data.pagination?.pages || 1);
         setTotal(data.pagination?.total || 0);
       } catch (error) {
@@ -165,23 +165,15 @@ export default function QuestionLibrary() {
     const counts = new Map();
     (categories || []).forEach((entry) => {
       if (!entry?.type) return;
-      let normalizedType = String(entry.type).toLowerCase().replace(/-/g, '_');
-      if (normalizedType === 'one_word') normalizedType = 'one_line';
-      const current = counts.get(normalizedType) || 0;
-      counts.set(normalizedType, current + (Number(entry.count) || 0));
+      counts.set(entry.type, Number(entry.count) || 0);
     });
 
     const coreTabs = coreTypes.map((type) => ({ type, count: counts.get(type) || 0 }));
-    const extraSet = new Set(coreTypes);
-    const extras = (categories || []).filter((entry) => {
-      if (!entry?.type) return false;
-      let normalized = String(entry.type).toLowerCase().replace(/-/g, '_');
-      if (normalized === 'one_word') normalized = 'one_line';
-      return !extraSet.has(normalized);
-    });
+    const extras = (categories || []).filter((entry) => entry?.type && !coreTypes.includes(entry.type));
 
-    return [{ type: 'all', count: categoryTotal }, ...coreTabs, ...extras];
-  }, [categories, categoryTotal]);
+    const allTabs = [{ type: 'all', count: total }, ...coreTabs, ...extras];
+    return lockType ? allTabs.filter((entry) => entry.type === lockType) : allTabs;
+  }, [categories, total, lockType]);
 
   const selectionSummary = useMemo(() => {
     return Object.values(selectedMeta).reduce((acc, item) => {
@@ -225,12 +217,16 @@ export default function QuestionLibrary() {
     }
     try {
       const data = await api.resolveLibraryQuestions(Array.from(selectedIds));
-      queueQuestionSelection(assessmentKey, { questions: data.questions || [] });
-      toast.success('Selected library questions added to the assessment.');
+      queueQuestionSelection(assessmentKey, { questions: data.questions || [], lockType });
+      toast.success('Selected library questions added to the assessment draft.');
       navigate(returnTo);
     } catch (error) {
       toast.error(error.message || 'Failed to add selected questions.');
     }
+  };
+
+  const openTagsModal = (questionText, tags = []) => {
+    setTagsModal({ open: true, questionText, tags });
   };
 
   return (
@@ -275,14 +271,12 @@ export default function QuestionLibrary() {
         {selectionMode && (
           <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
             <div className="font-semibold text-slate-800 dark:text-white">
-              {isScopedSelection ? `${labelForType(initialType)} library` : 'Mixed selection is enabled.'}
+              {lockType ? `${labelForType(lockType)} selection only.` : 'Mixed selection is enabled.'}
             </div>
             <div className="mt-1">
-              {Object.keys(selectionSummary).length
+              {lockType ? `Only ${labelForType(lockType).toLowerCase()} are available in this flow. Other question types are hidden to keep section mapping clean.` : (Object.keys(selectionSummary).length
                 ? Object.entries(selectionSummary).map(([type, count]) => `${count} ${labelForType(type)}`).join(' • ')
-                : isScopedSelection
-                  ? `You are adding more ${labelForType(initialType).toLowerCase()} for this section. You can switch tabs if needed, but this view opens scoped to the selected section type.`
-                  : 'Choose questions across any category. They will be grouped by type automatically when added to the assessment.'}
+                : 'Choose questions across any category. They will be grouped by type automatically when added to the assessment.')}
             </div>
           </div>
         )}
@@ -298,7 +292,8 @@ export default function QuestionLibrary() {
                   setFilters((prev) => ({ ...prev, type: category.type }));
                   setPage(1);
                 }}
-                className={`rounded-xl border px-3 py-2 text-xs font-semibold transition-colors ${
+                disabled={Boolean(lockType && category.type !== lockType)}
+                className={`rounded-xl border px-3 py-2 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                   active
                     ? 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300'
                     : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'
@@ -358,36 +353,18 @@ export default function QuestionLibrary() {
         </div>
 
         <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
-          <div className={`grid gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:border-gray-700 dark:bg-gray-800 ${selectionMode ? 'grid-cols-[42px_2fr_0.7fr_0.7fr_0.9fr_0.6fr_0.8fr]' : 'grid-cols-[2fr_0.7fr_0.7fr_0.9fr_0.6fr_0.8fr]'}`}>
+          <div className={`grid gap-3 border-b border-slate-200 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:border-gray-700 ${selectionMode ? 'grid-cols-[42px_1.7fr_0.9fr_1.2fr_1fr_0.8fr]' : 'grid-cols-[1.9fr_0.9fr_1.2fr_1fr_0.8fr_72px]'}`}>
             {selectionMode ? <div /> : null}
             <div>Question</div>
             <div>Type</div>
-            <div>Difficulty</div>
+            <div>Question Tags / Topics</div>
             <div>Source</div>
-            <div>Visibility</div>
             <div>Updated</div>
+            {!selectionMode ? <div className="text-right">View</div> : null}
           </div>
 
           {loading ? (
-            <div className="divide-y divide-slate-100 dark:divide-gray-800">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <div
-                  key={i}
-                  className={`grid w-full gap-3 px-4 py-3 animate-pulse ${selectionMode ? 'grid-cols-[42px_2fr_0.7fr_0.7fr_0.9fr_0.6fr_0.8fr]' : 'grid-cols-[2fr_0.7fr_0.7fr_0.9fr_0.6fr_0.8fr]'}`}
-                >
-                  {selectionMode && <div className="flex items-center justify-center"><div className="h-4 w-4 rounded bg-slate-200 dark:bg-gray-700" /></div>}
-                  <div className="flex flex-col gap-2">
-                    <div className="h-3.5 w-3/4 rounded-md bg-slate-200 dark:bg-gray-700" />
-                    <div className="h-2.5 w-1/2 rounded-md bg-slate-100 dark:bg-gray-800" />
-                  </div>
-                  <div className="flex items-center"><div className="h-5 w-14 rounded-md bg-slate-200 dark:bg-gray-700" /></div>
-                  <div className="flex items-center"><div className="h-5 w-14 rounded-md bg-slate-100 dark:bg-gray-800" /></div>
-                  <div className="flex items-center"><div className="h-3 w-20 rounded bg-slate-100 dark:bg-gray-800" /></div>
-                  <div className="flex items-center"><div className="h-5 w-12 rounded-full bg-slate-100 dark:bg-gray-800" /></div>
-                  <div className="flex items-center"><div className="h-3 w-16 rounded bg-slate-100 dark:bg-gray-800" /></div>
-                </div>
-              ))}
-            </div>
+            <div className="p-8 text-center text-sm text-slate-500 dark:text-gray-400">Loading library questions...</div>
           ) : questions.length === 0 ? (
             <div className="p-8 text-center text-sm text-slate-500 dark:text-gray-400">No questions matched the current filters.</div>
           ) : (
@@ -396,7 +373,7 @@ export default function QuestionLibrary() {
                 key={question._id}
                 type="button"
                 onClick={() => openQuestion(question._id)}
-                className={`group grid w-full gap-3 border-b border-slate-100 px-4 py-3 text-left text-sm text-slate-600 transition-colors last:border-b-0 hover:bg-slate-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800/60 ${selectionMode ? 'grid-cols-[42px_2fr_0.7fr_0.7fr_0.9fr_0.6fr_0.8fr]' : 'grid-cols-[2fr_0.7fr_0.7fr_0.9fr_0.6fr_0.8fr]'}`}
+                className={`grid w-full gap-3 border-b border-slate-100 px-4 py-3 text-left text-sm text-slate-600 transition-colors last:border-b-0 hover:bg-slate-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800/60 ${selectionMode ? 'grid-cols-[42px_1.7fr_0.9fr_1.2fr_1fr_0.8fr]' : 'grid-cols-[1.9fr_0.9fr_1.2fr_1fr_0.8fr_72px]'}`}
               >
                 {selectionMode && (
                   <div className="flex items-center justify-center">
@@ -412,46 +389,51 @@ export default function QuestionLibrary() {
                     />
                   </div>
                 )}
-                <div className="min-w-0">
-                  <div className="truncate font-semibold text-slate-800 group-hover:text-sky-600 dark:text-gray-100 dark:group-hover:text-sky-400">{question.questionText || 'Untitled Question'}</div>
+                <div>
+                  <div className="font-semibold text-slate-800 dark:text-gray-100">{question.questionText || 'Untitled Question'}</div>
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-gray-400">
-                    <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-medium text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                    <span>{question.sectionName || 'General'}</span>
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 font-semibold text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
                       {SOURCE_LABELS[question.sourceType] || 'Library'}
                     </span>
-                    {question.tags?.slice(0, 2).map((tag) => (
-                      <span key={tag} className="text-slate-400">#{tag}</span>
-                    ))}
-                    {question.tags?.length > 2 && (
-                      <span className="text-slate-400">+{question.tags.length - 2}</span>
-                    )}
                   </div>
                 </div>
-                <div className="flex items-center">
-                  <span className={`rounded-md px-2 py-0.5 text-xs font-medium ${question.questionType === 'coding' ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300' : question.questionType === 'mcq' ? 'bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-300' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'}`}>
-                    {question.questionType === 'coding' ? 'Coding' : question.questionType === 'mcq' ? 'MCQ' : question.questionType === 'short' ? 'Short' : 'One-word'}
-                  </span>
-                </div>
-                <div className="flex items-center text-xs text-slate-600 dark:text-gray-400">
-                  {question.difficulty ? (
-                    <span className={`rounded-md px-2 py-0.5 text-xs font-medium ${question.difficulty === 'Easy' ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-300' : question.difficulty === 'Medium' ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300'}`}>
-                      {question.difficulty}
-                    </span>
+                <div className="text-xs font-semibold text-slate-700 dark:text-gray-200">{labelForType(question.questionType).replace(' Questions', '')}</div>
+                <div className="flex flex-wrap items-start gap-1.5">
+                  {(question.tags || []).length ? (
+                    <>
+                      {(question.tags || []).slice(0, 4).map((tag) => (
+                        <span key={`${question._id}-${tag}`} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                          {tag}
+                        </span>
+                      ))}
+                      {(question.tags || []).length > 4 && (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openTagsModal(question.questionText || 'Question', (question.tags || []).slice(4));
+                          }}
+                          className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300"
+                        >
+                          + More
+                        </button>
+                      )}
+                    </>
                   ) : (
-                    <span className="text-slate-400">-</span>
+                    <span className="text-xs text-slate-500 dark:text-gray-400">-</span>
                   )}
                 </div>
-                <div className="flex items-center truncate text-xs text-slate-500 dark:text-gray-400">{question.sourceTitle || question.sourceAssessmentTitle || '-'}</div>
-                <div className="flex items-center">
-                  {question.questionType === 'coding' ? (
-                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${question.visibility === 'public' ? 'bg-sky-50 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300' : 'bg-slate-100 text-slate-600 dark:bg-gray-700 dark:text-gray-300'}`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${question.visibility === 'public' ? 'bg-sky-500' : 'bg-slate-400'}`}></span>
-                      {question.visibility === 'public' ? 'Public' : 'Private'}
+                <div className="text-xs text-slate-500 dark:text-gray-400">{question.sourceTitle || question.sourceAssessmentTitle || '-'}</div>
+                <div className="text-xs text-slate-500 dark:text-gray-400">{question.updatedAt ? new Date(question.updatedAt).toLocaleDateString() : '-'}</div>
+                {!selectionMode && (
+                  <div className="flex justify-end">
+                    <span className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 dark:border-gray-700 dark:text-gray-300">
+                      <Eye className="h-3.5 w-3.5" />
+                      View
                     </span>
-                  ) : (
-                    <span className="text-xs text-slate-400">-</span>
-                  )}
-                </div>
-                <div className="flex items-center text-xs text-slate-500 dark:text-gray-400">{question.updatedAt ? new Date(question.updatedAt).toLocaleDateString() : '-'}</div>
+                  </div>
+                )}
               </button>
             ))
           )}
@@ -575,6 +557,49 @@ export default function QuestionLibrary() {
           </>
         )}
       </AnimatePresence>
+      <AnimatePresence>
+        {tagsModal.open && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[60] bg-slate-950/45 backdrop-blur-sm"
+              onClick={() => setTagsModal({ open: false, questionText: '', tags: [] })}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 12 }}
+              className="fixed inset-0 z-[61] flex items-center justify-center px-4"
+            >
+              <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Question Tags</div>
+                    <h3 className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">{tagsModal.questionText || 'Question Tags'}</h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTagsModal({ open: false, questionText: '', tags: [] })}
+                    className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {tagsModal.tags.map((tag) => (
+                    <span key={`modal-${tag}`} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
+

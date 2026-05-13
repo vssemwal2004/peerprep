@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireAuth, requireAdmin, requireAdminOrCoordinator } from '../middleware/auth.js';
+import { requireAuth, requireAdminOrCoordinator } from '../middleware/auth.js';
 import {
   createAssessment,
   listAssessments,
@@ -18,7 +18,6 @@ import {
   resolveLibraryQuestions,
   createLibraryQuestion,
   createLibraryQuestionsBulk,
-  cleanupLibrary,
 } from '../controllers/questionLibraryController.js';
 
 const router = Router();
@@ -35,7 +34,6 @@ router.post('/library/questions', requireAuth, requireAdminOrCoordinator, create
 router.post('/library/questions/bulk', requireAuth, requireAdminOrCoordinator, createLibraryQuestionsBulk);
 router.get('/library/questions/:id', requireAuth, requireAdminOrCoordinator, getLibraryQuestion);
 router.post('/library/questions/resolve', requireAuth, requireAdminOrCoordinator, resolveLibraryQuestions);
-router.post('/library/cleanup', requireAuth, requireAdmin, cleanupLibrary);
 router.get('/assessment/:id', requireAuth, requireAdminOrCoordinator, getAssessment);
 router.put('/assessment/:id', requireAuth, requireAdminOrCoordinator, updateAssessment);
 router.delete('/assessment/:id', requireAuth, requireAdminOrCoordinator, deleteAssessment);

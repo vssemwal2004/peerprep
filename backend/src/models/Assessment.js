@@ -46,6 +46,7 @@ const questionSchema = new mongoose.Schema({
   problemDataSnapshot: { type: mongoose.Schema.Types.Mixed },
   coding: { type: codingSchema },
   points: { type: Number, default: 1 },
+  negativePoints: { type: Number, default: 0 },
   marks: { type: Number },
   weight: { type: Number },
 }, { _id: false });
@@ -54,6 +55,7 @@ const sectionSchema = new mongoose.Schema({
   sectionName: { type: String, required: true },
   type: { type: String, enum: ['mcq', 'short', 'one_line', 'coding'], required: true },
   marksPerQuestion: { type: Number, default: 1 },
+  negativeMarksPerQuestion: { type: Number, default: 0 },
   totalMarks: { type: Number, default: 0 },
   questions: { type: [questionSchema], default: [] },
 }, { _id: false });

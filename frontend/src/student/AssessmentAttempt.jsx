@@ -75,6 +75,11 @@ const CAMERA_VIOLATION_TYPES = new Set([
   'face_out_of_frame',
 ]);
 
+const SOFT_CAMERA_WARNING_TYPES = new Set([
+  'camera_loss',
+  'camera_no_face',
+]);
+
 const BLOCKED_INPUT_TYPES = new Set([
   'insertFromPaste',
   'insertFromDrop',
@@ -112,6 +117,66 @@ const getViolationWeight = (settings = {}, type = 'other') => {
   return 1;
 };
 
+const createSeededRandom = (seedInput = '') => {
+  let seed = 0;
+  const text = String(seedInput || 'peerprep');
+  for (let i = 0; i < text.length; i += 1) {
+    seed = ((seed << 5) - seed + text.charCodeAt(i)) >>> 0;
+  }
+  return () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
+};
+
+const seededShuffle = (items = [], random) => {
+  const next = [...items];
+  for (let index = next.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
+  }
+  return next;
+};
+
+const transformAssessmentForAttempt = (assessment, submissionId = '') => {
+  if (!assessment) return null;
+  const settings = assessment.settings || {};
+  if (!settings.randomShuffle && !settings.shuffleOptions) return assessment;
+
+  const random = createSeededRandom(`${assessment._id || 'assessment'}:${submissionId || 'attempt'}`);
+  const sections = (assessment.sections || []).map((section, sectionIndex) => {
+    let questions = (section.questions || []).map((question, questionIndex) => ({
+      ...question,
+      __originSectionIndex: sectionIndex,
+      __originQuestionIndex: questionIndex,
+    }));
+
+    if (settings.randomShuffle) {
+      questions = seededShuffle(questions, random);
+    }
+
+    questions = questions.map((question) => {
+      if (settings.shuffleOptions && section.type === 'mcq' && Array.isArray(question.options) && question.options.length > 1) {
+        const shuffledOptions = seededShuffle(
+          question.options.map((option, optionIndex) => ({ option, optionIndex })),
+          random,
+        );
+        return {
+          ...question,
+          options: shuffledOptions.map((entry) => entry.option),
+          correctOptionIndex: shuffledOptions.findIndex((entry) => entry.optionIndex === Number(question.correctOptionIndex)),
+          __optionOrder: shuffledOptions.map((entry) => entry.optionIndex),
+        };
+      }
+      return question;
+    });
+
+    return { ...section, questions };
+  });
+
+  return { ...assessment, sections };
+};
+
 export default function AssessmentAttempt() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -132,6 +197,7 @@ export default function AssessmentAttempt() {
   const [fullscreenExits, setFullscreenExits] = useState(0);
   const [copyPasteCount, setCopyPasteCount] = useState(0);
   const [cameraFlags, setCameraFlags] = useState(0);
+  const [screenshotWarnings, setScreenshotWarnings] = useState(0);
   const [violationScore, setViolationScore] = useState(0);
   const [pauseCount, setPauseCount] = useState(0);
   const [lastPauseAt, setLastPauseAt] = useState(null);
@@ -155,6 +221,7 @@ export default function AssessmentAttempt() {
   const [locationData, setLocationData] = useState(null);
   const [isPaused, setIsPaused] = useState(false);
   const [allowedEndTime, setAllowedEndTime] = useState(null);
+  const [pauseStartedAt, setPauseStartedAt] = useState(null);
   const [violationMessage, setViolationMessage] = useState('');
   const [activeConsoleTab, setActiveConsoleTab] = useState('result');
   const [codeResultMap, setCodeResultMap] = useState({});
@@ -181,6 +248,7 @@ export default function AssessmentAttempt() {
   const [sidebarPinned, setSidebarPinned] = useState(false);
   const [navTypeFilter, setNavTypeFilter] = useState('all');
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
+  const [audioLevel, setAudioLevel] = useState(0);
 
   const validationVideoRef = useRef(null);
   const monitorVideoRef = useRef(null);
@@ -196,12 +264,17 @@ export default function AssessmentAttempt() {
   const fullscreenExitTimerRef = useRef(null);
   const fullscreenCountdownRef = useRef(null);
   const heartbeatFailureRef = useRef(0);
+  const screenshotGraceUntilRef = useRef(0);
   const thresholdNoticeRef = useRef({});
   const popupThrottleRef = useRef({});
   const securityStatusRef = useRef(CSE_STATUS_DEFAULTS);
   const violationScoreRef = useRef(0);
   const pauseCountRef = useRef(0);
   const faceDetectorRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const audioAnalyserRef = useRef(null);
+  const audioDataRef = useRef(null);
+  const monitoringCooldownRef = useRef({});
   const cameraViolationStreakRef = useRef({ type: '', count: 0, at: 0 });
   const idleTimerRef = useRef(null);
   const lastActivityRef = useRef(Date.now());
@@ -217,8 +290,27 @@ export default function AssessmentAttempt() {
   const isSubmitted = submission?.status === 'submitted';
   const secureActive = phase === 'active' && !isSubmitted;
   const securitySettings = useMemo(() => assessment?.settings || {}, [assessment?.settings]);
+  const watermarkConfig = useMemo(() => {
+    const type = securitySettings.watermarkTextType || 'platform';
+    const student = submission?.studentSnapshot || {};
+    let text = 'PeerPrep';
+    if (type === 'candidate_name') text = student.name || submission?.studentName || 'Candidate';
+    else if (type === 'candidate_email') text = student.email || submission?.studentEmail || 'candidate@peerprep';
+    else if (type === 'candidate_id') text = student.studentId || submission?.studentRollNo || 'PP-Student';
+    else if (type === 'custom') text = securitySettings.watermarkCustomText || 'PeerPrep';
+    return {
+      enabled: Boolean(securitySettings.questionWatermark),
+      text,
+      opacity: Math.max(0.04, Math.min(0.35, Number(securitySettings.watermarkOpacity || 12) / 100)),
+      color: securitySettings.watermarkColor || '#cbd5e1',
+      angle: Number(securitySettings.watermarkAngle ?? -45) || -45,
+      spacing: Math.max(120, Number(securitySettings.watermarkSpacing || 220) || 220),
+      fontSize: Math.max(14, Number(securitySettings.watermarkFontSize || 24) || 24),
+    };
+  }, [securitySettings, submission]);
   const fullscreenRequired = Boolean(securitySettings.enableFullscreen);
   const cameraRequired = Boolean(securitySettings.cameraMonitoring);
+  const audioMonitoringEnabled = Boolean(securitySettings.audioMonitoring);
   const tabGuardEnabled = Boolean(securitySettings.tabSwitchDetection);
   const copyBlockEnabled = Boolean(securitySettings.disableCopyPaste);
   const preventMultipleTabs = Boolean(securitySettings.preventMultipleTabs);
@@ -233,16 +325,19 @@ export default function AssessmentAttempt() {
   const idleDetection = Boolean(securitySettings.idleDetection);
   const idleThresholdMs = Math.max(1, Number(securitySettings.idleThresholdMin || 5)) * 60 * 1000;
   const idleAction = securitySettings.idleAction || 'warn';
+  const sectionWiseLock = Boolean(securitySettings.sectionWiseLock);
+  const sectionGraceSec = Number(securitySettings.sectionGraceSec || 10);
   const duplicateTabCount = detectedTabs.filter((tab) => !tab.current).length;
   const totalViolations = tabSwitches + fullscreenExits + cameraFlags + copyPasteCount;
+  const totalWarnings = totalViolations + screenshotWarnings;
   const forcePauseActive = isPaused && phase === 'validation' && !isSubmitted;
   const securityHeartbeat = useMemo(() => ({
     fullscreen: !fullscreenRequired || Boolean(document.fullscreenElement),
     tabActive: !tabGuardEnabled || (document.hasFocus() && !document.hidden),
-    cameraActive: !cameraRequired || (Boolean(streamRef.current) && cameraIndicator !== 'warning'),
+    cameraActive: !cameraRequired || Boolean(streamRef.current),
     idle: Boolean(securityStatus.idle),
     duplicateTab: preventMultipleTabs && duplicateTabCount > 0,
-  }), [fullscreenRequired, tabGuardEnabled, cameraRequired, cameraIndicator, securityStatus.idle, preventMultipleTabs, duplicateTabCount]);
+  }), [fullscreenRequired, tabGuardEnabled, cameraRequired, securityStatus.idle, preventMultipleTabs, duplicateTabCount]);
   const finalRules = useMemo(() => {
     const rules = [];
     if (fullscreenRequired) rules.push({ type: 'bullet', text: 'Fullscreen mode must remain active during the test.' });
@@ -316,27 +411,34 @@ export default function AssessmentAttempt() {
     if (cameraIndicator === 'warning' || securityStatus.cameraActive === false) {
       return {
         ok: false,
-        text: securityNotice || 'Camera violation detected: please sit properly and keep your face centered.',
+        text: securityNotice || 'Camera cannot detect your face.',
       };
     }
     if (streamRef.current || cameraIndicator === 'normal') {
       return {
         ok: true,
-        text: 'Camera monitoring active: posture OK.',
+        text: 'Camera monitoring active.',
       };
     }
     return {
       ok: false,
-      text: 'Camera monitoring waiting for a stable camera feed.',
+      text: 'Waiting for a stable camera feed.',
     };
   }, [cameraRequired, cameraIndicator, securityStatus.cameraActive, securityNotice]);
 
   const answersArray = useMemo(() => (
     Object.entries(answersMap).map(([key, value]) => {
       const [sectionIndex, questionIndex] = key.split('-').map(Number);
-      return { sectionIndex, questionIndex, ...value };
+      const displayQuestion = assessment?.sections?.[sectionIndex]?.questions?.[questionIndex];
+      const originSectionIndex = Number(displayQuestion?.__originSectionIndex ?? sectionIndex);
+      const originQuestionIndex = Number(displayQuestion?.__originQuestionIndex ?? questionIndex);
+      const payload = { ...value };
+      if (typeof value?.answer === 'number' && Array.isArray(displayQuestion?.__optionOrder)) {
+        payload.answer = displayQuestion.__optionOrder[value.answer] ?? value.answer;
+      }
+      return { sectionIndex: originSectionIndex, questionIndex: originQuestionIndex, ...payload };
     })
-  ), [answersMap]);
+  ), [answersMap, assessment]);
   const flatQuestions = useMemo(() => {
     const list = [];
     (assessment?.sections || []).forEach((sec, secIdx) => {
@@ -346,6 +448,35 @@ export default function AssessmentAttempt() {
     });
     return list;
   }, [assessment]);
+  const sectionLockPlan = useMemo(() => {
+    if (!assessment?.sections?.length || !sectionWiseLock) return [];
+    const totalDurationMs = Math.max(0, Number(assessment.duration || 0)) * 60 * 1000;
+    const totalQuestionCount = Math.max(1, flatQuestions.length);
+    let elapsed = 0;
+    return (assessment.sections || []).map((sec) => {
+      const questionCount = Math.max(1, sec.questions?.length || 0);
+      const durationMs = Math.round((totalDurationMs * questionCount) / totalQuestionCount);
+      const startsAtMs = elapsed;
+      elapsed += durationMs;
+      return {
+        startsAtMs,
+        endsAtMs: elapsed,
+      };
+    });
+  }, [assessment, sectionWiseLock, flatQuestions.length]);
+
+  const elapsedAssessmentMs = useMemo(() => {
+    if (!assessment?.duration) return 0;
+    const totalDurationMs = Math.max(0, Number(assessment.duration || 0)) * 60 * 1000;
+    return Math.max(0, totalDurationMs - timeLeft);
+  }, [assessment?.duration, timeLeft]);
+
+  const isSectionLocked = useCallback((sectionIndex) => {
+    if (!sectionWiseLock) return false;
+    const plan = sectionLockPlan[sectionIndex];
+    if (!plan) return false;
+    return elapsedAssessmentMs > plan.endsAtMs + (sectionGraceSec * 1000);
+  }, [sectionWiseLock, sectionLockPlan, elapsedAssessmentMs, sectionGraceSec]);
 
   const sectionStarts = useMemo(() => {
     let count = 0;
@@ -355,6 +486,23 @@ export default function AssessmentAttempt() {
       return start;
     });
   }, [assessment]);
+
+  const typeQuestionNumbers = useMemo(() => {
+    let mcqCount = 0;
+    let codingCount = 0;
+    const map = {};
+    flatQuestions.forEach((item) => {
+      const key = `${item.sectionIndex}-${item.questionIndex}`;
+      if (item.section?.type === 'coding') {
+        codingCount += 1;
+        map[key] = codingCount;
+      } else {
+        mcqCount += 1;
+        map[key] = mcqCount;
+      }
+    });
+    return map;
+  }, [flatQuestions]);
 
   const currentFlatIndex = useMemo(() => (
     flatQuestions.findIndex((item) => item.sectionIndex === activeSection && item.questionIndex === activeQuestion)
@@ -476,6 +624,7 @@ export default function AssessmentAttempt() {
   const triggerForcePause = useCallback((type, message, serverState = {}) => {
     const nowIso = serverState.lastPauseAt || new Date().toISOString();
     setLastPauseAt(nowIso);
+    setPauseStartedAt((prev) => prev || Date.now());
     setPauseCount((prev) => Math.max(prev + 1, Number(serverState.pauseCount || 0)));
     setViolationMessage(message || 'Security Violation Detected');
     setSecurityAction('pause');
@@ -516,9 +665,9 @@ export default function AssessmentAttempt() {
       title = 'Right-click blocked';
       text = 'Right-click is disabled by the assessment security settings.';
     } else if (CAMERA_VIOLATION_TYPES.has(type)) {
-      title = 'Camera violation detected';
-      text = message || 'Please sit properly and keep your face centered in the camera.';
-      tone = 'danger';
+      title = 'Camera attention needed';
+      text = message || 'Camera visibility is unstable. Please return to the frame.';
+      tone = 'warning';
     } else if (type === 'duplicate_tab') {
       title = 'Duplicate assessment tab';
       text = 'Close all other assessment tabs and continue only in this window.';
@@ -535,6 +684,19 @@ export default function AssessmentAttempt() {
       tone,
     });
   }, [tabSwitchAction, tabSwitches, tabSwitchLimit]);
+
+  const showScreenshotBlockedPopup = useCallback(() => {
+    screenshotGraceUntilRef.current = Date.now() + 8000;
+    const warningCount = totalWarnings + 1;
+    setScreenshotWarnings((prev) => prev + 1);
+    setSecurityPopup({
+      open: true,
+      title: 'Screenshots are not allowed',
+      message: `Screenshots are not allowed. Warning count: ${warningCount}.`,
+      tone: 'warning',
+    });
+    setSecurityNotice(`Screenshots are not allowed. Warning count: ${warningCount}.`);
+  }, [totalWarnings]);
 
   const recordViolation = useCallback(async (type, message, meta = {}) => {
     if (isSubmitted || !assessment?._id || !CSE_VALID_VIOLATIONS.has(type)) return null;
@@ -586,13 +748,18 @@ export default function AssessmentAttempt() {
         triggerForcePause(type, message, result);
         return result;
       }
-      if (!CAMERA_VIOLATION_TYPES.has(type)) {
+      if (CAMERA_VIOLATION_TYPES.has(type)) {
+        // Camera issues: show soft notice only, never interrupt exam
+        setSecurityNotice(message);
+      } else {
         showSecurityPopup(type, message, entry.meta, result);
         toast.info(message);
       }
       return result;
     } catch {
-      if (!CAMERA_VIOLATION_TYPES.has(type)) {
+      if (CAMERA_VIOLATION_TYPES.has(type)) {
+        setSecurityNotice(message);
+      } else {
         showSecurityPopup(type, message, entry.meta);
       }
       if (type === 'heartbeat_failure') {
@@ -659,17 +826,30 @@ export default function AssessmentAttempt() {
       setOffset(serverTime - localNow);
       setTimeLeft(allowedEnd - serverTime);
       setAllowedEndTime(allowedEnd);
-      setAssessment(data.assessment);
+      const attemptAssessment = transformAssessmentForAttempt(data.assessment, data.submission?._id || `${id}:preview`);
+      setAssessment(attemptAssessment);
       setSubmission(data.submission);
       const locallySawRules = localStorage.getItem(rulesSeenStorageKey) === '1';
       setHasSeenRules(Boolean(data.submission?.startedAt) || locallySawRules);
 
       const initialAnswers = {};
+      const displayIndexLookup = new Map();
+      (attemptAssessment?.sections || []).forEach((sectionItem, displaySectionIndex) => {
+        (sectionItem.questions || []).forEach((questionItem, displayQuestionIndex) => {
+          const originSectionIndex = Number(questionItem.__originSectionIndex ?? displaySectionIndex);
+          const originQuestionIndex = Number(questionItem.__originQuestionIndex ?? displayQuestionIndex);
+          displayIndexLookup.set(`${originSectionIndex}-${originQuestionIndex}`, { displaySectionIndex, displayQuestionIndex, questionItem });
+        });
+      });
       (data.submission?.answers || []).forEach((ans) => {
-        initialAnswers[answerKey(ans.sectionIndex, ans.questionIndex)] = {
-          answer: ans.answer,
-          language: ans.language,
-          code: ans.code,
+        const mapped = displayIndexLookup.get(`${ans.sectionIndex}-${ans.questionIndex}`);
+        if (!mapped) return;
+        const displayAnswer = { answer: ans.answer, language: ans.language, code: ans.code };
+        if (typeof ans.answer === 'number' && Array.isArray(mapped.questionItem?.__optionOrder)) {
+          displayAnswer.answer = mapped.questionItem.__optionOrder.findIndex((optionIndex) => optionIndex === ans.answer);
+        }
+        initialAnswers[answerKey(mapped.displaySectionIndex, mapped.displayQuestionIndex)] = {
+          ...displayAnswer,
         };
       });
       setAnswersMap(initialAnswers);
@@ -807,8 +987,12 @@ export default function AssessmentAttempt() {
       setSidebarPinned(false);
     }
     lastIsCodingRef.current = Boolean(isCodingForLayout);
-    setNavTypeFilter((prev) => (prev === 'all' ? (isCodingForLayout ? 'coding' : 'mcq') : prev));
   }, [assessment, isCodingForLayout]);
+
+  useEffect(() => {
+    const currentType = assessment?.sections?.[activeSection]?.type === 'coding' ? 'coding' : 'mcq';
+    setNavTypeFilter((prev) => (prev === 'all' ? currentType : prev));
+  }, [assessment, activeSection]);
 
   useEffect(() => {
     if (!isCodingForLayout) return;
@@ -938,6 +1122,13 @@ export default function AssessmentAttempt() {
     };
     const handleKeydown = (event) => {
       const key = event.key?.toLowerCase();
+      if (key === 'printscreen' || event.code === 'PrintScreen') {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation?.();
+        showScreenshotBlockedPopup();
+        return;
+      }
       const ctrlOrMeta = event.ctrlKey || event.metaKey;
       const blockedCtrlKey = ctrlOrMeta && ['c', 'v', 'x', 'a', 's', 'p', 'u', 'r'].includes(key);
       const blockedInsert = key === 'insert' && (event.shiftKey || ctrlOrMeta);
@@ -971,7 +1162,7 @@ export default function AssessmentAttempt() {
       document.removeEventListener('beforeinput', handleBeforeInput, capture);
       document.removeEventListener('keydown', handleKeydown, capture);
     };
-  }, [secureActive, copyBlockEnabled, blockRightClick, recordViolation]);
+  }, [secureActive, copyBlockEnabled, blockRightClick, recordViolation, showScreenshotBlockedPopup]);
 
   useEffect(() => {
     if (!secureActive || !idleDetection) return undefined;
@@ -1131,6 +1322,10 @@ export default function AssessmentAttempt() {
         streamRef.current.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
       }
+      if (audioContextRef.current?.close) {
+        audioContextRef.current.close().catch(() => {});
+        audioContextRef.current = null;
+      }
     };
   }, []);
 
@@ -1162,16 +1357,27 @@ export default function AssessmentAttempt() {
       cameraViolationStreakRef.current = { type, count: nextCount, at: Date.now() };
       setCameraIndicator('warning');
       setSecurityStatus((prev) => ({ ...prev, cameraActive: false }));
-      void recordViolation(type, message, {
-        ...meta,
-        source: 'camera_monitor',
-        persistent: nextCount >= 3,
-      });
+      setSecurityNotice(message);
+      if (type === 'camera_no_face') {
+        setFaceStatus('idle');
+      }
+      if (SOFT_CAMERA_WARNING_TYPES.has(type)) {
+        return;
+      }
+      if (nextCount >= 4) {
+        void recordViolation(type, message, {
+          ...meta,
+          source: 'camera_monitor',
+          persistent: true,
+        });
+      }
     };
     const markCameraNormal = () => {
       cameraViolationStreakRef.current = { type: '', count: 0, at: Date.now() };
       setCameraIndicator('normal');
       setSecurityStatus((prev) => ({ ...prev, cameraActive: true }));
+      setSecurityNotice('');
+      setFaceStatus('detected');
     };
     const fallbackPresenceCheck = () => {
       if (!streamRef.current || !video || !canvas || !ctx) {
@@ -1211,7 +1417,7 @@ export default function AssessmentAttempt() {
           const faces = await faceDetectorRef.current.detect(video);
           if (cancelled) return;
           if (!faces.length) {
-            emitCameraViolation('camera_no_face', 'No face detected. Please stay in frame.', { confidence: 0.95 });
+            emitCameraViolation('camera_no_face', 'Camera cannot detect your face. Please stay centered in frame.', { confidence: 0.95 });
             return;
           }
           if (faces.length > 1) {
@@ -1239,7 +1445,7 @@ export default function AssessmentAttempt() {
       if (fallback?.detected) {
         markCameraNormal();
       } else {
-        emitCameraViolation('camera_no_face', 'Face or human presence was not clearly detected.', {
+        emitCameraViolation('camera_no_face', 'Camera cannot detect your face. Please stay centered in frame.', {
           confidence: fallback?.confidence || 0,
           variance: fallback?.variance || 0,
           detector: 'frame_variance_fallback',
@@ -1257,12 +1463,85 @@ export default function AssessmentAttempt() {
   }, [secureActive, cameraRequired, recordViolation]);
 
   useEffect(() => {
+    if (!secureActive || !cameraRequired || !assessment?._id) return undefined;
+    const intervalSec = Math.max(15, Number(securitySettings.cameraSnapshotInterval || 120) || 120);
+    const timer = setInterval(() => {
+      const video = monitorVideoRef.current;
+      if (!video || video.readyState < 2) return;
+      const canvas = document.createElement('canvas');
+      canvas.width = 200;
+      canvas.height = 120;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      void api.logStudentAssessmentMonitoring(assessment._id, {
+        snapshot: {
+          type: 'camera',
+          capturedAt: new Date().toISOString(),
+          dataUrl: canvas.toDataURL('image/jpeg', 0.45),
+          width: canvas.width,
+          height: canvas.height,
+        },
+      }).catch(() => {});
+    }, intervalSec * 1000);
+    return () => clearInterval(timer);
+  }, [secureActive, cameraRequired, assessment?._id, securitySettings.cameraSnapshotInterval]);
+
+  useEffect(() => {
+    if (!secureActive || !audioMonitoringEnabled || !assessment?._id || !streamRef.current) return undefined;
+    let cancelled = false;
+    const threshold = Math.max(10, Number(securitySettings.audioNoiseThreshold || 65) || 65);
+    const cooldownMs = Math.max(5000, (Number(securitySettings.audioEventCooldownSec || 20) || 20) * 1000);
+    const setup = async () => {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        audioContextRef.current = audioContextRef.current || new AudioCtx();
+        const source = audioContextRef.current.createMediaStreamSource(streamRef.current);
+        const analyser = audioContextRef.current.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+        audioAnalyserRef.current = analyser;
+        audioDataRef.current = new Uint8Array(analyser.frequencyBinCount);
+      } catch {
+        // ignore unsupported audio analysis
+      }
+    };
+    void setup();
+    const interval = setInterval(() => {
+      if (cancelled || !audioAnalyserRef.current || !audioDataRef.current) return;
+      audioAnalyserRef.current.getByteFrequencyData(audioDataRef.current);
+      const avg = audioDataRef.current.reduce((sum, value) => sum + value, 0) / Math.max(1, audioDataRef.current.length);
+      const pseudoDb = Math.round((avg / 255) * 100);
+      setAudioLevel(pseudoDb);
+      if (pseudoDb < threshold) return;
+      const now = Date.now();
+      if (now - (monitoringCooldownRef.current.audio || 0) < cooldownMs) return;
+      monitoringCooldownRef.current.audio = now;
+      setSecurityNotice(`Background noise is above the allowed threshold (${pseudoDb}/${threshold}). Please keep your environment quiet.`);
+      void api.logStudentAssessmentMonitoring(assessment._id, {
+        event: {
+          type: 'audio_threshold',
+          at: new Date().toISOString(),
+          message: 'Audio threshold exceeded during assessment.',
+          meta: { level: pseudoDb, threshold },
+        },
+      }).catch(() => {});
+    }, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [secureActive, audioMonitoringEnabled, assessment?._id, securitySettings.audioNoiseThreshold, securitySettings.audioEventCooldownSec]);
+
+  useEffect(() => {
     if (!secureActive) return undefined;
     const sendHeartbeat = async () => {
+      const screenshotGraceActive = Date.now() < screenshotGraceUntilRef.current;
       const status = {
-        fullscreen: !fullscreenRequired || Boolean(document.fullscreenElement),
-        tabActive: !tabGuardEnabled || (document.hasFocus() && !document.hidden),
-        cameraActive: !cameraRequired || (Boolean(streamRef.current) && securityStatusRef.current.cameraActive !== false),
+        fullscreen: screenshotGraceActive || !fullscreenRequired || Boolean(document.fullscreenElement),
+        tabActive: screenshotGraceActive || !tabGuardEnabled || (document.hasFocus() && !document.hidden),
+        cameraActive: !cameraRequired || Boolean(streamRef.current),
         idle: Boolean(securityStatusRef.current.idle),
         duplicateTab: Boolean(securityStatusRef.current.duplicateTab),
       };
@@ -1277,7 +1556,7 @@ export default function AssessmentAttempt() {
         if (typeof result?.violationScore === 'number') setViolationScore(result.violationScore);
         if (typeof result?.pauseCount === 'number') setPauseCount(result.pauseCount);
         if (result?.lastPauseAt) setLastPauseAt(result.lastPauseAt);
-        if (result?.inconsistent) {
+        if (result?.inconsistent && !screenshotGraceActive) {
           await recordViolation('heartbeat_failure', 'Security heartbeat reported an inconsistent session state.', {
             source: 'heartbeat_inconsistent',
             status,
@@ -1285,6 +1564,7 @@ export default function AssessmentAttempt() {
           return;
         }
       } catch {
+        if (screenshotGraceActive) return;
         if (Date.now() - heartbeatFailureRef.current > 12000) {
           heartbeatFailureRef.current = Date.now();
           void recordViolation('heartbeat_failure', 'Security heartbeat failed. Please check your connection.', {
@@ -1563,16 +1843,22 @@ export default function AssessmentAttempt() {
       return;
     }
     try {
+      const resumingPausedAttempt = Boolean(isPaused && pauseStartedAt && allowedEndTime);
       if (fullscreenRequired) await requestFullscreen();
       if (cameraRequired) await ensureCamera();
       const data = await api.beginStudentAssessment(assessment._id);
       const serverTime = new Date(data.serverTime).getTime();
-      const allowedEnd = new Date(data.allowedEnd).getTime();
+      const serverAllowedEnd = new Date(data.allowedEnd).getTime();
+      const pauseDuration = resumingPausedAttempt ? Math.max(0, Date.now() - pauseStartedAt) : 0;
+      const adjustedAllowedEnd = resumingPausedAttempt
+        ? Math.max(serverAllowedEnd, allowedEndTime + pauseDuration)
+        : serverAllowedEnd;
       setOffset(serverTime - Date.now());
-      setTimeLeft(allowedEnd - serverTime);
-      setAllowedEndTime(allowedEnd);
+      setTimeLeft(adjustedAllowedEnd - serverTime);
+      setAllowedEndTime(adjustedAllowedEnd);
       setSubmission(data.submission);
       setIsPaused(false);
+      setPauseStartedAt(null);
       setSecurityStatus({
         fullscreen: !fullscreenRequired || Boolean(document.fullscreenElement),
         cameraActive: !cameraRequired || Boolean(streamRef.current),
@@ -1740,11 +2026,12 @@ export default function AssessmentAttempt() {
   };
 
   const canNavigateToQuestion = (sectionIndex, questionIndex) => {
+    if (isSectionLocked(sectionIndex)) return false;
     if (!restrictNavigation) return true;
     const targetFlatIndex = flatQuestions.findIndex((item) => item.sectionIndex === sectionIndex && item.questionIndex === questionIndex);
-    if (targetFlatIndex < 0) return false;
-    if (targetFlatIndex >= currentFlatIndex) return true;
-    return allowSectionReview && sectionIndex === activeSection;
+    if (targetFlatIndex === -1) return false;
+    if (allowSectionReview && sectionIndex === activeSection) return true;
+    return targetFlatIndex >= currentFlatIndex;
   };
 
   const navigateToQuestion = (sectionIndex, questionIndex) => {
@@ -1806,7 +2093,14 @@ export default function AssessmentAttempt() {
 
   const markForReviewAndNext = () => {
     const key = answerKey(activeSection, activeQuestion);
-    setMarkedMap((prev) => ({ ...prev, [key]: true }));
+    setMarkedMap((prev) => {
+      if (prev[key]) {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      }
+      return { ...prev, [key]: true };
+    });
     goToNextQuestion();
   };
 
@@ -1814,6 +2108,17 @@ export default function AssessmentAttempt() {
     void handleSave();
     goToNextQuestion();
   };
+
+  useEffect(() => {
+    if (!sectionWiseLock || !assessment?.sections?.length) return;
+    if (!isSectionLocked(activeSection)) return;
+    const nextAvailableSection = assessment.sections.findIndex((_, index) => !isSectionLocked(index));
+    if (nextAvailableSection >= 0 && nextAvailableSection !== activeSection) {
+      setActiveSection(nextAvailableSection);
+      setActiveQuestion(0);
+      toast.info('The previous section has been locked based on the assessment timing settings.');
+    }
+  }, [sectionWiseLock, assessment, activeSection, isSectionLocked, toast]);
 
   if (loading) {
     return <div className="min-h-screen bg-white dark:bg-gray-900 pt-20 text-center text-slate-500">Loading assessment...</div>;
@@ -1878,16 +2183,14 @@ export default function AssessmentAttempt() {
       const hasMcq = flatQuestions.some((item) => item.section?.type !== 'coding');
       const hasCoding = flatQuestions.some((item) => item.section?.type === 'coding');
       const effectiveFilter = navTypeFilter === 'all'
-        ? (isCodingForLayout ? 'coding' : 'mcq')
+        ? (section?.type === 'coding' ? 'coding' : 'mcq')
         : navTypeFilter;
       const navItems = flatQuestions.filter((item) => {
         const kind = item.section?.type === 'coding' ? 'coding' : 'mcq';
         return effectiveFilter === 'coding' ? kind === 'coding' : kind === 'mcq';
       });
-
       const allowCollapse = Boolean(isCodingForLayout);
       const isCollapsed = allowCollapse && !sidebarExpanded;
-
       const togglePinned = () => {
         if (!allowCollapse) return;
         setSidebarPinned((prev) => {
@@ -1896,33 +2199,37 @@ export default function AssessmentAttempt() {
           return nextPinned;
         });
       };
-
+      const answeredCnt = navItems.filter((item) => questionStatus(item.sectionIndex, item.questionIndex) === 'answered').length;
+      const reviewCnt = navItems.filter((item) => questionStatus(item.sectionIndex, item.questionIndex) === 'review').length;
+      const unansweredCnt = navItems.length - answeredCnt - reviewCnt;
+      const pct = navItems.length > 0 ? Math.round((answeredCnt / navItems.length) * 100) : 0;
+      const currentTypeLabel = effectiveFilter === 'coding' ? 'Coding' : 'MCQ / Short';
       return (
         <aside
-          onMouseEnter={() => {
-            if (!allowCollapse || sidebarPinned) return;
-            setSidebarExpanded(true);
-          }}
-          onMouseLeave={() => {
-            if (!allowCollapse || sidebarPinned) return;
-            setSidebarExpanded(false);
-          }}
-          className={`flex-none shrink-0 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900 w-full lg:min-h-0 lg:overflow-y-auto transition-all duration-200 ${
-            isCollapsed
-              ? 'p-1.5 lg:w-14 lg:min-w-[3.5rem]'
-              : 'p-2.5 lg:w-64 lg:min-w-[16rem]'
-          }`}
+          onMouseEnter={() => { if (!allowCollapse || sidebarPinned) return; setSidebarExpanded(true); }}
+          onMouseLeave={() => { if (!allowCollapse || sidebarPinned) return; setSidebarExpanded(false); }}
+          className={`flex-none shrink-0 w-full lg:min-h-0 lg:overflow-y-auto transition-all duration-300 ease-in-out flex flex-col overflow-hidden rounded-[28px] border border-cyan-100/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(242,251,252,0.98)_48%,rgba(255,255,255,0.96)_100%)] shadow-[0_28px_70px_-44px_rgba(8,145,178,0.38)] backdrop-blur dark:border-slate-700 dark:bg-gray-900 ${isCollapsed ? 'lg:w-[4.5rem] lg:min-w-[4.5rem]' : 'lg:w-[21.5rem] lg:min-w-[21.5rem]'}`}
           aria-label="Assessment sidebar"
         >
-          <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} gap-2`}> 
+          {/* Header */}
+          <div className="relative flex items-center justify-between shrink-0 overflow-hidden border-b border-cyan-200/70 bg-[linear-gradient(135deg,#0f89ab_0%,#12a3bb_35%,#1abc87_100%)] px-5 py-5">
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.28),transparent_58%)]" />
             {!isCollapsed && (
-              <div className="text-xs font-semibold text-slate-800 dark:text-white">Navigator</div>
+              <div className="min-w-0 flex-1">
+                <div className="text-[10px] font-bold uppercase tracking-[0.28em] text-cyan-50/90">Question Palette</div>
+                <div className="mt-2 text-xl font-black text-white truncate leading-tight">{assessment?.title || 'Assessment'}</div>
+                <div className="mt-2 flex items-center gap-2 text-[12px] font-semibold text-cyan-50/95">
+                  <span>{currentTypeLabel}</span>
+                  <span className="h-1 w-1 rounded-full bg-white/80" />
+                  <span>{navItems.length} Questions</span>
+                </div>
+              </div>
             )}
             {allowCollapse && (
               <button
                 type="button"
                 onClick={togglePinned}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                className={`relative z-[1] flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/14 text-cyan-50 hover:bg-white/24 hover:text-white transition-colors ${isCollapsed ? 'mx-auto' : 'ml-3'}`}
                 aria-label={sidebarPinned ? 'Unpin sidebar' : 'Pin sidebar'}
                 title={sidebarPinned ? 'Unpin sidebar' : 'Pin sidebar'}
               >
@@ -1932,60 +2239,67 @@ export default function AssessmentAttempt() {
           </div>
 
           {isCollapsed ? (
-            <div className="mt-2 flex flex-col items-center gap-2 text-[10px] text-slate-500">
-              <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" title="Answered" />
-              <div className="h-1.5 w-1.5 rounded-full bg-rose-500" title="Not Answered" />
-              <div className="h-1.5 w-1.5 rounded-full bg-purple-500" title="Marked" />
+            <div className="flex flex-1 flex-col items-center gap-3 bg-white/90 py-5 dark:bg-gray-900">
+              <div className="flex flex-col items-center gap-1.5">
+                <div className="h-2.5 w-2.5 rounded-full bg-emerald-700" title={`Answered: ${answeredCnt}`} />
+                <div className="h-2.5 w-2.5 rounded-full bg-rose-600" title={`Not Answered: ${unansweredCnt}`} />
+                <div className="h-2.5 w-2.5 rounded-full bg-amber-500" title={`Marked: ${reviewCnt}`} />
+              </div>
+              <div className="h-px w-7 bg-slate-200 dark:bg-gray-700" />
+              <div className="text-[9px] font-black text-slate-400 tabular-nums">{pct}%</div>
             </div>
           ) : (
-            <>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {hasMcq && (
-                  <button
-                    type="button"
-                    onClick={() => setNavTypeFilter('mcq')}
-                    className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold ${
-                      effectiveFilter === 'mcq' ? 'border-sky-300 bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    MCQ
-                  </button>
-                )}
-                {hasCoding && (
-                  <button
-                    type="button"
-                    onClick={() => setNavTypeFilter('coding')}
-                    className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold ${
-                      effectiveFilter === 'coding' ? 'border-sky-300 bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    Coding
-                  </button>
-                )}
+            <div className="flex flex-1 flex-col overflow-y-auto bg-white/95 dark:bg-gray-900">
+              {/* Type filter */}
+              {(hasMcq && hasCoding) && (
+                <div className="px-4 pt-4 pb-0 shrink-0">
+                  <div className="flex gap-1.5 rounded-2xl border border-cyan-100 bg-[linear-gradient(180deg,#effbfc_0%,#eef8fb_100%)] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
+                  {hasMcq && (
+                    <button type="button" onClick={() => setNavTypeFilter('mcq')}
+                      className={`flex-1 rounded-xl px-3 py-2.5 text-[12px] font-extrabold transition-all ${effectiveFilter === 'mcq' ? 'bg-white text-cyan-800 shadow-[0_10px_24px_-18px_rgba(8,145,178,0.9)] ring-1 ring-cyan-200' : 'text-slate-600 hover:bg-white/80 hover:text-cyan-700 dark:text-gray-300'}`}>
+                      MCQ / Short
+                    </button>
+                  )}
+                  {hasCoding && (
+                    <button type="button" onClick={() => setNavTypeFilter('coding')}
+                      className={`flex-1 rounded-xl px-3 py-2.5 text-[12px] font-extrabold transition-all ${effectiveFilter === 'coding' ? 'bg-white text-emerald-800 shadow-[0_10px_24px_-18px_rgba(5,150,105,0.9)] ring-1 ring-emerald-200' : 'text-slate-600 hover:bg-white/80 hover:text-emerald-700 dark:text-gray-300'}`}>
+                      Coding
+                    </button>
+                  )}
+                  </div>
+                </div>
+              )}
+
+              {/* Legend */}
+              <div className="px-4 pt-4 pb-2 flex flex-wrap gap-x-4 gap-y-2 shrink-0">
+                {[['bg-emerald-700','Answered'],['bg-rose-600','Not Done'],['bg-amber-500','Review']].map(([color,label]) => (
+                  <span key={label} className="inline-flex items-center gap-2 text-[11px] font-semibold text-slate-600 dark:text-gray-500">
+                    <span className={`h-3 w-3 rounded-[4px] ${color} inline-block shadow-sm`} />{label}
+                  </span>
+                ))}
               </div>
 
-              <div className="mt-2 grid grid-cols-5 gap-1.5">
+              {/* Question grid */}
+              <div className="px-4 pt-2 pb-4 grid grid-cols-5 gap-3 shrink-0">
                 {navItems.map((item) => {
                   const status = questionStatus(item.sectionIndex, item.questionIndex);
-                  const statusTone = status === 'answered'
-                    ? 'bg-emerald-500 text-white'
-                    : status === 'review'
-                      ? 'bg-purple-500 text-white'
-                      : 'bg-rose-500 text-white';
                   const isActive = item.sectionIndex === activeSection && item.questionIndex === activeQuestion;
-                  const number = (sectionStarts[item.sectionIndex] || 0) + item.questionIndex + 1;
+                  const number = typeQuestionNumbers[`${item.sectionIndex}-${item.questionIndex}`] || (item.questionIndex + 1);
                   const canNavigate = canNavigateToQuestion(item.sectionIndex, item.questionIndex);
+                  let cls = '';
+                  if (isActive) cls = 'relative z-10 border border-cyan-400 bg-[linear-gradient(135deg,#1095bb_0%,#0ea5c9_54%,#11b7d8_100%)] text-white shadow-[0_18px_34px_-18px_rgba(8,145,178,0.95)] ring-4 ring-cyan-100';
+                  else if (status === 'answered') cls = 'border border-emerald-300/80 bg-emerald-50 text-emerald-900 hover:bg-emerald-100 shadow-[0_10px_24px_-22px_rgba(5,150,105,0.9)] dark:bg-emerald-900/30 dark:border-emerald-700 dark:text-emerald-200';
+                  else if (status === 'review') cls = 'border border-amber-300/90 bg-amber-50 text-amber-800 hover:bg-amber-100 shadow-[0_10px_24px_-22px_rgba(245,158,11,0.85)] dark:bg-amber-900/30 dark:border-amber-700 dark:text-amber-200';
+                  else cls = 'border border-rose-300/80 bg-white text-rose-700 hover:border-rose-400 hover:bg-rose-50 shadow-[0_10px_24px_-24px_rgba(225,29,72,0.55)] dark:border-rose-800 dark:bg-rose-950/20 dark:text-rose-200';
                   return (
                     <button
                       key={`nav-${item.sectionIndex}-${item.questionIndex}`}
                       type="button"
                       onClick={() => navigateToQuestion(item.sectionIndex, item.questionIndex)}
                       disabled={!canNavigate}
-                      className={`h-7 w-7 rounded-lg text-[10px] font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${statusTone} ${
-                        isActive ? 'ring-2 ring-sky-400 ring-offset-2' : ''
-                      }`}
+                      className={`h-12 w-full rounded-xl text-[15px] font-black transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-40 ${cls}`}
                       aria-label={`Go to question ${number}`}
-                      title={`Question ${number}`}
+                      title={`Q${number} - ${status}`}
                     >
                       {number}
                     </button>
@@ -1993,66 +2307,59 @@ export default function AssessmentAttempt() {
                 })}
               </div>
 
-              <div className="mt-2 flex flex-wrap gap-1.5 text-[9px] text-slate-600">
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-emerald-700">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                  Answered
-                </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-1.5 py-0.5 text-rose-700">
-                  <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
-                  Not Answered
-                </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-1.5 py-0.5 text-purple-700">
-                  <span className="h-1.5 w-1.5 rounded-full bg-purple-500" />
-                  Marked
-                </span>
-              </div>
-
-              <div className="mt-3 border-t border-slate-200 pt-2 dark:border-gray-700">
-                <div className="text-[10px] font-semibold text-slate-700 dark:text-gray-200">Progress</div>
-                <div className="mt-1.5 grid grid-cols-2 gap-1.5 text-[10px]">
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 dark:border-gray-700 dark:bg-gray-800">
-                    <div className="text-[9px] text-slate-500 dark:text-gray-300">Total</div>
-                    <div className="text-xs font-semibold text-slate-900 dark:text-white">{progressCounts.total}</div>
-                  </div>
-                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 dark:border-emerald-800 dark:bg-emerald-900/20">
-                    <div className="text-[9px] text-emerald-700 dark:text-emerald-300">Attempted</div>
-                    <div className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">{progressCounts.answered}</div>
-                  </div>
-                  <div className="rounded-lg border border-rose-200 bg-rose-50 px-2 py-1.5 dark:border-rose-800 dark:bg-rose-900/20">
-                    <div className="text-[9px] text-rose-700 dark:text-rose-300">Not Attempted</div>
-                    <div className="text-xs font-semibold text-rose-700 dark:text-rose-300">{progressCounts.unanswered}</div>
-                  </div>
-                  <div className="rounded-lg border border-purple-200 bg-purple-50 px-2 py-1.5 dark:border-purple-800 dark:bg-purple-900/20">
-                    <div className="text-[9px] text-purple-700 dark:text-purple-300">Marked</div>
-                    <div className="text-xs font-semibold text-purple-700 dark:text-purple-300">{progressCounts.review}</div>
-                  </div>
+              {/* Progress */}
+              <div className="px-4 pb-4 shrink-0">
+                <div className="mb-3 rounded-[22px] border border-cyan-100 bg-white px-4 py-3 shadow-[0_18px_45px_-34px_rgba(8,145,178,0.3)]">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Progress</span>
+                  <span className="text-[12px] font-black text-cyan-700 dark:text-cyan-300">{pct}%</span>
                 </div>
-
-                <div className="mt-2 space-y-1">
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
-                    {saving ? 'Saving...' : 'Auto-saved'}
+                <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-gray-700">
+                  <div className="h-full rounded-full bg-gradient-to-r from-sky-500 via-cyan-500 to-emerald-500 transition-all duration-500" style={{ width: `${pct}%` }} />
+                </div>
+              </div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded-2xl bg-emerald-50 dark:bg-emerald-900/25 border border-emerald-200 dark:border-emerald-800 py-3">
+                    <div className="text-2xl font-black text-emerald-800 dark:text-emerald-200">{answeredCnt}</div>
+                    <div className="text-[11px] text-emerald-700 dark:text-emerald-300 font-semibold">Done</div>
                   </div>
-                  <div className="text-[10px] text-slate-500 dark:text-gray-400">
-                    Violations: {totalViolations} • Score: {violationScore}
+                  <div className="rounded-2xl bg-rose-50 dark:bg-rose-900/25 border border-rose-200 dark:border-rose-800 py-3">
+                    <div className="text-2xl font-black text-rose-700 dark:text-rose-200">{unansweredCnt}</div>
+                    <div className="text-[11px] text-rose-600 dark:text-rose-300 font-semibold">Left</div>
+                  </div>
+                  <div className="rounded-2xl bg-amber-50 dark:bg-amber-900/25 border border-amber-200 dark:border-amber-800 py-3">
+                    <div className="text-2xl font-black text-amber-700 dark:text-amber-200">{reviewCnt}</div>
+                    <div className="text-[11px] text-amber-600 dark:text-amber-300 font-semibold">Review</div>
                   </div>
                 </div>
               </div>
 
-              <div className="mt-3 border-t border-slate-200 pt-2 dark:border-gray-700">
+              {/* Timer */}
+              <div className="border-t border-cyan-100 px-4 pb-4 pt-3 shrink-0 dark:border-gray-700">
+                <div className="rounded-[22px] bg-[linear-gradient(135deg,#1e293b_0%,#25324a_100%)] dark:bg-gray-800 px-4 py-3.5 flex items-center justify-between shadow-[0_20px_46px_-34px_rgba(15,23,42,0.95)]">
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-5 w-5 shrink-0 text-cyan-300" />
+                    <span className="text-[2rem] leading-none font-black text-white tabular-nums tracking-tight">{formatTime(timeLeft)}</span>
+                  </div>
+                  <span className={`text-[11px] font-bold px-3 py-1 rounded-full ${saving ? 'bg-amber-500/20 text-amber-300' : 'bg-emerald-500/20 text-emerald-300'}`}>
+                    {saving ? 'Saving...' : 'Saved'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Submit */}
+              <div className="px-4 pb-5 shrink-0 mt-auto">
                 <button
                   type="button"
                   onClick={() => setShowSubmitConfirm(true)}
                   disabled={isSubmitted}
-                  className="w-full rounded-lg bg-emerald-600 px-3 py-1.5 text-[10px] font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+                  className="w-full rounded-[20px] bg-gradient-to-r from-emerald-600 to-emerald-500 py-4 text-xl font-black text-white shadow-[0_20px_40px_-24px_rgba(16,185,129,0.8)] dark:shadow-none hover:from-emerald-500 hover:to-emerald-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Submit
+                  {isSubmitted ? 'Submitted' : 'Submit Assessment'}
                 </button>
-                <div className="mt-1 text-[9px] text-slate-500 dark:text-gray-400">
-                  Submit ends the assessment attempt.
-                </div>
+                <p className="mt-2 text-center text-[11px] text-slate-400 dark:text-gray-500">Answers are auto-saved</p>
               </div>
-            </>
+            </div>
           )}
         </aside>
       );
@@ -2085,13 +2392,43 @@ export default function AssessmentAttempt() {
       enabled: idleDetection,
     },
   ];
+  const watermarkColumns = useMemo(() => {
+    const spacing = Math.max(120, watermarkConfig.spacing);
+    return Array.from({ length: 12 }).map((_, index) => ({
+      id: `wm-${index}`,
+      left: `${(index % 4) * 28 + 6}%`,
+      top: `${Math.floor(index / 4) * 30 + 10}%`,
+      text: watermarkConfig.text,
+      spacing,
+    }));
+  }, [watermarkConfig]);
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 lg:h-screen lg:overflow-hidden">
+    <div className="relative min-h-screen bg-[linear-gradient(180deg,#f8fbff_0%,#f8fafc_36%,#eef2ff_100%)] text-slate-900 dark:bg-gray-900 lg:h-screen lg:overflow-hidden">
+      {showAssessmentWorkspace && watermarkConfig.enabled && (
+        <div className="pointer-events-none fixed inset-0 z-[1] overflow-hidden" aria-hidden="true">
+          {watermarkColumns.map((item) => (
+            <div
+              key={item.id}
+              className="absolute select-none whitespace-nowrap font-black uppercase tracking-[0.22em]"
+              style={{
+                left: item.left,
+                top: item.top,
+                transform: `rotate(${watermarkConfig.angle}deg)`,
+                color: watermarkConfig.color,
+                opacity: watermarkConfig.opacity,
+                fontSize: `${watermarkConfig.fontSize}px`,
+              }}
+            >
+              {item.text}
+            </div>
+          ))}
+        </div>
+      )}
       {!showAssessmentWorkspace && (
-        <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 text-center dark:bg-gray-950">
-          <div className="max-w-md">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-300">
+        <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.14),_transparent_42%),linear-gradient(180deg,#f8fbff_0%,#eef4ff_52%,#f8fafc_100%)] px-4 text-center dark:bg-gray-950">
+          <div className="max-w-md rounded-[28px] border border-white/80 bg-white/90 p-8 shadow-[0_30px_90px_-45px_rgba(15,23,42,0.35)] backdrop-blur">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-sky-50 text-sky-600 ring-1 ring-sky-100 dark:bg-sky-900/20 dark:text-sky-300">
               <ShieldCheck className="h-6 w-6" />
             </div>
             <h1 className="mt-4 text-xl font-semibold text-slate-900 dark:text-white">Secure assessment setup</h1>
@@ -2104,15 +2441,15 @@ export default function AssessmentAttempt() {
 
       {showAssessmentWorkspace && (
       <>
-      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur shadow-sm dark:border-gray-700 dark:bg-gray-900/95">
-        <div className="flex w-full flex-wrap items-center gap-2 px-3 py-2">
+      <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/92 backdrop-blur-xl shadow-[0_12px_32px_-24px_rgba(15,23,42,0.45)] dark:border-slate-700 dark:bg-gray-950/95">
+        <div className="flex w-full flex-wrap items-center gap-3 px-4 py-3">
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={goToPrevQuestion}
               disabled={!hasAllowedPrevQuestion}
               title="Previous question"
-              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50 hover:border-slate-300 disabled:opacity-40 transition-all shadow-sm"
             >
               <ChevronLeft className="h-3.5 w-3.5" />
               Prev
@@ -2125,13 +2462,13 @@ export default function AssessmentAttempt() {
           <div className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
             Q {currentQuestionNumber}/{totalQuestions || 1}
           </div>
-          <div className="flex flex-1 items-center justify-end gap-1.5">
+          <div className="flex flex-1 items-center justify-end gap-2">
             <button
               type="button"
               onClick={goToNextQuestion}
               disabled={!hasNextQuestion}
               title="Next question"
-              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50 hover:border-slate-300 disabled:opacity-40 transition-all shadow-sm"
             >
               Next
               <ChevronRight className="h-3.5 w-3.5" />
@@ -2171,14 +2508,6 @@ export default function AssessmentAttempt() {
                 {isSubmitting ? '...' : 'Submit'}
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => handleSubmit(false)}
-              disabled={isSubmitted}
-              className="rounded-md bg-emerald-600 px-2 py-1 text-[11px] font-semibold text-white disabled:opacity-50"
-            >
-              Submit
-            </button>
             {isCoding && (
               <button
                 type="button"
@@ -2192,39 +2521,36 @@ export default function AssessmentAttempt() {
         </div>
       </header>
       {isCoding ? (
-        <div className="w-full px-2 py-2 pb-12 md:px-3 lg:px-0 lg:h-[calc(100vh-56px)] lg:overflow-hidden">
-          <div className="flex h-full flex-col gap-2 lg:flex-row lg:min-h-0">
-            {questionNavigatorPanel}
-            <div className="flex min-h-0 flex-1 flex-col lg:min-h-0">
-              <div ref={splitContainerRef} className="flex min-h-0 flex-1 flex-col gap-2 lg:flex-row lg:min-h-0">
+        <div className={`w-full px-3 py-3 pb-16 md:px-4 lg:h-[calc(100vh-68px)] lg:overflow-hidden ${
+          cameraStatusLine && !cameraStatusLine.ok
+            ? 'bg-[linear-gradient(180deg,#fff5f5_0%,#fffdfd_18%,#ffffff_52%,#fff5f5_100%)]'
+            : 'bg-[linear-gradient(180deg,#eef7fb_0%,#f7fbfd_18%,#ffffff_52%,#f7fbfd_100%)]'
+        }`}>
+          <div className="flex h-full flex-col gap-3 lg:flex-row lg:min-h-0 lg:overflow-hidden">
+            <div className="flex min-h-0 flex-1 flex-col lg:min-h-0 lg:overflow-hidden min-w-0">
+              <div ref={splitContainerRef} className="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row lg:min-h-0">
                 <section
                   ref={problemPaneRef}
                   style={{ width: leftWidth ? `${leftWidth}px` : undefined, flexBasis: leftWidth ? `${leftWidth}px` : undefined }}
-                  className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-900 lg:h-full lg:overflow-y-auto"
+                  className={`rounded-[28px] bg-white/95 p-5 shadow-[0_24px_60px_-42px_rgba(15,23,42,0.35)] dark:bg-gray-900 lg:h-full lg:overflow-y-auto ${
+                    cameraStatusLine && !cameraStatusLine.ok ? 'border border-rose-300 shadow-[0_0_0_1px_rgba(244,63,94,0.08),0_24px_60px_-42px_rgba(225,29,72,0.35)]' : 'border border-slate-200/80 dark:border-gray-700'
+                  }`}
                 >
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <div className="text-[10px] text-slate-500">Section {activeSection + 1} • Coding • Marks {questionMarks}</div>
-                      <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                  <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 dark:border-gray-700 pb-3 mb-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 border border-violet-100 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-widest text-violet-600 dark:bg-violet-900/20 dark:border-violet-700 dark:text-violet-300 mb-1.5">
+                        Section {activeSection + 1} Â· Coding Â· {questionMarks}pt
+                      </div>
+                      <div className="text-[0.95rem] font-bold leading-snug text-slate-900 dark:text-white">
                         {question?.questionText || question?.problemDataSnapshot?.title || question?.coding?.problemData?.title || question?.coding?.title}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={toggleMarkForReview}
-                      title={isMarked ? 'Unmark review' : 'Mark this question for review'}
-                      className={`rounded-lg border px-2 py-1 text-[10px] font-semibold ${
-                        isMarked ? 'border-purple-200 bg-purple-50 text-purple-700' : 'border-slate-200 bg-slate-50 text-slate-600'
-                      }`}
-                    >
-                      {isMarked ? 'Marked' : 'Review'}
-                    </button>
                   </div>
 
-                  <div className="mt-2 space-y-2 text-xs text-slate-700 dark:text-gray-200">
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-2 dark:border-gray-700 dark:bg-gray-800">
-                      <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Problem Statement</div>
-                      <div className="mt-1">
+                  <div className="mt-2 space-y-3 text-xs text-slate-700 dark:text-gray-200">
+                    <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3 dark:border-gray-700 dark:bg-gray-800/60">
+                      <div className="text-[9px] font-extrabold uppercase tracking-[0.18em] text-slate-400 mb-2">Problem Statement</div>
+                      <div className="text-[0.82rem] leading-relaxed">
                         {(codingData?.description || codingData?.statement)
                           ? <RichTextPreview content={codingData.description || codingData.statement} />
                           : <div className="text-slate-500">No statement available.</div>}
@@ -2232,23 +2558,23 @@ export default function AssessmentAttempt() {
                     </div>
 
                     {(codingData?.constraints || codingData?.inputFormat || codingData?.outputFormat) && (
-                      <div className="grid gap-2 text-[10px] text-slate-600 dark:text-gray-300">
+                      <div className="grid gap-2 text-[0.78rem] text-slate-600 dark:text-gray-300">
                         {codingData.constraints && (
-                          <div>
-                            <div className="font-semibold text-slate-500">Constraints</div>
-                            <div>{codingData.constraints}</div>
+                          <div className="rounded-lg bg-white dark:bg-gray-900 border border-slate-100 dark:border-gray-700 px-2.5 py-2">
+                            <div className="text-[9px] font-extrabold uppercase tracking-[0.16em] text-slate-400 mb-1">Constraints</div>
+                            <div className="leading-relaxed">{codingData.constraints}</div>
                           </div>
                         )}
                         {codingData.inputFormat && (
-                          <div>
-                            <div className="font-semibold text-slate-500">Input Format</div>
-                            <div>{codingData.inputFormat}</div>
+                          <div className="rounded-lg bg-white dark:bg-gray-900 border border-slate-100 dark:border-gray-700 px-2.5 py-2">
+                            <div className="text-[9px] font-extrabold uppercase tracking-[0.16em] text-slate-400 mb-1">Input Format</div>
+                            <div className="leading-relaxed">{codingData.inputFormat}</div>
                           </div>
                         )}
                         {codingData.outputFormat && (
-                          <div>
-                            <div className="font-semibold text-slate-500">Output Format</div>
-                            <div>{codingData.outputFormat}</div>
+                          <div className="rounded-lg bg-white dark:bg-gray-900 border border-slate-100 dark:border-gray-700 px-2.5 py-2">
+                            <div className="text-[9px] font-extrabold uppercase tracking-[0.16em] text-slate-400 mb-1">Output Format</div>
+                            <div className="leading-relaxed">{codingData.outputFormat}</div>
                           </div>
                         )}
                       </div>
@@ -2285,7 +2611,9 @@ export default function AssessmentAttempt() {
                   <div className="h-12 w-1 rounded-full bg-slate-300" />
                 </button>
 
-                <section ref={editorPaneRef} className="flex min-h-[560px] flex-1 flex-col lg:min-h-0">
+                <section ref={editorPaneRef} className={`flex min-h-[520px] flex-1 flex-col rounded-[28px] bg-white/96 shadow-[0_24px_60px_-42px_rgba(15,23,42,0.35)] dark:bg-gray-900 lg:min-h-0 lg:overflow-hidden ${
+                  cameraStatusLine && !cameraStatusLine.ok ? 'border border-rose-300 shadow-[0_0_0_1px_rgba(244,63,94,0.08),0_24px_60px_-42px_rgba(225,29,72,0.35)]' : 'border border-slate-200/80 dark:border-gray-700'
+                }`}>
                   {section?.type === 'coding' && (() => {
                     const answerValue = answersMap[answerKey(activeSection, activeQuestion)] || {};
                     const key = answerKey(activeSection, activeQuestion);
@@ -2338,34 +2666,34 @@ export default function AssessmentAttempt() {
                 </section>
               </div>
             </div>
+            {questionNavigatorPanel}
           </div>
         </div>
       ) : (
-        <div className="w-full px-2 py-2 pb-12 md:px-3 lg:px-6 lg:h-[calc(100vh-56px)] lg:overflow-hidden">
-          <div className="flex h-full flex-col gap-2 lg:flex-row lg:min-h-0">
-            {questionNavigatorPanel}
-            <section className="flex min-h-0 flex-1 flex-col rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-900 lg:min-h-0 lg:overflow-y-auto">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <div className="text-[10px] text-slate-500">Section {activeSection + 1} • MCQ • Marks {questionMarks}</div>
-                  <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                    {question?.questionText || 'Question'}
+        <div className={`w-full px-3 py-3 pb-16 md:px-4 lg:h-[calc(100vh-68px)] lg:overflow-hidden ${
+          cameraStatusLine && !cameraStatusLine.ok
+            ? 'bg-[linear-gradient(180deg,#fff5f5_0%,#ffffff_40%,#fff7f7_100%)]'
+            : 'bg-[linear-gradient(180deg,rgba(248,250,252,0.95)_0%,rgba(255,255,255,0.98)_40%,rgba(248,250,252,1)_100%)]'
+        }`}>
+          <div className="flex h-full flex-col gap-3 lg:flex-row lg:min-h-0 lg:overflow-hidden">
+            <section className={`flex min-h-0 flex-1 flex-col overflow-hidden rounded-[22px] bg-white shadow-[0_18px_48px_-36px_rgba(8,145,178,0.22)] dark:bg-gray-900 lg:min-h-0 lg:overflow-y-auto ${
+              cameraStatusLine && !cameraStatusLine.ok ? 'border border-rose-300 shadow-[0_0_0_1px_rgba(244,63,94,0.08),0_18px_48px_-36px_rgba(225,29,72,0.34)]' : 'border border-cyan-100 dark:border-gray-700'
+            }`}>
+              <div className="border-b border-cyan-100 bg-[linear-gradient(180deg,#f2fbff_0%,#ffffff_100%)] px-6 py-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-600">
+                      <span className="rounded-md bg-cyan-600 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-white">Question {currentQuestionNumber}</span><span className="rounded-md border border-cyan-100 bg-cyan-50 px-2.5 py-1 text-cyan-700">Marks: {questionMarks}</span><span className="rounded-md border border-slate-200 bg-white px-2.5 py-1">{section?.type === 'mcq' ? 'MCQ' : 'Short Answer'}</span>
+                    </div>
+                    <div className="text-lg font-bold leading-snug text-slate-900 dark:text-white md:text-[1.15rem]">
+                      {question?.questionText || 'Question'}
+                    </div>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={toggleMarkForReview}
-                  title={isMarked ? 'Unmark review' : 'Mark this question for review'}
-                  className={`rounded-lg border px-2 py-1 text-[10px] font-semibold ${
-                    isMarked ? 'border-purple-200 bg-purple-50 text-purple-700' : 'border-slate-200 bg-slate-50 text-slate-600'
-                  }`}
-                >
-                  {isMarked ? 'Marked' : 'Review'}
-                </button>
               </div>
 
               {section?.type === 'mcq' && (
-                <div className="mt-2 space-y-2">
+                <div className="mt-3 space-y-2 px-5 pb-5 md:px-6">
                   {question.options?.map((opt, idx) => {
                     const selected = answersMap[answerKey(activeSection, activeQuestion)]?.answer === idx;
                     const optionLabel = String.fromCharCode(65 + idx);
@@ -2375,18 +2703,18 @@ export default function AssessmentAttempt() {
                         key={`opt-${idx}`}
                         onClick={() => updateAnswer(activeSection, activeQuestion, { answer: idx })}
                         disabled={isSubmitted}
-                        className={`flex w-full items-start gap-2 rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
+                        className={`flex w-full items-start gap-3 rounded-md border px-3.5 py-3 text-left transition-all duration-150 ${
                           selected
-                            ? 'border-sky-300 bg-sky-50 text-sky-700 shadow-sm'
-                            : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+                            ? 'border-cyan-400 bg-cyan-50 shadow-sm dark:bg-sky-900/20 dark:border-sky-500'
+                            : 'border-slate-200 bg-white hover:border-cyan-200 hover:bg-cyan-50/40 dark:border-gray-700 dark:bg-gray-900'
                         }`}
                       >
-                        <span className={`mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-semibold ${
-                          selected ? 'border-sky-500 bg-sky-500 text-white' : 'border-slate-300 text-slate-500'
+                        <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-extrabold transition-all ${
+                          selected ? 'bg-cyan-600 text-white' : 'border border-slate-300 text-slate-500 dark:border-gray-600'
                         }`}>
                           {optionLabel}
                         </span>
-                        <span className="text-xs text-slate-700">{opt}</span>
+                        <span className={`text-[0.94rem] leading-relaxed font-medium ${selected ? 'text-sky-900 dark:text-sky-100' : 'text-slate-700 dark:text-gray-200'}`}>{opt}</span>
                       </button>
                     );
                   })}
@@ -2394,52 +2722,55 @@ export default function AssessmentAttempt() {
               )}
 
               {(section?.type === 'short' || section?.type === 'one_line') && (
-                <textarea
-                  value={answersMap[answerKey(activeSection, activeQuestion)]?.answer || ''}
-                  onChange={(e) => updateAnswer(activeSection, activeQuestion, { answer: e.target.value })}
-                  rows="6"
-                  className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-800 shadow-sm focus:border-sky-300 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
-                  disabled={isSubmitted}
-                  placeholder="Type your response here"
-                />
+                <div className="px-6 pb-2">
+                  <textarea
+                    value={answersMap[answerKey(activeSection, activeQuestion)]?.answer || ''}
+                    onChange={(e) => updateAnswer(activeSection, activeQuestion, { answer: e.target.value })}
+                    rows="7"
+                    className="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-[0.94rem] leading-relaxed text-slate-800 shadow-sm transition-all focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+                    disabled={isSubmitted}
+                    placeholder="Type your response here..."
+                  />
+                </div>
               )}
 
-              <div className="mt-6 flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={markForReviewAndNext}
-                  title="Mark this question for review and move forward"
-                  className="rounded-xl border border-purple-200 bg-purple-50 px-4 py-2 text-xs font-semibold text-purple-700"
-                >
-                  Mark for Review & Next
-                </button>
-                <button
-                  type="button"
-                  onClick={clearResponse}
-                  title="Clear the selected response"
-                  className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                >
-                  Clear Response
-                </button>
-                <button
-                  type="button"
-                  onClick={saveAndNext}
-                  title="Save answer and move to the next question"
-                  className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white"
-                >
-                  Save & Next
-                </button>
+              <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-cyan-100 bg-[linear-gradient(180deg,#ffffff_0%,#f6fbfd_100%)] px-5 py-4 md:px-6 dark:border-gray-700">
                 <button
                   type="button"
                   onClick={goToPrevQuestion}
                   disabled={!hasAllowedPrevQuestion}
                   title="Go to previous question"
-                  className="ml-auto rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 transition-all"
                 >
-                  Previous
+                  <ChevronLeft className="h-3.5 w-3.5" /> Prev
+                </button>
+                <button
+                  type="button"
+                  onClick={markForReviewAndNext}
+                  title={isMarked ? 'Unmark and go to next question' : 'Mark for review and go to next question'}
+                  className="rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-bold text-amber-700 transition-all hover:bg-amber-100 dark:bg-amber-900/20 dark:border-amber-700 dark:text-amber-300"
+                >
+                  Mark & Next
+                </button>
+                <button
+                  type="button"
+                  onClick={clearResponse}
+                  title="Clear the selected response"
+                  className="rounded-md border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-500 hover:bg-slate-50 dark:border-gray-600 dark:bg-gray-800 transition-all"
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  onClick={saveAndNext}
+                  title="Save and advance"
+                  className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-5 py-2 text-xs font-bold text-white transition-all hover:bg-emerald-500 shadow-md shadow-emerald-200 dark:shadow-none"
+                >
+                  Save & Next <ChevronRight className="h-3.5 w-3.5" />
                 </button>
               </div>
             </section>
+            {questionNavigatorPanel}
           </div>
         </div>
       )}
@@ -2551,39 +2882,75 @@ export default function AssessmentAttempt() {
 
               {currentSetupStepKey === 'camera' && (
                 <div className="space-y-4">
-                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Step 2: Camera Verification</div>
-                  {cameraRequired ? (
-                    <>
-                      <p className="text-sm text-slate-600 dark:text-gray-300">Camera access is required by the assessment settings.</p>
-                      <div className="mx-auto w-full max-w-lg">
-                        <div className="relative h-40 w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-900/10 dark:border-gray-700 sm:h-44">
-                          <video ref={validationVideoRef} className="h-full w-full object-cover object-center" muted playsInline autoPlay />
-                          <div className="pointer-events-none absolute inset-3 rounded-2xl border-2 border-rose-400/60">
-                            <div className="absolute left-0 right-0 top-1/2 h-0.5 -translate-y-1/2 bg-rose-500/50 animate-pulse" />
+                  <div>
+                    <div className="text-sm font-bold text-slate-800 dark:text-white">Camera Verification</div>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">
+                      {cameraRequired
+                        ? 'Your webcam feed is required for identity verification during this assessment.'
+                        : 'Camera monitoring is not required for this assessment.'}
+                    </p>
+                  </div>
+                  {cameraRequired && (
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+                      <div className="relative w-full max-w-[360px] overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 shadow-sm dark:border-gray-700">
+                        <div className="relative aspect-[4/3]">
+                          <video ref={validationVideoRef} className="h-full w-full object-cover" muted playsInline autoPlay />
+                          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(15,23,42,0.12)_0%,rgba(15,23,42,0.28)_100%)]" />
+                          <div className="pointer-events-none absolute inset-[12%] rounded-[22px] border border-white/35" />
+                          <div className="pointer-events-none absolute inset-x-[22%] top-[16%] bottom-[16%] rounded-[26px] border border-dashed border-sky-200/55 bg-white/5" />
+                          <div className="absolute left-3 top-3 rounded-full bg-slate-950/55 px-2.5 py-1 text-[10px] font-medium text-white backdrop-blur-sm">
+                            Camera preview
+                          </div>
+                          <div className={`absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold backdrop-blur-sm ${
+                            faceStatus === 'detected'
+                              ? 'bg-emerald-500/20 text-emerald-100'
+                              : faceStatus === 'detecting'
+                                ? 'bg-amber-500/20 text-amber-100'
+                                : 'bg-slate-900/45 text-white/90'
+                          }`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${
+                              faceStatus === 'detected'
+                                ? 'bg-emerald-300'
+                                : faceStatus === 'detecting'
+                                  ? 'bg-amber-300 animate-pulse'
+                                  : 'bg-rose-300'
+                            }`} />
+                            {faceStatus === 'detected' ? 'Face detected' : faceStatus === 'detecting' ? 'Scanning' : 'Waiting'}
                           </div>
                         </div>
                       </div>
-                    </>
-                  ) : (
-                    <p className="text-sm text-slate-600 dark:text-gray-300">Camera monitoring is not required for this assessment.</p>
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="rounded-xl border border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-600 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+                          Keep your face centered and clearly visible. A simple preview will appear as soon as the camera is active.
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {[
+                            ['Camera', validationState.camera ? 'Ready' : 'Pending'],
+                            ['Face', faceStatus === 'detected' ? 'Detected' : faceStatus === 'detecting' ? 'Scanning' : 'Waiting'],
+                            ['Feed', streamRef.current ? 'Live' : 'Off'],
+                          ].map(([label, value]) => (
+                            <div key={label} className="rounded-full border border-slate-200 bg-white/85 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+                              <span className="text-slate-400">{label}:</span> {value}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
                   )}
                   <div className="flex flex-wrap items-center gap-3">
                     <button
                       type="button"
                       onClick={handleCameraCheck}
                       disabled={Boolean(setupCheckingStep)}
-                      className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                      className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-5 py-2.5 text-xs font-bold text-white shadow-md shadow-sky-200 dark:shadow-none disabled:cursor-not-allowed disabled:opacity-60 hover:bg-sky-500 transition-colors"
                     >
-                      {setupCheckingStep === 'camera' && <Loader2 className="h-4 w-4 animate-spin" />}
-                      {cameraRequired ? 'Enable Camera' : 'Confirm Camera Step'}
+                      {setupCheckingStep === 'camera' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Video className="h-4 w-4" />}
+                      {cameraRequired ? 'Activate & Verify Camera' : 'Confirm Camera Step'}
                     </button>
-                    <span className="text-xs text-slate-500">
-                      {faceStatus === 'detected' ? 'Face detected' : faceStatus === 'detecting' ? 'Detecting face...' : 'Camera not ready'}
-                    </span>
                   </div>
                   {validationState.camera && validationState.face && (
-                    <div className="flex items-center gap-2 text-sm text-emerald-600">
-                      <CheckCircle2 className="h-4 w-4" /> Camera verified.
+                    <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 dark:bg-emerald-900/20 dark:border-emerald-700 dark:text-emerald-300">
+                      <CheckCircle2 className="h-4 w-4" /> Camera identity verified successfully.
                     </div>
                   )}
                 </div>
@@ -2781,12 +3148,12 @@ export default function AssessmentAttempt() {
 
       {securityPopup.open && secureActive && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/35 px-4 backdrop-blur-[1px]">
-          <div className={`w-full max-w-sm rounded-2xl border bg-white p-4 shadow-2xl dark:bg-gray-900 ${
+          <div className={`w-full max-w-md rounded-[28px] border bg-white p-5 shadow-[0_28px_80px_-32px_rgba(15,23,42,0.42)] dark:bg-gray-900 ${
             securityPopup.tone === 'danger'
               ? 'border-rose-200 dark:border-rose-800'
               : 'border-amber-200 dark:border-amber-800'
           }`}>
-            <div className={`flex items-center gap-2 text-sm font-semibold ${
+            <div className={`flex items-center gap-2 text-base font-bold ${
               securityPopup.tone === 'danger'
                 ? 'text-rose-600 dark:text-rose-300'
                 : 'text-amber-600 dark:text-amber-300'
@@ -2794,14 +3161,14 @@ export default function AssessmentAttempt() {
               <AlertTriangle className="h-4 w-4" />
               {securityPopup.title}
             </div>
-            <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-gray-300">
+            <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-gray-300">
               {securityPopup.message}
             </p>
             <div className="mt-4 flex justify-end">
               <button
                 type="button"
                 onClick={() => setSecurityPopup((prev) => ({ ...prev, open: false }))}
-                className={`rounded-xl px-4 py-2 text-xs font-semibold text-white ${
+                className={`rounded-2xl px-5 py-2.5 text-sm font-semibold text-white ${
                   securityPopup.tone === 'danger'
                     ? 'bg-rose-600 hover:bg-rose-500'
                     : 'bg-amber-600 hover:bg-amber-500'
@@ -3015,7 +3382,7 @@ export default function AssessmentAttempt() {
                 type="button"
                 onClick={() => {
                   resetSecuritySetupProgress();
-                  setIsPaused(false);
+                  setIsPaused(true);
                   setPhase('validation');
                   setViolationMessage('');
                 }}
@@ -3088,7 +3455,7 @@ export default function AssessmentAttempt() {
               onClick={() => {
                 setViolationMessage('');
                 setFullscreenRecovery({ active: false, remaining: 0 });
-                setIsPaused(false);
+                setIsPaused(true);
                 resetSecuritySetupProgress();
                 setPhase('validation');
               }}
@@ -3102,42 +3469,50 @@ export default function AssessmentAttempt() {
 
       {secureActive && (
         <>
-          <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 shadow-lg backdrop-blur dark:border-gray-700 dark:bg-gray-900/95">
-            {cameraStatusLine && (
-              <div className={`${cameraStatusLine.ok ? 'bg-emerald-500 text-white' : 'bg-rose-600 text-white'}`}>
-                <div className="mx-auto flex max-w-7xl items-center gap-2 px-3 py-1 text-[11px] font-semibold md:px-4">
-                  <span className={`h-2 w-2 rounded-full ${cameraStatusLine.ok ? 'bg-white' : 'bg-rose-100'}`} />
+          <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-700/60 bg-slate-950/96 shadow-2xl backdrop-blur-md">
+            {cameraStatusLine && !cameraStatusLine.ok && (
+              <div className="border-b border-rose-300/20 bg-rose-600/95 text-white">
+                <div className="mx-auto flex max-w-7xl items-center gap-2 px-4 py-2.5 text-[11px] font-semibold">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
                   <span className="truncate">{cameraStatusLine.text}</span>
+                  <span className="ml-auto text-[10px] opacity-80">Camera warning only</span>
                 </div>
               </div>
             )}
-            <div className="px-3 py-2">
-            <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 text-xs">
-              <div className="flex flex-wrap items-center gap-2">
-                {securityStatusItems.map((item) => (
-                  <span
-                    key={item.key}
-                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-semibold ${
-                      item.ok
-                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300'
-                        : 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300'
-                    }`}
-                  >
-                    <span className={`h-2 w-2 rounded-full ${item.ok ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                    {item.label}: {item.enabled ? (item.ok ? 'OK' : 'Violated') : 'Off'}
+            <div className="px-4 py-1.5">
+              <div className="mx-auto flex max-w-full flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {securityStatusItems.filter(i => i.enabled).map((item) => (
+                    <span
+                      key={item.key}
+                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                        item.ok
+                          ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                          : 'bg-rose-500/15 text-rose-400 border border-rose-500/30 animate-pulse'
+                      }`}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${item.ok ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                      {item.label}
+                    </span>
+                  ))}
+                  {cameraStatusLine && cameraStatusLine.ok && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />Camera OK
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {securityNotice && (
+                    <span className="text-[10px] font-semibold text-rose-300 max-w-[32rem] truncate">{securityNotice}</span>
+                  )}
+                  <span className="rounded-full bg-slate-800 border border-slate-600 px-2.5 py-1 text-[10px] font-bold text-slate-300">
+                    Warning {totalWarnings}
                   </span>
-                ))}
+                  <span className="rounded-full bg-slate-800 border border-slate-600 px-2.5 py-1 text-[10px] font-bold text-slate-300">
+                    Score {violationScore}
+                  </span>
+                </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2 font-semibold text-slate-700 dark:text-gray-200">
-                {securityNotice && <span className="max-w-[48rem] truncate text-rose-600 dark:text-rose-300">{securityNotice}</span>}
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 dark:border-gray-700 dark:bg-gray-800">
-                  Violations {totalViolations}
-                </span>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 dark:border-gray-700 dark:bg-gray-800">
-                  Score {violationScore}
-                </span>
-              </div>
-            </div>
             </div>
           </div>
           {cameraRequired && (
@@ -3151,3 +3526,4 @@ export default function AssessmentAttempt() {
     </div>
   );
 }
+

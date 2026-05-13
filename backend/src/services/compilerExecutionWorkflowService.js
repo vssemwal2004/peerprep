@@ -947,6 +947,7 @@ function scoreAssessmentWithCoding(assessment, answers = []) {
     (section.questions || []).forEach((question, questionIndex) => {
       const questionType = question.type || section.type;
       const points = Number(question.points || question.marks || 0);
+      const negativePoints = Math.max(0, Number(question.negativePoints ?? question.negativeMarks ?? section.negativeMarksPerQuestion ?? 0) || 0);
       maxMarks += points;
 
       const answer = answerMap.get(`${sectionIndex}-${questionIndex}`);
@@ -955,6 +956,8 @@ function scoreAssessmentWithCoding(assessment, answers = []) {
       if (questionType === 'mcq') {
         if (Number(answer.answer) === Number(question.correctOptionIndex)) {
           score += points;
+        } else {
+          score -= negativePoints;
         }
         return;
       }
@@ -968,12 +971,19 @@ function scoreAssessmentWithCoding(assessment, answers = []) {
         } else if (Array.isArray(question.keywords) && question.keywords.length > 0) {
           const matched = question.keywords.every((keyword) => actual.includes(String(keyword).toLowerCase()));
           if (matched) score += points;
+          else score -= negativePoints;
+        } else if (actual) {
+          score -= negativePoints;
         }
         return;
       }
 
-      if (questionType === 'coding' && String(answer.executionVerdict || '').toUpperCase() === 'AC') {
-        score += points;
+      if (questionType === 'coding') {
+        if (String(answer.executionVerdict || '').toUpperCase() === 'AC') {
+          score += points;
+        } else if (String(answer.code || '').trim()) {
+          score -= negativePoints;
+        }
       }
     });
   });

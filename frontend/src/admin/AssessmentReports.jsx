@@ -161,6 +161,8 @@ export default function AssessmentReports() {
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
   const [exportColumns, setExportColumns] = useState(loadSavedExportColumns);
+  const [availableExportKeys, setAvailableExportKeys] = useState([]);
+  const [loadingExportMeta, setLoadingExportMeta] = useState(false);
 
   const selectedAssessment = useMemo(
     () => assessments.find((a) => String(a._id) === String(selectedAssessmentId)),
@@ -259,8 +261,21 @@ export default function AssessmentReports() {
   }, [exportColumns, toast]);
 
   const setAllExportColumns = useCallback((checked) => {
-    setExportColumns(Object.fromEntries(EXPORT_COLUMN_DEFS.map(({ key }) => [key, checked])));
-  }, []);
+    setExportColumns((prev) => ({
+      ...prev,
+      ...Object.fromEntries(
+        EXPORT_COLUMN_DEFS
+          .filter(({ key }) => !availableExportKeys.length || availableExportKeys.includes(key))
+          .map(({ key }) => [key, checked]),
+      ),
+    }));
+  }, [availableExportKeys]);
+
+  const visibleExportDefs = useMemo(() => {
+    if (!availableExportKeys.length) return EXPORT_COLUMN_DEFS;
+    const availableSet = new Set(availableExportKeys);
+    return EXPORT_COLUMN_DEFS.filter(({ key }) => availableSet.has(key));
+  }, [availableExportKeys]);
 
   const buildExportValue = useCallback((row, key) => {
     const value = row?.[key];
@@ -273,7 +288,7 @@ export default function AssessmentReports() {
   }, []);
 
   const handleExcelExport = useCallback(async () => {
-    const selectedDefs = EXPORT_COLUMN_DEFS.filter(({ key }) => exportColumns[key]);
+    const selectedDefs = visibleExportDefs.filter(({ key }) => exportColumns[key]);
     if (!selectedDefs.length) {
       toast.error('Select at least one column for Excel export.');
       return;
@@ -283,29 +298,20 @@ export default function AssessmentReports() {
     try {
       const exportParams = { ...filters };
       if (selectedAssessmentId) exportParams.assessmentId = selectedAssessmentId;
+      exportParams.columns = selectedDefs.map(({ key }) => key).join(',');
       const payload = await api.getAssessmentReportsExportData(exportParams);
       const rows = Array.isArray(payload?.rows) ? payload.rows : [];
       const sectionRows = Array.isArray(payload?.sectionRows) ? payload.sectionRows : [];
       const proctoringRows = Array.isArray(payload?.proctoringRows) ? payload.proctoringRows : [];
       const summary = payload?.summary || {};
 
+      if (!rows.length) {
+        toast.error('No candidate report data found for the selected assessment and filters.');
+        return;
+      }
+
       const XLSX = await import('xlsx');
       const workbook = XLSX.utils.book_new();
-
-      const summarySheetRows = [
-        { Metric: 'Generated At', Value: formatDateTime(payload?.generatedAt) },
-        { Metric: 'Total Assessments', Value: summary.totalAssessments || 0 },
-        { Metric: 'Total Candidates', Value: summary.totalCandidates || 0 },
-        { Metric: 'Average Score', Value: summary.avgScore || 0 },
-        { Metric: 'Max Score', Value: summary.maxScore || 0 },
-        { Metric: 'Min Score', Value: summary.minScore || 0 },
-        { Metric: 'Pass Count', Value: summary.passCount || 0 },
-        { Metric: 'Fail Count', Value: summary.failCount || 0 },
-        { Metric: 'Violation Count', Value: summary.violationCount || 0 },
-      ];
-      const summarySheet = XLSX.utils.json_to_sheet(summarySheetRows);
-      summarySheet['!cols'] = [{ wch: 24 }, { wch: 24 }];
-      XLSX.utils.book_append_sheet(workbook, summarySheet, 'Summary');
 
       const candidateRows = rows.map((row) => Object.fromEntries(
         selectedDefs.map(({ key, label }) => [label, buildExportValue(row, key)]),
@@ -323,6 +329,21 @@ export default function AssessmentReports() {
         return { wch: Math.min(28, Math.max(14, maxValueLength)) };
       });
       XLSX.utils.book_append_sheet(workbook, candidateSheet, 'Candidates');
+
+      const summarySheetRows = [
+        { Metric: 'Generated At', Value: formatDateTime(payload?.generatedAt) },
+        { Metric: 'Total Assessments', Value: summary.totalAssessments || 0 },
+        { Metric: 'Total Candidates', Value: summary.totalCandidates || 0 },
+        { Metric: 'Average Score', Value: summary.avgScore || 0 },
+        { Metric: 'Max Score', Value: summary.maxScore || 0 },
+        { Metric: 'Min Score', Value: summary.minScore || 0 },
+        { Metric: 'Pass Count', Value: summary.passCount || 0 },
+        { Metric: 'Fail Count', Value: summary.failCount || 0 },
+        { Metric: 'Violation Count', Value: summary.violationCount || 0 },
+      ];
+      const summarySheet = XLSX.utils.json_to_sheet(summarySheetRows);
+      summarySheet['!cols'] = [{ wch: 24 }, { wch: 24 }];
+      XLSX.utils.book_append_sheet(workbook, summarySheet, 'Summary');
 
       if (sectionRows.length) {
         const sectionSheet = XLSX.utils.json_to_sheet(sectionRows);
@@ -350,7 +371,41 @@ export default function AssessmentReports() {
     } finally {
       setExportingExcel(false);
     }
-  }, [api, buildExportValue, exportColumns, filters, selectedAssessmentId, toast]);
+  }, [buildExportValue, exportColumns, filters, selectedAssessmentId, toast, visibleExportDefs]);
+
+  useEffect(() => {
+    if (!showExportModal) return;
+    let active = true;
+    const loadExportMeta = async () => {
+      setLoadingExportMeta(true);
+      try {
+        const exportParams = { ...filters };
+        if (selectedAssessmentId) exportParams.assessmentId = selectedAssessmentId;
+        const payload = await api.getAssessmentReportsExportData(exportParams);
+        if (!active) return;
+        const keys = Array.isArray(payload?.availableColumns) ? payload.availableColumns : [];
+        setAvailableExportKeys(keys);
+        if (keys.length) {
+          const allowed = new Set(keys);
+          setExportColumns((prev) => {
+            const next = { ...prev };
+            Object.keys(next).forEach((key) => {
+              if (!allowed.has(key)) next[key] = false;
+            });
+            return next;
+          });
+        }
+      } catch (err) {
+        if (!active) return;
+        toast.error(err.message || 'Failed to load export fields');
+        setAvailableExportKeys([]);
+      } finally {
+        if (active) setLoadingExportMeta(false);
+      }
+    };
+    void loadExportMeta();
+    return () => { active = false; };
+  }, [showExportModal, filters, selectedAssessmentId, toast]);
 
   /* ── Sorting ── */
   const handleSort = useCallback((key) => {
@@ -1118,19 +1173,27 @@ export default function AssessmentReports() {
                 <button onClick={saveExportPreferences} className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300 dark:hover:bg-sky-900/30">Save Preferred Export Settings</button>
               </div>
               <div className="grid max-h-[420px] gap-2 overflow-y-auto rounded-xl border border-slate-200 p-3 sm:grid-cols-2 lg:grid-cols-3 dark:border-gray-700">
-                {EXPORT_COLUMN_DEFS.map(({ key, label }) => (
+                {loadingExportMeta ? (
+                  <div className="col-span-full py-8 text-center text-xs text-slate-500 dark:text-gray-400">
+                    Loading available fields from the selected assessment...
+                  </div>
+                ) : visibleExportDefs.length ? visibleExportDefs.map(({ key, label }) => (
                   <label key={key} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-xs text-slate-700 hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800">
                     <input type="checkbox" checked={Boolean(exportColumns[key])} onChange={() => setExportColumns((prev) => ({ ...prev, [key]: !prev[key] }))} className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />
                     <span>{label}</span>
                   </label>
-                ))}
+                )) : (
+                  <div className="col-span-full py-8 text-center text-xs text-slate-500 dark:text-gray-400">
+                    No exportable fields are available for the current assessment filters.
+                  </div>
+                )}
               </div>
             </div>
             <div className="flex items-center justify-between gap-3 border-t border-slate-200 px-5 py-4 dark:border-gray-700">
-              <div className="text-xs text-slate-500 dark:text-gray-400">{EXPORT_COLUMN_DEFS.filter(({ key }) => exportColumns[key]).length} column(s) selected</div>
+              <div className="text-xs text-slate-500 dark:text-gray-400">{visibleExportDefs.filter(({ key }) => exportColumns[key]).length} column(s) selected</div>
               <div className="flex items-center gap-2">
                 <button onClick={() => setShowExportModal(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Cancel</button>
-                <button onClick={handleExcelExport} disabled={exportingExcel} className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-60">{exportingExcel ? 'Preparing Excel...' : 'Download Excel'}</button>
+                <button onClick={handleExcelExport} disabled={exportingExcel || loadingExportMeta || !visibleExportDefs.some(({ key }) => exportColumns[key])} className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-60">{exportingExcel ? 'Preparing Excel...' : 'Download Excel'}</button>
               </div>
             </div>
           </div>

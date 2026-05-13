@@ -44,6 +44,8 @@ const assessmentSubmissionSchema = new mongoose.Schema({
   securityHeartbeat: { type: mongoose.Schema.Types.Mixed, default: {} },
   violations: { type: [mongoose.Schema.Types.Mixed], default: [] },
   violationLog: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  proctoringSnapshots: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  monitoringEvents: { type: [mongoose.Schema.Types.Mixed], default: [] },
   attemptCount: { type: Number, default: 0 },
   isLate: { type: Boolean, default: false },
   lastIp: { type: String },
