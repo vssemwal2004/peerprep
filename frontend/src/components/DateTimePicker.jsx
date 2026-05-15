@@ -13,6 +13,8 @@ import { Calendar, Clock } from "lucide-react";
  * @param {string} className - Additional CSS classes
  * @param {boolean} disabled - Disable input
  * @param {boolean} enableTime - Enable time picker (default: true)
+ * @param {boolean} autoSelectToday - Auto-select current date when empty (default: true)
+ * @param {boolean} allowPast - Allow selecting dates before now (default: false)
  */
 export default function DateTimePicker({
   value,
@@ -24,6 +26,8 @@ export default function DateTimePicker({
   disabled = false,
   enableTime = true,
   isEnd = false,
+  autoSelectToday = true,
+  allowPast = false,
 }) {
   const inputRef = useRef(null);
   const flatpickrRef = useRef(null);
@@ -47,7 +51,7 @@ export default function DateTimePicker({
       closeOnSelect: false,
       minuteIncrement: 1,
       defaultDate: value || null,
-      minDate: min || (isEnd ? null : new Date()),
+      minDate: min || (allowPast || isEnd ? null : new Date()),
       maxDate: max || null,
       // Keep calendar open unless OK button was clicked
       onClose: (selectedDates, dateStr, instance) => {
@@ -180,7 +184,7 @@ export default function DateTimePicker({
 
           // For start picker (no min), prevent picking past dates/times
           const now = new Date();
-          if (!min && date.getTime() <= now.getTime()) {
+          if (!allowPast && !min && date.getTime() <= now.getTime()) {
             // Move to next minute
             const future = new Date(now.getTime() + 60 * 1000);
             instance.setDate(future, true);
@@ -219,7 +223,7 @@ export default function DateTimePicker({
       },
       onReady: (selectedDates, dateStr, instance) => {
         // Auto-select today's date for start picker if no date is selected, to enable time disabling
-        if (!isEnd && (!instance.selectedDates || instance.selectedDates.length === 0) && !value) {
+        if (autoSelectToday && !isEnd && (!instance.selectedDates || instance.selectedDates.length === 0) && !value) {
           setTimeout(() => {
             instance.setDate(new Date(), true);
             // Refresh disabled states after auto-select
@@ -742,7 +746,7 @@ export default function DateTimePicker({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [min, max, enableTime]);
+  }, [min, max, enableTime, autoSelectToday, allowPast]);
 
   // Update value when prop changes
   useEffect(() => {

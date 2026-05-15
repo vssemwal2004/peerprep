@@ -3,11 +3,11 @@ import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import DateTimePicker from '../components/DateTimePicker';
 import {
-  ArrowLeft, ArrowRight, BarChart3, Calendar, Download, Filter,
+  Activity, ArrowLeft, ArrowRight, BarChart3, Calendar, CheckCircle2, ChevronDown, Clock, Download, FileSpreadsheet, Filter,
   GraduationCap, Layers, LayoutDashboard, RotateCcw, Save, Search,
-  ShieldAlert, SlidersHorizontal, Sparkles, TrendingUp, Users, X,
+  ShieldAlert, SlidersHorizontal, Sparkles, Target, TrendingUp, Users, X,
 } from 'lucide-react';
-import { Sparkline, MiniBarChart } from './reports/ReportCharts';
+import { AreaChart, Heatmap, PieChart, Sparkline, MiniBarChart } from './reports/ReportCharts';
 import {
   TrendBadge, StatusBadge, KpiCard, FilterChip, SortHeader,
   AssessmentListItem, TableEmpty, TableRow, SkeletonRow,
@@ -100,6 +100,296 @@ const DEFAULT_EXPORT_COLUMNS = Object.fromEntries(
   ].includes(key)]),
 );
 
+function getRollingYearMonths() {
+  const months = [];
+  const cursor = new Date();
+  cursor.setDate(1);
+  cursor.setHours(0, 0, 0, 0);
+  for (let i = 11; i >= 0; i -= 1) {
+    const date = new Date(cursor);
+    date.setMonth(cursor.getMonth() - i);
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    months.push({
+      key,
+      label: date.toLocaleDateString('en-US', { month: 'short' }),
+      year: date.getFullYear(),
+    });
+  }
+  return months;
+}
+
+function getRollingYearDays() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = [];
+  for (let i = 364; i >= 0; i -= 1) {
+    const date = new Date(today);
+    date.setDate(today.getDate() - i);
+    days.push(date);
+  }
+  return days;
+}
+
+function dateKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function monthKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function activityTone(value, max) {
+  const ratio = max > 0 ? value / max : 0;
+  if (!value) return 'bg-slate-100 dark:bg-gray-800 border border-slate-200 dark:border-gray-700';
+  if (ratio > 0.75) return 'bg-sky-700 dark:bg-sky-300';
+  if (ratio > 0.45) return 'bg-sky-500 dark:bg-sky-500';
+  if (ratio > 0.22) return 'bg-sky-300 dark:bg-sky-700';
+  return 'bg-sky-100 dark:bg-sky-900';
+}
+
+function YearlyAssessmentActivity({ calendar = [], monthly = [], onSelectAssessment }) {
+  const [hoveredDay, setHoveredDay] = useState(null);
+  const [pinnedDay, setPinnedDay] = useState(null);
+  const activityMap = useMemo(() => {
+    const map = new Map();
+    calendar.forEach((item) => map.set(item.date, item));
+    return map;
+  }, [calendar]);
+  const days = useMemo(() => getRollingYearDays(), []);
+  const monthBars = useMemo(() => getRollingYearMonths(), []);
+  const calendarMonths = useMemo(() => {
+    const groups = [];
+    days.forEach((day) => {
+      const key = monthKey(day);
+      let group = groups.find((item) => item.key === key);
+      if (!group) {
+        group = {
+          key,
+          label: day.toLocaleDateString('en-US', { month: 'short' }),
+          year: day.getFullYear(),
+          leadingBlanks: day.getDay(),
+          days: [],
+        };
+        groups.push(group);
+      }
+      group.days.push(day);
+    });
+    return groups;
+  }, [days]);
+  const maxDaily = Math.max(...calendar.map((item) => Number(item.count || 0)), 1);
+  const monthlyMap = useMemo(() => {
+    const map = new Map();
+    monthly.forEach((item) => map.set(item.month, item));
+    return map;
+  }, [monthly]);
+  const monthMax = Math.max(...monthly.map((item) => Number(item.count || 0)), 1);
+  const activeDays = calendar.filter((item) => Number(item.count || 0) > 0).length;
+  const totalAssessments = calendar.reduce((sum, item) => sum + Number(item.count || 0), 0);
+  const totalViolations = calendar.reduce((sum, item) => sum + Number(item.violations || 0), 0);
+  const questionRows = calendar.filter((item) => Number(item.totalQuestions || 0) > 0);
+  const avgQuestions = questionRows.length
+    ? questionRows.reduce((sum, item) => sum + Number(item.totalQuestions || 0), 0) / totalAssessments
+    : 0;
+  const activeDay = pinnedDay || hoveredDay;
+  const activeAssessments = activeDay?.assessments || [];
+  const makeDayPayload = (day, item) => ({
+    date: dateKey(day),
+    label: day.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+    ...(item || { count: 0, assessments: [] }),
+  });
+
+  return (
+    <div className="relative min-w-0 overflow-hidden rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900 sm:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-sky-600 dark:text-sky-300">Yearly assessment system</div>
+          <h2 className="mt-1 text-base font-black text-slate-950 dark:text-white">Assessment creation calendar</h2>
+          <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Day-wise assessment creation activity. Hover a day to inspect assessments, then click a card to open that assessment report.</p>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {[
+            ['Active days', activeDays],
+            ['Assessments', totalAssessments],
+            ['Avg Qs', avgQuestions.toFixed(1)],
+            ['Violations', totalViolations],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2 text-center dark:border-gray-800 dark:bg-gray-800">
+              <div className="text-sm font-black text-slate-900 dark:text-white">{value}</div>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-5 grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+        <div
+          className="relative min-w-0 overflow-hidden rounded-2xl border border-slate-100 bg-slate-50/70 p-3 dark:border-gray-800 dark:bg-gray-950/30 sm:p-4"
+          onMouseLeave={() => setHoveredDay(null)}
+        >
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="text-sm text-slate-600 dark:text-gray-300">
+              <span className="text-xl font-black text-slate-950 dark:text-white">{totalAssessments}</span>
+              <span className="ml-1">assessments in the past one year</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 dark:text-gray-400">
+              <span>Total active days: <b className="text-slate-800 dark:text-gray-100">{activeDays}</b></span>
+              <span>Peak day: <b className="text-slate-800 dark:text-gray-100">{Math.max(...calendar.map((item) => Number(item.count || 0)), 0)}</b></span>
+            </div>
+          </div>
+
+          <div className="max-w-full overflow-x-auto overflow-y-hidden pb-2 pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent dark:scrollbar-thumb-gray-700">
+          <div className="w-max max-w-none">
+            <div className="flex items-start gap-5 sm:gap-7">
+              {calendarMonths.map((month) => (
+                <div key={month.key} className="shrink-0">
+                  <div className="grid grid-flow-col grid-rows-7 gap-1.5">
+                    {Array.from({ length: month.leadingBlanks }).map((_, index) => (
+                      <span key={`${month.key}-blank-${index}`} className="h-3 w-3" />
+                    ))}
+                    {month.days.map((day) => {
+                      const key = dateKey(day);
+                      const item = activityMap.get(key);
+                      const count = Number(item?.count || 0);
+                      const assessmentLabel = count === 1 ? 'assessment' : 'assessments';
+                      const isPinned = pinnedDay?.date === key;
+                      const isHovered = hoveredDay?.date === key;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onMouseEnter={() => setHoveredDay(makeDayPayload(day, item))}
+                          onFocus={() => setHoveredDay(makeDayPayload(day, item))}
+                          onClick={() => setPinnedDay(makeDayPayload(day, item))}
+                          title={`${day.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}: ${count} ${assessmentLabel}`}
+                          className={`h-3 w-3 cursor-pointer rounded-[4px] transition-all hover:scale-125 hover:ring-2 hover:ring-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500 ${
+                            isPinned
+                              ? 'scale-125 ring-2 ring-sky-600 ring-offset-2 ring-offset-slate-50 dark:ring-offset-gray-950'
+                              : isHovered
+                                ? 'ring-2 ring-sky-400'
+                                : ''
+                          } ${activityTone(count, maxDaily)}`}
+                        />
+                      );
+                    })}
+                  </div>
+                  <div className="mt-2 text-center text-xs font-medium text-slate-400 dark:text-gray-500">
+                    {month.label}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          </div>
+          <div className="mt-4 flex items-center justify-end gap-2 text-[10px] font-medium text-slate-400">
+            Less
+            <span className="h-3 w-3 rounded bg-slate-100 ring-1 ring-slate-200 dark:bg-gray-800 dark:ring-gray-700" />
+            <span className="h-3 w-3 rounded bg-sky-100 dark:bg-sky-900" />
+            <span className="h-3 w-3 rounded bg-sky-300 dark:bg-sky-700" />
+            <span className="h-3 w-3 rounded bg-sky-500" />
+            <span className="h-3 w-3 rounded bg-sky-700 dark:bg-sky-300" />
+            More
+          </div>
+
+          {activeDay && (
+            <div className="absolute inset-x-3 top-16 z-30 max-h-[calc(100%-4.75rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl shadow-slate-300/40 backdrop-blur dark:border-gray-700 dark:bg-gray-900 dark:shadow-black/40 sm:left-auto sm:right-4 sm:top-4 sm:w-[min(22rem,calc(100%-2rem))] sm:max-h-[calc(100%-2rem)]">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-600 dark:text-sky-300">
+                    {pinnedDay ? 'Selected day' : 'Hover preview'}
+                  </div>
+                  <div className="mt-1 text-sm font-black text-slate-900 dark:text-white">{activeDay.label}</div>
+                  <div className="mt-0.5 text-xs text-slate-500 dark:text-gray-400">{activeAssessments.length} assessment(s) created on this day</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-sky-50 px-2.5 py-1 text-xs font-bold text-sky-700 dark:bg-sky-900/30 dark:text-sky-300">
+                    {activeDay.count || 0}
+                  </span>
+                  {pinnedDay && (
+                    <button
+                      type="button"
+                      onClick={() => setPinnedDay(null)}
+                      className="rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                      aria-label="Close selected day"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {activeAssessments.length ? (
+                <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1 sm:max-h-72">
+                  {activeAssessments.map((assessment) => (
+                    <button
+                      key={assessment._id}
+                      type="button"
+                      onClick={() => {
+                        setPinnedDay(null);
+                        onSelectAssessment?.(assessment);
+                      }}
+                      className="group w-full rounded-xl border border-slate-100 bg-slate-50 p-3 text-left transition-all hover:-translate-y-0.5 hover:border-sky-200 hover:bg-sky-50 hover:shadow-md hover:shadow-sky-100 dark:border-gray-800 dark:bg-gray-800 dark:hover:border-sky-800 dark:hover:bg-sky-900/20 dark:hover:shadow-black/20"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-bold text-slate-900 group-hover:text-sky-700 dark:text-white dark:group-hover:text-sky-300">
+                            {assessment.title || 'Untitled'}
+                          </div>
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500 dark:text-gray-400">
+                            <span className="rounded bg-white px-1.5 py-0.5 font-semibold dark:bg-gray-900">{assessment.assessmentType || 'mixed'}</span>
+                            <span>{assessment.totalQuestions || 0} Qs</span>
+                            <span>{assessment.submissionCount || 0} attempts</span>
+                            <span>{Number(assessment.avgScore || 0).toFixed(1)}% avg</span>
+                          </div>
+                        </div>
+                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+                          {assessment.lifecycleBucket || 'current'}
+                        </span>
+                      </div>
+                      <div className="mt-2 text-[10px] font-semibold uppercase tracking-wider text-sky-600 opacity-0 transition-opacity group-hover:opacity-100 dark:text-sky-300">
+                        Open assessment report
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-5 text-center text-xs text-slate-400 dark:border-gray-700 dark:bg-gray-800">
+                  No assessments were created on this day.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="min-w-0 rounded-2xl border border-slate-100 bg-slate-50/70 p-4 dark:border-gray-800 dark:bg-gray-950/30">
+          <div className="mb-4 flex items-center justify-between">
+            <div className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-gray-400">Monthly assessments</div>
+            <div className="text-[10px] text-slate-400">Last 12 months</div>
+          </div>
+          <div className="flex h-44 items-end gap-2">
+            {monthBars.map((month) => {
+              const item = monthlyMap.get(month.key);
+              const count = Number(item?.count || 0);
+              const attempts = Number(item?.attempts || 0);
+              const height = monthMax > 0 ? Math.max(6, (count / monthMax) * 100) : 6;
+              return (
+                <div key={month.key} className="flex flex-1 flex-col items-center gap-2">
+                  <div className="flex h-32 w-full items-end rounded-full bg-slate-100 p-1 dark:bg-gray-800" title={`${month.label} ${month.year}: ${count} assessments, ${attempts} attempts`}>
+                    <div
+                      className="w-full rounded-full bg-gradient-to-t from-sky-600 to-cyan-300 shadow-sm transition-all"
+                      style={{ height: `${height}%` }}
+                    />
+                  </div>
+                  <span className="text-[10px] font-semibold text-slate-400">{month.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function loadSavedExportColumns() {
   try {
     const saved = JSON.parse(localStorage.getItem(EXPORT_SETTINGS_KEY) || '{}');
@@ -126,7 +416,10 @@ export default function AssessmentReports() {
     createdBy: '', tag: '', department: '', difficulty: '',
     from: '', to: '', scoreMin: '', scoreMax: '',
     completionRateMin: '', completionRateMax: '', attemptsMin: '', attemptsMax: '',
+    assessmentWindow: 'all',
   });
+  const [assessmentSearch, setAssessmentSearch] = useState('');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState({ schedule: false, list: false });
   const [showFilters, setShowFilters] = useState(false);
   const [savedFilterName, setSavedFilterName] = useState('');
   const [savedFilters, setSavedFilters] = useState(() => {
@@ -136,6 +429,7 @@ export default function AssessmentReports() {
 
   /* Data */
   const [assessments, setAssessments] = useState([]);
+  const [allAssessments, setAllAssessments] = useState([]);
   const [students, setStudents] = useState([]);
   const [summary, setSummary] = useState({});
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0 });
@@ -165,14 +459,49 @@ export default function AssessmentReports() {
   const [loadingExportMeta, setLoadingExportMeta] = useState(false);
 
   const selectedAssessment = useMemo(
-    () => assessments.find((a) => String(a._id) === String(selectedAssessmentId)),
-    [assessments, selectedAssessmentId]
+    () => allAssessments.find((a) => String(a._id) === String(selectedAssessmentId))
+      || assessments.find((a) => String(a._id) === String(selectedAssessmentId)),
+    [allAssessments, assessments, selectedAssessmentId]
   );
 
   const updateFilter = useCallback((key, value) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
     setPagination((p) => ({ ...p, page: 1 }));
   }, []);
+
+  const selectAssessmentReport = useCallback((assessmentOrId, options = {}) => {
+    const id = typeof assessmentOrId === 'object'
+      ? assessmentOrId?._id || assessmentOrId?.id
+      : assessmentOrId;
+    if (!id) return;
+
+    setSelectedAssessmentId(id);
+    setFilters((prev) => ({ ...prev, assessmentId: id }));
+    setPagination((p) => ({ ...p, page: 1 }));
+    if (options.openOverview !== false) setActiveTab('overview');
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const loadAssessments = async () => {
+      try {
+        const data = await api.listAssessments();
+        if (!active) return;
+        setAllAssessments(Array.isArray(data?.assessments) ? data.assessments : []);
+      } catch (err) {
+        if (active) toast.error(err.message || 'Failed to load assessments');
+      }
+    };
+    void loadAssessments();
+    return () => { active = false; };
+  }, [toast]);
+
+  useEffect(() => {
+    setSelectedAssessmentId(filters.assessmentId || '');
+  }, [filters.assessmentId]);
 
   /* ── Load reports (debounced) ── */
   useEffect(() => {
@@ -184,7 +513,6 @@ export default function AssessmentReports() {
         if (activeTab === 'violations') params.hasViolations = 'true';
         const data = await api.getAssessmentReports(params);
         if (!active) return;
-        console.log('Reports data:', data); // Debug log
         // Handle different data structures
         const assessments = data.assessments || data || [];
         const students = data.students || data.reports || [];
@@ -194,9 +522,6 @@ export default function AssessmentReports() {
         setStudents(Array.isArray(students) ? students : []);
         setSummary(summary);
         setPagination((prev) => ({ ...prev, total }));
-        if (!selectedAssessmentId && assessments.length > 0) {
-          setSelectedAssessmentId(assessments[0]._id || assessments[0].id);
-        }
       } catch (err) {
         console.error('Error loading reports:', err);
         toast.error(err.message || 'Failed to load reports');
@@ -214,17 +539,18 @@ export default function AssessmentReports() {
   }, [filters, pagination.page, pagination.limit, sort, activeTab, toast]);
 
   useEffect(() => {
-    if (!assessments.length) {
+    if (!selectedAssessmentId) return;
+    const source = allAssessments.length ? allAssessments : assessments;
+    if (!source.length) {
       if (selectedAssessmentId) setSelectedAssessmentId('');
       return;
     }
-    const selectedStillExists = assessments.some((a) => String(a._id) === String(selectedAssessmentId));
+    const selectedStillExists = source.some((a) => String(a._id) === String(selectedAssessmentId));
     if (!selectedStillExists) {
-      const nextId = assessments[0]?._id || '';
-      setSelectedAssessmentId(nextId);
-      setFilters((prev) => ({ ...prev, assessmentId: nextId }));
+      setSelectedAssessmentId('');
+      setFilters((prev) => ({ ...prev, assessmentId: '' }));
     }
-  }, [assessments, selectedAssessmentId]);
+  }, [allAssessments, assessments, selectedAssessmentId]);
 
   /* ── Load student detail ── */
   const openStudentDetail = useCallback(async (studentRow) => {
@@ -313,11 +639,21 @@ export default function AssessmentReports() {
       const XLSX = await import('xlsx');
       const workbook = XLSX.utils.book_new();
 
+      const selectedTitle = selectedAssessment?.title || 'All Assessments';
+      const reportHeader = [
+        ['PeerPrep Assessment Analytics Report'],
+        ['Assessment', selectedTitle],
+        ['Generated At', formatDateTime(payload?.generatedAt)],
+        ['Filters', Object.entries(exportParams).filter(([, value]) => value).map(([key, value]) => `${key}: ${value}`).join(' | ') || 'None'],
+        [],
+      ];
       const candidateRows = rows.map((row) => Object.fromEntries(
         selectedDefs.map(({ key, label }) => [label, buildExportValue(row, key)]),
       ));
-      const candidateSheet = XLSX.utils.json_to_sheet(candidateRows);
+      const candidateSheet = XLSX.utils.aoa_to_sheet(reportHeader);
+      XLSX.utils.sheet_add_json(candidateSheet, candidateRows, { origin: 'A6' });
       candidateSheet['!autofilter'] = { ref: candidateSheet['!ref'] || 'A1' };
+      candidateSheet['!freeze'] = { xSplit: 0, ySplit: 6 };
       candidateSheet['!cols'] = selectedDefs.map(({ key, label }) => {
         const maxValueLength = Math.max(
           label.length,
@@ -341,7 +677,12 @@ export default function AssessmentReports() {
         { Metric: 'Fail Count', Value: summary.failCount || 0 },
         { Metric: 'Violation Count', Value: summary.violationCount || 0 },
       ];
-      const summarySheet = XLSX.utils.json_to_sheet(summarySheetRows);
+      const summarySheet = XLSX.utils.aoa_to_sheet([
+        ['PeerPrep Assessment Report Summary'],
+        ['Assessment', selectedTitle],
+        [],
+      ]);
+      XLSX.utils.sheet_add_json(summarySheet, summarySheetRows, { origin: 'A4' });
       summarySheet['!cols'] = [{ wch: 24 }, { wch: 24 }];
       XLSX.utils.book_append_sheet(workbook, summarySheet, 'Summary');
 
@@ -362,7 +703,8 @@ export default function AssessmentReports() {
       }
 
       const dateStamp = new Date().toISOString().slice(0, 10);
-      XLSX.writeFile(workbook, `assessment-report-${dateStamp}.xlsx`);
+      const safeAssessmentName = selectedTitle.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'all-assessments';
+      XLSX.writeFile(workbook, `assessment-report-${safeAssessmentName}-${dateStamp}.xlsx`);
       setShowExportModal(false);
       toast.success('Excel exported successfully');
     } catch (err) {
@@ -371,7 +713,118 @@ export default function AssessmentReports() {
     } finally {
       setExportingExcel(false);
     }
+  }, [buildExportValue, exportColumns, filters, selectedAssessment, selectedAssessmentId, toast, visibleExportDefs]);
+
+  const handleCsvExport = useCallback(async () => {
+    const selectedDefs = visibleExportDefs.filter(({ key }) => exportColumns[key]);
+    if (!selectedDefs.length) {
+      toast.error('Select at least one column for CSV export.');
+      return;
+    }
+    setExportingExcel(true);
+    try {
+      const exportParams = { ...filters };
+      if (selectedAssessmentId) exportParams.assessmentId = selectedAssessmentId;
+      exportParams.columns = selectedDefs.map(({ key }) => key).join(',');
+      const payload = await api.getAssessmentReportsExportData(exportParams);
+      const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+      if (!rows.length) {
+        toast.error('No candidate report data found for the selected filters.');
+        return;
+      }
+      const escapeCsv = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+      const csv = [
+        selectedDefs.map(({ label }) => escapeCsv(label)).join(','),
+        ...rows.map((row) => selectedDefs.map(({ key }) => escapeCsv(buildExportValue(row, key))).join(',')),
+      ].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `assessment-report-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setShowExportModal(false);
+      toast.success('CSV exported successfully');
+    } catch (err) {
+      toast.error(err.message || 'CSV export failed');
+    } finally {
+      setExportingExcel(false);
+    }
   }, [buildExportValue, exportColumns, filters, selectedAssessmentId, toast, visibleExportDefs]);
+
+  const handlePdfExport = useCallback(async () => {
+    const selectedDefs = visibleExportDefs.filter(({ key }) => exportColumns[key]);
+    if (!selectedDefs.length) {
+      toast.error('Select at least one column for PDF export.');
+      return;
+    }
+    setExportingExcel(true);
+    try {
+      const exportParams = { ...filters };
+      if (selectedAssessmentId) exportParams.assessmentId = selectedAssessmentId;
+      exportParams.columns = selectedDefs.map(({ key }) => key).join(',');
+      const payload = await api.getAssessmentReportsExportData(exportParams);
+      const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+      if (!rows.length) {
+        toast.error('No candidate report data found for the selected filters.');
+        return;
+      }
+      const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;',
+      }[char]));
+      const tableHead = selectedDefs.map(({ label }) => `<th>${escapeHtml(label)}</th>`).join('');
+      const tableRows = rows.map((row) => `<tr>${selectedDefs.map(({ key }) => `<td>${escapeHtml(buildExportValue(row, key))}</td>`).join('')}</tr>`).join('');
+      const printWindow = window.open('', '_blank', 'noopener,noreferrer');
+      if (!printWindow) {
+        toast.error('Allow popups to generate the PDF report.');
+        return;
+      }
+      printWindow.document.write(`
+        <!doctype html>
+        <html>
+          <head>
+            <title>Assessment Report</title>
+            <style>
+              body { font-family: Inter, Arial, sans-serif; color: #0f172a; margin: 28px; }
+              h1 { margin: 0; font-size: 22px; }
+              .meta { color: #64748b; font-size: 12px; margin: 8px 0 18px; }
+              .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }
+              .card { border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px; }
+              .label { color: #64748b; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+              .value { margin-top: 4px; font-weight: 800; font-size: 18px; }
+              table { width: 100%; border-collapse: collapse; font-size: 10px; }
+              th { background: #f1f5f9; text-align: left; padding: 8px; border: 1px solid #e2e8f0; }
+              td { padding: 7px; border: 1px solid #e2e8f0; vertical-align: top; }
+              tr:nth-child(even) td { background: #f8fafc; }
+              @media print { body { margin: 16px; } .no-print { display: none; } }
+            </style>
+          </head>
+          <body>
+            <button class="no-print" onclick="window.print()" style="margin-bottom: 16px; padding: 8px 12px;">Print / Save PDF</button>
+            <h1>PeerPrep Assessment Analytics Report</h1>
+            <div class="meta">Assessment: ${escapeHtml(selectedAssessment?.title || 'All Assessments')} | Generated: ${escapeHtml(formatDateTime(payload?.generatedAt))}</div>
+            <div class="summary">
+              <div class="card"><div class="label">Candidates</div><div class="value">${payload?.summary?.totalCandidates || rows.length}</div></div>
+              <div class="card"><div class="label">Average Score</div><div class="value">${payload?.summary?.avgScore || 0}</div></div>
+              <div class="card"><div class="label">Passed</div><div class="value">${payload?.summary?.passCount || 0}</div></div>
+              <div class="card"><div class="label">Violations</div><div class="value">${payload?.summary?.violationCount || 0}</div></div>
+            </div>
+            <table><thead><tr>${tableHead}</tr></thead><tbody>${tableRows}</tbody></table>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+      setShowExportModal(false);
+      toast.success('PDF report opened');
+    } catch (err) {
+      toast.error(err.message || 'PDF export failed');
+    } finally {
+      setExportingExcel(false);
+    }
+  }, [buildExportValue, exportColumns, filters, selectedAssessment, selectedAssessmentId, toast, visibleExportDefs]);
 
   useEffect(() => {
     if (!showExportModal) return;
@@ -440,6 +893,7 @@ export default function AssessmentReports() {
       assessmentId: '', assessmentType: '', studentQuery: '', status: '', createdBy: '', tag: '',
       department: '', difficulty: '', from: '', to: '', scoreMin: '', scoreMax: '',
       completionRateMin: '', completionRateMax: '', attemptsMin: '', attemptsMax: '',
+      assessmentWindow: 'all',
     });
     setSelectedAssessmentId('');
     setPagination((p) => ({ ...p, page: 1 }));
@@ -449,7 +903,8 @@ export default function AssessmentReports() {
   const activeChips = useMemo(() => {
     const chips = [];
     if (filters.assessmentId) {
-      const a = assessments.find((x) => String(x._id) === String(filters.assessmentId));
+      const a = allAssessments.find((x) => String(x._id) === String(filters.assessmentId))
+        || assessments.find((x) => String(x._id) === String(filters.assessmentId));
       chips.push({ key: 'assessmentId', label: `Assessment: ${a?.title || filters.assessmentId}`, clear: () => updateFilter('assessmentId', '') });
     }
     if (filters.assessmentType) chips.push({ key: 'assessmentType', label: `Type: ${filters.assessmentType}`, clear: () => updateFilter('assessmentType', '') });
@@ -459,10 +914,11 @@ export default function AssessmentReports() {
     if (filters.tag) chips.push({ key: 'tag', label: `Tag: ${filters.tag}`, clear: () => updateFilter('tag', '') });
     if (filters.department) chips.push({ key: 'department', label: `Dept: ${filters.department}`, clear: () => updateFilter('department', '') });
     if (filters.difficulty) chips.push({ key: 'difficulty', label: `Difficulty: ${filters.difficulty}`, clear: () => updateFilter('difficulty', '') });
+    if (filters.assessmentWindow && filters.assessmentWindow !== 'all') chips.push({ key: 'assessmentWindow', label: `Window: ${filters.assessmentWindow}`, clear: () => updateFilter('assessmentWindow', 'all') });
     if (filters.from || filters.to) chips.push({ key: 'dateRange', label: `Date: ${filters.from || '…'} → ${filters.to || '…'}`, clear: () => { setFilters((p) => ({ ...p, from: '', to: '' })); } });
     if (filters.scoreMin || filters.scoreMax) chips.push({ key: 'scoreRange', label: `Score: ${filters.scoreMin || 0} - ${filters.scoreMax || '∞'}`, clear: () => { setFilters((p) => ({ ...p, scoreMin: '', scoreMax: '' })); } });
     return chips;
-  }, [filters, assessments, updateFilter]);
+  }, [filters, allAssessments, assessments, updateFilter]);
 
   /* ── KPI data ── */
   const kpiData = useMemo(() => {
@@ -479,22 +935,22 @@ export default function AssessmentReports() {
 
     const baseKPIs = [
       {
-        icon: Users, label: 'Total Assessments', value: assessments.length || 0,
-        insight: assessments.length ? `${assessments.length} published assessments` : undefined,
+        icon: Users, label: 'Total Assessments', value: summary?.totalAssessments || allAssessments.length || assessments.length || 0,
+        insight: allAssessments.length ? `${allAssessments.length} published assessments` : undefined,
         trend: s.assessmentGrowth, tone: 'sky',
-        chart: <Sparkline data={s.assessmentTrend || [30, 45, 35, 50, 42, 60, 55]} stroke="#0ea5e9" />,
+        chart: Array.isArray(s.assessmentTrend) && s.assessmentTrend.length > 1 ? <Sparkline data={s.assessmentTrend} stroke="#0ea5e9" /> : null,
       },
       {
         icon: GraduationCap, label: 'Total Attempts', value: totalStudents,
         insight: uniqueCandidates ? `${uniqueCandidates} unique candidates` : undefined,
         trend: s.attemptGrowth, tone: 'violet',
-        chart: <Sparkline data={s.attemptTrend || [120, 150, 130, 180, 200, 220, 250]} stroke="#8b5cf6" />,
+        chart: Array.isArray(s.attemptTrend) && s.attemptTrend.length > 1 ? <Sparkline data={s.attemptTrend} stroke="#8b5cf6" /> : null,
       },
       {
         icon: TrendingUp, label: 'Avg Score', value: `${avgScore.toFixed(1)}%`,
         sub: `of ${s.maxScore || 100} max`, insight: s.medianScore ? `Median: ${s.medianScore}%` : undefined,
         trend: s.scoreGrowth, tone: 'emerald',
-        chart: <Sparkline data={s.scoreTrend || [60, 62, 58, 65, 63, 68, 70]} stroke="#10b981" />,
+        chart: Array.isArray(s.scoreTrend) && s.scoreTrend.length > 1 ? <Sparkline data={s.scoreTrend} stroke="#10b981" /> : null,
       },
       {
         icon: BarChart3, label: 'Pass Rate', value: `${passRate.toFixed(1)}%`,
@@ -544,7 +1000,7 @@ export default function AssessmentReports() {
     }
 
     return baseKPIs;
-  }, [summary, assessments, pagination.total, activeTab]);
+  }, [summary, allAssessments.length, assessments, pagination.total, activeTab, students]);
 
   const distributionLabels = ['0-25', '26-50', '51-75', '76-90', '91-100'];
   const distributionData = useMemo(() => {
@@ -574,7 +1030,7 @@ export default function AssessmentReports() {
       if (date) dateMap.set(date, (dateMap.get(date) || 0) + 1);
     });
     const sorted = Array.from(dateMap.entries()).sort((a, b) => a[0].localeCompare(b[0])).slice(-10);
-    if (sorted.length === 0) return [100, 120, 115, 140, 180, 200, 220, 250, 280, 300];
+    if (sorted.length === 0) return [];
     return sorted.map(([, count]) => count);
   }, [summary, students]);
 
@@ -620,6 +1076,86 @@ export default function AssessmentReports() {
     return sorted.map(([, count]) => count);
   }, [summary?.violationTrend, students]);
 
+  const assessmentSidebarItems = useMemo(() => {
+    const now = Date.now();
+    const source = allAssessments.length ? allAssessments : assessments;
+    const getBucket = (assessment) => {
+      if (assessment.lifecycleBucket) return assessment.lifecycleBucket;
+      const start = assessment.startTime ? new Date(assessment.startTime).getTime() : null;
+      const end = assessment.endTime ? new Date(assessment.endTime).getTime() : null;
+      if (start && start > now) return 'upcoming';
+      if (end && end < now) return 'completed';
+      return 'current';
+    };
+    const search = assessmentSearch.trim().toLowerCase();
+    return source
+      .map((assessment) => ({ ...assessment, lifecycleBucket: getBucket(assessment) }))
+      .filter((assessment) => {
+        const matchesWindow = filters.assessmentWindow === 'all' || assessment.lifecycleBucket === filters.assessmentWindow;
+        const haystack = `${assessment.title || ''} ${assessment.assessmentType || ''} ${assessment.assessmentId || ''}`.toLowerCase();
+        return matchesWindow && (!search || haystack.includes(search));
+      })
+      .sort((a, b) => {
+        const aTime = new Date(a.startTime || a.createdAt || 0).getTime();
+        const bTime = new Date(b.startTime || b.createdAt || 0).getTime();
+        return bTime - aTime;
+      });
+  }, [allAssessments, assessments, assessmentSearch, filters.assessmentWindow]);
+
+  const assessmentWindowTabs = useMemo(() => {
+    const now = Date.now();
+    const source = allAssessments.length ? allAssessments : assessments;
+    const counts = source.reduce((acc, assessment) => {
+      const start = assessment.startTime ? new Date(assessment.startTime).getTime() : null;
+      const end = assessment.endTime ? new Date(assessment.endTime).getTime() : null;
+      const bucket = assessment.lifecycleBucket || (start && start > now ? 'upcoming' : end && end < now ? 'completed' : 'current');
+      acc.all += 1;
+      if (bucket === 'current') acc.current += 1;
+      if (bucket === 'upcoming') acc.upcoming += 1;
+      if (bucket === 'completed') acc.completed += 1;
+      return acc;
+    }, { all: 0, current: 0, upcoming: 0, completed: 0 });
+    return [
+      { id: 'all', label: 'All Assessments', count: counts.all, icon: Layers },
+      { id: 'current', label: 'Current Assessments', count: counts.current, icon: Activity },
+      { id: 'upcoming', label: 'Upcoming Assessments', count: counts.upcoming, icon: Clock },
+      { id: 'completed', label: 'Completed Assessments', count: counts.completed, icon: CheckCircle2 },
+    ];
+  }, [allAssessments, assessments]);
+
+  const subjectPerformanceRows = useMemo(() => (
+    (summary?.subjectPerformance || assessments || []).slice(0, 6).map((item) => ({
+      label: item.title || item.subject || item.assessmentType || 'Assessment',
+      value: Number(item.avgScore || item.score || item.attempted || 0),
+    }))
+  ), [summary?.subjectPerformance, assessments]);
+
+  const heatmapRows = useMemo(() => {
+    const byAssessment = assessmentSidebarItems.slice(0, 5).map((assessment) => ({
+      label: assessment.title || 'Untitled',
+      values: [
+        Number(assessment.submissionCount || assessment.attempts || 0),
+        Number(assessment.completedCount || assessment.submissions || 0),
+        Number(assessment.violationCount || 0),
+        Number(assessment.avgScore || 0),
+        Number(assessment.totalQuestions || 0),
+        Number(assessment.duration || 0),
+        Number(assessment.maxScore || 0),
+      ],
+    }));
+    return byAssessment;
+  }, [assessmentSidebarItems]);
+
+  const yearlyActivity = useMemo(
+    () => Array.isArray(summary?.assessmentCalendar) ? summary.assessmentCalendar : [],
+    [summary?.assessmentCalendar],
+  );
+
+  const monthlyActivity = useMemo(
+    () => Array.isArray(summary?.monthlyAssessments) ? summary.monthlyAssessments : [],
+    [summary?.monthlyAssessments],
+  );
+
   const totalPages = Math.max(1, Math.ceil((pagination.total || 0) / pagination.limit));
 
   return (
@@ -634,7 +1170,7 @@ export default function AssessmentReports() {
             <div>
               <h1 className="text-lg font-bold text-slate-900 dark:text-white">Assessment Reports</h1>
               <p className="text-xs text-slate-500 dark:text-gray-400">
-                Enterprise analytics · {pagination.total || 0} records · {assessments.length} assessments
+                Enterprise analytics - {pagination.total || 0} records - {allAssessments.length || assessments.length} assessments
               </p>
             </div>
           </div>
@@ -659,7 +1195,7 @@ export default function AssessmentReports() {
                   className="h-9 w-48 rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-8 text-xs text-slate-700 outline-none ring-sky-200 transition-all focus:border-sky-400 focus:ring-2 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:ring-sky-900"
                 >
                   <option value="">All Assessments</option>
-                  {assessments.map((a) => (
+                  {(allAssessments.length ? allAssessments : assessments).map((a) => (
                     <option key={a._id} value={a._id}>{a.title || 'Untitled'}</option>
                   ))}
                 </select>
@@ -788,6 +1324,63 @@ export default function AssessmentReports() {
           </div>
         )}
 
+        {(activeTab === 'overview' || activeTab === 'analytics') && (
+          <div className="mb-6 grid gap-4 lg:grid-cols-[1.1fr_0.9fr_1fr]">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
+                  <Activity className="h-4 w-4 text-sky-600" />
+                  Real-time Activity
+                </div>
+                <span className="rounded-full bg-sky-50 px-2 py-1 text-[10px] font-semibold text-sky-700 dark:bg-sky-900/20 dark:text-sky-300">Live trend</span>
+              </div>
+              <div className="mt-4">
+                <AreaChart data={attemptTrend} stroke="#0ea5e9" />
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+              <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
+                <Target className="h-4 w-4 text-emerald-600" />
+                Pass / Fail Ratio
+              </div>
+              <div className="mt-4 flex items-center gap-4">
+                <PieChart
+                  data={[
+                    { label: 'Pass', value: Number(summary?.passCount || 0) },
+                    { label: 'Fail', value: Number(summary?.failCount || 0) },
+                  ]}
+                  colors={['#10b981', '#ef4444']}
+                />
+                <div className="space-y-2 text-xs">
+                  <div className="flex items-center gap-2 text-slate-600 dark:text-gray-300"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />Pass: {summary?.passCount || 0}</div>
+                  <div className="flex items-center gap-2 text-slate-600 dark:text-gray-300"><span className="h-2.5 w-2.5 rounded-full bg-rose-500" />Fail: {summary?.failCount || 0}</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+              <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
+                <BarChart3 className="h-4 w-4 text-amber-600" />
+                Subject-wise Performance
+              </div>
+              <div className="mt-4 space-y-3">
+                {subjectPerformanceRows.map((row) => (
+                  <div key={row.label}>
+                    <div className="mb-1 flex items-center justify-between text-[11px]">
+                      <span className="max-w-[180px] truncate font-semibold text-slate-600 dark:text-gray-300">{row.label}</span>
+                      <span className="font-bold text-slate-900 dark:text-white">{Number(row.value || 0).toFixed(1)}%</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-gray-800">
+                      <div className="h-full rounded-full bg-gradient-to-r from-sky-500 to-emerald-500" style={{ width: `${Math.min(100, Number(row.value || 0))}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ── Violations Charts Row ── */}
         {activeTab === 'violations' && (
           <div className="mb-6 grid gap-4 lg:grid-cols-3">
@@ -871,8 +1464,8 @@ export default function AssessmentReports() {
                 <option value="hard">Hard</option>
               </select>
               <input value={filters.department} onChange={(e) => updateFilter('department', e.target.value)} placeholder="Department" className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
-              <DateTimePicker value={filters.from} onChange={(iso) => updateFilter('from', iso)} placeholder="From Date" className="text-xs" />
-              <DateTimePicker value={filters.to} onChange={(iso) => updateFilter('to', iso)} min={filters.from || undefined} placeholder="To Date" className="text-xs" />
+              <DateTimePicker value={filters.from} onChange={(iso) => updateFilter('from', iso)} placeholder="From Date" className="text-xs" autoSelectToday={false} allowPast />
+              <DateTimePicker value={filters.to} onChange={(iso) => updateFilter('to', iso)} min={filters.from || undefined} placeholder="To Date" className="text-xs" autoSelectToday={false} allowPast />
               <input type="number" value={filters.scoreMin} onChange={(e) => updateFilter('scoreMin', e.target.value)} placeholder="Min Score %" className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
               <input type="number" value={filters.scoreMax} onChange={(e) => updateFilter('scoreMax', e.target.value)} placeholder="Max Score %" className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
             </div>
@@ -907,6 +1500,51 @@ export default function AssessmentReports() {
         )}
 
         {/* ══════════════════════ MAIN CONTENT ══════════════════════ */}
+        {activeTab === 'analytics' && (
+          <div className="mb-6 space-y-4">
+            <YearlyAssessmentActivity
+              calendar={yearlyActivity}
+              monthly={monthlyActivity}
+              onSelectAssessment={selectAssessmentReport}
+            />
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-bold text-slate-900 dark:text-white">Assessment Health Matrix</h2>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Attempts, completion, violations, score, questions, duration, and peak score by assessment.</p>
+                </div>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600 dark:bg-gray-800 dark:text-gray-300">Dynamic signals</span>
+              </div>
+              {heatmapRows.length ? (
+                <Heatmap rows={heatmapRows} />
+              ) : (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-400 dark:border-gray-700 dark:bg-gray-800/40">
+                  No assessment signal data is available for the selected filters yet.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className="mb-4 flex gap-2 overflow-x-auto pb-1 lg:hidden">
+          {assessmentWindowTabs.map((tab) => {
+            const Icon = tab.icon;
+            const active = filters.assessmentWindow === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => updateFilter('assessmentWindow', tab.id)}
+                className={`flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-xs font-bold transition-colors ${active ? 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300' : 'border-slate-200 bg-white text-slate-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {tab.label}
+                <span className={active ? 'text-sky-600 dark:text-sky-300' : 'text-slate-400'}>{tab.count}</span>
+              </button>
+            );
+          })}
+        </div>
+
         <div className="grid gap-5 lg:grid-cols-[300px_1fr]">
           {/* ── Professional Assessment Sidebar ── */}
           <div className="hidden lg:block">
@@ -920,8 +1558,35 @@ export default function AssessmentReports() {
                   <span className="text-sm font-bold text-slate-800 dark:text-white">Assessments</span>
                 </div>
                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:bg-gray-800 dark:text-gray-400">
-                  {assessments.length}
+                  {allAssessments.length || assessments.length}
                 </span>
+              </div>
+
+              <div className="mb-4 grid gap-2">
+                {assessmentWindowTabs.map((tab) => {
+                  const Icon = tab.icon;
+                  const active = filters.assessmentWindow === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => updateFilter('assessmentWindow', tab.id)}
+                      className={`group flex items-center justify-between rounded-xl border px-3 py-2.5 text-left transition-all duration-300 ${
+                        active
+                          ? 'border-sky-200 bg-sky-50 text-sky-800 shadow-sm shadow-sky-100 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-200'
+                          : 'border-transparent bg-slate-50/70 text-slate-600 hover:border-slate-200 hover:bg-white hover:text-slate-900 dark:bg-gray-800/70 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:bg-gray-800'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2 text-xs font-bold">
+                        <Icon className={`h-3.5 w-3.5 ${active ? 'text-sky-600 dark:text-sky-300' : 'text-slate-400 group-hover:text-sky-500'}`} />
+                        {tab.label}
+                      </span>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${active ? 'bg-sky-600 text-white' : 'bg-white text-slate-500 dark:bg-gray-900 dark:text-gray-400'}`}>
+                        {tab.count}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Search Filter */}
@@ -930,20 +1595,29 @@ export default function AssessmentReports() {
                 <input
                   type="text"
                   placeholder="Search assessments..."
-                  value={filters.search || ''}
-                  onChange={(e) => setFilters((p) => ({ ...p, search: e.target.value }))}
+                  value={assessmentSearch}
+                  onChange={(e) => setAssessmentSearch(e.target.value)}
                   className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 text-xs text-slate-700 outline-none transition-all placeholder:text-slate-400 focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:placeholder:text-gray-500 dark:focus:border-sky-500 dark:focus:ring-sky-900/30"
                 />
               </div>
 
-              {/* Date Filter */}
-              <div className="mb-4 space-y-2">
+              <button
+                type="button"
+                onClick={() => setSidebarCollapsed((prev) => ({ ...prev, schedule: !prev.schedule }))}
+                className="mb-2 flex w-full items-center justify-between rounded-lg px-1 text-[11px] font-bold uppercase tracking-wider text-slate-400"
+              >
+                Quick date filters
+                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${sidebarCollapsed.schedule ? '-rotate-90' : ''}`} />
+              </button>
+              {!sidebarCollapsed.schedule && <div className="mb-4 space-y-2">
                 <div className="relative">
                   <Calendar className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                   <DateTimePicker
                     value={filters.from}
                     onChange={(v) => setFilters((p) => ({ ...p, from: v }))}
                     placeholder="From date"
+                    autoSelectToday={false}
+                    allowPast
                     className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 text-xs text-slate-700 outline-none transition-all placeholder:text-slate-400 focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:placeholder:text-gray-500 dark:focus:border-sky-500 dark:focus:ring-sky-900/30"
                   />
                 </div>
@@ -953,25 +1627,33 @@ export default function AssessmentReports() {
                     value={filters.to}
                     onChange={(v) => setFilters((p) => ({ ...p, to: v }))}
                     placeholder="To date"
+                    autoSelectToday={false}
+                    allowPast
                     className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 text-xs text-slate-700 outline-none transition-all placeholder:text-slate-400 focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:placeholder:text-gray-500 dark:focus:border-sky-500 dark:focus:ring-sky-900/30"
                   />
                 </div>
-              </div>
+              </div>}
+
+              <button
+                type="button"
+                onClick={() => setSidebarCollapsed((prev) => ({ ...prev, list: !prev.list }))}
+                className="mb-2 flex w-full items-center justify-between rounded-lg px-1 text-[11px] font-bold uppercase tracking-wider text-slate-400"
+              >
+                Assessment directory
+                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${sidebarCollapsed.list ? '-rotate-90' : ''}`} />
+              </button>
 
               {/* Assessment List */}
-              <div className="space-y-2">
+              {!sidebarCollapsed.list && <div className="space-y-2">
                 {loading && !assessments.length ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <div key={i} className="h-20 animate-pulse rounded-xl bg-gradient-to-r from-slate-100 to-slate-50 dark:from-gray-800 dark:to-gray-800/50" />
                   ))
                 ) : (
-                  assessments.map((a) => (
+                  assessmentSidebarItems.map((a) => (
                     <button
                       key={a._id}
-                      onClick={() => {
-                        setSelectedAssessmentId(a._id);
-                        setFilters((prev) => ({ ...prev, assessmentId: a._id }));
-                      }}
+                      onClick={() => selectAssessmentReport(a, { openOverview: false })}
                       className={`group relative flex w-full flex-col gap-2.5 rounded-xl border p-3.5 text-left transition-all duration-300 ease-out ${
                         String(a._id) === String(selectedAssessmentId)
                           ? 'border-sky-300 bg-gradient-to-br from-sky-50 to-blue-50/50 shadow-md shadow-sky-100/50 dark:border-sky-600/50 dark:from-sky-900/20 dark:to-blue-900/10 dark:shadow-sky-900/20'
@@ -990,7 +1672,7 @@ export default function AssessmentReports() {
                           </div>
                           <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-gray-500">
                             <span className="rounded bg-slate-100 px-1 py-0.5 font-medium dark:bg-gray-800">{a.assessmentType || 'N/A'}</span>
-                            <span>·</span>
+                            <span>-</span>
                             <span>{a.totalQuestions || 0} Qs</span>
                           </div>
                         </div>
@@ -1017,26 +1699,27 @@ export default function AssessmentReports() {
                         </div>
                       </div>
 
-                      {/* Hover expand effect - mini sparkline */}
-                      <div className="h-0 overflow-hidden opacity-0 transition-all duration-300 group-hover:h-6 group-hover:opacity-100">
-                        <Sparkline
-                          data={a.trend || [30, 45, 35, 50, 42, 60, 55]}
-                          width={220}
-                          height={20}
-                          stroke={String(a._id) === String(selectedAssessmentId) ? '#0ea5e9' : '#94a3b8'}
-                          strokeWidth={1.5}
-                        />
-                      </div>
+                      {Array.isArray(a.trend) && a.trend.length > 1 && (
+                        <div className="h-0 overflow-hidden opacity-0 transition-all duration-300 group-hover:h-6 group-hover:opacity-100">
+                          <Sparkline
+                            data={a.trend}
+                            width={220}
+                            height={20}
+                            stroke={String(a._id) === String(selectedAssessmentId) ? '#0ea5e9' : '#94a3b8'}
+                            strokeWidth={1.5}
+                          />
+                        </div>
+                      )}
                     </button>
                   ))
                 )}
-                {!loading && !assessments.length && (
+                {!loading && !assessmentSidebarItems.length && (
                   <div className="py-8 text-center">
                     <Search className="mx-auto h-8 w-8 text-slate-300 dark:text-gray-600" />
                     <p className="mt-2 text-xs text-slate-400 dark:text-gray-500">No assessments found</p>
                   </div>
                 )}
-              </div>
+              </div>}
             </div>
           </div>
 
@@ -1049,7 +1732,7 @@ export default function AssessmentReports() {
                   <span className="text-sm font-bold text-slate-900 dark:text-white">
                     {activeTab === 'violations' ? 'Flagged Sessions' : 'Candidate Performance'}
                   </span>
-                  {selectedAssessment && <span className="text-xs text-slate-400 dark:text-gray-500">· {selectedAssessment.title}</span>}
+                  {selectedAssessment && <span className="text-xs text-slate-400 dark:text-gray-500">- {selectedAssessment.title}</span>}
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -1193,7 +1876,12 @@ export default function AssessmentReports() {
               <div className="text-xs text-slate-500 dark:text-gray-400">{visibleExportDefs.filter(({ key }) => exportColumns[key]).length} column(s) selected</div>
               <div className="flex items-center gap-2">
                 <button onClick={() => setShowExportModal(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Cancel</button>
-                <button onClick={handleExcelExport} disabled={exportingExcel || loadingExportMeta || !visibleExportDefs.some(({ key }) => exportColumns[key])} className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-60">{exportingExcel ? 'Preparing Excel...' : 'Download Excel'}</button>
+                <button onClick={handlePdfExport} disabled={exportingExcel || loadingExportMeta || !visibleExportDefs.some(({ key }) => exportColumns[key])} className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">PDF</button>
+                <button onClick={handleCsvExport} disabled={exportingExcel || loadingExportMeta || !visibleExportDefs.some(({ key }) => exportColumns[key])} className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">CSV</button>
+                <button onClick={handleExcelExport} disabled={exportingExcel || loadingExportMeta || !visibleExportDefs.some(({ key }) => exportColumns[key])} className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-60">
+                  <FileSpreadsheet className="h-3.5 w-3.5" />
+                  {exportingExcel ? 'Preparing Excel...' : 'Download Excel'}
+                </button>
               </div>
             </div>
           </div>

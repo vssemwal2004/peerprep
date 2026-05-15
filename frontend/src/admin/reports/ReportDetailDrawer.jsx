@@ -14,7 +14,7 @@ function SectionBreakdown({ sections }) {
             <button onClick={() => setOpen((p) => ({ ...p, [idx]: !isOpen }))} className="flex w-full items-center justify-between p-4 text-left hover:bg-slate-50 dark:hover:bg-gray-800">
               <div>
                 <div className="font-semibold text-sm text-slate-900 dark:text-white">{section.sectionName}</div>
-                <div className="text-[10px] text-slate-400 dark:text-gray-500 mt-0.5">{section.type} · {section.totalQuestions} questions</div>
+                <div className="text-[10px] text-slate-400 dark:text-gray-500 mt-0.5">{section.type} - {section.totalQuestions} questions</div>
               </div>
               <div className="flex items-center gap-3">
                 <div className="text-right">
@@ -131,7 +131,7 @@ export default function ReportDetailDrawer({ student, loading, data, onClose, op
             </div>
             <div>
               <h2 className="text-lg font-bold text-slate-900 dark:text-white">{student.studentName || 'Unknown'}</h2>
-              <p className="text-xs text-slate-500 dark:text-gray-400">{student.studentId || student.studentRollNo || '—'} · {formatDateTime(student.attemptDate)}</p>
+              <p className="text-xs text-slate-500 dark:text-gray-400">{student.studentId || student.studentRollNo || '-'} - {formatDateTime(student.attemptDate)}</p>
             </div>
           </div>
           <div className="flex items-center gap-1">
@@ -180,7 +180,7 @@ export default function ReportDetailDrawer({ student, loading, data, onClose, op
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 dark:border-gray-700 dark:bg-gray-800">
                     <div className="flex flex-col items-center gap-5 sm:flex-row sm:justify-between">
                       <div className="flex items-center gap-4">
-                        <DonutChart score={data.score || 0} total={data.totalMarks || 100} size={80} stroke={6} />
+                        <DonutChart value={data.score || 0} total={data.totalMarks || 100} size={80} stroke={6} />
                         <div>
                           <div className="text-3xl font-bold text-slate-900 dark:text-white">{data.score ?? 0}<span className="text-base font-normal text-slate-400 dark:text-gray-500"> / {data.totalMarks || 100}</span></div>
                           <div className="text-xs text-slate-500 dark:text-gray-400">Final Score</div>

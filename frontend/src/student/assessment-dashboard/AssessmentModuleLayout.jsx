@@ -1,12 +1,11 @@
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { BarChart3, ClipboardList, History, Trophy } from 'lucide-react';
+import { BarChart3, ClipboardList, History } from 'lucide-react';
 
 const NAV_ITEMS = [
   { label: 'Your Assessments', to: '/student/assessments', icon: ClipboardList },
   { label: 'Assessment Reports', to: '/student/assessment-reports', icon: BarChart3 },
-  { label: 'Ranks', to: '/student/ranks', icon: Trophy },
   { label: 'Assessment History', to: '/student/assessment-history', icon: History },
 ];
 
@@ -17,7 +16,6 @@ export default function AssessmentModuleLayout({ title, children }) {
   const aliasMap = {
     '/student/assessments': '/assessments',
     '/student/assessment-reports': '/assessment-reports',
-    '/student/ranks': '/ranks',
     '/student/assessment-history': '/assessment-history',
   };
 
@@ -31,7 +29,7 @@ export default function AssessmentModuleLayout({ title, children }) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 pt-16">
+    <div className="min-h-screen bg-slate-50 pt-16 transition-colors dark:bg-gray-950">
       <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-[1600px]">
         <aside
           onMouseEnter={() => setExpanded(true)}
@@ -41,14 +39,14 @@ export default function AssessmentModuleLayout({ title, children }) {
           <motion.div
             animate={{ width: expanded ? 240 : 88 }}
             transition={{ duration: 0.22, ease: 'easeOut' }}
-            className="flex h-full flex-col border-r border-slate-200 bg-white shadow-sm"
+            className="flex h-full flex-col border-r border-slate-200 bg-white shadow-sm transition-colors dark:border-gray-800 dark:bg-gray-900"
           >
-            <div className="border-b border-slate-200 px-4 py-4">
+            <div className="border-b border-slate-200 px-4 py-4 dark:border-gray-800">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-600 text-white">
                   <ClipboardList className="h-5 w-5" strokeWidth={1.9} />
                 </div>
-                <span className={`whitespace-nowrap text-sm font-semibold text-slate-900 transition-opacity ${expanded ? 'opacity-100' : 'opacity-0'}`}>
+                <span className={`whitespace-nowrap text-sm font-semibold text-slate-900 transition-opacity dark:text-white ${expanded ? 'opacity-100' : 'opacity-0'}`}>
                   Assessment
                 </span>
               </div>
@@ -65,12 +63,12 @@ export default function AssessmentModuleLayout({ title, children }) {
                     to={item.to}
                     className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors ${
                       active
-                        ? 'bg-sky-50 text-sky-700'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                        ? 'bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-300'
+                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'
                     }`}
                   >
                     <span className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl ${
-                      active ? 'bg-sky-100 text-sky-700' : 'bg-slate-100 text-slate-500'
+                      active ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300' : 'bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-gray-400'
                     }`}>
                       <Icon className="h-4 w-4" strokeWidth={1.9} />
                     </span>
@@ -85,11 +83,11 @@ export default function AssessmentModuleLayout({ title, children }) {
         </aside>
 
         <div className="min-w-0 flex-1">
-          <div className="border-b border-slate-200 bg-white px-4 py-4 shadow-sm sm:px-6">
-            <h1 className="text-xl font-semibold text-slate-900">{title}</h1>
+          <div className="border-b border-slate-200 bg-white px-4 py-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 sm:px-6">
+            <h1 className="text-xl font-semibold text-slate-900 dark:text-white">{title}</h1>
           </div>
 
-          <div className="md:hidden border-b border-slate-200 bg-white px-4 py-3">
+          <div className="border-b border-slate-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-900 md:hidden">
             <div className="flex gap-2 overflow-x-auto">
               {NAV_ITEMS.map((item) => {
                 const Icon = item.icon;
@@ -99,7 +97,7 @@ export default function AssessmentModuleLayout({ title, children }) {
                     key={item.to}
                     to={item.to}
                     className={`inline-flex min-w-max items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium ${
-                      active ? 'bg-sky-50 text-sky-700' : 'bg-slate-100 text-slate-600'
+                      active ? 'bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-300' : 'bg-slate-100 text-slate-600 dark:bg-gray-800 dark:text-gray-300'
                     }`}
                   >
                     <Icon className="h-4 w-4" strokeWidth={1.9} />

@@ -383,7 +383,52 @@ function buildSectionBreakdownWithScores(assessment = {}, submission = {}) {
   });
 }
 
-function buildQuestionWiseReport(assessment = {}, submission = {}) {
+function getQuestionExplanation(question = {}) {
+  if (question?.explanation) return question.explanation;
+  const visibleCases = question?.coding?.testCases || question?.problemDataSnapshot?.testCases || [];
+  const explainedCase = Array.isArray(visibleCases)
+    ? visibleCases.find((testCase) => testCase?.explanation && !testCase?.hidden)
+    : null;
+  return explainedCase?.explanation || '';
+}
+
+function buildStudentResultPermissions(assessment = {}, submission = {}, now = new Date()) {
+  const settings = normalizeAssessmentSettings(assessment.settings || {});
+  const submittedAt = submission?.submittedAt ? new Date(submission.submittedAt) : null;
+  const delayHours = Number(settings.resultDelayHours || 0);
+  const delayedReleaseAt = submittedAt && delayHours > 0
+    ? new Date(submittedAt.getTime() + delayHours * 60 * 60 * 1000)
+    : null;
+  const resultReleased = Boolean(settings.showResultsAfterSubmit)
+    || !delayedReleaseAt
+    || delayedReleaseAt.getTime() <= now.getTime();
+
+  return {
+    resultReleased,
+    releaseAt: delayedReleaseAt,
+    canViewScore: resultReleased,
+    canViewPercentage: resultReleased,
+    canViewQuestionReview: resultReleased,
+    canViewStudentAnswers: resultReleased,
+    canViewCorrectAnswers: resultReleased && Boolean(settings.showCorrectAnswers),
+    canViewExplanations: resultReleased && Boolean(settings.showCorrectAnswers),
+    canViewSectionAnalytics: resultReleased && Boolean(settings.showSectionBreakdown),
+    canViewTimeAnalysis: resultReleased,
+    canViewRank: resultReleased && Boolean(settings.showPercentile),
+    canViewLeaderboard: resultReleased && Boolean(settings.showPercentile),
+    hasNegativeMarking: (assessment.sections || []).some((section) => (
+      Number(section?.negativeMarksPerQuestion || 0) > 0
+      || (section.questions || []).some((question) => Number(question?.negativePoints || 0) > 0)
+    )),
+  };
+}
+
+function buildQuestionWiseReport(assessment = {}, submission = {}, permissions = {
+  canViewScore: true,
+  canViewStudentAnswers: true,
+  canViewCorrectAnswers: true,
+  canViewExplanations: true,
+}) {
   const answerMap = new Map();
   (submission.answers || []).forEach((answer) => {
     answerMap.set(`${answer.sectionIndex}-${answer.questionIndex}`, answer);
@@ -395,18 +440,38 @@ function buildQuestionWiseReport(assessment = {}, submission = {}) {
       const answer = answerMap.get(`${sectionIndex}-${questionIndex}`);
       const result = evaluateQuestionResponse(question, section, answer);
       const marks = Number(question?.points ?? question?.marks ?? section.marksPerQuestion ?? 1);
-      rows.push({
+      const negativeMarks = Number(question?.negativePoints ?? section?.negativeMarksPerQuestion ?? 0);
+      const selectedIndex = answer?.answer !== undefined && answer?.answer !== null ? Number(answer.answer) : null;
+      const correctIndex = question?.correctOptionIndex !== undefined && question?.correctOptionIndex !== null
+        ? Number(question.correctOptionIndex)
+        : null;
+      const row = {
         sectionIndex,
         questionIndex,
         sectionName: section.sectionName || `Section ${sectionIndex + 1}`,
         questionText: question?.questionText || `Question ${questionIndex + 1}`,
         type: question?.type || section?.type || 'mcq',
         timeSpentSec: 0,
-        isCorrect: result === 'correct',
+        status: result === 'wrong' ? 'incorrect' : result,
+        isCorrect: permissions.canViewScore ? result === 'correct' : null,
         isSkipped: result === 'skipped',
-        marksObtained: result === 'correct' ? marks : 0,
-        maxMarks: marks,
-      });
+        marksObtained: permissions.canViewScore ? (result === 'correct' ? marks : result === 'wrong' ? -negativeMarks : 0) : null,
+        maxMarks: permissions.canViewScore ? marks : null,
+        negativeMarks: permissions.canViewScore && negativeMarks > 0 ? negativeMarks : null,
+        options: Array.isArray(question?.options) ? question.options : [],
+      };
+      if (permissions.canViewStudentAnswers) {
+        row.studentAnswer = answer?.answer ?? answer?.code ?? '';
+        row.selectedOptionIndex = Number.isFinite(selectedIndex) ? selectedIndex : null;
+      }
+      if (permissions.canViewCorrectAnswers) {
+        row.correctAnswer = question?.expectedAnswer || (Number.isFinite(correctIndex) ? question.options?.[correctIndex] : '');
+        row.correctOptionIndex = Number.isFinite(correctIndex) ? correctIndex : null;
+      }
+      if (permissions.canViewExplanations) {
+        row.explanation = getQuestionExplanation(question);
+      }
+      rows.push(row);
     });
   });
   return rows;
@@ -461,6 +526,56 @@ function buildProctoringFlags(submission = {}) {
   return flags.join(' | ');
 }
 
+function buildMonitoringTimeline(submission = {}) {
+  const normalizeEvent = (event = {}, source = 'monitoring') => ({
+    type: event.type || event.eventType || event.kind || 'activity',
+    message: event.message || event.reason || event.label || 'Monitoring event recorded.',
+    at: event.at || event.timestamp || event.createdAt || event.time || null,
+    severity: event.severity || event.level || event.meta?.severity || 'medium',
+    source,
+    meta: event.meta || event.details || {},
+  });
+
+  const events = [
+    ...(Array.isArray(submission.violationLog) ? submission.violationLog.map((event) => normalizeEvent(event, 'violation')) : []),
+    ...(Array.isArray(submission.violations) ? submission.violations.map((event) => normalizeEvent(event, 'violation')) : []),
+    ...(Array.isArray(submission.monitoringEvents) ? submission.monitoringEvents.map((event) => normalizeEvent(event, 'monitoring')) : []),
+    ...(Array.isArray(submission.proctoringSnapshots) ? submission.proctoringSnapshots.map((event) => normalizeEvent(event, 'snapshot')) : []),
+  ].filter((event) => event.at);
+
+  return events.sort((a, b) => new Date(a.at) - new Date(b.at));
+}
+
+function buildAssessmentWindowMatch(windowName, now = new Date()) {
+  const normalized = String(windowName || 'all').toLowerCase();
+  if (normalized === 'current' || normalized === 'active') {
+    return {
+      'assessment.startTime': { $lte: now },
+      'assessment.endTime': { $gte: now },
+    };
+  }
+  if (normalized === 'upcoming') return { 'assessment.startTime': { $gt: now } };
+  if (normalized === 'completed') return { 'assessment.endTime': { $lt: now } };
+  return {};
+}
+
+function buildAssessmentCollectionWindowMatch(windowName, now = new Date()) {
+  const normalized = String(windowName || 'all').toLowerCase();
+  if (normalized === 'current' || normalized === 'active') return { startTime: { $lte: now }, endTime: { $gte: now } };
+  if (normalized === 'upcoming') return { startTime: { $gt: now } };
+  if (normalized === 'completed') return { endTime: { $lt: now } };
+  return {};
+}
+
+function lifecycleBucketForAssessment(assessment = {}, now = new Date()) {
+  const start = assessment.startTime ? new Date(assessment.startTime) : null;
+  const end = assessment.endTime ? new Date(assessment.endTime) : null;
+  if (assessment.lifecycleStatus === 'draft') return 'draft';
+  if (start && start > now) return 'upcoming';
+  if (end && end < now) return 'completed';
+  return 'current';
+}
+
 function computeSubmissionTimeTakenSec(submission = {}) {
   if (Number.isFinite(Number(submission.timeTakenSec)) && Number(submission.timeTakenSec) > 0) {
     return Number(submission.timeTakenSec);
@@ -481,7 +596,7 @@ function formatStudentSubmissionStatus(submission = {}) {
   return submission.status === 'submitted' ? 'Completed' : 'Partial';
 }
 
-function buildStudentReportRow(assessment = {}, submission = {}) {
+function buildStudentReportRow(assessment = {}, submission = {}, { rankInfo = null, now = new Date() } = {}) {
   const analytics = buildAssessmentAttemptAnalytics(assessment, submission);
   const totalMarks = Number(assessment.totalMarks || computeTotalMarksFromSections(assessment.sections || []));
   const score = Number(submission.score || 0);
@@ -490,26 +605,38 @@ function buildStudentReportRow(assessment = {}, submission = {}) {
     : totalMarks > 0
       ? Number(((score / totalMarks) * 100).toFixed(2))
       : 0;
+  const permissions = buildStudentResultPermissions(assessment, submission, now);
+  const sectionBreakdown = permissions.canViewSectionAnalytics ? analytics.sectionBreakdown : [];
+  const questionWise = permissions.canViewQuestionReview
+    ? buildQuestionWiseReport(assessment, submission, permissions)
+    : [];
 
   return {
     id: submission._id,
     assessmentId: assessment._id,
     assessmentName: assessment.title || 'Untitled Assessment',
     assessmentType: assessment.assessmentType || 'mixed',
+    duration: assessment.duration || 0,
     dateAttempted: submission.submittedAt || submission.startedAt || submission.updatedAt || submission.createdAt,
     status: formatStudentSubmissionStatus(submission),
-    score,
-    totalMarks,
+    score: permissions.canViewScore ? score : null,
+    totalMarks: permissions.canViewScore ? totalMarks : null,
+    rawScore: permissions.canViewScore ? score : null,
     totalQuestions: analytics.totalQuestions,
-    correctAnswers: analytics.correctAnswers,
-    wrongAnswers: analytics.wrongAnswers,
-    skippedQuestions: analytics.skippedQuestions,
-    pendingEvaluationQuestions: analytics.pendingEvaluationQuestions,
-    accuracy,
+    correctAnswers: permissions.canViewScore ? analytics.correctAnswers : null,
+    wrongAnswers: permissions.canViewScore ? analytics.wrongAnswers : null,
+    skippedQuestions: permissions.canViewScore ? analytics.skippedQuestions : null,
+    pendingEvaluationQuestions: permissions.canViewScore ? analytics.pendingEvaluationQuestions : null,
+    accuracy: permissions.canViewPercentage ? accuracy : null,
     timeTakenSec: computeSubmissionTimeTakenSec(submission),
     submittedAt: submission.submittedAt,
     startedAt: submission.startedAt,
-    sectionBreakdown: analytics.sectionBreakdown,
+    sectionBreakdown,
+    questionWise,
+    permissions,
+    rank: permissions.canViewRank ? rankInfo?.rank || null : null,
+    percentile: permissions.canViewRank ? rankInfo?.percentile || null : null,
+    participants: permissions.canViewRank ? rankInfo?.participants || null : null,
   };
 }
 
@@ -1061,6 +1188,13 @@ export async function listAssessments(req, res) {
               $cond: [{ $eq: ['$status', 'submitted'] }, 1, 0],
             },
           },
+          avgScore: { $avg: { $ifNull: ['$score', 0] } },
+          maxScore: { $max: { $ifNull: ['$score', 0] } },
+          minScore: { $min: { $ifNull: ['$score', 0] } },
+          tabSwitches: { $sum: { $ifNull: ['$tabSwitches', 0] } },
+          fullscreenExits: { $sum: { $ifNull: ['$fullscreenExits', 0] } },
+          cameraFlags: { $sum: { $ifNull: ['$cameraFlags', 0] } },
+          copyPasteCount: { $sum: { $ifNull: ['$copyPasteCount', 0] } },
         },
       },
     ]);
@@ -1068,6 +1202,7 @@ export async function listAssessments(req, res) {
     const now = new Date();
     const data = assessments.map((a) => {
       const status = computeStatus(now, a);
+      const lifecycleBucket = lifecycleBucketForAssessment(a, now);
       const assignedCount = a.targetType === 'all'
         ? 'All Students'
         : (a.lifecycleStatus === 'draft'
@@ -1077,9 +1212,23 @@ export async function listAssessments(req, res) {
       return {
         ...sanitizeAssessmentForResponse(a),
         status,
+        lifecycleBucket,
+        totalQuestions: countQuestions(a.sections || []),
+        totalMarks: Number(a.totalMarks || computeTotalMarksFromSections(a.sections || [])) || 0,
         assignedCount,
         attempts: countsByAssessment.get(String(a._id))?.count || 0,
+        submissionCount: countsByAssessment.get(String(a._id))?.count || 0,
         submissions: countsByAssessment.get(String(a._id))?.submitted || 0,
+        completedCount: countsByAssessment.get(String(a._id))?.submitted || 0,
+        avgScore: countsByAssessment.get(String(a._id))?.avgScore || 0,
+        maxScore: countsByAssessment.get(String(a._id))?.maxScore || 0,
+        minScore: countsByAssessment.get(String(a._id))?.minScore || 0,
+        violationCount: (
+          (countsByAssessment.get(String(a._id))?.tabSwitches || 0)
+          + (countsByAssessment.get(String(a._id))?.fullscreenExits || 0)
+          + (countsByAssessment.get(String(a._id))?.cameraFlags || 0)
+          + (countsByAssessment.get(String(a._id))?.copyPasteCount || 0)
+        ),
       };
     });
     res.json({ count: data.length, assessments: data });
@@ -1454,7 +1603,7 @@ export async function getStudentAssessmentDashboard(req, res) {
     const studentId = String(req.user?._id || '');
     const now = new Date();
 
-    const [assessments, studentSubmissions, leaderboardRows] = await Promise.all([
+    const [assessments, studentSubmissions] = await Promise.all([
       Assessment.find({
         lifecycleStatus: { $ne: 'draft' },
         isVisible: { $ne: false },
@@ -1466,46 +1615,63 @@ export async function getStudentAssessmentDashboard(req, res) {
         ],
       }).sort({ startTime: -1, createdAt: -1 }).lean(),
       AssessmentSubmission.find({ studentId: req.user._id }).sort({ updatedAt: -1 }).lean(),
-      AssessmentSubmission.aggregate([
-        { $match: { status: 'submitted' } },
-        {
-          $group: {
-            _id: '$studentId',
-            totalScore: { $sum: { $ifNull: ['$score', 0] } },
-            assessmentsCompleted: { $sum: 1 },
-            averageAccuracy: { $avg: '$accuracy' },
-            averageTimeTakenSec: { $avg: '$timeTakenSec' },
-            latestSubmittedAt: { $max: '$submittedAt' },
-          },
-        },
-        {
-          $lookup: {
-            from: 'users',
-            localField: '_id',
-            foreignField: '_id',
-            as: 'student',
-          },
-        },
-        { $unwind: '$student' },
-        {
-          $project: {
-            studentId: '$_id',
-            name: '$student.name',
-            avatarUrl: '$student.avatarUrl',
-            collegeId: '$student.studentId',
-            totalScore: { $round: ['$totalScore', 2] },
-            assessmentsCompleted: 1,
-            averageAccuracy: { $round: [{ $ifNull: ['$averageAccuracy', 0] }, 2] },
-            averageTimeTakenSec: { $round: [{ $ifNull: ['$averageTimeTakenSec', 0] }, 0] },
-            latestSubmittedAt: 1,
-          },
-        },
-      ]),
     ]);
 
     const submissionsByAssessment = new Map(
       studentSubmissions.map((submission) => [String(submission.assessmentId), submission]),
     );
+    const submittedAssessmentIds = studentSubmissions
+      .filter((submission) => submission?.status === 'submitted' && submission.assessmentId)
+      .map((submission) => submission.assessmentId);
+    const rankInfoByAssessment = new Map();
+    if (submittedAssessmentIds.length) {
+      const uniqueAssessmentIds = [...new Set(submittedAssessmentIds.map((id) => String(id)))]
+        .map((id) => new mongoose.Types.ObjectId(id));
+      const rankRows = await AssessmentSubmission.aggregate([
+        { $match: { status: 'submitted', assessmentId: { $in: uniqueAssessmentIds } } },
+        {
+          $setWindowFields: {
+            partitionBy: '$assessmentId',
+            sortBy: { score: -1, timeTakenSec: 1, submittedAt: 1 },
+            output: {
+              rank: { $rank: {} },
+              participants: { $count: {} },
+            },
+          },
+        },
+        { $match: { studentId: req.user._id } },
+        {
+          $project: {
+            assessmentId: 1,
+            rank: 1,
+            participants: 1,
+            percentile: {
+              $round: [
+                {
+                  $multiply: [
+                    {
+                      $divide: [
+                        { $subtract: ['$participants', '$rank'] },
+                        { $cond: [{ $gt: ['$participants', 0] }, '$participants', 1] },
+                      ],
+                    },
+                    100,
+                  ],
+                },
+                2,
+              ],
+            },
+          },
+        },
+      ]);
+      rankRows.forEach((row) => {
+        rankInfoByAssessment.set(String(row.assessmentId), {
+          rank: row.rank || null,
+          participants: row.participants || null,
+          percentile: row.percentile || null,
+        });
+      });
+    }
 
     const ongoingAssessments = [];
     const upcomingAssessments = [];
@@ -1550,7 +1716,10 @@ export async function getStudentAssessmentDashboard(req, res) {
       }
 
       if (submission && (submission.startedAt || submission.submittedAt || submission.updatedAt)) {
-        reportRows.push(buildStudentReportRow(assessment, submission));
+        reportRows.push(buildStudentReportRow(assessment, submission, {
+          rankInfo: rankInfoByAssessment.get(assessmentId) || null,
+          now,
+        }));
       }
     });
 
@@ -1564,41 +1733,19 @@ export async function getStudentAssessmentDashboard(req, res) {
       return row.status === 'Completed' && ended;
     });
 
-    const leaderboard = [...leaderboardRows]
-      .sort((left, right) => {
-        if (right.totalScore !== left.totalScore) return right.totalScore - left.totalScore;
-        if (right.averageAccuracy !== left.averageAccuracy) return right.averageAccuracy - left.averageAccuracy;
-        if (right.assessmentsCompleted !== left.assessmentsCompleted) return right.assessmentsCompleted - left.assessmentsCompleted;
-        return String(left.name || '').localeCompare(String(right.name || ''));
-      })
-      .map((entry, index) => ({
-        rank: index + 1,
-        studentId: entry.studentId,
-        name: entry.name || 'Student',
-        avatarUrl: entry.avatarUrl || '',
-        collegeId: entry.collegeId || '',
-        score: Number(entry.totalScore || 0),
-        assessmentsCompleted: Number(entry.assessmentsCompleted || 0),
-        averageAccuracy: Number(entry.averageAccuracy || 0),
-        averageTimeTakenSec: Number(entry.averageTimeTakenSec || 0),
-        latestSubmittedAt: entry.latestSubmittedAt,
-        isCurrentStudent: String(entry.studentId) === studentId,
-      }));
-
-    const currentStudentRank = leaderboard.find((entry) => entry.isCurrentStudent) || null;
     const completedReports = sortedReports.filter((row) => row.status === 'Completed');
-    const averageScore = completedReports.length
-      ? Number((completedReports.reduce((sum, row) => sum + Number(row.score || 0), 0) / completedReports.length).toFixed(2))
+    const visibleScoreReports = completedReports.filter((row) => row.permissions?.canViewScore);
+    const averageScore = visibleScoreReports.length
+      ? Number((visibleScoreReports.reduce((sum, row) => sum + Number(row.score || 0), 0) / visibleScoreReports.length).toFixed(2))
       : 0;
-    const bestScore = completedReports.length
-      ? Math.max(...completedReports.map((row) => Number(row.score || 0)))
+    const bestScore = visibleScoreReports.length
+      ? Math.max(...visibleScoreReports.map((row) => Number(row.score || 0)))
       : 0;
 
     res.json({
       serverTime: now,
       currentStudent: {
         id: studentId,
-        rank: currentStudentRank?.rank || null,
       },
       overview: {
         upcomingCount: upcomingAssessments.length,
@@ -1612,7 +1759,6 @@ export async function getStudentAssessmentDashboard(req, res) {
       ongoingAssessments,
       reports: sortedReports,
       history: historyRows,
-      leaderboard,
     });
   } catch (err) {
     console.error('Error loading student assessment dashboard:', err);
@@ -2055,12 +2201,16 @@ export async function getAssessmentReports(req, res) {
       assessmentId,
       assessmentType,
       studentId,
+      studentQuery,
       status,
       hasViolations,
+      assessmentWindow,
       from,
       to,
       scoreMin,
       scoreMax,
+      sortKey = 'attemptDate',
+      sortDir = 'desc',
       page = 1,
       limit = 25,
       passMark = 0.4,
@@ -2117,9 +2267,21 @@ export async function getAssessmentReports(req, res) {
       { $unwind: '$student' },
     ];
 
-    const postMatch = { 'assessment.lifecycleStatus': { $ne: 'draft' } };
+    const now = new Date();
+    const postMatch = {
+      'assessment.lifecycleStatus': { $ne: 'draft' },
+      ...buildAssessmentWindowMatch(assessmentWindow, now),
+    };
     if (assessmentType) postMatch['assessment.assessmentType'] = assessmentType;
     if (studentId) postMatch['student._id'] = new mongoose.Types.ObjectId(studentId);
+    if (studentQuery) {
+      const regex = new RegExp(String(studentQuery).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      postMatch.$or = [
+        { 'student.name': regex },
+        { 'student.email': regex },
+        { 'student.studentId': regex },
+      ];
+    }
     if (req.user?.role === 'coordinator') {
       postMatch['assessment.createdBy'] = req.user._id;
     }
@@ -2138,9 +2300,20 @@ export async function getAssessmentReports(req, res) {
       { $lookup: { from: 'users', localField: 'studentId', foreignField: '_id', as: 'student' } },
       { $unwind: '$student' },
     ];
-    const summaryPostMatch = { 'assessment.lifecycleStatus': { $ne: 'draft' } };
+    const summaryPostMatch = {
+      'assessment.lifecycleStatus': { $ne: 'draft' },
+      ...buildAssessmentWindowMatch(assessmentWindow, now),
+    };
     if (assessmentType) summaryPostMatch['assessment.assessmentType'] = assessmentType;
     if (studentId) summaryPostMatch['student._id'] = new mongoose.Types.ObjectId(studentId);
+    if (studentQuery) {
+      const regex = new RegExp(String(studentQuery).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      summaryPostMatch.$or = [
+        { 'student.name': regex },
+        { 'student.email': regex },
+        { 'student.studentId': regex },
+      ];
+    }
     if (req.user?.role === 'coordinator') {
       summaryPostMatch['assessment.createdBy'] = req.user._id;
     }
@@ -2156,12 +2329,21 @@ export async function getAssessmentReports(req, res) {
     const limitNum = Math.min(100, Math.max(1, Number(limit) || 25));
     const pageNum = Math.max(1, Number(page) || 1);
     const skip = (pageNum - 1) * limitNum;
+    const sortFieldMap = {
+      studentName: 'studentName',
+      attemptDate: 'attemptDate',
+      attempts: 'attempts',
+      score: 'score',
+      accuracy: 'accuracy',
+      timeTakenSec: 'timeTakenSec',
+      violationCount: 'violationCount',
+      rank: 'rank',
+    };
+    const resolvedSortKey = sortFieldMap[sortKey] || 'attemptDate';
+    const resolvedSortDir = String(sortDir).toLowerCase() === 'asc' ? 1 : -1;
 
     const studentRows = await AssessmentSubmission.aggregate([
       ...baseLookup,
-      { $sort: { submittedAt: -1, startedAt: -1 } },
-      { $skip: skip },
-      { $limit: limitNum },
       {
         $project: {
           _id: 1,
@@ -2200,6 +2382,9 @@ export async function getAssessmentReports(req, res) {
           copyPasteCount: { $ifNull: ['$copyPasteCount', 0] },
         },
       },
+      { $sort: { [resolvedSortKey]: resolvedSortDir, attemptDate: -1 } },
+      { $skip: skip },
+      { $limit: limitNum },
     ]);
 
     const summaryRows = await AssessmentSubmission.aggregate([
@@ -2307,13 +2492,99 @@ export async function getAssessmentReports(req, res) {
       { $sort: { _id: 1 } },
       { $limit: 10 },
     ]);
+
+    const attemptTrendRows = await AssessmentSubmission.aggregate([
+      ...summaryBaseLookup,
+      { $match: { startedAt: { $exists: true, $ne: null } } },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$startedAt' } },
+          count: { $sum: 1 },
+          avgScore: { $avg: { $ifNull: ['$score', 0] } },
+        },
+      },
+      { $sort: { _id: 1 } },
+      { $limit: 30 },
+    ]);
+
+    const monthlyActivityRows = await AssessmentSubmission.aggregate([
+      ...summaryBaseLookup,
+      { $match: { startedAt: { $exists: true, $ne: null } } },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m', date: '$startedAt' } },
+          attempts: { $sum: 1 },
+          completed: { $sum: { $cond: [{ $eq: ['$status', 'submitted'] }, 1, 0] } },
+          violations: {
+            $sum: {
+              $add: [
+                { $ifNull: ['$tabSwitches', 0] },
+                { $ifNull: ['$fullscreenExits', 0] },
+                { $ifNull: ['$cameraFlags', 0] },
+                { $ifNull: ['$copyPasteCount', 0] },
+              ],
+            },
+          },
+          avgScore: { $avg: { $ifNull: ['$score', 0] } },
+        },
+      },
+      { $sort: { _id: 1 } },
+      { $limit: 12 },
+    ]);
+
+    const activityCalendarRows = await AssessmentSubmission.aggregate([
+      ...summaryBaseLookup,
+      { $match: { startedAt: { $exists: true, $ne: null } } },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$startedAt' } },
+          attempts: { $sum: 1 },
+          violations: {
+            $sum: {
+              $add: [
+                { $ifNull: ['$tabSwitches', 0] },
+                { $ifNull: ['$fullscreenExits', 0] },
+                { $ifNull: ['$cameraFlags', 0] },
+                { $ifNull: ['$copyPasteCount', 0] },
+              ],
+            },
+          },
+          avgScore: { $avg: { $ifNull: ['$score', 0] } },
+        },
+      },
+      { $sort: { _id: 1 } },
+      { $limit: 365 },
+    ]);
+
     const summary = summaryRows?.[0] || { avgScore: 0, maxScore: 0, minScore: 0, total: 0, passCount: 0 };
     const failCount = Math.max(0, (summary.total || 0) - (summary.passCount || 0));
 
-    const assessmentSummariesMatch = { lifecycleStatus: { $ne: 'draft' } };
+    const assessmentSummariesMatch = {
+      lifecycleStatus: { $ne: 'draft' },
+      ...buildAssessmentCollectionWindowMatch(assessmentWindow, now),
+    };
     if (assessmentId) assessmentSummariesMatch._id = new mongoose.Types.ObjectId(assessmentId);
     if (assessmentType) assessmentSummariesMatch.assessmentType = assessmentType;
     if (req.user?.role === 'coordinator') assessmentSummariesMatch.createdBy = req.user._id;
+
+    const assessmentCalendarMatch = {
+      lifecycleStatus: { $ne: 'draft' },
+      ...buildAssessmentCollectionWindowMatch(assessmentWindow, now),
+    };
+    if (assessmentType) assessmentCalendarMatch.assessmentType = assessmentType;
+    if (req.user?.role === 'coordinator') assessmentCalendarMatch.createdBy = req.user._id;
+
+    const assessmentCreatedTrendRows = await Assessment.aggregate([
+      { $match: assessmentCalendarMatch },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m', date: '$createdAt' } },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+      { $limit: 12 },
+    ]);
 
     const assessmentSummaries = await Assessment.aggregate([
       { $match: assessmentSummariesMatch },
@@ -2330,6 +2601,11 @@ export async function getAssessmentReports(req, res) {
           title: 1,
           assessmentType: 1,
           lifecycleStatus: 1,
+          startTime: 1,
+          endTime: 1,
+          duration: 1,
+          createdAt: 1,
+          updatedAt: 1,
           totalQuestions: {
             $sum: {
               $map: {
@@ -2345,10 +2621,173 @@ export async function getAssessmentReports(req, res) {
           avgScore: { $avg: '$submissions.score' },
           maxScore: { $max: '$submissions.score' },
           minScore: { $min: '$submissions.score' },
+          submissionCount: { $size: { $ifNull: ['$submissions', []] } },
+          completedCount: {
+            $size: {
+              $filter: {
+                input: { $ifNull: ['$submissions', []] },
+                as: 'submission',
+                cond: { $eq: ['$$submission.status', 'submitted'] },
+              },
+            },
+          },
+          violationCount: {
+            $sum: {
+              $map: {
+                input: { $ifNull: ['$submissions', []] },
+                as: 'submission',
+                in: {
+                  $add: [
+                    { $ifNull: ['$$submission.tabSwitches', 0] },
+                    { $ifNull: ['$$submission.fullscreenExits', 0] },
+                    { $ifNull: ['$$submission.cameraFlags', 0] },
+                    { $ifNull: ['$$submission.copyPasteCount', 0] },
+                  ],
+                },
+              },
+            },
+          },
         },
       },
       { $sort: { createdAt: -1 } },
     ]);
+
+    const assessmentCalendarSummaries = assessmentId
+      ? await Assessment.aggregate([
+        { $match: assessmentCalendarMatch },
+        {
+          $lookup: {
+            from: 'assessmentsubmissions',
+            localField: '_id',
+            foreignField: 'assessmentId',
+            as: 'submissions',
+          },
+        },
+        {
+          $project: {
+            title: 1,
+            assessmentType: 1,
+            lifecycleStatus: 1,
+            startTime: 1,
+            endTime: 1,
+            duration: 1,
+            createdAt: 1,
+            totalQuestions: {
+              $sum: {
+                $map: {
+                  input: { $ifNull: ['$sections', []] },
+                  as: 'sec',
+                  in: { $size: { $ifNull: ['$$sec.questions', []] } },
+                },
+              },
+            },
+            totalMarks: 1,
+            attempted: { $size: { $ifNull: ['$submissions', []] } },
+            avgScore: { $avg: '$submissions.score' },
+            submissionCount: { $size: { $ifNull: ['$submissions', []] } },
+            completedCount: {
+              $size: {
+                $filter: {
+                  input: { $ifNull: ['$submissions', []] },
+                  as: 'submission',
+                  cond: { $eq: ['$$submission.status', 'submitted'] },
+                },
+              },
+            },
+            violationCount: {
+              $sum: {
+                $map: {
+                  input: { $ifNull: ['$submissions', []] },
+                  as: 'submission',
+                  in: {
+                    $add: [
+                      { $ifNull: ['$$submission.tabSwitches', 0] },
+                      { $ifNull: ['$$submission.fullscreenExits', 0] },
+                      { $ifNull: ['$$submission.cameraFlags', 0] },
+                      { $ifNull: ['$$submission.copyPasteCount', 0] },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        },
+        { $sort: { createdAt: -1 } },
+      ])
+      : assessmentSummaries;
+
+    const assessmentBuckets = assessmentSummaries.reduce((acc, assessment) => {
+      const bucket = lifecycleBucketForAssessment(assessment, now);
+      acc.all += 1;
+      if (bucket === 'current') acc.current += 1;
+      if (bucket === 'upcoming') acc.upcoming += 1;
+      if (bucket === 'completed') acc.completed += 1;
+      return acc;
+    }, { all: 0, current: 0, upcoming: 0, completed: 0 });
+
+    const assessmentCalendarMap = new Map();
+    const monthlyAssessmentMap = new Map();
+    assessmentCalendarSummaries.forEach((assessment) => {
+      if (!assessment?.createdAt) return;
+      const created = new Date(assessment.createdAt);
+      if (Number.isNaN(created.getTime())) return;
+      const dayKey = created.toISOString().slice(0, 10);
+      const monthKey = created.toISOString().slice(0, 7);
+      const card = {
+        _id: assessment._id,
+        title: assessment.title || 'Untitled',
+        assessmentType: assessment.assessmentType || 'mixed',
+        lifecycleStatus: assessment.lifecycleStatus || 'published',
+        lifecycleBucket: lifecycleBucketForAssessment(assessment, now),
+        startTime: assessment.startTime || null,
+        endTime: assessment.endTime || null,
+        duration: assessment.duration || 0,
+        totalQuestions: assessment.totalQuestions || 0,
+        totalMarks: assessment.totalMarks || 0,
+        submissionCount: assessment.submissionCount || assessment.attempted || 0,
+        completedCount: assessment.completedCount || 0,
+        avgScore: Number(Number(assessment.avgScore || 0).toFixed(2)),
+        violationCount: assessment.violationCount || 0,
+        createdAt: assessment.createdAt,
+      };
+
+      const dayEntry = assessmentCalendarMap.get(dayKey) || {
+        date: dayKey,
+        count: 0,
+        totalQuestions: 0,
+        attempts: 0,
+        completed: 0,
+        violations: 0,
+        assessments: [],
+      };
+      dayEntry.count += 1;
+      dayEntry.totalQuestions += Number(card.totalQuestions || 0);
+      dayEntry.attempts += Number(card.submissionCount || 0);
+      dayEntry.completed += Number(card.completedCount || 0);
+      dayEntry.violations += Number(card.violationCount || 0);
+      dayEntry.assessments.push(card);
+      assessmentCalendarMap.set(dayKey, dayEntry);
+
+      const monthEntry = monthlyAssessmentMap.get(monthKey) || {
+        month: monthKey,
+        count: 0,
+        totalQuestions: 0,
+        attempts: 0,
+        completed: 0,
+        violations: 0,
+      };
+      monthEntry.count += 1;
+      monthEntry.totalQuestions += Number(card.totalQuestions || 0);
+      monthEntry.attempts += Number(card.submissionCount || 0);
+      monthEntry.completed += Number(card.completedCount || 0);
+      monthEntry.violations += Number(card.violationCount || 0);
+      monthlyAssessmentMap.set(monthKey, monthEntry);
+    });
+
+    const assessmentCalendar = Array.from(assessmentCalendarMap.values())
+      .sort((a, b) => a.date.localeCompare(b.date));
+    const monthlyAssessments = Array.from(monthlyAssessmentMap.values())
+      .sort((a, b) => a.month.localeCompare(b.month));
 
     res.json({
       assessments: assessmentSummaries,
@@ -2375,6 +2814,27 @@ export async function getAssessmentReports(req, res) {
         ],
         topViolators: topViolatorsRows || [],
         violationTrend: violationTrendRows.map((row) => row.violationCount) || [],
+        attemptTrend: attemptTrendRows.map((row) => row.count) || [],
+        scoreTrend: attemptTrendRows.map((row) => Number((row.avgScore || 0).toFixed(2))) || [],
+        assessmentTrend: assessmentCreatedTrendRows.map((row) => row.count) || [],
+        trendLabels: attemptTrendRows.map((row) => row._id) || [],
+        monthlyActivity: monthlyActivityRows.map((row) => ({
+          month: row._id,
+          attempts: row.attempts || 0,
+          completed: row.completed || 0,
+          violations: row.violations || 0,
+          avgScore: Number((row.avgScore || 0).toFixed(2)),
+        })),
+        activityCalendar: activityCalendarRows.map((row) => ({
+          date: row._id,
+          attempts: row.attempts || 0,
+          violations: row.violations || 0,
+          avgScore: Number((row.avgScore || 0).toFixed(2)),
+        })),
+        assessmentCalendar,
+        monthlyAssessments,
+        totalAssessments: assessmentBuckets.all,
+        assessmentBuckets,
       },
       pagination: {
         page: pageNum,
@@ -2456,6 +2916,7 @@ export async function getAssessmentReportsExportData(req, res) {
       assessmentType,
       studentQuery,
       status,
+      assessmentWindow,
       from,
       to,
       scoreMin,
@@ -2496,7 +2957,10 @@ export async function getAssessmentReportsExportData(req, res) {
       { $unwind: '$student' },
     ];
 
-    const postMatch = { 'assessment.lifecycleStatus': { $ne: 'draft' } };
+    const postMatch = {
+      'assessment.lifecycleStatus': { $ne: 'draft' },
+      ...buildAssessmentWindowMatch(assessmentWindow, new Date()),
+    };
     if (assessmentType) postMatch['assessment.assessmentType'] = assessmentType;
     if (studentQuery) {
       const regex = new RegExp(String(studentQuery).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
@@ -2537,6 +3001,8 @@ export async function getAssessmentReportsExportData(req, res) {
         securitySetup: { $ifNull: ['$securitySetup', {}] },
         violationLog: { $ifNull: ['$violationLog', []] },
         violations: { $ifNull: ['$violations', []] },
+        monitoringEvents: { $ifNull: ['$monitoringEvents', []] },
+        proctoringSnapshots: { $ifNull: ['$proctoringSnapshots', []] },
         attemptCount: { $ifNull: ['$attemptCount', 0] },
         lastIp: 1,
         lastUserAgent: 1,
@@ -2629,6 +3095,7 @@ export async function getAssessmentReportsExportData(req, res) {
           assessmentType: assessmentDoc.assessmentType || 'mixed',
           assessmentCode: assessmentDoc.assessmentId || '',
           assessmentStatus: assessmentDoc.lifecycleStatus || 'draft',
+          assessmentWindow: lifecycleBucketForAssessment(assessmentDoc),
           assessmentStartTime: assessmentDoc.startTime || null,
           assessmentEndTime: assessmentDoc.endTime || null,
           assessmentDurationMin: assessmentDoc.duration || 0,
@@ -2679,7 +3146,7 @@ export async function getAssessmentReportsExportData(req, res) {
           securityHeartbeat: securityHeartbeatText,
           location: locationText,
           proctoringFlags: proctoringFlagsText,
-          proctoringActivityCount: Array.isArray(row.violationLog) ? row.violationLog.length : 0,
+          proctoringActivityCount: buildMonitoringTimeline(row).length,
           questionCount: questionWise.length,
         });
 
@@ -2701,7 +3168,7 @@ export async function getAssessmentReportsExportData(req, res) {
           });
         });
 
-        (row.violationLog || []).forEach((logEntry, logIndex) => {
+        buildMonitoringTimeline(row).forEach((logEntry, logIndex) => {
           proctoringRows.push({
             submissionId: String(row._id),
             candidateName: row.student?.name || 'Unknown',
@@ -2711,6 +3178,8 @@ export async function getAssessmentReportsExportData(req, res) {
             type: logEntry?.type || 'other',
             message: logEntry?.message || '',
             at: logEntry?.at || null,
+            severity: logEntry?.severity || 'medium',
+            source: logEntry?.source || '',
             weight: logEntry?.meta?.weight ?? '',
             meta: JSON.stringify(logEntry?.meta || {}),
           });
@@ -3190,7 +3659,7 @@ export async function getSubmissionViolations(req, res) {
     const { submissionId } = req.params;
     const submission = await AssessmentSubmission.findById(submissionId)
       .populate('studentId', 'name email studentId')
-      .select('violationLog tabSwitches fullscreenExits copyPasteCount cameraFlags violationScore pauseCount lastPauseAt status startedAt submittedAt studentId assessmentId securitySetup securityHeartbeat')
+      .select('violationLog violations monitoringEvents proctoringSnapshots tabSwitches fullscreenExits copyPasteCount cameraFlags violationScore pauseCount lastPauseAt status startedAt submittedAt studentId assessmentId securitySetup securityHeartbeat lastIp lastUserAgent')
       .lean();
     if (!submission) return res.status(404).json({ error: 'Submission not found.' });
     if (req.user && req.user.role === 'coordinator') {
@@ -3199,18 +3668,22 @@ export async function getSubmissionViolations(req, res) {
         return res.status(403).json({ error: 'Access denied.' });
       }
     }
-    const timeline = (submission.violationLog || [])
-      .map((e) => ({ ...e, source: 'log' }))
-      .sort((a, b) => new Date(a.at) - new Date(b.at));
+    const assessment = await Assessment.findById(submission.assessmentId)
+      .select('title startTime endTime duration settings')
+      .lean();
+    const userAgentDetails = parseUserAgentDetails(submission.lastUserAgent || '');
+    const timeline = buildMonitoringTimeline(submission);
     return res.json({
       submission: {
         studentName: (submission.studentId && submission.studentId.name) || 'Unknown',
         studentEmail: (submission.studentId && submission.studentId.email) || '',
         studentRollNo: (submission.studentId && submission.studentId.studentId) || '',
+        assessmentTitle: assessment?.title || '',
         status: submission.status,
         startedAt: submission.startedAt,
         submittedAt: submission.submittedAt,
       },
+      assessment: assessment || null,
       counters: {
         tabSwitches: submission.tabSwitches || 0,
         fullscreenExits: submission.fullscreenExits || 0,
@@ -3224,6 +3697,12 @@ export async function getSubmissionViolations(req, res) {
       timeline,
       securitySetup: submission.securitySetup || {},
       securityHeartbeat: submission.securityHeartbeat || {},
+      device: {
+        browser: userAgentDetails.browser,
+        os: userAgentDetails.os,
+        ipAddress: submission.lastIp || '',
+        userAgent: submission.lastUserAgent || '',
+      },
     });
   } catch (err) {
     console.error('Error fetching violations:', err);

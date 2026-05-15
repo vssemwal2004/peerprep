@@ -87,11 +87,9 @@ export function StudentNavbar() {
       (
         location.pathname.startsWith("/student/assessment/") ||
         location.pathname === "/student/assessment-reports" ||
-        location.pathname === "/student/ranks" ||
         location.pathname === "/student/assessment-history" ||
         location.pathname === "/assessments" ||
         location.pathname === "/assessment-reports" ||
-        location.pathname === "/ranks" ||
         location.pathname === "/assessment-history"
       )
     ) return true;

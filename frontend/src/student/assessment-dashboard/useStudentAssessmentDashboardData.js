@@ -15,7 +15,6 @@ const EMPTY_DASHBOARD = {
   ongoingAssessments: [],
   reports: [],
   history: [],
-  leaderboard: [],
 };
 
 export function useStudentAssessmentDashboardData() {

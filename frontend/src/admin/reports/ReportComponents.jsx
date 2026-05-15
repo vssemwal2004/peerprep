@@ -20,9 +20,10 @@ export const formatShortDate = (value) => {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 export const formatDuration = (seconds = 0) => {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
+  const safeSeconds = Math.max(0, Math.round(Number(seconds) || 0));
+  const h = Math.floor(safeSeconds / 3600);
+  const m = Math.floor((safeSeconds % 3600) / 60);
+  const s = safeSeconds % 60;
   if (h > 0) return `${h}h ${m}m`;
   if (m > 0) return `${m}m ${s}s`;
   return `${s}s`;
@@ -89,8 +90,8 @@ export function KpiCard({ icon: Icon, label, value, sub, insight, trend, chart, 
         <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${toneBg}`}><Icon className="h-5 w-5" /></div>
         {trend !== undefined && <TrendBadge change={trend} />}
       </div>
-      <div className="mt-3">
-        <div className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">{value}</div>
+      <div className="mt-3 min-w-0">
+        <div className="truncate text-2xl font-bold tracking-tight text-slate-900 dark:text-white" title={String(value ?? '')}>{value}</div>
         <div className="mt-0.5 text-xs font-medium text-slate-500 dark:text-gray-400">{label}</div>
       </div>
       {chart && <div className="mt-3 opacity-60 transition-opacity group-hover:opacity-100">{chart}</div>}
@@ -190,7 +191,7 @@ export function TableRow({ row, idx, pagination, visibleColumns, openStudentDeta
       {visibleColumns.score && (
         <td className="px-4 py-3 text-right">
           <div className="flex items-center justify-end gap-2">
-            <DonutChart score={row.score || 0} total={row.totalMarks || 100} size={32} stroke={3} />
+            <DonutChart value={row.score || 0} total={row.totalMarks || 100} size={32} stroke={3} />
             <span className="text-sm font-bold text-slate-900 dark:text-white">{row.score ?? 0}<span className="text-[10px] font-normal text-slate-400 dark:text-gray-500">/{row.totalMarks || 100}</span></span>
           </div>
         </td>
@@ -215,10 +216,7 @@ export function TableRow({ row, idx, pagination, visibleColumns, openStudentDeta
       )}
       {visibleColumns.status && (
         <td className="px-4 py-3 text-center">
-          <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold bg-${statusMeta[row.status]?.tone || 'slate'}-50 text-${statusMeta[row.status]?.tone || 'slate'}-700 border-${statusMeta[row.status]?.tone || 'slate'}-200 dark:bg-${statusMeta[row.status]?.tone || 'slate'}-900/20 dark:text-${statusMeta[row.status]?.tone || 'slate'}-300 dark:border-${statusMeta[row.status]?.tone || 'slate'}-800`}>
-            {statusMeta[row.status]?.icon && <span>{/* icon placeholder */}</span>}
-            {(statusMeta[row.status] || statusMeta.incomplete).label}
-          </span>
+          <StatusBadge value={row.status} />
         </td>
       )}
       {visibleColumns.rank && <td className="px-4 py-3 text-center text-xs font-semibold">{row.rank ?? '—'}</td>}
