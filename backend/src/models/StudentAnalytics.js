@@ -3,6 +3,10 @@ import mongoose from 'mongoose';
 const metricSchema = new mongoose.Schema({
   label: String,
   value: Number,
+  rawScore: Number,
+  adjustedScore: Number,
+  integrityScore: Number,
+  violationCount: Number,
 }, { _id: false });
 
 const topicMetricSchema = new mongoose.Schema({
@@ -36,14 +40,36 @@ const studentAnalyticsSchema = new mongoose.Schema({
     avgScore: { type: Number, default: 0 },
     interviewScore: { type: Number, default: 0 },
     streak: { type: Number, default: 0 },
+    readinessScore: { type: Number, default: 0 },
+    healthScore: { type: Number, default: 0 },
+    currentFocus: { type: String, default: '' },
   },
   assessments: {
     attempts: { type: Number, default: 0 },
+    submittedAttempts: { type: Number, default: 0 },
+    violationAttempts: { type: Number, default: 0 },
     avgScore: { type: Number, default: 0 },
+    adjustedAvgScore: { type: Number, default: 0 },
     avgAccuracy: { type: Number, default: 0 },
     highestScore: { type: Number, default: 0 },
     latestScore: { type: Number, default: 0 },
+    latestAdjustedScore: { type: Number, default: 0 },
+    stabilityScore: { type: Number, default: 0 },
+    integrityScore: { type: Number, default: 100 },
+    violationRate: { type: Number, default: 0 },
+    violationCount: { type: Number, default: 0 },
+    avgTimeTakenSec: { type: Number, default: 0 },
+    securityRisk: { type: String, default: 'low' },
+    proctoring: {
+      tabSwitches: { type: Number, default: 0 },
+      fullscreenExits: { type: Number, default: 0 },
+      copyPasteCount: { type: Number, default: 0 },
+      cameraFlags: { type: Number, default: 0 },
+      violationScore: { type: Number, default: 0 },
+      pauseCount: { type: Number, default: 0 },
+    },
     progress: [metricSchema],
+    recentAttempts: [metricSchema],
   },
   problems: {
     attempts: { type: Number, default: 0 },
@@ -82,6 +108,12 @@ const studentAnalyticsSchema = new mongoose.Schema({
   derived: {
     consistencyScore: { type: Number, default: 0 },
     effortScore: { type: Number, default: 0 },
+    assessmentIntegrityScore: { type: Number, default: 100 },
+    performanceScore: { type: Number, default: 0 },
+    readinessScore: { type: Number, default: 0 },
+    placementSignal: { type: Number, default: 0 },
+    growthScore: { type: Number, default: 0 },
+    riskLevel: { type: String, default: 'low' },
   },
 }, { timestamps: true });
 

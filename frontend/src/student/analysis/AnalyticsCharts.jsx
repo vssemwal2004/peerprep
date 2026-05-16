@@ -43,17 +43,17 @@ function PremiumTooltip({ active, payload, label, suffix = "" }) {
       className="min-w-[150px] rounded-2xl px-3 py-3 shadow-[0_24px_60px_-36px_rgba(15,23,42,0.55)] backdrop-blur-xl"
       style={{ background: chartTheme.panel, border: `1px solid ${chartTheme.border}` }}
     >
-      <div className="text-[10px] font-black uppercase tracking-[0.18em]" style={{ color: chartTheme.muted }}>
+      <div className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: chartTheme.muted }}>
         Insight
       </div>
-      <div className="mt-1 text-xs font-black" style={{ color: chartTheme.text }}>
+      <div className="mt-1 text-xs font-bold" style={{ color: chartTheme.text }}>
         {payload[0]?.payload?.topic || payload[0]?.payload?.name || label}
       </div>
       {payload.map((entry) => (
         <div key={entry.dataKey || entry.name} className="mt-2 flex items-center gap-2 text-xs" style={{ color: chartTheme.muted }}>
           <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: entry.color || entry.fill }} />
           <span className="font-semibold">{entry.name || entry.dataKey}</span>
-          <span className="ml-auto font-black" style={{ color: chartTheme.text }}>
+          <span className="ml-auto font-bold" style={{ color: chartTheme.text }}>
             {Math.round(Number(entry.value || 0))}
             {suffix}
           </span>
@@ -67,7 +67,7 @@ export function ChartFrame({ children, minHeight = 300, empty, emptyTitle, empty
   if (empty) return <EmptyState title={emptyTitle} text={emptyText} />;
 
   return (
-    <div className="rounded-[22px] border border-slate-200/80 bg-[linear-gradient(135deg,rgba(248,250,252,0.95),rgba(255,255,255,0.98))] p-4 dark:border-white/10 dark:bg-[linear-gradient(135deg,rgba(15,23,42,0.72),rgba(2,6,23,0.88))]">
+    <div className="rounded-[16px] border border-slate-200 bg-white p-3.5 dark:border-white/10 dark:bg-slate-950/72">
       <div style={{ minHeight }}>{children}</div>
     </div>
   );
@@ -241,7 +241,7 @@ export function RadarScoreChart({ data = [], minHeight = 320 }) {
 
 export function LearningMixChart({ data = [] }) {
   const chartTheme = useChartTheme();
-  const colors = [CHART_COLORS.sky, CHART_COLORS.emerald, CHART_COLORS.amber, CHART_COLORS.violet];
+  const colors = [CHART_COLORS.sky, CHART_COLORS.emerald, CHART_COLORS.amber];
 
   return (
     <ChartFrame

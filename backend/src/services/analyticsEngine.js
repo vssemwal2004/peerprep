@@ -12,6 +12,7 @@ const ACCEPTED_STATUSES = ['AC', 'Accepted'];
 
 const round = (value) => Number((value || 0).toFixed(2));
 const clamp = (value, min = 0, max = 100) => Math.min(max, Math.max(min, value));
+const ASSESSMENT_FINAL_STATUSES = ['submitted', 'violation'];
 
 const toDateKey = (date) => {
   if (!date) return '';
@@ -37,6 +38,54 @@ function computeTopicLevel(accuracy) {
   if (accuracy >= 75) return 'strong';
   if (accuracy >= 55) return 'medium';
   return 'weak';
+}
+
+function computeAssessmentViolationCount(submission = {}) {
+  return Number(submission.tabSwitches || 0)
+    + Number(submission.fullscreenExits || 0)
+    + Number(submission.copyPasteCount || 0)
+    + Number(submission.cameraFlags || 0);
+}
+
+function computeAssessmentPenalty(submission = {}) {
+  const weightedEvents =
+    Number(submission.tabSwitches || 0) * 2
+    + Number(submission.fullscreenExits || 0) * 3
+    + Number(submission.copyPasteCount || 0) * 4
+    + Number(submission.cameraFlags || 0) * 4
+    + Number(submission.pauseCount || 0)
+    + Number(submission.violationScore || 0) * 1.25
+    + (submission.status === 'violation' ? 10 : 0);
+
+  return clamp(weightedEvents, 0, 40);
+}
+
+function computeAssessmentIntegrity(submission = {}) {
+  return clamp(100 - computeAssessmentPenalty(submission), 0, 100);
+}
+
+function computeSecurityRisk(integrityScore = 100, violationRate = 0) {
+  if (integrityScore < 55 || violationRate >= 45) return 'high';
+  if (integrityScore < 78 || violationRate >= 20) return 'medium';
+  return 'low';
+}
+
+function scoreSpread(values = []) {
+  if (!values.length) return 0;
+  return Math.max(...values) - Math.min(...values);
+}
+
+function average(values = []) {
+  if (!values.length) return 0;
+  return values.reduce((sum, value) => sum + Number(value || 0), 0) / values.length;
+}
+
+function computeGrowthScore(progress = []) {
+  if (progress.length < 2) return 0;
+  const half = Math.max(1, Math.floor(progress.length / 2));
+  const earlier = progress.slice(0, half).map((item) => item.value || 0);
+  const later = progress.slice(half).map((item) => item.value || 0);
+  return clamp(50 + (average(later) - average(earlier)), 0, 100);
 }
 
 function buildWeeklySeries(countMap) {
@@ -175,38 +224,156 @@ async function buildProblemMetrics(studentId) {
 async function buildAssessmentMetrics(studentId) {
   const [summaryAgg, recent] = await Promise.all([
     AssessmentSubmission.aggregate([
-      { $match: { studentId, status: 'submitted' } },
+      { $match: { studentId, status: { $in: ASSESSMENT_FINAL_STATUSES } } },
+      {
+        $addFields: {
+          safeScore: { $ifNull: ['$score', 0] },
+          safeAccuracy: { $ifNull: ['$accuracy', 0] },
+          tabSwitchSafe: { $ifNull: ['$tabSwitches', 0] },
+          fullscreenSafe: { $ifNull: ['$fullscreenExits', 0] },
+          copyPasteSafe: { $ifNull: ['$copyPasteCount', 0] },
+          cameraSafe: { $ifNull: ['$cameraFlags', 0] },
+          pauseSafe: { $ifNull: ['$pauseCount', 0] },
+          violationScoreSafe: { $ifNull: ['$violationScore', 0] },
+          timeTakenSafe: { $ifNull: ['$timeTakenSec', 0] },
+        },
+      },
+      {
+        $addFields: {
+          violationCount: {
+            $add: ['$tabSwitchSafe', '$fullscreenSafe', '$copyPasteSafe', '$cameraSafe'],
+          },
+          penalty: {
+            $min: [
+              40,
+              {
+                $add: [
+                  { $multiply: ['$tabSwitchSafe', 2] },
+                  { $multiply: ['$fullscreenSafe', 3] },
+                  { $multiply: ['$copyPasteSafe', 4] },
+                  { $multiply: ['$cameraSafe', 4] },
+                  '$pauseSafe',
+                  { $multiply: ['$violationScoreSafe', 1.25] },
+                  { $cond: [{ $eq: ['$status', 'violation'] }, 10, 0] },
+                ],
+              },
+            ],
+          },
+        },
+      },
+      {
+        $addFields: {
+          adjustedScore: { $max: [0, { $subtract: ['$safeScore', '$penalty'] }] },
+          integrityScore: { $max: [0, { $subtract: [100, '$penalty'] }] },
+        },
+      },
       {
         $group: {
           _id: null,
           attempts: { $sum: 1 },
-          avgScore: { $avg: '$score' },
-          avgAccuracy: { $avg: '$accuracy' },
-          highestScore: { $max: '$score' },
+          submittedAttempts: { $sum: { $cond: [{ $eq: ['$status', 'submitted'] }, 1, 0] } },
+          violationAttempts: { $sum: { $cond: [{ $eq: ['$status', 'violation'] }, 1, 0] } },
+          avgScore: { $avg: '$safeScore' },
+          adjustedAvgScore: { $avg: '$adjustedScore' },
+          avgAccuracy: { $avg: '$safeAccuracy' },
+          highestScore: { $max: '$safeScore' },
+          avgIntegrityScore: { $avg: '$integrityScore' },
+          avgTimeTakenSec: { $avg: '$timeTakenSafe' },
+          violationCount: { $sum: '$violationCount' },
+          tabSwitches: { $sum: '$tabSwitchSafe' },
+          fullscreenExits: { $sum: '$fullscreenSafe' },
+          copyPasteCount: { $sum: '$copyPasteSafe' },
+          cameraFlags: { $sum: '$cameraSafe' },
+          violationScore: { $sum: '$violationScoreSafe' },
+          pauseCount: { $sum: '$pauseSafe' },
         },
       },
     ]),
-    AssessmentSubmission.find({ studentId, status: 'submitted' })
-      .sort({ submittedAt: -1 })
-      .limit(8)
-      .select('score submittedAt')
+    AssessmentSubmission.find({ studentId, status: { $in: ASSESSMENT_FINAL_STATUSES } })
+      .sort({ submittedAt: -1, updatedAt: -1 })
+      .limit(12)
+      .select('score accuracy submittedAt updatedAt status timeTakenSec tabSwitches fullscreenExits copyPasteCount cameraFlags violationScore pauseCount')
       .lean(),
   ]);
 
-  const summary = summaryAgg[0] || { attempts: 0, avgScore: 0, avgAccuracy: 0, highestScore: 0 };
-  const latestScore = recent?.[0]?.score || 0;
+  const enrichedRecent = (recent || []).map((item) => {
+    const penalty = computeAssessmentPenalty(item);
+    const adjustedScore = clamp(Number(item.score || 0) - penalty, 0, 100);
+    const integrityScore = computeAssessmentIntegrity(item);
+    return {
+      ...item,
+      violationCount: computeAssessmentViolationCount(item),
+      adjustedScore,
+      integrityScore,
+    };
+  });
+
+  const summary = summaryAgg[0] || {
+    attempts: 0,
+    submittedAttempts: 0,
+    violationAttempts: 0,
+    avgScore: 0,
+    adjustedAvgScore: 0,
+    avgAccuracy: 0,
+    highestScore: 0,
+    avgIntegrityScore: 100,
+    avgTimeTakenSec: 0,
+    violationCount: 0,
+    tabSwitches: 0,
+    fullscreenExits: 0,
+    copyPasteCount: 0,
+    cameraFlags: 0,
+    violationScore: 0,
+    pauseCount: 0,
+  };
+  const latestScore = enrichedRecent?.[0]?.score || 0;
+  const latestAdjustedScore = enrichedRecent?.[0]?.adjustedScore || 0;
   const progress = (recent || []).reverse().map((item) => ({
     label: item.submittedAt ? new Date(item.submittedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'Attempt',
-    value: round(item.score || 0),
+    value: round(clamp(Number(item.score || 0) - computeAssessmentPenalty(item), 0, 100)),
+    rawScore: round(item.score || 0),
+    adjustedScore: round(clamp(Number(item.score || 0) - computeAssessmentPenalty(item), 0, 100)),
+    integrityScore: round(computeAssessmentIntegrity(item)),
+    violationCount: computeAssessmentViolationCount(item),
   }));
+  const violationRate = summary.attempts ? (summary.violationAttempts / summary.attempts) * 100 : 0;
+  const stabilityScore = clamp(100 - scoreSpread(progress.map((item) => item.value || 0)), 0, 100);
+  const integrityScore = summary.attempts ? summary.avgIntegrityScore : 100;
+  const securityRisk = computeSecurityRisk(integrityScore, violationRate);
 
   return {
     attempts: summary.attempts || 0,
+    submittedAttempts: summary.submittedAttempts || 0,
+    violationAttempts: summary.violationAttempts || 0,
     avgScore: round(summary.avgScore || 0),
+    adjustedAvgScore: round(summary.adjustedAvgScore || 0),
     avgAccuracy: round(summary.avgAccuracy || 0),
     highestScore: round(summary.highestScore || 0),
     latestScore: round(latestScore || 0),
+    latestAdjustedScore: round(latestAdjustedScore || 0),
+    stabilityScore: round(stabilityScore),
+    integrityScore: round(integrityScore),
+    violationRate: round(violationRate),
+    violationCount: summary.violationCount || 0,
+    avgTimeTakenSec: round(summary.avgTimeTakenSec || 0),
+    securityRisk,
+    proctoring: {
+      tabSwitches: summary.tabSwitches || 0,
+      fullscreenExits: summary.fullscreenExits || 0,
+      copyPasteCount: summary.copyPasteCount || 0,
+      cameraFlags: summary.cameraFlags || 0,
+      violationScore: round(summary.violationScore || 0),
+      pauseCount: summary.pauseCount || 0,
+    },
     progress,
+    recentAttempts: enrichedRecent.slice(0, 6).map((item) => ({
+      label: item.submittedAt ? new Date(item.submittedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'Attempt',
+      value: round(item.adjustedScore || 0),
+      rawScore: round(item.score || 0),
+      adjustedScore: round(item.adjustedScore || 0),
+      integrityScore: round(item.integrityScore || 0),
+      violationCount: item.violationCount || 0,
+    })),
   };
 }
 
@@ -314,11 +481,77 @@ async function buildLearningMetrics(studentId) {
   };
 }
 
-function computeDerivedScores({ weeklyActiveDays, streak, attempts, assessments, completedTopics }) {
+function computeDerivedScores({
+  weeklyActiveDays,
+  streak,
+  attempts,
+  assessments,
+  completedTopics,
+  problemAccuracy,
+  assessmentScore,
+  assessmentIntegrityScore,
+  interviewScore,
+  learningCompletion,
+  progress,
+  assessmentViolationRate,
+}) {
   const consistencyScore = clamp(Math.round(weeklyActiveDays * 10 + streak * 6), 0, 100);
   const effortRaw = attempts + assessments * 2 + completedTopics;
   const effortScore = clamp(Math.round((effortRaw / 5) * 10), 0, 100);
-  return { consistencyScore, effortScore };
+  const performanceScore = clamp(round(
+    (Number(problemAccuracy || 0) * 0.32)
+    + (Number(assessmentScore || 0) * 0.34)
+    + (Number(interviewScore || 0) * 0.18)
+    + (Number(learningCompletion || 0) * 0.16),
+  ));
+  const readinessScore = clamp(round(
+    (performanceScore * 0.45)
+    + (consistencyScore * 0.18)
+    + (effortScore * 0.12)
+    + (Number(assessmentIntegrityScore || 100) * 0.25),
+  ));
+  const placementSignal = clamp(round(
+    (readinessScore * 0.5)
+    + (Number(problemAccuracy || 0) * 0.2)
+    + (Number(interviewScore || 0) * 0.2)
+    + (consistencyScore * 0.1),
+  ));
+  const growthScore = computeGrowthScore(progress || []);
+  const riskLevel = computeSecurityRisk(assessmentIntegrityScore, assessmentViolationRate || 0);
+
+  return {
+    consistencyScore,
+    effortScore,
+    assessmentIntegrityScore: round(assessmentIntegrityScore || 100),
+    performanceScore,
+    readinessScore,
+    placementSignal,
+    growthScore,
+    riskLevel,
+  };
+}
+
+function chooseCurrentFocus({ problemMetrics, assessmentMetrics, interviewMetrics, learningMetrics }) {
+  const candidates = [
+    {
+      label: problemMetrics.topics?.find((topic) => topic.level === 'weak')?.topic || 'DSA accuracy',
+      score: problemMetrics.accuracy || 0,
+    },
+    {
+      label: assessmentMetrics.integrityScore < 85 ? 'Assessment integrity' : 'Assessment performance',
+      score: Math.min(assessmentMetrics.adjustedAvgScore || 0, assessmentMetrics.integrityScore || 100),
+    },
+    {
+      label: 'Mock interview readiness',
+      score: interviewMetrics.avgScore || 0,
+    },
+    {
+      label: 'Learning completion',
+      score: learningMetrics.completionPercent || 0,
+    },
+  ];
+
+  return candidates.sort((a, b) => a.score - b.score)[0]?.label || 'Build more tracked attempts';
 }
 
 export async function computeStudentAnalytics(studentId) {
@@ -346,9 +579,22 @@ export async function computeStudentAnalytics(studentId) {
     attempts: problemMetrics.attempts,
     assessments: assessmentMetrics.attempts,
     completedTopics: learningMetrics.completedTopics,
+    problemAccuracy: problemMetrics.accuracy,
+    assessmentScore: assessmentMetrics.adjustedAvgScore || assessmentMetrics.avgScore,
+    assessmentIntegrityScore: assessmentMetrics.integrityScore,
+    assessmentViolationRate: assessmentMetrics.violationRate,
+    interviewScore: interviewMetrics.avgScore,
+    learningCompletion: learningMetrics.completionPercent,
+    progress: assessmentMetrics.progress,
   });
 
-  const avgScore = assessmentMetrics.avgScore || problemMetrics.accuracy;
+  const avgScore = assessmentMetrics.adjustedAvgScore || assessmentMetrics.avgScore || problemMetrics.accuracy;
+  const currentFocus = chooseCurrentFocus({
+    problemMetrics,
+    assessmentMetrics,
+    interviewMetrics,
+    learningMetrics,
+  });
 
   return {
     overview: {
@@ -358,6 +604,9 @@ export async function computeStudentAnalytics(studentId) {
       avgScore: round(avgScore),
       interviewScore: interviewMetrics.avgScore,
       streak,
+      readinessScore: derivedScores.readinessScore,
+      healthScore: round((derivedScores.readinessScore * 0.55) + (derivedScores.consistencyScore * 0.25) + (derivedScores.assessmentIntegrityScore * 0.2)),
+      currentFocus,
     },
     assessments: assessmentMetrics,
     problems: problemMetrics,
@@ -399,10 +648,15 @@ export function buildReadinessReport(analysis, benchmark) {
   const dsaScore = analysis?.problems?.accuracy || 0;
   const consistencyScore = analysis?.derived?.consistencyScore || 0;
   const interviewScore = analysis?.interviews?.avgScore || 0;
+  const assessmentIntegrityScore = analysis?.assessments?.integrityScore ?? 100;
+  const assessmentScore = analysis?.assessments?.adjustedAvgScore || analysis?.assessments?.avgScore || 0;
   const totalAttempts = analysis?.problems?.attempts || 0;
 
   const { wDsa, wCons, wInt } = normalizeWeights(benchmark);
-  const readinessScore = clamp(round(dsaScore * wDsa + consistencyScore * wCons + interviewScore * wInt));
+  const baseReadiness = dsaScore * wDsa + consistencyScore * wCons + interviewScore * wInt;
+  const assessmentSignal = assessmentScore ? assessmentScore * 0.12 : 0;
+  const integrityMultiplier = clamp(0.72 + (assessmentIntegrityScore / 100) * 0.28, 0.72, 1);
+  const readinessScore = clamp(round((baseReadiness * 0.88 + assessmentSignal) * integrityMultiplier));
 
   let badge = 'Improving';
   if (readinessScore < 50) badge = 'Not Ready';
@@ -441,6 +695,14 @@ export function buildReadinessReport(analysis, benchmark) {
       message: `Your interview score is ${round(interviewScore)}, required is ${benchmark.interviewScore}.`,
       required: benchmark.interviewScore,
       current: round(interviewScore),
+    });
+  }
+  if (assessmentIntegrityScore < 80) {
+    gaps.push({
+      type: 'Assessment Integrity',
+      message: `Your assessment integrity score is ${round(assessmentIntegrityScore)}. Reduce proctoring warnings for a stronger readiness signal.`,
+      required: 80,
+      current: round(assessmentIntegrityScore),
     });
   }
 
@@ -485,6 +747,9 @@ export function buildReadinessReport(analysis, benchmark) {
   if (interviewScore < benchmark.interviewScore) {
     actionPlan.push('Practice 3 mock interviews focused on communication and problem solving.');
   }
+  if (assessmentIntegrityScore < 80) {
+    actionPlan.push('Complete the next assessment with zero tab switches, fullscreen exits, copy/paste blocks, or camera warnings.');
+  }
   topicFeedback.forEach((item) => {
     actionPlan.push(`Solve 15-25 ${item.topic} questions to strengthen coverage.`);
   });
@@ -503,6 +768,8 @@ export function buildReadinessReport(analysis, benchmark) {
       dsa: round(dsaScore),
       consistency: round(consistencyScore),
       interview: round(interviewScore),
+      assessment: round(assessmentScore),
+      integrity: round(assessmentIntegrityScore),
     },
     gapAnalysis: gaps,
     topicFeedback,

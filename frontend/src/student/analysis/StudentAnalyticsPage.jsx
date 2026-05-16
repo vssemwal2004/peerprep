@@ -18,7 +18,7 @@ import {
   Loader2,
   MessageSquare,
   RefreshCw,
-  ShieldCheck,
+  Sparkles,
   Target,
   TrendingUp,
   Video,
@@ -67,40 +67,17 @@ import {
   toLearningTimeline,
 } from "./analyticsUtils";
 
-const WORKSPACES = [
-  {
-    id: "problems",
-    label: "DSA",
-    title: "Problem Solving",
-    description: "Topic mastery, accuracy, solved volume, and weak areas.",
-    Icon: Code2,
-    tone: "sky",
-  },
-  {
-    id: "assessments",
-    label: "Tests",
-    title: "Assessments",
-    description: "Score trend, stability, test accuracy, and improvement.",
-    Icon: ClipboardList,
-    tone: "emerald",
-  },
-  {
-    id: "interviews",
-    label: "Interviews",
-    title: "Mock Interviews",
-    description: "Feedback distribution, category ratings, and readiness gaps.",
-    Icon: MessageSquare,
-    tone: "amber",
-  },
-  {
-    id: "learning",
-    label: "Learning",
-    title: "Learning Progress",
-    description: "Study consistency, topic completion, and practice conversion.",
-    Icon: BookOpen,
-    tone: "violet",
-  },
+const SECTIONS = [
+  { id: "overview", label: "Overview", eyebrow: "Readiness", Icon: Gauge },
+  { id: "dsa", label: "Coding", eyebrow: "Intelligence", Icon: Code2 },
+  { id: "assessments", label: "Assessment", eyebrow: "Tests", Icon: ClipboardList },
+  { id: "interviews", label: "Interview", eyebrow: "Mock", Icon: MessageSquare },
+  { id: "learning", label: "Learning", eyebrow: "Study", Icon: BookOpen },
+  { id: "readiness", label: "Placement", eyebrow: "Company fit", Icon: BriefcaseBusiness },
 ];
+
+const MotionSection = motion.section;
+const MotionDiv = motion.div;
 
 function normalizeAnalysis(analysis) {
   return {
@@ -116,107 +93,68 @@ function normalizeAnalysis(analysis) {
 
 function PageBackground() {
   return (
-    <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 bg-slate-50 dark:bg-slate-950">
-      <div className="absolute inset-0 bg-[linear-gradient(180deg,#f8fafc_0%,#eef6ff_42%,#f8fafc_100%)] dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_50%,#020617_100%)]" />
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(15,23,42,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.035)_1px,transparent_1px)] bg-[size:44px_44px] opacity-60 dark:bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px)]" />
-      <div className="absolute left-0 top-0 h-72 w-72 rounded-full bg-sky-200/45 blur-3xl dark:bg-sky-500/10" />
-      <div className="absolute right-0 top-16 h-80 w-80 rounded-full bg-emerald-200/35 blur-3xl dark:bg-emerald-500/10" />
+    <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 bg-white dark:bg-slate-950">
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,#ffffff_0%,#f7fbff_42%,#ffffff_100%)] transition-colors duration-500 dark:bg-[linear-gradient(180deg,#020617_0%,#08111f_50%,#020617_100%)]" />
+      <div className="absolute inset-x-0 top-0 h-80 bg-[linear-gradient(180deg,rgba(14,165,233,0.1),transparent)] dark:opacity-70" />
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(14,165,233,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(14,165,233,0.045)_1px,transparent_1px)] bg-[size:64px_64px] opacity-55 dark:bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px)]" />
     </div>
   );
 }
 
-function DashboardHeader({
-  overallScore,
-  overallStatus,
-  healthScore,
-  activeModules,
-  weeklyMomentum,
-  topicAnalytics,
-  refreshing,
-  onRefresh,
-}) {
-  const statusMeta = STATUS_STYLES[overallStatus] || STATUS_STYLES.Improving;
-  const confidence = Math.round(overallScore * 0.68 + healthScore * 0.32);
-
+function SectionShell({ id, children, className = "" }) {
   return (
-    <Surface className="overflow-hidden border-slate-200 bg-white p-0 dark:bg-slate-950">
-      <div className="grid gap-0 lg:grid-cols-[270px_minmax(0,1fr)]">
-        <div className="border-b border-slate-200 bg-slate-950 p-5 text-white dark:border-white/10 lg:border-b-0 lg:border-r">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <div className="text-[10px] font-black uppercase tracking-[0.22em] text-sky-300">
-                Readiness
-              </div>
-              <div className="mt-1 text-xl font-black tracking-tight">{overallStatus}</div>
-            </div>
-            <TonePill tone={statusMeta.tone}>{formatPercent(overallScore)}</TonePill>
-          </div>
-          <div className="mt-5 flex justify-center">
-            <ScoreRing score={overallScore} size={136} stroke={10} tone={getScoreTone(overallScore)} label="Ready" />
-          </div>
-          <p className="mt-4 text-center text-sm leading-6 text-slate-300">{statusMeta.description}</p>
-        </div>
-
-        <div className="p-5 sm:p-6">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div className="max-w-3xl">
-              <div className="text-[11px] font-black uppercase tracking-[0.22em] text-sky-700 dark:text-sky-300">
-                PeerPrep Student Analysis
-              </div>
-              <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950 dark:text-white sm:text-3xl">
-                Understand your preparation in one workspace.
-              </h1>
-              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                A focused analytics console for DSA, tests, interviews, learning progress, and company readiness.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onRefresh}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-black text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-sky-200 hover:text-sky-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
-            >
-              <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-              Refresh
-            </button>
-          </div>
-
-          <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <MiniMetric
-              label="Confidence"
-              value={formatPercent(confidence)}
-              helper="Readiness + health"
-              tone={getScoreTone(confidence)}
-              Icon={ShieldCheck}
-            />
-            <MiniMetric
-              label="Health"
-              value={formatPercent(healthScore)}
-              helper={`${activeModules}/4 active modules`}
-              tone={getScoreTone(healthScore)}
-              Icon={Gauge}
-            />
-            <MiniMetric
-              label="Weekly Momentum"
-              value={weeklyMomentum}
-              helper="Tracked actions"
-              tone={weeklyMomentum > 0 ? "emerald" : "amber"}
-              Icon={CalendarCheck}
-            />
-            <MiniMetric
-              label="Focus Area"
-              value={topicAnalytics.weakest?.topic || "Balanced"}
-              helper={topicAnalytics.weakest ? `${Math.round(topicAnalytics.weakest.accuracy)}% accuracy` : "No urgent gap"}
-              tone={topicAnalytics.weakest ? "amber" : "emerald"}
-              Icon={Target}
-            />
-          </div>
-        </div>
-      </div>
-    </Surface>
+    <MotionSection
+      id={id}
+      initial={{ opacity: 0, y: 18 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 12 }}
+      transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+      className={className}
+    >
+      {children}
+    </MotionSection>
   );
 }
 
-function RestoredHero({
+function StickySectionNav({ activeSection, onChange }) {
+  return (
+    <div className="sticky top-[72px] z-30 mb-6 rounded-[18px] border border-slate-200 bg-white px-3 py-2 shadow-[0_18px_48px_-40px_rgba(15,23,42,0.42)] dark:border-white/10 dark:bg-slate-950">
+      <div className="flex gap-1.5 overflow-x-auto" role="tablist" aria-label="Analysis workspace">
+        {SECTIONS.map(({ id, label, eyebrow, Icon: SectionIcon }) => {
+          const active = activeSection === id;
+          const NavIcon = SectionIcon;
+          return (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => onChange(id)}
+              className={[
+                "group relative flex min-w-fit items-center gap-2 rounded-xl border px-2.5 py-1.5 text-left transition",
+                active
+                  ? "border-sky-600 bg-sky-600 text-white shadow-[0_14px_30px_-24px_rgba(14,165,233,0.9)]"
+                  : "border-transparent bg-transparent text-slate-600 hover:-translate-y-0.5 hover:border-sky-200 hover:bg-sky-50 hover:text-slate-950 dark:text-slate-300 dark:hover:border-sky-400/20 dark:hover:bg-sky-400/10 dark:hover:text-white",
+              ].join(" ")}
+            >
+              <span className={`flex h-7 w-7 items-center justify-center rounded-lg ${active ? "bg-white/15" : "bg-slate-100 text-slate-600 dark:bg-white/8"}`}>
+                <NavIcon className="h-3.5 w-3.5" />
+              </span>
+              <span>
+                <span className="hidden text-[9px] font-semibold uppercase tracking-[0.14em] opacity-65 sm:block">{eyebrow}</span>
+                <span className="block text-xs font-bold">{label}</span>
+              </span>
+              <span className={`absolute inset-x-3 -bottom-1 h-0.5 rounded-full bg-sky-500 transition ${active ? "opacity-100" : "opacity-0 group-hover:opacity-45"}`} />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ExecutiveHero({
+  analytics,
   overallScore,
   overallStatus,
   healthScore,
@@ -225,273 +163,651 @@ function RestoredHero({
   topicAnalytics,
   refreshing,
   onRefresh,
-  onOpenReadiness,
+  onNavigate,
 }) {
   const statusMeta = STATUS_STYLES[overallStatus] || STATUS_STYLES.Improving;
   const confidence = Math.round(overallScore * 0.62 + healthScore * 0.38);
-  const tone = getScoreTone(overallScore);
-
-  return (
-    <section id="overview">
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
-        <Surface className="relative overflow-hidden border-white/70 bg-white/76 p-0 backdrop-blur-2xl dark:bg-slate-950/70">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_8%_0%,rgba(14,165,233,0.18),transparent_30%),radial-gradient(circle_at_88%_12%,rgba(16,185,129,0.12),transparent_28%)]" />
-          <div className="relative grid gap-5 p-5 sm:p-6 xl:grid-cols-[minmax(0,1fr)_170px] xl:items-center">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <TonePill tone={statusMeta.tone}>{overallStatus}</TonePill>
-                <TonePill tone="emerald">{activeModules}/4 active modules</TonePill>
-                <TonePill tone="slate">{weeklyMomentum} weekly actions</TonePill>
-              </div>
-
-              <div className="mt-5">
-                <div className="text-[11px] font-black uppercase tracking-[0.24em] text-sky-700 dark:text-sky-300">
-                  PeerPrep intelligence
-                </div>
-                <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950 dark:text-white sm:text-3xl lg:text-4xl">
-                  Student readiness, made easy to understand.
-                </h1>
-                <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
-                  A focused view of DSA, assessments, interviews, learning progress, and placement readiness without overwhelming the student.
-                </p>
-              </div>
-
-              <div className="mt-5 grid gap-2 sm:grid-cols-3">
-                <MiniMetric
-                  label="Confidence"
-                  value={formatPercent(confidence)}
-                  helper="Readiness + health"
-                  tone={getScoreTone(confidence)}
-                  Icon={ShieldCheck}
-                />
-                <MiniMetric
-                  label="Health"
-                  value={formatPercent(healthScore)}
-                  helper="Preparation balance"
-                  tone={getScoreTone(healthScore)}
-                  Icon={Gauge}
-                />
-                <MiniMetric
-                  label="Focus"
-                  value={topicAnalytics.weakest?.topic || "Balanced"}
-                  helper={topicAnalytics.weakest ? `${Math.round(topicAnalytics.weakest.accuracy)}% accuracy` : "No urgent gap"}
-                  tone={topicAnalytics.weakest ? "amber" : "emerald"}
-                  Icon={Target}
-                />
-              </div>
-
-              <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-                <button
-                  type="button"
-                  onClick={onOpenReadiness}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-black text-white shadow-[0_20px_55px_-34px_rgba(15,23,42,0.75)] transition hover:-translate-y-0.5 hover:bg-slate-800 dark:bg-white dark:text-slate-950"
-                >
-                  Open placement readiness
-                  <ArrowRight className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={onRefresh}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-2.5 text-sm font-black text-slate-700 transition hover:-translate-y-0.5 hover:bg-white dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
-                >
-                  <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-                  Refresh
-                </button>
-              </div>
-            </div>
-
-            <div className="flex justify-center">
-              <ScoreRing score={overallScore} size={150} stroke={10} tone={tone} label="Ready" />
-            </div>
-          </div>
-        </Surface>
-
-        <Surface compact>
-          <SectionHeader eyebrow="Module profile" title="Four readiness signals" subtitle={statusMeta.description} />
-          <div className="mt-5 space-y-4">
-            <ProgressBar label="Overall readiness" value={overallScore} tone={tone} />
-            <ProgressBar label="Preparation health" value={healthScore} tone={getScoreTone(healthScore)} />
-            <ProgressBar label="Weekly momentum" value={Math.min(100, weeklyMomentum * 10)} tone={weeklyMomentum ? "emerald" : "amber"} />
-          </div>
-        </Surface>
-      </div>
-    </section>
-  );
-}
-
-function SnapshotCards({ analytics, topicAnalytics, assessmentMovement, weeklyMomentum }) {
-  const { problems, assessments, interviews, learning, derived } = analytics;
-  const cards = [
-    { label: "Problems Solved", value: problems.solved || 0, helper: `${problems.attempts || 0} attempts`, Icon: Code2, tone: "sky" },
-    { label: "Assessment Accuracy", value: Math.round(assessments.avgAccuracy || assessments.avgScore || 0), suffix: "%", helper: `${assessments.attempts || 0} tests`, Icon: ClipboardList, tone: "emerald" },
-    { label: "Interview Readiness", value: Math.round(interviews.avgScore || 0), helper: `${interviews.total || 0} sessions`, Icon: BriefcaseBusiness, tone: "amber" },
-    { label: "Learning Progress", value: Math.round(learning.completionPercent || 0), suffix: "%", helper: `${learning.completedTopics || 0}/${learning.totalTopics || 0} topics`, Icon: GraduationCap, tone: "violet" },
-    { label: "Weekly Consistency", value: weeklyMomentum, helper: `${Math.round(derived.consistencyScore || 0)}% consistency`, Icon: Activity, tone: "slate" },
-    { label: "Strongest Skill", value: topicAnalytics.strongest?.accuracy || 0, suffix: "%", helper: topicAnalytics.strongest?.topic || "More attempts needed", Icon: Award, tone: "emerald" },
-    { label: "Weakest Area", value: topicAnalytics.weakest?.accuracy || 0, suffix: "%", helper: topicAnalytics.weakest?.topic || "No weak topic found", Icon: Target, tone: topicAnalytics.weakest ? "amber" : "emerald" },
+  const streak = analytics.consistency.currentStreak || analytics.overview.streak || 0;
+  const placementReadiness = Math.round(analytics.derived.placementSignal || ((overallScore * 0.5) + (analytics.derived.consistencyScore || 0) * 0.2 + (analytics.interviews.avgScore || 0) * 0.3));
+  const heroStats = [
+    { label: "Weekly momentum", value: weeklyMomentum, helper: "tracked actions", Icon: CalendarCheck, tone: weeklyMomentum ? "emerald" : "amber" },
+    { label: "Consistency", value: Math.round(analytics.derived.consistencyScore || 0), suffix: "%", helper: `${analytics.consistency.activeDays || 0} active days`, Icon: Activity, tone: getScoreTone(analytics.derived.consistencyScore) },
+    { label: "Current streak", value: streak, helper: "days", Icon: Zap, tone: streak >= 5 ? "emerald" : "amber" },
   ];
 
   return (
-    <section className="mt-4">
-      <div className="mb-3 flex items-end justify-between gap-4">
+    <SectionShell id="overview">
+      <Surface className="relative overflow-hidden p-0">
+        <div className="absolute inset-x-0 top-0 h-1 bg-sky-500" />
+        <div className="absolute inset-x-0 top-0 h-24 bg-[linear-gradient(180deg,rgba(14,165,233,0.09),transparent)]" />
+        <div className="relative grid gap-0 xl:grid-cols-[minmax(0,1fr)_300px]">
+          <div className="p-5 sm:p-6">
+            <div className="flex flex-wrap items-center gap-2">
+              <TonePill tone={statusMeta.tone}>{overallStatus}</TonePill>
+              <TonePill tone="sky">{activeModules}/4 modules active</TonePill>
+              <TonePill tone="slate">{formatPercent(confidence)} confidence</TonePill>
+            </div>
+
+            <div className="mt-5 max-w-3xl">
+              <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-sky-700 dark:text-sky-300">
+                PeerPrep Analysis Overview
+              </div>
+              <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950 dark:text-white sm:text-4xl">
+                Your preparation command center.
+              </h1>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+                A focused student-profile style view of readiness, weekly rhythm, consistency, and the next best action.
+              </p>
+            </div>
+
+            <div className="mt-6 grid gap-3 sm:grid-cols-3">
+              {heroStats.map((item, index) => (
+                <MetricCard key={item.label} {...item} compact delay={index * 0.04} />
+              ))}
+            </div>
+
+            <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
+              <button
+                type="button"
+                onClick={() => onNavigate(topicAnalytics.weakest ? "dsa" : "assessments")}
+                className="group flex items-center justify-between gap-4 rounded-[18px] border border-sky-100 bg-sky-50/70 px-4 py-3 text-left transition hover:-translate-y-0.5 hover:border-sky-200 hover:bg-white hover:shadow-[0_18px_44px_-34px_rgba(14,165,233,0.75)] dark:border-sky-400/15 dark:bg-sky-400/10 dark:hover:bg-sky-400/15"
+              >
+                <span className="min-w-0">
+                  <span className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-700 dark:text-sky-200">
+                    Current focus
+                  </span>
+                  <span className="mt-1 block truncate text-base font-bold text-slate-950 dark:text-white">
+                    {analytics.overview.currentFocus || topicAnalytics.weakest?.topic || "Build more tracked attempts"}
+                  </span>
+                  <span className="mt-1 block text-xs font-semibold text-slate-500 dark:text-slate-400">
+                    {analytics.assessments.integrityScore < 85
+                      ? `${Math.round(analytics.assessments.integrityScore)}% assessment integrity needs attention`
+                      : topicAnalytics.weakest
+                      ? `${Math.round(topicAnalytics.weakest.accuracy)}% accuracy below target`
+                      : "Add tagged practice to unlock stronger recommendations"}
+                  </span>
+                </span>
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white transition group-hover:scale-105">
+                  <ArrowRight className="h-4 w-4" />
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={onRefresh}
+                className="inline-flex items-center justify-center gap-2 rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 transition hover:-translate-y-0.5 hover:border-sky-200 hover:text-sky-700 hover:shadow-[0_18px_44px_-36px_rgba(15,23,42,0.32)] dark:border-white/10 dark:bg-white/5 dark:text-slate-200"
+              >
+                <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                Refresh data
+              </button>
+            </div>
+          </div>
+
+          <div className="border-t border-slate-200 bg-slate-50/70 p-5 dark:border-white/10 dark:bg-white/[0.03] xl:border-l xl:border-t-0">
+            <div className="flex h-full flex-col justify-between gap-5">
+              <div className="flex justify-center">
+                <ScoreRing score={overallScore} size={164} stroke={11} tone={getScoreTone(overallScore)} label="Ready" />
+              </div>
+              <div className="space-y-3">
+                <ProgressBar label="Readiness" value={overallScore} tone={getScoreTone(overallScore)} />
+                <ProgressBar label="Health" value={healthScore} tone={getScoreTone(healthScore)} />
+                <ProgressBar label="Placement" value={placementReadiness} tone={getScoreTone(placementReadiness)} />
+              </div>
+              <p className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-center text-sm font-semibold leading-6 text-slate-600 dark:border-white/10 dark:bg-slate-950/60 dark:text-slate-300">
+                {statusMeta.description}
+              </p>
+            </div>
+          </div>
+        </div>
+      </Surface>
+    </SectionShell>
+  );
+}
+
+function SnapshotGrid({ analytics, assessmentMovement }) {
+  const { problems, assessments, interviews } = analytics;
+  const cards = [
+    { label: "Problems solved", value: problems.solved || 0, helper: `${problems.attempts || 0} attempts`, Icon: Code2, tone: "sky" },
+    { label: "DSA accuracy", value: Math.round(problems.accuracy || 0), suffix: "%", helper: "accepted quality", Icon: TrendingUp, tone: getScoreTone(problems.accuracy) },
+    { label: "Assessment average", value: Math.round(assessments.adjustedAvgScore || assessments.avgScore || 0), suffix: "%", helper: `${assessments.attempts || 0} attempts`, Icon: ClipboardList, tone: getScoreTone(assessments.adjustedAvgScore || assessments.avgScore) },
+    { label: "Interview rating", value: Math.round(interviews.avgScore || 0), helper: `${interviews.total || 0} reviewed`, Icon: MessageSquare, tone: getScoreTone(interviews.avgScore) },
+  ];
+
+  return (
+    <div className="mt-4">
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-400 dark:text-slate-500">
+          <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-400 dark:text-slate-500">
             Smart snapshot
           </div>
-          <h2 className="mt-1 text-lg font-black tracking-tight text-slate-950 dark:text-white">
-            Key signals first
+          <h2 className="mt-1 text-lg font-bold tracking-tight text-slate-950 dark:text-white">
+            Key signals without the noise
           </h2>
         </div>
         <TonePill tone={assessmentMovement.movement === null ? "sky" : assessmentMovement.movement >= 0 ? "emerald" : "rose"}>
           {assessmentMovement.movement === null ? "Trend warming up" : `${assessmentMovement.movement >= 0 ? "+" : ""}${assessmentMovement.movement}% test trend`}
         </TonePill>
       </div>
-      <div className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 lg:grid-cols-4 xl:grid-cols-7">
-        {cards.map((card) => (
-          <div key={card.label} className="min-w-[220px] snap-start sm:min-w-0">
-            <MetricCard {...card} compact />
+      <div className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 lg:grid-cols-4">
+        {cards.map((card, index) => (
+          <div key={card.label} className="min-w-[225px] snap-start sm:min-w-0">
+            <MetricCard {...card} compact delay={index * 0.025} />
           </div>
         ))}
       </div>
-    </section>
+    </div>
   );
 }
 
-function InsightLayer({ insights, onFocus }) {
-  const priority = insights[0];
-  const rest = insights.slice(1, 5);
+function ReadinessOperatingSystem({ analytics, moduleScores, topicAnalytics, healthScore, overallScore, weeklyMomentum }) {
+  const { consistency } = analytics;
+  const focusScore = Math.round((healthScore * 0.4) + (overallScore * 0.35) + (Math.min(100, weeklyMomentum * 12) * 0.25));
+  const rhythmScore = Math.min(100, (consistency.activeDays || 0) * 14 + Math.min(30, weeklyMomentum * 3));
+  const lowestModule = [...moduleScores].sort((a, b) => a.value - b.value)[0];
+  const goalItems = moduleScores.map((item) => ({
+    ...item,
+    Icon: item.id === "problems" ? Code2 : item.id === "assessments" ? ClipboardList : item.id === "interviews" ? MessageSquare : BookOpen,
+  }));
 
   return (
-    <section className="mt-4">
-      <Surface compact>
-        <div className="grid gap-4 lg:grid-cols-[0.72fr_1.28fr]">
-          <div className="rounded-[22px] border border-sky-200 bg-sky-50 p-4 dark:border-sky-400/15 dark:bg-sky-400/10">
-            <div className="flex items-center gap-3">
-              <IconBadge Icon={Zap} tone="sky" />
-              <div>
-                <div className="text-[10px] font-black uppercase tracking-[0.22em] text-sky-700 dark:text-sky-300">
-                  Priority insight
-                </div>
-                <h2 className="mt-1 text-lg font-black tracking-tight text-slate-950 dark:text-white">{priority.title}</h2>
-              </div>
-            </div>
-            <p className="mt-4 text-sm leading-6 text-slate-700 dark:text-slate-200">{priority.text}</p>
-            <button
-              type="button"
-              onClick={onFocus}
-              className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-sky-600 px-4 py-2.5 text-sm font-black text-white hover:bg-sky-500"
-            >
-              Review focus view
-              <ArrowRight className="h-4 w-4" />
-            </button>
+    <div className="mt-4 grid gap-4 xl:grid-cols-[1.08fr_0.92fr]">
+      <Surface>
+        <SectionHeader
+          eyebrow="Preparation architecture"
+          title="Goal completion tracker"
+          subtitle="Every lane contributes to one readiness score, but each lane stays easy to inspect."
+          action={<TonePill tone={getScoreTone(overallScore)}>{formatPercent(overallScore)} overall</TonePill>}
+        />
+        <div className="mt-5 grid gap-4 lg:grid-cols-[190px_minmax(0,1fr)] lg:items-center">
+          <div className="flex justify-center">
+            <ScoreRing score={focusScore} size={158} stroke={11} tone={getScoreTone(focusScore)} label="Focus" />
           </div>
-
-          <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 sm:grid sm:grid-cols-2 sm:overflow-visible xl:grid-cols-4">
-            {rest.map((insight) => (
-              <div key={insight.title} className="min-w-[240px] sm:min-w-0">
-                <MiniMetric
-                  label={insight.title}
-                  value={insight.tone === "emerald" ? "Healthy" : insight.tone === "rose" ? "Needs action" : "Watch"}
-                  helper={insight.text}
-                  tone={insight.tone}
-                  Icon={LineChart}
-                />
+          <div className="grid gap-3 sm:grid-cols-2">
+            {goalItems.map((item) => (
+              <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 transition hover:-translate-y-0.5 hover:bg-white dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/[0.06]">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <IconBadge Icon={item.Icon} tone={item.tone} className="h-9 w-9 rounded-xl" />
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-bold text-slate-900 dark:text-white">{item.label}</div>
+                      <div className="truncate text-xs font-semibold text-slate-500 dark:text-slate-400">{item.helper}</div>
+                    </div>
+                  </div>
+                  <TonePill tone={getScoreTone(item.value)}>{formatPercent(item.value)}</TonePill>
+                </div>
+                <ProgressBar value={item.value} tone={getScoreTone(item.value)} />
               </div>
             ))}
           </div>
         </div>
       </Surface>
-    </section>
+
+      <Surface>
+        <SectionHeader
+          eyebrow="Productivity intelligence"
+          title="What separates steady prep from bursts"
+          subtitle="A fast read on cadence, balance, and where attention should go next."
+        />
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <MiniMetric label="Focus score" value={formatPercent(focusScore)} helper="Readiness, health, and weekly effort" tone={getScoreTone(focusScore)} Icon={Target} />
+          <MiniMetric label="Study rhythm" value={formatPercent(rhythmScore)} helper={`${consistency.activeDays || 0} active days`} tone={getScoreTone(rhythmScore)} Icon={Activity} />
+          <MiniMetric label="Growth lane" value={lowestModule?.label || "Balanced"} helper="Lowest module score" tone="amber" Icon={TrendingUp} />
+          <MiniMetric label="Strength" value={topicAnalytics.strongest?.topic || "Emerging"} helper={topicAnalytics.strongest ? `${Math.round(topicAnalytics.strongest.accuracy)}% topic accuracy` : "More data needed"} tone={topicAnalytics.strongest ? "emerald" : "sky"} Icon={Award} />
+        </div>
+        <div className="mt-5 space-y-4">
+          <ProgressBar label="Preparation health" value={healthScore} tone={getScoreTone(healthScore)} />
+          <ProgressBar label="Rhythm quality" value={rhythmScore} tone={getScoreTone(rhythmScore)} helper="Built from active days and tracked actions." />
+        </div>
+      </Surface>
+    </div>
   );
 }
 
-function AnalysisStudio({ active, onChange, moduleScores, analytics, topicAnalytics, assessmentMovement, categoryData, learningTimeline, learningMix }) {
-  const selected = WORKSPACES.find((item) => item.id === active) || WORKSPACES[0];
+function SmartInsightsSection({ insights, topicAnalytics, onNavigate }) {
+  const priority = insights[0];
+  const recommendationQueue = [
+    topicAnalytics.weakest
+      ? `Practice ${topicAnalytics.weakest.topic} in short sets until accuracy crosses 65%.`
+      : "Solve more tagged problems to create stronger topic intelligence.",
+    "Keep one small daily action to protect your consistency score.",
+    "Review assessment mistakes before attempting the next timed test.",
+  ];
 
   return (
-    <section id="analysis-studio" className="mt-4 scroll-mt-28">
-      <Surface className="overflow-hidden p-0">
-        <div className="border-b border-slate-200 bg-white/65 p-4 dark:border-white/10 dark:bg-white/[0.03] sm:p-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <SectionHeader
-              eyebrow="Analysis studio"
-              title="One focused view at a time"
-              subtitle="Switch modules in place instead of scrolling through a long report."
-            />
-            <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 lg:mx-0 lg:overflow-visible lg:px-0">
-              {WORKSPACES.map((item) => {
-                const score = moduleScores.find((scoreItem) => scoreItem.id === item.id)?.value || 0;
-                const isActive = active === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => onChange(item.id)}
-                    className={[
-                      "flex min-w-[170px] items-center gap-3 rounded-2xl border px-3 py-3 text-left transition",
-                      isActive
-                        ? "border-slate-950 bg-slate-950 text-white shadow-[0_18px_45px_-30px_rgba(15,23,42,0.9)] dark:border-white dark:bg-white dark:text-slate-950"
-                        : "border-slate-200 bg-white text-slate-700 hover:-translate-y-0.5 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200",
-                    ].join(" ")}
-                  >
-                    <IconBadge Icon={item.Icon} tone={isActive ? "slate" : item.tone} className="h-9 w-9 rounded-xl" />
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-black">{item.label}</span>
-                      <span className={`mt-0.5 block text-xs font-semibold ${isActive ? "text-white/70 dark:text-slate-600" : "text-slate-400 dark:text-slate-500"}`}>
-                        {score}%
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
+    <SectionShell id="insights" className="mt-4">
+      <Surface className="overflow-hidden">
+        <div className="grid gap-5 lg:grid-cols-[0.78fr_1.22fr]">
+          <div className="relative overflow-hidden rounded-[18px] border border-sky-200 bg-sky-50 p-5 dark:border-sky-400/15 dark:bg-sky-400/10">
+            <div className="absolute right-0 top-0 h-28 w-28 rounded-full bg-sky-400/20 blur-2xl" />
+            <div className="relative flex items-center gap-3">
+              <IconBadge Icon={Sparkles} tone="sky" className="h-11 w-11" />
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-sky-700 dark:text-sky-300">
+                  Smart insights
+                </div>
+                <h2 className="mt-1 text-xl font-bold tracking-tight text-slate-950 dark:text-white">
+                  {priority.title}
+                </h2>
+              </div>
             </div>
+            <p className="relative mt-4 text-sm leading-6 text-slate-700 dark:text-slate-200">{priority.text}</p>
+            <button
+              type="button"
+              onClick={() => onNavigate(topicAnalytics.weakest ? "dsa" : "assessments")}
+              className="relative mt-4 inline-flex items-center gap-2 rounded-2xl bg-sky-600 px-4 py-2.5 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-sky-500"
+            >
+              Review focus area
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {insights.slice(1, 7).map((insight) => (
+              <div key={insight.title} className="rounded-[22px] border border-slate-200 bg-white/70 p-4 transition hover:-translate-y-0.5 hover:bg-white dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/[0.06]">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-bold text-slate-950 dark:text-white">{insight.title}</div>
+                  <TonePill tone={insight.tone}>{insight.tone === "emerald" ? "Healthy" : "Focus"}</TonePill>
+                </div>
+                <p className="mt-3 text-xs font-semibold leading-5 text-slate-500 dark:text-slate-400">{insight.text}</p>
+              </div>
+            ))}
           </div>
         </div>
 
-        <motion.div
-          key={active}
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-          className="p-4 sm:p-5"
-        >
-          <div className="mb-5 flex items-start justify-between gap-4">
-            <div className="flex items-start gap-3">
-              <IconBadge Icon={selected.Icon} tone={selected.tone} className="h-11 w-11 rounded-2xl" />
-              <div>
-                <div className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500">
-                  Active analysis
-                </div>
-                <h2 className="mt-1 text-xl font-black tracking-tight text-slate-950 dark:text-white">{selected.title}</h2>
-                <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">{selected.description}</p>
+        <div className="mt-5 grid gap-3 md:grid-cols-3">
+          {recommendationQueue.map((item, index) => (
+            <div key={item} className="flex gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-xs font-bold text-white dark:bg-white dark:text-slate-950">
+                {index + 1}
               </div>
+              <p className="text-sm font-semibold leading-6 text-slate-700 dark:text-slate-200">{item}</p>
             </div>
-            <TonePill tone={selected.tone}>Focused</TonePill>
-          </div>
-
-          {active === "problems" ? <DsaWorkspace analytics={analytics} topicAnalytics={topicAnalytics} /> : null}
-          {active === "assessments" ? <AssessmentWorkspace analytics={analytics} assessmentMovement={assessmentMovement} /> : null}
-          {active === "interviews" ? <InterviewWorkspace analytics={analytics} categoryData={categoryData} /> : null}
-          {active === "learning" ? <LearningWorkspace analytics={analytics} timeline={learningTimeline} mixData={learningMix} /> : null}
-        </motion.div>
+          ))}
+        </div>
       </Surface>
-    </section>
+    </SectionShell>
   );
 }
 
-function CompanyReadinessBlock({ companies, selectedCompany, onCompanyChange, readiness, loadingReadiness, comparison, onOpenReadiness }) {
+function PerformanceHeatmap({ points = [], tone = "sky" }) {
+  const source = points.length ? points : Array.from({ length: 28 }, (_, index) => ({ label: `D${index + 1}`, count: 0 }));
+  const max = Math.max(1, ...source.map((point) => Number(point.count || point.value || 0)));
+  const toneClass = tone === "emerald" ? "bg-emerald-500" : tone === "amber" ? "bg-amber-500" : "bg-sky-500";
+
   return (
-    <section className="mt-4">
+    <Surface>
+      <SectionHeader
+        eyebrow="Practice heatmap"
+        title="Activity density"
+        subtitle="Darker cells show stronger activity. The goal is a pattern students can understand at a glance."
+      />
+      <div className="mt-5 grid grid-cols-7 gap-2 sm:[grid-template-columns:repeat(14,minmax(0,1fr))]">
+        {source.slice(-28).map((point, index) => {
+          const value = Number(point.count || point.value || 0);
+          const intensity = value ? 0.22 + (value / max) * 0.78 : 0.08;
+          return (
+            <div key={`${point.date || point.label}-${index}`} className="group relative">
+              <div
+                className={`aspect-square rounded-xl ${toneClass} transition duration-200 group-hover:-translate-y-1 group-hover:ring-4 group-hover:ring-sky-200 dark:group-hover:ring-sky-400/20`}
+                style={{ opacity: intensity }}
+                title={`${point.date || point.label || "Activity"}: ${value}`}
+              />
+              <div className="mt-1 truncate text-center text-[10px] font-bold text-slate-400 dark:text-slate-500">
+                {point.label || ""}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Surface>
+  );
+}
+
+function MetricStrip({ items }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      {items.map((item, index) => (
+        <MetricCard key={item.label} {...item} compact delay={index * 0.04} />
+      ))}
+    </div>
+  );
+}
+
+function TopicFocusQueue({ topicAnalytics }) {
+  const focusTopics = (topicAnalytics.weak.length ? topicAnalytics.weak : topicAnalytics.lowVolume).slice(0, 5);
+
+  return (
+    <Surface>
+      <SectionHeader eyebrow="Focus queue" title="Topics to practice next" />
+      <div className="mt-4 space-y-3">
+        {focusTopics.length ? (
+          focusTopics.map((topic) => (
+            <div key={topic.topic} className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-white/10 dark:bg-white/[0.03]">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-bold text-slate-900 dark:text-white">{topic.topic}</div>
+                  <div className="mt-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400">{topic.attempts} attempts</div>
+                </div>
+                <TonePill tone={topic.accuracy < 55 ? "amber" : "sky"}>{formatPercent(topic.accuracy)}</TonePill>
+              </div>
+              <div className="mt-3">
+                <ProgressBar value={topic.accuracy} tone={topic.accuracy < 55 ? "amber" : "sky"} />
+              </div>
+            </div>
+          ))
+        ) : (
+          <EmptyState title="No urgent DSA gap" text="Keep solving tagged problems to sharpen this queue." />
+        )}
+      </div>
+    </Surface>
+  );
+}
+
+function DsaIntelligenceSection({ analytics, topicAnalytics }) {
+  const { problems, consistency } = analytics;
+  const radarData = [
+    { label: "Accuracy", value: Math.round(problems.accuracy || 0) },
+    { label: "Coverage", value: Math.min(100, topicAnalytics.active.length * 12) },
+    { label: "Volume", value: Math.min(100, (problems.attempts || 0) * 4) },
+    { label: "Strength", value: Math.min(100, topicAnalytics.strong.length * 16) },
+    { label: "Routine", value: Math.min(100, (consistency.activeDays || 0) * 16) },
+  ];
+
+  return (
+    <SectionShell id="dsa" className="mt-4">
+      <Surface className="overflow-hidden p-0">
+        <div className="border-b border-slate-200 bg-white/65 p-5 dark:border-white/10 dark:bg-white/[0.03]">
+          <SectionHeader
+            eyebrow="Coding intelligence"
+            title="DSA performance students can act on"
+            subtitle="Topic mastery, accuracy, solved volume, routine, and weak areas without congested charts."
+            action={<TonePill tone={getScoreTone(problems.accuracy)}>{formatPercent(problems.accuracy)} accuracy</TonePill>}
+          />
+        </div>
+        <div className="space-y-4 p-4 sm:p-5">
+          <MetricStrip
+            items={[
+              { label: "Attempts", value: problems.attempts || 0, helper: "submitted attempts", Icon: Gauge, tone: "sky" },
+              { label: "Solved", value: problems.solved || 0, helper: "accepted problems", Icon: CheckCircle2, tone: "emerald" },
+              { label: "Accuracy", value: Math.round(problems.accuracy || 0), suffix: "%", helper: "current DSA quality", Icon: TrendingUp, tone: getScoreTone(problems.accuracy) },
+              { label: "Weak topics", value: topicAnalytics.weak.length, helper: "need revision", Icon: Target, tone: topicAnalytics.weak.length ? "amber" : "emerald" },
+            ]}
+          />
+
+          <div className="grid gap-4 xl:grid-cols-[1.25fr_0.75fr]">
+            <Surface>
+              <SectionHeader
+                eyebrow="Topic mastery"
+                title="Strong vs weak topic analysis"
+                subtitle="High bars are reliable topics. Low bars are practice targets."
+              />
+              <div className="mt-4">
+                <TopicMasteryChart data={topicAnalytics.normalized} />
+              </div>
+            </Surface>
+            <Surface>
+              <SectionHeader eyebrow="Skill confidence" title="DSA profile" />
+              <div className="mt-4">
+                <RadarScoreChart data={radarData} minHeight={300} />
+              </div>
+            </Surface>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
+            <TopicFocusQueue topicAnalytics={topicAnalytics} />
+            <PerformanceHeatmap points={consistency.weeklyActivity || []} tone="sky" />
+          </div>
+        </div>
+      </Surface>
+    </SectionShell>
+  );
+}
+
+function AssessmentIntelligenceSection({ analytics, assessmentMovement }) {
+  const { assessments } = analytics;
+  const progress = (assessments.progress || []).map((item, index) => ({
+    label: item.label || `Test ${index + 1}`,
+    value: Number(item.value || 0),
+  }));
+  const adjustedAverage = assessments.adjustedAvgScore || assessments.avgScore || 0;
+  const timeline = progress.slice(-6);
+
+  return (
+    <SectionShell id="assessments" className="mt-4">
+      <Surface className="overflow-hidden p-0">
+        <div className="border-b border-slate-200 bg-white/65 p-5 dark:border-white/10 dark:bg-white/[0.03]">
+          <SectionHeader
+            eyebrow="Assessment intelligence"
+            title="Score trend, stability, and improvement"
+            subtitle="A premium test analytics view that explains whether performance is rising, dropping, or unstable."
+            action={<TonePill tone={getScoreTone(adjustedAverage)}>{formatPercent(adjustedAverage)} adjusted average</TonePill>}
+          />
+        </div>
+
+        <div className="space-y-4 p-4 sm:p-5">
+          <MetricStrip
+            items={[
+              { label: "Attempts", value: assessments.attempts || 0, helper: `${assessments.violationAttempts || 0} flagged`, Icon: ClipboardList, tone: assessments.violationAttempts ? "amber" : "sky" },
+              { label: "Adjusted avg", value: Math.round(adjustedAverage || 0), suffix: "%", helper: "score after integrity", Icon: TrendingUp, tone: getScoreTone(adjustedAverage) },
+              { label: "Highest", value: Math.round(assessments.highestScore || 0), suffix: "%", helper: "best score", Icon: Award, tone: "emerald" },
+              { label: "Integrity", value: Math.round(assessments.integrityScore ?? 100), suffix: "%", helper: assessments.securityRisk ? `${assessments.securityRisk} risk` : "proctoring signal", Icon: LineChart, tone: getScoreTone(assessments.integrityScore ?? 100) },
+            ]}
+          />
+
+          <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+            <Surface>
+              <SectionHeader
+                eyebrow="Performance trend"
+                title="Assessment score movement"
+                subtitle="The simplest way to understand improvement over recent submissions."
+              />
+              <div className="mt-4">
+                <TrendAreaChart data={progress} color={CHART_COLORS.sky} />
+              </div>
+            </Surface>
+            <Surface>
+              <SectionHeader eyebrow="Consistency" title="Time and score stability" />
+              <div className="mt-5 space-y-5">
+                <MiniMetric
+                  label="Recent movement"
+                  value={assessmentMovement.movement === null ? "Need data" : `${assessmentMovement.movement >= 0 ? "+" : ""}${assessmentMovement.movement}%`}
+                  helper="Last five vs previous five tests"
+                  tone={assessmentMovement.movement === null ? "sky" : assessmentMovement.movement >= 0 ? "emerald" : "rose"}
+                  Icon={BarChart3}
+                />
+                <ProgressBar
+                  label="Score stability"
+                  value={assessments.stabilityScore || Math.max(0, 100 - assessmentMovement.spread)}
+                  tone={(assessments.stabilityScore || Math.max(0, 100 - assessmentMovement.spread)) >= 75 ? "emerald" : "amber"}
+                />
+                <ProgressBar
+                  label="Assessment integrity"
+                  value={assessments.integrityScore ?? 100}
+                  tone={getScoreTone(assessments.integrityScore ?? 100)}
+                />
+              </div>
+            </Surface>
+          </div>
+
+          <Surface>
+            <SectionHeader eyebrow="History timeline" title="Recent assessment checkpoints" />
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              {timeline.length ? (
+                timeline.map((item, index) => (
+                  <div key={`${item.label}-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-sm font-bold text-slate-900 dark:text-white">{item.label}</div>
+                      <TonePill tone={getScoreTone(item.value)}>{formatPercent(item.value)}</TonePill>
+                    </div>
+                    <div className="mt-3">
+                      <ProgressBar value={item.value} tone={getScoreTone(item.value)} />
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <EmptyState title="No submitted assessments yet" text="Assessment history appears after submitted tests." />
+              )}
+            </div>
+          </Surface>
+        </div>
+      </Surface>
+    </SectionShell>
+  );
+}
+
+function InterviewIntelligenceSection({ analytics, categoryData }) {
+  const { interviews } = analytics;
+  const lowestCategory = categoryData.length ? [...categoryData].sort((a, b) => a.value - b.value)[0] : null;
+
+  return (
+    <SectionShell id="interviews" className="mt-4">
+      <Surface className="overflow-hidden p-0">
+        <div className="border-b border-slate-200 bg-white/65 p-5 dark:border-white/10 dark:bg-white/[0.03]">
+          <SectionHeader
+            eyebrow="Interview intelligence"
+            title="Recruiter-focused mock interview analytics"
+            subtitle="Communication, problem solving, confidence, feedback themes, and category-wise readiness."
+            action={<TonePill tone={getScoreTone(interviews.avgScore)}>{formatPercent(interviews.avgScore)} readiness</TonePill>}
+          />
+        </div>
+
+        <div className="space-y-4 p-4 sm:p-5">
+          <MetricStrip
+            items={[
+              { label: "Completed", value: interviews.total || 0, helper: "reviewed mocks", Icon: MessageSquare, tone: "sky" },
+              { label: "Rating", value: Math.round(interviews.avgScore || 0), helper: "feedback average", Icon: TrendingUp, tone: getScoreTone(interviews.avgScore) },
+              { label: "Pending", value: interviews.pending || 0, helper: "upcoming sessions", Icon: CalendarCheck, tone: "amber" },
+              { label: "Focus", value: lowestCategory?.value || 0, suffix: "%", helper: lowestCategory?.label || "No category yet", Icon: Target, tone: lowestCategory ? getScoreTone(lowestCategory.value) : "slate" },
+            ]}
+          />
+
+          <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+            <Surface>
+              <SectionHeader eyebrow="Interview profile" title="Feedback radar" />
+              <div className="mt-4">
+                <RadarScoreChart data={categoryData} minHeight={310} />
+              </div>
+            </Surface>
+            <Surface>
+              <SectionHeader eyebrow="Rating distribution" title="Mock interview scores" />
+              <div className="mt-4">
+                <PremiumBarChart data={interviews.ratingDistribution || []} color={CHART_COLORS.amber} minHeight={310} />
+              </div>
+            </Surface>
+          </div>
+
+          <Surface>
+            <SectionHeader eyebrow="Feedback visualization" title="What to improve before the next mock" />
+            <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_0.85fr]">
+              <div className="grid gap-4 sm:grid-cols-2">
+                {categoryData.length ? (
+                  categoryData.map((item) => (
+                    <ProgressBar key={item.label} label={item.label} value={item.value} tone={getScoreTone(item.value)} />
+                  ))
+                ) : (
+                  <EmptyState title="No feedback categories yet" text="Reviewed mock interviews will create this breakdown." />
+                )}
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                <div className="text-sm font-bold text-slate-900 dark:text-white">
+                  {lowestCategory ? `${lowestCategory.label} is the current interview lever.` : "Interview insight will unlock after feedback."}
+                </div>
+                <p className="mt-2 text-xs font-semibold leading-5 text-slate-500 dark:text-slate-400">
+                  Use feedback themes to turn mock interviews into visible readiness gains.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {(interviews.tags?.length ? interviews.tags : ["No feedback yet"]).map((tag) => (
+                    <TonePill key={tag} tone={interviews.tags?.length ? "sky" : "slate"}>
+                      {tag}
+                    </TonePill>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </Surface>
+        </div>
+      </Surface>
+    </SectionShell>
+  );
+}
+
+function LearningMomentumSection({ analytics, timeline, mixData }) {
+  const { learning } = analytics;
+  const practiceConversion = learning.videosWatched
+    ? Math.round(((learning.practiceSolved || 0) / learning.videosWatched) * 100)
+    : 0;
+
+  return (
+    <SectionShell id="learning" className="mt-4">
+      <Surface className="overflow-hidden p-0">
+        <div className="border-b border-slate-200 bg-white/65 p-5 dark:border-white/10 dark:bg-white/[0.03]">
+          <SectionHeader
+            eyebrow="Learning analytics"
+            title="Motivating study progress and consistency"
+            subtitle="Course progress, topic completion, learning behavior, and practice conversion in a calm visual system."
+            action={<TonePill tone={getScoreTone(learning.completionPercent)}>{formatPercent(learning.completionPercent)} complete</TonePill>}
+          />
+        </div>
+
+        <div className="space-y-4 p-4 sm:p-5">
+          <MetricStrip
+            items={[
+              { label: "Courses", value: learning.coursesEnrolled || 0, helper: "started modules", Icon: GraduationCap, tone: "sky" },
+              { label: "Videos", value: learning.videosWatched || 0, helper: "watched lessons", Icon: Video, tone: "sky" },
+              { label: "Topics done", value: learning.completedTopics || 0, helper: `${learning.totalTopics || 0} tracked`, Icon: CheckCircle2, tone: "amber" },
+              { label: "Practice", value: learning.practiceSolved || 0, helper: "applied learning", Icon: Target, tone: "sky" },
+            ]}
+          />
+
+          <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+            <Surface>
+              <SectionHeader eyebrow="Study rhythm" title="Learning activity over time" />
+              <div className="mt-4">
+                <TrendAreaChart data={timeline} color={CHART_COLORS.sky} suffix="" />
+              </div>
+            </Surface>
+            <Surface>
+              <SectionHeader eyebrow="Effort mix" title="Learning distribution" />
+              <div className="mt-4">
+                <LearningMixChart data={mixData} />
+              </div>
+            </Surface>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            <Surface>
+              <SectionHeader eyebrow="Completion" title="Course progress and practice conversion" />
+              <div className="mt-5 space-y-5">
+                <ProgressBar label="Topic completion" value={learning.completionPercent || 0} tone={getScoreTone(learning.completionPercent)} />
+                <ProgressBar label="Practice conversion" value={practiceConversion} tone={practiceConversion >= 70 ? "emerald" : "amber"} />
+              </div>
+            </Surface>
+            <Surface>
+              <SectionHeader eyebrow="Weekly rhythm" title="Learning heatmap" />
+              <div className="mt-5">
+                <ActivityDots points={timeline} tone="sky" />
+              </div>
+            </Surface>
+          </div>
+        </div>
+      </Surface>
+    </SectionShell>
+  );
+}
+
+function CompanyReadinessSection({ companies, selectedCompany, onCompanyChange, readiness, loadingReadiness, comparison, onOpenReadiness }) {
+  return (
+    <SectionShell id="readiness" className="mt-4">
       <Surface>
-        <div className="grid gap-5 lg:grid-cols-[0.75fr_1.25fr] lg:items-start">
+        <div className="grid gap-5 lg:grid-cols-[0.72fr_1.28fr] lg:items-start">
           <div>
             <SectionHeader
               eyebrow="Placement intelligence"
               title="Company readiness"
-              subtitle="Select a company benchmark and get a clear current-vs-target view."
+              subtitle="Select a company benchmark and compare your current score with target expectations."
             />
             <label className="mt-4 block">
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Company</span>
+              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">Company</span>
               <select
                 value={selectedCompany}
                 onChange={(event) => onCompanyChange(event.target.value)}
@@ -508,23 +824,23 @@ function CompanyReadinessBlock({ companies, selectedCompany, onCompanyChange, re
           </div>
 
           {loadingReadiness ? (
-            <div className="flex min-h-[220px] items-center justify-center rounded-2xl bg-slate-50 text-sm font-bold text-slate-500 dark:bg-white/[0.03] dark:text-slate-400">
+            <div className="flex min-h-[240px] items-center justify-center rounded-2xl bg-slate-50 text-sm font-bold text-slate-500 dark:bg-white/[0.03] dark:text-slate-400">
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Calculating readiness
             </div>
           ) : readiness && comparison ? (
-            <div className="grid gap-4 xl:grid-cols-[0.65fr_1.35fr]">
+            <div className="grid gap-4 xl:grid-cols-[0.62fr_1.38fr]">
               <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5 text-center dark:border-white/10 dark:bg-white/[0.03]">
-                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+                <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
                   {readiness.company?.companyName}
                 </div>
                 <div className="mt-4 flex justify-center">
-                  <ScoreRing score={readiness.report?.readinessScore || 0} size={140} stroke={10} tone={getScoreTone(readiness.report?.readinessScore)} label="Fit" />
+                  <ScoreRing score={readiness.report?.readinessScore || 0} size={142} stroke={10} tone={getScoreTone(readiness.report?.readinessScore)} label="Fit" />
                 </div>
                 <button
                   type="button"
                   onClick={onOpenReadiness}
-                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-black text-white hover:bg-slate-800 dark:bg-white dark:text-slate-950"
+                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-slate-800 dark:bg-white dark:text-slate-950"
                 >
                   Open roadmap
                   <ArrowRight className="h-4 w-4" />
@@ -552,450 +868,7 @@ function CompanyReadinessBlock({ companies, selectedCompany, onCompanyChange, re
           )}
         </div>
       </Surface>
-    </section>
-  );
-}
-
-function WorkspaceRail({ active, onChange, moduleScores }) {
-  const scoreMap = Object.fromEntries(moduleScores.map((item) => [item.id, item]));
-
-  return (
-    <Surface className="p-3">
-      <div className="mb-3 px-2">
-        <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
-          Analyze
-        </div>
-        <div className="mt-1 text-sm font-black text-slate-950 dark:text-white">Choose one area</div>
-      </div>
-      <div className="flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible">
-        {WORKSPACES.map((item) => {
-          const selected = active === item.id;
-          const score = scoreMap[item.id]?.value || 0;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onChange(item.id)}
-              className={[
-                "group flex min-w-[210px] items-center gap-3 rounded-2xl border p-3 text-left transition-all duration-200 lg:min-w-0",
-                selected
-                  ? "border-slate-950 bg-slate-950 text-white shadow-[0_18px_38px_-30px_rgba(15,23,42,0.95)] dark:border-white dark:bg-white dark:text-slate-950"
-                  : "border-slate-200 bg-white text-slate-700 hover:-translate-y-0.5 hover:border-sky-200 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200 dark:hover:bg-white/[0.08]",
-              ].join(" ")}
-            >
-              <IconBadge Icon={item.Icon} tone={selected ? "slate" : item.tone} className="h-10 w-10 rounded-xl" />
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-black">{item.title}</span>
-                <span className={`mt-0.5 block truncate text-xs font-semibold ${selected ? "text-white/70 dark:text-slate-600" : "text-slate-400 dark:text-slate-500"}`}>
-                  {item.description}
-                </span>
-                <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-slate-200/70 dark:bg-slate-800">
-                  <span
-                    className={`block h-full rounded-full ${
-                      item.tone === "emerald"
-                        ? "bg-emerald-500"
-                        : item.tone === "amber"
-                        ? "bg-amber-500"
-                        : item.tone === "violet"
-                        ? "bg-violet-500"
-                        : "bg-sky-500"
-                    }`}
-                    style={{ width: `${clamp(score)}%` }}
-                  />
-                </span>
-              </span>
-              <span className="text-sm font-black">{score}%</span>
-            </button>
-          );
-        })}
-      </div>
-    </Surface>
-  );
-}
-
-function MetricStrip({ items }) {
-  return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      {items.map((item) => (
-        <MetricCard key={item.label} {...item} compact />
-      ))}
-    </div>
-  );
-}
-
-function DsaWorkspace({ analytics, topicAnalytics }) {
-  const { problems, consistency } = analytics;
-  const radarData = [
-    { label: "Accuracy", value: Math.round(problems.accuracy || 0) },
-    { label: "Coverage", value: Math.min(100, topicAnalytics.active.length * 12) },
-    { label: "Volume", value: Math.min(100, (problems.attempts || 0) * 4) },
-    { label: "Strength", value: Math.min(100, topicAnalytics.strong.length * 16) },
-    { label: "Routine", value: Math.min(100, (consistency.activeDays || 0) * 16) },
-  ];
-
-  return (
-    <div className="space-y-4">
-      <MetricStrip
-        items={[
-          { label: "Attempts", value: problems.attempts || 0, helper: "Submitted attempts", Icon: Gauge, tone: "sky" },
-          { label: "Solved", value: problems.solved || 0, helper: "Accepted problems", Icon: CheckCircle2, tone: "emerald" },
-          { label: "Accuracy", value: Math.round(problems.accuracy || 0), suffix: "%", helper: "Current DSA quality", Icon: TrendingUp, tone: getScoreTone(problems.accuracy) },
-          { label: "Weak Topics", value: topicAnalytics.weak.length, helper: "Need revision", Icon: Target, tone: topicAnalytics.weak.length ? "amber" : "emerald" },
-        ]}
-      />
-
-      <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <Surface>
-          <SectionHeader
-            eyebrow="Topic mastery"
-            title="Strength and weakness by topic"
-            subtitle="Use this first: high bars are reliable topics, low bars are practice targets."
-          />
-          <div className="mt-4">
-            <TopicMasteryChart data={topicAnalytics.normalized} />
-          </div>
-        </Surface>
-        <Surface>
-          <SectionHeader eyebrow="Skill shape" title="DSA profile" />
-          <div className="mt-4">
-            <RadarScoreChart data={radarData} minHeight={290} />
-          </div>
-        </Surface>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-        <Surface>
-          <SectionHeader eyebrow="Routine" title="Weekly practice rhythm" />
-          <div className="mt-4">
-            <ActivityDots points={consistency.weeklyActivity || []} tone="sky" />
-          </div>
-        </Surface>
-        <Surface>
-          <SectionHeader eyebrow="Focus queue" title="Topics to practice next" />
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {(topicAnalytics.weak.length ? topicAnalytics.weak : topicAnalytics.lowVolume).slice(0, 4).map((topic) => (
-              <div key={topic.topic} className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-white/10 dark:bg-white/[0.03]">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="truncate text-sm font-black text-slate-900 dark:text-white">{topic.topic}</div>
-                  <span className="text-xs font-black text-slate-500 dark:text-slate-400">{Math.round(topic.accuracy)}%</span>
-                </div>
-                <div className="mt-3">
-                  <ProgressBar value={topic.accuracy} tone={topic.accuracy < 55 ? "amber" : "sky"} />
-                </div>
-              </div>
-            ))}
-            {!topicAnalytics.weak.length && !topicAnalytics.lowVolume.length ? (
-              <EmptyState title="No urgent DSA gap" text="Keep solving tagged problems to sharpen this queue." />
-            ) : null}
-          </div>
-        </Surface>
-      </div>
-    </div>
-  );
-}
-
-function AssessmentWorkspace({ analytics, assessmentMovement }) {
-  const { assessments } = analytics;
-  const progress = (assessments.progress || []).map((item, index) => ({
-    label: item.label || `Test ${index + 1}`,
-    value: Number(item.value || 0),
-  }));
-  const prediction = assessmentMovement.recentAverage
-    ? clamp(assessmentMovement.recentAverage + Math.max(-8, Math.min(8, assessmentMovement.movement || 0)))
-    : assessments.latestScore || assessments.avgScore || 0;
-
-  return (
-    <div className="space-y-4">
-      <MetricStrip
-        items={[
-          { label: "Submitted", value: assessments.attempts || 0, helper: "Completed tests", Icon: ClipboardList, tone: "sky" },
-          { label: "Average", value: Math.round(assessments.avgScore || 0), suffix: "%", helper: "Current baseline", Icon: TrendingUp, tone: getScoreTone(assessments.avgScore) },
-          { label: "Highest", value: Math.round(assessments.highestScore || 0), suffix: "%", helper: "Best score", Icon: Award, tone: "emerald" },
-          { label: "Prediction", value: Math.round(prediction || 0), suffix: "%", helper: "Next-score estimate", Icon: LineChart, tone: "violet" },
-        ]}
-      />
-
-      <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <Surface>
-          <SectionHeader
-            eyebrow="Performance trend"
-            title="Assessment score movement"
-            subtitle="A simple timeline to show whether test performance is rising or unstable."
-          />
-          <div className="mt-4">
-            <TrendAreaChart data={progress} color={CHART_COLORS.emerald} />
-          </div>
-        </Surface>
-        <Surface>
-          <SectionHeader eyebrow="Stability" title="Test consistency" />
-          <div className="mt-5 space-y-5">
-            <MiniMetric
-              label="Recent movement"
-              value={assessmentMovement.movement === null ? "Not enough data" : `${assessmentMovement.movement >= 0 ? "+" : ""}${assessmentMovement.movement}%`}
-              helper="Last five vs previous five tests"
-              tone={assessmentMovement.movement === null ? "sky" : assessmentMovement.movement >= 0 ? "emerald" : "rose"}
-              Icon={BarChart3}
-            />
-            <ProgressBar
-              label="Score stability"
-              value={Math.max(0, 100 - assessmentMovement.spread)}
-              tone={assessmentMovement.spread <= 12 ? "emerald" : "amber"}
-            />
-            <ProgressBar
-              label="Average accuracy"
-              value={assessments.avgAccuracy || assessments.avgScore || 0}
-              tone={getScoreTone(assessments.avgAccuracy || assessments.avgScore)}
-            />
-          </div>
-        </Surface>
-      </div>
-    </div>
-  );
-}
-
-function InterviewWorkspace({ analytics, categoryData }) {
-  const { interviews } = analytics;
-  const lowestCategory = categoryData.length ? [...categoryData].sort((a, b) => a.value - b.value)[0] : null;
-
-  return (
-    <div className="space-y-4">
-      <MetricStrip
-        items={[
-          { label: "Completed", value: interviews.total || 0, helper: "Reviewed mocks", Icon: MessageSquare, tone: "sky" },
-          { label: "Rating", value: Math.round(interviews.avgScore || 0), helper: "Feedback average", Icon: TrendingUp, tone: getScoreTone(interviews.avgScore) },
-          { label: "Pending", value: interviews.pending || 0, helper: "Upcoming sessions", Icon: CalendarCheck, tone: "amber" },
-          { label: "Focus", value: lowestCategory?.value || 0, suffix: "%", helper: lowestCategory?.label || "No category yet", Icon: Target, tone: lowestCategory ? "violet" : "slate" },
-        ]}
-      />
-
-      <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-        <Surface>
-          <SectionHeader eyebrow="Interview profile" title="Feedback radar" />
-          <div className="mt-4">
-            <RadarScoreChart data={categoryData} minHeight={300} />
-          </div>
-        </Surface>
-        <Surface>
-          <SectionHeader eyebrow="Rating distribution" title="Mock interview scores" />
-          <div className="mt-4">
-            <PremiumBarChart data={interviews.ratingDistribution || []} color={CHART_COLORS.amber} minHeight={300} />
-          </div>
-        </Surface>
-      </div>
-
-      <Surface>
-        <SectionHeader eyebrow="Feedback themes" title="What to improve" />
-        <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_0.85fr]">
-          <div className="grid gap-4 sm:grid-cols-2">
-            {categoryData.length ? (
-              categoryData.map((item) => (
-                <ProgressBar key={item.label} label={item.label} value={item.value} tone={getScoreTone(item.value)} />
-              ))
-            ) : (
-              <EmptyState title="No feedback categories yet" text="Reviewed mock interviews will create this breakdown." />
-            )}
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.03]">
-            <div className="text-sm font-black text-slate-900 dark:text-white">
-              {lowestCategory ? `${lowestCategory.label} is the current interview lever.` : "Interview insight will unlock after feedback."}
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {(interviews.tags?.length ? interviews.tags : ["No feedback yet"]).map((tag) => (
-                <TonePill key={tag} tone={interviews.tags?.length ? "sky" : "slate"}>
-                  {tag}
-                </TonePill>
-              ))}
-            </div>
-          </div>
-        </div>
-      </Surface>
-    </div>
-  );
-}
-
-function LearningWorkspace({ analytics, timeline, mixData }) {
-  const { learning } = analytics;
-  const practiceConversion = learning.videosWatched
-    ? Math.round(((learning.practiceSolved || 0) / learning.videosWatched) * 100)
-    : 0;
-
-  return (
-    <div className="space-y-4">
-      <MetricStrip
-        items={[
-          { label: "Courses", value: learning.coursesEnrolled || 0, helper: "Started modules", Icon: GraduationCap, tone: "sky" },
-          { label: "Videos", value: learning.videosWatched || 0, helper: "Watched lessons", Icon: Video, tone: "emerald" },
-          { label: "Topics Done", value: learning.completedTopics || 0, helper: `${learning.totalTopics || 0} tracked`, Icon: CheckCircle2, tone: "amber" },
-          { label: "Practice", value: learning.practiceSolved || 0, helper: "Applied learning", Icon: Target, tone: "violet" },
-        ]}
-      />
-
-      <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <Surface>
-          <SectionHeader eyebrow="Study rhythm" title="Learning activity over time" />
-          <div className="mt-4">
-            <TrendAreaChart data={timeline} color={CHART_COLORS.violet} suffix="" />
-          </div>
-        </Surface>
-        <Surface>
-          <SectionHeader eyebrow="Effort mix" title="Learning distribution" />
-          <div className="mt-4">
-            <LearningMixChart data={mixData} />
-          </div>
-        </Surface>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Surface>
-          <SectionHeader eyebrow="Completion" title="Course progress" />
-          <div className="mt-5 space-y-5">
-            <ProgressBar label="Topic completion" value={learning.completionPercent || 0} tone={getScoreTone(learning.completionPercent)} />
-            <ProgressBar label="Practice conversion" value={practiceConversion} tone={practiceConversion >= 70 ? "emerald" : "amber"} />
-          </div>
-        </Surface>
-        <Surface>
-          <SectionHeader eyebrow="Weekly rhythm" title="Consistency map" />
-          <div className="mt-5">
-            <ActivityDots points={timeline} tone="violet" />
-          </div>
-        </Surface>
-      </div>
-    </div>
-  );
-}
-
-function WorkspacePanel({ active, analytics, topicAnalytics, assessmentMovement, categoryData, learningTimeline, learningMix }) {
-  const workspace = WORKSPACES.find((item) => item.id === active) || WORKSPACES[0];
-
-  return (
-    <Surface className="min-w-0 p-0">
-      <div className="flex flex-col gap-4 border-b border-slate-200 p-5 dark:border-white/10 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex items-start gap-3">
-          <IconBadge Icon={workspace.Icon} tone={workspace.tone} className="h-11 w-11 rounded-2xl" />
-          <div>
-            <div className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500">
-              Active analysis
-            </div>
-            <h2 className="mt-1 text-xl font-black tracking-tight text-slate-950 dark:text-white">{workspace.title}</h2>
-            <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">{workspace.description}</p>
-          </div>
-        </div>
-        <TonePill tone={workspace.tone}>Focused view</TonePill>
-      </div>
-
-      <motion.div
-        key={active}
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-        className="p-4 sm:p-5"
-      >
-        {active === "problems" ? <DsaWorkspace analytics={analytics} topicAnalytics={topicAnalytics} /> : null}
-        {active === "assessments" ? <AssessmentWorkspace analytics={analytics} assessmentMovement={assessmentMovement} /> : null}
-        {active === "interviews" ? <InterviewWorkspace analytics={analytics} categoryData={categoryData} /> : null}
-        {active === "learning" ? <LearningWorkspace analytics={analytics} timeline={learningTimeline} mixData={learningMix} /> : null}
-      </motion.div>
-    </Surface>
-  );
-}
-
-function GuidancePanel({
-  insights,
-  analytics,
-  readiness,
-  companies,
-  selectedCompany,
-  onCompanyChange,
-  loadingReadiness,
-  comparison,
-  onOpenReadiness,
-}) {
-  const topInsights = insights.slice(0, 4);
-
-  return (
-    <div className="space-y-4">
-      <Surface>
-        <SectionHeader eyebrow="Next best action" title="What to do now" />
-        <div className="mt-4 space-y-3">
-          {topInsights.map((item) => (
-            <div key={item.title} className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-white/10 dark:bg-white/[0.03]">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-black text-slate-900 dark:text-white">{item.title}</div>
-                <TonePill tone={item.tone}>{item.tone === "emerald" ? "Good" : "Focus"}</TonePill>
-              </div>
-              <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{item.text}</p>
-            </div>
-          ))}
-        </div>
-      </Surface>
-
-      <Surface>
-        <SectionHeader eyebrow="Company fit" title="Placement benchmark" />
-        <label className="mt-4 block">
-          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
-            Company
-          </span>
-          <select
-            value={selectedCompany}
-            onChange={(event) => onCompanyChange(event.target.value)}
-            className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-900 outline-none transition focus:border-sky-300 focus:ring-4 focus:ring-sky-100 dark:border-white/10 dark:bg-slate-900 dark:text-white dark:focus:ring-sky-400/10"
-          >
-            <option value="">Select company</option>
-            {companies.map((company) => (
-              <option key={company._id || company.id} value={company._id || company.id}>
-                {company.companyName}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <div className="mt-4">
-          {loadingReadiness ? (
-            <div className="flex items-center gap-2 rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-500 dark:bg-white/[0.03] dark:text-slate-400">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Calculating fit
-            </div>
-          ) : readiness ? (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.03]">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <div className="text-sm font-black text-slate-900 dark:text-white">
-                    {readiness.company?.companyName}
-                  </div>
-                  <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    {comparison?.label || "Overall readiness"}
-                  </div>
-                </div>
-                <TonePill tone={getScoreTone(readiness.report?.readinessScore)}>
-                  {formatPercent(readiness.report?.readinessScore)}
-                </TonePill>
-              </div>
-              <div className="mt-4 space-y-3">
-                <ProgressBar label="Current" value={comparison?.current || readiness.report?.readinessScore || 0} tone={getScoreTone(comparison?.current || readiness.report?.readinessScore)} />
-                <ProgressBar label="Target" value={comparison?.target || 85} tone="slate" />
-              </div>
-              <button
-                type="button"
-                onClick={onOpenReadiness}
-                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-black text-white transition hover:bg-slate-800 dark:bg-white dark:text-slate-950"
-              >
-                Open roadmap
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
-          ) : (
-            <EmptyState title="No company selected" text="Choose a benchmark to see placement readiness." Icon={BriefcaseBusiness} />
-          )}
-        </div>
-      </Surface>
-
-      <Surface>
-        <SectionHeader eyebrow="This week" title="Consistency" />
-        <div className="mt-4">
-          <ActivityDots points={analytics.consistency.weeklyActivity || []} tone="emerald" />
-        </div>
-      </Surface>
-    </div>
+    </SectionShell>
   );
 }
 
@@ -1023,8 +896,8 @@ function ReadinessModal({ open, onClose, readiness, analytics, comparison }) {
     : [];
 
   return (
-    <motion.div className="fixed inset-0 z-[100] overflow-y-auto bg-slate-950/78 p-4 backdrop-blur-xl" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      <motion.div
+    <MotionDiv className="fixed inset-0 z-[100] overflow-y-auto bg-slate-950/78 p-4 backdrop-blur-xl" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+      <MotionDiv
         initial={{ opacity: 0, y: 16, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
@@ -1032,10 +905,10 @@ function ReadinessModal({ open, onClose, readiness, analytics, comparison }) {
       >
         <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-5 dark:border-white/10">
           <div>
-            <div className="text-[10px] font-black uppercase tracking-[0.24em] text-sky-700 dark:text-sky-300">
+            <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-sky-700 dark:text-sky-300">
               Placement roadmap
             </div>
-            <h2 className="mt-1 text-xl font-black text-slate-950 dark:text-white">
+            <h2 className="mt-1 text-xl font-bold text-slate-950 dark:text-white">
               {readiness?.company?.companyName || "Company readiness"}
             </h2>
           </div>
@@ -1043,6 +916,7 @@ function ReadinessModal({ open, onClose, readiness, analytics, comparison }) {
             type="button"
             onClick={onClose}
             className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-white/10 dark:text-slate-200 dark:hover:bg-white/15"
+            aria-label="Close readiness roadmap"
           >
             <X className="h-5 w-5" />
           </button>
@@ -1057,7 +931,7 @@ function ReadinessModal({ open, onClose, readiness, analytics, comparison }) {
                 <DataChip label="DSA" value={formatPercent(readiness?.report?.breakdown?.dsa)} tone="sky" />
                 <DataChip label="Consistency" value={formatPercent(readiness?.report?.breakdown?.consistency)} tone="emerald" />
                 <DataChip label="Interview" value={formatPercent(readiness?.report?.breakdown?.interview)} tone="amber" />
-                <DataChip label="Attempts" value={analytics.problems.attempts || 0} tone="violet" />
+                <DataChip label="Attempts" value={analytics.problems.attempts || 0} tone="sky" />
               </div>
             </div>
           </Surface>
@@ -1104,7 +978,7 @@ function ReadinessModal({ open, onClose, readiness, analytics, comparison }) {
           <Surface>
             <SectionHeader eyebrow="Time" title="Estimate" />
             <div className="mt-4 rounded-2xl bg-sky-50 p-4 dark:bg-sky-400/10">
-              <div className="text-2xl font-black text-slate-950 dark:text-white">
+              <div className="text-2xl font-bold text-slate-950 dark:text-white">
                 {readiness?.report?.timeEstimate || "2-3 weeks"}
               </div>
               <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
@@ -1120,7 +994,7 @@ function ReadinessModal({ open, onClose, readiness, analytics, comparison }) {
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               {(actionPlan.length ? actionPlan : ["Practice weak DSA topics", "Keep a daily activity streak", "Schedule one reviewed mock interview"]).map((step, index) => (
                 <div key={`${valueText(step)}-${index}`} className="flex gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.03]">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-xs font-black text-white dark:bg-white dark:text-slate-950">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-xs font-bold text-white dark:bg-white dark:text-slate-950">
                     {index + 1}
                   </div>
                   <div className="text-sm font-semibold leading-6 text-slate-700 dark:text-slate-200">{valueText(step)}</div>
@@ -1129,8 +1003,8 @@ function ReadinessModal({ open, onClose, readiness, analytics, comparison }) {
             </div>
           </Surface>
         </div>
-      </motion.div>
-    </motion.div>
+      </MotionDiv>
+    </MotionDiv>
   );
 }
 
@@ -1147,7 +1021,8 @@ export default function StudentAnalyticsPage() {
     reload,
     changeCompany,
   } = useStudentAnalyticsData();
-  const [activeWorkspace, setActiveWorkspace] = useState("problems");
+  const [activeSection, setActiveSection] = useState("overview");
+  const [showOverviewDetails, setShowOverviewDetails] = useState(false);
   const [readinessOpen, setReadinessOpen] = useState(false);
 
   const analytics = useMemo(() => normalizeAnalysis(analysis), [analysis]);
@@ -1190,59 +1065,76 @@ export default function StudentAnalyticsPage() {
   const comparison = useMemo(() => makeComparison(readiness, "overall", analytics), [analytics, readiness]);
 
   const refresh = useCallback(() => reload({ forceRefresh: true }), [reload]);
+  const changeWorkspace = useCallback((id) => {
+    setActiveSection(id);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
 
   if (loading) return <LoadingScreen />;
 
   return (
-    <div className="min-h-screen pb-10 pt-24 text-slate-950 dark:text-white">
+    <div className="min-h-screen pb-12 pt-24 text-slate-950 transition-colors duration-500 dark:text-white">
       <PageBackground />
 
       <main className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
         <ErrorBanner error={error} onRetry={refresh} />
+        <StickySectionNav activeSection={activeSection} onChange={changeWorkspace} />
 
-        <RestoredHero
-          overallScore={overallScore}
-          overallStatus={overallStatus}
-          healthScore={healthScore}
-          activeModules={activeModules}
-          weeklyMomentum={weeklyMomentum}
-          topicAnalytics={topicAnalytics}
-          refreshing={refreshing}
-          onRefresh={refresh}
-          onOpenReadiness={() => {
-            document.getElementById("company-readiness")?.scrollIntoView({ behavior: "smooth", block: "start" });
-          }}
-        />
+        {activeSection === "overview" ? (
+          <>
+            <ExecutiveHero
+              analytics={analytics}
+              overallScore={overallScore}
+              overallStatus={overallStatus}
+              healthScore={healthScore}
+              activeModules={activeModules}
+              weeklyMomentum={weeklyMomentum}
+              topicAnalytics={topicAnalytics}
+              refreshing={refreshing}
+              onRefresh={refresh}
+              onNavigate={changeWorkspace}
+            />
 
-        <SnapshotCards
-          analytics={analytics}
-          topicAnalytics={topicAnalytics}
-          assessmentMovement={assessmentMovement}
-          weeklyMomentum={weeklyMomentum}
-        />
+            <div className="mt-4 flex justify-center">
+              <button
+                type="button"
+                onClick={() => setShowOverviewDetails((value) => !value)}
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-sky-200 bg-white px-4 py-2 text-sm font-semibold text-sky-700 shadow-[0_14px_35px_-28px_rgba(14,165,233,0.8)] transition hover:-translate-y-0.5 hover:border-sky-300 hover:bg-sky-50 dark:border-sky-400/20 dark:bg-slate-950 dark:text-sky-200 dark:hover:bg-sky-400/10"
+              >
+                {showOverviewDetails ? "Hide readiness details" : "Open readiness details"}
+                <ArrowRight className={`h-4 w-4 transition ${showOverviewDetails ? "rotate-90" : ""}`} />
+              </button>
+            </div>
 
-        <InsightLayer
-          insights={insights}
-          onFocus={() => {
-            setActiveWorkspace(topicAnalytics.weakest ? "problems" : activeWorkspace);
-            document.getElementById("analysis-studio")?.scrollIntoView({ behavior: "smooth", block: "start" });
-          }}
-        />
+            {showOverviewDetails ? (
+              <div className="mt-4 space-y-4">
+                <SnapshotGrid analytics={analytics} assessmentMovement={assessmentMovement} />
+                <ReadinessOperatingSystem
+                  analytics={analytics}
+                  moduleScores={moduleScores}
+                  topicAnalytics={topicAnalytics}
+                  healthScore={healthScore}
+                  overallScore={overallScore}
+                  weeklyMomentum={weeklyMomentum}
+                />
+                <SmartInsightsSection insights={insights} topicAnalytics={topicAnalytics} onNavigate={changeWorkspace} />
+              </div>
+            ) : null}
+          </>
+        ) : null}
 
-        <AnalysisStudio
-          active={activeWorkspace}
-          onChange={setActiveWorkspace}
-          moduleScores={moduleScores}
-          analytics={analytics}
-          topicAnalytics={topicAnalytics}
-          assessmentMovement={assessmentMovement}
-          categoryData={categoryData}
-          learningTimeline={learningTimeline}
-          learningMix={learningMix}
-        />
+        {activeSection === "dsa" ? <DsaIntelligenceSection analytics={analytics} topicAnalytics={topicAnalytics} /> : null}
 
-        <div id="company-readiness" className="scroll-mt-28">
-          <CompanyReadinessBlock
+        {activeSection === "assessments" ? (
+          <AssessmentIntelligenceSection analytics={analytics} assessmentMovement={assessmentMovement} />
+        ) : null}
+
+        {activeSection === "interviews" ? <InterviewIntelligenceSection analytics={analytics} categoryData={categoryData} /> : null}
+
+        {activeSection === "learning" ? <LearningMomentumSection analytics={analytics} timeline={learningTimeline} mixData={learningMix} /> : null}
+
+        {activeSection === "readiness" ? (
+          <CompanyReadinessSection
             companies={companies}
             selectedCompany={selectedCompany}
             onCompanyChange={changeCompany}
@@ -1251,7 +1143,7 @@ export default function StudentAnalyticsPage() {
             comparison={comparison}
             onOpenReadiness={() => setReadinessOpen(true)}
           />
-        </div>
+        ) : null}
       </main>
 
       <ReadinessModal
@@ -1264,3 +1156,4 @@ export default function StudentAnalyticsPage() {
     </div>
   );
 }
+

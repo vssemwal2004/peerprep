@@ -15,7 +15,10 @@ const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 async function getLatestStudentSignalAt(studentId) {
   const [latestSubmission, latestAssessment, latestFeedback, latestProgress, latestActivity, latestSession] = await Promise.all([
     Submission.findOne({ user: studentId, mode: 'submit' }).sort({ createdAt: -1 }).select('createdAt').lean(),
-    AssessmentSubmission.findOne({ studentId, status: 'submitted' }).sort({ submittedAt: -1 }).select('submittedAt').lean(),
+    AssessmentSubmission.findOne({ studentId, status: { $in: ['submitted', 'violation'] } })
+      .sort({ submittedAt: -1, updatedAt: -1 })
+      .select('submittedAt updatedAt')
+      .lean(),
     Feedback.findOne({ to: studentId }).sort({ createdAt: -1 }).select('createdAt').lean(),
     Progress.findOne({ studentId }).sort({ updatedAt: -1 }).select('updatedAt completedAt').lean(),
     StudentActivity.findOne({ studentId }).sort({ date: -1 }).select('date').lean(),
@@ -28,6 +31,7 @@ async function getLatestStudentSignalAt(studentId) {
   const candidates = [
     latestSubmission?.createdAt,
     latestAssessment?.submittedAt,
+    latestAssessment?.updatedAt,
     latestFeedback?.createdAt,
     latestProgress?.updatedAt,
     latestProgress?.completedAt,

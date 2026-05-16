@@ -46,9 +46,9 @@ export function Surface({ children, className = "", compact = false }) {
   return (
     <div
       className={[
-        "rounded-[24px] border border-slate-200/80 bg-white/88 shadow-[0_20px_70px_-55px_rgba(15,23,42,0.45)] backdrop-blur-xl",
-        "dark:border-white/10 dark:bg-slate-950/78 dark:shadow-[0_24px_80px_-55px_rgba(0,0,0,0.8)]",
-        compact ? "p-4" : "p-5 sm:p-6",
+        "rounded-[20px] border border-slate-200 bg-white shadow-[0_18px_50px_-42px_rgba(15,23,42,0.28)] backdrop-blur-xl",
+        "dark:border-white/10 dark:bg-slate-950/86 dark:shadow-[0_20px_60px_-46px_rgba(0,0,0,0.75)]",
+        compact ? "p-3.5" : "p-4 sm:p-5",
         className,
       ].join(" ")}
     >
@@ -62,11 +62,11 @@ export function SectionHeader({ eyebrow, title, subtitle, action = null, classNa
     <div className={`flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between ${className}`}>
       <div className="min-w-0">
         {eyebrow ? (
-          <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-400 dark:text-slate-500">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
             {eyebrow}
           </div>
         ) : null}
-        <h2 className="mt-1 text-lg font-black tracking-tight text-slate-950 dark:text-white sm:text-xl">
+        <h2 className="mt-1 text-lg font-bold tracking-tight text-slate-950 dark:text-white sm:text-xl">
           {title}
         </h2>
         {subtitle ? (
@@ -84,7 +84,7 @@ export function TonePill({ children, tone = "sky", className = "" }) {
   const toneClasses = getToneClasses(tone);
   return (
     <span
-      className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-bold ring-1 ${toneClasses.pill} ${className}`}
+      className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ring-1 ${toneClasses.pill} ${className}`}
     >
       <span className={`h-1.5 w-1.5 rounded-full ${toneClasses.dot}`} />
       {children}
@@ -96,7 +96,7 @@ export function IconBadge({ Icon, tone = "sky", className = "" }) {
   const toneClasses = getToneClasses(tone);
   return (
     <div
-      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl shadow-lg ${toneClasses.icon} ${className}`}
+      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl shadow-[0_14px_28px_-20px_rgba(14,165,233,0.9)] ${toneClasses.icon} ${className}`}
     >
       <Icon className="h-4 w-4" />
     </div>
@@ -110,17 +110,17 @@ export function MetricCard({ label, value, helper, Icon, tone = "sky", suffix = 
       {...fadeIn(delay, 10)}
       whileHover={{ y: -3 }}
       className={[
-        "group relative overflow-hidden rounded-[20px] border border-slate-200/80 bg-white/86 shadow-sm transition-all duration-300 hover:shadow-[0_22px_50px_-38px_rgba(15,23,42,0.45)] dark:border-white/10 dark:bg-slate-950/70",
-        compact ? "p-3.5" : "p-4",
+        "group relative overflow-hidden rounded-[16px] border border-slate-200 bg-white shadow-sm transition-all duration-300 hover:border-sky-200 hover:shadow-[0_18px_44px_-36px_rgba(14,165,233,0.8)] dark:border-white/10 dark:bg-slate-950/72",
+        compact ? "p-3" : "p-3.5",
       ].join(" ")}
     >
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-slate-300 to-transparent opacity-70 dark:via-white/20" />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="truncate text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
+          <div className="truncate text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
             {label}
           </div>
-          <div className={`${compact ? "mt-1.5 text-xl" : "mt-2 text-2xl"} font-black tracking-tight text-slate-950 dark:text-white`}>
+          <div className={`${compact ? "mt-1.5 text-xl" : "mt-2 text-2xl"} font-bold tracking-tight text-slate-950 dark:text-white`}>
             <AnimatedNumber value={value} prefix={prefix} suffix={suffix} />
           </div>
           {helper ? <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">{helper}</p> : null}
@@ -143,11 +143,11 @@ export function MetricCard({ label, value, helper, Icon, tone = "sky", suffix = 
 export function MiniMetric({ label, value, helper, tone = "sky", Icon }) {
   const toneClasses = getToneClasses(tone);
   return (
-    <div className={`rounded-2xl border p-4 ${toneClasses.panel}`}>
+    <div className={`rounded-[16px] border p-3.5 ${toneClasses.panel}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="truncate text-[10px] font-black uppercase tracking-[0.18em] opacity-70">{label}</div>
-          <div className="mt-1 truncate text-lg font-black">{value}</div>
+          <div className="truncate text-[10px] font-semibold uppercase tracking-[0.16em] opacity-70">{label}</div>
+          <div className="mt-1 truncate text-lg font-bold">{value}</div>
           {helper ? <p className="mt-1 text-xs leading-relaxed opacity-75">{helper}</p> : null}
         </div>
         {Icon ? (
@@ -167,10 +167,10 @@ export function ProgressBar({ value = 0, tone = "sky", label, helper }) {
       {label ? (
         <div className="mb-2 flex items-center justify-between gap-3 text-xs">
           <span className="font-semibold text-slate-600 dark:text-slate-300">{label}</span>
-          <span className="font-black text-slate-900 dark:text-white">{Math.round(value)}%</span>
+          <span className="font-bold text-slate-900 dark:text-white">{Math.round(value)}%</span>
         </div>
       ) : null}
-      <div className="h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10">
+      <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10">
         <motion.div
           className={`h-full rounded-full ${toneClasses.bar}`}
           initial={{ width: 0 }}
@@ -195,7 +195,7 @@ export function ScoreRing({ score = 0, size = 168, stroke = 12, tone = "sky", la
     emerald: ["#86efac", "#059669"],
     amber: ["#fde68a", "#d97706"],
     rose: ["#fda4af", "#e11d48"],
-    violet: ["#c4b5fd", "#7c3aed"],
+    violet: ["#7dd3fc", "#0284c7"],
     slate: ["#cbd5e1", "#475569"],
   }[tone] || ["#7dd3fc", "#0284c7"];
 
@@ -232,10 +232,10 @@ export function ScoreRing({ score = 0, size = 168, stroke = 12, tone = "sky", la
         />
       </svg>
       <div className="absolute text-center">
-        <div className="text-4xl font-black tracking-tight text-slate-950 dark:text-white">
+        <div className="text-4xl font-bold tracking-tight text-slate-950 dark:text-white">
           <AnimatedNumber value={value} suffix="%" />
         </div>
-        <div className="mt-1 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+        <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
           {label}
         </div>
       </div>
@@ -249,7 +249,7 @@ export function EmptyState({ title = "No data yet", text = "Start using PeerPrep
       <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-slate-500 shadow-sm dark:bg-white/10 dark:text-slate-300">
         <Icon className="h-5 w-5" />
       </div>
-      <h3 className="mt-3 text-sm font-black text-slate-900 dark:text-white">{title}</h3>
+      <h3 className="mt-3 text-sm font-bold text-slate-900 dark:text-white">{title}</h3>
       <p className="mt-1 max-w-sm text-sm leading-relaxed text-slate-500 dark:text-slate-400">{text}</p>
     </div>
   );
@@ -286,7 +286,7 @@ export function ErrorBanner({ error, onRetry }) {
         <div className="flex items-start gap-3">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
-            <div className="text-sm font-black">Analytics could not refresh</div>
+            <div className="text-sm font-bold">Analytics could not refresh</div>
             <p className="mt-1 text-xs opacity-80">{error.message || "Please try again."}</p>
           </div>
         </div>
@@ -294,7 +294,7 @@ export function ErrorBanner({ error, onRetry }) {
           <button
             type="button"
             onClick={onRetry}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-rose-600 px-3 py-2 text-xs font-black text-white shadow-sm hover:bg-rose-500"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-rose-600 px-3 py-2 text-xs font-bold text-white shadow-sm hover:bg-rose-500"
           >
             Retry
             <ArrowUpRight className="h-3.5 w-3.5" />
@@ -309,8 +309,8 @@ export function DataChip({ label, value, tone = "sky" }) {
   const toneClasses = getToneClasses(tone);
   return (
     <div className={`rounded-2xl px-3 py-2 ring-1 ${toneClasses.pill}`}>
-      <div className="text-[10px] font-black uppercase tracking-[0.16em] opacity-70">{label}</div>
-      <div className="mt-0.5 text-sm font-black">{value}</div>
+      <div className="text-[10px] font-semibold uppercase tracking-[0.16em] opacity-70">{label}</div>
+      <div className="mt-0.5 text-sm font-bold">{value}</div>
     </div>
   );
 }

@@ -61,8 +61,8 @@ export const CHART_COLORS = {
   emeraldSoft: "#86efac",
   amber: "#f59e0b",
   rose: "#f43f5e",
-  violet: "#8b5cf6",
-  slate: "#64748b",
+  violet: "#0ea5e9",
+  slate: "#0f172a",
 };
 
 export function clamp(value, min = 0, max = 100) {
@@ -156,12 +156,12 @@ export function getToneClasses(tone = "sky") {
       text: "text-rose-700 dark:text-rose-300",
     },
     violet: {
-      panel: "border-violet-200/70 bg-violet-50/70 text-violet-800 dark:border-violet-400/15 dark:bg-violet-400/10 dark:text-violet-200",
-      pill: "bg-violet-100 text-violet-700 ring-violet-200 dark:bg-violet-400/10 dark:text-violet-200 dark:ring-violet-400/20",
-      icon: "bg-violet-500 text-white shadow-violet-500/25",
-      dot: "bg-violet-500",
-      bar: "bg-violet-500",
-      text: "text-violet-700 dark:text-violet-300",
+      panel: "border-sky-200/70 bg-sky-50/70 text-sky-800 dark:border-sky-400/15 dark:bg-sky-400/10 dark:text-sky-200",
+      pill: "bg-sky-100 text-sky-700 ring-sky-200 dark:bg-sky-400/10 dark:text-sky-200 dark:ring-sky-400/20",
+      icon: "bg-sky-500 text-white shadow-sky-500/25",
+      dot: "bg-sky-500",
+      bar: "bg-sky-500",
+      text: "text-sky-700 dark:text-sky-300",
     },
     slate: {
       panel: "border-slate-200/80 bg-slate-50/80 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200",
@@ -176,10 +176,14 @@ export function getToneClasses(tone = "sky") {
   return tones[tone] || tones.sky;
 }
 
-export function buildReadinessScore({ problems, assessments, interviews, learning }) {
+export function buildReadinessScore({ overview, derived, problems, assessments, interviews, learning }) {
+  if (typeof derived?.readinessScore === "number" && derived.readinessScore > 0) return Math.round(derived.readinessScore);
+  if (typeof overview?.readinessScore === "number" && overview.readinessScore > 0) return Math.round(overview.readinessScore);
+
   const values = [
     problems?.accuracy,
-    assessments?.avgScore,
+    assessments?.adjustedAvgScore || assessments?.avgScore,
+    assessments?.integrityScore,
     interviews?.avgScore,
     learning?.completionPercent,
   ].filter((value) => typeof value === "number" && value > 0);
@@ -200,23 +204,23 @@ export function buildModuleScores({ problems, assessments, interviews, learning 
     {
       id: "assessments",
       label: "Assessments",
-      value: Math.round(assessments?.avgScore || 0),
-      helper: "Average score",
-      tone: "emerald",
+      value: Math.round(assessments?.adjustedAvgScore || assessments?.avgScore || 0),
+      helper: assessments?.integrityScore < 85 ? "Adjusted for integrity" : "Adjusted average",
+      tone: getScoreTone(assessments?.adjustedAvgScore || assessments?.avgScore),
     },
     {
       id: "interviews",
       label: "Interviews",
       value: Math.round(interviews?.avgScore || 0),
       helper: "Feedback average",
-      tone: "amber",
+      tone: "sky",
     },
     {
       id: "learning",
       label: "Learning",
       value: Math.round(learning?.completionPercent || 0),
       helper: "Completion",
-      tone: "violet",
+      tone: "sky",
     },
   ];
 }
@@ -279,7 +283,7 @@ export function toLearningTimeline(points = []) {
 export function buildLearningMix(learning = {}) {
   return [
     { name: "Videos", value: learning.videosWatched || 0, tone: "sky" },
-    { name: "Topics", value: learning.completedTopics || 0, tone: "emerald" },
+    { name: "Topics", value: learning.completedTopics || 0, tone: "sky" },
     { name: "Practice", value: learning.practiceSolved || 0, tone: "amber" },
   ].filter((item) => item.value > 0);
 }
