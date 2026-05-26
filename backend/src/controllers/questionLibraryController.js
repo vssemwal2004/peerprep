@@ -15,6 +15,94 @@ function normalizeTag(tag = '') {
   return String(tag || '').trim();
 }
 
+function normalizeIdentityText(value = '') {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9+#]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getCodingProblemId(question = {}) {
+  const data = question.questionData || {};
+  const coding = data.coding || {};
+  const snapshot = data.problemDataSnapshot || coding.problemData || {};
+  return question.sourceProblemId
+    || data.problemId
+    || coding.problemId
+    || snapshot._id
+    || snapshot.id
+    || '';
+}
+
+function getCodingUniqueKey(question = {}) {
+  const problemId = getCodingProblemId(question);
+  if (problemId) return `problem:${String(problemId)}`;
+
+  const data = question.questionData || {};
+  const coding = data.coding || {};
+  const snapshot = data.problemDataSnapshot || coding.problemData || {};
+  const title = normalizeIdentityText(
+    question.questionText
+    || question.sourceProblemTitle
+    || snapshot.title
+    || coding.title
+    || data.questionText
+    || question.sourceAssessmentTitle,
+  );
+
+  return title ? `title:${title}` : `source:${question.sourceKey || question._id}`;
+}
+
+function compareLibraryPriority(a = {}, b = {}) {
+  const priority = { compiler: 0, manual: 1, assessment: 2 };
+  const sourceDiff = (priority[a.sourceType] ?? 9) - (priority[b.sourceType] ?? 9);
+  if (sourceDiff !== 0) return sourceDiff;
+
+  const aUpdated = new Date(a.updatedAt || a.createdAt || 0).getTime();
+  const bUpdated = new Date(b.updatedAt || b.createdAt || 0).getTime();
+  return bUpdated - aUpdated;
+}
+
+function uniqueCodingQuestions(questions = []) {
+  const grouped = new Map();
+  questions
+    .filter((question) => question.questionType === 'coding')
+    .sort(compareLibraryPriority)
+    .forEach((question) => {
+      const key = getCodingUniqueKey(question);
+      if (!grouped.has(key)) grouped.set(key, question);
+    });
+
+  return Array.from(grouped.values()).sort((a, b) => {
+    const aUpdated = new Date(a.updatedAt || a.createdAt || 0).getTime();
+    const bUpdated = new Date(b.updatedAt || b.createdAt || 0).getTime();
+    return bUpdated - aUpdated;
+  });
+}
+
+function uniqueLibraryQuestions(questions = []) {
+  const coding = uniqueCodingQuestions(questions);
+  const nonCoding = questions.filter((question) => question.questionType !== 'coding');
+  return [...nonCoding, ...coding].sort((a, b) => {
+    const aUpdated = new Date(a.updatedAt || a.createdAt || 0).getTime();
+    const bUpdated = new Date(b.updatedAt || b.createdAt || 0).getTime();
+    return bUpdated - aUpdated;
+  });
+}
+
+function buildCategoryCounts(questions = []) {
+  const counts = new Map();
+  questions.forEach((question) => {
+    const type = question.questionType || 'other';
+    counts.set(type, (counts.get(type) || 0) + 1);
+  });
+  return Array.from(counts.entries())
+    .map(([type, count]) => ({ type, count }))
+    .sort((a, b) => String(a.type).localeCompare(String(b.type)));
+}
+
 export async function listLibraryQuestions(req, res) {
   try {
     await ensureQuestionLibrarySynchronized();
@@ -46,27 +134,22 @@ export async function listLibraryQuestions(req, res) {
       baseMatch.createdBy = req.user._id;
     }
 
-    const match = { ...baseMatch };
-
-    if (normalizeType(type) && normalizeType(type) !== 'all') {
-      match.questionType = normalizeType(type);
-    }
-
-    const [questions, total, categories, tags, difficulties] = await Promise.all([
-      QuestionLibrary.find(match)
+    const [baseQuestions, tags, difficulties] = await Promise.all([
+      QuestionLibrary.find(baseMatch)
         .sort({ updatedAt: -1, createdAt: -1 })
-        .skip(skip)
-        .limit(limitNum)
         .lean(),
-      QuestionLibrary.countDocuments(match),
-      QuestionLibrary.aggregate([
-        { $match: baseMatch },
-        { $group: { _id: '$questionType', count: { $sum: 1 } } },
-        { $sort: { _id: 1 } },
-      ]),
       QuestionLibrary.distinct('tags', baseMatch),
       QuestionLibrary.distinct('difficulty', { ...baseMatch, difficulty: { $ne: '' } }),
     ]);
+
+    const uniqueBaseQuestions = uniqueLibraryQuestions(baseQuestions);
+    const categories = buildCategoryCounts(uniqueBaseQuestions);
+    const selectedType = normalizeType(type);
+    const filteredQuestions = selectedType && selectedType !== 'all'
+      ? uniqueBaseQuestions.filter((question) => question.questionType === selectedType)
+      : uniqueBaseQuestions;
+    const total = filteredQuestions.length;
+    const questions = filteredQuestions.slice(skip, skip + limitNum);
 
     res.json({
       questions: questions.map(formatLibraryQuestionSummary),
@@ -77,7 +160,7 @@ export async function listLibraryQuestions(req, res) {
         pages: Math.max(1, Math.ceil(total / limitNum)),
       },
       filters: {
-        categories: categories.map((entry) => ({ type: entry._id, count: entry.count })),
+        categories,
         tags: tags.filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
         difficulties: difficulties.filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
       },

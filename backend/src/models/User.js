@@ -39,6 +39,17 @@ const userSchema = new mongoose.Schema({
   // Additional fields
   avatarUrl: String,
   department: String, // For coordinators
+  phone: { type: String, trim: true },
+  isActive: { type: Boolean, default: true },
+  coordinatorPermissions: { type: [String], default: undefined },
+  coordinatorPermissionHistory: [{
+    changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    changedByEmail: String,
+    previousPermissions: [String],
+    nextPermissions: [String],
+    note: String,
+    createdAt: { type: Date, default: Date.now },
+  }],
   bio: { type: String, trim: true, maxlength: 280 },
   linkedinUrl: { type: String, trim: true },
   githubUrl: { type: String, trim: true },

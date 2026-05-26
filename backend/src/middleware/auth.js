@@ -2,6 +2,7 @@ import { verifyToken } from '../utils/jwt.js';
 import User from '../models/User.js';
 import { HttpError } from '../utils/errors.js';
 import crypto from 'crypto';
+import { hasCoordinatorPermission } from '../services/coordinatorPermissions.js';
 
 /**
  * Simple in-memory cache for user data to reduce database hits
@@ -63,13 +64,14 @@ export async function requireAuth(req, res, next) {
     // All tokens now resolve to the unified User model
     // Use lean() + select() for faster query - only fetch needed fields
     user = await User.findById(payload.sub)
-      .select('_id email name role semester activeSessionToken passwordChangedAt avatarUrl coordinatorId teacherIds studentId course branch college group department isSpecialStudent')
+      .select('_id email name role semester activeSessionToken passwordChangedAt avatarUrl coordinatorId teacherIds studentId course branch college group department phone isSpecialStudent isActive coordinatorPermissions')
       .lean();
     if (!user) throw new HttpError(401, 'User not found');
     
     // Cache the user data
     setCachedUser(payload.sub, user);
   }
+  if (user.role === 'coordinator' && user.isActive === false) throw new HttpError(403, 'Coordinator account disabled');
   
   // SECURITY: Check if this is the active session for this user
   // When user logs in from a new device, old sessions become invalid
@@ -128,6 +130,18 @@ export function requireStudent(req, res, next) {
 export function requireCoordinator(req, res, next) {
   if (!req.user || req.user.role !== 'coordinator') throw new HttpError(403, 'Coordinator only');
   next();
+}
+
+export function requireCoordinatorPermission(permission) {
+  return (req, res, next) => {
+    if (!req.user) throw new HttpError(401, 'Unauthorized');
+    if (req.user.role === 'admin') return next();
+    if (req.user.role !== 'coordinator') throw new HttpError(403, 'Coordinator only');
+    if (!hasCoordinatorPermission(req.user, permission)) {
+      throw new HttpError(403, 'Coordinator permission required');
+    }
+    return next();
+  };
 }
 
 

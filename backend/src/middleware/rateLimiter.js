@@ -239,6 +239,30 @@ export const feedbackLimiter = rateLimit({
   }
 });
 
+const ANALYTICS_WINDOW_MS = Number(process.env.ANALYTICS_REFRESH_WINDOW_MS || 15 * 60 * 1000);
+const ANALYTICS_MAX = Number(process.env.ANALYTICS_REFRESH_MAX || 30);
+
+function getUserScopedKey(req) {
+  return req.user?._id?.toString() || req.ip;
+}
+
+export const analyticsRefreshLimiter = rateLimit({
+  windowMs: ANALYTICS_WINDOW_MS,
+  max: ANALYTICS_MAX,
+  message: 'Too many analytics refresh requests',
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: getUserScopedKey,
+  skip: (req) => String(req.query?.refresh || '').toLowerCase() !== '1',
+  store: buildRateLimitStore('rl:analytics:refresh:'),
+  handler: (req, res) => {
+    console.warn(`[SECURITY] Analytics refresh limit exceeded for ${req.user?._id || req.ip}`);
+    res.status(429).json({
+      error: 'Analytics refresh rate limit exceeded. Please wait before refreshing again.'
+    });
+  }
+});
+
 // Compiler execution limiter - protects free Judge0 capacity from spam
 const RUN_WINDOW_MS = Number(process.env.COMPILER_RUN_WINDOW_MS || 60 * 1000);
 const RUN_MAX = Number(process.env.COMPILER_RUN_MAX || 10);

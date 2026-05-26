@@ -167,11 +167,12 @@ export default function QuestionLibrary() {
       if (!entry?.type) return;
       counts.set(entry.type, Number(entry.count) || 0);
     });
+    const allCount = Array.from(counts.values()).reduce((sum, count) => sum + count, 0);
 
     const coreTabs = coreTypes.map((type) => ({ type, count: counts.get(type) || 0 }));
     const extras = (categories || []).filter((entry) => entry?.type && !coreTypes.includes(entry.type));
 
-    const allTabs = [{ type: 'all', count: total }, ...coreTabs, ...extras];
+    const allTabs = [{ type: 'all', count: allCount || total }, ...coreTabs, ...extras];
     return lockType ? allTabs.filter((entry) => entry.type === lockType) : allTabs;
   }, [categories, total, lockType]);
 

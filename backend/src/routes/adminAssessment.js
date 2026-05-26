@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireAuth, requireAdminOrCoordinator } from '../middleware/auth.js';
+import { requireAuth, requireCoordinatorPermission } from '../middleware/auth.js';
 import {
   createAssessment,
   listAssessments,
@@ -22,20 +22,20 @@ import {
 
 const router = Router();
 
-router.post('/assessment/create', requireAuth, requireAdminOrCoordinator, createAssessment);
-router.get('/assessment/list', requireAuth, requireAdminOrCoordinator, listAssessments);
-router.get('/assessment/reports', requireAuth, requireAdminOrCoordinator, getAssessmentReports);
-router.get('/assessment/reports/submissions/:submissionId', requireAuth, requireAdminOrCoordinator, getStudentAssessmentReport);
-router.get('/assessment/reports/export-data', requireAuth, requireAdminOrCoordinator, getAssessmentReportsExportData);
-router.get('/assessment/reports/export', requireAuth, requireAdminOrCoordinator, exportAssessmentReports);
-router.get('/assessment/submissions/:submissionId/violations', requireAuth, requireAdminOrCoordinator, getSubmissionViolations);
-router.get('/library/questions', requireAuth, requireAdminOrCoordinator, listLibraryQuestions);
-router.post('/library/questions', requireAuth, requireAdminOrCoordinator, createLibraryQuestion);
-router.post('/library/questions/bulk', requireAuth, requireAdminOrCoordinator, createLibraryQuestionsBulk);
-router.get('/library/questions/:id', requireAuth, requireAdminOrCoordinator, getLibraryQuestion);
-router.post('/library/questions/resolve', requireAuth, requireAdminOrCoordinator, resolveLibraryQuestions);
-router.get('/assessment/:id', requireAuth, requireAdminOrCoordinator, getAssessment);
-router.put('/assessment/:id', requireAuth, requireAdminOrCoordinator, updateAssessment);
-router.delete('/assessment/:id', requireAuth, requireAdminOrCoordinator, deleteAssessment);
+router.post('/assessment/create', requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), createAssessment);
+router.get('/assessment/list', requireAuth, requireCoordinatorPermission('coordinator.assessment.view'), listAssessments);
+router.get('/assessment/reports', requireAuth, requireCoordinatorPermission('coordinator.assessment.reports'), getAssessmentReports);
+router.get('/assessment/reports/submissions/:submissionId', requireAuth, requireCoordinatorPermission('coordinator.assessment.reports'), getStudentAssessmentReport);
+router.get('/assessment/reports/export-data', requireAuth, requireCoordinatorPermission('coordinator.assessment.reports'), getAssessmentReportsExportData);
+router.get('/assessment/reports/export', requireAuth, requireCoordinatorPermission('coordinator.assessment.reports'), exportAssessmentReports);
+router.get('/assessment/submissions/:submissionId/violations', requireAuth, requireCoordinatorPermission('coordinator.assessment.reports'), getSubmissionViolations);
+router.get('/library/questions', requireAuth, requireCoordinatorPermission('coordinator.library.view'), listLibraryQuestions);
+router.post('/library/questions', requireAuth, requireCoordinatorPermission('coordinator.library.create'), createLibraryQuestion);
+router.post('/library/questions/bulk', requireAuth, requireCoordinatorPermission('coordinator.library.create'), createLibraryQuestionsBulk);
+router.get('/library/questions/:id', requireAuth, requireCoordinatorPermission('coordinator.library.view'), getLibraryQuestion);
+router.post('/library/questions/resolve', requireAuth, requireCoordinatorPermission('coordinator.library.create'), resolveLibraryQuestions);
+router.get('/assessment/:id', requireAuth, requireCoordinatorPermission('coordinator.assessment.view'), getAssessment);
+router.put('/assessment/:id', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), updateAssessment);
+router.delete('/assessment/:id', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), deleteAssessment);
 
 export default router;

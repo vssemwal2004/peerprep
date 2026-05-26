@@ -6,6 +6,8 @@ import { ToastProvider } from './components/CustomToast';
 import AdminLayout from './admin/AdminLayout';
 import SessionMonitor from './components/SessionMonitor';
 import { NavbarSkeleton, PageSkeleton, DashboardSkeleton } from './components/Skeletons';
+import { useAuth } from './context/AuthContext';
+import { hasPermission } from './admin/coordinatorPermissions';
 
 // Lazy-load navbars to keep them out of the main bundle
 const StudentNavbar = lazy(() => import('./components/StudentNavbar').then(m => ({ default: m.StudentNavbar })));
@@ -68,6 +70,9 @@ const AdminAssessmentPreview = lazy(() => import("./admin/assessment/AdminAssess
 const AdminEmailTemplates = lazy(() => import("./admin/EmailTemplates"));
 const AnnouncementCreate = lazy(() => import("./admin/AnnouncementCreate"));
 const AnnouncementManage = lazy(() => import("./admin/AnnouncementManage"));
+const CoordinatorOverview = lazy(() => import("./admin/CoordinatorOverview"));
+const CoordinatorAccess = lazy(() => import("./admin/CoordinatorAccess"));
+const CoordinatorAccessDetails = lazy(() => import("./admin/CoordinatorAccessDetails"));
 
 // Coordinator Pages
 const CoordinatorProtectedRoute = lazy(() => import("./coordinator/CoordinatorProtectedRoute"));
@@ -170,6 +175,7 @@ function useHideGlobalLoader() {
 function AppContent() {
   useHideGlobalLoader();
   const location = useLocation();
+  const { user } = useAuth();
   const isAssessmentModuleAlias = /^\/(assessments|assessment-reports|assessment-history)(\/)?$/.test(location.pathname);
   const isProblemSolver = /^\/problems\/[^/]+$/.test(location.pathname);
   const isMain = location.pathname === "/";
@@ -191,9 +197,24 @@ function AppContent() {
     </AdminProtectedRoute>
   );
 
-  const CoordinatorShell = ({ children, layout = true }) => (
+  const CoordinatorAccessDenied = () => (
+    <div className="min-h-screen bg-slate-50 pt-20 dark:bg-gray-950">
+      <div className="mx-auto max-w-3xl px-4 py-10">
+        <div className="rounded-2xl border border-amber-200 bg-white p-6 shadow-sm dark:border-amber-400/20 dark:bg-gray-900">
+          <h1 className="text-xl font-bold text-slate-950 dark:text-white">Access not assigned</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">
+            Your admin has not enabled this coordinator feature for your account yet.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+
+  const CoordinatorShell = ({ children, layout = true, permission }) => (
     <CoordinatorProtectedRoute>
-      {layout ? <CoordinatorLayout>{children}</CoordinatorLayout> : children}
+      {permission && !hasPermission(user, permission)
+        ? (layout ? <CoordinatorLayout><CoordinatorAccessDenied /></CoordinatorLayout> : <CoordinatorAccessDenied />)
+        : (layout ? <CoordinatorLayout>{children}</CoordinatorLayout> : children)}
     </CoordinatorProtectedRoute>
   );
 
@@ -259,6 +280,9 @@ function AppContent() {
         <Route path="/admin/students/:studentId" element={<AdminShell><AdminStudentProfile /></AdminShell>} />
         <Route path="/admin/coordinator-directory" element={<AdminShell><CoordinatorDirectory /></AdminShell>} />
         <Route path="/admin/coordinators" element={<AdminShell><CoordinatorOnboarding /></AdminShell>} />
+        <Route path="/admin/coordinator-overview" element={<AdminShell><CoordinatorOverview /></AdminShell>} />
+        <Route path="/admin/coordinator-access" element={<AdminShell><CoordinatorAccess /></AdminShell>} />
+        <Route path="/admin/coordinator-access/:coordinatorId" element={<AdminShell><CoordinatorAccessDetails /></AdminShell>} />
         <Route path="/admin/event" element={<AdminShell><EventManagement /></AdminShell>} />
         <Route path="/admin/event/:id" element={<AdminShell><EventDetail /></AdminShell>} />
         <Route path="/admin/interviews" element={<AdminShell><EventDetail /></AdminShell>} />
@@ -293,38 +317,39 @@ function AppContent() {
         <Route path="/admin/announcements/manage" element={<AdminShell><AnnouncementManage /></AdminShell>} />
         
         {/* Coordinator Routes - Protected */}
-        <Route path="/coordinator/overview" element={<CoordinatorShell><AdminOverview /></CoordinatorShell>} />
-        <Route path="/coordinator" element={<CoordinatorShell><CoordinatorEventDetail /></CoordinatorShell>} />
-        <Route path="/coordinator/interviews" element={<CoordinatorShell><CoordinatorEventDetail /></CoordinatorShell>} />
-        <Route path="/coordinator/event/:id" element={<CoordinatorShell><CoordinatorEventDetail /></CoordinatorShell>} />
-        <Route path="/coordinator/students" element={<CoordinatorShell><CoordinatorStudents /></CoordinatorShell>} />
-        <Route path="/coordinator/students/:studentId" element={<CoordinatorShell><AdminStudentProfile /></CoordinatorShell>} />
-        <Route path="/coordinator/subjects" element={<CoordinatorShell><SemesterManagement /></CoordinatorShell>} />
-        <Route path="/coordinator/database" element={<CoordinatorShell><CoordinatorDatabase /></CoordinatorShell>} />
-        <Route path="/coordinator/feedback" element={<CoordinatorShell><CoordinatorFeedback /></CoordinatorShell>} />
-        <Route path="/coordinator/event/create" element={<CoordinatorShell><EventManagement /></CoordinatorShell>} />
-        <Route path="/coordinator/profile" element={<CoordinatorShell><CoordinatorProfile /></CoordinatorShell>} />
-        <Route path="/coordinator/change-password" element={<CoordinatorShell><CoordinatorChangePassword /></CoordinatorShell>} />
-        <Route path="/coordinator/activity" element={<CoordinatorShell><CoordinatorActivity /></CoordinatorShell>} />
+        <Route path="/coordinator/overview" element={<CoordinatorShell permission="coordinator.dashboard.overview"><AdminOverview /></CoordinatorShell>} />
+        <Route path="/coordinator" element={<CoordinatorShell permission="coordinator.interviews.view"><CoordinatorEventDetail /></CoordinatorShell>} />
+        <Route path="/coordinator/interviews" element={<CoordinatorShell permission="coordinator.interviews.view"><CoordinatorEventDetail /></CoordinatorShell>} />
+        <Route path="/coordinator/event/:id" element={<CoordinatorShell permission="coordinator.interviews.view"><CoordinatorEventDetail /></CoordinatorShell>} />
+        <Route path="/coordinator/students" element={<CoordinatorShell permission="coordinator.students.view"><CoordinatorStudents /></CoordinatorShell>} />
+        <Route path="/coordinator/students/:studentId" element={<CoordinatorShell permission="coordinator.students.profile"><AdminStudentProfile /></CoordinatorShell>} />
+        <Route path="/coordinator/subjects" element={<CoordinatorShell permission="coordinator.learning.manage"><SemesterManagement /></CoordinatorShell>} />
+        <Route path="/coordinator/database" element={<CoordinatorShell permission="coordinator.courses.view"><CoordinatorDatabase /></CoordinatorShell>} />
+        <Route path="/coordinator/feedback" element={<CoordinatorShell permission="coordinator.feedback.view"><CoordinatorFeedback /></CoordinatorShell>} />
+        <Route path="/coordinator/event/create" element={<CoordinatorShell permission="coordinator.interviews.create"><EventManagement /></CoordinatorShell>} />
+        <Route path="/coordinator/profile" element={<CoordinatorShell permission="coordinator.profile.manage"><CoordinatorProfile /></CoordinatorShell>} />
+        <Route path="/coordinator/change-password" element={<CoordinatorShell permission="coordinator.profile.manage"><CoordinatorChangePassword /></CoordinatorShell>} />
+        <Route path="/coordinator/activity" element={<CoordinatorShell permission="coordinator.activity.view"><CoordinatorActivity /></CoordinatorShell>} />
         
         {/* Extended Coordinator Features */}
-        <Route path="/coordinator/assessment" element={<CoordinatorShell><AssessmentDashboard /></CoordinatorShell>} />
-        <Route path="/coordinator/assessment/create" element={<CoordinatorShell><CreateAssessment /></CoordinatorShell>} />
-        <Route path="/coordinator/assessment/:id/edit" element={<CoordinatorShell><CreateAssessment /></CoordinatorShell>} />
-        <Route path="/coordinator/assessment/reports" element={<CoordinatorShell><AssessmentReports /></CoordinatorShell>} />
-        <Route path="/coordinator/assessment/preview/:id" element={<CoordinatorShell layout={false}><AdminAssessmentPreview /></CoordinatorShell>} />
-        <Route path="/coordinator/library" element={<CoordinatorShell><QuestionLibrary /></CoordinatorShell>} />
-        <Route path="/coordinator/library/add-question" element={<CoordinatorShell><AddQuestionToLibrary /></CoordinatorShell>} />
-        <Route path="/coordinator/announcements/add" element={<CoordinatorShell><AnnouncementCreate /></CoordinatorShell>} />
-        <Route path="/coordinator/announcements/manage" element={<CoordinatorShell><AnnouncementManage /></CoordinatorShell>} />
-        <Route path="/coordinator/compiler" element={<CoordinatorShell><AdminCompilerDashboard /></CoordinatorShell>} />
-        <Route path="/coordinator/compiler/create" element={<CoordinatorShell><AdminCompilerDashboard /></CoordinatorShell>} />
-        <Route path="/coordinator/compiler/problems" element={<CoordinatorShell><AdminCompilerDashboard /></CoordinatorShell>} />
-        <Route path="/coordinator/compiler/:id/edit" element={<CoordinatorShell><AdminCompilerDashboard /></CoordinatorShell>} />
-        <Route path="/coordinator/compiler/:id/preview" element={<CoordinatorShell><AdminCompilerDashboard /></CoordinatorShell>} />
-        <Route path="/coordinator/compiler/analytics" element={<CoordinatorShell><AdminCompilerDashboard /></CoordinatorShell>} />
-        <Route path="/coordinator/company-insights" element={<CoordinatorShell><AdminCompanyInsights /></CoordinatorShell>} />
-        <Route path="/coordinator/company-insights/add" element={<CoordinatorShell><AdminCompanyBenchmarkAdd /></CoordinatorShell>} />
+        <Route path="/coordinator/assessment" element={<CoordinatorShell permission="coordinator.assessment.view"><AssessmentDashboard /></CoordinatorShell>} />
+        <Route path="/coordinator/assessment/create" element={<CoordinatorShell permission="coordinator.assessment.create"><CreateAssessment /></CoordinatorShell>} />
+        <Route path="/coordinator/assessment/:id/edit" element={<CoordinatorShell permission="coordinator.assessment.edit"><CreateAssessment /></CoordinatorShell>} />
+        <Route path="/coordinator/assessment/reports" element={<CoordinatorShell permission="coordinator.assessment.reports"><AssessmentReports /></CoordinatorShell>} />
+        <Route path="/coordinator/assessment/select-problem" element={<CoordinatorShell permission="coordinator.assessment.create"><SelectProblemFromLibrary /></CoordinatorShell>} />
+        <Route path="/coordinator/assessment/preview/:id" element={<CoordinatorShell layout={false} permission="coordinator.assessment.edit"><AdminAssessmentPreview /></CoordinatorShell>} />
+        <Route path="/coordinator/library" element={<CoordinatorShell permission="coordinator.library.view"><QuestionLibrary /></CoordinatorShell>} />
+        <Route path="/coordinator/library/add-question" element={<CoordinatorShell permission="coordinator.library.create"><AddQuestionToLibrary /></CoordinatorShell>} />
+        <Route path="/coordinator/announcements/add" element={<CoordinatorShell permission="coordinator.announcements.create"><AnnouncementCreate /></CoordinatorShell>} />
+        <Route path="/coordinator/announcements/manage" element={<CoordinatorShell permission="coordinator.announcements.manage"><AnnouncementManage /></CoordinatorShell>} />
+        <Route path="/coordinator/compiler" element={<CoordinatorShell permission="coordinator.compiler.view"><AdminCompilerDashboard /></CoordinatorShell>} />
+        <Route path="/coordinator/compiler/create" element={<CoordinatorShell permission="coordinator.compiler.create"><AdminCompilerDashboard /></CoordinatorShell>} />
+        <Route path="/coordinator/compiler/problems" element={<CoordinatorShell permission="coordinator.compiler.manage"><AdminCompilerDashboard /></CoordinatorShell>} />
+        <Route path="/coordinator/compiler/:id/edit" element={<CoordinatorShell permission="coordinator.compiler.manage"><AdminCompilerDashboard /></CoordinatorShell>} />
+        <Route path="/coordinator/compiler/:id/preview" element={<CoordinatorShell permission="coordinator.compiler.manage"><AdminCompilerDashboard /></CoordinatorShell>} />
+        <Route path="/coordinator/compiler/analytics" element={<CoordinatorShell permission="coordinator.compiler.analytics"><AdminCompilerDashboard /></CoordinatorShell>} />
+        <Route path="/coordinator/company-insights" element={<CoordinatorShell permission="coordinator.company.view"><AdminCompanyInsights /></CoordinatorShell>} />
+        <Route path="/coordinator/company-insights/add" element={<CoordinatorShell permission="coordinator.company.create"><AdminCompanyBenchmarkAdd /></CoordinatorShell>} />
           </Routes>
         </Suspense>
       </main>

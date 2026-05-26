@@ -21,6 +21,17 @@ const activityPointSchema = new mongoose.Schema({
   count: Number,
 }, { _id: false });
 
+const explanationSchema = new mongoose.Schema({
+  id: String,
+  title: String,
+  score: Number,
+  impact: String,
+  tone: String,
+  summary: String,
+  evidence: [String],
+  action: String,
+}, { _id: false });
+
 const studentAnalyticsSchema = new mongoose.Schema({
   studentId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -32,6 +43,14 @@ const studentAnalyticsSchema = new mongoose.Schema({
   generatedAt: {
     type: Date,
     default: Date.now,
+  },
+  contractVersion: {
+    type: String,
+    default: '2026.05.startup-readiness-v1',
+  },
+  scoreModel: {
+    version: { type: String, default: '2026.05.startup-readiness-v1' },
+    studentVisibleSecurityAggregatesOnly: { type: Boolean, default: true },
   },
   overview: {
     totalAttempts: { type: Number, default: 0 },
@@ -106,6 +125,7 @@ const studentAnalyticsSchema = new mongoose.Schema({
     lastActiveAt: Date,
   },
   derived: {
+    contractVersion: { type: String, default: '2026.05.startup-readiness-v1' },
     consistencyScore: { type: Number, default: 0 },
     effortScore: { type: Number, default: 0 },
     assessmentIntegrityScore: { type: Number, default: 100 },
@@ -114,6 +134,14 @@ const studentAnalyticsSchema = new mongoose.Schema({
     placementSignal: { type: Number, default: 0 },
     growthScore: { type: Number, default: 0 },
     riskLevel: { type: String, default: 'low' },
+  },
+  explanations: {
+    overview: [explanationSchema],
+    coding: [explanationSchema],
+    assessment: [explanationSchema],
+    interview: [explanationSchema],
+    learning: [explanationSchema],
+    placement: [explanationSchema],
   },
 }, { timestamps: true });
 

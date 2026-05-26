@@ -1,12 +1,12 @@
 import { Router } from 'express';
-import { requireAuth, requireAdmin } from '../middleware/auth.js';
+import { requireAuth, requireCoordinatorPermission } from '../middleware/auth.js';
 import { createAnnouncement, listAnnouncementsAdmin, updateAnnouncement, deleteAnnouncement } from '../controllers/announcementController.js';
 
 const router = Router();
 
-router.post('/create', requireAuth, requireAdmin, createAnnouncement);
-router.get('/', requireAuth, requireAdmin, listAnnouncementsAdmin);
-router.put('/:id', requireAuth, requireAdmin, updateAnnouncement);
-router.delete('/:id', requireAuth, requireAdmin, deleteAnnouncement);
+router.post('/create', requireAuth, requireCoordinatorPermission('coordinator.announcements.create'), createAnnouncement);
+router.get('/', requireAuth, requireCoordinatorPermission('coordinator.announcements.manage'), listAnnouncementsAdmin);
+router.put('/:id', requireAuth, requireCoordinatorPermission('coordinator.announcements.manage'), updateAnnouncement);
+router.delete('/:id', requireAuth, requireCoordinatorPermission('coordinator.announcements.manage'), deleteAnnouncement);
 
 export default router;

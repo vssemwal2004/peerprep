@@ -2,6 +2,21 @@ import User from '../models/User.js';
 import Event from '../models/Event.js';
 import { sendMail, renderTemplate } from '../utils/mailer.js';
 import { logActivity } from './adminActivityController.js';
+import {
+  DEFAULT_COORDINATOR_PERMISSIONS,
+  COORDINATOR_PERMISSION_CATEGORIES,
+  normalizeCoordinatorPermissions,
+} from '../services/coordinatorPermissions.js';
+
+function summarizePermissions(user) {
+  const permissions = normalizeCoordinatorPermissions(user.coordinatorPermissions);
+  return {
+    permissions,
+    permissionCount: permissions.length,
+    totalPermissionCount: DEFAULT_COORDINATOR_PERMISSIONS.length,
+    lastPermissionUpdatedAt: user.coordinatorPermissionHistory?.[0]?.createdAt || user.updatedAt,
+  };
+}
 
 export async function listAllCoordinators(req, res) {
   try {
@@ -21,7 +36,7 @@ export async function listAllCoordinators(req, res) {
     }
 
     const users = await User.find(query)
-      .select('name email coordinatorId createdAt avatarUrl')
+      .select('name email phone role coordinatorId department college createdAt updatedAt avatarUrl isActive coordinatorPermissions coordinatorPermissionHistory activeSessionCreatedAt')
       .sort({ createdAt: -1 })
       .lean();
 
@@ -86,6 +101,9 @@ export async function listAllCoordinators(req, res) {
 
   const enriched = users.map(u => ({
     ...u,
+    status: u.isActive === false ? 'disabled' : 'active',
+    lastActive: u.activeSessionCreatedAt || u.updatedAt,
+    ...summarizePermissions(u),
     studentsAssigned: countsMap.get(u.coordinatorId) || 0,
     eventsCreated: eventsMap.get(u.coordinatorId) || { regular: 0, special: 0, total: 0 }
   }));    res.json({ count: enriched.length, coordinators: enriched });
@@ -97,7 +115,7 @@ export async function listAllCoordinators(req, res) {
 
 export async function createCoordinator(req, res) {
   try {
-    const { coordinatorName, coordinatorEmail, coordinatorPassword, coordinatorID } = req.body || {};
+    const { coordinatorName, coordinatorEmail, coordinatorPassword, coordinatorID, phone, department, college, permissions } = req.body || {};
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!coordinatorName || !coordinatorEmail || !coordinatorID) {
       return res.status(400).json({ error: 'Missing required fields (coordinatorName, coordinatorEmail, coordinatorID)' });
@@ -116,8 +134,13 @@ export async function createCoordinator(req, res) {
       name: coordinatorName,
       email: coordinatorEmail,
       coordinatorId: coordinatorID,
+      phone,
+      department,
+      college,
       passwordHash,
       mustChangePassword: true,
+      isActive: true,
+      coordinatorPermissions: normalizeCoordinatorPermissions(permissions),
     });
 
     // Send onboarding email to coordinator
@@ -153,7 +176,7 @@ export async function createCoordinator(req, res) {
       req
     });
 
-    return res.status(201).json({ id: user._id, email: user.email, coordinatorID: user.coordinatorId, status: 'created' });
+    return res.status(201).json({ id: user._id, _id: user._id, email: user.email, coordinatorID: user.coordinatorId, status: 'created', permissionCount: user.coordinatorPermissions.length });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -162,7 +185,7 @@ export async function createCoordinator(req, res) {
 export async function updateCoordinator(req, res) {
   try {
     const { coordinatorId } = req.params;
-    const { coordinatorName, coordinatorEmail, coordinatorID } = req.body || {};
+    const { coordinatorName, coordinatorEmail, coordinatorID, phone, department, college } = req.body || {};
 
     const coordinator = await User.findOne({ _id: coordinatorId, role: 'coordinator' });
     if (!coordinator) {
@@ -198,6 +221,9 @@ export async function updateCoordinator(req, res) {
     if (coordinatorName) coordinator.name = coordinatorName;
     if (coordinatorEmail) coordinator.email = coordinatorEmail;
     if (coordinatorID) coordinator.coordinatorId = coordinatorID;
+    if (phone !== undefined) coordinator.phone = phone;
+    if (department !== undefined) coordinator.department = department;
+    if (college !== undefined) coordinator.college = college;
 
     await coordinator.save();
 
@@ -216,7 +242,126 @@ export async function updateCoordinator(req, res) {
       id: coordinator._id,
       email: coordinator.email,
       coordinatorID: coordinator.coordinatorId,
+      phone: coordinator.phone,
+      department: coordinator.department,
+      college: coordinator.college,
       status: 'updated',
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+export async function getCoordinatorAccess(req, res) {
+  try {
+    const { coordinatorId } = req.params;
+    const coordinator = await User.findOne({ _id: coordinatorId, role: 'coordinator' })
+      .select('name email phone role coordinatorId department college createdAt updatedAt isActive coordinatorPermissions coordinatorPermissionHistory activeSessionCreatedAt avatarUrl')
+      .lean();
+
+    if (!coordinator) {
+      return res.status(404).json({ error: 'Coordinator not found' });
+    }
+
+    return res.json({
+      coordinator: {
+        ...coordinator,
+        status: coordinator.isActive === false ? 'disabled' : 'active',
+        lastActive: coordinator.activeSessionCreatedAt || coordinator.updatedAt,
+        ...summarizePermissions(coordinator),
+      },
+      catalog: COORDINATOR_PERMISSION_CATEGORIES,
+      allPermissions: DEFAULT_COORDINATOR_PERMISSIONS,
+      history: coordinator.coordinatorPermissionHistory || [],
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+export async function updateCoordinatorAccess(req, res) {
+  try {
+    const { coordinatorId } = req.params;
+    const { permissions, note } = req.body || {};
+    const coordinator = await User.findOne({ _id: coordinatorId, role: 'coordinator' });
+
+    if (!coordinator) {
+      return res.status(404).json({ error: 'Coordinator not found' });
+    }
+
+    const previousPermissions = normalizeCoordinatorPermissions(coordinator.coordinatorPermissions);
+    const nextPermissions = normalizeCoordinatorPermissions(permissions);
+
+    coordinator.coordinatorPermissions = nextPermissions;
+    coordinator.coordinatorPermissionHistory.unshift({
+      changedBy: req.user._id,
+      changedByEmail: req.user.email,
+      previousPermissions,
+      nextPermissions,
+      note: note || 'Permissions updated by admin',
+    });
+    coordinator.coordinatorPermissionHistory = coordinator.coordinatorPermissionHistory.slice(0, 25);
+    await coordinator.save();
+
+    logActivity({
+      userEmail: req.user.email,
+      userRole: req.user.role,
+      actionType: 'UPDATE',
+      targetType: 'COORDINATOR',
+      targetId: coordinator._id.toString(),
+      description: `Updated coordinator access for ${coordinator.name || coordinator.email}`,
+      metadata: {
+        coordinatorId: coordinator.coordinatorId,
+        previousCount: previousPermissions.length,
+        nextCount: nextPermissions.length,
+      },
+      req,
+    });
+
+    return res.json({
+      coordinator: {
+        _id: coordinator._id,
+        name: coordinator.name,
+        email: coordinator.email,
+        coordinatorId: coordinator.coordinatorId,
+        status: coordinator.isActive === false ? 'disabled' : 'active',
+        ...summarizePermissions(coordinator),
+      },
+      history: coordinator.coordinatorPermissionHistory,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+export async function updateCoordinatorStatus(req, res) {
+  try {
+    const { coordinatorId } = req.params;
+    const { isActive } = req.body || {};
+    const coordinator = await User.findOne({ _id: coordinatorId, role: 'coordinator' });
+
+    if (!coordinator) {
+      return res.status(404).json({ error: 'Coordinator not found' });
+    }
+
+    coordinator.isActive = Boolean(isActive);
+    await coordinator.save();
+
+    logActivity({
+      userEmail: req.user.email,
+      userRole: req.user.role,
+      actionType: 'UPDATE',
+      targetType: 'COORDINATOR',
+      targetId: coordinator._id.toString(),
+      description: `${coordinator.isActive ? 'Enabled' : 'Disabled'} coordinator: ${coordinator.name || coordinator.email}`,
+      metadata: { coordinatorId: coordinator.coordinatorId },
+      req,
+    });
+
+    return res.json({
+      id: coordinator._id,
+      isActive: coordinator.isActive,
+      status: coordinator.isActive ? 'active' : 'disabled',
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });

@@ -8,9 +8,58 @@ import StudentActivity from '../models/StudentActivity.js';
 import Pair from '../models/Pair.js';
 import { HttpError } from '../utils/errors.js';
 import { validateObjectId } from '../utils/validators.js';
+import { logSecurityEvent } from '../utils/logger.js';
 import { upsertStudentAnalytics, buildReadinessReport } from '../services/analyticsEngine.js';
 
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
+const REVALIDATE_AFTER_MS = 5 * 60 * 1000;
+const analyticsBuilds = new Map();
+const SENSITIVE_ANALYTICS_KEYS = new Set([
+  'violationLog',
+  'violations',
+  'monitoringEvents',
+  'proctoringSnapshots',
+  'lastIp',
+  'lastUserAgent',
+  'securityHeartbeat',
+  'rawCamera',
+  'snapshot',
+  'snapshots',
+]);
+
+function redactSensitiveAnalytics(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => redactSensitiveAnalytics(item));
+  }
+
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+
+  const clean = {};
+  Object.entries(value).forEach(([key, nestedValue]) => {
+    if (SENSITIVE_ANALYTICS_KEYS.has(key)) return;
+    clean[key] = redactSensitiveAnalytics(nestedValue);
+  });
+  return clean;
+}
+
+function auditAnalyticsAccess(req, action, metadata = {}) {
+  logSecurityEvent({
+    type: 'ANALYTICS_ACCESS',
+    userId: req.user?._id,
+    email: req.user?.email,
+    ip: req.ip,
+    userAgent: req.get('user-agent'),
+    message: `Student analytics ${action}`,
+    metadata: {
+      action,
+      path: req.originalUrl || req.path,
+      method: req.method,
+      ...metadata,
+    },
+  });
+}
 
 async function getLatestStudentSignalAt(studentId) {
   const [latestSubmission, latestAssessment, latestFeedback, latestProgress, latestActivity, latestSession] = await Promise.all([
@@ -44,36 +93,81 @@ async function getLatestStudentSignalAt(studentId) {
   return new Date(Math.max(...candidates.map((d) => new Date(d).getTime())));
 }
 
+function getStudentKey(studentId) {
+  return String(studentId);
+}
+
+async function buildAnalyticsOnce(studentId) {
+  const key = getStudentKey(studentId);
+  if (analyticsBuilds.has(key)) {
+    return analyticsBuilds.get(key);
+  }
+
+  const buildPromise = upsertStudentAnalytics(studentId)
+    .finally(() => analyticsBuilds.delete(key));
+  analyticsBuilds.set(key, buildPromise);
+  return buildPromise;
+}
+
+function withCacheMeta(analysis, { status, reason, latestSignalAt = null } = {}) {
+  const generatedAt = analysis?.generatedAt ? new Date(analysis.generatedAt) : null;
+  return {
+    analysis,
+    meta: {
+      cacheStatus: status,
+      cacheReason: reason,
+      generatedAt,
+      latestSignalAt,
+      ageMs: generatedAt ? Math.max(0, Date.now() - generatedAt.getTime()) : null,
+      revalidateAfterMs: REVALIDATE_AFTER_MS,
+      staleAfterMs: STALE_AFTER_MS,
+    },
+  };
+}
+
 async function getOrBuildAnalytics(studentId, { forceRefresh = false } = {}) {
   const existing = await StudentAnalytics.findOne({ studentId }).lean();
 
   if (!existing || !existing.generatedAt) {
-    return upsertStudentAnalytics(studentId);
+    const analysis = await buildAnalyticsOnce(studentId);
+    return withCacheMeta(analysis, { status: 'rebuilt', reason: 'missing-cache' });
   }
 
   if (forceRefresh) {
-    return upsertStudentAnalytics(studentId);
+    const analysis = await buildAnalyticsOnce(studentId);
+    return withCacheMeta(analysis, { status: 'rebuilt', reason: 'forced-refresh' });
   }
 
   const generatedAt = new Date(existing.generatedAt);
-  const isTimeStale = Date.now() - generatedAt.getTime() >= STALE_AFTER_MS;
+  const cacheAge = Date.now() - generatedAt.getTime();
+  if (cacheAge < REVALIDATE_AFTER_MS) {
+    return withCacheMeta(existing, { status: 'hit', reason: 'fresh-window' });
+  }
+
+  const isTimeStale = cacheAge >= STALE_AFTER_MS;
   if (isTimeStale) {
-    return upsertStudentAnalytics(studentId);
+    const analysis = await buildAnalyticsOnce(studentId);
+    return withCacheMeta(analysis, { status: 'rebuilt', reason: 'time-stale' });
   }
 
   const latestSignalAt = await getLatestStudentSignalAt(studentId);
   if (latestSignalAt && latestSignalAt.getTime() > generatedAt.getTime()) {
-    return upsertStudentAnalytics(studentId);
+    const analysis = await buildAnalyticsOnce(studentId);
+    return withCacheMeta(analysis, { status: 'rebuilt', reason: 'new-student-signal', latestSignalAt });
   }
 
-  return existing;
+  return withCacheMeta(existing, { status: 'hit', reason: 'validated', latestSignalAt });
 }
 
 export async function getStudentAnalysis(req, res) {
   const studentId = req.user?._id;
   const forceRefresh = String(req.query?.refresh || '').toLowerCase() === '1';
-  const analysis = await getOrBuildAnalytics(studentId, { forceRefresh });
-  res.json({ analysis });
+  const { analysis, meta } = await getOrBuildAnalytics(studentId, { forceRefresh });
+  if (forceRefresh) {
+    auditAnalyticsAccess(req, 'forced-refresh', { cacheStatus: meta.cacheStatus, cacheReason: meta.cacheReason });
+  }
+  res.set('Cache-Control', 'private, max-age=30');
+  res.json({ analysis: redactSensitiveAnalytics(analysis), meta });
 }
 
 export async function getCompanyReadiness(req, res) {
@@ -83,15 +177,27 @@ export async function getCompanyReadiness(req, res) {
   validateObjectId(companyId, 'Company ID');
 
   const forceRefresh = String(req.query?.refresh || '').toLowerCase() === '1';
+  if (forceRefresh) {
+    auditAnalyticsAccess(req, 'company-readiness-forced-refresh', { companyId });
+  }
 
-  const [analysis, benchmark] = await Promise.all([
+  const [analysisResult, benchmark] = await Promise.all([
     getOrBuildAnalytics(studentId, { forceRefresh }),
     CompanyBenchmark.findById(companyId).lean(),
   ]);
 
   if (!benchmark) throw new HttpError(404, 'Company benchmark not found');
 
-  const report = buildReadinessReport(analysis, benchmark);
+  const report = buildReadinessReport(analysisResult.analysis, benchmark);
+  if (report?.breakdown?.integrity < 80 || report?.breakdown?.assessment < 40) {
+    auditAnalyticsAccess(req, 'company-readiness-risk-view', {
+      companyId,
+      readinessScore: report.readinessScore,
+      integrity: report.breakdown?.integrity,
+      assessment: report.breakdown?.assessment,
+    });
+  }
+  res.set('Cache-Control', 'private, max-age=30');
 
   res.json({
     company: {
@@ -106,6 +212,12 @@ export async function getCompanyReadiness(req, res) {
       weightConsistency: benchmark.weightConsistency,
       weightInterview: benchmark.weightInterview,
     },
-    report,
+    report: redactSensitiveAnalytics(report),
+    meta: analysisResult.meta,
   });
 }
+
+export const __studentAnalysisTestHooks = {
+  redactSensitiveAnalytics,
+  SENSITIVE_ANALYTICS_KEYS,
+};

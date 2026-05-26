@@ -10,7 +10,7 @@
     "worker:compiler": "node --env-file=.env src/workers/compiler.worker.js",
     "worker:assessment": "node --env-file=.env src/workers/assessment.worker.js",
     "lint": "echo 'No linter configured'",
-    "test": "echo 'No tests yet'"
+    "test": "node --test \"test/**/*.test.js\""
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.894.0",

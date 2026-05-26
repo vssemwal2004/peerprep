@@ -11,6 +11,7 @@ import { logAuthAttempt, logSuspiciousActivity } from '../utils/logger.js';
 import { validatePasswordStrength, validateEmail, generateSecureToken, hashToken } from '../utils/validators.js';
 import { checkEmailResetLimit, recordEmailResetAttempt } from '../middleware/rateLimiter.js';
 import { createNotification } from '../services/notificationService.js';
+import { normalizeCoordinatorPermissions } from '../services/coordinatorPermissions.js';
 
 function getAuthCookieOptions() {
   return {
@@ -216,6 +217,9 @@ export async function me(req, res) {
     response.coordinatorId = u.coordinatorId;
     response.department = u.department;
     response.college = u.college;
+    response.phone = u.phone || '';
+    response.isActive = u.isActive !== false;
+    response.permissions = normalizeCoordinatorPermissions(u.coordinatorPermissions);
   }
   
   res.json(response);
@@ -448,6 +452,10 @@ export async function login(req, res) {
     ],
   });
   if (coordinator) {
+    if (coordinator.isActive === false) {
+      logAuthAttempt(req, false, coordinator.email, null, 'Coordinator disabled');
+      throw new HttpError(403, 'Coordinator account disabled');
+    }
     const ok = await coordinator.verifyPassword(password);
     if (!ok) {
       // SECURITY: Log failed auth attempt
@@ -491,7 +499,7 @@ export async function forcePasswordChange(req, res) {
 }
 
 function sanitizeUser(u) {
-  return {
+  const user = {
     id: u._id,
     role: u.role,
     name: u.name,
@@ -503,6 +511,14 @@ function sanitizeUser(u) {
     college: u.college,
     isSpecialStudent: Boolean(u.isSpecialStudent),
   };
+  if (u.role === 'coordinator') {
+    user.coordinatorId = u.coordinatorId;
+    user.department = u.department;
+    user.phone = u.phone || '';
+    user.isActive = u.isActive !== false;
+    user.permissions = normalizeCoordinatorPermissions(u.coordinatorPermissions);
+  }
+  return user;
 }
 
 // Request password reset - generates token and sends email

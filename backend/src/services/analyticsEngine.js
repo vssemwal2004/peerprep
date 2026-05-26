@@ -9,6 +9,60 @@ import StudentAnalytics from '../models/StudentAnalytics.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ACCEPTED_STATUSES = ['AC', 'Accepted'];
+export const ANALYTICS_CONTRACT_VERSION = '2026.05.startup-readiness-v1';
+export const ANALYTICS_SCORE_MODEL = Object.freeze({
+  assessmentPenalty: {
+    tabSwitch: 2,
+    fullscreenExit: 3,
+    copyPaste: 4,
+    cameraFlag: 4,
+    pause: 1,
+    violationScore: 1.25,
+    violationStatus: 10,
+    maxPenalty: 40,
+  },
+  derivedScores: {
+    performance: {
+      dsaAccuracy: 0.32,
+      assessmentAdjustedScore: 0.34,
+      interviewScore: 0.18,
+      learningCompletion: 0.16,
+    },
+    readiness: {
+      performanceScore: 0.45,
+      consistencyScore: 0.18,
+      effortScore: 0.12,
+      assessmentIntegrityScore: 0.25,
+    },
+    placementSignal: {
+      readinessScore: 0.5,
+      dsaAccuracy: 0.2,
+      interviewScore: 0.2,
+      consistencyScore: 0.1,
+    },
+    overviewHealth: {
+      readinessScore: 0.55,
+      consistencyScore: 0.25,
+      assessmentIntegrityScore: 0.2,
+    },
+  },
+  thresholds: {
+    topicStrong: 75,
+    topicMedium: 55,
+    riskHighIntegrityBelow: 55,
+    riskHighViolationRateAtLeast: 45,
+    riskMediumIntegrityBelow: 78,
+    riskMediumViolationRateAtLeast: 20,
+    readinessReady: 85,
+    readinessAlmostReady: 70,
+    readinessImproving: 50,
+    companyIntegrityMinimum: 80,
+  },
+  safety: {
+    studentVisibleRawSecurityFields: false,
+    studentVisibleSecurityAggregatesOnly: true,
+  },
+});
 
 const round = (value) => Number((value || 0).toFixed(2));
 const clamp = (value, min = 0, max = 100) => Math.min(max, Math.max(min, value));
@@ -35,8 +89,8 @@ function normalizeWeights({ weightDsa, weightConsistency, weightInterview }) {
 }
 
 function computeTopicLevel(accuracy) {
-  if (accuracy >= 75) return 'strong';
-  if (accuracy >= 55) return 'medium';
+  if (accuracy >= ANALYTICS_SCORE_MODEL.thresholds.topicStrong) return 'strong';
+  if (accuracy >= ANALYTICS_SCORE_MODEL.thresholds.topicMedium) return 'medium';
   return 'weak';
 }
 
@@ -48,16 +102,17 @@ function computeAssessmentViolationCount(submission = {}) {
 }
 
 function computeAssessmentPenalty(submission = {}) {
+  const weights = ANALYTICS_SCORE_MODEL.assessmentPenalty;
   const weightedEvents =
-    Number(submission.tabSwitches || 0) * 2
-    + Number(submission.fullscreenExits || 0) * 3
-    + Number(submission.copyPasteCount || 0) * 4
-    + Number(submission.cameraFlags || 0) * 4
-    + Number(submission.pauseCount || 0)
-    + Number(submission.violationScore || 0) * 1.25
-    + (submission.status === 'violation' ? 10 : 0);
+    Number(submission.tabSwitches || 0) * weights.tabSwitch
+    + Number(submission.fullscreenExits || 0) * weights.fullscreenExit
+    + Number(submission.copyPasteCount || 0) * weights.copyPaste
+    + Number(submission.cameraFlags || 0) * weights.cameraFlag
+    + Number(submission.pauseCount || 0) * weights.pause
+    + Number(submission.violationScore || 0) * weights.violationScore
+    + (submission.status === 'violation' ? weights.violationStatus : 0);
 
-  return clamp(weightedEvents, 0, 40);
+  return clamp(weightedEvents, 0, weights.maxPenalty);
 }
 
 function computeAssessmentIntegrity(submission = {}) {
@@ -65,9 +120,39 @@ function computeAssessmentIntegrity(submission = {}) {
 }
 
 function computeSecurityRisk(integrityScore = 100, violationRate = 0) {
-  if (integrityScore < 55 || violationRate >= 45) return 'high';
-  if (integrityScore < 78 || violationRate >= 20) return 'medium';
+  const thresholds = ANALYTICS_SCORE_MODEL.thresholds;
+  if (integrityScore < thresholds.riskHighIntegrityBelow || violationRate >= thresholds.riskHighViolationRateAtLeast) return 'high';
+  if (integrityScore < thresholds.riskMediumIntegrityBelow || violationRate >= thresholds.riskMediumViolationRateAtLeast) return 'medium';
   return 'low';
+}
+
+function scoreTone(score = 0) {
+  const value = Number(score) || 0;
+  if (value >= 80) return 'positive';
+  if (value >= 60) return 'stable';
+  if (value >= 40) return 'attention';
+  return 'risk';
+}
+
+function scoreImpact(score = 0) {
+  const value = Number(score) || 0;
+  if (value >= 80) return 'boosting';
+  if (value >= 60) return 'supporting';
+  if (value >= 40) return 'limiting';
+  return 'blocking';
+}
+
+function explanation({ id, title, score, summary, evidence = [], action, impact }) {
+  return {
+    id,
+    title,
+    score: round(clamp(score)),
+    impact: impact || scoreImpact(score),
+    tone: scoreTone(score),
+    summary,
+    evidence: evidence.filter(Boolean).slice(0, 4),
+    action,
+  };
 }
 
 function scoreSpread(values = []) {
@@ -495,31 +580,33 @@ function computeDerivedScores({
   progress,
   assessmentViolationRate,
 }) {
+  const weights = ANALYTICS_SCORE_MODEL.derivedScores;
   const consistencyScore = clamp(Math.round(weeklyActiveDays * 10 + streak * 6), 0, 100);
   const effortRaw = attempts + assessments * 2 + completedTopics;
   const effortScore = clamp(Math.round((effortRaw / 5) * 10), 0, 100);
   const performanceScore = clamp(round(
-    (Number(problemAccuracy || 0) * 0.32)
-    + (Number(assessmentScore || 0) * 0.34)
-    + (Number(interviewScore || 0) * 0.18)
-    + (Number(learningCompletion || 0) * 0.16),
+    (Number(problemAccuracy || 0) * weights.performance.dsaAccuracy)
+    + (Number(assessmentScore || 0) * weights.performance.assessmentAdjustedScore)
+    + (Number(interviewScore || 0) * weights.performance.interviewScore)
+    + (Number(learningCompletion || 0) * weights.performance.learningCompletion),
   ));
   const readinessScore = clamp(round(
-    (performanceScore * 0.45)
-    + (consistencyScore * 0.18)
-    + (effortScore * 0.12)
-    + (Number(assessmentIntegrityScore || 100) * 0.25),
+    (performanceScore * weights.readiness.performanceScore)
+    + (consistencyScore * weights.readiness.consistencyScore)
+    + (effortScore * weights.readiness.effortScore)
+    + (Number(assessmentIntegrityScore || 100) * weights.readiness.assessmentIntegrityScore),
   ));
   const placementSignal = clamp(round(
-    (readinessScore * 0.5)
-    + (Number(problemAccuracy || 0) * 0.2)
-    + (Number(interviewScore || 0) * 0.2)
-    + (consistencyScore * 0.1),
+    (readinessScore * weights.placementSignal.readinessScore)
+    + (Number(problemAccuracy || 0) * weights.placementSignal.dsaAccuracy)
+    + (Number(interviewScore || 0) * weights.placementSignal.interviewScore)
+    + (consistencyScore * weights.placementSignal.consistencyScore),
   ));
   const growthScore = computeGrowthScore(progress || []);
   const riskLevel = computeSecurityRisk(assessmentIntegrityScore, assessmentViolationRate || 0);
 
   return {
+    contractVersion: ANALYTICS_CONTRACT_VERSION,
     consistencyScore,
     effortScore,
     assessmentIntegrityScore: round(assessmentIntegrityScore || 100),
@@ -552,6 +639,166 @@ function chooseCurrentFocus({ problemMetrics, assessmentMetrics, interviewMetric
   ];
 
   return candidates.sort((a, b) => a.score - b.score)[0]?.label || 'Build more tracked attempts';
+}
+
+function buildAnalyticsExplanations({
+  problemMetrics,
+  assessmentMetrics,
+  interviewMetrics,
+  learningMetrics,
+  derivedScores,
+  weeklyActiveDays,
+  streak,
+  currentFocus,
+}) {
+  const weakestTopic = [...(problemMetrics.topics || [])]
+    .filter((topic) => Number(topic.attempts || 0) > 0)
+    .sort((a, b) => (a.accuracy || 0) - (b.accuracy || 0))[0];
+  const strongestTopic = [...(problemMetrics.topics || [])]
+    .filter((topic) => Number(topic.attempts || 0) > 0)
+    .sort((a, b) => (b.accuracy || 0) - (a.accuracy || 0))[0];
+  const lowestInterviewCategory = Object.entries(interviewMetrics.categoryScores || {})
+    .sort(([, a], [, b]) => Number(a || 0) - Number(b || 0))[0];
+
+  const overview = [
+    explanation({
+      id: 'readiness-score',
+      title: 'Overall readiness',
+      score: derivedScores.readinessScore,
+      summary: `Readiness is driven by performance, consistency, effort, and assessment integrity. Current focus: ${currentFocus}.`,
+      evidence: [
+        `Performance score ${round(derivedScores.performanceScore)}%`,
+        `Consistency score ${round(derivedScores.consistencyScore)}%`,
+        `Effort score ${round(derivedScores.effortScore)}%`,
+        `Integrity score ${round(derivedScores.assessmentIntegrityScore)}%`,
+      ],
+      action: currentFocus ? `Work on ${currentFocus} first.` : 'Add more tracked activity to improve the signal.',
+    }),
+    explanation({
+      id: 'weekly-rhythm',
+      title: 'Weekly rhythm',
+      score: derivedScores.consistencyScore,
+      summary: `${weeklyActiveDays} active days this week and a ${streak}-day streak are shaping your consistency score.`,
+      evidence: [
+        `${weeklyActiveDays}/7 active days`,
+        `${streak} day current streak`,
+      ],
+      action: weeklyActiveDays >= 5 ? 'Keep the same cadence and raise difficulty slowly.' : 'Add one small tracked action on quiet days.',
+    }),
+  ];
+
+  const coding = [
+    explanation({
+      id: 'dsa-accuracy',
+      title: 'DSA accuracy',
+      score: problemMetrics.accuracy,
+      summary: `${round(problemMetrics.accuracy)}% accepted quality across ${problemMetrics.attempts || 0} attempts.`,
+      evidence: [
+        `${problemMetrics.solved || 0} accepted submissions`,
+        strongestTopic ? `Strongest: ${strongestTopic.topic} (${round(strongestTopic.accuracy)}%)` : '',
+        weakestTopic ? `Weakest: ${weakestTopic.topic} (${round(weakestTopic.accuracy)}%)` : '',
+      ],
+      action: weakestTopic ? `Practice ${weakestTopic.topic} in focused sets.` : 'Solve more tagged problems to unlock topic-level guidance.',
+    }),
+  ];
+
+  const assessment = [
+    explanation({
+      id: 'assessment-adjusted-score',
+      title: 'Adjusted assessment score',
+      score: assessmentMetrics.adjustedAvgScore || assessmentMetrics.avgScore,
+      summary: 'Assessment score is adjusted with integrity signals so readiness is harder to inflate.',
+      evidence: [
+        `Raw average ${round(assessmentMetrics.avgScore)}%`,
+        `Adjusted average ${round(assessmentMetrics.adjustedAvgScore || assessmentMetrics.avgScore)}%`,
+        `${assessmentMetrics.violationAttempts || 0} flagged attempts`,
+        `${round(assessmentMetrics.violationRate || 0)}% violation rate`,
+      ],
+      action: assessmentMetrics.integrityScore < 85
+        ? 'Complete the next assessment with clean fullscreen, camera, and copy/paste behavior.'
+        : 'Review mistakes before the next timed attempt.',
+    }),
+    explanation({
+      id: 'assessment-integrity',
+      title: 'Assessment integrity',
+      score: assessmentMetrics.integrityScore ?? 100,
+      summary: `Integrity is currently ${round(assessmentMetrics.integrityScore ?? 100)}% with ${assessmentMetrics.securityRisk || 'low'} security risk.`,
+      evidence: [
+        `${assessmentMetrics.violationCount || 0} total proctoring warnings`,
+        `${assessmentMetrics.proctoring?.tabSwitches || 0} tab switches`,
+        `${assessmentMetrics.proctoring?.fullscreenExits || 0} fullscreen exits`,
+        `${assessmentMetrics.proctoring?.cameraFlags || 0} camera flags`,
+      ],
+      action: assessmentMetrics.integrityScore < 85
+        ? 'Reduce proctoring warnings to increase trusted readiness.'
+        : 'Maintain clean assessment behavior.',
+    }),
+    explanation({
+      id: 'assessment-stability',
+      title: 'Score stability',
+      score: assessmentMetrics.stabilityScore || 0,
+      summary: 'Stability measures how predictable your recent adjusted scores are.',
+      evidence: [
+        `Latest adjusted score ${round(assessmentMetrics.latestAdjustedScore || 0)}%`,
+        `Highest raw score ${round(assessmentMetrics.highestScore || 0)}%`,
+        `${assessmentMetrics.recentAttempts?.length || 0} recent attempts used`,
+      ],
+      action: 'Re-attempt weak areas after reviewing mistakes to reduce score swings.',
+    }),
+  ];
+
+  const interview = [
+    explanation({
+      id: 'interview-readiness',
+      title: 'Interview readiness',
+      score: interviewMetrics.avgScore || 0,
+      summary: `${interviewMetrics.total || 0} reviewed mock interviews contribute to this signal.`,
+      evidence: [
+        `${round(interviewMetrics.avgScore || 0)} average feedback score`,
+        `${interviewMetrics.pending || 0} pending sessions`,
+        lowestInterviewCategory ? `Lowest category: ${lowestInterviewCategory[0]}` : '',
+      ],
+      action: lowestInterviewCategory ? `Improve ${lowestInterviewCategory[0]} in the next mock.` : 'Complete a reviewed mock interview to unlock recruiter-style guidance.',
+    }),
+  ];
+
+  const learning = [
+    explanation({
+      id: 'learning-completion',
+      title: 'Learning completion',
+      score: learningMetrics.completionPercent || 0,
+      summary: `${learningMetrics.completedTopics || 0}/${learningMetrics.totalTopics || 0} learning topics are complete.`,
+      evidence: [
+        `${learningMetrics.coursesEnrolled || 0} enrolled courses`,
+        `${learningMetrics.videosWatched || 0} watched lessons`,
+        `${problemMetrics.solved || 0} solved practice problems`,
+      ],
+      action: 'Convert each learning session into immediate coding practice.',
+    }),
+  ];
+
+  return {
+    overview,
+    coding,
+    assessment,
+    interview,
+    learning,
+    placement: [
+      explanation({
+        id: 'placement-signal',
+        title: 'Placement signal',
+        score: derivedScores.placementSignal,
+        summary: 'Placement signal combines readiness, DSA accuracy, interview score, and consistency.',
+        evidence: [
+          `Readiness ${round(derivedScores.readinessScore)}%`,
+          `DSA accuracy ${round(problemMetrics.accuracy)}%`,
+          `Interview score ${round(interviewMetrics.avgScore || 0)}%`,
+          `Consistency ${round(derivedScores.consistencyScore)}%`,
+        ],
+        action: currentFocus ? `Improve ${currentFocus} for the fastest placement lift.` : 'Keep building balanced activity across modules.',
+      }),
+    ],
+  };
 }
 
 export async function computeStudentAnalytics(studentId) {
@@ -595,8 +842,23 @@ export async function computeStudentAnalytics(studentId) {
     interviewMetrics,
     learningMetrics,
   });
+  const explanations = buildAnalyticsExplanations({
+    problemMetrics,
+    assessmentMetrics,
+    interviewMetrics,
+    learningMetrics,
+    derivedScores,
+    weeklyActiveDays,
+    streak,
+    currentFocus,
+  });
 
   return {
+    contractVersion: ANALYTICS_CONTRACT_VERSION,
+    scoreModel: {
+      version: ANALYTICS_CONTRACT_VERSION,
+      studentVisibleSecurityAggregatesOnly: ANALYTICS_SCORE_MODEL.safety.studentVisibleSecurityAggregatesOnly,
+    },
     overview: {
       totalAttempts: problemMetrics.attempts + assessmentMetrics.attempts,
       problemAttempts: problemMetrics.attempts,
@@ -605,7 +867,11 @@ export async function computeStudentAnalytics(studentId) {
       interviewScore: interviewMetrics.avgScore,
       streak,
       readinessScore: derivedScores.readinessScore,
-      healthScore: round((derivedScores.readinessScore * 0.55) + (derivedScores.consistencyScore * 0.25) + (derivedScores.assessmentIntegrityScore * 0.2)),
+      healthScore: round(
+        (derivedScores.readinessScore * ANALYTICS_SCORE_MODEL.derivedScores.overviewHealth.readinessScore)
+        + (derivedScores.consistencyScore * ANALYTICS_SCORE_MODEL.derivedScores.overviewHealth.consistencyScore)
+        + (derivedScores.assessmentIntegrityScore * ANALYTICS_SCORE_MODEL.derivedScores.overviewHealth.assessmentIntegrityScore),
+      ),
       currentFocus,
     },
     assessments: assessmentMetrics,
@@ -622,6 +888,7 @@ export async function computeStudentAnalytics(studentId) {
       lastActiveAt,
     },
     derived: derivedScores,
+    explanations,
   };
 }
 
@@ -659,9 +926,9 @@ export function buildReadinessReport(analysis, benchmark) {
   const readinessScore = clamp(round((baseReadiness * 0.88 + assessmentSignal) * integrityMultiplier));
 
   let badge = 'Improving';
-  if (readinessScore < 50) badge = 'Not Ready';
-  else if (readinessScore < 70) badge = 'Improving';
-  else if (readinessScore < 85) badge = 'Almost Ready';
+  if (readinessScore < ANALYTICS_SCORE_MODEL.thresholds.readinessImproving) badge = 'Not Ready';
+  else if (readinessScore < ANALYTICS_SCORE_MODEL.thresholds.readinessAlmostReady) badge = 'Improving';
+  else if (readinessScore < ANALYTICS_SCORE_MODEL.thresholds.readinessReady) badge = 'Almost Ready';
   else badge = 'Ready';
 
   const gaps = [];
@@ -697,11 +964,11 @@ export function buildReadinessReport(analysis, benchmark) {
       current: round(interviewScore),
     });
   }
-  if (assessmentIntegrityScore < 80) {
+  if (assessmentIntegrityScore < ANALYTICS_SCORE_MODEL.thresholds.companyIntegrityMinimum) {
     gaps.push({
       type: 'Assessment Integrity',
       message: `Your assessment integrity score is ${round(assessmentIntegrityScore)}. Reduce proctoring warnings for a stronger readiness signal.`,
-      required: 80,
+      required: ANALYTICS_SCORE_MODEL.thresholds.companyIntegrityMinimum,
       current: round(assessmentIntegrityScore),
     });
   }
@@ -747,7 +1014,7 @@ export function buildReadinessReport(analysis, benchmark) {
   if (interviewScore < benchmark.interviewScore) {
     actionPlan.push('Practice 3 mock interviews focused on communication and problem solving.');
   }
-  if (assessmentIntegrityScore < 80) {
+  if (assessmentIntegrityScore < ANALYTICS_SCORE_MODEL.thresholds.companyIntegrityMinimum) {
     actionPlan.push('Complete the next assessment with zero tab switches, fullscreen exits, copy/paste blocks, or camera warnings.');
   }
   topicFeedback.forEach((item) => {
@@ -760,8 +1027,32 @@ export function buildReadinessReport(analysis, benchmark) {
 
   const estimateWeeks = Math.min(8, Math.max(1, Math.ceil(actionPlan.length / 2)));
   const timeEstimate = `Estimated time to reach readiness: ${estimateWeeks}-${estimateWeeks + 1} weeks`;
+  const explanations = [
+    explanation({
+      id: 'company-fit-score',
+      title: 'Company fit score',
+      score: readinessScore,
+      summary: 'Company fit uses company benchmark weights, assessment strength, and assessment integrity.',
+      evidence: [
+        `DSA ${round(dsaScore)}%`,
+        `Consistency ${round(consistencyScore)}%`,
+        `Interview ${round(interviewScore)}%`,
+        `Assessment integrity ${round(assessmentIntegrityScore)}%`,
+      ],
+      action: actionPlan[0] || 'Keep practicing to maintain readiness.',
+    }),
+    explanation({
+      id: 'benchmark-gap',
+      title: 'Benchmark gaps',
+      score: clamp(100 - gaps.length * 18, 0, 100),
+      summary: gaps.length ? `${gaps.length} benchmark gap${gaps.length > 1 ? 's' : ''} need attention.` : 'No major benchmark gap is currently blocking readiness.',
+      evidence: gaps.map((gap) => `${gap.type}: ${gap.current}/${gap.required}`),
+      action: gaps[0]?.message || 'Protect current strengths while increasing practice volume.',
+    }),
+  ];
 
   return {
+    contractVersion: ANALYTICS_CONTRACT_VERSION,
     readinessScore,
     badge,
     breakdown: {
@@ -774,8 +1065,19 @@ export function buildReadinessReport(analysis, benchmark) {
     gapAnalysis: gaps,
     topicFeedback,
     actionPlan,
+    explanations,
     timeEstimate,
   };
 }
+
+export const __analyticsTestHooks = {
+  clamp,
+  round,
+  computeAssessmentPenalty,
+  computeAssessmentIntegrity,
+  computeAssessmentViolationCount,
+  computeSecurityRisk,
+  computeDerivedScores,
+};
 
 

@@ -82,7 +82,7 @@ export default function AssessmentLaunchModal({ assessment, open, onClose, onUnl
     }
   }, [open]);
 
-  const requiresPassword = Boolean(assessment?.passwordEnabled);
+  const requiresPassword = Boolean(assessment?.passwordEnabled && !assessment?.passwordUnlocked);
   const sections = Array.isArray(assessment?.sections) ? assessment.sections : [];
 
   const sectionSummary = useMemo(() => {

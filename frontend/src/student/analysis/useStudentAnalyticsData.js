@@ -3,6 +3,9 @@ import { api } from "../../utils/api";
 import socketService from "../../utils/socket";
 import { useAuth } from "../../context/AuthContext";
 
+const SOFT_REFRESH_INTERVAL_MS = 2 * 60 * 1000;
+const EVENT_REFRESH_DEBOUNCE_MS = 2500;
+
 export function useStudentAnalyticsData() {
   const { user } = useAuth();
   const [analysis, setAnalysis] = useState(null);
@@ -15,12 +18,16 @@ export function useStudentAnalyticsData() {
   const [error, setError] = useState(null);
   const inFlightRef = useRef(false);
   const selectedCompanyRef = useRef("");
+  const companiesLoadedRef = useRef(false);
+  const lastLoadedAtRef = useRef(0);
+  const eventRefreshTimerRef = useRef(null);
 
   useEffect(() => {
     selectedCompanyRef.current = selectedCompany;
   }, [selectedCompany]);
 
-  const loadAnalytics = useCallback(async ({ forceRefresh = false, withLoader = false } = {}) => {
+  const loadAnalytics = useCallback(async ({ forceRefresh = false, withLoader = false, skipIfFresh = false } = {}) => {
+    if (skipIfFresh && !forceRefresh && Date.now() - lastLoadedAtRef.current < SOFT_REFRESH_INTERVAL_MS) return;
     if (inFlightRef.current) return;
     inFlightRef.current = true;
 
@@ -29,13 +36,18 @@ export function useStudentAnalyticsData() {
       if (withLoader) setLoading(true);
       else setRefreshing(true);
 
+      const shouldLoadCompanies = !companiesLoadedRef.current;
       const [analysisRes, companiesRes] = await Promise.all([
         api.getStudentAnalysis(forceRefresh),
-        api.listStudentCompanies(),
+        shouldLoadCompanies ? api.listStudentCompanies() : Promise.resolve(null),
       ]);
 
       setAnalysis(analysisRes?.analysis || null);
-      setCompanies(companiesRes?.companies || []);
+      lastLoadedAtRef.current = Date.now();
+      if (companiesRes?.companies) {
+        companiesLoadedRef.current = true;
+        setCompanies(companiesRes.companies);
+      }
 
       if (selectedCompanyRef.current) {
         const readinessRes = await api.getCompanyReadiness(selectedCompanyRef.current, forceRefresh);
@@ -62,7 +74,7 @@ export function useStudentAnalyticsData() {
     try {
       setLoadingReadiness(true);
       setError(null);
-      const result = await api.getCompanyReadiness(companyId, true);
+      const result = await api.getCompanyReadiness(companyId, false);
       setReadiness(result || null);
     } catch (err) {
       setError(err);
@@ -71,14 +83,21 @@ export function useStudentAnalyticsData() {
     }
   }, []);
 
-  useEffect(() => {
-    loadAnalytics({ forceRefresh: true, withLoader: true });
+  const scheduleEventRefresh = useCallback(() => {
+    window.clearTimeout(eventRefreshTimerRef.current);
+    eventRefreshTimerRef.current = window.setTimeout(() => {
+      loadAnalytics({ forceRefresh: true });
+    }, EVENT_REFRESH_DEBOUNCE_MS);
   }, [loadAnalytics]);
 
   useEffect(() => {
-    const handleWindowFocus = () => loadAnalytics({ forceRefresh: true });
+    loadAnalytics({ withLoader: true });
+  }, [loadAnalytics]);
+
+  useEffect(() => {
+    const handleWindowFocus = () => loadAnalytics({ skipIfFresh: true });
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") loadAnalytics({ forceRefresh: true });
+      if (document.visibilityState === "visible") loadAnalytics({ skipIfFresh: true });
     };
 
     window.addEventListener("focus", handleWindowFocus);
@@ -86,14 +105,15 @@ export function useStudentAnalyticsData() {
 
     const intervalId = window.setInterval(() => {
       if (document.visibilityState === "visible") {
-        loadAnalytics({ forceRefresh: true });
+        loadAnalytics({ skipIfFresh: true });
       }
-    }, 30000);
+    }, SOFT_REFRESH_INTERVAL_MS);
 
     return () => {
       window.removeEventListener("focus", handleWindowFocus);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.clearInterval(intervalId);
+      window.clearTimeout(eventRefreshTimerRef.current);
     };
   }, [loadAnalytics]);
 
@@ -108,7 +128,7 @@ export function useStudentAnalyticsData() {
       if (payload?.mode !== "submit") return;
       if (!["AC", "WA", "TLE", "RE", "CE"].includes(payload?.status)) return;
 
-      loadAnalytics({ forceRefresh: true });
+      scheduleEventRefresh();
     };
 
     socketService.on("compiler-submission-updated", handleSubmissionUpdate);
@@ -116,7 +136,7 @@ export function useStudentAnalyticsData() {
     return () => {
       socketService.off("compiler-submission-updated", handleSubmissionUpdate);
     };
-  }, [loadAnalytics, user?._id]);
+  }, [scheduleEventRefresh, user?._id]);
 
   return {
     analysis,

@@ -224,7 +224,7 @@ export const api = {
   listStudentCompanies: () => request('/student/analysis/companies', { skipCache: true }),
   getCompanyReadiness: (companyId, forceRefresh = false) =>
     request(
-      `/student/analysis/readiness?companyId=${companyId}${forceRefresh ? '&refresh=1' : ''}`,
+      `/student/analysis/readiness?companyId=${encodeURIComponent(companyId)}${forceRefresh ? '&refresh=1' : ''}`,
       { skipCache: true }
     ),
 
@@ -282,6 +282,9 @@ export const api = {
   listAllCoordinators: (search = '') => request(`/coordinators/list${search ? '?search=' + encodeURIComponent(search) : ''}`),
   createCoordinator: (body) => request('/coordinators/create', { method: 'POST', body }),
   updateCoordinator: (coordinatorId, body) => request(`/coordinators/${coordinatorId}`, { method: 'PUT', body }),
+  getCoordinatorAccess: (coordinatorId) => request(`/coordinators/${coordinatorId}/access`, { skipCache: true }),
+  updateCoordinatorAccess: (coordinatorId, body) => request(`/coordinators/${coordinatorId}/access`, { method: 'PUT', body }),
+  updateCoordinatorStatus: (coordinatorId, isActive) => request(`/coordinators/${coordinatorId}/status`, { method: 'PATCH', body: { isActive } }),
   deleteCoordinator: (coordinatorId) => request(`/coordinators/${coordinatorId}`, { method: 'DELETE' }),
 
   // Events

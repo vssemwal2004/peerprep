@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { requireAdmin, requireAdminOrStudent, requireAuth, requireStudent, requireAdminOrCoordinator, requireAdminCoordinatorOrStudent } from '../middleware/auth.js';
+import { requireAdmin, requireAuth, requireStudent, requireAdminCoordinatorOrStudent, requireCoordinatorPermission } from '../middleware/auth.js';
 import {
   compilerExecutionLimiter,
   compilerRunCooldown,
@@ -47,31 +47,31 @@ const upload = multer({
 
 router.use(requireAuth);
 
-router.get('/overview', requireAdminOrCoordinator, getAdminCompilerOverview);
-router.get('/analytics', requireAdminOrCoordinator, getAdminCompilerAnalytics);
-router.get('/student/:id', requireAdminOrCoordinator, getCompilerStudentAnalytics);
-router.get('/problems/overview', requireAdminOrCoordinator, getCompilerOverview);
-router.post('/problems/preview/run', requireAdminOrCoordinator, upload.none(), previewRunProblem);
-router.post('/problems/:id/preview/approve', requireAdminOrCoordinator, upload.none(), approveProblemPreview);
+router.get('/overview', requireCoordinatorPermission('coordinator.compiler.view'), getAdminCompilerOverview);
+router.get('/analytics', requireCoordinatorPermission('coordinator.compiler.analytics'), getAdminCompilerAnalytics);
+router.get('/student/:id', requireCoordinatorPermission('coordinator.compiler.analytics'), getCompilerStudentAnalytics);
+router.get('/problems/overview', requireCoordinatorPermission('coordinator.compiler.view'), getCompilerOverview);
+router.post('/problems/preview/run', requireCoordinatorPermission('coordinator.compiler.manage'), upload.none(), previewRunProblem);
+router.post('/problems/:id/preview/approve', requireCoordinatorPermission('coordinator.compiler.manage'), upload.none(), approveProblemPreview);
 router.get('/problems', requireAdminCoordinatorOrStudent, listProblems);
-router.post('/problems', requireAdminOrCoordinator, upload.any(), createProblem);
+router.post('/problems', requireCoordinatorPermission('coordinator.compiler.create'), upload.any(), createProblem);
 router.get('/problems/:id/submissions', requireStudent, listProblemSubmissions);
 router.get('/problems/:id', requireAdminCoordinatorOrStudent, getProblemDetail);
-router.put('/problems/:id', requireAdminOrCoordinator, upload.any(), updateProblem);
-router.patch('/problems/:id/status', requireAdminOrCoordinator, upload.none(), updateProblemStatus);
-router.patch('/problems/:id/visibility', requireAdminOrCoordinator, upload.none(), updateProblemVisibility);
-router.delete('/problems/:id', requireAdminOrCoordinator, deleteProblem);
-router.post('/problems/:id/run', requireAdminOrCoordinator, upload.none(), runProblemCode);
-router.post('/problems/:id/submit', requireAdminOrCoordinator, upload.none(), submitProblemCode);
+router.put('/problems/:id', requireCoordinatorPermission('coordinator.compiler.manage'), upload.any(), updateProblem);
+router.patch('/problems/:id/status', requireCoordinatorPermission('coordinator.compiler.manage'), upload.none(), updateProblemStatus);
+router.patch('/problems/:id/visibility', requireCoordinatorPermission('coordinator.compiler.manage'), upload.none(), updateProblemVisibility);
+router.delete('/problems/:id', requireCoordinatorPermission('coordinator.compiler.manage'), deleteProblem);
+router.post('/problems/:id/run', requireCoordinatorPermission('coordinator.compiler.manage'), upload.none(), runProblemCode);
+router.post('/problems/:id/submit', requireCoordinatorPermission('coordinator.compiler.manage'), upload.none(), submitProblemCode);
 router.post('/problems/:id/expected', requireStudent, compilerExecutionLimiter, getExpectedOutput);
 
 router.post('/run', requireStudent, compilerRunLimiter, compilerRunCooldown, runCode);
 router.post('/submit', requireStudent, compilerSubmitLimiter, compilerSubmitCooldown, submitCode);
 router.get('/health/judge0', requireAdmin, getJudge0Health);
 
-router.get('/submissions', requireAdminOrCoordinator, listSubmissions);
-router.get('/submissions/analytics', requireAdminOrCoordinator, getCompilerAnalytics);
-router.get('/analytics/overview', requireAdminOrCoordinator, getCompilerAnalyticsOverview);
-router.get('/analytics/problem/:id', requireAdminOrCoordinator, getCompilerProblemAnalytics);
+router.get('/submissions', requireCoordinatorPermission('coordinator.compiler.analytics'), listSubmissions);
+router.get('/submissions/analytics', requireCoordinatorPermission('coordinator.compiler.analytics'), getCompilerAnalytics);
+router.get('/analytics/overview', requireCoordinatorPermission('coordinator.compiler.analytics'), getCompilerAnalyticsOverview);
+router.get('/analytics/problem/:id', requireCoordinatorPermission('coordinator.compiler.analytics'), getCompilerProblemAnalytics);
 
 export default router;

@@ -1,348 +1,275 @@
-/* eslint-disable no-unused-vars */
-import { useState, useEffect, useMemo } from "react";
-import { api } from "../utils/api";
-import { motion, AnimatePresence } from "framer-motion";
-import { Search, Users, Loader2, X, Trash2, Edit2, Save } from "lucide-react";
-import Fuse from "fuse.js";
-import ContributionCalendar from "../components/ContributionCalendar";
-import { useToast } from "../components/CustomToast";
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowUpDown, Edit2, Eye, Loader2, Lock, Search, ShieldCheck, ToggleLeft, ToggleRight, UserPlus, Users, X } from 'lucide-react';
+import { api } from '../utils/api';
+import { useToast } from '../components/CustomToast';
+
+const pageSizes = [8, 12, 24, 48];
+
+function formatDate(value) {
+  if (!value) return 'Never';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Never';
+  return date.toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function StatusPill({ active }) {
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.08em] ${
+      active
+        ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200'
+        : 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-200'
+    }`}>
+      {active ? 'Active' : 'Disabled'}
+    </span>
+  );
+}
+
+function CoordinatorCard({ coordinator, onEdit, onToggle, onView, onAccess }) {
+  const active = coordinator.isActive !== false;
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-gray-900 lg:hidden">
+      <div className="flex items-start justify-between gap-3">
+        <button type="button" onClick={() => onView(coordinator)} className="flex min-w-0 items-center gap-3 text-left">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sm font-bold text-sky-700 dark:bg-sky-400/10 dark:text-sky-200">
+            {(coordinator.name || coordinator.email || '?').charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-bold text-slate-950 dark:text-white">{coordinator.name || 'Unnamed coordinator'}</p>
+            <p className="truncate text-xs font-semibold text-slate-500 dark:text-slate-400">{coordinator.email}</p>
+          </div>
+        </button>
+        <StatusPill active={active} />
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
+        <div className="rounded-xl bg-slate-50 p-3 dark:bg-white/[0.04]">
+          <div className="text-lg font-bold text-slate-950 dark:text-white">{coordinator.permissionCount || 0}</div>
+          <div className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-400">Permissions</div>
+        </div>
+        <div className="rounded-xl bg-slate-50 p-3 dark:bg-white/[0.04]">
+          <div className="truncate text-sm font-bold text-slate-950 dark:text-white">{formatDate(coordinator.lastActive)}</div>
+          <div className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-400">Last Active</div>
+        </div>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button onClick={() => onView(coordinator)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 dark:border-white/10 dark:text-slate-200"><Eye className="h-3.5 w-3.5" />View</button>
+        <button onClick={() => onEdit(coordinator)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 dark:border-white/10 dark:text-slate-200"><Edit2 className="h-3.5 w-3.5" />Edit</button>
+        <button onClick={() => onAccess(coordinator)} className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-bold text-sky-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-200"><ShieldCheck className="h-3.5 w-3.5" />Access</button>
+        <button onClick={() => onToggle(coordinator)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 dark:border-white/10 dark:text-slate-200">
+          {active ? <ToggleRight className="h-3.5 w-3.5" /> : <ToggleLeft className="h-3.5 w-3.5" />}
+          {active ? 'Disable' : 'Enable'}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function CoordinatorDirectory() {
   const toast = useToast();
+  const navigate = useNavigate();
   const [coordinators, setCoordinators] = useState([]);
-  const [filtered, setFiltered] = useState([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [selectedCoordinator, setSelectedCoordinator] = useState(null);
-  const [showModal, setShowModal] = useState(false);
-  const [activity, setActivity] = useState({});
-  const [editingCoordinator, setEditingCoordinator] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('createdAt');
+  const [sortDir, setSortDir] = useState('desc');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(12);
+  const [selected, setSelected] = useState(null);
+  const [editing, setEditing] = useState(null);
   const [editForm, setEditForm] = useState({});
-  const [isSaving, setIsSaving] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [saving, setSaving] = useState(false);
 
-  const fuse = useMemo(() => {
-    return new Fuse(coordinators, {
-      keys: [
-        { name: 'name', weight: 2 },
-        { name: 'coordinatorId', weight: 2 },
-        { name: 'email', weight: 1.5 },
-      ],
-      threshold: 0.4,
-      includeScore: true,
-      ignoreLocation: true,
-      minMatchCharLength: 2,
-      getFn: (obj, path) => {
-        const value = Fuse.config.getFn(obj, path);
-        if (typeof value === 'string') {
-          return value.toLowerCase().replace(/[.\s-]/g, '');
-        }
-        return value;
-      }
-    });
-  }, [coordinators]);
-
-  useEffect(() => { loadData(); }, []);
-
-  useEffect(() => {
-    if (!searchQuery.trim()) {
-      setFiltered(coordinators);
-    } else {
-      const normalizedQuery = searchQuery.toLowerCase().replace(/[.\s-]/g, '');
-      const results = fuse.search(normalizedQuery);
-      setFiltered(results.map(r => r.item));
-    }
-    setCurrentPage(1); // Reset to first page on search
-  }, [searchQuery, coordinators, fuse]);
-
-  // Calculate pagination
-  const totalPages = Math.ceil(filtered.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedCoordinators = filtered.slice(startIndex, endIndex);
-
-  const handlePageChange = (page) => {
-    setCurrentPage(page);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const loadData = async () => {
-    setIsLoading(true);
-    setError("");
+  const load = async () => {
+    setLoading(true);
+    setError('');
     try {
       const data = await api.listAllCoordinators();
-      const list = data.coordinators || [];
-      setCoordinators(list);
-      setFiltered(list);
+      setCoordinators(data.coordinators || []);
     } catch (err) {
-      setError(err.message || "Failed to load coordinators");
+      setError(err.message || 'Failed to load coordinators.');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  const clearSearch = () => {
-    setSearchQuery("");
-    setFiltered(coordinators);
-  };
+  useEffect(() => {
+    load();
+  }, []);
 
-  const openCoordinatorProfile = (coordinator) => {
-    setSelectedCoordinator(coordinator);
-    setShowModal(true);
-    
-    // Generate placeholder activity data
-    const map = {};
-    const today = new Date();
-    for (let i = 0; i < 180; i++) {
-      const d = new Date(today);
-      d.setDate(d.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
-      const v = Math.random() < 0.25 ? Math.floor(Math.random() * 6) : 0;
-      if (v) map[key] = v;
-    }
-    setActivity(map);
-  };
+  const filtered = useMemo(() => {
+    const text = query.trim().toLowerCase();
+    const list = coordinators.filter((coordinator) => {
+      const matchesText = !text || [coordinator.name, coordinator.email, coordinator.phone, coordinator.coordinatorId, coordinator.department, coordinator.college]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(text));
+      const active = coordinator.isActive !== false;
+      const matchesStatus = statusFilter === 'all' || (statusFilter === 'active' ? active : !active);
+      return matchesText && matchesStatus;
+    });
 
-  const closeModal = () => {
-    setShowModal(false);
-    setTimeout(() => {
-      setSelectedCoordinator(null);
-      setActivity({});
-    }, 300);
-  };
+    return list.sort((a, b) => {
+      const left = sortBy === 'permissionCount' ? Number(a.permissionCount || 0) : String(a[sortBy] || '').toLowerCase();
+      const right = sortBy === 'permissionCount' ? Number(b.permissionCount || 0) : String(b[sortBy] || '').toLowerCase();
+      if (left < right) return sortDir === 'asc' ? -1 : 1;
+      if (left > right) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [coordinators, query, statusFilter, sortBy, sortDir]);
 
-  // Edit Coordinator Modal actions
-  const handleChangeEdit = (field, value) => {
-    setEditForm((prev) => ({ ...prev, [field]: value }));
-  };
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const pageItems = filtered.slice((page - 1) * pageSize, page * pageSize);
 
-  const handleDeleteCoordinator = async (coord, e) => {
-    e.stopPropagation();
+  useEffect(() => {
+    setPage(1);
+  }, [query, statusFilter, sortBy, sortDir, pageSize]);
 
-    if (!confirm(`Are you sure you want to delete coordinator ${coord.name || coord.email}? This action cannot be undone.`)) {
-      return;
-    }
-
+  const toggleStatus = async (coordinator) => {
+    const active = coordinator.isActive !== false;
+    if (!confirm(`${active ? 'Disable' : 'Enable'} ${coordinator.name || coordinator.email}?`)) return;
     try {
-      await api.deleteCoordinator(coord._id);
-      setCoordinators(prev => prev.filter(c => c._id !== coord._id));
-      setFiltered(prev => prev.filter(c => c._id !== coord._id));
-      toast.success(`Coordinator ${coord.name || coord.email} deleted successfully.`);
+      const result = await api.updateCoordinatorStatus(coordinator._id, !active);
+      setCoordinators((current) => current.map((item) => item._id === coordinator._id ? { ...item, isActive: result.isActive, status: result.status } : item));
+      toast.success(`Coordinator ${result.status}.`);
     } catch (err) {
-      toast.error(err.message || 'Failed to delete coordinator');
+      toast.error(err.message || 'Failed to update coordinator status.');
     }
   };
 
-  const handleEditCoordinator = (coord, e) => {
-    e.stopPropagation();
-    setEditingCoordinator(coord);
+  const startEdit = (coordinator) => {
+    setEditing(coordinator);
     setEditForm({
-      coordinatorName: coord.name || '',
-      coordinatorEmail: coord.email || '',
-      coordinatorID: coord.coordinatorId || '',
+      coordinatorName: coordinator.name || '',
+      coordinatorEmail: coordinator.email || '',
+      coordinatorID: coordinator.coordinatorId || '',
+      phone: coordinator.phone || '',
+      department: coordinator.department || '',
+      college: coordinator.college || '',
     });
   };
 
-  const handleUpdateCoordinator = async () => {
-    if (!editingCoordinator) return;
-
-    setIsSaving(true);
+  const saveEdit = async () => {
+    if (!editing) return;
+    setSaving(true);
     try {
-      await api.updateCoordinator(editingCoordinator._id, editForm);
-
-      const updateList = (list) => list.map(c =>
-        c._id === editingCoordinator._id
-          ? { ...c, name: editForm.coordinatorName, email: editForm.coordinatorEmail, coordinatorId: editForm.coordinatorID }
-          : c
-      );
-
-      setCoordinators(updateList);
-      setFiltered(updateList);
-
-      setEditingCoordinator(null);
-      setEditForm({});
-      toast.success(`Coordinator ${editForm.coordinatorName} updated successfully.`);
+      await api.updateCoordinator(editing._id, editForm);
+      setCoordinators((current) => current.map((item) => item._id === editing._id ? {
+        ...item,
+        name: editForm.coordinatorName,
+        email: editForm.coordinatorEmail,
+        coordinatorId: editForm.coordinatorID,
+        phone: editForm.phone,
+        department: editForm.department,
+        college: editForm.college,
+      } : item));
+      setEditing(null);
+      toast.success('Coordinator updated.');
     } catch (err) {
-      toast.error(err.message || 'Failed to update coordinator');
+      toast.error(err.message || 'Failed to update coordinator.');
     } finally {
-      setIsSaving(false);
+      setSaving(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 flex flex-col pt-20">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: "easeOut" }}
-        className="flex-1 w-full max-w-7xl mx-auto px-4 py-6"
-      >
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-slate-200 dark:border-gray-700 p-3 sm:p-4 lg:p-6">
-          {/* Header Section with Search */}
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-indigo-100 dark:bg-indigo-900 flex items-center justify-center flex-shrink-0">
-                <Users className="w-5 h-5 sm:w-6 sm:h-6 text-indigo-600" />
-              </div>
-              <div>
-                <h2 className="text-lg sm:text-xl lg:text-2xl font-semibold text-slate-800 dark:text-white">Coordinator Database</h2>
-                <p className="text-slate-600 dark:text-white text-xs sm:text-sm hidden sm:block">View and search all coordinators</p>
-              </div>
+    <div className="min-h-screen bg-slate-50 pt-20 dark:bg-gray-950">
+      <div className="mx-auto max-w-7xl px-4 py-6">
+        <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-bold uppercase tracking-[0.12em] text-sky-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-200">
+              <Users className="h-3.5 w-3.5" />
+              Coordinator Directory
             </div>
-
-            {/* Search Bar */}
-            <div className="w-full sm:w-64 lg:w-80">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search coordinators..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-9 py-2 text-sm border border-slate-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-600 focus:border-indigo-500 dark:focus:border-indigo-600 text-slate-700 dark:text-white bg-white dark:bg-gray-700 placeholder:text-gray-400 dark:placeholder:text-gray-400"
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={clearSearch}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-100 dark:hover:bg-gray-600 rounded transition-colors"
-                  >
-                    <X className="w-3 h-3 text-slate-500" />
-                  </button>
-                )}
-              </div>
-              <p className="text-xs text-slate-500 dark:text-white mt-1 ml-1 hidden lg:block">Search by name, coordinator ID, or email</p>
-            </div>
+            <h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-950 dark:text-white">Coordinator List</h1>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-400">Search, filter, edit, enable/disable, and jump into access management for every coordinator.</p>
           </div>
+          <Link to="/admin/coordinators" className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-slate-800 dark:bg-white dark:text-slate-950">
+            <UserPlus className="h-4 w-4" />
+            Add Coordinator
+          </Link>
+        </div>
 
-          {/* Stats */}
-          <div className="mb-4 sm:mb-6 p-3 sm:p-4 bg-slate-50 dark:bg-gray-700 rounded-lg border border-slate-200 dark:border-gray-600">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Users className="w-4 h-4 sm:w-5 sm:h-5 text-slate-600 dark:text-white" />
-                <span className="text-xs sm:text-sm font-medium text-slate-700 dark:text-white">
-                  Total Coordinators: <span className="font-semibold text-indigo-600 dark:text-indigo-400">{coordinators.length}</span>
-                </span>
-              </div>
-              {searchQuery && (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs sm:text-sm text-slate-600 dark:text-gray-400">
-                    Showing: <span className="font-semibold text-slate-800 dark:text-gray-200">{filtered.length}</span> results
-                  </span>
-                </div>
-              )}
-            </div>
+        <div className="mb-5 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-gray-900 lg:grid-cols-[1fr_180px_180px_160px]">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, email, phone, ID..." className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-9 text-sm font-semibold text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-white/10 dark:bg-gray-950 dark:text-white dark:focus:ring-sky-400/10" />
+            {query ? <button onClick={() => setQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"><X className="h-4 w-4" /></button> : null}
           </div>
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700 dark:border-white/10 dark:bg-gray-950 dark:text-slate-200">
+            <option value="all">All status</option>
+            <option value="active">Active</option>
+            <option value="disabled">Disabled</option>
+          </select>
+          <select value={sortBy} onChange={(event) => setSortBy(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700 dark:border-white/10 dark:bg-gray-950 dark:text-slate-200">
+            <option value="createdAt">Recently added</option>
+            <option value="name">Name</option>
+            <option value="email">Email</option>
+            <option value="permissionCount">Permissions</option>
+            <option value="lastActive">Last active</option>
+          </select>
+          <button onClick={() => setSortDir((value) => value === 'asc' ? 'desc' : 'asc')} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700 dark:border-white/10 dark:bg-gray-950 dark:text-slate-200">
+            <ArrowUpDown className="h-4 w-4" />
+            {sortDir === 'asc' ? 'Asc' : 'Desc'}
+          </button>
+        </div>
 
-          {/* Error */}
-          {error && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-700 dark:text-red-400 text-sm"
-            >
-              {error}
-            </motion.div>
-          )}
+        {error ? <div className="mb-5 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700 dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-200">{error}</div> : null}
 
-          {/* Loading / Empty / Table */}
-          {isLoading && coordinators.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12">
-              <Loader2 className="w-12 h-12 text-indigo-600 animate-spin mb-4" />
-              <p className="text-slate-600 dark:text-gray-400">Loading coordinators...</p>
+        {loading ? (
+          <div className="flex min-h-[320px] items-center justify-center rounded-2xl border border-slate-200 bg-white dark:border-white/10 dark:bg-gray-900">
+            <Loader2 className="h-8 w-8 animate-spin text-sky-600" />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center dark:border-white/10 dark:bg-gray-900">
+            <Users className="mx-auto h-12 w-12 text-slate-300" />
+            <h3 className="mt-4 text-lg font-bold text-slate-950 dark:text-white">No coordinators found</h3>
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Adjust the search or create a new coordinator.</p>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-3 lg:hidden">
+              {pageItems.map((coordinator) => (
+                <CoordinatorCard key={coordinator._id} coordinator={coordinator} onView={setSelected} onEdit={startEdit} onToggle={toggleStatus} onAccess={(item) => navigate(`/admin/coordinator-access/${item._id}`)} />
+              ))}
             </div>
-          ) : filtered.length === 0 ? (
-            <div className="text-center py-12">
-              <Users className="w-16 h-16 text-slate-300 dark:text-gray-600 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-slate-700 dark:text-gray-300 mb-2">No coordinators found</h3>
-              <p className="text-slate-500 dark:text-gray-400 text-sm">{searchQuery ? "Try adjusting your search query" : "No coordinators have been added yet"}</p>
-            </div>
-          ) : (
-            <div>
-              <div className="mb-3 px-2">
-                <p className="text-sm text-slate-600 dark:text-gray-400 flex items-center gap-2">
-                  <span className="font-medium text-indigo-600 dark:text-indigo-400">💡 Tip:</span>
-                  Click on a coordinator's name to view their detailed profile
-                </p>
-              </div>
-              <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-gray-700">
-              <table className="min-w-full divide-y divide-slate-200">
-                <thead className="bg-slate-50 dark:bg-gray-700">
+
+            <div className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-gray-900 lg:block">
+              <table className="min-w-full divide-y divide-slate-100 dark:divide-white/10">
+                <thead className="bg-slate-50 dark:bg-white/[0.04]">
                   <tr>
-                    <th className="px-4 py-2 text-left text-xs font-semibold tracking-wider text-slate-600 dark:text-gray-300">Coordinator</th>
-                    <th className="px-4 py-2 text-left text-xs font-semibold tracking-wider text-slate-600 dark:text-white">Email</th>
-                    <th className="px-4 py-2 text-left text-xs font-semibold tracking-wider text-slate-600 dark:text-white">Events Created</th>
-                    <th className="px-4 py-2 text-left text-xs font-semibold tracking-wider text-slate-600 dark:text-white">Students Assigned</th>
-                    <th className="px-4 py-2 text-left text-xs font-semibold tracking-wider text-slate-600 dark:text-white">Created</th>
-                    <th className="px-4 py-2 text-left text-xs font-semibold tracking-wider text-slate-600 dark:text-white">Actions</th>
+                    {['Name', 'Email', 'Phone', 'Role', 'Status', 'Permissions', 'Last Active', 'Actions'].map((heading) => (
+                      <th key={heading} className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{heading}</th>
+                    ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-gray-700 bg-white dark:bg-gray-800">
-                  {paginatedCoordinators.map((c) => {
-                    const initial = c.name?.charAt(0)?.toUpperCase() || "?";
-                    const registered = c.createdAt ? new Date(c.createdAt).toLocaleDateString() : "-";
+                <tbody className="divide-y divide-slate-100 dark:divide-white/10">
+                  {pageItems.map((coordinator) => {
+                    const active = coordinator.isActive !== false;
                     return (
-                      <tr key={c._id || c.email} className="hover:bg-slate-50 dark:hover:bg-gray-700">
-                        <td className="px-4 py-2">
-                          <div className="flex items-center gap-3 min-w-[220px]">
-                            {c.avatarUrl ? (
-                              <img 
-                                src={c.avatarUrl} 
-                                alt={c.name} 
-                                className="w-8 h-8 rounded-full object-cover border border-slate-200"
-                              />
-                            ) : (
-                              <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 flex items-center justify-center font-semibold text-sm">
-                                {initial}
-                              </div>
-                            )}
-                            <div className="max-w-[280px]">
-                              <button
-                                onClick={() => openCoordinatorProfile(c)}
-                                className="font-medium text-slate-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400 truncate text-sm transition-colors text-left"
-                              >
-                                {c.name || "Unknown"}
-                              </button>
-                              <div className="text-xs text-slate-500 dark:text-white truncate">{c.coordinatorId || "N/A"}</div>
+                      <tr key={coordinator._id} className="transition hover:bg-sky-50/60 dark:hover:bg-sky-400/10">
+                        <td className="px-4 py-3">
+                          <button onClick={() => setSelected(coordinator)} className="flex min-w-[220px] items-center gap-3 text-left">
+                            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sm font-bold text-sky-700 dark:bg-sky-400/10 dark:text-sky-200">{(coordinator.name || '?').charAt(0).toUpperCase()}</div>
+                            <div>
+                              <div className="font-bold text-slate-950 dark:text-white">{coordinator.name || 'Unnamed'}</div>
+                              <div className="text-xs font-semibold text-slate-500">{coordinator.coordinatorId || '-'}</div>
                             </div>
-                          </div>
+                          </button>
                         </td>
-                        <td className="px-4 py-2 text-slate-700 dark:text-white max-w-[260px] text-sm">
-                          <span className="truncate block">{c.email || "-"}</span>
-                        </td>
-                        <td className="px-4 py-2 text-slate-700 dark:text-white text-sm">
-                          {c.eventsCreated ? (
-                            <div className="flex flex-col gap-0.5">
-                              <span className="font-medium text-slate-900 dark:text-white">
-                                {c.eventsCreated.total} Total
-                              </span>
-                              <span className="text-xs text-slate-500 dark:text-white">
-                                {c.eventsCreated.regular} Regular, {c.eventsCreated.special} Special
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="text-slate-500 dark:text-white">0</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-2 text-slate-700 dark:text-white text-sm">{c.studentsAssigned ?? 0}</td>
-                        <td className="px-4 py-2 text-slate-600 dark:text-white text-sm">{registered}</td>
-                        <td className="px-4 py-2">
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={(e) => handleEditCoordinator(c, e)}
-                              className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
-                              title="Edit coordinator"
-                            >
-                              <Edit2 className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={(e) => handleDeleteCoordinator(c, e)}
-                              className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-                              title="Delete coordinator"
-                            >
-                              <Trash2 className="w-4 h-4" />
+                        <td className="px-4 py-3 text-sm font-semibold text-slate-600 dark:text-slate-300">{coordinator.email || '-'}</td>
+                        <td className="px-4 py-3 text-sm font-semibold text-slate-600 dark:text-slate-300">{coordinator.phone || '-'}</td>
+                        <td className="px-4 py-3 text-sm font-semibold capitalize text-slate-600 dark:text-slate-300">{coordinator.role || 'coordinator'}</td>
+                        <td className="px-4 py-3"><StatusPill active={active} /></td>
+                        <td className="px-4 py-3 text-sm font-bold text-slate-950 dark:text-white">{coordinator.permissionCount || 0}</td>
+                        <td className="px-4 py-3 text-sm font-semibold text-slate-600 dark:text-slate-300">{formatDate(coordinator.lastActive)}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1.5">
+                            <button onClick={() => setSelected(coordinator)} title="View" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-white/10"><Eye className="h-4 w-4" /></button>
+                            <button onClick={() => startEdit(coordinator)} title="Edit" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-white/10"><Edit2 className="h-4 w-4" /></button>
+                            <button onClick={() => navigate(`/admin/coordinator-access/${coordinator._id}`)} title="Manage Access" className="rounded-lg p-2 text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-400/10"><ShieldCheck className="h-4 w-4" /></button>
+                            <button onClick={() => toggleStatus(coordinator)} title={active ? 'Disable' : 'Enable'} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-white/10">
+                              {active ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}
                             </button>
                           </div>
                         </td>
@@ -353,303 +280,89 @@ export default function CoordinatorDirectory() {
               </table>
             </div>
 
-            {/* Pagination Controls */}
-            {filtered.length > 0 && (
-              <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-4 px-2">
-                <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-white">
-                  <span>Show</span>
-                  <select
-                    value={itemsPerPage}
-                    onChange={(e) => {
-                      setItemsPerPage(Number(e.target.value));
-                      setCurrentPage(1);
-                    }}
-                    className="px-3 py-1 border border-slate-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-slate-700 dark:text-white focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-transparent"
-                  >
-                    <option value={10}>10</option>
-                    <option value={25}>25</option>
-                    <option value={50}>50</option>
-                    <option value={100}>100</option>
-                  </select>
-                  <span>
-                    Showing {startIndex + 1}-{Math.min(endIndex, filtered.length)} of {filtered.length}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handlePageChange(currentPage - 1)}
-                    disabled={currentPage === 1}
-                    className="px-3 py-1.5 text-sm font-medium rounded-lg border border-slate-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    Previous
-                  </button>
-                  
-                  <div className="flex items-center gap-1">
-                    {[...Array(totalPages)].map((_, i) => {
-                      const page = i + 1;
-                      // Show first page, last page, current page, and pages around current
-                      if (
-                        page === 1 ||
-                        page === totalPages ||
-                        (page >= currentPage - 1 && page <= currentPage + 1)
-                      ) {
-                        return (
-                          <button
-                            key={page}
-                            onClick={() => handlePageChange(page)}
-                            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                              currentPage === page
-                                ? 'bg-indigo-600 dark:bg-indigo-500 text-white'
-                                : 'border border-slate-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-gray-700'
-                            }`}
-                          >
-                            {page}
-                          </button>
-                        );
-                      } else if (page === currentPage - 2 || page === currentPage + 2) {
-                        return <span key={page} className="px-2 text-slate-500 dark:text-gray-400">...</span>;
-                      }
-                      return null;
-                    })}
-                  </div>
-
-                  <button
-                    onClick={() => handlePageChange(currentPage + 1)}
-                    disabled={currentPage === totalPages}
-                    className="px-3 py-1.5 text-sm font-medium rounded-lg border border-slate-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    Next
-                  </button>
-                </div>
+            <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+                Showing {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, filtered.length)} of {filtered.length}
               </div>
-            )}
+              <div className="flex flex-wrap items-center gap-2">
+                <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold dark:border-white/10 dark:bg-gray-950 dark:text-slate-200">
+                  {pageSizes.map((size) => <option key={size} value={size}>{size} / page</option>)}
+                </select>
+                <button disabled={page === 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700 disabled:opacity-40 dark:border-white/10 dark:text-slate-200">Previous</button>
+                <span className="px-2 text-sm font-bold text-slate-600 dark:text-slate-300">{page} / {totalPages}</span>
+                <button disabled={page === totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700 disabled:opacity-40 dark:border-white/10 dark:text-slate-200">Next</button>
+              </div>
             </div>
-          )}
-        </div>
-      </motion.div>
-
-      {/* Coordinator Profile Modal */}
-      <AnimatePresence>
-        {showModal && selectedCoordinator && (
-          <>
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={closeModal}
-              className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm z-50"
-            />
-            
-            {/* Modal */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              transition={{ duration: 0.2 }}
-              className="fixed inset-0 z-50 flex items-center justify-center p-4"
-              onClick={closeModal}
-            >
-              <div
-                onClick={(e) => e.stopPropagation()}
-                className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
-              >
-                {/* Header */}
-                <div className="sticky top-0 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-gray-700 dark:to-gray-700 border-b border-slate-200 dark:border-gray-600 px-6 py-4 flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    {selectedCoordinator.avatarUrl ? (
-                      <img 
-                        src={selectedCoordinator.avatarUrl} 
-                        alt={selectedCoordinator.name} 
-                        className="w-16 h-16 rounded-full object-cover border-2 border-white shadow-md"
-                      />
-                    ) : (
-                      <div className="w-16 h-16 rounded-full bg-indigo-500 flex items-center justify-center text-white font-bold text-2xl border-2 border-white shadow-md">
-                        {selectedCoordinator.name?.charAt(0)?.toUpperCase() || "?"}
-                      </div>
-                    )}
-                    <div>
-                      <h3 className="text-xl font-semibold text-slate-800 dark:text-white">{selectedCoordinator.name || "Unknown"}</h3>
-                      <p className="text-sm text-slate-600 dark:text-white">{selectedCoordinator.coordinatorId || "N/A"}</p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={closeModal}
-                    className="p-2 hover:bg-slate-200 dark:hover:bg-gray-600 rounded-full transition-colors"
-                  >
-                    <X className="w-5 h-5 text-slate-600 dark:text-white" />
-                  </button>
-                </div>
-
-                {/* Content */}
-                <div className="p-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Personal Information */}
-                    <div>
-                      <h4 className="text-sm font-semibold text-slate-700 dark:text-white mb-3 uppercase tracking-wide">Personal Information</h4>
-                      <div className="space-y-3">
-                        <div>
-                          <label className="text-xs text-slate-500 dark:text-white">Name</label>
-                          <div className="mt-1 text-slate-800 dark:text-white font-medium">{selectedCoordinator.name || "-"}</div>
-                        </div>
-                        <div>
-                          <label className="text-xs text-slate-500 dark:text-white">Coordinator ID</label>
-                          <div className="mt-1 text-slate-800 dark:text-white font-medium">{selectedCoordinator.coordinatorId || "-"}</div>
-                        </div>
-                        <div>
-                          <label className="text-xs text-slate-500 dark:text-white">Email</label>
-                          <div className="mt-1 text-slate-800 dark:text-white">{selectedCoordinator.email || "-"}</div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Statistics */}
-                    <div>
-                      <h4 className="text-sm font-semibold text-slate-700 dark:text-white mb-3 uppercase tracking-wide">Statistics</h4>
-                      <div className="space-y-3">
-                        <div>
-                          <label className="text-xs text-slate-500 dark:text-white">Events Created</label>
-                          {selectedCoordinator.eventsCreated ? (
-                            <div className="mt-1">
-                              <div className="text-slate-800 dark:text-white font-medium">{selectedCoordinator.eventsCreated.total} Total</div>
-                              <div className="text-xs text-slate-600 dark:text-white">{selectedCoordinator.eventsCreated.regular} Regular, {selectedCoordinator.eventsCreated.special} Special</div>
-                            </div>
-                          ) : (
-                            <div className="mt-1 text-slate-800 dark:text-white">0</div>
-                          )}
-                        </div>
-                        <div>
-                          <label className="text-xs text-slate-500 dark:text-white">Students Assigned</label>
-                          <div className="mt-1 text-slate-800 dark:text-white font-medium">{selectedCoordinator.studentsAssigned ?? 0}</div>
-                        </div>
-                        <div>
-                          <label className="text-xs text-slate-500 dark:text-white">Registered On</label>
-                          <div className="mt-1 text-slate-800 dark:text-white">{selectedCoordinator.createdAt ? new Date(selectedCoordinator.createdAt).toLocaleDateString() : "-"}</div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Institution */}
-                    <div>
-                      <h4 className="text-sm font-semibold text-slate-700 dark:text-white mb-3 uppercase tracking-wide">Institution</h4>
-                      <div className="space-y-3">
-                        <div>
-                          <label className="text-xs text-slate-500 dark:text-white">Department</label>
-                          <div className="mt-1 text-slate-800 dark:text-white">{selectedCoordinator.department || "-"}</div>
-                        </div>
-                        <div>
-                          <label className="text-xs text-slate-500 dark:text-white">College</label>
-                          <div className="mt-1 text-slate-800 dark:text-white">{selectedCoordinator.college || "-"}</div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Footer */}
-                <div className="sticky bottom-0 bg-slate-50 dark:bg-gray-700 border-t border-slate-200 dark:border-gray-600 px-6 py-4 flex justify-end">
-                  <button
-                    onClick={closeModal}
-                    className="px-4 py-2 bg-slate-800 dark:bg-gray-600 text-white rounded-lg hover:bg-slate-700 dark:hover:bg-gray-500 transition-colors"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            </motion.div>
           </>
         )}
-      </AnimatePresence>
 
-      {/* Edit Coordinator Modal */}
-      <AnimatePresence>
-        {editingCoordinator && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 0.5 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
-              onClick={() => { if (!isSaving) { setEditingCoordinator(null); setEditForm({}); } }}
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              transition={{ duration: 0.2 }}
-              className="fixed inset-0 z-50 flex items-center justify-center p-4"
-              onClick={() => { if (!isSaving) { setEditingCoordinator(null); setEditForm({}); } }}
-            >
-              <div
-                onClick={(e) => e.stopPropagation()}
-                className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full p-6 border border-slate-200 dark:border-gray-700"
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-slate-800 dark:text-white">Edit Coordinator</h3>
-                  <button
-                    onClick={() => { if (!isSaving) { setEditingCoordinator(null); setEditForm({}); } }}
-                    className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-gray-700"
-                  >
-                    <X className="w-4 h-4 text-slate-600 dark:text-white" />
-                  </button>
+        {selected ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm" onClick={() => setSelected(null)}>
+            <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-gray-900" onClick={(event) => event.stopPropagation()}>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-950 dark:text-white">{selected.name || 'Coordinator'}</h2>
+                  <p className="mt-1 text-sm font-semibold text-slate-500">{selected.email}</p>
                 </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 dark:text-gray-300 mb-1">Name</label>
-                    <input
-                      type="text"
-                      value={editForm.coordinatorName || ''}
-                      onChange={(e) => handleChangeEdit('coordinatorName', e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 dark:text-gray-300 mb-1">Email</label>
-                    <input
-                      type="email"
-                      value={editForm.coordinatorEmail || ''}
-                      onChange={(e) => handleChangeEdit('coordinatorEmail', e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 dark:text-gray-300 mb-1">Coordinator ID</label>
-                    <input
-                      type="text"
-                      value={editForm.coordinatorID || ''}
-                      onChange={(e) => handleChangeEdit('coordinatorID', e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    />
-                  </div>
-                </div>
-
-                <div className="mt-6 flex justify-end gap-3">
-                  <button
-                    type="button"
-                    onClick={() => { if (!isSaving) { setEditingCoordinator(null); setEditForm({}); } }}
-                    className="px-4 py-2 text-sm font-medium rounded-lg border border-slate-300 dark:border-gray-600 text-slate-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-slate-50 dark:hover:bg-gray-600"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleUpdateCoordinator}
-                    disabled={isSaving}
-                    className={`px-4 py-2 text-sm font-medium rounded-lg text-white flex items-center gap-2 ${
-                      isSaving ? 'bg-slate-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
-                    }`}
-                  >
-                    <Save className="w-4 h-4" />
-                    {isSaving ? 'Saving...' : 'Save Changes'}
-                  </button>
-                </div>
+                <button onClick={() => setSelected(null)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10"><X className="h-5 w-5" /></button>
               </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                {[
+                  ['Coordinator ID', selected.coordinatorId || '-'],
+                  ['Phone', selected.phone || '-'],
+                  ['Department', selected.department || '-'],
+                  ['College', selected.college || '-'],
+                  ['Students Assigned', selected.studentsAssigned ?? 0],
+                  ['Events Created', selected.eventsCreated?.total ?? 0],
+                  ['Assigned Permissions', selected.permissionCount || 0],
+                  ['Last Active', formatDate(selected.lastActive)],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-xl bg-slate-50 p-4 dark:bg-white/[0.04]">
+                    <div className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">{label}</div>
+                    <div className="mt-2 text-sm font-bold text-slate-950 dark:text-white">{value}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-6 flex justify-end gap-2">
+                <button onClick={() => navigate(`/admin/coordinator-access/${selected._id}`)} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white dark:bg-white dark:text-slate-950"><ShieldCheck className="h-4 w-4" />Manage Access</button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {editing ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm" onClick={() => !saving && setEditing(null)}>
+            <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-gray-900" onClick={(event) => event.stopPropagation()}>
+              <div className="mb-5 flex items-center justify-between">
+                <h2 className="text-lg font-bold text-slate-950 dark:text-white">Edit Coordinator</h2>
+                <button onClick={() => !saving && setEditing(null)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10"><X className="h-5 w-5" /></button>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {[
+                  ['coordinatorName', 'Name'],
+                  ['coordinatorEmail', 'Email'],
+                  ['coordinatorID', 'Coordinator ID'],
+                  ['phone', 'Phone'],
+                  ['department', 'Department'],
+                  ['college', 'College'],
+                ].map(([key, label]) => (
+                  <label key={key} className={key === 'college' ? 'sm:col-span-2' : ''}>
+                    <span className="mb-1.5 block text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</span>
+                    <input value={editForm[key] || ''} onChange={(event) => setEditForm((current) => ({ ...current, [key]: event.target.value }))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-white/10 dark:bg-gray-950 dark:text-white" />
+                  </label>
+                ))}
+              </div>
+              <div className="mt-6 flex justify-end gap-2">
+                <button onClick={() => setEditing(null)} disabled={saving} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-700 dark:border-white/10 dark:text-slate-200">Cancel</button>
+                <button onClick={saveEdit} disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white disabled:bg-slate-400 dark:bg-white dark:text-slate-950">
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
+                  Save Changes
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

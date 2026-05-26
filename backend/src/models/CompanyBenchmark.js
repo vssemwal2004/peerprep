@@ -65,6 +65,4 @@ const companyBenchmarkSchema = new mongoose.Schema({
   },
 }, { timestamps: true });
 
-companyBenchmarkSchema.index({ companyName: 1 }, { unique: true });
-
 export default mongoose.model('CompanyBenchmark', companyBenchmarkSchema);

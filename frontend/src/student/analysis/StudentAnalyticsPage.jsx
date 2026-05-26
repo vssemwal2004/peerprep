@@ -88,6 +88,7 @@ function normalizeAnalysis(analysis) {
     learning: analysis?.learning || {},
     consistency: analysis?.consistency || {},
     derived: analysis?.derived || {},
+    explanations: analysis?.explanations || {},
   };
 }
 
@@ -113,6 +114,59 @@ function SectionShell({ id, children, className = "" }) {
     >
       {children}
     </MotionSection>
+  );
+}
+
+function explanationTone(tone) {
+  if (tone === "positive") return "emerald";
+  if (tone === "attention") return "amber";
+  if (tone === "risk") return "rose";
+  return "sky";
+}
+
+function ScoreExplanationPanel({ title = "Why this score?", explanations = [], compact = false }) {
+  const items = (explanations || []).filter(Boolean).slice(0, compact ? 2 : 4);
+  if (!items.length) return null;
+
+  return (
+    <div className={compact ? "rounded-[20px] border border-slate-200 bg-slate-50/75 p-4 dark:border-white/10 dark:bg-white/[0.03]" : ""}>
+      <SectionHeader
+        eyebrow="Score explainability"
+        title={title}
+        subtitle="Clear reasons, evidence, and the next action behind this analytics signal."
+      />
+      <div className={`mt-4 grid gap-3 ${compact ? "" : "lg:grid-cols-2"}`}>
+        {items.map((item) => {
+          const tone = explanationTone(item.tone);
+          return (
+            <div
+              key={item.id || item.title}
+              className="group rounded-[18px] border border-slate-200 bg-white/75 p-4 transition hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-[0_18px_46px_-36px_rgba(14,165,233,0.72)] dark:border-white/10 dark:bg-white/[0.03] dark:hover:border-sky-400/20"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-bold text-slate-950 dark:text-white">{item.title}</div>
+                  <p className="mt-1 text-xs font-semibold leading-5 text-slate-500 dark:text-slate-400">{item.summary}</p>
+                </div>
+                <TonePill tone={tone}>{formatPercent(item.score)}</TonePill>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {(item.evidence || []).slice(0, 3).map((evidence) => (
+                  <TonePill key={evidence} tone="slate">
+                    {evidence}
+                  </TonePill>
+                ))}
+              </div>
+              {item.action ? (
+                <div className="mt-3 rounded-2xl bg-sky-50 px-3 py-2 text-xs font-semibold leading-5 text-sky-800 transition group-hover:bg-sky-100 dark:bg-sky-400/10 dark:text-sky-200">
+                  {item.action}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -594,6 +648,8 @@ function AssessmentIntelligenceSection({ analytics, assessmentMovement }) {
             ]}
           />
 
+          <ScoreExplanationPanel title="Why assessment score changed" explanations={analytics.explanations.assessment} />
+
           <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
             <Surface>
               <SectionHeader
@@ -861,6 +917,7 @@ function CompanyReadinessSection({ companies, selectedCompany, onCompanyChange, 
                   <DataChip label="Consistency" value={formatPercent(readiness.report?.breakdown?.consistency)} tone="emerald" />
                   <DataChip label="Interview" value={formatPercent(readiness.report?.breakdown?.interview)} tone="amber" />
                 </div>
+                <ScoreExplanationPanel title="Why this company fit score" explanations={readiness.report?.explanations} compact />
               </div>
             </div>
           ) : (
@@ -942,6 +999,10 @@ function ReadinessModal({ open, onClose, readiness, analytics, comparison }) {
               <PremiumBarChart data={benchmarkData} color={CHART_COLORS.sky} suffix="%" minHeight={250} />
             </div>
           </Surface>
+        </div>
+
+        <div className="px-5 pb-5">
+          <ScoreExplanationPanel title="Why this fit score" explanations={readiness?.report?.explanations} />
         </div>
 
         <div className="grid gap-5 px-5 pb-5 lg:grid-cols-3">
@@ -1109,6 +1170,7 @@ export default function StudentAnalyticsPage() {
             {showOverviewDetails ? (
               <div className="mt-4 space-y-4">
                 <SnapshotGrid analytics={analytics} assessmentMovement={assessmentMovement} />
+                <ScoreExplanationPanel title="Why your readiness looks this way" explanations={analytics.explanations.overview} />
                 <ReadinessOperatingSystem
                   analytics={analytics}
                   moduleScores={moduleScores}

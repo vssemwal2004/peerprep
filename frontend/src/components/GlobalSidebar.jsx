@@ -22,7 +22,11 @@ import {
   Mail,
   Megaphone,
   Building2,
+  UserCog,
+  ShieldCheck,
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { hasPermission } from '../admin/coordinatorPermissions';
 
 const buildNavItems = (role = 'admin') => {
   if (role === 'coordinator') {
@@ -32,6 +36,7 @@ const buildNavItems = (role = 'admin') => {
         label: 'Overview',
         to: '/coordinator/overview',
         icon: LayoutDashboard,
+        permissionKey: 'coordinator.dashboard.overview',
         match: (loc) => loc.pathname === '/coordinator/overview' || loc.pathname === '/coordinator',
       },
       {
@@ -40,23 +45,23 @@ const buildNavItems = (role = 'admin') => {
         label: 'Interviews',
         icon: CalendarDays,
         items: [
-          { label: 'Create Interview', to: '/coordinator/event/create', icon: CalendarPlus },
-          { label: 'Scheduled Interviews', to: '/coordinator', icon: CalendarClock },
+          { label: 'Create Interview', to: '/coordinator/event/create', icon: CalendarPlus, permissionKey: 'coordinator.interviews.create' },
+          { label: 'Scheduled Interviews', to: '/coordinator', icon: CalendarClock, permissionKey: 'coordinator.interviews.view' },
         ],
       },
-      { type: 'link', label: 'My Students', to: '/coordinator/students', icon: Users },
-      { type: 'link', label: 'Learning Modules', to: '/coordinator/subjects', icon: BookOpen },
-      { type: 'link', label: 'Registered Courses', to: '/coordinator/database', icon: Building2 },
-      { type: 'link', label: 'Feedback', to: '/coordinator/feedback', icon: MessageSquare },
+      { type: 'link', label: 'My Students', to: '/coordinator/students', icon: Users, permissionKey: 'coordinator.students.view' },
+      { type: 'link', label: 'Learning Modules', to: '/coordinator/subjects', icon: BookOpen, permissionKey: 'coordinator.learning.manage' },
+      { type: 'link', label: 'Registered Courses', to: '/coordinator/database', icon: Building2, permissionKey: 'coordinator.courses.view' },
+      { type: 'link', label: 'Feedback', to: '/coordinator/feedback', icon: MessageSquare, permissionKey: 'coordinator.feedback.view' },
       {
         type: 'group',
         key: 'assessment',
         label: 'Assessment',
         icon: ClipboardList,
         items: [
-          { label: 'Overview', to: '/coordinator/assessment', icon: ClipboardList },
-          { label: 'Add Assessment', to: '/coordinator/assessment/create', icon: ClipboardList },
-          { label: 'Reports', to: '/coordinator/assessment/reports', icon: ClipboardList },
+          { label: 'Overview', to: '/coordinator/assessment', icon: ClipboardList, permissionKey: 'coordinator.assessment.view' },
+          { label: 'Add Assessment', to: '/coordinator/assessment/create', icon: ClipboardList, permissionKey: 'coordinator.assessment.create' },
+          { label: 'Reports', to: '/coordinator/assessment/reports', icon: ClipboardList, permissionKey: 'coordinator.assessment.reports' },
         ],
       },
       {
@@ -65,8 +70,8 @@ const buildNavItems = (role = 'admin') => {
         label: 'Library',
         icon: Library,
         items: [
-          { label: 'View Library', to: '/coordinator/library', icon: Library },
-          { label: 'Add Question', to: '/coordinator/library/add-question', icon: Library },
+          { label: 'View Library', to: '/coordinator/library', icon: Library, permissionKey: 'coordinator.library.view' },
+          { label: 'Add Question', to: '/coordinator/library/add-question', icon: Library, permissionKey: 'coordinator.library.create' },
         ],
       },
       {
@@ -75,8 +80,8 @@ const buildNavItems = (role = 'admin') => {
         label: 'Announcements',
         icon: Megaphone,
         items: [
-          { label: 'Add Announcement', to: '/coordinator/announcements/add', icon: Megaphone },
-          { label: 'Manage Announcements', to: '/coordinator/announcements/manage', icon: Megaphone },
+          { label: 'Add Announcement', to: '/coordinator/announcements/add', icon: Megaphone, permissionKey: 'coordinator.announcements.create' },
+          { label: 'Manage Announcements', to: '/coordinator/announcements/manage', icon: Megaphone, permissionKey: 'coordinator.announcements.manage' },
         ],
       },
       {
@@ -85,10 +90,10 @@ const buildNavItems = (role = 'admin') => {
         label: 'Compiler',
         icon: TerminalSquare,
         items: [
-          { label: 'Overview', to: '/coordinator/compiler', icon: LayoutDashboard },
-          { label: 'Create Problem', to: '/coordinator/compiler/create', icon: PlusSquare },
-          { label: 'Problem Management', to: '/coordinator/compiler/problems', icon: FileCode2 },
-          { label: 'Analytics', to: '/coordinator/compiler/analytics', icon: BarChart3 },
+          { label: 'Overview', to: '/coordinator/compiler', icon: LayoutDashboard, permissionKey: 'coordinator.compiler.view' },
+          { label: 'Create Problem', to: '/coordinator/compiler/create', icon: PlusSquare, permissionKey: 'coordinator.compiler.create' },
+          { label: 'Problem Management', to: '/coordinator/compiler/problems', icon: FileCode2, permissionKey: 'coordinator.compiler.manage' },
+          { label: 'Analytics', to: '/coordinator/compiler/analytics', icon: BarChart3, permissionKey: 'coordinator.compiler.analytics' },
         ],
       },
       {
@@ -97,8 +102,8 @@ const buildNavItems = (role = 'admin') => {
         label: 'Company Insights',
         icon: Building2,
         items: [
-          { label: 'Add Benchmark', to: '/coordinator/company-insights/add', icon: Building2 },
-          { label: 'View Benchmarks', to: '/coordinator/company-insights', icon: Building2 },
+          { label: 'Add Benchmark', to: '/coordinator/company-insights/add', icon: Building2, permissionKey: 'coordinator.company.create' },
+          { label: 'View Benchmarks', to: '/coordinator/company-insights', icon: Building2, permissionKey: 'coordinator.company.view' },
         ],
       },
     ];
@@ -125,22 +130,24 @@ const buildNavItems = (role = 'admin') => {
     },
     {
       type: 'group',
-      key: 'add-users',
-      label: 'Add Users',
-      icon: UserPlus,
+      key: 'coordinator-management',
+      label: 'Coordinator',
+      icon: UserCog,
       items: [
-        { label: 'Add Students', to: '/admin/onboarding', icon: UserPlus },
         { label: 'Add Coordinators', to: '/admin/coordinators', icon: GraduationCap },
+        { label: 'Coordinator List', to: '/admin/coordinator-directory', icon: Users },
+        { label: 'Coordinator Overview', to: '/admin/coordinator-overview', icon: LayoutDashboard },
+        { label: 'Coordinator Access', to: '/admin/coordinator-access', icon: ShieldCheck },
       ],
     },
     {
       type: 'group',
-      key: 'users',
-      label: 'Users',
-      icon: Users,
+      key: 'student-management',
+      label: 'Student',
+      icon: GraduationCap,
       items: [
-        { label: 'Students List', to: '/admin/students', icon: Users },
-        { label: 'Coordinators List', to: '/admin/coordinator-directory', icon: Users },
+        { label: 'Add Student', to: '/admin/onboarding', icon: UserPlus },
+        { label: 'Student List', to: '/admin/students', icon: Users },
       ],
     },
     { type: 'link', label: 'Learning Modules', to: '/admin/learning', icon: BookOpen },
@@ -212,7 +219,20 @@ const buildNavItems = (role = 'admin') => {
 
 export default function GlobalSidebar({ role = 'admin', isExpanded = false, onExpand = () => {}, onCollapse = () => {} }) {
   const location = useLocation();
-  const navItems = useMemo(() => buildNavItems(role), [role]);
+  const { user } = useAuth();
+  const navItems = useMemo(() => {
+    const items = buildNavItems(role);
+    if (role !== 'coordinator') return items;
+    return items
+      .map((item) => {
+        if (item.type === 'group') {
+          const children = item.items.filter((child) => hasPermission(user, child.permissionKey));
+          return children.length ? { ...item, items: children } : null;
+        }
+        return hasPermission(user, item.permissionKey) ? item : null;
+      })
+      .filter(Boolean);
+  }, [role, user]);
   const [openGroup, setOpenGroup] = useState(null);
 
   useEffect(() => {

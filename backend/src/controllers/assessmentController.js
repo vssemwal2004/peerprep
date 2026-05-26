@@ -75,8 +75,37 @@ function computeStatus(now, assessment) {
 
 function computeAllowedEnd(assessment, startedAt) {
   const durationMs = (assessment.duration || 0) * 60 * 1000;
-  const byDuration = new Date(startedAt.getTime() + durationMs);
+  const parsedStartDate = startedAt instanceof Date ? startedAt : new Date(startedAt || Date.now());
+  const startDate = Number.isNaN(parsedStartDate.getTime()) ? new Date() : parsedStartDate;
+  const byDuration = new Date(startDate.getTime() + durationMs);
   return byDuration < assessment.endTime ? byDuration : assessment.endTime;
+}
+
+function assessmentRouteQuery(id) {
+  const value = String(id || '').trim();
+  if (!value) return null;
+  if (mongoose.Types.ObjectId.isValid(value)) return { _id: value };
+  return { assessmentId: value };
+}
+
+async function findAssessmentForStudentRoute(id, { lean = false, select = '' } = {}) {
+  const query = assessmentRouteQuery(id);
+  if (!query) return null;
+  let request = Assessment.findOne(query);
+  if (select) request = request.select(select);
+  if (lean) request = request.lean();
+  return request;
+}
+
+function isStudentAssignedToAssessment(assessment = {}, student = {}) {
+  if (assessment.targetType === 'all') return true;
+  const studentObjectId = String(student?._id || '');
+  const studentCode = String(student?.studentId || '').trim().toLowerCase();
+  return (assessment.assignedStudents || []).some((entry) => {
+    const rawId = String(entry?._id || entry || '');
+    const rawStudentCode = String(entry?.studentId || '').trim().toLowerCase();
+    return rawId === studentObjectId || Boolean(studentCode && (rawId.toLowerCase() === studentCode || rawStudentCode === studentCode));
+  });
 }
 
 function getRequiredSecuritySteps(settings = {}) {
@@ -226,16 +255,6 @@ async function ensureAssessmentPasswordUnlocked(assessment, submission, password
   const providedPassword = typeof password === 'string' ? password : '';
   if (!providedPassword) return { ok: false, status: 401, error: 'Assessment password is required.' };
 
-  const matched = await bcrypt.compare(providedPassword, assessment.passwordHash);
-  if (!matched) return { ok: false, status: 401, error: 'Incorrect assessment password.' };
-  return { ok: true };
-}
-
-async function verifyAssessmentPassword(assessment, password) {
-  if (!assessment.passwordEnabled) return { ok: true };
-  if (!assessment.passwordHash) return { ok: false, status: 403, error: 'Assessment password is not set. Please contact your admin.' };
-  const providedPassword = typeof password === 'string' ? password : '';
-  if (!providedPassword) return { ok: false, status: 401, error: 'Assessment password is required.' };
   const matched = await bcrypt.compare(providedPassword, assessment.passwordHash);
   if (!matched) return { ok: false, status: 401, error: 'Incorrect assessment password.' };
   return { ok: true };
@@ -638,6 +657,72 @@ function buildStudentReportRow(assessment = {}, submission = {}, { rankInfo = nu
     percentile: permissions.canViewRank ? rankInfo?.percentile || null : null,
     participants: permissions.canViewRank ? rankInfo?.participants || null : null,
   };
+}
+
+function compareSubmittedAssessmentRows(a = {}, b = {}) {
+  const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+  if (scoreDiff !== 0) return scoreDiff;
+
+  const aTime = Number.isFinite(Number(a.timeTakenSec)) ? Number(a.timeTakenSec) : computeSubmissionTimeTakenSec(a) || Number.MAX_SAFE_INTEGER;
+  const bTime = Number.isFinite(Number(b.timeTakenSec)) ? Number(b.timeTakenSec) : computeSubmissionTimeTakenSec(b) || Number.MAX_SAFE_INTEGER;
+  if (aTime !== bTime) return aTime - bTime;
+
+  const aSubmittedAt = new Date(a.submittedAt || a.updatedAt || a.createdAt || 0).getTime();
+  const bSubmittedAt = new Date(b.submittedAt || b.updatedAt || b.createdAt || 0).getTime();
+  return aSubmittedAt - bSubmittedAt;
+}
+
+function rankSignature(row = {}) {
+  const score = Number(row.score || 0);
+  const timeTaken = Number.isFinite(Number(row.timeTakenSec)) ? Number(row.timeTakenSec) : computeSubmissionTimeTakenSec(row) || Number.MAX_SAFE_INTEGER;
+  const submittedAt = new Date(row.submittedAt || row.updatedAt || row.createdAt || 0).getTime();
+  return `${score}:${timeTaken}:${submittedAt}`;
+}
+
+async function buildStudentRankInfoByAssessment(assessmentIds = [], studentId) {
+  const uniqueAssessmentIds = [...new Set(assessmentIds.map((id) => String(id || '')).filter(Boolean))]
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+
+  const rankInfoByAssessment = new Map();
+  if (!uniqueAssessmentIds.length) return rankInfoByAssessment;
+
+  const submittedRows = await AssessmentSubmission.find({
+    status: 'submitted',
+    assessmentId: { $in: uniqueAssessmentIds },
+  })
+    .select('assessmentId studentId score timeTakenSec submittedAt startedAt updatedAt createdAt')
+    .lean();
+
+  const rowsByAssessment = new Map();
+  submittedRows.forEach((row) => {
+    const key = String(row.assessmentId);
+    if (!rowsByAssessment.has(key)) rowsByAssessment.set(key, []);
+    rowsByAssessment.get(key).push(row);
+  });
+
+  rowsByAssessment.forEach((rows, assessmentId) => {
+    const sortedRows = [...rows].sort(compareSubmittedAssessmentRows);
+    let previousSignature = '';
+    let previousRank = 0;
+
+    sortedRows.forEach((row, index) => {
+      const signature = rankSignature(row);
+      const rank = signature === previousSignature ? previousRank : index + 1;
+      previousSignature = signature;
+      previousRank = rank;
+
+      if (String(row.studentId) !== String(studentId)) return;
+      const participants = sortedRows.length;
+      rankInfoByAssessment.set(assessmentId, {
+        rank,
+        participants,
+        percentile: participants ? Number((((participants - rank) / participants) * 100).toFixed(2)) : null,
+      });
+    });
+  });
+
+  return rankInfoByAssessment;
 }
 
 function normalizeAssessmentSections(sections = []) {
@@ -1623,55 +1708,7 @@ export async function getStudentAssessmentDashboard(req, res) {
     const submittedAssessmentIds = studentSubmissions
       .filter((submission) => submission?.status === 'submitted' && submission.assessmentId)
       .map((submission) => submission.assessmentId);
-    const rankInfoByAssessment = new Map();
-    if (submittedAssessmentIds.length) {
-      const uniqueAssessmentIds = [...new Set(submittedAssessmentIds.map((id) => String(id)))]
-        .map((id) => new mongoose.Types.ObjectId(id));
-      const rankRows = await AssessmentSubmission.aggregate([
-        { $match: { status: 'submitted', assessmentId: { $in: uniqueAssessmentIds } } },
-        {
-          $setWindowFields: {
-            partitionBy: '$assessmentId',
-            sortBy: { score: -1, timeTakenSec: 1, submittedAt: 1 },
-            output: {
-              rank: { $rank: {} },
-              participants: { $count: {} },
-            },
-          },
-        },
-        { $match: { studentId: req.user._id } },
-        {
-          $project: {
-            assessmentId: 1,
-            rank: 1,
-            participants: 1,
-            percentile: {
-              $round: [
-                {
-                  $multiply: [
-                    {
-                      $divide: [
-                        { $subtract: ['$participants', '$rank'] },
-                        { $cond: [{ $gt: ['$participants', 0] }, '$participants', 1] },
-                      ],
-                    },
-                    100,
-                  ],
-                },
-                2,
-              ],
-            },
-          },
-        },
-      ]);
-      rankRows.forEach((row) => {
-        rankInfoByAssessment.set(String(row.assessmentId), {
-          rank: row.rank || null,
-          participants: row.participants || null,
-          percentile: row.percentile || null,
-        });
-      });
-    }
+    const rankInfoByAssessment = await buildStudentRankInfoByAssessment(submittedAssessmentIds, req.user._id);
 
     const ongoingAssessments = [];
     const upcomingAssessments = [];
@@ -1705,6 +1742,7 @@ export async function getStudentAssessmentDashboard(req, res) {
           totalQuestions,
           assessmentType: assessment.assessmentType || 'mixed',
           passwordEnabled: Boolean(assessment.passwordEnabled),
+          passwordUnlocked: Boolean(!assessment.passwordEnabled || submission?.passwordVerifiedAt),
           settings: assessment.settings || {},
           status,
           actionLabel: submission?.status === 'in_progress' ? 'Continue' : 'Start',
@@ -1769,9 +1807,10 @@ export async function getStudentAssessmentDashboard(req, res) {
 export async function getStudentAssessment(req, res) {
   try {
     const { id } = req.params;
-    const studentId = req.user._id;
+    const student = req.user;
+    const studentId = student._id;
 
-    const assessment = await Assessment.findById(id).lean();
+    const assessment = await findAssessmentForStudentRoute(id, { lean: true });
     if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
     if (assessment.lifecycleStatus === 'draft') {
       return res.status(403).json({ error: 'Assessment is not published yet.' });
@@ -1780,7 +1819,7 @@ export async function getStudentAssessment(req, res) {
       return res.status(400).json({ error: 'Assessment schedule is incomplete.' });
     }
 
-    const isAssigned = assessment.targetType === 'all' || (assessment.assignedStudents || []).some(s => s.toString() === studentId.toString());
+    const isAssigned = isStudentAssignedToAssessment(assessment, student);
     if (!isAssigned) return res.status(403).json({ error: 'Not assigned to this assessment.' });
 
     const now = new Date();
@@ -1788,7 +1827,7 @@ export async function getStudentAssessment(req, res) {
       return res.status(403).json({ error: 'Assessment has not started yet.', serverTime: now, startTime: assessment.startTime });
     }
 
-    let submission = await AssessmentSubmission.findOne({ assessmentId: id, studentId });
+    let submission = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId });
 
     const passwordCheck = await ensureAssessmentPasswordUnlocked(assessment, submission);
     if (!passwordCheck.ok) {
@@ -1806,7 +1845,7 @@ export async function getStudentAssessment(req, res) {
 
     if (!submission) {
       submission = await AssessmentSubmission.create({
-        assessmentId: id,
+        assessmentId: assessment._id,
         studentId,
         status: 'not_started',
         attemptCount: 0,
@@ -1841,9 +1880,10 @@ export async function startStudentAssessment(req, res) {
   try {
     const { id } = req.params;
     const { password } = req.body || {};
-    const studentId = req.user._id;
+    const student = req.user;
+    const studentId = student._id;
 
-    const assessment = await Assessment.findById(id);
+    const assessment = await findAssessmentForStudentRoute(id);
     if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
     if (assessment.lifecycleStatus === 'draft') {
       return res.status(403).json({ error: 'Assessment is not published yet.' });
@@ -1852,7 +1892,7 @@ export async function startStudentAssessment(req, res) {
       return res.status(400).json({ error: 'Assessment schedule is incomplete.' });
     }
 
-    const isAssigned = assessment.targetType === 'all' || (assessment.assignedStudents || []).some(s => s.toString() === studentId.toString());
+    const isAssigned = isStudentAssignedToAssessment(assessment, student);
     if (!isAssigned) return res.status(403).json({ error: 'Not assigned to this assessment.' });
 
     const now = new Date();
@@ -1863,20 +1903,20 @@ export async function startStudentAssessment(req, res) {
       return res.status(403).json({ error: 'Assessment window has closed.', serverTime: now, endTime: assessment.endTime });
     }
 
-    let submission = await AssessmentSubmission.findOne({ assessmentId: id, studentId });
+    let submission = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId });
     const attemptLimit = assessment.attemptLimit || 1;
     if (submission?.status === 'submitted' && submission.attemptCount >= attemptLimit) {
       return res.status(403).json({ error: 'No attempts remaining for this assessment.' });
     }
 
-    const passwordCheck = await verifyAssessmentPassword(assessment, password);
+    const passwordCheck = await ensureAssessmentPasswordUnlocked(assessment, submission, password);
     if (!passwordCheck.ok) {
       return res.status(passwordCheck.status).json({ error: passwordCheck.error });
     }
 
     if (!submission) {
       submission = await AssessmentSubmission.create({
-        assessmentId: id,
+        assessmentId: assessment._id,
         studentId,
         passwordVerifiedAt: assessment.passwordEnabled ? now : undefined,
         securitySetup: {},
@@ -1908,21 +1948,22 @@ export async function startStudentAssessment(req, res) {
 export async function beginStudentAssessment(req, res) {
   try {
     const { id } = req.params;
-    const studentId = req.user._id;
+    const student = req.user;
+    const studentId = student._id;
     const now = new Date();
 
-    const assessment = await Assessment.findById(id);
+    const assessment = await findAssessmentForStudentRoute(id);
     if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
     if (assessment.lifecycleStatus === 'draft') return res.status(403).json({ error: 'Assessment is not published yet.' });
     if (!assessment.startTime || !assessment.endTime || !assessment.duration) {
       return res.status(400).json({ error: 'Assessment schedule is incomplete.' });
     }
-    const isAssigned = assessment.targetType === 'all' || (assessment.assignedStudents || []).some(s => s.toString() === studentId.toString());
+    const isAssigned = isStudentAssignedToAssessment(assessment, student);
     if (!isAssigned) return res.status(403).json({ error: 'Not assigned to this assessment.' });
     if (now < assessment.startTime) return res.status(403).json({ error: 'Assessment has not started yet.', serverTime: now, startTime: assessment.startTime });
     if (now > assessment.endTime) return res.status(403).json({ error: 'Assessment window has closed.', serverTime: now, endTime: assessment.endTime });
 
-    let submission = await AssessmentSubmission.findOne({ assessmentId: id, studentId });
+    let submission = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId });
     const passwordCheck = await ensureAssessmentPasswordUnlocked(assessment, submission);
     if (!passwordCheck.ok) return res.status(passwordCheck.status).json({ error: passwordCheck.error });
     const requiredSecuritySteps = getRequiredSecuritySteps(assessment.settings || {});
@@ -1936,7 +1977,7 @@ export async function beginStudentAssessment(req, res) {
 
     if (!submission) {
       submission = await AssessmentSubmission.create({
-        assessmentId: id,
+        assessmentId: assessment._id,
         studentId,
         startedAt: now,
         securityCompletedAt: now,
@@ -3414,11 +3455,11 @@ export async function logStudentViolation(req, res) {
       'other',
     ];
     if (!type || !VALID.includes(type)) return res.status(400).json({ error: 'Valid violation type required.' });
-    const submission = await AssessmentSubmission.findOne({ assessmentId: id, studentId });
+    const assessment = await findAssessmentForStudentRoute(id, { lean: true, select: 'settings' });
+    if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
+    const submission = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId });
     if (!submission) return res.status(404).json({ error: 'Submission not found.' });
     if (submission.status === 'submitted') return res.json({ ok: true });
-    const assessment = await Assessment.findById(id).select('settings').lean();
-    if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
     const settings = assessment.settings || {};
     const now = new Date();
     const weight = violationWeight(settings, type);
@@ -3467,12 +3508,11 @@ export async function logStudentHeartbeat(req, res) {
     const { id } = req.params;
     const studentId = req.user._id;
     const { status = {}, violationScore, pauseCount, cameraFlags } = req.body || {};
-    const submission = await AssessmentSubmission.findOne({ assessmentId: id, studentId });
+    const assessment = await findAssessmentForStudentRoute(id, { lean: true, select: 'settings' });
+    if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
+    const submission = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId });
     if (!submission) return res.status(404).json({ error: 'Submission not found.' });
     if (submission.status === 'submitted') return res.json({ ok: true, action: 'warn' });
-
-    const assessment = await Assessment.findById(id).select('settings').lean();
-    if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
     const settings = assessment.settings || {};
     const now = new Date();
     const normalizedStatus = {
@@ -3542,14 +3582,18 @@ export async function logStudentHeartbeat(req, res) {
 export async function markStudentAssessmentSetupStep(req, res) {
   try {
     const { id } = req.params;
-    const studentId = req.user._id;
+    const student = req.user;
+    const studentId = student._id;
     const { step, meta } = req.body || {};
     const allowedSteps = new Set(['environment', 'camera', 'fullscreen', 'location', 'final']);
     if (!step || !allowedSteps.has(step)) {
       return res.status(400).json({ error: 'Valid setup step is required.' });
     }
 
-    const assessment = await Assessment.findById(id).select('lifecycleStatus startTime endTime duration settings targetType assignedStudents').lean();
+    const assessment = await findAssessmentForStudentRoute(id, {
+      lean: true,
+      select: 'lifecycleStatus startTime endTime duration settings targetType assignedStudents',
+    });
     if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
     if (assessment.lifecycleStatus === 'draft') return res.status(403).json({ error: 'Assessment is not published yet.' });
     if (!assessment.startTime || !assessment.endTime || !assessment.duration) {
@@ -3559,11 +3603,10 @@ export async function markStudentAssessmentSetupStep(req, res) {
     if (now < assessment.startTime || now > assessment.endTime) {
       return res.status(403).json({ error: 'Assessment is outside the active time window.' });
     }
-    const isAssigned = assessment.targetType === 'all'
-      || (assessment.assignedStudents || []).some((entry) => String(entry) === String(studentId));
+    const isAssigned = isStudentAssignedToAssessment(assessment, student);
     if (!isAssigned) return res.status(403).json({ error: 'Not assigned to this assessment.' });
 
-    const submission = await AssessmentSubmission.findOne({ assessmentId: id, studentId });
+    const submission = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId });
     if (!submission) return res.status(404).json({ error: 'Submission not found. Unlock assessment first.' });
     const passwordCheck = await ensureAssessmentPasswordUnlocked(assessment, submission);
     if (!passwordCheck.ok) return res.status(passwordCheck.status).json({ error: passwordCheck.error });
@@ -3615,7 +3658,9 @@ export async function logStudentMonitoring(req, res) {
     const { id } = req.params;
     const studentId = req.user._id;
     const { snapshot, event } = req.body || {};
-    const submission = await AssessmentSubmission.findOne({ assessmentId: id, studentId });
+    const assessment = await findAssessmentForStudentRoute(id, { lean: true, select: '_id' });
+    if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
+    const submission = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId });
     if (!submission) return res.status(404).json({ error: 'Submission not found.' });
     if (submission.status === 'submitted') return res.json({ ok: true });
 
