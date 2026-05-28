@@ -13,7 +13,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "^0.10.35",
     "@tailwindcss/vite": "^4.1.13",
+    "@tensorflow-models/coco-ssd": "^2.2.3",
+    "@tensorflow/tfjs": "^4.22.0",
     "baseline-browser-mapping": "^2.9.11",
     "flatpickr": "^4.6.13",
     "framer-motion": "^11.11.17",

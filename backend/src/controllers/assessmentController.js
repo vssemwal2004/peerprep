@@ -9,6 +9,12 @@ import { createNotification, createNotifications } from '../services/notificatio
 import { enqueueAssessmentCodingEvaluationJobs } from '../services/compilerExecutionWorkflowService.js';
 import { removeAssessmentQuestionsFromLibrary, syncAssessmentQuestionsToLibrary } from '../services/questionLibraryService.js';
 import { logActivity } from './adminActivityController.js';
+import {
+  AI_PROCTORING_VIOLATION_TYPES,
+  applyAiProctoringViolationToSummary,
+  getAiProctoringDefaultWeight,
+  isAiProctoringViolation,
+} from '../modules/assessment/proctoring/proctoring.rules.js';
 
 function buildSimpleChanges(before = {}, after = {}, keys = []) {
   const changes = {};
@@ -165,6 +171,22 @@ function clampSettingNumber(value, fallback, { min = null, max = null } = {}) {
   return next;
 }
 
+function normalizeAiProctoringSettings(settings = {}) {
+  const source = settings && typeof settings === 'object' ? settings : {};
+  return {
+    enabled: Boolean(source.enabled),
+    detectMobile: source.detectMobile !== false,
+    detectMultiplePersons: source.detectMultiplePersons !== false,
+    detectNoFace: source.detectNoFace !== false,
+    detectFaceOutOfFrame: source.detectFaceOutOfFrame !== false,
+    detectLookingAway: source.detectLookingAway !== false,
+    detectionIntervalMs: clampSettingNumber(source.detectionIntervalMs, 1500, { min: 1000, max: 5000 }),
+    ignoreLimit: clampSettingNumber(source.ignoreLimit, 5, { min: 0, max: 50 }),
+    violationCooldownSec: clampSettingNumber(source.violationCooldownSec, 20, { min: 5, max: 120 }),
+    criticalAutoFlag: source.criticalAutoFlag !== false,
+  };
+}
+
 function normalizeAssessmentSettings(settings = {}) {
   const source = settings && typeof settings === 'object' ? { ...settings } : {};
   delete source.negativeMarking;
@@ -225,6 +247,7 @@ function normalizeAssessmentSettings(settings = {}) {
     violationPauseScore: clampSettingNumber(source.violationPauseScore, 0, { min: 0, max: 1000 }),
     violationAutoSubmitScore: clampSettingNumber(source.violationAutoSubmitScore, 0, { min: 0, max: 1000 }),
     violationWeights: source.violationWeights && typeof source.violationWeights === 'object' ? source.violationWeights : {},
+    aiProctoring: normalizeAiProctoringSettings(source.aiProctoring),
   };
 }
 
@@ -563,6 +586,45 @@ function buildMonitoringTimeline(submission = {}) {
   ].filter((event) => event.at);
 
   return events.sort((a, b) => new Date(a.at) - new Date(b.at));
+}
+
+const AI_PROCTORING_SUMMARY_DEFAULTS = Object.freeze({
+  totalViolations: 0,
+  noFace: 0,
+  faceOutOfFrame: 0,
+  multipleFaces: 0,
+  multiplePersons: 0,
+  mobileDetected: 0,
+  lookingAway: 0,
+  cameraBlocked: 0,
+  riskLevel: 'clean',
+  lastViolationAt: null,
+});
+
+function normalizeAiProctoringSummaryForReport(summary = {}) {
+  const source = summary && typeof summary === 'object' ? summary : {};
+  const numberValue = (key) => Math.max(0, Number(source[key] || 0));
+  const riskLevel = ['clean', 'low', 'medium', 'high', 'critical'].includes(source.riskLevel)
+    ? source.riskLevel
+    : AI_PROCTORING_SUMMARY_DEFAULTS.riskLevel;
+
+  return {
+    totalViolations: numberValue('totalViolations'),
+    noFace: numberValue('noFace'),
+    faceOutOfFrame: numberValue('faceOutOfFrame'),
+    multipleFaces: numberValue('multipleFaces'),
+    multiplePersons: numberValue('multiplePersons'),
+    mobileDetected: numberValue('mobileDetected'),
+    lookingAway: numberValue('lookingAway'),
+    cameraBlocked: numberValue('cameraBlocked'),
+    riskLevel,
+    lastViolationAt: source.lastViolationAt || null,
+  };
+}
+
+function getAiViolationLogEntries(violationLog = []) {
+  if (!Array.isArray(violationLog)) return [];
+  return violationLog.filter((entry) => isAiProctoringViolation(entry?.type));
 }
 
 function buildAssessmentWindowMatch(windowName, now = new Date()) {
@@ -2943,6 +3005,8 @@ export async function getStudentAssessmentReport(req, res) {
         copyPasteCount: submission.copyPasteCount || 0,
         location: submission.securitySetup?.location || null,
       },
+      aiProctoringSummary: normalizeAiProctoringSummaryForReport(submission.aiProctoringSummary),
+      aiViolationLog: getAiViolationLogEntries(submission.violationLog),
     });
   } catch (err) {
     console.error('Error fetching student assessment report:', err);
@@ -3352,6 +3416,67 @@ function actionSetting(settings, keys, fallback = 'warn') {
   return fallback;
 }
 
+const EXISTING_VIOLATION_TYPES = Object.freeze([
+  'tab_switch',
+  'fullscreen_exit',
+  'camera_loss',
+  'camera_no_face',
+  'multiple_faces',
+  'face_out_of_frame',
+  'copy_paste',
+  'context_menu',
+  'duplicate_tab',
+  'idle',
+  'heartbeat_failure',
+  'auto_submit',
+  'other',
+]);
+
+const NON_BLOCKING_CAMERA_VIOLATION_TYPES = Object.freeze([
+  'camera_loss',
+  'camera_no_face',
+  'multiple_faces',
+  'face_out_of_frame',
+]);
+
+const VALID_VIOLATION_TYPES = Object.freeze([
+  ...EXISTING_VIOLATION_TYPES,
+  ...AI_PROCTORING_VIOLATION_TYPES,
+]);
+
+const VALID_AI_VIOLATION_SEVERITIES = new Set(['low', 'medium', 'high', 'critical']);
+
+function sanitizeViolationMessage(message) {
+  return String(message || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+}
+
+function normalizeViolationMetadata(meta, metadata) {
+  const value = metadata !== undefined ? metadata : meta;
+  if (value === undefined || value === null) return { ok: true, value: {} };
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    return { ok: false, error: 'Violation metadata must be an object.' };
+  }
+  return { ok: true, value };
+}
+
+function normalizeViolationSeverity(severity) {
+  if (severity === undefined || severity === null || severity === '') return { ok: true, value: undefined };
+  const normalized = String(severity).toLowerCase();
+  if (!VALID_AI_VIOLATION_SEVERITIES.has(normalized)) {
+    return { ok: false, error: 'Violation severity must be low, medium, high, or critical.' };
+  }
+  return { ok: true, value: normalized };
+}
+
+function normalizeViolationConfidence(confidence) {
+  if (confidence === undefined || confidence === null || confidence === '') return { ok: true, value: undefined };
+  const normalized = Number(confidence);
+  if (!Number.isFinite(normalized) || normalized < 0 || normalized > 1) {
+    return { ok: false, error: 'Violation confidence must be a number between 0 and 1.' };
+  }
+  return { ok: true, value: normalized };
+}
+
 function violationWeight(settings = {}, type = 'other') {
   const weights = settings.violationWeights || settings.violationWeight || {};
   const camelByType = {
@@ -3366,6 +3491,13 @@ function violationWeight(settings = {}, type = 'other') {
     duplicate_tab: 'duplicateTab',
     idle: 'idle',
     heartbeat_failure: 'heartbeat',
+    ai_no_face: 'aiNoFace',
+    ai_face_out_of_frame: 'aiFaceOutOfFrame',
+    ai_multiple_faces: 'aiMultipleFaces',
+    ai_multiple_persons: 'aiMultiplePersons',
+    ai_mobile_detected: 'aiMobileDetected',
+    ai_looking_away: 'aiLookingAway',
+    ai_camera_blocked: 'aiCameraBlocked',
     other: 'other',
   };
   const camel = camelByType[type] || type;
@@ -3377,10 +3509,18 @@ function violationWeight(settings = {}, type = 'other') {
   const weighted = Number(weights?.[type] ?? weights?.[camel]);
   if (configured !== null) return Math.max(0, configured);
   if (Number.isFinite(weighted)) return Math.max(0, weighted);
+  const aiDefault = getAiProctoringDefaultWeight(type);
+  if (aiDefault !== null) return aiDefault;
   return 1;
 }
 
+function isNonBlockingDetectionViolation(type) {
+  return type === 'fullscreen_exit' || isAiProctoringViolation(type) || NON_BLOCKING_CAMERA_VIOLATION_TYPES.includes(type);
+}
+
 function decideViolationAction({ settings = {}, type, meta = {}, submission }) {
+  if (isNonBlockingDetectionViolation(type)) return 'warn';
+
   const totalWarnings = (submission.tabSwitches || 0)
     + (submission.fullscreenExits || 0)
     + (submission.cameraFlags || 0)
@@ -3438,23 +3578,18 @@ export async function logStudentViolation(req, res) {
   try {
     const { id } = req.params;
     const studentId = req.user._id;
-    const { type, message, meta } = req.body || {};
-    const VALID = [
-      'tab_switch',
-      'fullscreen_exit',
-      'camera_loss',
-      'camera_no_face',
-      'multiple_faces',
-      'face_out_of_frame',
-      'copy_paste',
-      'context_menu',
-      'duplicate_tab',
-      'idle',
-      'heartbeat_failure',
-      'auto_submit',
-      'other',
-    ];
-    if (!type || !VALID.includes(type)) return res.status(400).json({ error: 'Valid violation type required.' });
+    const { type, message, meta, metadata, severity, confidence } = req.body || {};
+    if (!type || !VALID_VIOLATION_TYPES.includes(type)) return res.status(400).json({ error: 'Valid violation type required.' });
+
+    const normalizedMeta = normalizeViolationMetadata(meta, metadata);
+    if (!normalizedMeta.ok) return res.status(400).json({ error: normalizedMeta.error });
+
+    const normalizedSeverity = normalizeViolationSeverity(severity);
+    if (!normalizedSeverity.ok) return res.status(400).json({ error: normalizedSeverity.error });
+
+    const normalizedConfidence = normalizeViolationConfidence(confidence);
+    if (!normalizedConfidence.ok) return res.status(400).json({ error: normalizedConfidence.error });
+
     const assessment = await findAssessmentForStudentRoute(id, { lean: true, select: 'settings' });
     if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
     const submission = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId });
@@ -3462,15 +3597,30 @@ export async function logStudentViolation(req, res) {
     if (submission.status === 'submitted') return res.json({ ok: true });
     const settings = assessment.settings || {};
     const now = new Date();
-    const weight = violationWeight(settings, type);
+    const isAiViolation = isAiProctoringViolation(type);
+    const isDetectionOnlyViolation = isNonBlockingDetectionViolation(type);
+    const weight = isDetectionOnlyViolation ? 0 : violationWeight(settings, type);
+    const cleanMessage = sanitizeViolationMessage(message);
+    const logMeta = {
+      ...normalizedMeta.value,
+      weight,
+      ...(normalizedSeverity.value ? { severity: normalizedSeverity.value } : {}),
+      ...(normalizedConfidence.value !== undefined ? { confidence: normalizedConfidence.value } : {}),
+    };
+    if (isAiViolation) logMeta.source = logMeta.source || 'ai_proctoring';
+
     submission.violationLog = submission.violationLog || [];
-    submission.violationLog.push({ type, message: message || '', at: now, meta: { ...(meta || {}), weight } });
+    submission.violationLog.push({ type, message: cleanMessage, at: now, meta: logMeta });
     if (type === 'tab_switch') submission.tabSwitches = (submission.tabSwitches || 0) + 1;
     if (type === 'fullscreen_exit') submission.fullscreenExits = (submission.fullscreenExits || 0) + 1;
     if (['camera_loss', 'camera_no_face', 'multiple_faces', 'face_out_of_frame'].includes(type)) submission.cameraFlags = (submission.cameraFlags || 0) + 1;
     if (type === 'copy_paste' || type === 'context_menu') submission.copyPasteCount = (submission.copyPasteCount || 0) + 1;
+    if (isAiViolation) {
+      submission.aiProctoringSummary = applyAiProctoringViolationToSummary(submission.aiProctoringSummary || {}, type, now);
+      submission.markModified('aiProctoringSummary');
+    }
     submission.violationScore = (submission.violationScore || 0) + weight;
-    const action = decideViolationAction({ settings, type, meta: meta || {}, submission });
+    const action = decideViolationAction({ settings, type, meta: logMeta, submission });
     if (action === 'pause') {
       submission.pauseCount = (submission.pauseCount || 0) + 1;
       submission.lastPauseAt = now;
@@ -3496,6 +3646,8 @@ export async function logStudentViolation(req, res) {
       lastPauseAt: submission.lastPauseAt,
       action,
       autoSubmit: action === 'autosubmit',
+      riskLevel: submission.aiProctoringSummary?.riskLevel,
+      aiProctoringSummary: submission.aiProctoringSummary || undefined,
     });
   } catch (err) {
     console.error('Error logging violation:', err);
@@ -3704,7 +3856,7 @@ export async function getSubmissionViolations(req, res) {
     const { submissionId } = req.params;
     const submission = await AssessmentSubmission.findById(submissionId)
       .populate('studentId', 'name email studentId')
-      .select('violationLog violations monitoringEvents proctoringSnapshots tabSwitches fullscreenExits copyPasteCount cameraFlags violationScore pauseCount lastPauseAt status startedAt submittedAt studentId assessmentId securitySetup securityHeartbeat lastIp lastUserAgent')
+      .select('violationLog violations monitoringEvents proctoringSnapshots aiProctoringSummary tabSwitches fullscreenExits copyPasteCount cameraFlags violationScore pauseCount lastPauseAt status startedAt submittedAt studentId assessmentId securitySetup securityHeartbeat lastIp lastUserAgent')
       .lean();
     if (!submission) return res.status(404).json({ error: 'Submission not found.' });
     if (req.user && req.user.role === 'coordinator') {
@@ -3718,6 +3870,8 @@ export async function getSubmissionViolations(req, res) {
       .lean();
     const userAgentDetails = parseUserAgentDetails(submission.lastUserAgent || '');
     const timeline = buildMonitoringTimeline(submission);
+    const aiProctoringSummary = normalizeAiProctoringSummaryForReport(submission.aiProctoringSummary);
+    const aiViolationLog = timeline.filter((entry) => isAiProctoringViolation(entry?.type));
     return res.json({
       submission: {
         studentName: (submission.studentId && submission.studentId.name) || 'Unknown',
@@ -3738,7 +3892,10 @@ export async function getSubmissionViolations(req, res) {
         pauseCount: submission.pauseCount || 0,
         lastPauseAt: submission.lastPauseAt,
         totalViolations: (submission.tabSwitches || 0) + (submission.fullscreenExits || 0) + (submission.cameraFlags || 0) + (submission.copyPasteCount || 0),
+        aiProctoringSummary,
       },
+      aiProctoringSummary,
+      aiViolationLog,
       timeline,
       securitySetup: submission.securitySetup || {},
       securityHeartbeat: submission.securityHeartbeat || {},

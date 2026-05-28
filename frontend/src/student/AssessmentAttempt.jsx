@@ -25,6 +25,9 @@ import {
 import CodeEditor from './CodeEditor';
 import { RichTextPreview } from '../admin/compiler/CompilerContentPreview';
 import { getCodeValidationMessage, getStarterCodeForLanguage } from './problemUtils';
+import ProctoringFooter from '../features/assessment/student/components/ProctoringFooter';
+import { ProctoringManager } from '../features/assessment/proctoring';
+import { logAiProctoringViolation } from '../features/assessment/proctoring/services/proctoringApi';
 
 const formatTime = (ms) => {
   if (ms <= 0) return '00:00';
@@ -80,6 +83,16 @@ const SOFT_CAMERA_WARNING_TYPES = new Set([
   'camera_no_face',
 ]);
 
+const NON_BLOCKING_DETECTION_TYPES = new Set([
+  ...CAMERA_VIOLATION_TYPES,
+  'fullscreen_exit',
+]);
+
+const SOFT_FOOTER_WARNING_TYPES = new Set([
+  ...CAMERA_VIOLATION_TYPES,
+  'fullscreen_exit',
+]);
+
 const BLOCKED_INPUT_TYPES = new Set([
   'insertFromPaste',
   'insertFromDrop',
@@ -115,6 +128,15 @@ const getViolationWeight = (settings = {}, type = 'other') => {
   if (Number.isFinite(direct) && direct >= 0) return direct;
   if (Number.isFinite(mapped) && mapped >= 0) return mapped;
   return 1;
+};
+
+const formatSectionTypeLabel = (type = 'mixed') => {
+  const normalized = String(type || 'mixed').replace(/_/g, ' ').toLowerCase();
+  if (normalized === 'mcq') return 'MCQ';
+  if (normalized === 'short') return 'Short Answer';
+  if (normalized === 'one line') return 'One-line Answer';
+  if (normalized === 'coding') return 'Coding';
+  return normalized.replace(/\b\w/g, (char) => char.toUpperCase());
 };
 
 const createSeededRandom = (seedInput = '') => {
@@ -198,6 +220,7 @@ export default function AssessmentAttempt() {
   const [copyPasteCount, setCopyPasteCount] = useState(0);
   const [cameraFlags, setCameraFlags] = useState(0);
   const [screenshotWarnings, setScreenshotWarnings] = useState(0);
+  const [aiWarnings, setAiWarnings] = useState(0);
   const [violationScore, setViolationScore] = useState(0);
   const [pauseCount, setPauseCount] = useState(0);
   const [lastPauseAt, setLastPauseAt] = useState(null);
@@ -249,9 +272,11 @@ export default function AssessmentAttempt() {
   const [navTypeFilter, setNavTypeFilter] = useState('all');
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [audioLevel, setAudioLevel] = useState(0);
+  const [proctoringStatus, setProctoringStatus] = useState(null);
 
   const validationVideoRef = useRef(null);
   const monitorVideoRef = useRef(null);
+  const aiProctoringVideoRef = useRef(null);
   const monitorCanvasRef = useRef(null);
   const splitContainerRef = useRef(null);
   const problemPaneRef = useRef(null);
@@ -265,6 +290,7 @@ export default function AssessmentAttempt() {
   const fullscreenCountdownRef = useRef(null);
   const heartbeatFailureRef = useRef(0);
   const screenshotGraceUntilRef = useRef(0);
+  const lastScreenshotWarningAtRef = useRef(0);
   const thresholdNoticeRef = useRef({});
   const popupThrottleRef = useRef({});
   const securityStatusRef = useRef(CSE_STATUS_DEFAULTS);
@@ -276,6 +302,7 @@ export default function AssessmentAttempt() {
   const audioDataRef = useRef(null);
   const monitoringCooldownRef = useRef({});
   const cameraViolationStreakRef = useRef({ type: '', count: 0, at: 0 });
+  const proctoringManagerRef = useRef(null);
   const idleTimerRef = useRef(null);
   const lastActivityRef = useRef(Date.now());
   const tabInstanceIdRef = useRef(
@@ -310,6 +337,7 @@ export default function AssessmentAttempt() {
   }, [securitySettings, submission]);
   const fullscreenRequired = Boolean(securitySettings.enableFullscreen);
   const cameraRequired = Boolean(securitySettings.cameraMonitoring);
+  const aiProctoringEnabled = Boolean(securitySettings.aiProctoring?.enabled);
   const audioMonitoringEnabled = Boolean(securitySettings.audioMonitoring);
   const tabGuardEnabled = Boolean(securitySettings.tabSwitchDetection);
   const copyBlockEnabled = Boolean(securitySettings.disableCopyPaste);
@@ -329,7 +357,7 @@ export default function AssessmentAttempt() {
   const sectionGraceSec = Number(securitySettings.sectionGraceSec || 10);
   const duplicateTabCount = detectedTabs.filter((tab) => !tab.current).length;
   const totalViolations = tabSwitches + fullscreenExits + cameraFlags + copyPasteCount;
-  const totalWarnings = totalViolations + screenshotWarnings;
+  const totalWarnings = totalViolations + screenshotWarnings + aiWarnings;
   const forcePauseActive = isPaused && phase === 'validation' && !isSubmitted;
   const securityHeartbeat = useMemo(() => ({
     fullscreen: !fullscreenRequired || Boolean(document.fullscreenElement),
@@ -347,9 +375,16 @@ export default function AssessmentAttempt() {
     if (preventMultipleTabs) rules.push({ type: 'bullet', text: 'Only one assessment tab may remain open.' });
     if (securitySettings.randomShuffle) rules.push({ type: 'bullet', text: 'Questions may appear in a randomized order.' });
     if (securitySettings.autoSubmitOnEnd) rules.push({ type: 'bullet', text: 'The test auto-submits when the timer ends.' });
-    if (securitySettings.restrictNavigation) rules.push({ type: 'bullet', text: 'Backward navigation may be restricted during this assessment.' });
+    if (securitySettings.restrictNavigation) {
+      rules.push({
+        type: 'bullet',
+        text: allowSectionReview
+          ? 'You may review questions only inside your current section. Once you move to another section, earlier sections cannot be reopened.'
+          : 'Backward navigation is locked. Once you move forward, previous questions cannot be reopened.',
+      });
+    }
     return rules;
-  }, [fullscreenRequired, tabGuardEnabled, tabSwitchLimit, cameraRequired, copyBlockEnabled, preventMultipleTabs, securitySettings]);
+  }, [fullscreenRequired, tabGuardEnabled, tabSwitchLimit, cameraRequired, copyBlockEnabled, preventMultipleTabs, securitySettings, allowSectionReview]);
   const setupSteps = useMemo(() => {
     const steps = [{ id: 1, key: 'environment', title: 'Clean Environment Check', icon: <Monitor className="h-4 w-4" /> }];
     if (cameraRequired) steps.push({ id: steps.length + 1, key: 'camera', title: 'Camera Verification', icon: <Video className="h-4 w-4" /> });
@@ -487,6 +522,22 @@ export default function AssessmentAttempt() {
     });
   }, [assessment]);
 
+  const sectionSummaries = useMemo(() => (
+    (assessment?.sections || []).map((sec, index) => {
+      const count = sec?.questions?.length || 0;
+      const start = (sectionStarts[index] || 0) + 1;
+      const end = count > 0 ? start + count - 1 : start;
+      return {
+        index,
+        count,
+        start,
+        end,
+        label: sec?.sectionName || `Section ${index + 1}`,
+        typeLabel: formatSectionTypeLabel(sec?.type),
+      };
+    })
+  ), [assessment?.sections, sectionStarts]);
+
   const typeQuestionNumbers = useMemo(() => {
     let mcqCount = 0;
     let codingCount = 0;
@@ -512,7 +563,6 @@ export default function AssessmentAttempt() {
   const currentQuestionNumber = currentFlatIndex >= 0 ? currentFlatIndex + 1 : 1;
   const hasPrevQuestion = currentFlatIndex > 0;
   const hasNextQuestion = currentFlatIndex >= 0 && currentFlatIndex < totalQuestions - 1;
-  const hasAllowedPrevQuestion = hasPrevQuestion && (!restrictNavigation || allowSectionReview);
 
   const questionStatus = useCallback((secIdx, qIdx) => {
     const key = `${secIdx}-${qIdx}`;
@@ -561,6 +611,40 @@ export default function AssessmentAttempt() {
   useEffect(() => {
     pauseCountRef.current = pauseCount;
   }, [pauseCount]);
+
+  const stopAiProctoring = useCallback(() => {
+    if (proctoringManagerRef.current) {
+      proctoringManagerRef.current.stop();
+      proctoringManagerRef.current = null;
+    }
+    setProctoringStatus(null);
+  }, []);
+
+  const handleAiViolationConfirmed = useCallback(async (event) => {
+    if (!assessment?._id || !event?.type) return;
+
+    const limitExceeded = Boolean(event.metadata?.limitExceeded);
+    setSecurityNotice(event.message || 'Camera attention needed. Please adjust and continue.');
+
+    if (limitExceeded) {
+      setAiWarnings((prev) => prev + 1);
+      try {
+        await logAiProctoringViolation({
+          assessmentId: assessment._id,
+          submissionId: submission?._id,
+          violation: event,
+        });
+      } catch (err) {
+        console.warn('AI proctoring violation logging failed; assessment will continue.', err);
+      }
+    }
+  }, [assessment?._id, submission?._id]);
+
+  const handleAiProctoringError = useCallback((error) => {
+    // AI proctoring should never interrupt the existing assessment flow in this step.
+    console.warn('AI Proctoring error', error);
+  }, []);
+
   const clampLeftWidth = (value) => {
     if (!splitContainerRef.current) return value;
     const containerWidth = splitContainerRef.current.getBoundingClientRect().width;
@@ -612,6 +696,7 @@ export default function AssessmentAttempt() {
         securityHeartbeat,
         violations,
       });
+      stopAiProctoring();
       toast.success(auto ? 'Time is up. Assessment auto-submitted.' : 'Assessment submitted successfully');
       navigate('/student/assessments');
     } catch (err) {
@@ -619,9 +704,17 @@ export default function AssessmentAttempt() {
     } finally {
       setSaving(false);
     }
-  }, [assessment, answersArray, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violationScore, pauseCount, lastPauseAt, securityHeartbeat, violations, toast, navigate]);
+  }, [assessment, answersArray, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violationScore, pauseCount, lastPauseAt, securityHeartbeat, violations, stopAiProctoring, toast, navigate]);
 
   const triggerForcePause = useCallback((type, message, serverState = {}) => {
+    if (SOFT_FOOTER_WARNING_TYPES.has(type)) {
+      setSecurityNotice(message || 'Security attention needed. Please correct it and continue.');
+      setSecurityAction('warn');
+      setIsPaused(false);
+      if (phase === 'violation') setPhase('active');
+      return;
+    }
+
     const nowIso = serverState.lastPauseAt || new Date().toISOString();
     setLastPauseAt(nowIso);
     setPauseStartedAt((prev) => prev || Date.now());
@@ -631,7 +724,7 @@ export default function AssessmentAttempt() {
     setIsPaused(true);
     resetSecuritySetupProgress();
     setPhase('violation');
-  }, [resetSecuritySetupProgress]);
+  }, [phase, resetSecuritySetupProgress]);
 
   const showSecurityPopup = useCallback((type, message, meta = {}, result = {}) => {
     const now = Date.now();
@@ -686,7 +779,9 @@ export default function AssessmentAttempt() {
   }, [tabSwitchAction, tabSwitches, tabSwitchLimit]);
 
   const showScreenshotBlockedPopup = useCallback(() => {
-    screenshotGraceUntilRef.current = Date.now() + 8000;
+    const now = Date.now();
+    lastScreenshotWarningAtRef.current = now;
+    screenshotGraceUntilRef.current = now + 20000;
     const warningCount = totalWarnings + 1;
     setScreenshotWarnings((prev) => prev + 1);
     setSecurityPopup({
@@ -706,7 +801,8 @@ export default function AssessmentAttempt() {
     if (now - (violationThrottleRef.current[throttleKey] || 0) < throttleMs) return null;
     violationThrottleRef.current[throttleKey] = now;
 
-    const weight = getViolationWeight(securitySettings, type);
+    const detectionOnly = NON_BLOCKING_DETECTION_TYPES.has(type);
+    const weight = detectionOnly ? 0 : getViolationWeight(securitySettings, type);
     const entry = {
       type,
       message,
@@ -734,22 +830,21 @@ export default function AssessmentAttempt() {
       if (typeof result?.fullscreenExits === 'number') setFullscreenExits(result.fullscreenExits);
       if (typeof result?.cameraFlags === 'number') setCameraFlags(result.cameraFlags);
       if (typeof result?.copyPasteCount === 'number') setCopyPasteCount(result.copyPasteCount);
-      if (typeof result?.violationScore === 'number') setViolationScore(result.violationScore);
-      if (typeof result?.pauseCount === 'number') setPauseCount(result.pauseCount);
-      if (result?.lastPauseAt) setLastPauseAt(result.lastPauseAt);
-      const action = normalizeAction(result?.action, result?.autoSubmit ? 'autosubmit' : 'warn');
+      if (typeof result?.violationScore === 'number' && !detectionOnly) setViolationScore(result.violationScore);
+      if (typeof result?.pauseCount === 'number' && !detectionOnly) setPauseCount(result.pauseCount);
+      if (result?.lastPauseAt && !detectionOnly) setLastPauseAt(result.lastPauseAt);
+      const action = detectionOnly ? 'warn' : normalizeAction(result?.action, result?.autoSubmit ? 'autosubmit' : 'warn');
       setSecurityAction(action);
       if (action === 'autosubmit') {
         toast.error('Violation limit reached. Assessment auto-submitted.');
         await handleSubmit(true);
         return result;
       }
-      if (action === 'pause' && !CAMERA_VIOLATION_TYPES.has(type)) {
+      if (action === 'pause' && !SOFT_FOOTER_WARNING_TYPES.has(type)) {
         triggerForcePause(type, message, result);
         return result;
       }
-      if (CAMERA_VIOLATION_TYPES.has(type)) {
-        // Camera issues: show soft notice only, never interrupt exam
+      if (SOFT_FOOTER_WARNING_TYPES.has(type)) {
         setSecurityNotice(message);
       } else {
         showSecurityPopup(type, message, entry.meta, result);
@@ -757,7 +852,7 @@ export default function AssessmentAttempt() {
       }
       return result;
     } catch {
-      if (CAMERA_VIOLATION_TYPES.has(type)) {
+      if (SOFT_FOOTER_WARNING_TYPES.has(type)) {
         setSecurityNotice(message);
       } else {
         showSecurityPopup(type, message, entry.meta);
@@ -1215,10 +1310,7 @@ export default function AssessmentAttempt() {
       if (!document.fullscreenElement) {
         setSecurityStatus((prev) => ({ ...prev, fullscreen: false }));
         setFullscreenRecovery({ active: true, remaining: fullscreenTimeoutSec || 0 });
-        void recordViolation('fullscreen_exit', 'Fullscreen mode is required during the assessment.', {
-          timeoutSec: fullscreenTimeoutSec || null,
-          source: 'fullscreenchange',
-        });
+        setSecurityNotice('Fullscreen is off. Re-enter fullscreen to continue without a warning.');
         if (fullscreenTimeoutSec > 0) {
           if (fullscreenExitTimerRef.current) clearTimeout(fullscreenExitTimerRef.current);
           if (fullscreenCountdownRef.current) clearInterval(fullscreenCountdownRef.current);
@@ -1318,6 +1410,7 @@ export default function AssessmentAttempt() {
 
   useEffect(() => {
     return () => {
+      stopAiProctoring();
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
@@ -1327,7 +1420,48 @@ export default function AssessmentAttempt() {
         audioContextRef.current = null;
       }
     };
-  }, []);
+  }, [stopAiProctoring]);
+
+  useEffect(() => {
+    if (!secureActive || !aiProctoringEnabled || !assessment?._id || !submission?._id) {
+      stopAiProctoring();
+      return undefined;
+    }
+
+    if (proctoringManagerRef.current) return undefined;
+
+    let cancelled = false;
+    const manager = new ProctoringManager({
+      assessmentId: assessment._id,
+      submissionId: submission._id,
+      settings: securitySettings.aiProctoring,
+      videoElement: aiProctoringVideoRef.current,
+      onStatusChange: setProctoringStatus,
+      onViolationConfirmed: handleAiViolationConfirmed,
+      onError: handleAiProctoringError,
+    });
+
+    proctoringManagerRef.current = manager;
+    setProctoringStatus(manager.getStatus());
+
+    void manager.start().then(() => {
+      if (cancelled) manager.stop();
+    });
+
+    return () => {
+      cancelled = true;
+      stopAiProctoring();
+    };
+  }, [
+    secureActive,
+    aiProctoringEnabled,
+    assessment?._id,
+    submission?._id,
+    securitySettings.aiProctoring,
+    stopAiProctoring,
+    handleAiViolationConfirmed,
+    handleAiProctoringError,
+  ]);
 
   useEffect(() => {
     if (!secureActive || !cameraRequired) {
@@ -1538,9 +1672,11 @@ export default function AssessmentAttempt() {
     if (!secureActive) return undefined;
     const sendHeartbeat = async () => {
       const screenshotGraceActive = Date.now() < screenshotGraceUntilRef.current;
+      const screenshotWarningRecent = Date.now() - lastScreenshotWarningAtRef.current < 30000;
+      const fullscreenRecoveryActive = Boolean(fullscreenRecovery.active);
       const status = {
-        fullscreen: screenshotGraceActive || !fullscreenRequired || Boolean(document.fullscreenElement),
-        tabActive: screenshotGraceActive || !tabGuardEnabled || (document.hasFocus() && !document.hidden),
+        fullscreen: screenshotGraceActive || screenshotWarningRecent || fullscreenRecoveryActive || !fullscreenRequired || Boolean(document.fullscreenElement),
+        tabActive: screenshotGraceActive || screenshotWarningRecent || !tabGuardEnabled || (document.hasFocus() && !document.hidden),
         cameraActive: !cameraRequired || Boolean(streamRef.current),
         idle: Boolean(securityStatusRef.current.idle),
         duplicateTab: Boolean(securityStatusRef.current.duplicateTab),
@@ -1556,6 +1692,10 @@ export default function AssessmentAttempt() {
         if (typeof result?.violationScore === 'number') setViolationScore(result.violationScore);
         if (typeof result?.pauseCount === 'number') setPauseCount(result.pauseCount);
         if (result?.lastPauseAt) setLastPauseAt(result.lastPauseAt);
+        if (result?.inconsistent && screenshotWarningRecent) {
+          setSecurityNotice('Screenshot attempt recorded as a warning. Continue the assessment.');
+          return;
+        }
         if (result?.inconsistent && !screenshotGraceActive) {
           await recordViolation('heartbeat_failure', 'Security heartbeat reported an inconsistent session state.', {
             source: 'heartbeat_inconsistent',
@@ -1564,7 +1704,10 @@ export default function AssessmentAttempt() {
           return;
         }
       } catch {
-        if (screenshotGraceActive) return;
+        if (screenshotGraceActive || screenshotWarningRecent) {
+          setSecurityNotice('Screenshot attempt recorded as a warning. Continue the assessment.');
+          return;
+        }
         if (Date.now() - heartbeatFailureRef.current > 12000) {
           heartbeatFailureRef.current = Date.now();
           void recordViolation('heartbeat_failure', 'Security heartbeat failed. Please check your connection.', {
@@ -1576,7 +1719,7 @@ export default function AssessmentAttempt() {
     void sendHeartbeat();
     const interval = setInterval(sendHeartbeat, 5000);
     return () => clearInterval(interval);
-  }, [secureActive, assessment?._id, fullscreenRequired, tabGuardEnabled, cameraRequired, cameraFlags, handleSubmit, recordViolation, triggerForcePause]);
+  }, [secureActive, assessment?._id, fullscreenRequired, fullscreenRecovery.active, tabGuardEnabled, cameraRequired, cameraFlags, handleSubmit, recordViolation, triggerForcePause]);
 
   const updateAnswer = (sectionIndex, questionIndex, value) => {
     setAnswersMap((prev) => ({
@@ -2025,18 +2168,38 @@ export default function AssessmentAttempt() {
     }));
   };
 
-  const canNavigateToQuestion = (sectionIndex, questionIndex) => {
-    if (isSectionLocked(sectionIndex)) return false;
-    if (!restrictNavigation) return true;
+  const getNavigationRestrictionMessage = (sectionIndex, questionIndex) => {
+    if (isSectionLocked(sectionIndex)) {
+      const targetSummary = sectionSummaries[sectionIndex];
+      return `${targetSummary?.label || `Section ${sectionIndex + 1}`} is locked by the section timer. You can continue only in unlocked sections.`;
+    }
+    if (!restrictNavigation) return '';
     const targetFlatIndex = flatQuestions.findIndex((item) => item.sectionIndex === sectionIndex && item.questionIndex === questionIndex);
-    if (targetFlatIndex === -1) return false;
-    if (allowSectionReview && sectionIndex === activeSection) return true;
-    return targetFlatIndex >= currentFlatIndex;
+    if (targetFlatIndex === -1) return 'This question is not available.';
+    if (targetFlatIndex >= currentFlatIndex) return '';
+    const targetNumber = targetFlatIndex + 1;
+    const currentSummary = sectionSummaries[activeSection];
+    const targetSummary = sectionSummaries[sectionIndex];
+    if (allowSectionReview && sectionIndex === activeSection) return '';
+    if (allowSectionReview) {
+      return `You are now in ${currentSummary?.label || `Section ${activeSection + 1}`}. This assessment allows review only inside the current section, so Question ${targetNumber} in ${targetSummary?.label || `Section ${sectionIndex + 1}`} cannot be reopened.`;
+    }
+    return `Backward navigation is locked for this assessment. You have already moved past Question ${targetNumber}, so it cannot be reopened.`;
+  };
+
+  const canNavigateToQuestion = (sectionIndex, questionIndex) => {
+    return !getNavigationRestrictionMessage(sectionIndex, questionIndex);
   };
 
   const navigateToQuestion = (sectionIndex, questionIndex) => {
-    if (!canNavigateToQuestion(sectionIndex, questionIndex)) {
-      toast.info('Backward navigation is restricted for this assessment.');
+    const restrictionMessage = getNavigationRestrictionMessage(sectionIndex, questionIndex);
+    if (restrictionMessage) {
+      setSecurityPopup({
+        open: true,
+        title: 'Navigation locked',
+        message: restrictionMessage,
+        tone: 'warning',
+      });
       return false;
     }
     setActiveSection(sectionIndex);
@@ -2119,6 +2282,17 @@ export default function AssessmentAttempt() {
       toast.info('The previous section has been locked based on the assessment timing settings.');
     }
   }, [sectionWiseLock, assessment, activeSection, isSectionLocked, toast]);
+
+  const watermarkColumns = useMemo(() => {
+    const spacing = Math.max(120, watermarkConfig.spacing);
+    return Array.from({ length: 12 }).map((_, index) => ({
+      id: `wm-${index}`,
+      left: `${(index % 4) * 28 + 6}%`,
+      top: `${Math.floor(index / 4) * 30 + 10}%`,
+      text: watermarkConfig.text,
+      spacing,
+    }));
+  }, [watermarkConfig]);
 
   if (loading) {
     return <div className="min-h-screen bg-white dark:bg-gray-900 pt-20 text-center text-slate-500">Loading assessment...</div>;
@@ -2279,6 +2453,47 @@ export default function AssessmentAttempt() {
                 ))}
               </div>
 
+              {/* Section map */}
+              <div className="px-4 pb-2 shrink-0">
+                <div className="rounded-2xl border border-cyan-100 bg-cyan-50/70 px-3 py-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-cyan-700">Sections</span>
+                    {restrictNavigation && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-bold text-amber-700">
+                        Back locked
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-2 space-y-1.5">
+                    {sectionSummaries.map((summary) => {
+                      const isCurrentSection = summary.index === activeSection;
+                      return (
+                        <div
+                          key={`section-map-${summary.index}`}
+                          className={`flex items-center justify-between gap-2 rounded-xl border px-2.5 py-2 text-[11px] font-semibold ${
+                            isCurrentSection
+                              ? 'border-cyan-300 bg-white text-cyan-900 shadow-sm'
+                              : 'border-cyan-100 bg-white/70 text-slate-600'
+                          }`}
+                        >
+                          <span className="min-w-0 truncate">{summary.label}</span>
+                          <span className="shrink-0 text-right text-[10px] font-black uppercase tracking-[0.08em]">
+                            Q{summary.start}-Q{summary.end} {summary.typeLabel}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {restrictNavigation && (
+                    <p className="mt-2 text-[10px] font-medium leading-4 text-slate-600">
+                      {allowSectionReview
+                        ? 'You can review only the section you are currently in. Previous sections stay locked.'
+                        : 'After moving forward, previous questions stay locked.'}
+                    </p>
+                  )}
+                </div>
+              </div>
+
               {/* Question grid */}
               <div className="px-4 pt-2 pb-4 grid grid-cols-5 gap-3 shrink-0">
                 {navItems.map((item) => {
@@ -2291,15 +2506,16 @@ export default function AssessmentAttempt() {
                   else if (status === 'answered') cls = 'border border-emerald-300/80 bg-emerald-50 text-emerald-900 hover:bg-emerald-100 shadow-[0_10px_24px_-22px_rgba(5,150,105,0.9)] dark:bg-emerald-900/30 dark:border-emerald-700 dark:text-emerald-200';
                   else if (status === 'review') cls = 'border border-amber-300/90 bg-amber-50 text-amber-800 hover:bg-amber-100 shadow-[0_10px_24px_-22px_rgba(245,158,11,0.85)] dark:bg-amber-900/30 dark:border-amber-700 dark:text-amber-200';
                   else cls = 'border border-rose-300/80 bg-white text-rose-700 hover:border-rose-400 hover:bg-rose-50 shadow-[0_10px_24px_-24px_rgba(225,29,72,0.55)] dark:border-rose-800 dark:bg-rose-950/20 dark:text-rose-200';
+                  if (!canNavigate && !isActive) cls += ' cursor-not-allowed opacity-70 grayscale-[0.15]';
                   return (
                     <button
                       key={`nav-${item.sectionIndex}-${item.questionIndex}`}
                       type="button"
                       onClick={() => navigateToQuestion(item.sectionIndex, item.questionIndex)}
-                      disabled={!canNavigate}
-                      className={`h-12 w-full rounded-xl text-[15px] font-black transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-40 ${cls}`}
+                      aria-disabled={!canNavigate}
+                      className={`h-12 w-full rounded-xl text-[15px] font-black transition-all duration-150 ${cls}`}
                       aria-label={`Go to question ${number}`}
-                      title={`Q${number} - ${status}`}
+                      title={canNavigate ? `Q${number} - ${status}` : 'Click to see why this question is locked'}
                     >
                       {number}
                     </button>
@@ -2392,16 +2608,23 @@ export default function AssessmentAttempt() {
       enabled: idleDetection,
     },
   ];
-  const watermarkColumns = useMemo(() => {
-    const spacing = Math.max(120, watermarkConfig.spacing);
-    return Array.from({ length: 12 }).map((_, index) => ({
-      id: `wm-${index}`,
-      left: `${(index % 4) * 28 + 6}%`,
-      top: `${Math.floor(index / 4) * 30 + 10}%`,
-      text: watermarkConfig.text,
-      spacing,
-    }));
-  }, [watermarkConfig]);
+  const aiFooterIssueStates = {
+    camera: ['blocked', 'error'],
+    face: ['missing', 'out_of_frame', 'multiple'],
+    eye: ['looking_away'],
+    mobile: ['detected'],
+    person: ['multiple', 'missing'],
+  };
+  const hasAiFooterIssue = Boolean(
+    aiProctoringEnabled
+      && proctoringStatus
+      && (proctoringStatus.error || Object.entries(aiFooterIssueStates).some(([key, states]) => states.includes(proctoringStatus[key]))),
+  );
+  const footerIssueItems = securityStatusItems.filter((item) => item.enabled && !item.ok);
+  const footerHasIssue = Boolean(securityNotice || hasAiFooterIssue || footerIssueItems.length || (cameraStatusLine && !cameraStatusLine.ok));
+  const footerNoticeText = securityNotice
+    || (cameraStatusLine && !cameraStatusLine.ok ? cameraStatusLine.text : '')
+    || (hasAiFooterIssue ? 'AI proctoring needs attention. Please adjust and continue.' : '');
 
   return (
     <div className="relative min-h-screen bg-[linear-gradient(180deg,#f8fbff_0%,#f8fafc_36%,#eef2ff_100%)] text-slate-900 dark:bg-gray-900 lg:h-screen lg:overflow-hidden">
@@ -2447,8 +2670,8 @@ export default function AssessmentAttempt() {
             <button
               type="button"
               onClick={goToPrevQuestion}
-              disabled={!hasAllowedPrevQuestion}
-              title="Previous question"
+              disabled={!hasPrevQuestion}
+              title={hasPrevQuestion ? 'Previous question' : 'No previous question'}
               className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50 hover:border-slate-300 disabled:opacity-40 transition-all shadow-sm"
             >
               <ChevronLeft className="h-3.5 w-3.5" />
@@ -2585,8 +2808,8 @@ export default function AssessmentAttempt() {
                 <button
                   type="button"
                   onClick={goToPrevQuestion}
-                  disabled={!hasAllowedPrevQuestion}
-                  title="Go to previous question"
+                  disabled={!hasPrevQuestion}
+                  title={hasPrevQuestion ? 'Go to previous question' : 'No previous question'}
                   className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Prev
@@ -2738,8 +2961,8 @@ export default function AssessmentAttempt() {
                 <button
                   type="button"
                   onClick={goToPrevQuestion}
-                  disabled={!hasAllowedPrevQuestion}
-                  title="Go to previous question"
+                  disabled={!hasPrevQuestion}
+                  title={hasPrevQuestion ? 'Go to previous question' : 'No previous question'}
                   className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 transition-all"
                 >
                   <ChevronLeft className="h-3.5 w-3.5" /> Prev
@@ -3257,10 +3480,11 @@ export default function AssessmentAttempt() {
 
                   <div className="mt-3 space-y-2.5">
                     {(assessment.sections || []).map((sec, idx) => {
+                      const summary = sectionSummaries[idx];
                       const questionCount = sec?.questions?.length || 0;
                       const marksEach = Number(sec?.marksPerQuestion || sec?.questions?.[0]?.points || sec?.questions?.[0]?.marks || 0) || 0;
                       const totalSectionMarks = Number(sec?.totalMarks || 0) || (questionCount * marksEach);
-                      const sectionType = String(sec?.type || 'mixed').replace(/_/g, ' ');
+                      const sectionType = summary?.typeLabel || formatSectionTypeLabel(sec?.type);
                       const sectionLabel = sec?.sectionName || `Section ${idx + 1}`;
 
                       return (
@@ -3273,7 +3497,7 @@ export default function AssessmentAttempt() {
                                 </div>
                                 <div>
                                   <div className="text-[13px] font-semibold text-slate-900 dark:text-white">{sectionLabel}</div>
-                                  <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">{sectionType}</div>
+                                  <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Q{summary?.start || 1}-Q{summary?.end || questionCount} - {sectionType}</div>
                                 </div>
                               </div>
                             </div>
@@ -3293,7 +3517,7 @@ export default function AssessmentAttempt() {
                             </div>
                             <div className="rounded-xl bg-slate-50 px-3 py-2">
                               <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Section Type</div>
-                              <div className="mt-1 text-[13px] font-semibold capitalize text-slate-800">{sectionType}</div>
+                              <div className="mt-1 text-[13px] font-semibold text-slate-800">{sectionType}</div>
                             </div>
                           </div>
                         </div>
@@ -3345,7 +3569,7 @@ export default function AssessmentAttempt() {
                     </div>
                     <ul className="mt-3 space-y-2 text-[12.5px] font-medium text-slate-700 dark:text-gray-300">
                       <li className="rounded-xl bg-slate-50 px-3 py-2">Your progress is auto-saved continuously</li>
-                      <li className="rounded-xl bg-slate-50 px-3 py-2">Security violations may pause or interrupt the attempt</li>
+                      <li className="rounded-xl bg-slate-50 px-3 py-2">Camera and AI proctoring status appears in the footer during the test</li>
                       <li className="rounded-xl bg-slate-50 px-3 py-2">Read every section carefully before the timer begins</li>
                     </ul>
                   </div>
@@ -3432,18 +3656,14 @@ export default function AssessmentAttempt() {
               <AlertTriangle className="h-5 w-5" />
               <span className="text-sm font-semibold">Security Violation Detected</span>
             </div>
-            <h2 className="mt-3 text-xl font-semibold text-slate-900 dark:text-white">Assessment paused for re-validation</h2>
+            <h2 className="mt-3 text-xl font-semibold text-slate-900 dark:text-white">Assessment paused</h2>
             <p className="mt-2 text-sm text-slate-600 dark:text-gray-300">
               {violationMessage || 'Security checks must be completed again before you can resume.'}
             </p>
-            <div className="mt-4 grid gap-3 text-xs text-slate-600 dark:text-gray-300 sm:grid-cols-3">
+            <div className="mt-4 grid gap-3 text-xs text-slate-600 dark:text-gray-300 sm:grid-cols-2">
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800">
-                <div className="text-slate-400">Violation score</div>
-                <div className="text-lg font-semibold text-slate-900 dark:text-white">{violationScore}</div>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800">
-                <div className="text-slate-400">Pause count</div>
-                <div className="text-lg font-semibold text-slate-900 dark:text-white">{pauseCount}</div>
+                <div className="text-slate-400">Warning count</div>
+                <div className="text-lg font-semibold text-slate-900 dark:text-white">{totalWarnings}</div>
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800">
                 <div className="text-slate-400">Action</div>
@@ -3469,48 +3689,50 @@ export default function AssessmentAttempt() {
 
       {secureActive && (
         <>
-          <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-700/60 bg-slate-950/96 shadow-2xl backdrop-blur-md">
-            {cameraStatusLine && !cameraStatusLine.ok && (
-              <div className="border-b border-rose-300/20 bg-rose-600/95 text-white">
-                <div className="mx-auto flex max-w-7xl items-center gap-2 px-4 py-2.5 text-[11px] font-semibold">
-                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
-                  <span className="truncate">{cameraStatusLine.text}</span>
-                  <span className="ml-auto text-[10px] opacity-80">Camera warning only</span>
-                </div>
-              </div>
-            )}
+          <div className={`fixed bottom-0 left-0 right-0 z-40 border-t shadow-2xl transition-colors ${
+            footerHasIssue
+              ? 'border-rose-300 bg-rose-700'
+              : 'border-emerald-300 bg-emerald-700'
+          }`}>
             <div className="px-4 py-1.5">
               <div className="mx-auto flex max-w-full flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {securityStatusItems.filter(i => i.enabled).map((item) => (
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                  <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                    footerHasIssue
+                      ? 'border border-white/45 bg-white text-rose-700 shadow-sm'
+                      : 'border border-white/45 bg-white text-emerald-700 shadow-sm'
+                  }`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${footerHasIssue ? 'bg-rose-600 animate-pulse' : 'bg-emerald-600'}`} />
+                    {footerHasIssue ? 'Attention needed' : 'Secure'}
+                  </span>
+                  {footerIssueItems.map((item) => (
                     <span
                       key={item.key}
-                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold ${
-                        item.ok
-                          ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                          : 'bg-rose-500/15 text-rose-400 border border-rose-500/30 animate-pulse'
-                      }`}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-white/35 bg-rose-950/30 px-2.5 py-1 text-[10px] font-bold text-white animate-pulse"
                     >
-                      <span className={`h-1.5 w-1.5 rounded-full ${item.ok ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                      <span className="h-1.5 w-1.5 rounded-full bg-white" />
                       {item.label}
                     </span>
                   ))}
-                  {cameraStatusLine && cameraStatusLine.ok && (
-                    <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />Camera OK
+                  <ProctoringFooter
+                    enabled={aiProctoringEnabled}
+                    status={proctoringStatus}
+                    compact
+                  />
+                </div>
+                <div className="flex min-w-0 items-center gap-2">
+                  {footerNoticeText && (
+                    <span className="max-w-[36rem] truncate text-[10px] font-semibold text-white">{footerNoticeText}</span>
+                  )}
+                  {totalWarnings > 0 && (
+                    <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${
+                      footerHasIssue
+                        ? 'border-white/45 bg-white text-rose-700'
+                        : 'border-white/35 bg-emerald-950/25 text-white'
+                    }`}>
+                      Warning {totalWarnings}
                     </span>
                   )}
-                </div>
-                <div className="flex items-center gap-2">
-                  {securityNotice && (
-                    <span className="text-[10px] font-semibold text-rose-300 max-w-[32rem] truncate">{securityNotice}</span>
-                  )}
-                  <span className="rounded-full bg-slate-800 border border-slate-600 px-2.5 py-1 text-[10px] font-bold text-slate-300">
-                    Warning {totalWarnings}
-                  </span>
-                  <span className="rounded-full bg-slate-800 border border-slate-600 px-2.5 py-1 text-[10px] font-bold text-slate-300">
-                    Score {violationScore}
-                  </span>
                 </div>
               </div>
             </div>
@@ -3520,6 +3742,9 @@ export default function AssessmentAttempt() {
               <video ref={monitorVideoRef} className="fixed -left-[9999px] h-1 w-1 opacity-0" muted playsInline autoPlay />
               <canvas ref={monitorCanvasRef} className="fixed -left-[9999px] h-1 w-1 opacity-0" />
             </>
+          )}
+          {aiProctoringEnabled && (
+            <video ref={aiProctoringVideoRef} className="fixed -left-[9999px] h-1 w-1 opacity-0" muted playsInline autoPlay />
           )}
         </>
       )}

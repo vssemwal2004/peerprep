@@ -60,6 +60,23 @@ const sectionSchema = new mongoose.Schema({
   questions: { type: [questionSchema], default: [] },
 }, { _id: false });
 
+const aiProctoringSettingsSchema = new mongoose.Schema({
+  enabled: { type: Boolean, default: false },
+  detectMobile: { type: Boolean, default: true },
+  detectMultiplePersons: { type: Boolean, default: true },
+  detectNoFace: { type: Boolean, default: true },
+  detectFaceOutOfFrame: { type: Boolean, default: true },
+  detectLookingAway: { type: Boolean, default: true },
+  detectionIntervalMs: { type: Number, default: 1500, min: 1000, max: 5000 },
+  ignoreLimit: { type: Number, default: 5, min: 0, max: 50 },
+  violationCooldownSec: { type: Number, default: 20, min: 5, max: 120 },
+  criticalAutoFlag: { type: Boolean, default: true },
+}, { _id: false });
+
+const assessmentSettingsSchema = new mongoose.Schema({
+  aiProctoring: { type: aiProctoringSettingsSchema, default: () => ({}) },
+}, { _id: false, strict: false });
+
 const assessmentSchema = new mongoose.Schema({
   title: { type: String },
   description: { type: String, default: '' },
@@ -82,7 +99,7 @@ const assessmentSchema = new mongoose.Schema({
   testType: { type: String, trim: true },
   isVisible: { type: Boolean, default: true },
   customInstructions: { type: [String], default: [] },
-  settings: { type: mongoose.Schema.Types.Mixed, default: {} },
+  settings: { type: assessmentSettingsSchema, default: () => ({}) },
   passwordEnabled: { type: Boolean, default: false },
   passwordHash: { type: String },
   sections: { type: [sectionSchema], default: [] },

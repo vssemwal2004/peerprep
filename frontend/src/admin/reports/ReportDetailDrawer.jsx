@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { X, Layers, LayoutList, Target, Timer, Zap, ShieldAlert, Clock, BookOpen, ChevronDown, ChevronUp } from 'lucide-react';
 import { formatDateTime, formatDuration } from './ReportComponents';
 import { DonutChart, HorizontalProgress } from './ReportCharts';
+import AIProctoringReportPanel from '../../features/assessment/admin/components/AIProctoringReportPanel';
 
 function SectionBreakdown({ sections }) {
   const [open, setOpen] = useState({});
@@ -225,7 +226,13 @@ export default function ReportDetailDrawer({ student, loading, data, onClose, op
               )}
 
               {tab === 'security' && (
-                <SecurityInfo info={data.securityInfo} />
+                <div className="space-y-4">
+                  <SecurityInfo info={data.securityInfo} />
+                  <AIProctoringReportPanel
+                    aiProctoringSummary={data.aiProctoringSummary}
+                    violations={data.aiViolationLog || []}
+                  />
+                </div>
               )}
             </div>
           )}

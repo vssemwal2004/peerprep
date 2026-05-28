@@ -14,6 +14,7 @@ import CSVUploader from './assessment/components/CSVUploader';
 import StudentSelector from './assessment/components/StudentSelector';
 import SectionBuilder from './assessment/components/SectionBuilder';
 import AssessmentPreview from './assessment/components/AssessmentPreview';
+import AIProctoringSettings, { DEFAULT_AI_PROCTORING_SETTINGS, normalizeAiProctoringSettings } from '../features/assessment/admin/components/AIProctoringSettings';
 import { listCodingDrafts, loadCodingDraft, saveCodingDraft } from './assessment/assessmentCodingStore';
 import { loadAssessmentDraft, saveAssessmentDraft, clearAssessmentDraft } from './assessment/assessmentDraftStore';
 import { consumeProblemSelections, consumeQuestionSelections } from './assessment/assessmentProblemSelectionStore';
@@ -104,6 +105,14 @@ const createQuestionId = () => {
   return `q-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 };
 
+const withAiProctoringSettings = (settings = {}) => {
+  const source = settings && typeof settings === 'object' ? settings : {};
+  return {
+    ...source,
+    aiProctoring: normalizeAiProctoringSettings(source.aiProctoring),
+  };
+};
+
 const LIBRARY_SECTION_LABELS = {
   mcq: 'MCQ Questions',
   short: 'Short Questions',
@@ -170,12 +179,15 @@ function Row({
   badge,
   children,
   toggleKey,
+  enabledOverride,
+  onToggle,
   settings,
   onSettingChange,
 }) {
-  const enabled = Boolean(settings?.[toggleKey]);
+  const hasToggle = Boolean(toggleKey || onToggle);
+  const enabled = enabledOverride ?? Boolean(settings?.[toggleKey]);
   return (
-    <div className={`rounded-xl border px-4 py-3.5 transition-colors ${enabled || !toggleKey ? 'border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900' : 'border-slate-100 bg-slate-50/60 dark:border-gray-800 dark:bg-gray-800/40'}`}>
+    <div className={`rounded-xl border px-4 py-3.5 transition-colors ${enabled || !hasToggle ? 'border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900' : 'border-slate-100 bg-slate-50/60 dark:border-gray-800 dark:bg-gray-800/40'}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3">
           <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${iconBg}`}>{icon}</div>
@@ -187,9 +199,9 @@ function Row({
             <p className="mt-0.5 text-xs text-slate-500 dark:text-gray-400">{desc}</p>
           </div>
         </div>
-        {toggleKey && <Toggle value={enabled} onChange={(v) => onSettingChange?.(toggleKey, v)} />}
+        {hasToggle && <Toggle value={enabled} onChange={(v) => (onToggle ? onToggle(v) : onSettingChange?.(toggleKey, v))} />}
       </div>
-      {(enabled || !toggleKey) && children && <div className="mt-3 border-t border-slate-100 pt-3 dark:border-gray-700">{children}</div>}
+      {(enabled || !hasToggle) && children && <div className="mt-3 border-t border-slate-100 pt-3 dark:border-gray-700">{children}</div>}
     </div>
   );
 }
@@ -221,7 +233,9 @@ export default function CreateAssessment() {
     customInstructions: [],
     passwordEnabled: false,
     passwordValue: '',
-    settings: {},
+    settings: {
+      aiProctoring: DEFAULT_AI_PROCTORING_SETTINGS,
+    },
   });
   const [sections, setSections] = useState([]);
   const [selectedStudents, setSelectedStudents] = useState([]);
@@ -456,6 +470,7 @@ export default function CreateAssessment() {
             ...prev,
             ...draft.form,
             assessmentId: prev.assessmentId,
+            settings: withAiProctoringSettings(draft.form.settings || prev.settings),
           }));
         }
         if (draft.sections && draft.sections.length > 0) {
@@ -510,7 +525,7 @@ export default function CreateAssessment() {
           customInstructions: Array.isArray(assessment.customInstructions) ? assessment.customInstructions : [],
           passwordEnabled: Boolean(assessment.passwordEnabled),
           passwordValue: '',
-          settings: assessment.settings && typeof assessment.settings === 'object' ? assessment.settings : {},
+          settings: withAiProctoringSettings(assessment.settings),
         };
         const effectiveTargetMode = draftForm?.targetMode || resolvedTargetMode;
 
@@ -519,6 +534,7 @@ export default function CreateAssessment() {
           ...baseForm,
           ...(draftForm || {}),
           assessmentId: draftForm?.assessmentId || baseForm.assessmentId || prev.assessmentId,
+          settings: withAiProctoringSettings(draftForm?.settings || baseForm.settings),
         }));
         setVersion(draftVersion || assessment.version || 1);
 
@@ -728,7 +744,7 @@ export default function CreateAssessment() {
       customInstructions: form.customInstructions || [],
       passwordEnabled: Boolean(form.passwordEnabled),
       password: form.passwordEnabled ? (form.passwordValue || '') : '',
-      settings: form.settings || {},
+      settings: withAiProctoringSettings(form.settings),
     };
   };
 
@@ -1223,8 +1239,9 @@ export default function CreateAssessment() {
       </div>
     ),
     settings: (() => {
-      const s = form.settings || {};
-      const upd = (key, val) => updateForm({ settings: { ...(form.settings || {}), [key]: val } });
+      const s = withAiProctoringSettings(form.settings);
+      const upd = (key, val) => updateForm({ settings: withAiProctoringSettings({ ...(form.settings || {}), [key]: val }) });
+      const updateAiProctoring = (nextValue) => upd('aiProctoring', normalizeAiProctoringSettings(nextValue));
       const rowProps = { settings: s, onSettingChange: upd };
 
       return (
@@ -1238,6 +1255,7 @@ export default function CreateAssessment() {
               { label: 'Camera', active: s.cameraMonitoring, icon: <Camera className="h-3 w-3" /> },
               { label: 'Copy Block', active: s.disableCopyPaste, icon: <Copy className="h-3 w-3" /> },
               { label: 'Shot Guard', active: s.blockScreenshots, icon: <Monitor className="h-3 w-3" /> },
+              { label: 'AI Proctoring', active: s.aiProctoring?.enabled, icon: <Shield className="h-3 w-3" /> },
               { label: 'Shuffle', active: s.randomShuffle, icon: <Shuffle className="h-3 w-3" /> },
               { label: 'Auto-Submit', active: s.autoSubmitOnEnd, icon: <Timer className="h-3 w-3" /> },
             ].map(({ label, active, icon }) => (
@@ -1246,7 +1264,7 @@ export default function CreateAssessment() {
               </span>
             ))}
             <span className="ml-auto text-[11px] text-sky-600 dark:text-sky-400">
-              {[form.passwordEnabled, s.enableFullscreen, s.tabSwitchDetection, s.cameraMonitoring, s.disableCopyPaste, s.blockScreenshots, s.randomShuffle, s.autoSubmitOnEnd].filter(Boolean).length} / 8 active
+              {[form.passwordEnabled, s.enableFullscreen, s.tabSwitchDetection, s.cameraMonitoring, s.disableCopyPaste, s.blockScreenshots, s.aiProctoring?.enabled, s.randomShuffle, s.autoSubmitOnEnd].filter(Boolean).length} / 9 active
             </span>
           </div>
 
@@ -1411,6 +1429,21 @@ export default function CreateAssessment() {
                 </div>
               </Row>
 
+              <Row
+                {...rowProps}
+                icon={<Shield className="h-4 w-4" />}
+                title="AI Proctoring"
+                desc="Runs browser-side checks for confirmed AI proctoring violations during the test."
+                enabledOverride={Boolean(s.aiProctoring?.enabled)}
+                onToggle={(enabled) => updateAiProctoring({ ...s.aiProctoring, enabled })}
+              >
+                <AIProctoringSettings
+                  value={s.aiProctoring}
+                  onChange={updateAiProctoring}
+                  disabled={!s.aiProctoring?.enabled}
+                />
+              </Row>
+
               <Row {...rowProps} icon={<Volume2 className="h-4 w-4" />} iconBg="bg-teal-50 text-teal-600 dark:bg-teal-900/20 dark:text-teal-400"
                 title="Audio Monitoring" desc="Records ambient audio during the session for suspicious sound detection." toggleKey="audioMonitoring">
                 <FieldRow label="Flag if noise threshold exceeded (dB)">
@@ -1435,7 +1468,7 @@ export default function CreateAssessment() {
 
               <Row {...rowProps} icon={<Globe className="h-4 w-4" />} title="Prevent Multiple Tabs / Windows" desc="Detects and blocks attempts to open the test in multiple browser tabs." toggleKey="preventMultipleTabs" />
 
-              <Row {...rowProps} icon={<Navigation className="h-4 w-4" />} title="Restrict Backward Navigation" desc="Prevents candidates from revisiting previously answered questions." toggleKey="restrictNavigation">
+              <Row {...rowProps} icon={<Navigation className="h-4 w-4" />} title="Restrict Backward Navigation" desc="Shows a clear warning and prevents candidates from reopening locked previous questions." toggleKey="restrictNavigation">
                 <FieldRow label="Allow reviewing within same section">
                   <Toggle value={Boolean(s.allowSectionReview)} onChange={(v) => upd('allowSectionReview', v)} />
                 </FieldRow>
