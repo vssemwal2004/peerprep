@@ -10,6 +10,7 @@ import {
   COMPILER_LANGUAGES,
   buildProblemFormData,
   createDefaultProblemForm,
+  createEmptyFaq,
   createEmptyHiddenTestCase,
   createEmptySampleTestCase,
   createProblemFormFromProblem,
@@ -21,6 +22,7 @@ import { loadCodingDraft, saveCodingDraft } from '../assessment/assessmentCoding
 
 const EDITOR_TABS = [
   { key: 'details', label: 'Question Details' },
+  { key: 'guidance', label: 'Hints & FAQ' },
   { key: 'tests', label: 'Test Cases' },
   { key: 'templates', label: 'Code Templates' },
 ];
@@ -90,6 +92,94 @@ function TestCaseEditorCard({ title, cases, onAdd, onRemove, onChange, includeEx
       >
         <Plus className="h-4 w-4" />
         Add {title}
+      </button>
+    </div>
+  );
+}
+
+function HintEditor({ hints, onAdd, onRemove, onChange }) {
+  return (
+    <div className="space-y-4">
+      {(hints || []).length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-5 text-sm text-slate-500 dark:border-gray-700 dark:text-gray-400">
+          No hints added yet. Add one or more optional hints for students to reveal while solving.
+        </div>
+      ) : (
+        hints.map((hint, index) => (
+          <div key={`hint-${index}`} className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h4 className="text-sm font-semibold text-slate-800 dark:text-gray-100">Hint {index + 1}</h4>
+              <button type="button" onClick={() => onRemove(index)} className="inline-flex items-center gap-1 text-xs font-medium text-rose-600">
+                <X className="h-3.5 w-3.5" />
+                Remove
+              </button>
+            </div>
+            <textarea
+              value={hint}
+              onChange={(event) => onChange(index, event.target.value)}
+              rows={4}
+              placeholder="Guide the student without giving away the full solution."
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"
+            />
+          </div>
+        ))
+      )}
+
+      <button
+        type="button"
+        onClick={onAdd}
+        className="inline-flex items-center gap-2 rounded-xl border border-dashed border-slate-300 px-4 py-3 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+      >
+        <Plus className="h-4 w-4" />
+        Add Hint
+      </button>
+    </div>
+  );
+}
+
+function FaqEditor({ faqs, onAdd, onRemove, onChange }) {
+  return (
+    <div className="space-y-4">
+      {(faqs || []).length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-5 text-sm text-slate-500 dark:border-gray-700 dark:text-gray-400">
+          FAQs are optional. Add common questions with a solution note when the problem needs extra clarification.
+        </div>
+      ) : (
+        faqs.map((faq, index) => (
+          <div key={`faq-${index}`} className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h4 className="text-sm font-semibold text-slate-800 dark:text-gray-100">FAQ {index + 1}</h4>
+              <button type="button" onClick={() => onRemove(index)} className="inline-flex items-center gap-1 text-xs font-medium text-rose-600">
+                <X className="h-3.5 w-3.5" />
+                Remove
+              </button>
+            </div>
+            <div className="grid gap-4">
+              <input
+                value={faq.question}
+                onChange={(event) => onChange(index, 'question', event.target.value)}
+                placeholder="Question students may ask"
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"
+              />
+              <textarea
+                value={faq.answer}
+                onChange={(event) => onChange(index, 'answer', event.target.value)}
+                rows={5}
+                placeholder="Solution or clarification shown to students"
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"
+              />
+            </div>
+          </div>
+        ))
+      )}
+
+      <button
+        type="button"
+        onClick={onAdd}
+        className="inline-flex items-center gap-2 rounded-xl border border-dashed border-slate-300 px-4 py-3 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+      >
+        <Plus className="h-4 w-4" />
+        Add FAQ
       </button>
     </div>
   );
@@ -259,6 +349,26 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
       ...previous,
       hiddenTestCases: previous.hiddenTestCases.map((testCase, itemIndex) => (
         itemIndex === index ? { ...testCase, [field]: value } : testCase
+      )),
+    }));
+    setIsDirty(true);
+  };
+
+  const updateHint = (index, value) => {
+    setForm((previous) => ({
+      ...previous,
+      hints: (previous.hints || []).map((hint, itemIndex) => (
+        itemIndex === index ? value : hint
+      )),
+    }));
+    setIsDirty(true);
+  };
+
+  const updateFaq = (index, field, value) => {
+    setForm((previous) => ({
+      ...previous,
+      faqs: (previous.faqs || []).map((faq, itemIndex) => (
+        itemIndex === index ? { ...faq, [field]: value } : faq
       )),
     }));
     setIsDirty(true);
@@ -547,6 +657,28 @@ if (!isValidated || publishedProblem.status !== 'published') {
                   <input type="number" min="64" step="64" value={form.memoryLimitMb} onChange={(event) => updateField('memoryLimitMb', event.target.value)} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
                 </div>
               </div>
+            </SectionCard>
+          </>
+        ) : null}
+
+        {activeTab === 'guidance' ? (
+          <>
+            <SectionCard title="Hints" subtitle="Optional progressive guidance that students can reveal while solving.">
+              <HintEditor
+                hints={form.hints || []}
+                onAdd={() => updateField('hints', [...(form.hints || []), ''])}
+                onRemove={(index) => updateField('hints', (form.hints || []).filter((_, itemIndex) => itemIndex !== index))}
+                onChange={updateHint}
+              />
+            </SectionCard>
+
+            <SectionCard title="FAQ" subtitle="Optional questions and solution notes shown dynamically on the student problem page.">
+              <FaqEditor
+                faqs={form.faqs || []}
+                onAdd={() => updateField('faqs', [...(form.faqs || []), createEmptyFaq()])}
+                onRemove={(index) => updateField('faqs', (form.faqs || []).filter((_, itemIndex) => itemIndex !== index))}
+                onChange={updateFaq}
+              />
             </SectionCard>
           </>
         ) : null}

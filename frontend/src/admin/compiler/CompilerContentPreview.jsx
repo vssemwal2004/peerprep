@@ -118,6 +118,10 @@ export function RichTextPreview({ content, className = '' }) {
 
 export function ProblemStatementPreview({ problem, showMeta = true }) {
   const sampleTestCases = problem?.sampleTestCases || [];
+  const hints = Array.isArray(problem?.hints) ? problem.hints.filter((hint) => String(hint || '').trim()) : [];
+  const faqs = Array.isArray(problem?.faqs)
+    ? problem.faqs.filter((faq) => String(faq?.question || '').trim() || String(faq?.answer || '').trim())
+    : [];
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
@@ -184,6 +188,40 @@ export function ProblemStatementPreview({ problem, showMeta = true }) {
             </p>
           </div>
         </section>
+
+        {hints.length > 0 ? (
+          <section className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold text-slate-800 dark:text-gray-100">Hints</h3>
+              <span className="text-xs text-slate-500 dark:text-gray-400">{hints.length} configured</span>
+            </div>
+            <div className="space-y-2">
+              {hints.map((hint, index) => (
+                <div key={`hint-preview-${index}`} className="rounded-xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-sm text-slate-700 dark:border-sky-900/40 dark:bg-sky-900/10 dark:text-gray-300">
+                  <span className="font-semibold text-sky-700 dark:text-sky-300">Hint {index + 1}: </span>
+                  {hint}
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {faqs.length > 0 ? (
+          <section className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold text-slate-800 dark:text-gray-100">FAQ</h3>
+              <span className="text-xs text-slate-500 dark:text-gray-400">{faqs.length} configured</span>
+            </div>
+            <div className="space-y-3">
+              {faqs.map((faq, index) => (
+                <div key={`faq-preview-${index}`} className="rounded-xl border border-slate-200 px-4 py-3 dark:border-gray-700">
+                  <p className="text-sm font-semibold text-slate-800 dark:text-gray-100">{faq.question}</p>
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600 dark:text-gray-300">{faq.answer}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <section className="grid gap-3 md:grid-cols-3">
           <div className="rounded-xl border border-slate-200 px-4 py-3 dark:border-gray-700">

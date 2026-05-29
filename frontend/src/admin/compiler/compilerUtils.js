@@ -21,6 +21,13 @@ export function createEmptyHiddenTestCase() {
   };
 }
 
+export function createEmptyFaq() {
+  return {
+    question: '',
+    answer: '',
+  };
+}
+
 export function createDefaultProblemForm() {
   return {
     title: '',
@@ -34,6 +41,8 @@ export function createDefaultProblemForm() {
     inputFormat: '',
     outputFormat: '',
     constraints: '',
+    hints: [],
+    faqs: [],
     timeLimitSeconds: 2,
     memoryLimitMb: 256,
     sampleTestCases: [createEmptySampleTestCase()],
@@ -67,6 +76,13 @@ export function createProblemFormFromProblem(problem) {
     inputFormat: problem?.inputFormat || '',
     outputFormat: problem?.outputFormat || '',
     constraints: problem?.constraints || '',
+    hints: Array.isArray(problem?.hints) ? problem.hints.map((hint) => String(hint || '')) : [],
+    faqs: Array.isArray(problem?.faqs)
+      ? problem.faqs.map((faq) => ({
+        question: faq?.question || '',
+        answer: faq?.answer || '',
+      }))
+      : [],
     timeLimitSeconds: problem?.timeLimitSeconds || 2,
     memoryLimitMb: problem?.memoryLimitMb || 256,
     sampleTestCases: problem?.sampleTestCases?.length
@@ -107,6 +123,8 @@ export function buildProblemFormData(problemForm, status) {
   formData.append('inputFormat', problemForm.inputFormat || '');
   formData.append('outputFormat', problemForm.outputFormat || '');
   formData.append('constraints', problemForm.constraints || '');
+  formData.append('hints', JSON.stringify(problemForm.hints || []));
+  formData.append('faqs', JSON.stringify(problemForm.faqs || []));
   formData.append('timeLimitSeconds', String(problemForm.timeLimitSeconds || 2));
   formData.append('memoryLimitMb', String(problemForm.memoryLimitMb || 256));
   formData.append('sampleTestCases', JSON.stringify(problemForm.sampleTestCases || []));

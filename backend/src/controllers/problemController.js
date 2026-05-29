@@ -394,6 +394,51 @@ function countReferenceSolutions(value) {
   return 0;
 }
 
+function normalizeHints(value) {
+  const parsedHints = parseJsonField(value, []);
+  if (!Array.isArray(parsedHints)) {
+    throw new HttpError(400, 'Hints must be an array.');
+  }
+
+  return parsedHints
+    .map((hint) => String(hint ?? '').trim())
+    .filter(Boolean)
+    .slice(0, 20)
+    .map((hint) => {
+      if (Buffer.byteLength(hint, 'utf8') > 2000) {
+        throw new HttpError(400, 'Each hint must be 2000 characters or less.');
+      }
+      return hint;
+    });
+}
+
+function normalizeFaqs(value) {
+  const parsedFaqs = parseJsonField(value, []);
+  if (!Array.isArray(parsedFaqs)) {
+    throw new HttpError(400, 'FAQs must be an array.');
+  }
+
+  return parsedFaqs
+    .map((faq) => ({
+      question: String(faq?.question ?? '').trim(),
+      answer: String(faq?.answer ?? '').trim(),
+    }))
+    .filter((faq) => faq.question || faq.answer)
+    .slice(0, 30)
+    .map((faq) => {
+      if (!faq.question || !faq.answer) {
+        throw new HttpError(400, 'Each FAQ needs both a question and a solution.');
+      }
+      if (Buffer.byteLength(faq.question, 'utf8') > 300) {
+        throw new HttpError(400, 'FAQ questions must be 300 characters or less.');
+      }
+      if (Buffer.byteLength(faq.answer, 'utf8') > 3000) {
+        throw new HttpError(400, 'FAQ solutions must be 3000 characters or less.');
+      }
+      return faq;
+    });
+}
+
 function buildProblemPayload(
   req,
   {
@@ -459,6 +504,8 @@ function buildProblemPayload(
     inputFormat: String(req.body.inputFormat ?? ''),
     outputFormat: String(req.body.outputFormat ?? ''),
     constraints: String(req.body.constraints ?? ''),
+    hints: normalizeHints(req.body.hints),
+    faqs: normalizeFaqs(req.body.faqs),
     timeLimitSeconds: parseNumber(req.body.timeLimitSeconds ?? req.body.timeLimit, 2, { min: 1, max: 15, integer: false }),
     memoryLimitMb: parseNumber(req.body.memoryLimitMb ?? req.body.memoryLimit, 256, { min: 64, max: 1024, integer: true }),
     status,

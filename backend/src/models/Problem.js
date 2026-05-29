@@ -52,6 +52,21 @@ const problemSchema = new mongoose.Schema({
     type: String,
     default: '',
   },
+  hints: [{
+    type: String,
+    trim: true,
+  }],
+  faqs: [{
+    question: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    answer: {
+      type: String,
+      default: '',
+    },
+  }],
   timeLimitSeconds: {
     type: Number,
     default: 2,

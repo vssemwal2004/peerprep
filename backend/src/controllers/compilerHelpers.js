@@ -49,6 +49,15 @@ export function serializeProblem(
     inputFormat: problem.inputFormat || '',
     outputFormat: problem.outputFormat || '',
     constraints: problem.constraints || '',
+    hints: Array.isArray(problem.hints) ? problem.hints.filter((hint) => String(hint || '').trim()) : [],
+    faqs: Array.isArray(problem.faqs)
+      ? problem.faqs
+        .map((faq) => ({
+          question: String(faq?.question || '').trim(),
+          answer: String(faq?.answer || '').trim(),
+        }))
+        .filter((faq) => faq.question || faq.answer)
+      : [],
     timeLimitSeconds: problem.timeLimitSeconds,
     memoryLimitMb: problem.memoryLimitMb,
     status,

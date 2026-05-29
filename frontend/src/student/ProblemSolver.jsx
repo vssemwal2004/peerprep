@@ -282,6 +282,10 @@ function ProblemDescriptionPanel({ problem }) {
 
   const topics = problem.tags || [];
   const companies = problem.companyTags || [];
+  const hints = Array.isArray(problem.hints) ? problem.hints.filter((hint) => String(hint || '').trim()) : [];
+  const faqs = Array.isArray(problem.faqs)
+    ? problem.faqs.filter((faq) => String(faq?.question || '').trim() || String(faq?.answer || '').trim())
+    : [];
 
   return (
     <div className="space-y-6 px-5 py-5">
@@ -325,6 +329,31 @@ function ProblemDescriptionPanel({ problem }) {
           </p>
         </div>
       </section>
+
+      {hints.length > 0 ? (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">
+              Hints
+            </h2>
+            <span className="text-xs text-slate-500 dark:text-gray-400">{hints.length} available</span>
+          </div>
+          <div className="space-y-2">
+            {hints.map((hint, index) => (
+              <details
+                key={`hint-${index}`}
+                className="group rounded-[18px] border border-sky-100 bg-sky-50/70 px-4 py-3 dark:border-sky-900/40 dark:bg-sky-900/10"
+              >
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-sky-800 dark:text-sky-200">
+                  Hint {index + 1}
+                  <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+                </summary>
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-gray-300">{hint}</p>
+              </details>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
@@ -378,6 +407,31 @@ function ProblemDescriptionPanel({ problem }) {
             ))}
           </div>
         )}
+
+        {faqs.length > 0 ? (
+          <section className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">
+                FAQ
+              </h2>
+              <span className="text-xs text-slate-500 dark:text-gray-400">{faqs.length} notes</span>
+            </div>
+            <div className="divide-y divide-slate-200/70 overflow-hidden rounded-[22px] bg-slate-50/80 dark:divide-gray-700 dark:bg-gray-800/70">
+              {faqs.map((faq, index) => (
+                <details key={`faq-${index}`} className="group">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-800 dark:text-gray-100">
+                    {faq.question}
+                    <ChevronDown className="h-4 w-4 flex-none text-slate-400 transition-transform group-open:rotate-180 dark:text-gray-500" />
+                  </summary>
+                  <div className="px-4 pb-4">
+                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Solution</p>
+                    <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-gray-300">{faq.answer}</p>
+                  </div>
+                </details>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         {(topics.length > 0 || companies.length > 0) && (
           <section className="divide-y divide-slate-200/70 rounded-[22px] bg-slate-50/80 dark:divide-gray-700 dark:bg-gray-800/70">
