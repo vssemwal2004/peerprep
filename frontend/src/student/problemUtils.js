@@ -62,7 +62,7 @@ export function saveProblemDrafts(problemId, drafts) {
 
 export function buildProblemDrafts(problem, storedDrafts = {}) {
   return (problem?.supportedLanguages || []).reduce((acc, language) => {
-    const fallbackTemplate = problem?.codeTemplates?.[language] || '';
+    const fallbackTemplate = getStarterCodeForLanguage(problem, language);
     const storedDraft = storedDrafts?.[language];
     acc[language] = typeof storedDraft === 'string' ? storedDraft : fallbackTemplate;
     return acc;
@@ -74,7 +74,35 @@ function normalizeCodeForComparison(value) {
 }
 
 export function getStarterCodeForLanguage(problemLike, language) {
-  return String(problemLike?.codeTemplates?.[language] ?? '');
+  const lang = String(language || '').trim();
+  if (!problemLike || !lang) return '';
+
+  const directTemplate = problemLike?.codeTemplates?.[lang];
+  if (typeof directTemplate === 'string') return directTemplate;
+
+  const starterCode = problemLike?.starterCode;
+  if (Array.isArray(starterCode)) {
+    const entry = starterCode.find((item) => String(item?.language || '').trim() === lang);
+    if (typeof entry?.code === 'string') return entry.code;
+  } else if (starterCode && typeof starterCode === 'object' && typeof starterCode[lang] === 'string') {
+    return starterCode[lang];
+  }
+
+  const template = problemLike?.templates?.[lang];
+  if (typeof template === 'string') return template;
+
+  const nestedSources = [
+    problemLike?.problemDataSnapshot,
+    problemLike?.problemData,
+    problemLike?.coding?.problemData,
+    problemLike?.coding,
+  ];
+  for (const nestedSource of nestedSources) {
+    if (!nestedSource || nestedSource === problemLike) continue;
+    const nestedTemplate = getStarterCodeForLanguage(nestedSource, lang);
+    if (nestedTemplate) return nestedTemplate;
+  }
+  return '';
 }
 
 export function getCodeValidationMessage(sourceCode, starterCode = '', action = 'submit') {

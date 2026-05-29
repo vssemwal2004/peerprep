@@ -234,6 +234,7 @@ export default function CreateAssessment() {
     passwordEnabled: false,
     passwordValue: '',
     settings: {
+      securityRecheckTimeoutSec: 180,
       aiProctoring: DEFAULT_AI_PROCTORING_SETTINGS,
     },
   });
@@ -1463,6 +1464,13 @@ export default function CreateAssessment() {
                 title="Auto-Submit on Timer End" desc="Automatically submits the test when the timer reaches zero." badge="recommended" toggleKey="autoSubmitOnEnd">
                 <FieldRow label="Warn candidate before auto-submit (minutes)">
                   <NumInput value={s.autoSubmitWarnMin} onChange={(v) => upd('autoSubmitWarnMin', v)} min={1} max={30} placeholder="5" unit="min" />
+                </FieldRow>
+              </Row>
+
+              <Row {...rowProps} icon={<Clock className="h-4 w-4" />} iconBg="bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-300"
+                title="Security Recheck Timer" desc="Pauses the assessment timer during required security rechecks and auto-submits if the candidate does not finish in time.">
+                <FieldRow label="Maximum recheck time">
+                  <NumInput value={s.securityRecheckTimeoutSec} onChange={(v) => upd('securityRecheckTimeoutSec', v)} min={30} max={1800} placeholder="180" unit="sec" />
                 </FieldRow>
               </Row>
 

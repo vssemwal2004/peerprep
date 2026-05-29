@@ -1,46 +1,39 @@
-import { useEffect, useMemo, useState } from 'react';
-import { motion } from 'framer-motion';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
-  Award,
   BarChart3,
   CalendarClock,
   CheckCircle2,
   ChevronDown,
   Clock3,
+  Download,
   EyeOff,
   FileText,
   Filter,
   Lock,
-  Medal,
+  RefreshCcw,
   Search,
+  SlidersHorizontal,
   Target,
-  Timer,
-  TrendingUp,
-  Trophy,
   XCircle,
 } from 'lucide-react';
 import AssessmentModuleLayout from './assessment-dashboard/AssessmentModuleLayout';
 import { useStudentAssessmentDashboardData } from './assessment-dashboard/useStudentAssessmentDashboardData';
 import { formatDateTime, formatScore, formatSeconds, formatShortDate } from './assessment-dashboard/assessmentDashboardUtils';
+import { useToast } from '../components/CustomToast';
 
-const questionFilters = [
-  { id: 'all', label: 'All Questions' },
-  { id: 'correct', label: 'Correct' },
-  { id: 'incorrect', label: 'Incorrect' },
-  { id: 'skipped', label: 'Skipped' },
-  { id: 'pending', label: 'Partial' },
-];
+const STORAGE_KEY = 'peerprep_student_report_workspace_v1';
 
-const statusStyles = {
-  correct: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300',
-  incorrect: 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300',
-  skipped: 'border-slate-200 bg-slate-100 text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300',
-  pending: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300',
-};
+const shellClass = 'border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900';
+const mutedText = 'text-slate-500 dark:text-gray-400';
+const labelClass = 'text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-gray-500';
 
 function permission(report, key) {
   return Boolean(report?.permissions?.[key]);
+}
+
+function hasValue(value) {
+  return value !== undefined && value !== null && value !== '';
 }
 
 function percent(value, total) {
@@ -55,348 +48,575 @@ function scorePercent(report) {
   return percent(report?.score, report?.totalMarks);
 }
 
-function toneForPercentage(value) {
-  if (value === null || value === undefined) return 'slate';
-  if (value >= 75) return 'emerald';
-  if (value >= 50) return 'sky';
-  if (value >= 35) return 'amber';
-  return 'rose';
+function safeFileName(value = 'assessment-report') {
+  return String(value || 'assessment-report')
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, '-')
+    .replace(/\s+/g, '-')
+    .slice(0, 80) || 'assessment-report';
 }
 
-function toneClass(tone) {
-  return {
-    emerald: 'from-emerald-500 to-cyan-400 text-emerald-600 dark:text-emerald-300',
-    sky: 'from-[#0f8fd6] to-[#52d8c8] text-sky-700 dark:text-sky-300',
-    amber: 'from-amber-500 to-orange-300 text-amber-700 dark:text-amber-300',
-    rose: 'from-rose-500 to-orange-400 text-rose-600 dark:text-rose-300',
-    slate: 'from-slate-500 to-slate-300 text-slate-700 dark:text-gray-300',
-  }[tone] || 'from-[#0f8fd6] to-[#52d8c8] text-sky-700 dark:text-sky-300';
+async function exportStudentReportExcel(report) {
+  if (!report) return;
+  const XLSX = await import('xlsx');
+  const workbook = XLSX.utils.book_new();
+  const pct = scorePercent(report);
+  const scoreVisible = permission(report, 'canViewScore');
+
+  const summaryRows = [
+    ['Assessment', report.assessmentName || 'Untitled Assessment'],
+    ['Status', report.status || ''],
+    ['Assessment type', report.assessmentType || ''],
+    ['Submitted', report.submittedAt ? formatDateTime(report.submittedAt) : ''],
+    ['Started', report.startedAt ? formatDateTime(report.startedAt) : ''],
+    ['Score', scoreVisible ? `${formatScore(report.score)} / ${formatScore(report.totalMarks)}` : 'Hidden'],
+    ['Percentage', pct !== null ? `${Math.round(pct)}%` : 'Hidden'],
+    ['Time spent', permission(report, 'canViewTimeAnalysis') ? formatSeconds(report.timeTakenSec) : 'Hidden'],
+    ['Rank', permission(report, 'canViewRank') && report.rank ? `#${report.rank} of ${report.participants || '-'}` : 'Hidden'],
+    ['Total questions', report.totalQuestions ?? ''],
+    ['Correct', scoreVisible ? report.correctAnswers ?? 0 : 'Hidden'],
+    ['Wrong', scoreVisible ? report.wrongAnswers ?? 0 : 'Hidden'],
+    ['Skipped', scoreVisible ? report.skippedQuestions ?? 0 : 'Hidden'],
+    ['Violation count', report.violationCount ?? report.securityInfo?.totalViolations ?? 'No data'],
+  ];
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(summaryRows), 'Summary');
+
+  if (Array.isArray(report.sectionBreakdown) && report.sectionBreakdown.length) {
+    const sectionRows = report.sectionBreakdown.map((section) => ({
+      Section: section.sectionName || `Section ${Number(section.sectionIndex || 0) + 1}`,
+      Type: section.type || '',
+      Questions: section.totalQuestions ?? 0,
+      Correct: section.correctAnswers ?? 0,
+      Wrong: section.wrongAnswers ?? 0,
+      Skipped: section.skippedQuestions ?? 0,
+      Partial: section.pendingEvaluationQuestions ?? 0,
+      Accuracy: `${Math.round(percent(section.correctAnswers, section.totalQuestions))}%`,
+    }));
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(sectionRows), 'Sections');
+  }
+
+  if (Array.isArray(report.questionWise) && report.questionWise.length) {
+    const questionRows = report.questionWise.map((question, index) => ({
+      Question: `Q${index + 1}`,
+      Section: question.sectionName || '',
+      Type: question.type || '',
+      Difficulty: question.difficulty || '',
+      Status: getQuestionStatus(question),
+      Marks: permission(report, 'canViewScore') ? `${formatScore(question.marksObtained || 0)} / ${formatScore(question.maxMarks || 0)}` : 'Hidden',
+      'Student Answer': hasValue(question.studentAnswer) ? question.studentAnswer : '',
+      'Correct Answer': hasValue(question.correctAnswer) ? question.correctAnswer : 'Hidden',
+      'Time Spent': formatSeconds(question.timeSpentSec || 0),
+      QuestionText: question.questionText || '',
+      Explanation: hasValue(question.explanation) ? question.explanation : '',
+    }));
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(questionRows), 'Questions');
+  }
+
+  const securityEntries = Object.entries(report.securityInfo || {})
+    .filter(([, value]) => hasValue(value))
+    .map(([key, value]) => ({ Metric: key.replace(/([A-Z])/g, ' $1'), Value: value }));
+  if (securityEntries.length) {
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(securityEntries), 'Security');
+  }
+
+  const dateStamp = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(workbook, `${safeFileName(report.assessmentName)}-student-report-${dateStamp}.xlsx`);
 }
 
-const surfaceClass = 'rounded-[1.35rem] border border-slate-200/75 bg-[#fbfdff]/95 shadow-[0_18px_54px_-42px_rgba(15,23,42,0.55)] backdrop-blur-xl transition-all dark:border-white/10 dark:bg-[#07111f]/88 dark:shadow-black/35';
-const innerSurfaceClass = 'rounded-[1.1rem] border border-slate-200/75 bg-white/88 shadow-[0_12px_30px_-26px_rgba(15,23,42,0.32)] dark:border-white/10 dark:bg-white/[0.045]';
-const labelClass = 'text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500';
-const reportFontStyle = { fontFamily: "'Manrope', ui-sans-serif, system-ui, sans-serif" };
-const headlineFontStyle = { fontFamily: "'Fraunces', 'Manrope', ui-serif, Georgia, serif" };
+function stateStyle(state) {
+  const key = String(state || '').toLowerCase();
+  if (['correct', 'completed', 'available', 'released', 'attempted'].includes(key)) {
+    return 'border-lime-200 bg-lime-50 text-lime-700 dark:border-lime-800 dark:bg-lime-900/20 dark:text-lime-300';
+  }
+  if (['incorrect', 'wrong', 'locked', 'hidden', 'pending'].includes(key)) {
+    return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300';
+  }
+  if (['skipped', 'not attempted'].includes(key)) {
+    return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300';
+  }
+  return 'border-slate-200 bg-white text-slate-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300';
+}
+
+function getReportAvailability(report) {
+  if (!report) return 'No data';
+  if (report.permissions?.resultReleased) return 'Available result';
+  if (report.permissions?.releaseAt) return 'Pending result';
+  return 'Locked result';
+}
+
+function getAttemptState(report) {
+  if (!report) return '';
+  if (report.status) return report.status;
+  if (report.submittedAt) return 'Completed';
+  if (report.startedAt) return 'Attempted';
+  return 'Not attempted';
+}
+
+function getQuestionStatus(question) {
+  const status = String(question?.status || '').toLowerCase();
+  if (status === 'incorrect') return 'Wrong';
+  if (status === 'pending') return 'Partial';
+  if (status) return status.charAt(0).toUpperCase() + status.slice(1);
+  if (question?.isCorrect === true) return 'Correct';
+  if (question?.isSkipped) return 'Skipped';
+  return 'Visited';
+}
+
+function AnswerBlock({ label, value }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!hasValue(value)) return null;
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  const long = text.length > 220;
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-gray-800 dark:bg-gray-950/60">
+      <div className={labelClass}>{label}</div>
+      <div className={`mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-800 dark:text-gray-200 ${long && !expanded ? 'max-h-28 overflow-hidden' : ''}`}>
+        {text}
+      </div>
+      {long ? (
+        <button
+          type="button"
+          onClick={() => setExpanded((value) => !value)}
+          className="mt-2 text-xs font-semibold text-sky-700 hover:text-sky-800 dark:text-sky-300"
+        >
+          {expanded ? 'Show less' : 'Show full answer'}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function EmptyState({ icon: Icon = FileText, title, message }) {
+  return (
+    <div className={`${shellClass} rounded-xl px-6 py-10 text-center`}>
+      <Icon className="mx-auto h-7 w-7 text-slate-300 dark:text-gray-600" />
+      <div className="mt-3 text-sm font-semibold text-slate-800 dark:text-gray-100">{title}</div>
+      {message ? <p className={`mx-auto mt-1 max-w-xl text-sm leading-6 ${mutedText}`}>{message}</p> : null}
+    </div>
+  );
+}
 
 function Skeleton() {
   return (
-    <div className="grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
-      <div className="h-[720px] animate-pulse rounded-[1.75rem] border border-slate-200/70 bg-white/80 dark:border-white/10 dark:bg-slate-950/60" />
-      <div className="h-[720px] animate-pulse rounded-[1.75rem] border border-slate-200/70 bg-white/80 dark:border-white/10 dark:bg-slate-950/60" />
+    <div className="grid h-[calc(100vh-10rem)] gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
+      <div className="animate-pulse rounded-xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900" />
+      <div className="animate-pulse rounded-xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900" />
     </div>
   );
 }
 
-function LockedPanel({ title = 'Result details are locked', message }) {
+function SummaryRow({ label, value, hidden }) {
   return (
-    <div className={`${surfaceClass} p-8 text-center`}>
-      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">
-        <Lock className="h-5 w-5" />
-      </div>
-      <div className="mt-4 text-base font-black tracking-tight text-slate-900 dark:text-white">{title}</div>
-      <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-slate-500 dark:text-gray-400">
-        {message || 'Your admin has not enabled this part of the report for this assessment yet.'}
-      </p>
+    <div className="flex min-w-0 items-center justify-between gap-4 border-b border-slate-100 py-2.5 last:border-0 dark:border-gray-800">
+      <span className={`text-xs ${mutedText}`}>{label}</span>
+      <span className="truncate text-right text-sm font-semibold text-slate-900 dark:text-white">{hidden ? 'Hidden' : value}</span>
     </div>
   );
 }
 
-function ScoreRing({ value, locked }) {
-  const normalized = locked ? 0 : Math.round(Math.max(0, Math.min(100, Number(value || 0))));
-  const tone = toneForPercentage(value);
-  const classes = toneClass(tone);
-  const size = 136;
-  const stroke = 10;
-  const radius = (size - stroke) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (normalized / 100) * circumference;
-
+function SectionShell({ id, title, children, defaultOpen = true, onJump }) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.94 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.45, ease: 'easeOut' }}
-      className="relative flex items-center justify-center rounded-[1.45rem] border border-slate-200/70 bg-gradient-to-br from-white to-slate-50 p-2 shadow-[0_18px_42px_-34px_rgba(2,132,199,0.72)] dark:border-white/10 dark:from-white/10 dark:to-slate-950/30"
-      style={{ height: size + 14, width: size + 14 }}
-    >
-      <svg width={size} height={size} className="-rotate-90">
-        <defs>
-          <linearGradient id="student-report-score" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#67e8f9" />
-            <stop offset="48%" stopColor="#0ea5e9" />
-            <stop offset="100%" stopColor="#0f766e" />
-          </linearGradient>
-        </defs>
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="currentColor" className="text-slate-100 dark:text-gray-800" strokeWidth={stroke} />
-        <motion.circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke="url(#student-report-score)"
-          strokeWidth={stroke}
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          initial={{ strokeDashoffset: circumference }}
-          animate={{ strokeDashoffset: offset }}
-          transition={{ duration: 0.9, ease: 'easeOut' }}
-        />
-      </svg>
-      <div className="absolute text-center">
-        <div className={`text-3xl font-extrabold tracking-[-0.04em] ${classes.split(' ').slice(2).join(' ')}`}>
-          {locked ? 'Hidden' : `${normalized}%`}
-        </div>
-        <div className={labelClass}>
-          Performance
-        </div>
+    <section id={id} className={`${shellClass} overflow-hidden rounded-xl`}>
+      <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-900">
+        <button type="button" onClick={() => onJump?.(id)} className="text-sm font-semibold text-slate-950 dark:text-white">
+          {title}
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 dark:text-gray-400 dark:hover:bg-gray-800"
+          aria-label={open ? `Collapse ${title}` : `Expand ${title}`}
+        >
+          <ChevronDown className={`h-4 w-4 transition-transform ${open ? '' : '-rotate-90'}`} />
+        </button>
       </div>
-    </motion.div>
+      {open ? <div className="p-4">{children}</div> : null}
+    </section>
   );
 }
 
-function MetricCard({ icon: Icon, label, value, sub, tone = 'sky', locked = false }) {
-  const classes = toneClass(tone);
-  return (
-    <motion.div
-      whileHover={{ y: -3 }}
-      transition={{ duration: 0.18, ease: 'easeOut' }}
-      className={`${innerSurfaceClass} group relative overflow-hidden p-4 hover:border-sky-200/90 dark:hover:border-sky-800/70`}
-    >
-      <div className="pointer-events-none absolute -right-8 -top-8 h-20 w-20 rounded-full bg-sky-200/30 blur-2xl transition-opacity group-hover:opacity-100 dark:bg-sky-500/10" />
-      <div className={`relative flex h-10 w-10 items-center justify-center rounded-[0.9rem] bg-gradient-to-br ${classes.split(' ').slice(0, 2).join(' ')} text-white shadow-[0_14px_30px_-18px_rgba(14,165,233,0.85)]`}>
-        <Icon className="h-4 w-4" />
-      </div>
-      <div className={`relative mt-4 ${labelClass}`}>{label}</div>
-      <div className="relative mt-1 truncate text-2xl font-extrabold tracking-[-0.035em] text-slate-950 dark:text-white">{locked ? 'Hidden' : value}</div>
-      {sub ? <div className="mt-1 text-xs text-slate-500 dark:text-gray-400">{sub}</div> : null}
-    </motion.div>
-  );
-}
-
-function ReportList({ reports, selectedId, onSelect }) {
-  if (!reports.length) {
-    return (
-      <div className={`${surfaceClass} p-8 text-center`}>
-        <FileText className="mx-auto h-8 w-8 text-slate-300 dark:text-gray-600" />
-        <div className="mt-3 text-sm font-bold text-slate-800 dark:text-gray-200">No reports found</div>
-        <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Completed and partial attempts will appear here.</p>
-      </div>
-    );
-  }
+function ReportNavigation({ reports, selectedId, query, setQuery, status, setStatus, onSelect }) {
+  const statusOptions = useMemo(() => {
+    const values = Array.from(new Set(reports.map((report) => report.status).filter(Boolean)));
+    return ['all', ...values];
+  }, [reports]);
 
   return (
-    <div className="space-y-2.5 pr-1">
-      {reports.map((report) => {
-        const visibleScore = permission(report, 'canViewScore');
-        const pct = scorePercent(report);
-        const tone = toneForPercentage(pct);
-        const selected = String(report.id) === String(selectedId);
-        return (
-          <motion.button
-            key={report.id}
-            type="button"
-            onClick={() => onSelect(report)}
-            whileHover={{ x: 3, y: -1 }}
-            transition={{ duration: 0.18, ease: 'easeOut' }}
-            className={`relative w-full overflow-hidden rounded-[1.35rem] border p-4 text-left transition-all ${
-              selected
-                ? 'border-sky-300 bg-[linear-gradient(135deg,#f8fcff,#ffffff_58%,#edf9ff)] shadow-[0_18px_42px_-34px_rgba(2,132,199,0.85)] dark:border-sky-700 dark:bg-[linear-gradient(135deg,rgba(8,47,73,0.52),rgba(2,6,23,0.95)_58%,rgba(15,23,42,0.78))]'
-                : 'border-slate-200/80 bg-white/85 hover:border-sky-200 hover:bg-white dark:border-white/10 dark:bg-slate-950/62 dark:hover:border-sky-800 dark:hover:bg-slate-900'
-            }`}
-          >
-            {selected ? <span className="absolute left-0 top-4 h-10 w-1 rounded-r-full bg-gradient-to-b from-cyan-400 to-sky-600" /> : null}
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="truncate text-sm font-extrabold tracking-[-0.015em] text-slate-950 dark:text-white">{report.assessmentName}</div>
-                <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-gray-400">
-                  <span className="rounded-full border border-slate-200 bg-white/80 px-2 py-0.5 font-bold uppercase tracking-wider dark:border-white/10 dark:bg-white/5">{report.assessmentType || 'mixed'}</span>
-                  <span>{formatShortDate(report.dateAttempted)}</span>
+    <aside className={`${shellClass} flex min-h-0 flex-col rounded-xl`}>
+      <div className="shrink-0 border-b border-slate-200 p-3 dark:border-gray-800">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className={labelClass}>Report Library</div>
+            <div className="mt-0.5 text-sm font-semibold text-slate-950 dark:text-white">{reports.length} assessments</div>
+          </div>
+          <span className="rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300">
+            Dynamic
+          </span>
+        </div>
+        <div className="relative mt-3">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search reports"
+            className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 text-xs text-slate-700 outline-none focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-200 dark:focus:ring-sky-900/40"
+          />
+        </div>
+        {statusOptions.length > 1 ? (
+          <div className="mt-2 flex items-center gap-2">
+            <Filter className="h-3.5 w-3.5 text-slate-400" />
+            <select
+              value={status}
+              onChange={(event) => setStatus(event.target.value)}
+              className="h-8 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 text-xs font-medium text-slate-600 outline-none focus:border-sky-400 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300"
+            >
+              {statusOptions.map((item) => (
+                <option key={item} value={item}>{item === 'all' ? 'All statuses' : item}</option>
+              ))}
+            </select>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+        {reports.length ? reports.map((report) => {
+          const selected = String(report.id) === String(selectedId);
+          const availability = getReportAvailability(report);
+          const pct = scorePercent(report);
+          const scoreVisible = permission(report, 'canViewScore');
+          return (
+            <button
+              key={report.id}
+              type="button"
+              onClick={() => onSelect(report)}
+              className={`mb-1.5 w-full rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                selected
+                  ? 'border-sky-300 bg-sky-50 text-sky-950 ring-1 ring-sky-100 dark:border-sky-700 dark:bg-sky-900/20 dark:text-sky-100 dark:ring-sky-900'
+                  : 'border-transparent text-slate-700 hover:border-slate-200 hover:bg-slate-50 dark:text-gray-300 dark:hover:border-gray-800 dark:hover:bg-gray-950/70'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold">{report.assessmentName}</div>
+                  <div className={`mt-1 flex flex-wrap items-center gap-1.5 text-[11px] ${mutedText}`}>
+                    {report.assessmentType ? <span>{report.assessmentType}</span> : null}
+                    {report.dateAttempted ? <span>{formatShortDate(report.dateAttempted)}</span> : null}
+                  </div>
                 </div>
+                <span className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${stateStyle(availability)}`}>
+                  {scoreVisible && pct !== null ? `${Math.round(pct)}%` : <EyeOff className="h-3.5 w-3.5" />}
+                </span>
               </div>
-              <span className={`rounded-full border border-slate-200/80 bg-white/80 px-2.5 py-1 text-xs font-extrabold dark:border-white/10 dark:bg-white/5 ${visibleScore ? toneClass(tone).split(' ').slice(2).join(' ') : 'text-slate-400'}`}>
-                {visibleScore ? `${Math.round(pct || 0)}%` : <EyeOff className="h-4 w-4" />}
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${stateStyle(availability)}`}>{availability}</span>
+                <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${stateStyle(getAttemptState(report))}`}>{getAttemptState(report)}</span>
+              </div>
+            </button>
+          );
+        }) : (
+          <div className="rounded-lg border border-dashed border-slate-200 px-3 py-8 text-center text-xs text-slate-500 dark:border-gray-800 dark:text-gray-400">
+            No report data received.
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+function WorkspaceHeader({ report, onRefresh, onExport, search, setSearch, filterOpen, setFilterOpen }) {
+  if (!report) return null;
+  const pct = scorePercent(report);
+  const scoreVisible = permission(report, 'canViewScore');
+  const percentageVisible = permission(report, 'canViewPercentage');
+  const metadata = [
+    report.assessmentType,
+    hasValue(report.totalQuestions) ? `${report.totalQuestions} questions` : null,
+    hasValue(report.duration) ? `${report.duration} min` : null,
+    report.status,
+  ].filter(Boolean);
+
+  return (
+    <div className={`${shellClass} sticky top-0 z-30 rounded-xl shadow-sm`}>
+      <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 dark:border-gray-800 xl:flex-row xl:items-center xl:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            {metadata.map((item) => (
+              <span key={item} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-medium text-slate-600 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
+                {item}
               </span>
-            </div>
-            <div className="mt-3 flex items-center justify-between text-xs text-slate-500 dark:text-gray-400">
-              <span>{report.status}</span>
-              <span>{formatSeconds(report.timeTakenSec)}</span>
-            </div>
-          </motion.button>
-        );
-      })}
+            ))}
+            <span className={`rounded-md border px-2 py-1 text-[11px] font-semibold ${stateStyle(getReportAvailability(report))}`}>
+              {getReportAvailability(report)}
+            </span>
+          </div>
+          <h2 className="mt-2 truncate text-base font-semibold text-slate-950 dark:text-white">{report.assessmentName}</h2>
+          <div className={`mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs ${mutedText}`}>
+            {report.submittedAt || report.dateAttempted ? <span>Submitted {formatDateTime(report.submittedAt || report.dateAttempted)}</span> : null}
+            {report.startedAt ? <span>Started {formatDateTime(report.startedAt)}</span> : null}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search in report"
+              className="h-8 w-44 rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-200"
+            />
+          </div>
+          <button type="button" onClick={() => setFilterOpen(!filterOpen)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-800">
+            <SlidersHorizontal className="h-3.5 w-3.5" /> Filters
+          </button>
+          <button type="button" onClick={onRefresh} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-800">
+            <RefreshCcw className="h-3.5 w-3.5" /> Refresh
+          </button>
+          <button type="button" onClick={onExport} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-2.5 text-xs font-semibold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300">
+            <Download className="h-3.5 w-3.5" /> Export Excel
+          </button>
+        </div>
+      </div>
+      <div className="grid gap-0 px-4 py-2 text-xs sm:grid-cols-4">
+        <SummaryRow label="Score" value={`${formatScore(report.score)} / ${formatScore(report.totalMarks)}`} hidden={!scoreVisible} />
+        <SummaryRow label="Percentage" value={pct !== null ? `${Math.round(pct)}%` : 'Hidden'} hidden={!percentageVisible} />
+        <SummaryRow label="Attempt count" value={report.attempts || report.attemptCount || 1} />
+        <SummaryRow label="Time spent" value={formatSeconds(report.timeTakenSec)} hidden={!permission(report, 'canViewTimeAnalysis')} />
+      </div>
     </div>
   );
 }
 
-function SectionAnalytics({ report }) {
+function ReportTabs({ tabs, activeTab, setActiveTab }) {
+  if (!tabs.length) return null;
+  return (
+    <div className="flex gap-1 overflow-x-auto border-b border-slate-200 bg-[#f8fbff] py-2 dark:border-gray-800 dark:bg-gray-950">
+      {tabs.map((tab) => (
+        <button
+          key={tab.id}
+          type="button"
+          onClick={() => setActiveTab(tab.id)}
+          className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+            activeTab === tab.id
+              ? 'bg-sky-600 text-white'
+              : 'border border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:text-sky-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300'
+          }`}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function OverviewPanel({ report, onJump }) {
+  if (!report) return null;
+  const scoreVisible = permission(report, 'canViewScore');
+  const pct = scorePercent(report);
+  const totalQuestions = Number(report.totalQuestions || 0);
+  const attempted = totalQuestions - Number(report.skippedQuestions || 0);
+  return (
+    <div className="space-y-3">
+      {!report.permissions?.resultReleased ? (
+        <EmptyState
+          icon={Lock}
+          title="Result release pending"
+          message={report.permissions?.releaseAt ? `Your detailed result is scheduled for ${formatDateTime(report.permissions.releaseAt)}.` : 'Your admin has not released detailed results for this assessment yet.'}
+        />
+      ) : null}
+
+      <SectionShell id="summary" title="Report Summary" onJump={onJump}>
+        <div className="grid gap-x-8 md:grid-cols-2">
+          <SummaryRow label="Score" value={`${formatScore(report.score)} / ${formatScore(report.totalMarks)}`} hidden={!scoreVisible} />
+          <SummaryRow label="Rank" value={`#${report.rank} of ${report.participants || '-'}`} hidden={!permission(report, 'canViewRank') || !report.rank} />
+          <SummaryRow label="Accuracy" value={pct !== null ? `${Math.round(pct)}%` : 'Hidden'} hidden={!permission(report, 'canViewPercentage')} />
+          <SummaryRow label="Time taken" value={formatSeconds(report.timeTakenSec)} hidden={!permission(report, 'canViewTimeAnalysis')} />
+          <SummaryRow label="Questions attempted" value={`${attempted} / ${totalQuestions}`} hidden={!scoreVisible} />
+          <SummaryRow label="Correct count" value={report.correctAnswers ?? 'Hidden'} hidden={!scoreVisible} />
+          <SummaryRow label="Wrong count" value={report.wrongAnswers ?? 'Hidden'} hidden={!scoreVisible} />
+          <SummaryRow label="Skipped count" value={report.skippedQuestions ?? 'Hidden'} hidden={!scoreVisible} />
+          <SummaryRow label="Violation count" value={report.violationCount ?? report.securityInfo?.totalViolations ?? 'No data'} />
+        </div>
+      </SectionShell>
+    </div>
+  );
+}
+
+function PerformancePanel({ report, onJump }) {
   if (!permission(report, 'canViewSectionAnalytics')) {
-    return <LockedPanel title="Section analytics hidden" message="Section-wise analytics are disabled for this assessment." />;
+    return <EmptyState icon={Lock} title="Section analytics hidden" message="Section-wise analytics are disabled for this assessment." />;
   }
   const sections = report.sectionBreakdown || [];
-  if (!sections.length) return null;
-  const strongest = [...sections].sort((a, b) => percent(b.correctAnswers, b.totalQuestions) - percent(a.correctAnswers, a.totalQuestions))[0];
-  const weakest = [...sections].sort((a, b) => percent(a.correctAnswers, a.totalQuestions) - percent(b.correctAnswers, b.totalQuestions))[0];
-
+  if (!sections.length) return <EmptyState title="No section performance data" message="The backend did not return section breakdown for this report." />;
   return (
-    <div className={`${surfaceClass} p-5`}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-base font-black tracking-tight text-slate-950 dark:text-white">Section Performance</h2>
-          <p className="mt-1 text-sm text-slate-500 dark:text-gray-400">Your strengths and improvement areas by section.</p>
-        </div>
-        <div className="flex flex-wrap gap-2 text-xs">
-          {strongest ? <span className="rounded-full border border-emerald-200 bg-emerald-50/80 px-3 py-1 font-bold text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300">Strongest: {strongest.sectionName}</span> : null}
-          {weakest ? <span className="rounded-full border border-amber-200 bg-amber-50/80 px-3 py-1 font-bold text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">Focus: {weakest.sectionName}</span> : null}
-        </div>
-      </div>
-      <div className="mt-5 space-y-4">
+    <SectionShell id="performance" title="Section Performance" onJump={onJump}>
+      <div className="space-y-2">
         {sections.map((section) => {
           const accuracy = percent(section.correctAnswers, section.totalQuestions);
           return (
-            <motion.div
-              key={`${section.sectionIndex}-${section.sectionName}`}
-              whileHover={{ y: -2 }}
-              className={`${innerSurfaceClass} p-4`}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="font-bold text-slate-900 dark:text-white">{section.sectionName}</div>
-                  <div className={`mt-0.5 ${labelClass}`}>{section.type}</div>
+            <div key={`${section.sectionIndex}-${section.sectionName}`} className="rounded-lg border border-slate-200 p-3 dark:border-gray-800">
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold text-slate-950 dark:text-white">{section.sectionName}</div>
+                  <div className={`mt-0.5 text-xs ${mutedText}`}>{section.type || 'Section'} - {section.totalQuestions || 0} questions</div>
                 </div>
-                <div className="text-right">
-                  <div className="text-lg font-black tracking-tight text-slate-950 dark:text-white">{Math.round(accuracy)}%</div>
-                  <div className={labelClass}>Accuracy</div>
-                </div>
+                <div className="text-sm font-semibold text-slate-900 dark:text-white">{Math.round(accuracy)}%</div>
               </div>
-              <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-white shadow-inner dark:bg-slate-900">
-                <motion.div initial={{ width: 0 }} animate={{ width: `${accuracy}%` }} transition={{ duration: 0.75, ease: 'easeOut' }} className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-sky-500 to-teal-500" />
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-gray-800">
+                <div className="h-full rounded-full bg-sky-500" style={{ width: `${accuracy}%` }} />
               </div>
-              <div className="mt-3 grid grid-cols-4 gap-2 text-center text-xs">
-                <span className="rounded-xl border border-slate-100 bg-white/80 px-2 py-2 dark:border-white/10 dark:bg-white/5">Correct <b className="text-emerald-600">{section.correctAnswers}</b></span>
-                <span className="rounded-xl border border-slate-100 bg-white/80 px-2 py-2 dark:border-white/10 dark:bg-white/5">Wrong <b className="text-rose-600">{section.wrongAnswers}</b></span>
-                <span className="rounded-xl border border-slate-100 bg-white/80 px-2 py-2 dark:border-white/10 dark:bg-white/5">Skipped <b>{section.skippedQuestions}</b></span>
-                <span className="rounded-xl border border-slate-100 bg-white/80 px-2 py-2 dark:border-white/10 dark:bg-white/5">Pending <b className="text-amber-600">{section.pendingEvaluationQuestions}</b></span>
+              <div className="mt-2 grid grid-cols-4 gap-2 text-[11px] text-slate-600 dark:text-gray-300">
+                <span>Correct <b className="text-lime-700 dark:text-lime-300">{section.correctAnswers}</b></span>
+                <span>Wrong <b className="text-sky-700 dark:text-sky-300">{section.wrongAnswers}</b></span>
+                <span>Skipped <b>{section.skippedQuestions}</b></span>
+                <span>Partial <b>{section.pendingEvaluationQuestions}</b></span>
               </div>
-            </motion.div>
+            </div>
           );
         })}
       </div>
-    </div>
+    </SectionShell>
   );
 }
 
-function QuestionReview({ report }) {
-  const [filter, setFilter] = useState('all');
-  const [section, setSection] = useState('all');
-  const [openQuestion, setOpenQuestion] = useState(null);
+function QuestionReview({ report, search, filterOpen }) {
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [sectionFilter, setSectionFilter] = useState('all');
+  const [difficultyFilter, setDifficultyFilter] = useState('all');
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [showExplanation, setShowExplanation] = useState(false);
+
+  const questions = report?.questionWise || [];
+  const dynamicStatuses = useMemo(() => Array.from(new Set(questions.map((question) => question.status).filter(Boolean))), [questions]);
+  const dynamicSections = useMemo(() => Array.from(new Set(questions.map((question) => question.sectionName).filter(Boolean))), [questions]);
+  const dynamicDifficulties = useMemo(() => Array.from(new Set(questions.map((question) => question.difficulty).filter(Boolean))), [questions]);
+
+  const filteredQuestions = useMemo(() => {
+    const searchText = search.trim().toLowerCase();
+    return questions.filter((question) => {
+      const matchesSearch = !searchText || `${question.questionText || ''} ${question.sectionName || ''} ${question.type || ''}`.toLowerCase().includes(searchText);
+      const matchesStatus = statusFilter === 'all' || question.status === statusFilter;
+      const matchesSection = sectionFilter === 'all' || question.sectionName === sectionFilter;
+      const matchesDifficulty = difficultyFilter === 'all' || question.difficulty === difficultyFilter;
+      return matchesSearch && matchesStatus && matchesSection && matchesDifficulty;
+    });
+  }, [difficultyFilter, questions, search, sectionFilter, statusFilter]);
+
+  useEffect(() => {
+    setSelectedIndex(0);
+    setShowExplanation(false);
+  }, [statusFilter, sectionFilter, difficultyFilter, search, report?.id]);
 
   if (!permission(report, 'canViewQuestionReview')) {
-    return <LockedPanel title="Question review hidden" message="Question-level review is not available until the assessment result is released by your admin." />;
+    return <EmptyState icon={Lock} title="Question review hidden" message="Question-level review is not available until your admin releases it." />;
   }
+  if (!questions.length) return <EmptyState title="No question review data" message="The backend did not return question-wise data for this report." />;
 
-  const questions = report.questionWise || [];
-  const sections = [...new Set(questions.map((question) => question.sectionName).filter(Boolean))];
-  const filtered = questions.filter((question) => {
-    const statusMatch = filter === 'all' || question.status === filter;
-    const sectionMatch = section === 'all' || question.sectionName === section;
-    return statusMatch && sectionMatch;
-  });
+  const selected = filteredQuestions[Math.min(selectedIndex, Math.max(0, filteredQuestions.length - 1))];
 
   return (
-    <div className={`${surfaceClass} overflow-hidden`}>
-      <div className="sticky top-14 z-10 border-b border-slate-200/70 bg-white/90 p-4 backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/85">
+    <div className={`${shellClass} overflow-hidden rounded-xl`}>
+      <div className="border-b border-slate-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-black tracking-tight text-slate-950 dark:text-white">Question Review</h2>
-            <p className="mt-1 text-sm text-slate-500 dark:text-gray-400">Filter questions by status or section.</p>
+            <div className="text-sm font-semibold text-slate-950 dark:text-white">Question Review</div>
+            <div className={`mt-0.5 text-xs ${mutedText}`}>{filteredQuestions.length} of {questions.length} questions</div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {questionFilters.map((item) => (
-              <button key={item.id} type="button" onClick={() => setFilter(item.id)} className={`rounded-full px-3 py-1.5 text-xs font-bold transition-all hover:-translate-y-0.5 ${filter === item.id ? 'bg-slate-950 text-white shadow-lg shadow-slate-300/40 dark:bg-white dark:text-slate-950 dark:shadow-black/30' : 'border border-slate-200 bg-white/80 text-slate-600 hover:border-sky-200 hover:text-sky-700 dark:border-white/10 dark:bg-white/5 dark:text-gray-300 dark:hover:border-sky-800'}`}>
-                {item.label}
-              </button>
-            ))}
-            <select value={section} onChange={(event) => setSection(event.target.value)} className="rounded-full border border-slate-200 bg-white/90 px-3 py-1.5 text-xs font-bold text-slate-600 outline-none dark:border-white/10 dark:bg-slate-900 dark:text-gray-300">
-              <option value="all">All Sections</option>
-              {sections.map((name) => <option key={name} value={name}>{name}</option>)}
-            </select>
-          </div>
+          {filterOpen ? (
+            <div className="flex flex-wrap gap-2">
+              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-600 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
+                <option value="all">All statuses</option>
+                {dynamicStatuses.map((item) => <option key={item} value={item}>{getQuestionStatus({ status: item })}</option>)}
+              </select>
+              {dynamicSections.length ? (
+                <select value={sectionFilter} onChange={(event) => setSectionFilter(event.target.value)} className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-600 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
+                  <option value="all">All sections</option>
+                  {dynamicSections.map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              ) : null}
+              {dynamicDifficulties.length ? (
+                <select value={difficultyFilter} onChange={(event) => setDifficultyFilter(event.target.value)} className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-600 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
+                  <option value="all">All difficulties</option>
+                  {dynamicDifficulties.map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </div>
 
-      <div className="grid gap-4 p-4 lg:grid-cols-[220px_minmax(0,1fr)]">
-        <div className="flex gap-2 overflow-x-auto lg:sticky lg:top-36 lg:block lg:max-h-[620px] lg:space-y-2 lg:overflow-y-auto">
-          {filtered.map((question, index) => (
-            <button key={`${question.sectionIndex}-${question.questionIndex}`} type="button" onClick={() => setOpenQuestion(openQuestion === index ? null : index)} className={`min-w-12 rounded-xl border px-3 py-2 text-xs font-black transition-transform hover:-translate-y-0.5 lg:w-full ${statusStyles[question.status] || statusStyles.pending}`}>
-              Q{question.questionIndex + 1}
-            </button>
-          ))}
+      <div className="grid min-h-[520px] gap-0 lg:grid-cols-[190px_minmax(0,1fr)]">
+        <div className="border-b border-slate-200 bg-slate-50/70 p-3 dark:border-gray-800 dark:bg-gray-950/40 lg:border-b-0 lg:border-r">
+          <div className="grid max-h-40 grid-cols-4 gap-1.5 overflow-y-auto lg:max-h-[calc(100vh-24rem)] lg:grid-cols-3">
+            {filteredQuestions.map((question, index) => (
+              <button
+                key={`${question.sectionIndex}-${question.questionIndex}-${index}`}
+                type="button"
+                onClick={() => {
+                  setSelectedIndex(index);
+                  setShowExplanation(false);
+                }}
+                className={`h-8 rounded-md border text-[11px] font-semibold transition-colors ${
+                  index === selectedIndex ? 'ring-2 ring-sky-300 ' : ''
+                } ${stateStyle(question.status)}`}
+                title={getQuestionStatus(question)}
+              >
+                Q{index + 1}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="space-y-3">
-          {filtered.length ? filtered.map((question, index) => {
-            const expanded = openQuestion === index || openQuestion === null;
-            return (
-              <motion.div
-                key={`${question.sectionIndex}-${question.questionIndex}-card`}
-                whileHover={{ y: -2 }}
-                className={`${innerSurfaceClass} p-4`}
-              >
-                <button type="button" onClick={() => setOpenQuestion(expanded ? -1 : index)} className="flex w-full items-start justify-between gap-3 text-left">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold ${statusStyles[question.status] || statusStyles.pending}`}>{question.status}</span>
-                      <span className="text-xs font-bold text-slate-400">{question.sectionName}</span>
-                    </div>
-                    <div className="mt-2 text-sm font-bold leading-6 text-slate-900 dark:text-white">Q{question.questionIndex + 1}. {question.questionText}</div>
-                  </div>
-                  <ChevronDown className={`mt-1 h-4 w-4 text-slate-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
-                </button>
-                {expanded ? (
-                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-4 space-y-3">
-                    {question.options?.length ? (
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        {question.options.map((option, optionIndex) => {
-                          const selected = question.selectedOptionIndex === optionIndex;
-                          const correct = question.correctOptionIndex === optionIndex;
-                          return (
-                            <div key={`${option}-${optionIndex}`} className={`rounded-xl border px-3 py-2 text-sm ${correct ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200' : selected ? 'border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-200' : 'border-slate-200 bg-white text-slate-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}>
-                              {option}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-                    {permission(report, 'canViewStudentAnswers') && !question.options?.length ? (
-                      <div className="rounded-xl border border-slate-200 bg-white/85 p-3 text-sm text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">
-                        <b>Your answer:</b> {question.studentAnswer || 'Not answered'}
-                      </div>
-                    ) : null}
-                    {permission(report, 'canViewCorrectAnswers') && question.correctAnswer ? (
-                      <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-3 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200">
-                        <b>Correct answer:</b> {question.correctAnswer}
-                      </div>
-                    ) : null}
-                    {permission(report, 'canViewScore') ? (
-                      <div className="flex flex-wrap gap-2 text-xs">
-                        <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 font-bold text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">Marks: {formatScore(question.marksObtained || 0)} / {formatScore(question.maxMarks || 0)}</span>
-                        {question.negativeMarks ? <span className="rounded-full bg-rose-50 px-3 py-1 font-bold text-rose-700 dark:bg-rose-900/20 dark:text-rose-300">Negative: -{formatScore(question.negativeMarks)}</span> : null}
-                      </div>
-                    ) : null}
-                    {permission(report, 'canViewExplanations') && question.explanation ? (
-                      <div className="rounded-xl border border-sky-200 bg-sky-50/80 p-3 text-sm leading-6 text-sky-900 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-200">
-                        <b>Explanation:</b> {question.explanation}
-                      </div>
-                    ) : null}
-                  </motion.div>
-                ) : null}
-              </motion.div>
-            );
-          }) : (
-            <div className="rounded-2xl border border-dashed border-slate-200 bg-white/70 p-8 text-center text-sm text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-gray-400">
-              No questions match the selected filters.
+        <div className="min-w-0 p-4">
+          {selected ? (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className={labelClass}>{selected.sectionName || 'Question'}</div>
+                  <h3 className="mt-1 text-base font-semibold text-slate-950 dark:text-white">Q{selectedIndex + 1}</h3>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  <span className={`rounded-md border px-2 py-1 text-xs font-semibold ${stateStyle(selected.status)}`}>{getQuestionStatus(selected)}</span>
+                  {hasValue(selected.type) ? <span className="rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 dark:border-gray-800 dark:text-gray-300">{selected.type}</span> : null}
+                  {hasValue(selected.difficulty) ? <span className="rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 dark:border-gray-800 dark:text-gray-300">{selected.difficulty}</span> : null}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-900 dark:border-gray-800 dark:bg-gray-950/40 dark:text-gray-100">
+                {selected.questionText}
+              </div>
+
+              <div className="grid gap-3 xl:grid-cols-2">
+                <AnswerBlock label="Student answer" value={selected.studentAnswer} />
+                <AnswerBlock label="Correct answer" value={selected.correctAnswer} />
+              </div>
+
+              <div className="grid gap-x-8 md:grid-cols-2">
+                <SummaryRow label="Marks" value={`${formatScore(selected.marksObtained || 0)} / ${formatScore(selected.maxMarks || 0)}`} hidden={!permission(report, 'canViewScore')} />
+                <SummaryRow label="Time spent" value={formatSeconds(selected.timeSpentSec || 0)} />
+                <SummaryRow label="Negative marks" value={formatScore(selected.negativeMarks || 0)} hidden={!hasValue(selected.negativeMarks)} />
+                <SummaryRow label="Status" value={getQuestionStatus(selected)} />
+              </div>
+
+              {hasValue(selected.explanation) ? (
+                <div className="rounded-lg border border-slate-200 dark:border-gray-800">
+                  <button type="button" onClick={() => setShowExplanation((value) => !value)} className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-semibold text-slate-800 dark:text-gray-100">
+                    Explanation
+                    <ChevronDown className={`h-4 w-4 transition-transform ${showExplanation ? '' : '-rotate-90'}`} />
+                  </button>
+                  {showExplanation ? <div className={`border-t border-slate-200 px-3 py-3 text-sm leading-6 ${mutedText} dark:border-gray-800`}>{selected.explanation}</div> : null}
+                </div>
+              ) : null}
+
+              <div className="flex items-center justify-between border-t border-slate-200 pt-3 dark:border-gray-800">
+                <button type="button" disabled={selectedIndex <= 0} onClick={() => setSelectedIndex((value) => Math.max(0, value - 1))} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 disabled:opacity-40 dark:border-gray-800 dark:text-gray-300">Previous</button>
+                <span className={`text-xs ${mutedText}`}>{selectedIndex + 1} / {filteredQuestions.length}</span>
+                <button type="button" disabled={selectedIndex >= filteredQuestions.length - 1} onClick={() => setSelectedIndex((value) => Math.min(filteredQuestions.length - 1, value + 1))} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 disabled:opacity-40 dark:border-gray-800 dark:text-gray-300">Next</button>
+              </div>
             </div>
+          ) : (
+            <EmptyState title="No matching questions" message="Adjust the available filters or report search to inspect questions." />
           )}
         </div>
       </div>
@@ -404,191 +624,54 @@ function QuestionReview({ report }) {
   );
 }
 
-function Insights({ report }) {
-  const pct = scorePercent(report);
-  const sections = report.sectionBreakdown || [];
-  const strongest = sections.length ? [...sections].sort((a, b) => percent(b.correctAnswers, b.totalQuestions) - percent(a.correctAnswers, a.totalQuestions))[0] : null;
-  const weakest = sections.length ? [...sections].sort((a, b) => percent(a.correctAnswers, a.totalQuestions) - percent(b.correctAnswers, b.totalQuestions))[0] : null;
-  const timeRatio = report.duration ? percent((report.timeTakenSec || 0) / 60, report.duration) : null;
-  const items = [];
-
-  if (permission(report, 'canViewPercentage') && pct !== null) {
-    items.push(pct >= 75 ? 'Strong overall performance. Keep practicing timed mixed sets to maintain consistency.' : 'Your score shows room to grow. Review incorrect and skipped questions first.');
-  }
-  if (strongest && permission(report, 'canViewSectionAnalytics')) items.push(`${strongest.sectionName} is your strongest section.`);
-  if (weakest && permission(report, 'canViewSectionAnalytics')) items.push(`Spend extra practice time on ${weakest.sectionName}.`);
-  if (permission(report, 'canViewTimeAnalysis') && timeRatio !== null) {
-    items.push(timeRatio > 90 ? 'You used most of the available time. Try shorter checkpoints per section.' : 'Your time usage looks controlled for this attempt.');
-  }
-  if (!items.length) items.push('Detailed insights will appear when your admin enables result visibility for this assessment.');
-
+function ViolationsPanel({ report }) {
+  const security = report?.securityInfo || {};
+  const entries = Object.entries(security).filter(([, value]) => Number(value || 0) > 0);
+  if (!entries.length && !hasValue(report?.violationCount)) return null;
   return (
-    <div className={`${surfaceClass} p-5`}>
-      <div className="flex items-center gap-2">
-        <BarChart3 className="h-5 w-5 text-sky-600 dark:text-sky-300" />
-        <h2 className="text-base font-black tracking-tight text-slate-950 dark:text-white">Performance Guidance</h2>
+    <SectionShell id="violations" title="Violations">
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        {hasValue(report.violationCount) ? <SummaryRow label="Total" value={report.violationCount} /> : null}
+        {entries.map(([key, value]) => <SummaryRow key={key} label={key.replace(/([A-Z])/g, ' $1')} value={value} />)}
       </div>
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
-        {items.map((item) => (
-          <motion.div key={item} whileHover={{ y: -2 }} className={`${innerSurfaceClass} relative overflow-hidden p-4 pl-5 text-sm leading-6 text-slate-600 dark:text-gray-300`}>
-            <span className="absolute left-0 top-4 h-8 w-1 rounded-r-full bg-sky-500/80" />
-            {item}
-          </motion.div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function TimeUsagePanel({ report }) {
-  if (!permission(report, 'canViewTimeAnalysis')) return null;
-
-  const usedSeconds = Number(report.timeTakenSec || 0);
-  const durationMinutes = Number(report.duration || 0);
-  const usedMinutes = usedSeconds / 60;
-  const usedPercent = durationMinutes > 0 ? Math.max(0, Math.min(100, (usedMinutes / durationMinutes) * 100)) : 0;
-  const remainingMinutes = durationMinutes > 0 ? Math.max(0, Math.round(durationMinutes - usedMinutes)) : null;
-  const paceLabel = durationMinutes <= 0
-    ? 'Recorded attempt time'
-    : usedPercent > 92
-      ? 'Finished near the limit'
-      : usedPercent < 45
-        ? 'Quick completion'
-        : 'Balanced time usage';
-
-  return (
-    <div className={`${surfaceClass} overflow-hidden`}>
-      <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_280px]">
-        <div className="p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className={labelClass}>Time Analysis</div>
-              <h2 className="mt-1 text-lg font-extrabold tracking-[-0.025em] text-slate-950 dark:text-white">Attempt pacing and duration control</h2>
-            </div>
-            <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">
-              {paceLabel}
-            </span>
-          </div>
-          <div className="mt-5">
-            <div className="flex items-end justify-between gap-3">
-              <div>
-                <div className="text-3xl font-extrabold tracking-[-0.045em] text-slate-950 dark:text-white">{formatSeconds(usedSeconds)}</div>
-                <div className="mt-1 text-sm text-slate-500 dark:text-gray-400">Total time spent in this attempt</div>
-              </div>
-              {durationMinutes > 0 ? (
-                <div className="text-right text-sm text-slate-500 dark:text-gray-400">
-                  <span className="font-bold text-slate-800 dark:text-gray-100">{Math.round(usedPercent)}%</span> of allotted time
-                </div>
-              ) : null}
-            </div>
-            <div className="mt-5 h-3 overflow-hidden rounded-full border border-slate-200 bg-slate-100 shadow-inner dark:border-white/10 dark:bg-slate-900">
-              <motion.div
-                initial={{ width: 0 }}
-                animate={{ width: durationMinutes > 0 ? `${usedPercent}%` : '100%' }}
-                transition={{ duration: 0.8, ease: 'easeOut' }}
-                className="h-full rounded-full bg-[linear-gradient(90deg,#0f8fd6,#42c7c4,#0f766e)]"
-              />
-            </div>
-            {durationMinutes > 0 ? (
-              <div className="mt-2 flex justify-between text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">
-                <span>Start</span>
-                <span>{durationMinutes} min limit</span>
-              </div>
-            ) : null}
-          </div>
-        </div>
-        <div className="border-t border-slate-200/70 bg-slate-50/70 p-5 dark:border-white/10 dark:bg-white/[0.035] lg:border-l lg:border-t-0">
-          <div className="grid gap-3">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-slate-950/50">
-              <CalendarClock className="h-4 w-4 text-sky-600 dark:text-sky-300" />
-              <div className="mt-2 text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Allowed Duration</div>
-              <div className="mt-1 text-xl font-extrabold tracking-[-0.03em] text-slate-950 dark:text-white">{durationMinutes ? `${durationMinutes} min` : 'Not limited'}</div>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-slate-950/50">
-              <TrendingUp className="h-4 w-4 text-teal-600 dark:text-teal-300" />
-              <div className="mt-2 text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Remaining</div>
-              <div className="mt-1 text-xl font-extrabold tracking-[-0.03em] text-slate-950 dark:text-white">{remainingMinutes === null ? 'N/A' : `${remainingMinutes} min`}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ReportDetail({ report }) {
-  if (!report) return <LockedPanel title="Select a report" message="Choose an assessment from the left to view your detailed analytics." />;
-
-  const scoreVisible = permission(report, 'canViewScore');
-  const pct = scorePercent(report);
-  const rankVisible = permission(report, 'canViewRank') && report.rank;
-  const metrics = [
-    { icon: Award, label: 'Score', value: `${formatScore(report.score)} / ${formatScore(report.totalMarks)}`, locked: !scoreVisible, tone: 'sky' },
-    { icon: Target, label: 'Accuracy', value: `${Math.round(pct || 0)}%`, locked: !permission(report, 'canViewPercentage'), tone: toneForPercentage(pct) },
-    { icon: CheckCircle2, label: 'Correct', value: report.correctAnswers ?? 'Hidden', locked: !scoreVisible, tone: 'emerald' },
-    { icon: XCircle, label: 'Incorrect', value: report.wrongAnswers ?? 'Hidden', locked: !scoreVisible, tone: 'rose' },
-    { icon: Timer, label: 'Time Spent', value: formatSeconds(report.timeTakenSec), sub: report.duration ? `of ${report.duration} min` : '', locked: !permission(report, 'canViewTimeAnalysis'), tone: 'amber' },
-    { icon: FileText, label: 'Attempted', value: scoreVisible ? `${(report.totalQuestions || 0) - (report.skippedQuestions || 0)} / ${report.totalQuestions || 0}` : 'Hidden', locked: !scoreVisible, tone: 'slate' },
-  ];
-
-  return (
-    <div className="space-y-5">
-      <div className={`sticky top-14 z-20 ${surfaceClass} p-5`}>
-        <div className="grid gap-5 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center">
-          <ScoreRing value={pct} locked={!permission(report, 'canViewPercentage')} />
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full border border-sky-200 bg-sky-50/80 px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-sky-700 dark:border-sky-800 dark:bg-sky-900/30 dark:text-sky-300">{report.assessmentType || 'Assessment'}</span>
-              <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-[11px] font-bold text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">{report.status}</span>
-              {rankVisible ? <span className="rounded-full border border-amber-200 bg-amber-50/80 px-3 py-1 text-[11px] font-extrabold text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">Rank #{report.rank}</span> : null}
-            </div>
-            <h1 className="mt-3 text-2xl font-extrabold tracking-[-0.035em] text-slate-950 dark:text-white">{report.assessmentName}</h1>
-            <div className="mt-2 flex flex-wrap gap-4 text-sm text-slate-500 dark:text-gray-400">
-              <span>Submitted: {formatDateTime(report.submittedAt || report.dateAttempted)}</span>
-              <span>Started: {formatDateTime(report.startedAt)}</span>
-            </div>
-          </div>
-          {rankVisible ? (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-center dark:border-amber-800 dark:bg-amber-900/20">
-              <Medal className="mx-auto h-5 w-5 text-amber-600" />
-              <div className="mt-2 text-2xl font-black text-amber-700 dark:text-amber-300">#{report.rank}</div>
-              <div className="text-xs text-amber-700/80 dark:text-amber-300/80">of {report.participants || '-'} students</div>
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      {!report.permissions?.resultReleased ? (
-        <LockedPanel title="Result release pending" message={report.permissions?.releaseAt ? `Your detailed result is scheduled for ${formatDateTime(report.permissions.releaseAt)}.` : 'Your admin has not released detailed results for this assessment yet.'} />
-      ) : null}
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {metrics.map((item) => <MetricCard key={item.label} {...item} />)}
-      </div>
-
-      <Insights report={report} />
-      <TimeUsagePanel report={report} />
-      <SectionAnalytics report={report} />
-      <QuestionReview report={report} />
-    </div>
+    </SectionShell>
   );
 }
 
 export default function AssessmentReportsPage() {
-  const { dashboard, loading, error } = useStudentAssessmentDashboardData();
+  const { dashboard, loading, error, refresh } = useStudentAssessmentDashboardData();
+  const toast = useToast();
   const [selectedReport, setSelectedReport] = useState(null);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
+  const [reportSearch, setReportSearch] = useState('');
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('overview');
+  const workspaceRef = useRef(null);
 
   const reports = dashboard.reports || [];
+
   const filteredReports = useMemo(() => {
     const search = query.trim().toLowerCase();
     return reports.filter((report) => {
-      const queryMatch = !search || `${report.assessmentName || ''} ${report.assessmentType || ''}`.toLowerCase().includes(search);
+      const queryMatch = !search || `${report.assessmentName || ''} ${report.assessmentType || ''} ${report.status || ''}`.toLowerCase().includes(search);
       const statusMatch = status === 'all' || report.status === status;
       return queryMatch && statusMatch;
     });
-  }, [reports, query, status]);
+  }, [query, reports, status]);
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+      if (saved.activeTab) setActiveTab(saved.activeTab);
+      if (saved.reportId && reports.length) {
+        const report = reports.find((item) => String(item.id) === String(saved.reportId));
+        if (report) setSelectedReport(report);
+      }
+    } catch {
+      // Ignore invalid stored UI state.
+    }
+  }, [reports]);
 
   useEffect(() => {
     if (!selectedReport && filteredReports.length) setSelectedReport(filteredReports[0]);
@@ -598,96 +681,101 @@ export default function AssessmentReportsPage() {
   }, [filteredReports, selectedReport]);
 
   const currentReport = filteredReports.find((report) => String(report.id) === String(selectedReport?.id)) || selectedReport;
-  const rankCards = filteredReports.filter((report) => permission(report, 'canViewRank') && report.rank).slice(0, 3);
+
+  const tabs = useMemo(() => {
+    if (!currentReport) return [];
+    const items = [{ id: 'overview', label: 'Overview' }];
+    if (permission(currentReport, 'canViewQuestionReview') && (currentReport.questionWise || []).length) items.push({ id: 'questions', label: 'Questions' });
+    if (permission(currentReport, 'canViewSectionAnalytics') && (currentReport.sectionBreakdown || []).length) items.push({ id: 'performance', label: 'Performance' });
+    const securityEntries = Object.entries(currentReport.securityInfo || {}).filter(([, value]) => Number(value || 0) > 0);
+    if (hasValue(currentReport.violationCount) || securityEntries.length) items.push({ id: 'violations', label: 'Violations' });
+    if (hasValue(currentReport.feedback)) items.push({ id: 'feedback', label: 'Feedback' });
+    return items;
+  }, [currentReport]);
+
+  useEffect(() => {
+    if (tabs.length && !tabs.some((tab) => tab.id === activeTab)) setActiveTab(tabs[0].id);
+  }, [activeTab, tabs]);
+
+  useEffect(() => {
+    if (!currentReport) return;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ reportId: currentReport.id, activeTab }));
+  }, [activeTab, currentReport]);
+
+  const selectReport = useCallback((report) => {
+    setSelectedReport(report);
+    workspaceRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  const jumpTo = useCallback((id) => {
+    const container = workspaceRef.current;
+    const target = container?.querySelector(`#${id}`);
+    if (!container || !target) return;
+    container.scrollTo({ top: target.offsetTop - 126, behavior: 'smooth' });
+  }, []);
+
+  const handleExport = useCallback(async () => {
+    if (!currentReport) return;
+    try {
+      await exportStudentReportExcel(currentReport);
+      toast.success('Student report exported to Excel');
+    } catch (err) {
+      toast.error(err.message || 'Failed to export report');
+    }
+  }, [currentReport, toast]);
 
   return (
     <AssessmentModuleLayout title="Assessment Reports">
-      <div className="relative space-y-5 overflow-hidden rounded-[1.5rem] border border-slate-200/70 bg-[linear-gradient(135deg,#f8fafc,#eef6fb_48%,#f7fafc)] p-3 text-slate-900 dark:border-white/10 dark:bg-[linear-gradient(135deg,#020617,#071321_52%,#020617)] dark:text-gray-100 sm:p-5" style={reportFontStyle}>
-        <div className="pointer-events-none absolute left-8 top-8 h-40 w-40 rounded-full bg-sky-200/18 blur-3xl dark:bg-sky-500/8" />
-        <motion.div
-          initial={{ opacity: 0, y: 14 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.42, ease: 'easeOut' }}
-          className="relative overflow-hidden rounded-[1.5rem] border border-slate-200/70 bg-white/82 shadow-[0_24px_70px_-56px_rgba(15,23,42,0.72)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/72"
-        >
-          <div className="relative p-6">
-            <div className="pointer-events-none absolute -right-20 -top-24 h-60 w-60 rounded-full bg-cyan-100/55 blur-3xl dark:bg-cyan-500/8" />
-            <div className="pointer-events-none absolute bottom-0 left-0 h-px w-full bg-gradient-to-r from-transparent via-sky-300/70 to-transparent" />
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-white/80 px-3 py-1 text-[10px] font-extrabold uppercase tracking-[0.22em] text-sky-700 shadow-sm dark:border-sky-800 dark:bg-white/5 dark:text-sky-300">
-                  <BarChart3 className="h-3.5 w-3.5" />
-                  PeerPrep Report Studio
-                </div>
-                <h1 className="mt-4 max-w-3xl text-[2.55rem] font-bold leading-[1.04] tracking-[-0.04em] text-slate-950 dark:text-white" style={headlineFontStyle}>
-                  Your assessment report, refined for focus.
-                </h1>
-                <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 dark:text-gray-300">
-                  A calm report workspace for released scores, section patterns, question review, timing, and rank visibility according to your assessment settings.
-                </p>
-              </div>
-              <div className="grid min-w-[min(100%,28rem)] grid-cols-3 gap-3">
-                <MetricCard icon={FileText} label="Reports" value={reports.length} tone="sky" />
-                <MetricCard icon={Trophy} label="Ranked" value={rankCards.length} tone="amber" />
-                <MetricCard icon={Clock3} label="Avg Time" value={formatSeconds(Math.round(reports.reduce((sum, report) => sum + Number(report.timeTakenSec || 0), 0) / Math.max(1, reports.length)))} tone="emerald" />
-              </div>
-            </div>
-          </div>
-        </motion.div>
-
+      <div className="h-[calc(100vh-9.5rem)] overflow-hidden rounded-xl bg-[#f8fbff] text-slate-900 dark:bg-gray-950 dark:text-gray-100">
         {loading ? (
           <Skeleton />
         ) : error ? (
-          <div className="rounded-3xl border border-rose-200 bg-white px-6 py-10 text-sm text-rose-600 dark:border-rose-800 dark:bg-gray-900 dark:text-rose-300">
+          <div className="rounded-xl border border-sky-200 bg-white px-6 py-10 text-sm text-sky-700 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300">
             <AlertCircle className="mb-3 h-6 w-6" />
             {error}
           </div>
         ) : (
-          <div className="relative grid min-w-0 gap-5 xl:grid-cols-[380px_minmax(0,1fr)] xl:items-start">
-            <aside className="min-w-0 xl:sticky xl:top-20 xl:max-h-[calc(100vh-7rem)] xl:overflow-hidden">
-              <div className={`${surfaceClass} p-4`}>
-                <div className="mb-4 flex items-center justify-between">
-                  <div>
-                    <div className={labelClass}>Report Library</div>
-                    <div className="mt-1 text-base font-extrabold tracking-[-0.02em] text-slate-950 dark:text-white">{filteredReports.length} assessment{filteredReports.length === 1 ? '' : 's'}</div>
-                  </div>
-                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">
-                    Scroll list
-                  </span>
-                </div>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Search reports..."
-                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white/70 py-2 pl-10 pr-4 text-sm text-slate-700 outline-none ring-sky-200 transition-all placeholder:text-slate-400 focus:border-sky-400 focus:bg-white focus:ring-2 dark:border-white/10 dark:bg-white/5 dark:text-gray-200 dark:placeholder:text-gray-500"
-                  />
-                </div>
-                <div className="mt-3 flex items-center gap-2">
-                  <Filter className="h-4 w-4 text-slate-400" />
-                  {['all', 'Completed', 'Partial'].map((item) => (
-                    <button key={item} type="button" onClick={() => setStatus(item)} className={`rounded-full px-3 py-1.5 text-xs font-bold transition-all hover:-translate-y-0.5 ${status === item ? 'bg-slate-950 text-white shadow-lg shadow-slate-300/40 dark:bg-white dark:text-slate-950 dark:shadow-black/30' : 'border border-slate-200 bg-white/70 text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300'}`}>
-                      {item === 'all' ? 'All' : item}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="mt-4 max-h-[520px] overflow-y-auto pr-1 xl:max-h-[calc(100vh-22rem)]">
-                <ReportList reports={filteredReports} selectedId={currentReport?.id} onSelect={setSelectedReport} />
-              </div>
-            </aside>
+          <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
+            <ReportNavigation
+              reports={filteredReports}
+              selectedId={currentReport?.id}
+              query={query}
+              setQuery={setQuery}
+              status={status}
+              setStatus={setStatus}
+              onSelect={selectReport}
+            />
 
-            <main className="min-w-0">
-              {rankCards.length ? (
-                <div className="mb-5 rounded-[1.5rem] border border-amber-200 bg-amber-50/80 p-4 shadow-sm dark:border-amber-800 dark:bg-amber-900/20">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <Trophy className="h-5 w-5 text-amber-600" />
-                    <span className="text-sm font-black text-amber-800 dark:text-amber-200">Ranking is enabled for {rankCards.length} visible report{rankCards.length === 1 ? '' : 's'}.</span>
-                  </div>
+            <main ref={workspaceRef} className="min-h-0 overflow-y-auto pr-1">
+              {currentReport ? (
+                <div className="space-y-3">
+                  <WorkspaceHeader
+                    report={currentReport}
+                    onRefresh={refresh}
+                    onExport={handleExport}
+                    search={reportSearch}
+                    setSearch={setReportSearch}
+                    filterOpen={filterOpen}
+                    setFilterOpen={setFilterOpen}
+                  />
+                  <ReportTabs tabs={tabs} activeTab={activeTab} setActiveTab={setActiveTab} />
+
+                  {activeTab === 'overview' ? <OverviewPanel report={currentReport} onJump={jumpTo} /> : null}
+                  {activeTab === 'questions' ? <QuestionReview report={currentReport} search={reportSearch} filterOpen={filterOpen} /> : null}
+                  {activeTab === 'performance' ? <PerformancePanel report={currentReport} onJump={jumpTo} /> : null}
+                  {activeTab === 'violations' ? <ViolationsPanel report={currentReport} /> : null}
+                  {activeTab === 'feedback' && hasValue(currentReport.feedback) ? (
+                    <SectionShell id="feedback" title="Feedback">
+                      <div className="text-sm leading-6 text-slate-700 dark:text-gray-300">{currentReport.feedback}</div>
+                    </SectionShell>
+                  ) : null}
                 </div>
-              ) : null}
-              <ReportDetail report={currentReport} />
+              ) : (
+                <EmptyState
+                  title="No report available"
+                  message="Assessment reports will appear here only when the backend returns report data for your account."
+                />
+              )}
             </main>
           </div>
         )}

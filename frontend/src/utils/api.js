@@ -331,6 +331,9 @@ export const api = {
   getAssessmentById: (id) => request(`/admin/assessment/${id}`),
   updateAssessment: (id, body) => request(`/admin/assessment/${id}`, { method: 'PUT', body }),
   deleteAssessment: (id) => request(`/admin/assessment/${id}`, { method: 'DELETE' }),
+  resetAssessmentSubmissions: (id) => request(`/admin/assessment/${id}/reset-submissions`, { method: 'POST' }),
+  markAssessmentComplete: (id) => request(`/admin/assessment/${id}/mark-complete`, { method: 'POST' }),
+  releaseAssessmentAnswers: (id) => request(`/admin/assessment/${id}/release-answers`, { method: 'POST' }),
   getAssessmentReports: (params = {}) => {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {

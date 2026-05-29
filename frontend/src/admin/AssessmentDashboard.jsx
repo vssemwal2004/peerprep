@@ -7,6 +7,7 @@ import { useToast } from '../components/CustomToast';
 import {
   Calendar, ClipboardList, Filter, Plus, Search, Trash2, Eye, EyeOff,
   Pencil, Copy, X, MoreVertical, Lock, Unlock, Globe, ShieldOff,
+  RotateCcw, CheckCircle2, AlertTriangle, FileCheck2,
 } from 'lucide-react';
 import AssessmentCard from './assessment/components/AssessmentCard';
 import { SectionCard } from './compiler/CompilerUi';
@@ -28,7 +29,7 @@ const tabs = [
 
 const formatDateTime = (value) => (value ? new Date(value).toLocaleString() : '-');
 
-function ThreeDotsMenu({ assessment, onEdit, onDuplicate, onDelete, onToggleVisibility, onEditPassword }) {
+function ThreeDotsMenu({ assessment, onEdit, onDuplicate, onDelete, onToggleVisibility, onEditPassword, onResetSubmissions, onMarkComplete, onReleaseAnswers }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -78,10 +79,75 @@ function ThreeDotsMenu({ assessment, onEdit, onDuplicate, onDelete, onToggleVisi
             )}
             {item(<Copy className="h-3.5 w-3.5" />, 'Duplicate', onDuplicate)}
             <div className="my-1 h-px bg-slate-100 dark:bg-gray-700" />
+            {item(<RotateCcw className="h-3.5 w-3.5" />, 'Reset Test Submissions', onResetSubmissions)}
+            {item(<CheckCircle2 className="h-3.5 w-3.5" />, 'Mark as Complete', onMarkComplete)}
+            {item(<FileCheck2 className="h-3.5 w-3.5" />, 'Generate Answers', onReleaseAnswers)}
+            <div className="my-1 h-px bg-slate-100 dark:bg-gray-700" />
             {item(<Trash2 className="h-3.5 w-3.5" />, 'Delete Assessment', onDelete, true)}
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+function ConfirmActionModal({ action, onClose, onConfirm }) {
+  const [saving, setSaving] = useState(false);
+  if (!action) return null;
+
+  const isDanger = action.tone === 'danger';
+  const isInfo = action.tone === 'info';
+  const handleConfirm = async () => {
+    setSaving(true);
+    try {
+      await onConfirm(action);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/45 px-4 backdrop-blur-sm">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96, y: 8 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-900"
+      >
+        <div className="flex items-start gap-3">
+          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+            isDanger ? 'bg-rose-50 text-rose-600' : isInfo ? 'bg-sky-50 text-sky-600' : 'bg-amber-50 text-amber-600'
+          }`}>
+            {isDanger ? <RotateCcw className="h-5 w-5" /> : isInfo ? <FileCheck2 className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
+          </div>
+          <div>
+            <h3 className="text-base font-semibold text-slate-900 dark:text-white">{action.title}</h3>
+            <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-gray-300">{action.message}</p>
+          </div>
+        </div>
+        <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+          {action.assessment?.title || 'Untitled assessment'}
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-300"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={saving}
+            className={`rounded-xl px-4 py-2 text-xs font-semibold text-white disabled:opacity-60 ${
+              isDanger ? 'bg-rose-600 hover:bg-rose-500' : isInfo ? 'bg-sky-600 hover:bg-sky-500' : 'bg-emerald-600 hover:bg-emerald-500'
+            }`}
+          >
+            {saving ? 'Working...' : action.confirmLabel}
+          </button>
+        </div>
+      </motion.div>
     </div>
   );
 }
@@ -182,6 +248,7 @@ export default function AssessmentDashboard() {
   const [error, setError] = useState('');
   const [selected, setSelected] = useState(null);
   const [passwordTarget, setPasswordTarget] = useState(null);
+  const [confirmAction, setConfirmAction] = useState(null);
   const [activeTab, setActiveTab] = useState('all');
   const [filters, setFilters] = useState({ status: 'All', search: '', startDate: '', endDate: '' });
 
@@ -214,7 +281,7 @@ export default function AssessmentDashboard() {
     if (activeTab === 'drafts') {
       matchesTab = a.lifecycleStatus === 'draft';
     } else if (activeTab !== 'all') {
-      matchesTab = a.status === activeTab;
+      matchesTab = String(a.status || '').toLowerCase() === activeTab;
     }
 
     const matchesStatus = filters.status === 'All' || a.status === filters.status;
@@ -257,6 +324,58 @@ export default function AssessmentDashboard() {
       loadAssessments();
     } catch (err) {
       toast.error(err.message || 'Failed to update visibility');
+    }
+  };
+
+  const openResetSubmissions = (assessment) => {
+    setConfirmAction({
+      type: 'reset',
+      tone: 'danger',
+      assessment,
+      title: 'Reset test submissions?',
+      message: 'All student submissions, answers, scores, security logs, and progress for this test will be deleted. Students will see a fresh test and can start again while the schedule is open.',
+      confirmLabel: 'Reset Test',
+    });
+  };
+
+  const openMarkComplete = (assessment) => {
+    setConfirmAction({
+      type: 'complete',
+      tone: 'warning',
+      assessment,
+      title: 'Mark assessment as complete?',
+      message: 'Students will no longer be able to start or continue this assessment. On the student side, the assessment will appear as Completed.',
+      confirmLabel: 'Mark Complete',
+    });
+  };
+
+  const openReleaseAnswers = (assessment) => {
+    setConfirmAction({
+      type: 'releaseAnswers',
+      tone: 'info',
+      assessment,
+      title: 'Generate answers for students?',
+      message: 'This will release the student report for this assessment with score, question review, correct answers, section analytics, and rank wherever backend data is available. Students will see it dynamically on their report page after refresh.',
+      confirmLabel: 'Generate Answers',
+    });
+  };
+
+  const handleConfirmAction = async (action) => {
+    try {
+      if (action.type === 'reset') {
+        const result = await api.resetAssessmentSubmissions(action.assessment._id);
+        toast.success(`Test reset. ${result.deletedSubmissions || 0} submission${Number(result.deletedSubmissions || 0) === 1 ? '' : 's'} deleted.`);
+      } else if (action.type === 'complete') {
+        await api.markAssessmentComplete(action.assessment._id);
+        toast.success('Assessment marked as complete');
+      } else if (action.type === 'releaseAnswers') {
+        await api.releaseAssessmentAnswers(action.assessment._id);
+        toast.success('Answers and detailed reports released to students');
+      }
+      setConfirmAction(null);
+      loadAssessments();
+    } catch (err) {
+      toast.error(err.message || 'Action failed');
     }
   };
 
@@ -371,6 +490,9 @@ export default function AssessmentDashboard() {
                             onDelete={() => handleDelete(assessment._id)}
                             onToggleVisibility={() => handleToggleVisibility(assessment)}
                             onEditPassword={() => setPasswordTarget(assessment)}
+                            onResetSubmissions={() => openResetSubmissions(assessment)}
+                            onMarkComplete={() => openMarkComplete(assessment)}
+                            onReleaseAnswers={() => openReleaseAnswers(assessment)}
                           />
                         </div>
                       </td>
@@ -465,6 +587,11 @@ export default function AssessmentDashboard() {
           onSave={loadAssessments}
         />
       )}
+      <ConfirmActionModal
+        action={confirmAction}
+        onClose={() => setConfirmAction(null)}
+        onConfirm={handleConfirmAction}
+      />
     </div>
   );
 }

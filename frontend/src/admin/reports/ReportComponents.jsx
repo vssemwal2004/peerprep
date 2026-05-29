@@ -39,8 +39,8 @@ export const statusMeta = {
 };
 export const assessmentStatusMeta = {
   draft: { label: 'Draft', bg: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' },
-  published: { label: 'Published', bg: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300' },
-  archived: { label: 'Archived', bg: 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300' },
+  published: { label: 'Published', bg: 'bg-lime-50 text-lime-700 dark:bg-lime-900/20 dark:text-lime-300' },
+  archived: { label: 'Archived', bg: 'bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-300' },
 };
 
 /* ═════════════════ BADGES ═════════════════ */
@@ -50,17 +50,17 @@ export function TrendBadge({ change, suffix = '%', invert = false }) {
   const good = invert ? !up : up;
   const Icon = up ? ArrowUpRight : change < 0 ? ArrowDownRight : ArrowRight;
   return (
-    <span className={`inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${good ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300'}`}>
+    <span className={`inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${good ? 'bg-lime-50 text-lime-700 dark:bg-lime-900/20 dark:text-lime-300' : 'bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-300'}`}>
       <Icon className="h-3 w-3" />{Math.abs(change)}{suffix}
     </span>
   );
 }
 
 const statusBgMap = {
-  emerald: 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800',
-  rose: 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-900/20 dark:text-rose-300 dark:border-rose-800',
+  emerald: 'bg-lime-50 text-lime-700 border border-lime-200 dark:bg-lime-900/20 dark:text-lime-300 dark:border-lime-800',
+  rose: 'bg-sky-50 text-sky-700 border border-sky-200 dark:bg-sky-900/20 dark:text-sky-300 dark:border-sky-800',
   sky: 'bg-sky-50 text-sky-700 border border-sky-200 dark:bg-sky-900/20 dark:text-sky-300 dark:border-sky-800',
-  amber: 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800',
+  amber: 'bg-lime-50 text-lime-700 border border-lime-200 dark:bg-lime-900/20 dark:text-lime-300 dark:border-lime-800',
   slate: 'bg-slate-50 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
 };
 
@@ -79,10 +79,11 @@ export function StatusBadge({ value, type = 'student' }) {
 /* ═════════════════ KPI CARD ═════════════════ */
 export function KpiCard({ icon: Icon, label, value, sub, insight, trend, chart, tone = 'sky' }) {
   const toneBg =
-    tone === 'emerald' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-300'
-    : tone === 'rose' ? 'bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-300'
-    : tone === 'amber' ? 'bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-300'
-    : tone === 'violet' ? 'bg-violet-50 text-violet-600 dark:bg-violet-900/20 dark:text-violet-300'
+    tone === 'lime' ? 'bg-lime-50 text-lime-700 dark:bg-lime-900/20 dark:text-lime-300'
+    : tone === 'emerald' ? 'bg-lime-50 text-lime-700 dark:bg-lime-900/20 dark:text-lime-300'
+    : tone === 'rose' ? 'bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-300'
+    : tone === 'amber' ? 'bg-lime-50 text-lime-700 dark:bg-lime-900/20 dark:text-lime-300'
+    : tone === 'violet' ? 'bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-300'
     : 'bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-300';
   return (
     <div className="group relative flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md dark:border-gray-700 dark:bg-gray-900">
@@ -200,7 +201,7 @@ export function TableRow({ row, idx, pagination, visibleColumns, openStudentDeta
         <td className="px-4 py-3 text-center">
           <div className="mx-auto w-24">
             <div className="text-[10px] text-slate-400 dark:text-gray-500">{row.accuracy ?? 0}%</div>
-            <HorizontalProgress value={row.accuracy || 0} max={100} height={3} color={row.accuracy >= 75 ? '#10b981' : row.accuracy >= 50 ? '#0ea5e9' : '#ef4444'} />
+            <HorizontalProgress value={row.accuracy || 0} max={100} height={3} color={row.accuracy >= 75 ? '#84cc16' : '#0ea5e9'} />
           </div>
         </td>
       )}
@@ -208,7 +209,7 @@ export function TableRow({ row, idx, pagination, visibleColumns, openStudentDeta
       {visibleColumns.violations && (
         <td className="px-4 py-3 text-center">
           {row.violationCount ? (
-            <button type="button" onClick={(e) => { e.stopPropagation(); openViolationReport(row._id); }} className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-700 transition-colors hover:bg-rose-100 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300 dark:hover:bg-rose-900/30">
+            <button type="button" onClick={(e) => { e.stopPropagation(); openViolationReport(row._id); }} className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-700 transition-colors hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300 dark:hover:bg-sky-900/30">
               <ShieldAlert className="h-3 w-3" />{row.violationCount}
             </button>
           ) : (<span className="text-xs text-slate-300 dark:text-gray-600">—</span>)}

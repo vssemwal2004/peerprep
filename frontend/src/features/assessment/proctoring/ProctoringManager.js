@@ -80,10 +80,35 @@ function getCameraActive(videoElement, stream) {
   return hasLiveTrack && !videoElement.paused && !videoElement.ended;
 }
 
-function getStatusFromDetectionResult(result = {}) {
+const FOOTER_ISSUE_CONFIRM_MS = 600;
+const FOOTER_ISSUE_CONFIRM_COUNT = 1;
+const FOOTER_ISSUE_CONFIRM_MS_BY_TYPE = Object.freeze({
+  [AI_PROCTORING_EVENTS.LOOKING_AWAY]: 5000,
+});
+const MOBILE_STATUS_HOLD_MS = 1800;
+
+function isBufferedIssueVisible(buffer, type, timestamp = Date.now()) {
+  const state = buffer?.getState?.(type);
+  if (!state?.firstSeenAt) return false;
+  const confirmMs = FOOTER_ISSUE_CONFIRM_MS_BY_TYPE[type] ?? FOOTER_ISSUE_CONFIRM_MS;
+  return state.consecutiveCount >= FOOTER_ISSUE_CONFIRM_COUNT
+    && timestamp - state.firstSeenAt >= confirmMs;
+}
+
+function getStatusFromDetectionResult(result = {}, buffer = null) {
   const cameraActive = result.cameraActive !== false;
   const faceCount = Number(result.faceCount || 0);
   const personCount = Number(result.personCount || 0);
+  const timestamp = Number(result.timestamp) || Date.now();
+  const multipleFacesVisible = faceCount > 1
+    && isBufferedIssueVisible(buffer, AI_PROCTORING_EVENTS.MULTIPLE_FACES, timestamp);
+  const noFaceVisible = result.facePresent === false
+    && isBufferedIssueVisible(buffer, AI_PROCTORING_EVENTS.NO_FACE, timestamp);
+  const faceOutVisible = result.faceOutOfFrame === true
+    && isBufferedIssueVisible(buffer, AI_PROCTORING_EVENTS.FACE_OUT_OF_FRAME, timestamp);
+  const lookingAwayVisible = result.lookingAway === true
+    && isBufferedIssueVisible(buffer, AI_PROCTORING_EVENTS.LOOKING_AWAY, timestamp);
+  const multiplePersonsVisible = personCount > 1;
 
   if (!cameraActive) {
     return {
@@ -97,22 +122,22 @@ function getStatusFromDetectionResult(result = {}) {
 
   return {
     camera: 'ok',
-    face: faceCount > 1
+    face: multipleFacesVisible
       ? 'multiple'
-      : result.facePresent === false
+      : noFaceVisible
         ? 'missing'
-        : result.faceOutOfFrame
+        : faceOutVisible
           ? 'out_of_frame'
           : 'ok',
-    eye: result.lookingAway ? 'looking_away' : 'ok',
+    eye: lookingAwayVisible ? 'looking_away' : 'ok',
     mobile: result.mobileAvailable === false
       ? 'unknown'
-      : result.mobileDetected
+      : (result.mobileVisible ?? result.mobileDetected)
         ? 'detected'
         : 'ok',
-    person: personCount > 1
+    person: multiplePersonsVisible
       ? 'multiple'
-      : personCount === 0
+      : personCount === 0 && noFaceVisible
         ? 'missing'
         : 'ok',
   };
@@ -139,6 +164,8 @@ export class ProctoringManager {
     this.objectDetectorAvailable = false;
     this.detectionTickInProgress = false;
     this.confirmedViolationCount = 0;
+    this.lastMobileSeenAt = 0;
+    this.lastMobileConfidence = 0;
     this.violationBuffer = new ViolationBuffer({
       cooldownMs: getCooldownMs(this.settings),
     });
@@ -273,7 +300,7 @@ export class ProctoringManager {
 
   startDetectionLoop() {
     this.stopDetectionLoop();
-    const intervalMs = Math.max(1000, Math.min(5000, Number(this.settings.detectionIntervalMs || 1500)));
+    const intervalMs = Math.max(500, Math.min(5000, Number(this.settings.detectionIntervalMs || 500)));
     this.detectionIntervalId = globalThis.setInterval(() => {
       void this.runDetectionTick();
     }, intervalMs);
@@ -310,17 +337,24 @@ export class ProctoringManager {
       const objectPersonConfidence = Number(objectResult?.confidence?.person || 0);
       const personCount = Math.max(faceCount || 0, objectPersonCount || 0);
       const personConfidence = Math.max(faceConfidence, objectPersonConfidence);
+      const rawMobileDetected = Boolean(objectResult?.mobileDetected);
       const mobileConfidence = Number(objectResult?.confidence?.mobile || 0);
+      if (rawMobileDetected) {
+        this.lastMobileSeenAt = timestamp;
+        this.lastMobileConfidence = mobileConfidence;
+      }
+      const mobileVisible = rawMobileDetected || (timestamp - this.lastMobileSeenAt <= MOBILE_STATUS_HOLD_MS);
       const result = createSafeDetectionResult({
         timestamp,
         cameraActive,
         ...(faceResult || {}),
-        mobileDetected: Boolean(objectResult?.mobileDetected),
+        mobileDetected: rawMobileDetected,
+        mobileVisible,
         mobileAvailable: !shouldUseObjectDetection(this.settings) || this.objectDetectorAvailable,
         personCount,
         confidence: {
           face: faceConfidence,
-          mobile: mobileConfidence,
+          mobile: Math.max(mobileConfidence, mobileVisible ? this.lastMobileConfidence : 0),
           person: personConfidence,
           lookingAway: Number(faceResult?.confidence?.lookingAway || 0),
         },
@@ -356,12 +390,6 @@ export class ProctoringManager {
   }
 
   handleDetectionResult(result = {}) {
-    const statusPatch = getStatusFromDetectionResult(result);
-    this.updateStatus({
-      ...statusPatch,
-      error: null,
-    });
-
     const candidates = getViolationCandidates(result, this.settings);
     const activeTypes = candidates.map((candidate) => candidate.type);
     this.violationBuffer.resetExcept(activeTypes, {
@@ -378,6 +406,12 @@ export class ProctoringManager {
         confirmStrategy: candidate.confirmStrategy,
       });
       if (confirmed) this.emitConfirmedViolation(candidate, confirmed);
+    });
+
+    const statusPatch = getStatusFromDetectionResult(result, this.violationBuffer);
+    this.updateStatus({
+      ...statusPatch,
+      error: null,
     });
   }
 

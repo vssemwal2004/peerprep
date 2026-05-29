@@ -2,9 +2,16 @@
 import { createFaceLandmarker } from '../utils/modelLoader';
 
 const SOURCE = 'mediapipe_face_landmarker';
-const FRAME_EDGE_THRESHOLD = 0.05;
-const LOOKING_AWAY_HORIZONTAL_THRESHOLD = 0.28;
-const LOOKING_AWAY_VERTICAL_THRESHOLD = 0.32;
+const FRAME_EDGE_THRESHOLD = 0.015;
+const LOOKING_AWAY_HORIZONTAL_THRESHOLD = 0.31;
+const LOOKING_AWAY_VERTICAL_THRESHOLD = 0.34;
+const IRIS_HORIZONTAL_THRESHOLD = 0.38;
+const IRIS_VERTICAL_THRESHOLD = 0.55;
+const BLENDSHAPE_GAZE_THRESHOLD = 0.32;
+const RIGHT_IRIS_INDICES = Object.freeze([468, 469, 470, 471, 472]);
+const LEFT_IRIS_INDICES = Object.freeze([473, 474, 475, 476, 477]);
+const RIGHT_EYE_INDICES = Object.freeze({ outer: 33, inner: 133, top: 159, bottom: 145 });
+const LEFT_EYE_INDICES = Object.freeze({ outer: 263, inner: 362, top: 386, bottom: 374 });
 const NO_FACE_RESULT = Object.freeze({
   facePresent: false,
   faceCount: 0,
@@ -73,8 +80,9 @@ function normalizeFaceLandmarkerResult(result = {}) {
   const boxes = faceLandmarks.map(getLandmarkBox).filter(Boolean);
   const primaryBox = boxes[0];
   const faceOutOfFrame = boxes.some(isBoxOutOfFrame);
-  const lookingAway = Boolean(primaryBox && isLookingAway(faceLandmarks[0], primaryBox));
-  const lookingAwayConfidence = lookingAway ? getLookingAwayConfidence(faceLandmarks[0], primaryBox) : 0;
+  const primaryBlendshapes = getPrimaryBlendshapes(result);
+  const lookingAway = Boolean(primaryBox && isLookingAway(faceLandmarks[0], primaryBox, primaryBlendshapes));
+  const lookingAwayConfidence = lookingAway ? getLookingAwayConfidence(faceLandmarks[0], primaryBox, primaryBlendshapes) : 0;
 
   return {
     facePresent: true,
@@ -150,21 +158,42 @@ function isBoxOutOfFrame(box) {
     || box.maxY > 1 - FRAME_EDGE_THRESHOLD;
 }
 
-function isLookingAway(landmarks = [], box) {
+function isLookingAway(landmarks = [], box, blendshapes = null) {
   const offsets = getNoseOffsets(landmarks, box);
-  if (!offsets) return false;
+  const irisOffsets = getIrisOffsets(landmarks);
+  const blendshapeOffset = getBlendshapeGazeOffset(blendshapes);
 
-  return offsets.horizontal > LOOKING_AWAY_HORIZONTAL_THRESHOLD
-    || offsets.vertical > LOOKING_AWAY_VERTICAL_THRESHOLD;
+  return Boolean(
+    (offsets && (
+      offsets.horizontal > LOOKING_AWAY_HORIZONTAL_THRESHOLD
+      || offsets.vertical > LOOKING_AWAY_VERTICAL_THRESHOLD
+    ))
+    || (irisOffsets && (
+      irisOffsets.horizontal > IRIS_HORIZONTAL_THRESHOLD
+      || irisOffsets.vertical > IRIS_VERTICAL_THRESHOLD
+    ))
+    || blendshapeOffset > BLENDSHAPE_GAZE_THRESHOLD,
+  );
 }
 
-function getLookingAwayConfidence(landmarks = [], box) {
+function getLookingAwayConfidence(landmarks = [], box, blendshapes = null) {
   const offsets = getNoseOffsets(landmarks, box);
-  if (!offsets) return 0;
+  const irisOffsets = getIrisOffsets(landmarks);
+  const blendshapeOffset = getBlendshapeGazeOffset(blendshapes);
+  if (!offsets && !irisOffsets && !blendshapeOffset) return 0;
 
-  const horizontalExcess = Math.max(0, offsets.horizontal - LOOKING_AWAY_HORIZONTAL_THRESHOLD);
-  const verticalExcess = Math.max(0, offsets.vertical - LOOKING_AWAY_VERTICAL_THRESHOLD);
-  return Math.min(0.95, 0.65 + Math.max(horizontalExcess, verticalExcess));
+  const headHorizontalExcess = Math.max(0, (offsets?.horizontal || 0) - LOOKING_AWAY_HORIZONTAL_THRESHOLD);
+  const headVerticalExcess = Math.max(0, (offsets?.vertical || 0) - LOOKING_AWAY_VERTICAL_THRESHOLD);
+  const irisHorizontalExcess = Math.max(0, (irisOffsets?.horizontal || 0) - IRIS_HORIZONTAL_THRESHOLD);
+  const irisVerticalExcess = Math.max(0, (irisOffsets?.vertical || 0) - IRIS_VERTICAL_THRESHOLD);
+  const blendshapeExcess = Math.max(0, blendshapeOffset - BLENDSHAPE_GAZE_THRESHOLD);
+  return Math.min(0.95, 0.62 + Math.max(
+    headHorizontalExcess,
+    headVerticalExcess,
+    irisHorizontalExcess,
+    irisVerticalExcess,
+    blendshapeExcess,
+  ));
 }
 
 function getNoseOffsets(landmarks = [], box) {
@@ -180,4 +209,78 @@ function getNoseOffsets(landmarks = [], box) {
     horizontal: Math.abs(normalizePointValue(nose.x) - centerX) / width,
     vertical: Math.abs(normalizePointValue(nose.y) - centerY) / height,
   };
+}
+
+function getIrisOffsets(landmarks = []) {
+  const offsets = [
+    getSingleEyeOffset(landmarks, RIGHT_EYE_INDICES, RIGHT_IRIS_INDICES),
+    getSingleEyeOffset(landmarks, LEFT_EYE_INDICES, LEFT_IRIS_INDICES),
+  ].filter(Boolean);
+
+  if (!offsets.length) return null;
+  return offsets.reduce((best, current) => ({
+    horizontal: Math.max(best.horizontal, current.horizontal),
+    vertical: Math.max(best.vertical, current.vertical),
+  }), {
+    horizontal: 0,
+    vertical: 0,
+  });
+}
+
+function getSingleEyeOffset(landmarks = [], eyeIndices, irisIndices = []) {
+  const outer = landmarks[eyeIndices.outer];
+  const inner = landmarks[eyeIndices.inner];
+  const top = landmarks[eyeIndices.top];
+  const bottom = landmarks[eyeIndices.bottom];
+  const iris = getIrisCenter(landmarks, irisIndices);
+
+  if (!outer || !inner || !top || !bottom || !iris) return null;
+
+  const minX = Math.min(normalizePointValue(outer.x), normalizePointValue(inner.x));
+  const maxX = Math.max(normalizePointValue(outer.x), normalizePointValue(inner.x));
+  const minY = Math.min(normalizePointValue(top.y), normalizePointValue(bottom.y));
+  const maxY = Math.max(normalizePointValue(top.y), normalizePointValue(bottom.y));
+  const width = Math.max(0.001, maxX - minX);
+  const height = Math.max(0.001, maxY - minY);
+  const centerX = minX + (width / 2);
+  const centerY = minY + (height / 2);
+
+  return {
+    horizontal: (Math.abs(iris.x - centerX) / width) * 2,
+    vertical: (Math.abs(iris.y - centerY) / height) * 2,
+  };
+}
+
+function getIrisCenter(landmarks = [], indices = []) {
+  const points = indices
+    .map((index) => landmarks[index])
+    .filter((point) => point && Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y)));
+
+  if (!points.length) return null;
+
+  return points.reduce((center, point) => ({
+    x: center.x + (normalizePointValue(point.x) / points.length),
+    y: center.y + (normalizePointValue(point.y) / points.length),
+  }), {
+    x: 0,
+    y: 0,
+  });
+}
+
+function getPrimaryBlendshapes(result = {}) {
+  const groups = Array.isArray(result.faceBlendshapes) ? result.faceBlendshapes : [];
+  const categories = groups[0]?.categories;
+  return Array.isArray(categories) ? categories : null;
+}
+
+function getBlendshapeGazeOffset(categories = null) {
+  if (!Array.isArray(categories)) return 0;
+
+  const gazeScores = categories
+    .filter((category) => /eyeLook(?:In|Out|Up|Down)/i.test(category?.categoryName || category?.displayName || ''))
+    .map((category) => Number(category.score))
+    .filter((score) => Number.isFinite(score));
+
+  if (!gazeScores.length) return 0;
+  return Math.max(...gazeScores);
 }

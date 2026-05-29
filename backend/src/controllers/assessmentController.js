@@ -74,17 +74,81 @@ function parseDate(input) {
 
 function computeStatus(now, assessment) {
   if (assessment.lifecycleStatus === 'draft') return 'Draft';
+  if (assessment.manuallyCompletedAt) return 'Completed';
   if (now < assessment.startTime) return 'Upcoming';
   if (now > assessment.endTime) return 'Completed';
   return 'Active';
 }
 
-function computeAllowedEnd(assessment, startedAt) {
+function isAssessmentClosedForStudents(assessment = {}, now = new Date()) {
+  if (assessment.manuallyCompletedAt) return true;
+  const end = assessment.endTime ? new Date(assessment.endTime) : null;
+  return Boolean(end && now > end);
+}
+
+function getPausedDurationMs(value) {
+  const duration = Number(value || 0);
+  return Number.isFinite(duration) && duration > 0 ? Math.floor(duration) : 0;
+}
+
+function computeAllowedEnd(assessment, startedAt, pausedDurationMs = 0) {
   const durationMs = (assessment.duration || 0) * 60 * 1000;
   const parsedStartDate = startedAt instanceof Date ? startedAt : new Date(startedAt || Date.now());
   const startDate = Number.isNaN(parsedStartDate.getTime()) ? new Date() : parsedStartDate;
   const byDuration = new Date(startDate.getTime() + durationMs);
-  return byDuration < assessment.endTime ? byDuration : assessment.endTime;
+  const parsedEndDate = assessment.endTime instanceof Date ? assessment.endTime : new Date(assessment.endTime || byDuration);
+  const endDate = Number.isNaN(parsedEndDate.getTime()) ? byDuration : parsedEndDate;
+  const baseEnd = byDuration < endDate ? byDuration : endDate;
+  return new Date(baseEnd.getTime() + getPausedDurationMs(pausedDurationMs));
+}
+
+function getSecurityRecheckTimeoutSec(settings = {}) {
+  return clampSettingNumber(settings.securityRecheckTimeoutSec, 180, { min: 30, max: 1800 });
+}
+
+function getSecurityRecheckTimeoutMs(settings = {}) {
+  return getSecurityRecheckTimeoutSec(settings) * 1000;
+}
+
+function getActivePauseElapsedMs(submission = {}, now = new Date()) {
+  if (!submission?.pauseStartedAt) return 0;
+  const startedAt = new Date(submission.pauseStartedAt).getTime();
+  const current = now instanceof Date ? now.getTime() : new Date(now).getTime();
+  if (!Number.isFinite(startedAt) || !Number.isFinite(current) || current <= startedAt) return 0;
+  return current - startedAt;
+}
+
+function isSecurityPauseWithinLimit(submission = {}, settings = {}, now = new Date()) {
+  if (!submission?.pauseStartedAt || submission.status === 'submitted') return false;
+  return getActivePauseElapsedMs(submission, now) <= getSecurityRecheckTimeoutMs(settings);
+}
+
+function hasSecurityPauseExpired(submission = {}, settings = {}, now = new Date()) {
+  if (!submission?.pauseStartedAt || submission.status === 'submitted') return false;
+  return getActivePauseElapsedMs(submission, now) > getSecurityRecheckTimeoutMs(settings);
+}
+
+function startSubmissionSecurityPause(submission, now = new Date()) {
+  if (!submission) return;
+  if (!submission.pauseStartedAt) {
+    submission.pauseCount = (submission.pauseCount || 0) + 1;
+    submission.pauseStartedAt = now;
+  }
+  submission.lastPauseAt = now;
+}
+
+function finishSubmissionSecurityPause(submission, now = new Date()) {
+  if (!submission?.pauseStartedAt) return;
+  submission.pausedDurationMs = getPausedDurationMs(submission.pausedDurationMs) + getActivePauseElapsedMs(submission, now);
+  submission.pauseStartedAt = undefined;
+}
+
+function computeEffectiveTimeTakenSec(submission = {}, endTime = new Date()) {
+  const startedAt = submission.startedAt ? new Date(submission.startedAt).getTime() : null;
+  const endedAt = endTime instanceof Date ? endTime.getTime() : new Date(endTime).getTime();
+  if (!startedAt || !Number.isFinite(endedAt) || endedAt < startedAt) return 0;
+  const pausedMs = getPausedDurationMs(submission.pausedDurationMs) + getActivePauseElapsedMs(submission, endTime);
+  return Math.max(0, Math.floor((endedAt - startedAt - pausedMs) / 1000));
 }
 
 function assessmentRouteQuery(id) {
@@ -180,7 +244,7 @@ function normalizeAiProctoringSettings(settings = {}) {
     detectNoFace: source.detectNoFace !== false,
     detectFaceOutOfFrame: source.detectFaceOutOfFrame !== false,
     detectLookingAway: source.detectLookingAway !== false,
-    detectionIntervalMs: clampSettingNumber(source.detectionIntervalMs, 1500, { min: 1000, max: 5000 }),
+    detectionIntervalMs: clampSettingNumber(source.detectionIntervalMs, 500, { min: 500, max: 5000 }),
     ignoreLimit: clampSettingNumber(source.ignoreLimit, 5, { min: 0, max: 50 }),
     violationCooldownSec: clampSettingNumber(source.violationCooldownSec, 20, { min: 5, max: 120 }),
     criticalAutoFlag: source.criticalAutoFlag !== false,
@@ -224,6 +288,7 @@ function normalizeAssessmentSettings(settings = {}) {
     audioEventCooldownSec: clampSettingNumber(source.audioEventCooldownSec, 20, { min: 5, max: 120 }),
     autoSubmitOnEnd: source.autoSubmitOnEnd !== false,
     autoSubmitWarnMin: clampSettingNumber(source.autoSubmitWarnMin, 5, { min: 1, max: 60 }),
+    securityRecheckTimeoutSec: getSecurityRecheckTimeoutSec(source),
     preventMultipleTabs: Boolean(source.preventMultipleTabs),
     duplicateTabAction: actionSetting(source, ['duplicateTabAction'], 'pause'),
     restrictNavigation: Boolean(source.restrictNavigation),
@@ -652,6 +717,7 @@ function lifecycleBucketForAssessment(assessment = {}, now = new Date()) {
   const start = assessment.startTime ? new Date(assessment.startTime) : null;
   const end = assessment.endTime ? new Date(assessment.endTime) : null;
   if (assessment.lifecycleStatus === 'draft') return 'draft';
+  if (assessment.manuallyCompletedAt) return 'completed';
   if (start && start > now) return 'upcoming';
   if (end && end < now) return 'completed';
   return 'current';
@@ -670,7 +736,7 @@ function computeSubmissionTimeTakenSec(submission = {}) {
       : null;
 
   if (!startedAt || !endedAt || endedAt < startedAt) return 0;
-  return Math.round((endedAt - startedAt) / 1000);
+  return computeEffectiveTimeTakenSec(submission, new Date(endedAt));
 }
 
 function formatStudentSubmissionStatus(submission = {}) {
@@ -1690,6 +1756,131 @@ export async function deleteAssessment(req, res) {
   }
 }
 
+export async function resetAssessmentSubmissions(req, res) {
+  try {
+    const { id } = req.params;
+    const assessment = await Assessment.findById(id);
+    if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
+    if (req.user?.role === 'coordinator' && assessment.createdBy?.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: 'Not allowed to reset this assessment.' });
+    }
+
+    const result = await AssessmentSubmission.deleteMany({ assessmentId: assessment._id });
+    assessment.manuallyCompletedAt = undefined;
+    await assessment.save();
+
+    await logActivity({
+      actorId: req.user?._id,
+      action: 'assessment.reset_submissions',
+      entityType: 'assessment',
+      entityId: assessment._id,
+      description: `Reset submissions for assessment: ${assessment.title || 'Untitled'}`,
+      metadata: { assessmentId: String(assessment._id), deletedSubmissions: result.deletedCount || 0 },
+      req,
+    });
+
+    return res.json({
+      ok: true,
+      message: 'Assessment submissions reset. Students can start fresh while the schedule is open.',
+      deletedSubmissions: result.deletedCount || 0,
+    });
+  } catch (err) {
+    console.error('Error resetting assessment submissions:', err);
+    return res.status(500).json({ error: 'Failed to reset assessment submissions.' });
+  }
+}
+
+export async function markAssessmentComplete(req, res) {
+  try {
+    const { id } = req.params;
+    const assessment = await Assessment.findById(id);
+    if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
+    if (req.user?.role === 'coordinator' && assessment.createdBy?.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: 'Not allowed to complete this assessment.' });
+    }
+    if (assessment.lifecycleStatus === 'draft') {
+      return res.status(400).json({ error: 'Publish the assessment before marking it complete.' });
+    }
+
+    const now = new Date();
+    assessment.manuallyCompletedAt = now;
+    await assessment.save();
+
+    await logActivity({
+      actorId: req.user?._id,
+      action: 'assessment.mark_complete',
+      entityType: 'assessment',
+      entityId: assessment._id,
+      description: `Marked assessment complete: ${assessment.title || 'Untitled'}`,
+      metadata: { assessmentId: String(assessment._id), completedAt: now },
+      req,
+    });
+
+    return res.json({
+      ok: true,
+      message: 'Assessment marked as complete.',
+      assessment: sanitizeAssessmentForResponse(assessment.toObject()),
+      manuallyCompletedAt: now,
+    });
+  } catch (err) {
+    console.error('Error marking assessment complete:', err);
+    return res.status(500).json({ error: 'Failed to mark assessment complete.' });
+  }
+}
+
+export async function releaseAssessmentAnswers(req, res) {
+  try {
+    const { id } = req.params;
+    const assessment = await Assessment.findById(id);
+    if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
+    if (req.user?.role === 'coordinator' && assessment.createdBy?.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: 'Not allowed to release answers for this assessment.' });
+    }
+    if (assessment.lifecycleStatus === 'draft') {
+      return res.status(400).json({ error: 'Publish the assessment before releasing answers.' });
+    }
+
+    const nextSettings = normalizeAssessmentSettings({
+      ...(assessment.settings && typeof assessment.settings === 'object' ? assessment.settings : {}),
+      showResultsAfterSubmit: true,
+      showCorrectAnswers: true,
+      showSectionBreakdown: true,
+      showPercentile: true,
+      resultDelayHours: 0,
+    });
+    assessment.settings = nextSettings;
+    await assessment.save();
+
+    await logActivity({
+      actorId: req.user?._id,
+      action: 'assessment.release_answers',
+      entityType: 'assessment',
+      entityId: assessment._id,
+      description: `Released report answers for assessment: ${assessment.title || 'Untitled'}`,
+      metadata: {
+        assessmentId: String(assessment._id),
+        releasedSettings: {
+          showResultsAfterSubmit: true,
+          showCorrectAnswers: true,
+          showSectionBreakdown: true,
+          showPercentile: true,
+          resultDelayHours: 0,
+        },
+      },
+      req,
+    });
+
+    return res.json({
+      ok: true,
+      message: 'Answers and detailed reports released to students.',
+      assessment: sanitizeAssessmentForResponse(assessment.toObject()),
+    });
+  } catch (err) {
+    console.error('Error releasing assessment answers:', err);
+    return res.status(500).json({ error: 'Failed to release assessment answers.' });
+  }
+}
+
 export async function listStudentAssessments(req, res) {
   try {
     const studentId = req.user._id;
@@ -1713,6 +1904,7 @@ export async function listStudentAssessments(req, res) {
       let status = 'Not Started';
       if (submission?.status === 'submitted') status = 'Completed';
       else if (submission?.status === 'violation') status = 'Violation';
+      else if (a.manuallyCompletedAt) status = 'Completed';
       else if (now >= a.startTime && now <= a.endTime) status = 'Available';
       else if (now > a.endTime) status = 'Completed';
 
@@ -1735,6 +1927,7 @@ export async function listStudentAssessments(req, res) {
         settings: a.settings || {},
         status,
         submittedAt: submission?.submittedAt,
+        manuallyCompletedAt: a.manuallyCompletedAt || null,
       };
     });
 
@@ -1774,6 +1967,7 @@ export async function getStudentAssessmentDashboard(req, res) {
 
     const ongoingAssessments = [];
     const upcomingAssessments = [];
+    const completedAssessments = [];
     const reportRows = [];
 
     assessments.forEach((assessment) => {
@@ -1783,12 +1977,15 @@ export async function getStudentAssessmentDashboard(req, res) {
       const totalQuestions = countQuestions(assessment.sections || []);
       const startsAt = assessment.startTime ? new Date(assessment.startTime) : null;
       const endsAt = assessment.endTime ? new Date(assessment.endTime) : null;
+      const isManuallyCompleted = Boolean(assessment.manuallyCompletedAt);
       const isUpcoming = startsAt && now < startsAt;
-      const isLive = startsAt && endsAt && now >= startsAt && now <= endsAt;
+      const isLive = startsAt && endsAt && now >= startsAt && now <= endsAt && !isManuallyCompleted;
+      const isCompletedWindow = isManuallyCompleted || (endsAt && now > endsAt);
       const hasExpiredLongEnough = endsAt ? (now.getTime() - endsAt.getTime()) > ASSESSMENT_EXPIRY_GRACE_MS : false;
 
-      if ((isUpcoming || isLive) && !hasExpiredLongEnough) {
-        const status = isLive ? 'Live' : 'Upcoming';
+      if ((isUpcoming || isLive || isCompletedWindow) && (!hasExpiredLongEnough || isManuallyCompleted || submission?.status === 'submitted')) {
+        const hasSubmitted = submission?.status === 'submitted';
+        const status = hasSubmitted || isCompletedWindow ? 'Completed' : isLive ? 'Live' : 'Upcoming';
         const card = {
           _id: assessment._id,
           title: assessment.title || 'Untitled Assessment',
@@ -1807,12 +2004,16 @@ export async function getStudentAssessmentDashboard(req, res) {
           passwordUnlocked: Boolean(!assessment.passwordEnabled || submission?.passwordVerifiedAt),
           settings: assessment.settings || {},
           status,
-          actionLabel: submission?.status === 'in_progress' ? 'Continue' : 'Start',
-          hasSubmissionInProgress: submission?.status === 'in_progress',
+          actionLabel: hasSubmitted || isCompletedWindow ? 'Completed' : submission?.status === 'in_progress' ? 'Continue' : 'Start',
+          hasSubmitted,
+          hasSubmissionInProgress: !isCompletedWindow && submission?.status === 'in_progress',
+          submittedAt: submission?.submittedAt || null,
+          manuallyCompletedAt: assessment.manuallyCompletedAt || null,
         };
 
-        if (status === 'Live') ongoingAssessments.push(card);
-        else upcomingAssessments.push(card);
+        if (isLive) ongoingAssessments.push(card);
+        else if (isUpcoming) upcomingAssessments.push(card);
+        else completedAssessments.push(card);
       }
 
       if (submission && (submission.startedAt || submission.submittedAt || submission.updatedAt)) {
@@ -1827,11 +2028,7 @@ export async function getStudentAssessmentDashboard(req, res) {
       (a, b) => new Date(b.dateAttempted || 0).getTime() - new Date(a.dateAttempted || 0).getTime(),
     );
 
-    const historyRows = sortedReports.filter((row) => {
-      const assessment = assessments.find((item) => String(item._id) === String(row.assessmentId));
-      const ended = assessment?.endTime ? new Date(assessment.endTime).getTime() < now.getTime() : false;
-      return row.status === 'Completed' && ended;
-    });
+    const historyRows = sortedReports.filter((row) => row.status === 'Completed');
 
     const completedReports = sortedReports.filter((row) => row.status === 'Completed');
     const visibleScoreReports = completedReports.filter((row) => row.permissions?.canViewScore);
@@ -1850,6 +2047,7 @@ export async function getStudentAssessmentDashboard(req, res) {
       overview: {
         upcomingCount: upcomingAssessments.length,
         liveCount: ongoingAssessments.length,
+        completedCount: completedAssessments.length,
         reportsCount: sortedReports.length,
         historyCount: historyRows.length,
         averageScore,
@@ -1857,6 +2055,7 @@ export async function getStudentAssessmentDashboard(req, res) {
       },
       upcomingAssessments,
       ongoingAssessments,
+      completedAssessments,
       reports: sortedReports,
       history: historyRows,
     });
@@ -1896,8 +2095,11 @@ export async function getStudentAssessment(req, res) {
       return res.status(passwordCheck.status).json({ error: passwordCheck.error });
     }
 
-    if (now > assessment.endTime && !submission) {
+    if (isAssessmentClosedForStudents(assessment, now) && !submission) {
       return res.status(403).json({ error: 'Assessment window has closed.', serverTime: now, endTime: assessment.endTime });
+    }
+    if (assessment.manuallyCompletedAt && submission?.status !== 'submitted') {
+      return res.status(403).json({ error: 'Assessment has been marked complete by the administrator.', serverTime: now });
     }
 
     const attemptLimit = assessment.attemptLimit || 1;
@@ -1914,12 +2116,29 @@ export async function getStudentAssessment(req, res) {
       });
     }
 
-    const allowedEnd = computeAllowedEnd(assessment, submission.startedAt || now);
-    if (now > allowedEnd && submission.status !== 'submitted') {
+    const settings = normalizeAssessmentSettings(assessment.settings || {});
+    if (
+      submission.status === 'in_progress'
+      && submission.startedAt
+      && !submission.securityCompletedAt
+      && !submission.pauseStartedAt
+    ) {
+      startSubmissionSecurityPause(submission, now);
+      await submission.save();
+    }
+    const securityPauseOk = isSecurityPauseWithinLimit(submission, settings, now);
+    const allowedEnd = computeAllowedEnd(assessment, submission.startedAt || now, submission.pausedDurationMs);
+    if ((now > allowedEnd || hasSecurityPauseExpired(submission, settings, now)) && !securityPauseOk && submission.status !== 'submitted') {
       submission.status = 'submitted';
       submission.submittedAt = now;
       submission.attemptCount = Math.max(submission.attemptCount || 0, 1);
       submission.isLate = assessment.allowLateSubmission ? false : true;
+      if (submission.pauseStartedAt) finishSubmissionSecurityPause(submission, now);
+      const scoring = scoreAssessment(assessment, submission.answers);
+      submission.score = scoring.score;
+      submission.maxMarks = scoring.maxMarks;
+      submission.accuracy = scoring.accuracy;
+      submission.timeTakenSec = computeEffectiveTimeTakenSec(submission, now);
       await submission.save();
     }
 
@@ -1928,6 +2147,7 @@ export async function getStudentAssessment(req, res) {
       submission,
       serverTime: now,
       allowedEnd,
+      securityRecheckTimeoutSec: getSecurityRecheckTimeoutSec(settings),
       requiresSecuritySetup: Boolean(submission && submission.status !== 'submitted' && !submission.securityCompletedAt),
       requiredSecuritySteps: getRequiredSecuritySteps(assessment.settings || {}),
       completedSecuritySteps: getCompletedSecuritySteps(submission),
@@ -1961,7 +2181,7 @@ export async function startStudentAssessment(req, res) {
     if (now < assessment.startTime) {
       return res.status(403).json({ error: 'Assessment has not started yet.', serverTime: now, startTime: assessment.startTime });
     }
-    if (now > assessment.endTime) {
+    if (isAssessmentClosedForStudents(assessment, now)) {
       return res.status(403).json({ error: 'Assessment window has closed.', serverTime: now, endTime: assessment.endTime });
     }
 
@@ -1999,7 +2219,8 @@ export async function startStudentAssessment(req, res) {
       assessment: sanitizeAssessmentForResponse(assessment),
       submission,
       serverTime: now,
-      allowedEnd: computeAllowedEnd(assessment, submission.startedAt || now),
+      allowedEnd: computeAllowedEnd(assessment, submission.startedAt || now, submission.pausedDurationMs),
+      securityRecheckTimeoutSec: getSecurityRecheckTimeoutSec(assessment.settings || {}),
     });
   } catch (err) {
     console.error('Error starting student assessment:', err);
@@ -2023,9 +2244,27 @@ export async function beginStudentAssessment(req, res) {
     const isAssigned = isStudentAssignedToAssessment(assessment, student);
     if (!isAssigned) return res.status(403).json({ error: 'Not assigned to this assessment.' });
     if (now < assessment.startTime) return res.status(403).json({ error: 'Assessment has not started yet.', serverTime: now, startTime: assessment.startTime });
-    if (now > assessment.endTime) return res.status(403).json({ error: 'Assessment window has closed.', serverTime: now, endTime: assessment.endTime });
 
     let submission = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId });
+    const settings = normalizeAssessmentSettings(assessment.settings || {});
+    const allowPausedRecheck = isSecurityPauseWithinLimit(submission, settings, now);
+    if (isAssessmentClosedForStudents(assessment, now) && !allowPausedRecheck) {
+      return res.status(403).json({ error: 'Assessment window has closed.', serverTime: now, endTime: assessment.endTime });
+    }
+    if (hasSecurityPauseExpired(submission, settings, now)) {
+      submission.status = 'submitted';
+      submission.submittedAt = now;
+      submission.attemptCount = Math.max(submission.attemptCount || 0, 1);
+      submission.isLate = false;
+      if (submission.pauseStartedAt) finishSubmissionSecurityPause(submission, now);
+      const scoring = scoreAssessment(assessment, submission.answers);
+      submission.score = scoring.score;
+      submission.maxMarks = scoring.maxMarks;
+      submission.accuracy = scoring.accuracy;
+      submission.timeTakenSec = computeEffectiveTimeTakenSec(submission, now);
+      await submission.save();
+      return res.status(409).json({ error: 'Security recheck time expired. Assessment was auto-submitted.', status: submission.status, serverTime: now });
+    }
     const passwordCheck = await ensureAssessmentPasswordUnlocked(assessment, submission);
     if (!passwordCheck.ok) return res.status(passwordCheck.status).json({ error: passwordCheck.error });
     const requiredSecuritySteps = getRequiredSecuritySteps(assessment.settings || {});
@@ -2056,12 +2295,18 @@ export async function beginStudentAssessment(req, res) {
       await submission.save();
     }
 
-    const allowedEnd = computeAllowedEnd(assessment, submission.startedAt || now);
+    if (submission.pauseStartedAt) {
+      finishSubmissionSecurityPause(submission, now);
+      await submission.save();
+    }
+
+    const allowedEnd = computeAllowedEnd(assessment, submission.startedAt || now, submission.pausedDurationMs);
     return res.json({
       message: 'Assessment started',
       submission,
       serverTime: now,
       allowedEnd,
+      securityRecheckTimeoutSec: getSecurityRecheckTimeoutSec(settings),
     });
   } catch (err) {
     console.error('Error beginning student assessment:', err);
@@ -2113,7 +2358,7 @@ export async function submitAssessment(req, res) {
       return res.status(passwordCheck.status).json({ error: passwordCheck.error });
     }
 
-    if (now > assessment.endTime && !submission) {
+    if (isAssessmentClosedForStudents(assessment, now) && !submission) {
       return res.status(403).json({ error: 'Assessment window has closed.' });
     }
 
@@ -2132,14 +2377,22 @@ export async function submitAssessment(req, res) {
       });
     }
 
-    const allowedEnd = computeAllowedEnd(assessment, submission.startedAt || now);
+    const settings = normalizeAssessmentSettings(assessment.settings || {});
+    const securityPauseOk = isSecurityPauseWithinLimit(submission, settings, now);
+    const allowedEnd = computeAllowedEnd(assessment, submission.startedAt || now, submission.pausedDurationMs);
 
-    const isExpired = now > allowedEnd;
+    const isExpired = (now > allowedEnd && !securityPauseOk) || hasSecurityPauseExpired(submission, settings, now);
     if (isExpired && !assessment.allowLateSubmission && status !== 'submitted') {
       submission.status = 'submitted';
       submission.submittedAt = now;
       submission.attemptCount = Math.max(submission.attemptCount || 0, 1);
       submission.isLate = false;
+      if (submission.pauseStartedAt) finishSubmissionSecurityPause(submission, now);
+      const scoring = scoreAssessment(assessment, submission.answers);
+      submission.score = scoring.score;
+      submission.maxMarks = scoring.maxMarks;
+      submission.accuracy = scoring.accuracy;
+      submission.timeTakenSec = computeEffectiveTimeTakenSec(submission, now);
       await submission.save();
       return res.json({ message: 'Saved', status: submission.status, submittedAt: submission.submittedAt, allowedEnd, serverTime: now });
     }
@@ -2181,13 +2434,15 @@ export async function submitAssessment(req, res) {
     }
 
     if (finalStatus === 'submitted' || finalStatus === 'violation') {
+      if (submission.pauseStartedAt) {
+        finishSubmissionSecurityPause(submission, now);
+      }
       const scoring = scoreAssessment(assessment, submission.answers);
       submission.score = scoring.score;
       submission.maxMarks = scoring.maxMarks;
       submission.accuracy = scoring.accuracy;
       const endTime = submission.submittedAt || now;
-      const startedAt = submission.startedAt || now;
-      submission.timeTakenSec = Math.max(0, Math.floor((endTime.getTime() - startedAt.getTime()) / 1000));
+      submission.timeTakenSec = computeEffectiveTimeTakenSec(submission, endTime);
     }
 
     await submission.save();
@@ -3622,8 +3877,7 @@ export async function logStudentViolation(req, res) {
     submission.violationScore = (submission.violationScore || 0) + weight;
     const action = decideViolationAction({ settings, type, meta: logMeta, submission });
     if (action === 'pause') {
-      submission.pauseCount = (submission.pauseCount || 0) + 1;
-      submission.lastPauseAt = now;
+      startSubmissionSecurityPause(submission, now);
       resetSubmissionSecuritySetup(submission);
     }
     if (action === 'autosubmit') {
@@ -3644,6 +3898,8 @@ export async function logStudentViolation(req, res) {
       violationScore: submission.violationScore,
       pauseCount: submission.pauseCount,
       lastPauseAt: submission.lastPauseAt,
+      pauseStartedAt: submission.pauseStartedAt,
+      securityRecheckTimeoutSec: getSecurityRecheckTimeoutSec(settings),
       action,
       autoSubmit: action === 'autosubmit',
       riskLevel: submission.aiProctoringSummary?.riskLevel,
@@ -3711,7 +3967,7 @@ export async function logStudentHeartbeat(req, res) {
         submission,
       });
       if (action === 'pause') {
-        submission.lastPauseAt = now;
+        startSubmissionSecurityPause(submission, now);
         resetSubmissionSecuritySetup(submission);
       }
     }
@@ -3724,6 +3980,8 @@ export async function logStudentHeartbeat(req, res) {
       violationScore: submission.violationScore || 0,
       pauseCount: submission.pauseCount || 0,
       lastPauseAt: submission.lastPauseAt,
+      pauseStartedAt: submission.pauseStartedAt,
+      securityRecheckTimeoutSec: getSecurityRecheckTimeoutSec(settings),
     });
   } catch (err) {
     console.error('Error logging heartbeat:', err);
@@ -3744,7 +4002,7 @@ export async function markStudentAssessmentSetupStep(req, res) {
 
     const assessment = await findAssessmentForStudentRoute(id, {
       lean: true,
-      select: 'lifecycleStatus startTime endTime duration settings targetType assignedStudents',
+      select: 'lifecycleStatus startTime endTime duration settings targetType assignedStudents manuallyCompletedAt',
     });
     if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
     if (assessment.lifecycleStatus === 'draft') return res.status(403).json({ error: 'Assessment is not published yet.' });
@@ -3752,14 +4010,29 @@ export async function markStudentAssessmentSetupStep(req, res) {
       return res.status(400).json({ error: 'Assessment schedule is incomplete.' });
     }
     const now = new Date();
-    if (now < assessment.startTime || now > assessment.endTime) {
-      return res.status(403).json({ error: 'Assessment is outside the active time window.' });
-    }
     const isAssigned = isStudentAssignedToAssessment(assessment, student);
     if (!isAssigned) return res.status(403).json({ error: 'Not assigned to this assessment.' });
 
     const submission = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId });
     if (!submission) return res.status(404).json({ error: 'Submission not found. Unlock assessment first.' });
+    const settings = normalizeAssessmentSettings(assessment.settings || {});
+    if (now < assessment.startTime || (isAssessmentClosedForStudents(assessment, now) && !isSecurityPauseWithinLimit(submission, settings, now))) {
+      return res.status(403).json({ error: 'Assessment is outside the active time window.' });
+    }
+    if (hasSecurityPauseExpired(submission, settings, now)) {
+      submission.status = 'submitted';
+      submission.submittedAt = now;
+      submission.attemptCount = Math.max(submission.attemptCount || 0, 1);
+      submission.isLate = false;
+      if (submission.pauseStartedAt) finishSubmissionSecurityPause(submission, now);
+      const scoring = scoreAssessment(assessment, submission.answers);
+      submission.score = scoring.score;
+      submission.maxMarks = scoring.maxMarks;
+      submission.accuracy = scoring.accuracy;
+      submission.timeTakenSec = computeEffectiveTimeTakenSec(submission, now);
+      await submission.save();
+      return res.status(409).json({ error: 'Security recheck time expired. Assessment was auto-submitted.', status: submission.status });
+    }
     const passwordCheck = await ensureAssessmentPasswordUnlocked(assessment, submission);
     if (!passwordCheck.ok) return res.status(passwordCheck.status).json({ error: passwordCheck.error });
 
@@ -3798,6 +4071,7 @@ export async function markStudentAssessmentSetupStep(req, res) {
       completedSecuritySteps: getCompletedSecuritySteps(submission),
       canBeginAssessment: hasCompletedRequiredSecuritySteps(submission, requiredSecuritySteps),
       location: submission.securitySetup?.location || null,
+      securityRecheckTimeoutSec: getSecurityRecheckTimeoutSec(settings),
     });
   } catch (err) {
     console.error('Error marking setup step:', err);

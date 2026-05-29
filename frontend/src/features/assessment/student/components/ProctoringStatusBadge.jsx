@@ -9,8 +9,8 @@ const STATUS_TEXT = Object.freeze({
   face: {
     unknown: 'Face Checking',
     ok: 'Face OK',
-    missing: 'No Face',
-    out_of_frame: 'Face Out',
+    missing: 'Face not visible',
+    out_of_frame: 'Adjust face',
     multiple: 'Multiple Faces',
   },
   eye: {

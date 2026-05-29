@@ -341,7 +341,7 @@ function YearlyAssessmentActivity({ calendar = [], monthly = [], onSelectAssessm
                             <span>{Number(assessment.avgScore || 0).toFixed(1)}% avg</span>
                           </div>
                         </div>
-                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+                        <span className="rounded-full bg-lime-50 px-2 py-0.5 text-[10px] font-bold text-lime-700 dark:bg-lime-900/30 dark:text-lime-300">
                           {assessment.lifecycleBucket || 'current'}
                         </span>
                       </div>
@@ -419,7 +419,7 @@ export default function AssessmentReports() {
     assessmentWindow: 'all',
   });
   const [assessmentSearch, setAssessmentSearch] = useState('');
-  const [sidebarCollapsed, setSidebarCollapsed] = useState({ schedule: false, list: false });
+  const [sidebarCollapsed, setSidebarCollapsed] = useState({ scope: true, schedule: true, list: false });
   const [showFilters, setShowFilters] = useState(false);
   const [savedFilterName, setSavedFilterName] = useState('');
   const [savedFilters, setSavedFilters] = useState(() => {
@@ -943,28 +943,28 @@ export default function AssessmentReports() {
       {
         icon: GraduationCap, label: 'Total Attempts', value: totalStudents,
         insight: uniqueCandidates ? `${uniqueCandidates} unique candidates` : undefined,
-        trend: s.attemptGrowth, tone: 'violet',
-        chart: Array.isArray(s.attemptTrend) && s.attemptTrend.length > 1 ? <Sparkline data={s.attemptTrend} stroke="#8b5cf6" /> : null,
+        trend: s.attemptGrowth, tone: 'lime',
+        chart: Array.isArray(s.attemptTrend) && s.attemptTrend.length > 1 ? <Sparkline data={s.attemptTrend} stroke="#84cc16" /> : null,
       },
       {
         icon: TrendingUp, label: 'Avg Score', value: `${avgScore.toFixed(1)}%`,
         sub: `of ${s.maxScore || 100} max`, insight: s.medianScore ? `Median: ${s.medianScore}%` : undefined,
-        trend: s.scoreGrowth, tone: 'emerald',
-        chart: Array.isArray(s.scoreTrend) && s.scoreTrend.length > 1 ? <Sparkline data={s.scoreTrend} stroke="#10b981" /> : null,
+        trend: s.scoreGrowth, tone: 'lime',
+        chart: Array.isArray(s.scoreTrend) && s.scoreTrend.length > 1 ? <Sparkline data={s.scoreTrend} stroke="#84cc16" /> : null,
       },
       {
         icon: BarChart3, label: 'Pass Rate', value: `${passRate.toFixed(1)}%`,
         insight: totalForPassRate > 0 ? `${passCount} passed, ${failCount} failed` : undefined,
-        trend: s.passRateGrowth, tone: 'emerald',
+        trend: s.passRateGrowth, tone: 'lime',
       },
       {
         icon: Search, label: 'Avg Time', value: formatDuration(avgTimeSec),
-        insight: s.fastestTime ? `Fastest: ${formatDuration(Number(s.fastestTime))}` : undefined, tone: 'amber',
+        insight: s.fastestTime ? `Fastest: ${formatDuration(Number(s.fastestTime))}` : undefined, tone: 'sky',
       },
       {
         icon: ShieldAlert, label: 'Violations', value: violationCount,
         insight: totalStudents > 0 ? `${((violationCount / totalStudents)).toFixed(1)} per session` : undefined,
-        trend: s.violationGrowth, tone: 'rose', invert: true,
+        trend: s.violationGrowth, tone: 'sky', invert: true,
       },
     ];
 
@@ -974,11 +974,11 @@ export default function AssessmentReports() {
         {
           icon: ShieldAlert, label: 'Total Violations', value: s.violationCount || 0,
           insight: s.violationRate ? `${s.violationRate}% violation rate` : undefined,
-          tone: 'rose',
+          tone: 'sky',
         },
         {
           icon: GraduationCap, label: 'Flagged Sessions', value: pagination.total || 0,
-          insight: 'Sessions with security violations', tone: 'amber',
+          insight: 'Sessions with security violations', tone: 'lime',
         },
         {
           icon: Search, label: 'Tab Switches', value: s.tabSwitches || 0,
@@ -990,11 +990,11 @@ export default function AssessmentReports() {
         },
         {
           icon: TrendingUp, label: 'Camera Flags', value: s.cameraFlags || 0,
-          insight: 'Camera monitoring violations', tone: 'rose',
+          insight: 'Camera monitoring violations', tone: 'sky',
         },
         {
           icon: Users, label: 'Unique Candidates', value: s.uniqueCandidates || 0,
-          insight: 'Students with violations', tone: 'violet',
+          insight: 'Students with violations', tone: 'lime',
         },
       ];
     }
@@ -1122,6 +1122,11 @@ export default function AssessmentReports() {
       { id: 'completed', label: 'Completed Assessments', count: counts.completed, icon: CheckCircle2 },
     ];
   }, [allAssessments, assessments]);
+  const activeAssessmentWindowTab = useMemo(
+    () => assessmentWindowTabs.find((tab) => tab.id === filters.assessmentWindow) || assessmentWindowTabs[0],
+    [assessmentWindowTabs, filters.assessmentWindow],
+  );
+  const ActiveAssessmentWindowIcon = activeAssessmentWindowTab?.icon || Layers;
 
   const subjectPerformanceRows = useMemo(() => (
     (summary?.subjectPerformance || assessments || []).slice(0, 6).map((item) => ({
@@ -1158,19 +1163,184 @@ export default function AssessmentReports() {
 
   const totalPages = Math.max(1, Math.ceil((pagination.total || 0) / pagination.limit));
 
+  const assessmentRail = (
+    <div className="flex h-full min-h-0 flex-col rounded-2xl border border-sky-100 bg-white shadow-sm shadow-sky-950/5 dark:border-sky-900/40 dark:bg-gray-900">
+      <div className="shrink-0 border-b border-sky-100 px-4 py-4 dark:border-sky-900/40">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-600 dark:text-sky-300">Report Scope</div>
+            <h2 className="mt-1 text-sm font-semibold text-slate-950 dark:text-white">Assessments</h2>
+          </div>
+          <span className="rounded-full bg-lime-50 px-2.5 py-1 text-[11px] font-semibold text-lime-700 ring-1 ring-lime-200 dark:bg-lime-900/20 dark:text-lime-300 dark:ring-lime-800">
+            {allAssessments.length || assessments.length}
+          </span>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/80 dark:border-gray-800 dark:bg-gray-950/40">
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed((prev) => ({ ...prev, scope: !prev.scope }))}
+            className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left"
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <ActiveAssessmentWindowIcon className="h-3.5 w-3.5 shrink-0 text-sky-600 dark:text-sky-300" />
+              <span className="min-w-0">
+                <span className="block truncate text-xs font-semibold text-slate-800 dark:text-gray-100">
+                  {activeAssessmentWindowTab?.label || 'All Assessments'}
+                </span>
+                <span className="block text-[10px] font-medium text-slate-400 dark:text-gray-500">Assessment filters</span>
+              </span>
+            </span>
+            <span className="flex shrink-0 items-center gap-2">
+              <span className="rounded-full bg-sky-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                {activeAssessmentWindowTab?.count ?? 0}
+              </span>
+              <ChevronDown className={`h-3.5 w-3.5 text-slate-400 transition-transform ${sidebarCollapsed.scope ? '-rotate-90' : ''}`} />
+            </span>
+          </button>
+
+          {!sidebarCollapsed.scope && (
+            <div className="border-t border-slate-200 p-2 dark:border-gray-800">
+              <div className="grid gap-2">
+                {assessmentWindowTabs.map((tab) => {
+                  const Icon = tab.icon;
+                  const active = filters.assessmentWindow === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => updateFilter('assessmentWindow', tab.id)}
+                      className={`flex items-center justify-between rounded-xl border px-3 py-2.5 text-left text-xs font-semibold transition-colors ${
+                        active
+                          ? 'border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-800 dark:bg-sky-900/25 dark:text-sky-200'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:bg-sky-50/60 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-sky-800 dark:hover:bg-sky-900/10'
+                      }`}
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <Icon className={`h-3.5 w-3.5 shrink-0 ${active ? 'text-sky-600 dark:text-sky-300' : 'text-slate-400'}`} />
+                        <span className="truncate">{tab.label}</span>
+                      </span>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                        active ? 'bg-sky-600 text-white' : 'bg-lime-50 text-lime-700 dark:bg-lime-900/20 dark:text-lime-300'
+                      }`}>
+                        {tab.count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="relative mt-3">
+                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search assessments"
+                  value={assessmentSearch}
+                  onChange={(e) => setAssessmentSearch(e.target.value)}
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-xs text-slate-700 outline-none transition-colors placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:focus:ring-sky-900/40"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="shrink-0 border-b border-sky-100 px-4 py-3 dark:border-sky-900/40">
+        <button
+          type="button"
+          onClick={() => setSidebarCollapsed((prev) => ({ ...prev, schedule: !prev.schedule }))}
+          className="flex w-full items-center justify-between text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-gray-400"
+        >
+          Date Range
+          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${sidebarCollapsed.schedule ? '-rotate-90' : ''}`} />
+        </button>
+        {!sidebarCollapsed.schedule && (
+          <div className="mt-3 space-y-2">
+            <DateTimePicker
+              value={filters.from}
+              onChange={(v) => setFilters((p) => ({ ...p, from: v }))}
+              placeholder="From date"
+              autoSelectToday={false}
+              allowPast
+              className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-200"
+            />
+            <DateTimePicker
+              value={filters.to}
+              onChange={(v) => setFilters((p) => ({ ...p, to: v }))}
+              placeholder="To date"
+              autoSelectToday={false}
+              allowPast
+              className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-200"
+            />
+          </div>
+        )}
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+        <div className="mb-2 flex items-center justify-between px-1">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-gray-400">Directory</span>
+          <button
+            type="button"
+            onClick={() => updateFilter('assessmentId', '')}
+            className="text-[11px] font-semibold text-sky-600 hover:text-sky-700 dark:text-sky-300"
+          >
+            All
+          </button>
+        </div>
+
+        <div className="space-y-2">
+          {loading && !assessments.length ? (
+            Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="h-20 animate-pulse rounded-xl bg-slate-100 dark:bg-gray-800" />
+            ))
+          ) : assessmentSidebarItems.length ? (
+            assessmentSidebarItems.map((a) => {
+              const active = String(a._id) === String(selectedAssessmentId);
+              return (
+                <button
+                  key={a._id}
+                  type="button"
+                  onClick={() => selectAssessmentReport(a, { openOverview: false })}
+                  className={`w-full rounded-xl border p-3 text-left transition-colors ${
+                    active
+                      ? 'border-sky-300 bg-sky-50 text-sky-950 ring-1 ring-sky-100 dark:border-sky-700 dark:bg-sky-900/20 dark:text-sky-100 dark:ring-sky-900'
+                      : 'border-slate-200 bg-white text-slate-700 hover:border-sky-200 hover:bg-sky-50/50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-sky-800'
+                  }`}
+                >
+                  <div className="truncate text-xs font-semibold">{a.title || 'Untitled'}</div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-slate-500 dark:text-gray-400">
+                    <span className="rounded bg-lime-50 px-1.5 py-0.5 font-semibold text-lime-700 dark:bg-lime-900/20 dark:text-lime-300">{a.assessmentType || 'mixed'}</span>
+                    <span>{a.totalQuestions || 0} Qs</span>
+                    <span>{a.submissionCount || 0} attempts</span>
+                  </div>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-gray-800">
+                    <div className="h-full rounded-full bg-sky-500" style={{ width: `${Math.min(100, Math.max(0, Number(a.avgScore || 0)))}%` }} />
+                  </div>
+                </button>
+              );
+            })
+          ) : (
+            <div className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center text-xs text-slate-500 dark:border-gray-800 dark:text-gray-400">
+              No assessments found
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-gray-950">
-      {/* ── Fixed Header (not sticky to avoid hiding content) ── */}
-      <div className="border-b border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-        <div className="mx-auto flex max-w-[1600px] items-center justify-between px-4 py-4 sm:px-6">
+    <div className="h-screen overflow-hidden bg-[#f5fbff] text-slate-900 dark:bg-gray-950">
+      <div className="shrink-0 border-b border-sky-100 bg-white/95 shadow-sm shadow-sky-950/5 backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
+        <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sky-600 text-white">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-600 text-white shadow-sm shadow-sky-200 dark:shadow-none">
               <BarChart3 className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-slate-900 dark:text-white">Assessment Reports</h1>
+              <h1 className="text-lg font-semibold text-slate-950 dark:text-white">Assessment Reports</h1>
               <p className="text-xs text-slate-500 dark:text-gray-400">
-                Enterprise analytics - {pagination.total || 0} records - {allAssessments.length || assessments.length} assessments
+                {pagination.total || 0} candidate records across {allAssessments.length || assessments.length} assessments
               </p>
             </div>
           </div>
@@ -1234,7 +1404,7 @@ export default function AssessmentReports() {
 
               <button
                 onClick={() => setShowExportModal(true)}
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300 dark:hover:bg-emerald-900/30"
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-lime-200 bg-lime-50 px-3 text-xs font-semibold text-lime-700 transition-colors hover:bg-lime-100 dark:border-lime-800 dark:bg-lime-900/20 dark:text-lime-300 dark:hover:bg-lime-900/30"
               >
                 <Download className="h-3.5 w-3.5" />
                 <span>Download Excel</span>
@@ -1255,7 +1425,7 @@ export default function AssessmentReports() {
                     <Icon className="h-3.5 w-3.5" />
                     {tab.label}
                     {tab.id === 'violations' && (summary?.violationCount || 0) > 0 && (
-                      <span className="ml-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold text-white">
+                      <span className="ml-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-sky-600 px-1 text-[9px] font-bold text-white">
                         {summary.violationCount}
                       </span>
                     )}
@@ -1267,7 +1437,12 @@ export default function AssessmentReports() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6">
+      <div className="mx-auto grid h-[calc(100vh-113px)] max-w-[1600px] grid-cols-1 gap-4 overflow-hidden px-4 py-4 sm:px-6 lg:grid-cols-[310px_minmax(0,1fr)]">
+        <aside className="hidden min-h-0 lg:block">
+          {assessmentRail}
+        </aside>
+
+        <main className="min-h-0 overflow-y-auto pr-1">
         {/* ── KPI Cards ── */}
         {(activeTab === 'overview' || activeTab === 'analytics') && (
           <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
@@ -1298,23 +1473,23 @@ export default function AssessmentReports() {
 
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
               <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
-                <BarChart3 className="h-4 w-4 text-emerald-600" />Attempt Trends
+                <BarChart3 className="h-4 w-4 text-lime-600" />Attempt Trends
               </div>
-              <div className="mt-4"><Sparkline data={attemptTrend} width={320} height={70} stroke="#10b981" fill="rgba(16,185,129,0.06)" strokeWidth={2} /></div>
+              <div className="mt-4"><Sparkline data={attemptTrend} width={320} height={70} stroke="#84cc16" fill="rgba(132,204,22,0.08)" strokeWidth={2} /></div>
               <div className="mt-3 flex items-center justify-between text-[11px] text-slate-500 dark:text-gray-400">
                 <span>Last {attemptTrend.length} days</span>
-                <span className="font-semibold text-emerald-600 dark:text-emerald-400">{attemptTrend.length > 1 ? `${((attemptTrend[attemptTrend.length - 1] - attemptTrend[0]) / Math.max(1, attemptTrend[0]) * 100).toFixed(0)}%` : ''}</span>
+                <span className="font-semibold text-lime-600 dark:text-lime-400">{attemptTrend.length > 1 ? `${((attemptTrend[attemptTrend.length - 1] - attemptTrend[0]) / Math.max(1, attemptTrend[0]) * 100).toFixed(0)}%` : ''}</span>
               </div>
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
               <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
-                <GraduationCap className="h-4 w-4 text-amber-500" />Top Performing
+                <GraduationCap className="h-4 w-4 text-lime-600" />Top Performing
               </div>
               <div className="mt-4 space-y-3">
                 {(summary?.topAssessments || assessments.slice(0, 5)).map((a, i) => (
                   <div key={a._id || i} className="flex items-center gap-3">
-                    <div className={`flex h-6 w-6 items-center justify-center rounded-md text-[10px] font-bold ${i < 3 ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300' : 'bg-slate-50 text-slate-500 dark:bg-gray-800 dark:text-gray-400'}`}>{i + 1}</div>
+                    <div className={`flex h-6 w-6 items-center justify-center rounded-md text-[10px] font-bold ${i < 3 ? 'bg-lime-50 text-lime-700 dark:bg-lime-900/20 dark:text-lime-300' : 'bg-slate-50 text-slate-500 dark:bg-gray-800 dark:text-gray-400'}`}>{i + 1}</div>
                     <div className="min-w-0 flex-1"><div className="truncate text-xs font-semibold text-slate-800 dark:text-gray-200">{a.title || 'Untitled'}</div></div>
                     <div className="text-xs font-bold text-slate-900 dark:text-white">{a.avgScore?.toFixed?.(0) || a.attempted || 0}%</div>
                   </div>
@@ -1341,27 +1516,27 @@ export default function AssessmentReports() {
 
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
               <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
-                <Target className="h-4 w-4 text-emerald-600" />
-                Pass / Fail Ratio
+                <Target className="h-4 w-4 text-lime-600" />
+                Completion Outcome
               </div>
               <div className="mt-4 flex items-center gap-4">
                 <PieChart
                   data={[
                     { label: 'Pass', value: Number(summary?.passCount || 0) },
-                    { label: 'Fail', value: Number(summary?.failCount || 0) },
+                    { label: 'Needs review', value: Number(summary?.failCount || 0) },
                   ]}
-                  colors={['#10b981', '#ef4444']}
+                  colors={['#84cc16', '#0ea5e9']}
                 />
                 <div className="space-y-2 text-xs">
-                  <div className="flex items-center gap-2 text-slate-600 dark:text-gray-300"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />Pass: {summary?.passCount || 0}</div>
-                  <div className="flex items-center gap-2 text-slate-600 dark:text-gray-300"><span className="h-2.5 w-2.5 rounded-full bg-rose-500" />Fail: {summary?.failCount || 0}</div>
+                  <div className="flex items-center gap-2 text-slate-600 dark:text-gray-300"><span className="h-2.5 w-2.5 rounded-full bg-lime-500" />Pass: {summary?.passCount || 0}</div>
+                  <div className="flex items-center gap-2 text-slate-600 dark:text-gray-300"><span className="h-2.5 w-2.5 rounded-full bg-sky-500" />Needs review: {summary?.failCount || 0}</div>
                 </div>
               </div>
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
               <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
-                <BarChart3 className="h-4 w-4 text-amber-600" />
+                <BarChart3 className="h-4 w-4 text-sky-600" />
                 Subject-wise Performance
               </div>
               <div className="mt-4 space-y-3">
@@ -1372,7 +1547,7 @@ export default function AssessmentReports() {
                       <span className="font-bold text-slate-900 dark:text-white">{Number(row.value || 0).toFixed(1)}%</span>
                     </div>
                     <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-gray-800">
-                      <div className="h-full rounded-full bg-gradient-to-r from-sky-500 to-emerald-500" style={{ width: `${Math.min(100, Number(row.value || 0))}%` }} />
+                      <div className="h-full rounded-full bg-gradient-to-r from-sky-500 to-lime-400" style={{ width: `${Math.min(100, Number(row.value || 0))}%` }} />
                     </div>
                   </div>
                 ))}
@@ -1387,11 +1562,11 @@ export default function AssessmentReports() {
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
-                  <ShieldAlert className="h-4 w-4 text-rose-600" />Violation Types
+                  <ShieldAlert className="h-4 w-4 text-sky-600" />Violation Types
                 </div>
                 <span className="text-[10px] text-slate-400 dark:text-gray-500">by category</span>
               </div>
-              <div className="mt-4"><MiniBarChart data={violationData} labels={violationLabels.map(l => l.split(' ')[0])} width={320} height={60} barColor="#ef4444" /></div>
+              <div className="mt-4"><MiniBarChart data={violationData} labels={violationLabels.map(l => l.split(' ')[0])} width={320} height={60} barColor="#0ea5e9" /></div>
               <div className="mt-3 grid grid-cols-4 gap-1 text-center">
                 {violationLabels.map((l, i) => (
                   <div key={l}>
@@ -1404,23 +1579,23 @@ export default function AssessmentReports() {
 
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
               <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
-                <BarChart3 className="h-4 w-4 text-amber-600" />Violation Trend
+                <BarChart3 className="h-4 w-4 text-sky-600" />Violation Trend
               </div>
-              <div className="mt-4"><Sparkline data={violationTrend} width={320} height={70} stroke="#f59e0b" fill="rgba(245,158,11,0.06)" strokeWidth={2} /></div>
+              <div className="mt-4"><Sparkline data={violationTrend} width={320} height={70} stroke="#0ea5e9" fill="rgba(14,165,233,0.08)" strokeWidth={2} /></div>
               <div className="mt-3 flex items-center justify-between text-[11px] text-slate-500 dark:text-gray-400">
                 <span>Last {violationTrend.length} days</span>
-                <span className="font-semibold text-amber-600 dark:text-amber-400">{violationTrend.length > 1 ? `${((violationTrend[violationTrend.length - 1] - violationTrend[0]) / Math.max(1, violationTrend[0]) * 100).toFixed(0)}%` : ''}</span>
+                <span className="font-semibold text-sky-600 dark:text-sky-400">{violationTrend.length > 1 ? `${((violationTrend[violationTrend.length - 1] - violationTrend[0]) / Math.max(1, violationTrend[0]) * 100).toFixed(0)}%` : ''}</span>
               </div>
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
               <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
-                <GraduationCap className="h-4 w-4 text-violet-600" />Top Violators
+                <GraduationCap className="h-4 w-4 text-sky-600" />Top Violators
               </div>
               <div className="mt-4 space-y-3">
                 {(summary?.topViolators || []).slice(0, 5).map((v, i) => (
                   <div key={i} className="flex items-center gap-3">
-                    <div className={`flex h-6 w-6 items-center justify-center rounded-md text-[10px] font-bold ${i < 3 ? 'bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300' : 'bg-slate-50 text-slate-500 dark:bg-gray-800 dark:text-gray-400'}`}>{i + 1}</div>
+                    <div className={`flex h-6 w-6 items-center justify-center rounded-md text-[10px] font-bold ${i < 3 ? 'bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-300' : 'bg-slate-50 text-slate-500 dark:bg-gray-800 dark:text-gray-400'}`}>{i + 1}</div>
                     <div className="min-w-0 flex-1"><div className="truncate text-xs font-semibold text-slate-800 dark:text-gray-200">{v.studentName || 'Unknown'}</div></div>
                     <div className="text-xs font-bold text-slate-900 dark:text-white">{v.violationCount || 0}</div>
                   </div>
@@ -1475,7 +1650,7 @@ export default function AssessmentReports() {
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-gray-500">Saved:</span>
                 {savedFilters.map((sf, i) => (
                   <button key={i} onClick={() => applySavedFilter(sf)} className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-600 transition-colors hover:border-sky-200 hover:bg-sky-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-sky-800 dark:hover:bg-sky-900/20">
-                    <Sparkles className="h-3 w-3 text-amber-500" />{sf.name}
+                    <Sparkles className="h-3 w-3 text-lime-500" />{sf.name}
                     <span onClick={(e) => { e.stopPropagation(); removeSavedFilter(i); }} className="ml-0.5 cursor-pointer rounded p-0.5 hover:bg-slate-200 dark:hover:bg-gray-700"><SlidersHorizontal className="h-3 w-3" /></span>
                   </button>
                 ))}
@@ -1526,28 +1701,52 @@ export default function AssessmentReports() {
           </div>
         )}
 
-        <div className="mb-4 flex gap-2 overflow-x-auto pb-1 lg:hidden">
-          {assessmentWindowTabs.map((tab) => {
-            const Icon = tab.icon;
-            const active = filters.assessmentWindow === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => updateFilter('assessmentWindow', tab.id)}
-                className={`flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-xs font-bold transition-colors ${active ? 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300' : 'border-slate-200 bg-white text-slate-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                {tab.label}
-                <span className={active ? 'text-sky-600 dark:text-sky-300' : 'text-slate-400'}>{tab.count}</span>
-              </button>
-            );
-          })}
+        <div className="mb-4 rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900 lg:hidden">
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed((prev) => ({ ...prev, scope: !prev.scope }))}
+            className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left"
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <ActiveAssessmentWindowIcon className="h-3.5 w-3.5 shrink-0 text-sky-600 dark:text-sky-300" />
+              <span className="truncate text-xs font-bold text-slate-800 dark:text-gray-100">
+                {activeAssessmentWindowTab?.label || 'All Assessments'}
+              </span>
+            </span>
+            <span className="flex shrink-0 items-center gap-2">
+              <span className="rounded-full bg-sky-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                {activeAssessmentWindowTab?.count ?? 0}
+              </span>
+              <ChevronDown className={`h-3.5 w-3.5 text-slate-400 transition-transform ${sidebarCollapsed.scope ? '-rotate-90' : ''}`} />
+            </span>
+          </button>
+          {!sidebarCollapsed.scope && (
+            <div className="grid gap-2 border-t border-slate-200 p-2 dark:border-gray-800">
+              {assessmentWindowTabs.map((tab) => {
+                const Icon = tab.icon;
+                const active = filters.assessmentWindow === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => updateFilter('assessmentWindow', tab.id)}
+                    className={`flex items-center justify-between rounded-xl border px-3 py-2.5 text-xs font-bold transition-colors ${active ? 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300' : 'border-slate-200 bg-white text-slate-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <Icon className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">{tab.label}</span>
+                    </span>
+                    <span className={active ? 'text-sky-600 dark:text-sky-300' : 'text-slate-400'}>{tab.count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        <div className="grid gap-5 lg:grid-cols-[300px_1fr]">
+        <div className="block">
           {/* ── Professional Assessment Sidebar ── */}
-          <div className="hidden lg:block">
+          <div className="hidden">
             <div className="sticky top-[136px] max-h-[calc(100vh-160px)] overflow-y-auto rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-lg shadow-slate-200/50 backdrop-blur-sm dark:border-gray-700/80 dark:bg-gray-900/90 dark:shadow-gray-900/50">
               {/* Header */}
               <div className="mb-4 flex items-center justify-between">
@@ -1678,8 +1877,8 @@ export default function AssessmentReports() {
                         </div>
                         <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                           a.lifecycleStatus === 'published'
-                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-                            : 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                            ? 'bg-lime-50 text-lime-700 dark:bg-lime-900/30 dark:text-lime-300'
+                            : 'bg-sky-50 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
                         }`}>
                           {a.lifecycleStatus || 'draft'}
                         </span>
@@ -1737,7 +1936,7 @@ export default function AssessmentReports() {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setShowExportModal(true)}
-                    className="inline-flex h-8 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300 dark:hover:bg-emerald-900/30"
+                    className="inline-flex h-8 items-center gap-1 rounded-lg border border-lime-200 bg-lime-50 px-2.5 text-xs font-medium text-lime-700 hover:bg-lime-100 dark:border-lime-800 dark:bg-lime-900/20 dark:text-lime-300 dark:hover:bg-lime-900/30"
                   >
                     <Download className="h-3 w-3" />
                     Excel
@@ -1834,6 +2033,7 @@ export default function AssessmentReports() {
             </div>
           </div>
         </div>
+        </main>
       </div>
 
       {/* ═══════════════════ STUDENT DETAIL DRAWER ═══════════════════ */}
@@ -1862,7 +2062,7 @@ export default function AssessmentReports() {
                   </div>
                 ) : visibleExportDefs.length ? visibleExportDefs.map(({ key, label }) => (
                   <label key={key} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-xs text-slate-700 hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800">
-                    <input type="checkbox" checked={Boolean(exportColumns[key])} onChange={() => setExportColumns((prev) => ({ ...prev, [key]: !prev[key] }))} className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />
+                    <input type="checkbox" checked={Boolean(exportColumns[key])} onChange={() => setExportColumns((prev) => ({ ...prev, [key]: !prev[key] }))} className="h-4 w-4 rounded border-slate-300 text-lime-600 focus:ring-lime-500" />
                     <span>{label}</span>
                   </label>
                 )) : (
@@ -1878,7 +2078,7 @@ export default function AssessmentReports() {
                 <button onClick={() => setShowExportModal(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Cancel</button>
                 <button onClick={handlePdfExport} disabled={exportingExcel || loadingExportMeta || !visibleExportDefs.some(({ key }) => exportColumns[key])} className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">PDF</button>
                 <button onClick={handleCsvExport} disabled={exportingExcel || loadingExportMeta || !visibleExportDefs.some(({ key }) => exportColumns[key])} className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">CSV</button>
-                <button onClick={handleExcelExport} disabled={exportingExcel || loadingExportMeta || !visibleExportDefs.some(({ key }) => exportColumns[key])} className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-60">
+                <button onClick={handleExcelExport} disabled={exportingExcel || loadingExportMeta || !visibleExportDefs.some(({ key }) => exportColumns[key])} className="inline-flex items-center gap-1 rounded-lg bg-lime-600 px-4 py-2 text-xs font-semibold text-white hover:bg-lime-500 disabled:opacity-60">
                   <FileSpreadsheet className="h-3.5 w-3.5" />
                   {exportingExcel ? 'Preparing Excel...' : 'Download Excel'}
                 </button>

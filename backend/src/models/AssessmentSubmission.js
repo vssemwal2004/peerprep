@@ -41,6 +41,8 @@ const assessmentSubmissionSchema = new mongoose.Schema({
   violationScore: { type: Number, default: 0 },
   pauseCount: { type: Number, default: 0 },
   lastPauseAt: { type: Date },
+  pauseStartedAt: { type: Date },
+  pausedDurationMs: { type: Number, default: 0 },
   securityHeartbeat: { type: mongoose.Schema.Types.Mixed, default: {} },
   violations: { type: [mongoose.Schema.Types.Mixed], default: [] },
   violationLog: { type: [mongoose.Schema.Types.Mixed], default: [] },

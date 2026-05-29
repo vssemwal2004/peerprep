@@ -6,6 +6,9 @@ import {
   getAssessment,
   updateAssessment,
   deleteAssessment,
+  resetAssessmentSubmissions,
+  markAssessmentComplete,
+  releaseAssessmentAnswers,
   getAssessmentReports,
   getStudentAssessmentReport,
   getAssessmentReportsExportData,
@@ -35,6 +38,9 @@ router.post('/library/questions/bulk', requireAuth, requireCoordinatorPermission
 router.get('/library/questions/:id', requireAuth, requireCoordinatorPermission('coordinator.library.view'), getLibraryQuestion);
 router.post('/library/questions/resolve', requireAuth, requireCoordinatorPermission('coordinator.library.create'), resolveLibraryQuestions);
 router.get('/assessment/:id', requireAuth, requireCoordinatorPermission('coordinator.assessment.view'), getAssessment);
+router.post('/assessment/:id/reset-submissions', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), resetAssessmentSubmissions);
+router.post('/assessment/:id/mark-complete', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), markAssessmentComplete);
+router.post('/assessment/:id/release-answers', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), releaseAssessmentAnswers);
 router.put('/assessment/:id', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), updateAssessment);
 router.delete('/assessment/:id', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), deleteAssessment);
 

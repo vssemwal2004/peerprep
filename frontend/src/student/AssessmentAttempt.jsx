@@ -93,6 +93,11 @@ const SOFT_FOOTER_WARNING_TYPES = new Set([
   'fullscreen_exit',
 ]);
 
+const SCREENSHOT_WARNING_GRACE_MS = 90000;
+const CAMERA_WARNING_STREAK_LIMIT = 6;
+const FACE_CENTER_TOLERANCE_RATIO = 0.46;
+const FACE_MIN_WIDTH_RATIO = 0.08;
+
 const BLOCKED_INPUT_TYPES = new Set([
   'insertFromPaste',
   'insertFromDrop',
@@ -199,6 +204,24 @@ const transformAssessmentForAttempt = (assessment, submissionId = '') => {
   return { ...assessment, sections };
 };
 
+const getCodingDataFromQuestion = (question = {}) => (
+  question?.problemDataSnapshot
+  || question?.problemData
+  || question?.coding?.problemData
+  || question?.coding
+  || {}
+);
+
+const getCodingLanguagesFromData = (codingData = {}) => (
+  Array.isArray(codingData?.supportedLanguages) && codingData.supportedLanguages.length
+    ? codingData.supportedLanguages
+    : ['python']
+);
+
+const getCodingStarterCode = (question, language) => (
+  getStarterCodeForLanguage(getCodingDataFromQuestion(question), language)
+);
+
 export default function AssessmentAttempt() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -245,6 +268,8 @@ export default function AssessmentAttempt() {
   const [isPaused, setIsPaused] = useState(false);
   const [allowedEndTime, setAllowedEndTime] = useState(null);
   const [pauseStartedAt, setPauseStartedAt] = useState(null);
+  const [securityRecheckStartedAt, setSecurityRecheckStartedAt] = useState(null);
+  const [securityRecheckRemainingSec, setSecurityRecheckRemainingSec] = useState(0);
   const [violationMessage, setViolationMessage] = useState('');
   const [activeConsoleTab, setActiveConsoleTab] = useState('result');
   const [codeResultMap, setCodeResultMap] = useState({});
@@ -296,6 +321,7 @@ export default function AssessmentAttempt() {
   const securityStatusRef = useRef(CSE_STATUS_DEFAULTS);
   const violationScoreRef = useRef(0);
   const pauseCountRef = useRef(0);
+  const securityRecheckAutoSubmitRef = useRef(false);
   const faceDetectorRef = useRef(null);
   const audioContextRef = useRef(null);
   const audioAnalyserRef = useRef(null);
@@ -341,6 +367,7 @@ export default function AssessmentAttempt() {
   const audioMonitoringEnabled = Boolean(securitySettings.audioMonitoring);
   const tabGuardEnabled = Boolean(securitySettings.tabSwitchDetection);
   const copyBlockEnabled = Boolean(securitySettings.disableCopyPaste);
+  const screenshotProtectionEnabled = Boolean(securitySettings.blockScreenshots);
   const preventMultipleTabs = Boolean(securitySettings.preventMultipleTabs);
   const blockRightClick = copyBlockEnabled && securitySettings.blockRightClick !== false;
   const tabSwitchLimit = Number(securitySettings.tabSwitchLimit || 0);
@@ -350,6 +377,10 @@ export default function AssessmentAttempt() {
   const restrictNavigation = Boolean(securitySettings.restrictNavigation);
   const allowSectionReview = securitySettings.allowSectionReview !== false;
   const fullscreenTimeoutSec = Number(securitySettings.fullscreenTimeoutSec || 0);
+  const configuredSecurityRecheckTimeoutSec = Number(securitySettings.securityRecheckTimeoutSec);
+  const securityRecheckTimeoutSec = Number.isFinite(configuredSecurityRecheckTimeoutSec)
+    ? Math.min(1800, Math.max(30, configuredSecurityRecheckTimeoutSec))
+    : 180;
   const idleDetection = Boolean(securitySettings.idleDetection);
   const idleThresholdMs = Math.max(1, Number(securitySettings.idleThresholdMin || 5)) * 60 * 1000;
   const idleAction = securitySettings.idleAction || 'warn';
@@ -358,7 +389,8 @@ export default function AssessmentAttempt() {
   const duplicateTabCount = detectedTabs.filter((tab) => !tab.current).length;
   const totalViolations = tabSwitches + fullscreenExits + cameraFlags + copyPasteCount;
   const totalWarnings = totalViolations + screenshotWarnings + aiWarnings;
-  const forcePauseActive = isPaused && phase === 'validation' && !isSubmitted;
+  const forcePauseActive = isPaused && phase === 'violation' && !isSubmitted;
+  const securityRecheckActive = isPaused && !isSubmitted && (phase === 'violation' || phase === 'validation');
   const securityHeartbeat = useMemo(() => ({
     fullscreen: !fullscreenRequired || Boolean(document.fullscreenElement),
     tabActive: !tabGuardEnabled || (document.hasFocus() && !document.hidden),
@@ -715,16 +747,21 @@ export default function AssessmentAttempt() {
       return;
     }
 
-    const nowIso = serverState.lastPauseAt || new Date().toISOString();
+    const nowIso = serverState.pauseStartedAt || serverState.lastPauseAt || new Date().toISOString();
+    const pauseStartMs = new Date(nowIso).getTime();
+    const effectivePauseStart = Number.isFinite(pauseStartMs) ? pauseStartMs : Date.now();
     setLastPauseAt(nowIso);
-    setPauseStartedAt((prev) => prev || Date.now());
+    setPauseStartedAt((prev) => prev || effectivePauseStart);
+    setSecurityRecheckStartedAt(effectivePauseStart);
+    setSecurityRecheckRemainingSec(Number(serverState.securityRecheckTimeoutSec || securityRecheckTimeoutSec));
+    securityRecheckAutoSubmitRef.current = false;
     setPauseCount((prev) => Math.max(prev + 1, Number(serverState.pauseCount || 0)));
     setViolationMessage(message || 'Security Violation Detected');
     setSecurityAction('pause');
     setIsPaused(true);
     resetSecuritySetupProgress();
     setPhase('violation');
-  }, [phase, resetSecuritySetupProgress]);
+  }, [phase, resetSecuritySetupProgress, securityRecheckTimeoutSec]);
 
   const showSecurityPopup = useCallback((type, message, meta = {}, result = {}) => {
     const now = Date.now();
@@ -780,8 +817,9 @@ export default function AssessmentAttempt() {
 
   const showScreenshotBlockedPopup = useCallback(() => {
     const now = Date.now();
+    if (now - lastScreenshotWarningAtRef.current < 1500) return;
     lastScreenshotWarningAtRef.current = now;
-    screenshotGraceUntilRef.current = now + 20000;
+    screenshotGraceUntilRef.current = now + SCREENSHOT_WARNING_GRACE_MS;
     const warningCount = totalWarnings + 1;
     setScreenshotWarnings((prev) => prev + 1);
     setSecurityPopup({
@@ -947,6 +985,22 @@ export default function AssessmentAttempt() {
           ...displayAnswer,
         };
       });
+      (attemptAssessment?.sections || []).forEach((sectionItem, displaySectionIndex) => {
+        if (sectionItem?.type !== 'coding') return;
+        (sectionItem.questions || []).forEach((questionItem, displayQuestionIndex) => {
+          const key = answerKey(displaySectionIndex, displayQuestionIndex);
+          const existingAnswer = initialAnswers[key] || {};
+          const codingData = getCodingDataFromQuestion(questionItem);
+          const languages = getCodingLanguagesFromData(codingData);
+          const language = existingAnswer.language || languages[0];
+          const hasCode = typeof existingAnswer.code === 'string' && existingAnswer.code.trim();
+          initialAnswers[key] = {
+            ...existingAnswer,
+            language,
+            code: hasCode ? existingAnswer.code : getStarterCodeForLanguage(codingData, language),
+          };
+        });
+      });
       setAnswersMap(initialAnswers);
       setTabSwitches(data.submission?.tabSwitches || 0);
       setFullscreenExits(data.submission?.fullscreenExits || 0);
@@ -958,17 +1012,37 @@ export default function AssessmentAttempt() {
       setViolations(data.submission?.violations || []);
       setLocationData(data.submission?.securitySetup?.location || null);
       syncCompletedSecuritySteps(data.completedSecuritySteps || []);
+      const loadedTimeoutSec = Math.min(
+        1800,
+        Math.max(30, Number(data.securityRecheckTimeoutSec || data.assessment?.settings?.securityRecheckTimeoutSec || 180) || 180),
+      );
+      const pauseStartMs = data.submission?.pauseStartedAt ? new Date(data.submission.pauseStartedAt).getTime() : null;
+      const hasActiveSecurityPause = data.submission?.status !== 'submitted' && Number.isFinite(pauseStartMs);
+      if (hasActiveSecurityPause) {
+        const elapsedSec = Math.floor((Date.now() - pauseStartMs) / 1000);
+        setIsPaused(true);
+        setPauseStartedAt(pauseStartMs);
+        setSecurityRecheckStartedAt(pauseStartMs);
+        setSecurityRecheckRemainingSec(Math.max(0, loadedTimeoutSec - elapsedSec));
+        securityRecheckAutoSubmitRef.current = false;
+      } else {
+        setIsPaused(false);
+        setPauseStartedAt(null);
+        setSecurityRecheckStartedAt(null);
+        setSecurityRecheckRemainingSec(0);
+      }
 
       const shouldSkipValidation = Boolean(
         data.submission?.status === 'submitted'
         || (data.submission?.status === 'in_progress' && data.submission?.startedAt && !data.requiresSecuritySetup),
       );
-      if (shouldSkipValidation) {
+      if (hasActiveSecurityPause) {
+        setPhase('validation');
+      } else if (shouldSkipValidation) {
         setPhase('active');
       } else {
         setPhase('validation');
       }
-      setIsPaused(false);
     } catch (err) {
       setError(err.message || 'Unable to load assessment');
     } finally {
@@ -1103,10 +1177,7 @@ export default function AssessmentAttempt() {
     if (!assessment || !allowedEndTime || isPaused || phase !== 'active') return undefined;
     const timer = setInterval(() => {
       const now = Date.now() + offset;
-      const startedAt = submission?.startedAt ? new Date(submission.startedAt).getTime() : now;
-      const durationMs = assessment.duration * 60 * 1000;
-      const cappedEnd = Math.min(allowedEndTime, startedAt + durationMs);
-      const remaining = cappedEnd - now;
+      const remaining = allowedEndTime - now;
       setTimeLeft(remaining);
       if (remaining <= 0 && submission?.status !== 'submitted' && autoSubmitOnEnd) {
         handleSubmit(true);
@@ -1114,6 +1185,23 @@ export default function AssessmentAttempt() {
     }, 1000);
     return () => clearInterval(timer);
   }, [assessment, submission, offset, allowedEndTime, isPaused, phase, autoSubmitOnEnd, handleSubmit]);
+
+  useEffect(() => {
+    if (!securityRecheckActive || !securityRecheckStartedAt) return undefined;
+    const tick = () => {
+      const elapsedSec = Math.floor((Date.now() - securityRecheckStartedAt) / 1000);
+      const remaining = Math.max(0, securityRecheckTimeoutSec - elapsedSec);
+      setSecurityRecheckRemainingSec(remaining);
+      if (remaining <= 0 && !securityRecheckAutoSubmitRef.current) {
+        securityRecheckAutoSubmitRef.current = true;
+        toast.error('Security recheck time expired. Assessment is being auto-submitted.');
+        void handleSubmit(true);
+      }
+    };
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [securityRecheckActive, securityRecheckStartedAt, securityRecheckTimeoutSec, handleSubmit, toast]);
 
   useEffect(() => {
     if (!secureActive || isSubmitted) return undefined;
@@ -1139,6 +1227,13 @@ export default function AssessmentAttempt() {
   useEffect(() => {
     if (!secureActive || !tabGuardEnabled) return undefined;
     const reportFocusLoss = (source) => {
+      const screenshotWarningActive = Date.now() < screenshotGraceUntilRef.current
+        || Date.now() - lastScreenshotWarningAtRef.current < SCREENSHOT_WARNING_GRACE_MS;
+      if (screenshotWarningActive) {
+        setSecurityStatus((prev) => ({ ...prev, tabActive: true }));
+        setSecurityNotice('Screenshot attempt recorded as a warning. Continue the assessment.');
+        return;
+      }
       const active = document.hasFocus() && !document.hidden;
       setSecurityStatus((prev) => ({ ...prev, tabActive: active }));
       if (!active) {
@@ -1179,7 +1274,7 @@ export default function AssessmentAttempt() {
   }, [secureActive, preventMultipleTabs, detectedTabs, recordViolation]);
 
   useEffect(() => {
-    if (!secureActive || !copyBlockEnabled) return undefined;
+    if (!secureActive || (!copyBlockEnabled && !screenshotProtectionEnabled)) return undefined;
     const stopRestrictedEvent = (event, type, message, meta = {}) => {
       event.preventDefault();
       event.stopPropagation();
@@ -1190,12 +1285,15 @@ export default function AssessmentAttempt() {
       });
     };
     const handleCopy = (event) => {
+      if (!copyBlockEnabled) return;
       stopRestrictedEvent(event, 'copy_paste', 'Copy action blocked by assessment rules.');
     };
     const handleCut = (event) => {
+      if (!copyBlockEnabled) return;
       stopRestrictedEvent(event, 'copy_paste', 'Cut action blocked by assessment rules.');
     };
     const handlePaste = (event) => {
+      if (!copyBlockEnabled) return;
       stopRestrictedEvent(event, 'copy_paste', 'Paste action blocked by assessment rules.');
     };
     const handleContextMenu = (event) => {
@@ -1203,12 +1301,15 @@ export default function AssessmentAttempt() {
       stopRestrictedEvent(event, 'context_menu', 'Right-click menu blocked by assessment rules.');
     };
     const handleDrop = (event) => {
+      if (!copyBlockEnabled) return;
       stopRestrictedEvent(event, 'copy_paste', 'Drag/drop content insertion blocked by assessment rules.');
     };
     const handleDragStart = (event) => {
+      if (!copyBlockEnabled) return;
       stopRestrictedEvent(event, 'copy_paste', 'Dragging selected content is blocked by assessment rules.');
     };
     const handleBeforeInput = (event) => {
+      if (!copyBlockEnabled) return;
       if (BLOCKED_INPUT_TYPES.has(event.inputType)) {
         stopRestrictedEvent(event, 'copy_paste', 'Paste or drop input blocked by assessment rules.', {
           inputType: event.inputType,
@@ -1217,13 +1318,19 @@ export default function AssessmentAttempt() {
     };
     const handleKeydown = (event) => {
       const key = event.key?.toLowerCase();
-      if (key === 'printscreen' || event.code === 'PrintScreen') {
+      const screenshotShortcut = screenshotProtectionEnabled && (
+        key === 'printscreen'
+        || event.code === 'PrintScreen'
+        || ((event.metaKey || event.ctrlKey) && event.shiftKey && ['3', '4', '5'].includes(key))
+      );
+      if (screenshotShortcut) {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation?.();
         showScreenshotBlockedPopup();
         return;
       }
+      if (!copyBlockEnabled) return;
       const ctrlOrMeta = event.ctrlKey || event.metaKey;
       const blockedCtrlKey = ctrlOrMeta && ['c', 'v', 'x', 'a', 's', 'p', 'u', 'r'].includes(key);
       const blockedInsert = key === 'insert' && (event.shiftKey || ctrlOrMeta);
@@ -1247,6 +1354,7 @@ export default function AssessmentAttempt() {
     document.addEventListener('dragstart', handleDragStart, capture);
     document.addEventListener('beforeinput', handleBeforeInput, capture);
     document.addEventListener('keydown', handleKeydown, capture);
+    window.addEventListener('keyup', handleKeydown, capture);
     return () => {
       document.removeEventListener('copy', handleCopy, capture);
       document.removeEventListener('cut', handleCut, capture);
@@ -1256,8 +1364,9 @@ export default function AssessmentAttempt() {
       document.removeEventListener('dragstart', handleDragStart, capture);
       document.removeEventListener('beforeinput', handleBeforeInput, capture);
       document.removeEventListener('keydown', handleKeydown, capture);
+      window.removeEventListener('keyup', handleKeydown, capture);
     };
-  }, [secureActive, copyBlockEnabled, blockRightClick, recordViolation, showScreenshotBlockedPopup]);
+  }, [secureActive, copyBlockEnabled, screenshotProtectionEnabled, blockRightClick, recordViolation, showScreenshotBlockedPopup]);
 
   useEffect(() => {
     if (!secureActive || !idleDetection) return undefined;
@@ -1308,6 +1417,14 @@ export default function AssessmentAttempt() {
     if (!secureActive || !fullscreenRequired) return undefined;
     const handleFullscreenEnforcement = () => {
       if (!document.fullscreenElement) {
+        const screenshotWarningActive = Date.now() < screenshotGraceUntilRef.current
+          || Date.now() - lastScreenshotWarningAtRef.current < SCREENSHOT_WARNING_GRACE_MS;
+        if (screenshotWarningActive) {
+          setSecurityStatus((prev) => ({ ...prev, fullscreen: true }));
+          setFullscreenRecovery({ active: false, remaining: 0 });
+          setSecurityNotice('Screenshot attempt recorded as a warning. Continue the assessment.');
+          return;
+        }
         setSecurityStatus((prev) => ({ ...prev, fullscreen: false }));
         setFullscreenRecovery({ active: true, remaining: fullscreenTimeoutSec || 0 });
         setSecurityNotice('Fullscreen is off. Re-enter fullscreen to continue without a warning.');
@@ -1498,7 +1615,7 @@ export default function AssessmentAttempt() {
       if (SOFT_CAMERA_WARNING_TYPES.has(type)) {
         return;
       }
-      if (nextCount >= 4) {
+      if (nextCount >= CAMERA_WARNING_STREAK_LIMIT) {
         void recordViolation(type, message, {
           ...meta,
           source: 'camera_monitor',
@@ -1561,9 +1678,9 @@ export default function AssessmentAttempt() {
           const box = faces[0].boundingBox || {};
           const centerX = (box.x || 0) + (box.width || 0) / 2;
           const centerY = (box.y || 0) + (box.height || 0) / 2;
-          const offCenter = Math.abs(centerX - video.videoWidth / 2) > video.videoWidth * 0.35
-            || Math.abs(centerY - video.videoHeight / 2) > video.videoHeight * 0.35
-            || (box.width || 0) < video.videoWidth * 0.12;
+          const offCenter = Math.abs(centerX - video.videoWidth / 2) > video.videoWidth * FACE_CENTER_TOLERANCE_RATIO
+            || Math.abs(centerY - video.videoHeight / 2) > video.videoHeight * FACE_CENTER_TOLERANCE_RATIO
+            || (box.width || 0) < video.videoWidth * FACE_MIN_WIDTH_RATIO;
           if (offCenter) {
             emitCameraViolation('face_out_of_frame', 'Face moved away from the camera. Please center yourself.', { confidence: 0.9 });
             return;
@@ -1672,7 +1789,7 @@ export default function AssessmentAttempt() {
     if (!secureActive) return undefined;
     const sendHeartbeat = async () => {
       const screenshotGraceActive = Date.now() < screenshotGraceUntilRef.current;
-      const screenshotWarningRecent = Date.now() - lastScreenshotWarningAtRef.current < 30000;
+      const screenshotWarningRecent = Date.now() - lastScreenshotWarningAtRef.current < SCREENSHOT_WARNING_GRACE_MS;
       const fullscreenRecoveryActive = Boolean(fullscreenRecovery.active);
       const status = {
         fullscreen: screenshotGraceActive || screenshotWarningRecent || fullscreenRecoveryActive || !fullscreenRequired || Boolean(document.fullscreenElement),
@@ -1726,6 +1843,34 @@ export default function AssessmentAttempt() {
       ...prev,
       [answerKey(sectionIndex, questionIndex)]: { ...prev[answerKey(sectionIndex, questionIndex)], ...value },
     }));
+  };
+
+  const updateCodingLanguage = (sectionIndex, questionIndex, nextLanguage) => {
+    const sectionItem = assessment?.sections?.[sectionIndex];
+    const questionItem = sectionItem?.questions?.[questionIndex];
+    if (!questionItem || sectionItem?.type !== 'coding') {
+      updateAnswer(sectionIndex, questionIndex, { language: nextLanguage });
+      return;
+    }
+
+    const key = answerKey(sectionIndex, questionIndex);
+    setAnswersMap((prev) => {
+      const existingAnswer = prev[key] || {};
+      const previousLanguage = existingAnswer.language || getCodingLanguagesFromData(getCodingDataFromQuestion(questionItem))[0];
+      const currentCode = existingAnswer.code || '';
+      const previousStarter = getCodingStarterCode(questionItem, previousLanguage);
+      const nextStarter = getCodingStarterCode(questionItem, nextLanguage);
+      const shouldUseTemplate = !String(currentCode).trim()
+        || String(currentCode).trim() === String(previousStarter).trim();
+      return {
+        ...prev,
+        [key]: {
+          ...existingAnswer,
+          language: nextLanguage,
+          code: shouldUseTemplate ? nextStarter : currentCode,
+        },
+      };
+    });
   };
 
   const toggleMarkForReview = () => {
@@ -1986,22 +2131,20 @@ export default function AssessmentAttempt() {
       return;
     }
     try {
-      const resumingPausedAttempt = Boolean(isPaused && pauseStartedAt && allowedEndTime);
       if (fullscreenRequired) await requestFullscreen();
       if (cameraRequired) await ensureCamera();
       const data = await api.beginStudentAssessment(assessment._id);
       const serverTime = new Date(data.serverTime).getTime();
       const serverAllowedEnd = new Date(data.allowedEnd).getTime();
-      const pauseDuration = resumingPausedAttempt ? Math.max(0, Date.now() - pauseStartedAt) : 0;
-      const adjustedAllowedEnd = resumingPausedAttempt
-        ? Math.max(serverAllowedEnd, allowedEndTime + pauseDuration)
-        : serverAllowedEnd;
       setOffset(serverTime - Date.now());
-      setTimeLeft(adjustedAllowedEnd - serverTime);
-      setAllowedEndTime(adjustedAllowedEnd);
+      setTimeLeft(serverAllowedEnd - serverTime);
+      setAllowedEndTime(serverAllowedEnd);
       setSubmission(data.submission);
       setIsPaused(false);
       setPauseStartedAt(null);
+      setSecurityRecheckStartedAt(null);
+      setSecurityRecheckRemainingSec(0);
+      securityRecheckAutoSubmitRef.current = false;
       setSecurityStatus({
         fullscreen: !fullscreenRequired || Boolean(document.fullscreenElement),
         cameraActive: !cameraRequired || Boolean(streamRef.current),
@@ -2014,6 +2157,11 @@ export default function AssessmentAttempt() {
       setHasSeenRules(true);
       setPhase('active');
     } catch (err) {
+      if (err?.response?.status === 409) {
+        toast.error(err.message || 'Security recheck time expired. Assessment was auto-submitted.');
+        navigate('/student/assessments');
+        return;
+      }
       toast.error(err.message || 'Unable to start assessment.');
     }
   };
@@ -2024,13 +2172,13 @@ export default function AssessmentAttempt() {
     if (!section || section.type !== 'coding') return;
     const question = section?.questions?.[activeQuestion];
     const key = answerKey(activeSection, activeQuestion);
-    const codingData = question?.problemDataSnapshot || question?.problemData || question?.coding?.problemData || question?.coding || {};
+    const codingData = getCodingDataFromQuestion(question);
     const problemId = question?.problemId || question?.coding?.problemId || codingData?._id;
     if (!problemId) {
       toast.error('This coding question is missing its problem reference.');
       return;
     }
-    const supported = codingData?.supportedLanguages?.length ? codingData.supportedLanguages : ['python'];
+    const supported = getCodingLanguagesFromData(codingData);
     const language = answersMap[key]?.language || supported[0];
     const sourceCode = answersMap[key]?.code || '';
     const validationMessage = getCodeValidationMessage(
@@ -2109,13 +2257,13 @@ export default function AssessmentAttempt() {
     if (!section || section.type !== 'coding') return;
     const question = section?.questions?.[activeQuestion];
     const key = answerKey(activeSection, activeQuestion);
-    const codingData = question?.problemDataSnapshot || question?.problemData || question?.coding?.problemData || question?.coding || {};
+    const codingData = getCodingDataFromQuestion(question);
     const problemId = question?.problemId || question?.coding?.problemId || codingData?._id;
     if (!problemId) {
       toast.error('This coding question is missing its problem reference.');
       return;
     }
-    const supported = codingData?.supportedLanguages?.length ? codingData.supportedLanguages : ['python'];
+    const supported = getCodingLanguagesFromData(codingData);
     const language = answersMap[key]?.language || supported[0];
     const sourceCode = answersMap[key]?.code || '';
     const validationMessage = getCodeValidationMessage(
@@ -2159,11 +2307,16 @@ export default function AssessmentAttempt() {
     const key = answerKey(activeSection, activeQuestion);
     const section = assessment?.sections?.[activeSection];
     if (!section || section.type !== 'coding') return;
+    const question = section?.questions?.[activeQuestion];
+    const codingData = getCodingDataFromQuestion(question);
+    const supported = getCodingLanguagesFromData(codingData);
+    const language = answersMap[key]?.language || supported[0];
     setAnswersMap((prev) => ({
       ...prev,
       [key]: {
         ...prev[key],
-        code: '',
+        language,
+        code: getStarterCodeForLanguage(codingData, language),
       },
     }));
   };
@@ -2317,12 +2470,8 @@ export default function AssessmentAttempt() {
   const isMarked = markedMap[answerKey(activeSection, activeQuestion)];
   const questionMarks = question?.marks ?? section?.marksPerQuestion ?? 0;
   const isCoding = section?.type === 'coding';
-  const codingData = isCoding
-    ? (question?.problemDataSnapshot || question?.problemData || question?.coding?.problemData || question?.coding || {})
-    : null;
-  const codingLanguages = isCoding
-    ? (codingData?.supportedLanguages?.length ? codingData.supportedLanguages : ['python'])
-    : [];
+  const codingData = isCoding ? getCodingDataFromQuestion(question) : null;
+  const codingLanguages = isCoding ? getCodingLanguagesFromData(codingData) : [];
   const activeLanguage = isCoding
     ? (answersMap[answerKey(activeSection, activeQuestion)]?.language || codingLanguages[0])
     : '';
@@ -2703,7 +2852,7 @@ export default function AssessmentAttempt() {
             {isCoding && (
               <select
                 value={activeLanguage}
-                onChange={(event) => updateAnswer(activeSection, activeQuestion, { language: event.target.value })}
+                onChange={(event) => updateCodingLanguage(activeSection, activeQuestion, event.target.value)}
                 className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
               >
                 {codingLanguages.map((lang) => (
@@ -2864,8 +3013,8 @@ export default function AssessmentAttempt() {
                       <CodeEditor
                         supportedLanguages={codingLanguages}
                         language={answerValue.language || codingLanguages[0]}
-                        code={answerValue.code || ''}
-                        onLanguageChange={(lang) => updateAnswer(activeSection, activeQuestion, { language: lang })}
+                        code={answerValue.code ?? getStarterCodeForLanguage(codingData, answerValue.language || codingLanguages[0])}
+                        onLanguageChange={(lang) => updateCodingLanguage(activeSection, activeQuestion, lang)}
                         onCodeChange={(code) => updateAnswer(activeSection, activeQuestion, { code })}
                         customInput=""
                         testCases={testCases}
@@ -3009,10 +3158,21 @@ export default function AssessmentAttempt() {
                     Security Setup
                   </div>
                   <h2 className="mt-2.5 text-[1.55rem] font-black tracking-tight text-slate-950 dark:text-white sm:text-[1.65rem]">Security Setup</h2>
-                  <p className="mt-1.5 text-sm text-slate-500 dark:text-gray-300">Complete all mandatory checks before moving forward.</p>
+                  <p className="mt-1.5 text-sm text-slate-500 dark:text-gray-300">
+                    {securityRecheckActive
+                      ? 'Assessment timer is paused. Complete these checks before the security recheck timer expires.'
+                      : 'Complete all mandatory checks before moving forward.'}
+                  </p>
                 </div>
-                <div className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 dark:bg-gray-800 dark:text-gray-200">
-                  Step {validationStep} of {setupSteps.length}
+                <div className="flex flex-col items-end gap-2">
+                  {securityRecheckActive && (
+                    <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-bold text-sky-700 dark:border-sky-400/30 dark:bg-sky-900/20 dark:text-sky-200">
+                      Recheck time {formatTime(securityRecheckRemainingSec * 1000)}
+                    </div>
+                  )}
+                  <div className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 dark:bg-gray-800 dark:text-gray-200">
+                    Step {validationStep} of {setupSteps.length}
+                  </div>
                 </div>
               </div>
 
@@ -3316,13 +3476,17 @@ export default function AssessmentAttempt() {
                     type="button"
                     onClick={() => {
                       if (setupStepIsDone('final')) {
-                        setPhase('rules');
+                        if (isPaused) {
+                          void startAssessment();
+                        } else {
+                          setPhase('rules');
+                        }
                       }
                     }}
                     disabled={!setupStepIsDone('final')}
                     className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
                   >
-                    Proceed
+                    {isPaused ? 'Resume Assessment' : 'Proceed'}
                   </button>
                 )}
               </div>
@@ -3593,7 +3757,7 @@ export default function AssessmentAttempt() {
         </div>
       )}
 
-      {phase === 'violation' && !isSubmitted && (
+      {phase === 'violation' && !isPaused && !isSubmitted && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
           <div className="w-full max-w-md rounded-2xl border border-rose-200 bg-white p-6 shadow-xl dark:border-rose-800 dark:bg-gray-900">
             <div className="flex items-center gap-2 text-rose-600">
@@ -3658,12 +3822,16 @@ export default function AssessmentAttempt() {
             </div>
             <h2 className="mt-3 text-xl font-semibold text-slate-900 dark:text-white">Assessment paused</h2>
             <p className="mt-2 text-sm text-slate-600 dark:text-gray-300">
-              {violationMessage || 'Security checks must be completed again before you can resume.'}
+              {violationMessage || 'Security checks must be completed again before you can resume. Your assessment timer is paused during this recheck.'}
             </p>
-            <div className="mt-4 grid gap-3 text-xs text-slate-600 dark:text-gray-300 sm:grid-cols-2">
+            <div className="mt-4 grid gap-3 text-xs text-slate-600 dark:text-gray-300 sm:grid-cols-3">
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800">
                 <div className="text-slate-400">Warning count</div>
                 <div className="text-lg font-semibold text-slate-900 dark:text-white">{totalWarnings}</div>
+              </div>
+              <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 dark:border-sky-400/30 dark:bg-sky-900/20">
+                <div className="text-sky-600 dark:text-sky-300">Recheck time</div>
+                <div className="text-lg font-semibold text-sky-700 dark:text-sky-100">{formatTime(securityRecheckRemainingSec * 1000)}</div>
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800">
                 <div className="text-slate-400">Action</div>
@@ -3676,6 +3844,9 @@ export default function AssessmentAttempt() {
                 setViolationMessage('');
                 setFullscreenRecovery({ active: false, remaining: 0 });
                 setIsPaused(true);
+                setSecurityRecheckStartedAt((prev) => prev || Date.now());
+                setSecurityRecheckRemainingSec((prev) => prev || securityRecheckTimeoutSec);
+                securityRecheckAutoSubmitRef.current = false;
                 resetSecuritySetupProgress();
                 setPhase('validation');
               }}

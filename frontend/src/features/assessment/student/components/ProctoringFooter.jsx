@@ -59,7 +59,7 @@ export default function ProctoringFooter({
     >
       <span className={`inline-flex shrink-0 items-center gap-1.5 font-bold ${compact ? 'text-[9px]' : 'text-[10px]'}`}>
         <span className={`h-1.5 w-1.5 rounded-full ${hasIssue ? 'bg-white animate-pulse' : 'bg-white'}`} />
-        {hasIssue ? 'AI alert' : 'AI OK'}
+        {hasIssue ? 'AI attention' : 'Secure'}
       </span>
       {issueItems.map((item) => (
         <ProctoringStatusBadge

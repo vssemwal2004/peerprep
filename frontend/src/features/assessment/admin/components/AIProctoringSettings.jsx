@@ -6,7 +6,7 @@ export const DEFAULT_AI_PROCTORING_SETTINGS = {
   detectNoFace: true,
   detectFaceOutOfFrame: true,
   detectLookingAway: true,
-  detectionIntervalMs: 1500,
+  detectionIntervalMs: 500,
   ignoreLimit: 5,
   violationCooldownSec: 20,
   criticalAutoFlag: true,
@@ -96,9 +96,9 @@ export default function AIProctoringSettings({ value, onChange, disabled = false
         <NumberInput
           value={settings.detectionIntervalMs}
           onChange={(next) => update('detectionIntervalMs', next)}
-          min={1000}
+          min={500}
           max={5000}
-          placeholder="1500"
+          placeholder="500"
           unit="ms"
           disabled={disabled}
         />

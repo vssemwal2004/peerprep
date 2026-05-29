@@ -4,14 +4,25 @@ import { createCocoSsdModel } from '../utils/modelLoader';
 const SOURCE = 'coco_ssd';
 const MOBILE_LABEL = 'cell phone';
 const PERSON_LABEL = 'person';
-const MOBILE_CONFIDENCE_THRESHOLD = 0.6;
-const PERSON_CONFIDENCE_THRESHOLD = 0.6;
+const MOBILE_LABELS = Object.freeze(['cell phone', 'mobile phone', 'phone']);
+const MOBILE_CONFIDENCE_THRESHOLD = 0.25;
+const PERSON_CONFIDENCE_THRESHOLD = 0.55;
+const MAX_DETECTED_BOXES = 20;
+const MIN_DETECTION_SCORE = 0.12;
+const MOBILE_CROP_SIZE = 416;
+const MOBILE_SCAN_REGIONS = Object.freeze([
+  { name: 'bottom', x: 0, y: 0.42, width: 1, height: 0.58 },
+  { name: 'left', x: 0, y: 0, width: 0.58, height: 1 },
+  { name: 'right', x: 0.42, y: 0, width: 0.58, height: 1 },
+  { name: 'center', x: 0.18, y: 0.12, width: 0.64, height: 0.76 },
+]);
 
 export class CocoSsdAdapter {
   constructor(options = {}) {
     this.options = options;
     this.model = null;
     this.loaded = false;
+    this.mobileScanCanvas = null;
   }
 
   async load() {
@@ -27,14 +38,91 @@ export class CocoSsdAdapter {
       return createDefaultObjectResult('video_not_ready');
     }
 
-    const predictions = await this.model.detect(videoElement);
-    return normalizeCocoSsdPredictions(predictions);
+    const detectOptions = {
+      maxNumBoxes: Number(this.options.maxNumBoxes || MAX_DETECTED_BOXES),
+      minScore: Number(this.options.minScore || MIN_DETECTION_SCORE),
+      mobileThreshold: Number(this.options.mobileThreshold || MOBILE_CONFIDENCE_THRESHOLD),
+      personThreshold: Number(this.options.personThreshold || PERSON_CONFIDENCE_THRESHOLD),
+    };
+    const predictions = await this.model.detect(
+      videoElement,
+      detectOptions.maxNumBoxes,
+      detectOptions.minScore,
+    );
+    const fullFrameResult = normalizeCocoSsdPredictions(predictions, {
+      mobileThreshold: detectOptions.mobileThreshold,
+      personThreshold: detectOptions.personThreshold,
+      scanRegion: 'full',
+    });
+    if (fullFrameResult.mobileDetected) return fullFrameResult;
+
+    const cropResult = await this.detectMobileInCrops(videoElement, detectOptions);
+    return mergeObjectResults(fullFrameResult, cropResult);
   }
 
   dispose() {
     this.model?.dispose?.();
     this.model = null;
     this.loaded = false;
+    this.mobileScanCanvas = null;
+  }
+
+  async detectMobileInCrops(videoElement, options = {}) {
+    const canvas = this.getMobileScanCanvas();
+    const context = canvas?.getContext?.('2d', { willReadFrequently: true });
+    if (!canvas || !context) return createDefaultObjectResult('crop_canvas_unavailable');
+
+    const videoWidth = Number(videoElement.videoWidth || 0);
+    const videoHeight = Number(videoElement.videoHeight || 0);
+    if (!videoWidth || !videoHeight) return createDefaultObjectResult('video_not_ready');
+
+    const cropResults = [];
+    for (const region of MOBILE_SCAN_REGIONS) {
+      const sourceX = Math.max(0, Math.floor(region.x * videoWidth));
+      const sourceY = Math.max(0, Math.floor(region.y * videoHeight));
+      const sourceWidth = Math.min(videoWidth - sourceX, Math.floor(region.width * videoWidth));
+      const sourceHeight = Math.min(videoHeight - sourceY, Math.floor(region.height * videoHeight));
+      if (sourceWidth <= 0 || sourceHeight <= 0) continue;
+
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(
+        videoElement,
+        sourceX,
+        sourceY,
+        sourceWidth,
+        sourceHeight,
+        0,
+        0,
+        canvas.width,
+        canvas.height,
+      );
+
+      const cropPredictions = await this.model.detect(
+        canvas,
+        options.maxNumBoxes,
+        options.minScore,
+      );
+      const cropResult = normalizeCocoSsdPredictions(cropPredictions, {
+        mobileThreshold: options.mobileThreshold,
+        personThreshold: 1,
+        scanRegion: region.name,
+      });
+      cropResults.push(cropResult);
+      if (cropResult.mobileDetected) break;
+    }
+
+    return mergeObjectResults(...cropResults);
+  }
+
+  getMobileScanCanvas() {
+    if (this.mobileScanCanvas) return this.mobileScanCanvas;
+    if (typeof document === 'undefined') return null;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = MOBILE_CROP_SIZE;
+    canvas.height = MOBILE_CROP_SIZE;
+    this.mobileScanCanvas = canvas;
+    return canvas;
   }
 }
 
@@ -47,18 +135,22 @@ export const cocoSsdAdapter = {
   CocoSsdAdapter,
 };
 
-function normalizeCocoSsdPredictions(predictions = []) {
+function normalizeCocoSsdPredictions(predictions = [], options = {}) {
   const objects = Array.isArray(predictions)
     ? predictions
       .filter((item) => item && typeof item.class === 'string')
       .map((item) => ({
-        class: item.class,
+        class: item.class.toLowerCase(),
         score: clampScore(item.score),
+        bbox: Array.isArray(item.bbox) ? item.bbox.slice(0, 4) : null,
+        scanRegion: options.scanRegion || 'full',
       }))
     : [];
 
-  const mobileObjects = objects.filter((item) => item.class === MOBILE_LABEL && item.score >= MOBILE_CONFIDENCE_THRESHOLD);
-  const personObjects = objects.filter((item) => item.class === PERSON_LABEL && item.score >= PERSON_CONFIDENCE_THRESHOLD);
+  const mobileThreshold = getThreshold(options.mobileThreshold, MOBILE_CONFIDENCE_THRESHOLD);
+  const personThreshold = getThreshold(options.personThreshold, PERSON_CONFIDENCE_THRESHOLD);
+  const mobileObjects = objects.filter((item) => isMobileLabel(item.class) && item.score >= mobileThreshold);
+  const personObjects = objects.filter((item) => item.class === PERSON_LABEL && item.score >= personThreshold);
   const bestMobileScore = getBestScore(mobileObjects);
   const bestPersonScore = getBestScore(personObjects);
 
@@ -95,6 +187,39 @@ function createDefaultObjectResult(reason) {
   };
 }
 
+function mergeObjectResults(...results) {
+  const validResults = results.filter(Boolean);
+  const mobileObjects = validResults.flatMap((result) => (
+    Array.isArray(result.metadata?.objects)
+      ? result.metadata.objects.filter((item) => isMobileLabel(item.class))
+      : []
+  ));
+  const personObjects = validResults.flatMap((result) => (
+    Array.isArray(result.metadata?.objects)
+      ? result.metadata.objects.filter((item) => item.class === PERSON_LABEL)
+      : []
+  ));
+  const bestMobileScore = getBestScore(mobileObjects);
+  const bestPersonScore = getBestScore(personObjects);
+
+  return {
+    mobileDetected: mobileObjects.length > 0,
+    personCount: personObjects.length,
+    confidence: {
+      mobile: bestMobileScore,
+      person: bestPersonScore,
+    },
+    metadata: {
+      source: SOURCE,
+      objects: [
+        ...mobileObjects,
+        ...personObjects,
+      ],
+      scans: validResults.map((result) => result.metadata?.scanRegion).filter(Boolean),
+    },
+  };
+}
+
 function isVideoReady(videoElement) {
   return Boolean(
     videoElement
@@ -112,4 +237,15 @@ function clampScore(score) {
 
 function getBestScore(objects = []) {
   return objects.reduce((best, item) => Math.max(best, clampScore(item.score)), 0);
+}
+
+function isMobileLabel(label) {
+  const normalized = String(label || '').toLowerCase().trim();
+  return normalized === MOBILE_LABEL || MOBILE_LABELS.includes(normalized);
+}
+
+function getThreshold(value, fallback) {
+  const next = Number(value);
+  if (!Number.isFinite(next)) return fallback;
+  return Math.max(0, Math.min(1, next));
 }

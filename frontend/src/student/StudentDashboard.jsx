@@ -342,6 +342,271 @@ function QuickNav({ navigate }) {
   );
 }
 
+function HeroAmbientBackground() {
+  const sparks = [
+    { left: "7%", top: "18%", delay: "0s", duration: "10s" },
+    { left: "18%", top: "78%", delay: "1.2s", duration: "12s" },
+    { left: "42%", top: "14%", delay: "0.5s", duration: "11s" },
+    { left: "68%", top: "24%", delay: "2.1s", duration: "13s" },
+    { left: "84%", top: "68%", delay: "0.8s", duration: "12s" },
+    { left: "56%", top: "84%", delay: "1.6s", duration: "10s" },
+  ];
+
+  return (
+    <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
+      <style>{`
+        @keyframes ppHeroAurora {
+          0% { transform: translate3d(-3%, -2%, 0) rotate(0deg); opacity: .72; }
+          50% { transform: translate3d(3%, 2%, 0) rotate(1deg); opacity: .92; }
+          100% { transform: translate3d(-3%, -2%, 0) rotate(0deg); opacity: .72; }
+        }
+        @keyframes ppHeroGrid {
+          0% { transform: translate3d(0, 0, 0); }
+          100% { transform: translate3d(34px, 34px, 0); }
+        }
+        @keyframes ppHeroSpark {
+          0% { transform: translate3d(0, 26px, 0) scaleY(.65); opacity: 0; }
+          15% { opacity: .42; }
+          70% { opacity: .2; }
+          100% { transform: translate3d(32px, -38px, 0) scaleY(1.15); opacity: 0; }
+        }
+        @keyframes ppHeroScan {
+          0% { transform: translateX(-55%); opacity: 0; }
+          20% { opacity: .42; }
+          80% { opacity: .18; }
+          100% { transform: translateX(55%); opacity: 0; }
+        }
+        @keyframes ppHeroBorder {
+          0% { opacity: .4; transform: translateX(-45%); }
+          50% { opacity: .9; }
+          100% { opacity: .4; transform: translateX(45%); }
+        }
+      `}</style>
+
+      <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(224,242,254,.86),rgba(255,255,255,.76)_38%,rgba(219,234,254,.62)_100%)] dark:bg-[linear-gradient(135deg,rgba(2,6,23,.96),rgba(8,47,73,.9)_42%,rgba(15,23,42,.96)_100%)]" />
+      <div
+        className="absolute -inset-20 opacity-80 blur-3xl dark:opacity-50"
+        style={{
+          animation: "ppHeroAurora 16s ease-in-out infinite",
+          background:
+            "linear-gradient(120deg, rgba(14,165,233,.28), transparent 28%, rgba(56,189,248,.24) 46%, rgba(99,102,241,.18) 68%, transparent)",
+        }}
+      />
+      <div
+        className="absolute inset-0 opacity-[0.22] dark:opacity-[0.16]"
+        style={{
+          animation: "ppHeroGrid 18s linear infinite",
+          backgroundImage:
+            "linear-gradient(rgba(14,165,233,.26) 1px, transparent 1px), linear-gradient(90deg, rgba(14,165,233,.26) 1px, transparent 1px)",
+          backgroundSize: "34px 34px",
+          maskImage: "linear-gradient(to bottom, transparent, black 14%, black 78%, transparent)",
+        }}
+      />
+      <div
+        className="absolute inset-x-[-20%] top-[18%] h-16 rotate-[-8deg] bg-gradient-to-r from-transparent via-white/45 to-transparent blur-xl dark:via-sky-300/10"
+        style={{ animation: "ppHeroScan 9s ease-in-out infinite" }}
+      />
+      <div className="absolute inset-x-6 top-0 h-px overflow-hidden">
+        <div
+          className="h-px w-2/3 bg-gradient-to-r from-transparent via-sky-300 to-transparent"
+          style={{ animation: "ppHeroBorder 6s ease-in-out infinite" }}
+        />
+      </div>
+      {sparks.map((spark, index) => (
+        <span
+          key={`${spark.left}-${spark.top}`}
+          className="absolute h-8 w-px rounded bg-gradient-to-b from-transparent via-sky-400/45 to-transparent dark:via-cyan-200/25"
+          style={{
+            left: spark.left,
+            top: spark.top,
+            animation: `ppHeroSpark ${spark.duration} ease-in-out infinite`,
+            animationDelay: spark.delay,
+            opacity: index % 2 ? 0.7 : 0.48,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function HeroMetricCard({ icon: Icon, label, value, helper, delay = 0 }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+      whileHover={{ y: -4, scale: 1.01 }}
+      className="group relative overflow-hidden rounded-2xl border border-white/60 bg-white/62 p-4 shadow-[0_18px_50px_-34px_rgba(2,132,199,.65)] backdrop-blur-2xl transition-shadow duration-300 hover:shadow-[0_28px_70px_-42px_rgba(2,132,199,.85)] dark:border-white/10 dark:bg-white/[0.07]"
+    >
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent dark:via-cyan-200/30" />
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-sky-200/70 bg-sky-50/80 text-sky-700 shadow-inner dark:border-sky-300/10 dark:bg-sky-300/10 dark:text-sky-200">
+          <Icon className="h-4 w-4" />
+        </div>
+        <div className="text-right">
+          <div className="text-2xl font-black tracking-normal text-sky-950 dark:text-white">
+            <AnimatedNumber value={value} />
+          </div>
+          <div className="mt-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-300">{label}</div>
+        </div>
+      </div>
+      <div className="mt-3 text-xs font-medium leading-5 text-slate-500 dark:text-slate-300">{helper}</div>
+    </motion.div>
+  );
+}
+
+function HeroWeeklyWidget({ weeklyActivity, weeklyActiveDays, weeklyGoal, weeklyTotalActivities, weeklyRemaining }) {
+  const progress = Math.min(100, Math.round((weeklyActiveDays / weeklyGoal) * 100));
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: 24 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ delay: 0.18, duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
+      whileHover={{ y: -6 }}
+      className="relative overflow-hidden rounded-[28px] border border-white/65 bg-white/60 p-5 shadow-[0_30px_90px_-58px_rgba(2,132,199,.9)] backdrop-blur-2xl dark:border-white/10 dark:bg-white/[0.075] sm:p-6"
+    >
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-sky-200 to-transparent dark:via-cyan-200/30" />
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-sky-700 dark:text-sky-200">Live weekly system</div>
+          <h2 className="mt-2 text-lg font-black tracking-normal text-sky-950 dark:text-white">Momentum engine</h2>
+        </div>
+        <div className="flex items-center gap-2 rounded-full border border-emerald-200/70 bg-emerald-50/80 px-3 py-1 text-[11px] font-bold text-emerald-700 dark:border-emerald-300/10 dark:bg-emerald-300/10 dark:text-emerald-200">
+          <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_18px_rgba(52,211,153,.7)]" />
+          Active
+        </div>
+      </div>
+
+      <div className="mt-6 grid grid-cols-[120px_minmax(0,1fr)] gap-5 max-sm:grid-cols-1">
+        <div className="relative mx-auto flex h-28 w-28 items-center justify-center">
+          <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90">
+            <circle cx="60" cy="60" r="48" fill="none" stroke="rgba(148,163,184,.18)" strokeWidth="12" />
+            <motion.circle
+              cx="60"
+              cy="60"
+              r="48"
+              fill="none"
+              stroke="url(#heroProgress)"
+              strokeWidth="12"
+              strokeLinecap="round"
+              initial={{ pathLength: 0 }}
+              animate={{ pathLength: progress / 100 }}
+              transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1] }}
+            />
+            <defs>
+              <linearGradient id="heroProgress" x1="0" x2="1" y1="0" y2="1">
+                <stop offset="0%" stopColor="#22d3ee" />
+                <stop offset="48%" stopColor="#0ea5e9" />
+                <stop offset="100%" stopColor="#2563eb" />
+              </linearGradient>
+            </defs>
+          </svg>
+          <div className="absolute text-center">
+            <div className="text-2xl font-black text-sky-950 dark:text-white">{progress}%</div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400 dark:text-slate-400">Goal</div>
+          </div>
+        </div>
+
+        <div className="min-w-0">
+          <div className="grid grid-cols-7 gap-1.5">
+            {weeklyActivity.map((day, index) => (
+              <motion.div
+                key={day.key}
+                initial={{ scaleY: 0.25, opacity: 0 }}
+                animate={{ scaleY: 1, opacity: 1 }}
+                transition={{ delay: 0.34 + index * 0.045, duration: 0.42 }}
+                className="flex flex-col items-center gap-2"
+              >
+                <div className="flex h-20 w-full items-end rounded-full bg-white/60 p-1 shadow-inner dark:bg-white/10">
+                  <div
+                    title={`${day.fullLabel}: ${day.count} activities`}
+                    className="w-full rounded-full bg-gradient-to-t from-sky-600 via-sky-400 to-cyan-200 shadow-[0_0_18px_rgba(14,165,233,.38)]"
+                    style={{ height: `${Math.max(10, Math.min(100, day.count * 18))}%` }}
+                  />
+                </div>
+                <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-300">{day.label.slice(0, 3)}</div>
+              </motion.div>
+            ))}
+          </div>
+          <div className="mt-4 rounded-2xl border border-white/60 bg-white/45 px-4 py-3 text-sm font-semibold leading-6 text-slate-700 dark:border-white/10 dark:bg-white/[0.055] dark:text-slate-200">
+            {weeklyRemaining === 0
+              ? "Weekly goal reached. Keep the rhythm alive."
+              : `${weeklyTotalActivities} activities logged. ${weeklyRemaining} day${weeklyRemaining !== 1 ? "s" : ""} left for the weekly goal.`}
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function HeroInsightPanel({ displayAnnouncements, announcementIndex, fallbackThoughts, thoughtIndex, navigate }) {
+  const hasAnnouncement = displayAnnouncements.length > 0;
+  const activeTitle = hasAnnouncement
+    ? displayAnnouncements[announcementIndex]?.title
+    : fallbackThoughts[thoughtIndex]?.area;
+  const activeText = hasAnnouncement
+    ? displayAnnouncements[announcementIndex]?.message
+    : fallbackThoughts[thoughtIndex]?.text;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 22 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.28, duration: 0.62, ease: [0.22, 1, 0.36, 1] }}
+      className="relative overflow-hidden rounded-[28px] border border-white/65 bg-white/58 p-4 shadow-[0_28px_80px_-58px_rgba(15,23,42,.55)] backdrop-blur-2xl dark:border-white/10 dark:bg-white/[0.07] sm:p-5"
+    >
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-200 to-transparent dark:via-cyan-200/30" />
+      <div className="absolute inset-y-6 right-1/3 w-px rotate-12 bg-gradient-to-b from-transparent via-sky-300/30 to-transparent" />
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0 flex-1">
+          <div className="inline-flex items-center gap-2 rounded-full border border-sky-200/70 bg-sky-50/70 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-sky-700 dark:border-sky-300/10 dark:bg-sky-300/10 dark:text-sky-200">
+            <span className="relative flex h-2 w-2">
+              <motion.span
+                className="absolute inline-flex h-full w-full rounded-full bg-sky-400/40"
+                animate={{ scale: [1, 2, 1], opacity: [0.42, 0.02, 0.42] }}
+                transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+              />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-sky-500" />
+            </span>
+            AI insights
+          </div>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={`${activeTitle}-${activeText}`}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <h2 className="mt-3 text-lg font-black tracking-normal text-sky-950 dark:text-white sm:text-xl">
+                {hasAnnouncement ? activeTitle : "Track your performance"}
+              </h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+                {hasAnnouncement ? activeText : activeText || "Understand your progress, identify gaps, and improve with intelligent insights."}
+              </p>
+            </motion.div>
+          </AnimatePresence>
+        </div>
+
+        <motion.button
+          type="button"
+          onClick={() => navigate("/student/analysis")}
+          whileHover={{ scale: 1.025, y: -2 }}
+          whileTap={{ scale: 0.98 }}
+          transition={{ type: "spring", stiffness: 300, damping: 20 }}
+          className="group relative inline-flex min-h-12 w-full items-center justify-center gap-2 overflow-hidden rounded-2xl bg-gradient-to-r from-sky-500 via-blue-600 to-sky-500 px-6 py-3 text-sm font-black text-white shadow-[0_22px_60px_-34px_rgba(2,132,199,.95)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/50 sm:w-auto"
+        >
+          <span className="absolute inset-y-0 -left-1/3 w-1/3 skew-x-[-18deg] bg-white/25 opacity-0 blur-sm transition-all duration-700 group-hover:left-full group-hover:opacity-100" />
+          <Sparkles className="relative h-4 w-4" />
+          <span className="relative">Check Performance</span>
+          <ArrowRight className="relative h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
+        </motion.button>
+      </div>
+    </motion.div>
+  );
+}
+
 /* ─── Main Dashboard ─── */
 export default function StudentDashboard() {
   const navigate = useNavigate();
@@ -578,225 +843,130 @@ export default function StudentDashboard() {
         {/* Keep all page content above the grid */}
         <div className="relative z-10">
 
-        {/* ── 1. FULL VIEWPORT HERO (Hero + Motivation) ── */}
-        <div className="relative h-[calc(100vh-5rem)] flex flex-col justify-start gap-[clamp(10px,2vh,20px)] overflow-hidden">
-          {/* Shared Growth Flow background for Hero + Motivation (single continuous backdrop) */}
-          <div className="pointer-events-none absolute inset-0">
-            {/* Layer 1: clean gradient base */}
-            <div className="absolute inset-0 bg-gradient-to-br from-sky-100 via-white to-slate-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950" />
+        {/* ── 1. PREMIUM DASHBOARD HERO ── */}
+        <motion.section
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
+          className="relative px-4 pb-6 pt-4 sm:px-6 lg:px-10"
+        >
+          <div className="relative min-h-[calc(100vh-7rem)] overflow-hidden rounded-[28px] border border-white/70 bg-white/45 shadow-[0_34px_120px_-84px_rgba(2,132,199,.85)] backdrop-blur-2xl dark:border-white/10 dark:bg-white/[0.045]">
+            <HeroAmbientBackground />
 
-            {/* Layer 2: glow accents */}
-            <motion.div
-              className="absolute -left-16 top-10 h-64 w-64 rounded-full bg-sky-200/35 blur-3xl dark:bg-white/6"
-              animate={{ x: [0, 18, 0], y: [0, -10, 0], opacity: [0.65, 0.45, 0.65] }}
-              transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
-            />
-            <motion.div
-              className="absolute -right-20 bottom-8 h-72 w-72 rounded-full bg-blue-200/30 blur-3xl dark:bg-white/6"
-              animate={{ x: [0, -16, 0], y: [0, 12, 0], opacity: [0.55, 0.35, 0.55] }}
-              transition={{ duration: 14, repeat: Infinity, ease: "easeInOut" }}
-            />
-
-            {/* Layer 4: floating geometry */}
-            <motion.div
-              className="absolute left-14 top-24 h-2 w-2 rounded-full bg-sky-400/25 dark:bg-white/10"
-              animate={{ y: [0, -18, 0], x: [0, 8, 0], scale: [1, 1.2, 1], opacity: [0.35, 0.55, 0.35] }}
-              transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
-            />
-            <motion.div
-              className="absolute right-20 top-28 h-9 w-9 rounded-2xl border border-sky-300/25 bg-white/25 backdrop-blur-sm dark:border-white/10 dark:bg-white/5"
-              animate={{ y: [0, -14, 0], x: [0, -10, 0], rotate: [0, 4, 0], opacity: [0.3, 0.5, 0.3] }}
-              transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
-            />
-            <motion.div
-              className="absolute left-1/2 bottom-10 h-3 w-3 -translate-x-1/2 rounded-full bg-blue-500/15 dark:bg-white/8"
-              animate={{ y: [0, -20, 0], x: [0, 10, 0], scale: [1, 1.15, 1], opacity: [0.25, 0.45, 0.25] }}
-              transition={{ duration: 11, repeat: Infinity, ease: "easeInOut" }}
-            />
-            <motion.div
-              className="absolute left-24 bottom-16 h-1 w-1 rounded-full bg-slate-400/35 dark:bg-slate-400/20"
-              animate={{ y: [0, -26, 0], opacity: [0.25, 0.6, 0.25] }}
-              transition={{ duration: 9, repeat: Infinity, ease: "easeInOut" }}
-            />
-            <motion.div
-              className="absolute right-28 bottom-14 h-1.5 w-1.5 rounded-full bg-sky-500/20 dark:bg-sky-300/15"
-              animate={{ y: [0, -22, 0], x: [0, -8, 0], opacity: [0.2, 0.5, 0.2] }}
-              transition={{ duration: 10.5, repeat: Infinity, ease: "easeInOut" }}
-            />
-          </div>
-
-          {/* ── 1A. HERO ── */}
-          <motion.section
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-            className="relative z-10 w-full px-4 sm:px-6 lg:px-10"
-          >
-            <div className="relative overflow-hidden rounded-[32px]">
-              <div className="relative overflow-hidden rounded-[31px] bg-transparent">
-                <div className="relative px-6 sm:px-10 py-[clamp(18px,4vh,54px)]">
-                  <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 items-center">
-                    {/* left */}
-                    <div className="lg:col-span-3">
-                      <div className="pointer-events-none absolute -left-16 top-10 h-56 w-72 rounded-full bg-white/12 blur-3xl" />
-                      <div className="inline-flex items-center rounded-full bg-transparent px-3 py-1 text-[12px] font-semibold text-sky-900 dark:text-sky-200">
-                        PeerPrep student dashboard
-                      </div>
-                      <h1 className="mt-4 text-3xl sm:text-4xl lg:text-4xl font-black leading-tight tracking-tight text-sky-950 dark:text-slate-50">
-                        Welcome back{user?.name ? "," : ""}{" "}
-                        <span className="bg-gradient-to-r from-sky-950 via-sky-700 to-indigo-700 bg-clip-text text-transparent dark:from-slate-100 dark:via-sky-300 dark:to-indigo-300">
-                          {user?.name || "Student"}
-                        </span>
-                      </h1>
-                      <p className="mt-4 text-slate-600 dark:text-slate-300 text-sm sm:text-base max-w-xl leading-relaxed">
-                        Your home for interviews, assessments, learning modules, and coding practice — all in one place.
-                      </p>
-
-                      <div className="mt-6">
-                        <QuickNav navigate={navigate} />
-                      </div>
-                    </div>
-
-                    {/* right: quick status */}
-                    <div className="lg:col-span-2">
-                      <div className="rounded-2xl bg-transparent backdrop-blur-xl p-6">
-                        <div className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">This week</div>
-
-                        <div className="mt-4 space-y-3">
-                          <div className="flex items-center justify-between rounded-xl bg-white/30 dark:bg-white/10 px-4 py-3">
-                            <div className="flex items-center gap-3">
-                              <Calendar className="h-4 w-4 text-slate-600 dark:text-white/80" />
-                              <div className="text-sm font-semibold text-sky-950 dark:text-slate-50">Upcoming interviews</div>
-                            </div>
-                            <div className="text-lg font-black text-sky-950 dark:text-slate-50">
-                              <AnimatedNumber value={upcomingInterviews} />
-                            </div>
-                          </div>
-
-                          <div className="flex items-center justify-between rounded-xl bg-white/30 dark:bg-white/10 px-4 py-3">
-                            <div className="flex items-center gap-3">
-                              <ClipboardList className="h-4 w-4 text-slate-600 dark:text-white/80" />
-                              <div className="text-sm font-semibold text-sky-950 dark:text-slate-50">Pending assessments</div>
-                            </div>
-                            <div className="text-lg font-black text-sky-950 dark:text-slate-50">
-                              <AnimatedNumber value={activeAssessments} />
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="mt-5 flex items-start gap-2 text-slate-600 dark:text-slate-300 text-sm">
-                          <BarChart3 className="h-4 w-4 mt-0.5 text-slate-500 dark:text-slate-300" />
-                          <p className="leading-relaxed">
-                            {weeklyRemaining === 0
-                              ? "Weekly goal reached — keep it consistent."
-                              : `You're ${weeklyRemaining} day${weeklyRemaining !== 1 ? "s" : ""} away from your weekly goal.`}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </motion.section>
-
-          {/* ── 1B. MOTIVATION ── */}
-          <section className="relative z-10 overflow-hidden flex-1 min-h-0">
-          <div className="relative h-full w-full px-4 sm:px-6 lg:px-10 py-[clamp(10px,2vh,22px)] flex flex-col justify-center">
-            <div className="mx-auto w-full max-w-3xl text-center">
-              <div className="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-gray-300">
-                Daily updates
-              </div>
-              <h2 className="mt-3 text-xl sm:text-2xl font-black text-sky-950 dark:text-gray-50 tracking-tight">
-                A small push, every day
-              </h2>
-
-              <div className="mt-6">
-                {displayAnnouncements.length > 0 ? (
-                  <AnimatePresence mode="wait">
-                    <motion.div
-                      key={`${announcementIndex}-${displayAnnouncements[announcementIndex]?.title}`}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-                      className="space-y-3"
-                    >
-                      <div className="inline-flex items-center rounded-full bg-transparent px-3 py-1 text-xs font-semibold text-slate-600 dark:text-gray-200">
-                        Announcement
-                      </div>
-                      <div className="text-lg sm:text-xl font-semibold text-sky-950 dark:text-gray-50 leading-relaxed">
-                        {displayAnnouncements[announcementIndex]?.title}
-                      </div>
-                      <div className="text-sm text-slate-600 dark:text-gray-300 leading-relaxed">
-                        {displayAnnouncements[announcementIndex]?.message}
-                      </div>
-                    </motion.div>
-                  </AnimatePresence>
-                ) : (
-                  <AnimatePresence mode="wait">
-                    <motion.div
-                      key={`${thoughtIndex}-${fallbackThoughts[thoughtIndex]?.area}`}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-                      className="space-y-3"
-                    >
-                      <div className="inline-flex items-center rounded-full bg-transparent px-3 py-1 text-xs font-semibold text-slate-600 dark:text-gray-200">
-                        {fallbackThoughts[thoughtIndex]?.area}
-                      </div>
-                      <div className="text-lg sm:text-xl font-semibold text-sky-950 dark:text-gray-50 leading-relaxed">
-                        {fallbackThoughts[thoughtIndex]?.text}
-                      </div>
-                    </motion.div>
-                  </AnimatePresence>
-                )}
-              </div>
-
-              <div className="mt-10 pt-8 border-t border-slate-200/60 dark:border-gray-700/60">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 text-left">
-                  <div className="min-w-0">
-                    <div className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-slate-500 dark:text-gray-300">
-                      <span className="relative flex h-2.5 w-2.5">
-                        <motion.span
-                          className="absolute inline-flex h-full w-full rounded-full bg-sky-400/35"
-                          animate={{ scale: [1, 1.9, 1], opacity: [0.35, 0.05, 0.35] }}
-                          transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
-                        />
-                        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-sky-500/60" />
-                      </span>
-                      AI Insights
-                    </div>
-
-                    <div className="mt-3 text-lg sm:text-xl font-black text-sky-950 dark:text-gray-50 tracking-tight">
-                      Track your performance
-                    </div>
-                    <div className="mt-2 text-sm text-slate-600 dark:text-gray-300 leading-relaxed max-w-xl">
-                      Understand your progress, identify gaps, and improve with intelligent insights.
-                    </div>
-                  </div>
-
-                  <motion.button
-                    type="button"
-                    onClick={() => navigate("/student/analysis")}
-                    whileHover={{ scale: 1.03, y: -1 }}
-                    whileTap={{ scale: 0.98 }}
-                    transition={{ type: "spring", stiffness: 260, damping: 18 }}
-                    className="group relative w-full sm:w-auto overflow-hidden inline-flex items-center justify-center gap-2 rounded-2xl px-6 py-3.5 text-sm font-extrabold text-white tracking-tight bg-gradient-to-b from-sky-400 via-sky-500 to-blue-600 ring-1 ring-white/20 shadow-[0_18px_45px_-30px_rgba(2,132,199,0.75)] hover:from-sky-300 hover:via-sky-400 hover:to-blue-600 hover:shadow-[0_26px_65px_-38px_rgba(2,132,199,0.95)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/40"
+            <div className="relative z-10 flex min-h-[calc(100vh-7rem)] flex-col justify-between gap-6 p-4 sm:p-6 lg:p-8">
+              <div className="grid flex-1 items-center gap-6 lg:grid-cols-[minmax(0,1.18fr)_minmax(340px,.82fr)] xl:gap-8">
+                <div className="min-w-0">
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.08, duration: 0.5 }}
+                    className="inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/55 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.16em] text-sky-800 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.07] dark:text-sky-200"
                   >
-                    <span aria-hidden="true" className="pointer-events-none absolute -inset-6 rounded-3xl opacity-0 blur-2xl bg-sky-400/30 transition-opacity duration-300 group-hover:opacity-100" />
-                    <span aria-hidden="true" className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/18 via-white/6 to-transparent opacity-70 transition-opacity duration-300 group-hover:opacity-90" />
-                    <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/35" />
-                    <Sparkles className="relative z-10 h-4 w-4 text-white/90" />
-                    <span className="relative z-10">Check Performance</span>
-                  </motion.button>
+                    <span className="h-1.5 w-6 rounded-full bg-gradient-to-r from-cyan-300 to-sky-600 shadow-[0_0_16px_rgba(14,165,233,.55)]" />
+                    PeerPrep student dashboard
+                  </motion.div>
+
+                  <motion.h1
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.13, duration: 0.58, ease: [0.22, 1, 0.36, 1] }}
+                    className="mt-5 max-w-4xl text-4xl font-black leading-[1.04] tracking-normal text-sky-950 dark:text-white sm:text-5xl lg:text-6xl"
+                  >
+                    Welcome back{user?.name ? "," : ""}{" "}
+                    <span className="bg-gradient-to-r from-sky-700 via-blue-600 to-cyan-500 bg-clip-text text-transparent dark:from-sky-200 dark:via-cyan-200 dark:to-white">
+                      {user?.name || "Student"}
+                    </span>
+                  </motion.h1>
+
+                  <motion.p
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.2, duration: 0.55 }}
+                    className="mt-5 max-w-2xl text-base font-medium leading-7 text-slate-600 dark:text-slate-300 sm:text-lg"
+                  >
+                    Your home for interviews, assessments, learning modules, and coding practice, tuned for consistent placement momentum.
+                  </motion.p>
+
+                  <motion.div
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.28, duration: 0.55 }}
+                    className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center"
+                  >
+                    <motion.button
+                      type="button"
+                      onClick={() => navigate("/problems")}
+                      whileHover={{ y: -2, scale: 1.025 }}
+                      whileTap={{ scale: 0.98 }}
+                      transition={{ type: "spring", stiffness: 320, damping: 21 }}
+                      className="group relative inline-flex min-h-12 items-center justify-center gap-2 overflow-hidden rounded-2xl bg-gradient-to-r from-sky-500 via-blue-600 to-sky-500 px-6 py-3 text-sm font-black text-white shadow-[0_24px_70px_-38px_rgba(2,132,199,.95)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/50"
+                    >
+                      <span className="absolute inset-y-0 -left-1/3 w-1/3 skew-x-[-18deg] bg-white/25 opacity-0 blur-sm transition-all duration-700 group-hover:left-full group-hover:opacity-100" />
+                      <Code2 className="relative h-4 w-4" />
+                      <span className="relative">Start Practice</span>
+                      <ArrowRight className="relative h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
+                    </motion.button>
+
+                    <motion.button
+                      type="button"
+                      onClick={() => navigate("/student/assessments")}
+                      whileHover={{ y: -2, scale: 1.018 }}
+                      whileTap={{ scale: 0.98 }}
+                      transition={{ type: "spring", stiffness: 320, damping: 22 }}
+                      className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-white/70 bg-white/48 px-6 py-3 text-sm font-black text-sky-900 shadow-sm backdrop-blur-xl transition-colors duration-300 hover:bg-white/68 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/40 dark:border-white/10 dark:bg-white/[0.07] dark:text-sky-100 dark:hover:bg-white/[0.1]"
+                    >
+                      <ClipboardList className="h-4 w-4" />
+                      View Assessments
+                    </motion.button>
+                  </motion.div>
+
+                  <motion.div
+                    initial={{ opacity: 0, y: 14 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.36, duration: 0.58 }}
+                    className="mt-6"
+                  >
+                    <QuickNav navigate={navigate} />
+                  </motion.div>
+                </div>
+
+                <div className="min-w-0 space-y-4">
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                    <HeroMetricCard
+                      icon={Calendar}
+                      label="Interviews"
+                      value={upcomingInterviews}
+                      helper="Upcoming joined sessions"
+                      delay={0.2}
+                    />
+                    <HeroMetricCard
+                      icon={ClipboardList}
+                      label="Assessments"
+                      value={activeAssessments}
+                      helper="Pending assessment actions"
+                      delay={0.26}
+                    />
+                  </div>
+                  <HeroWeeklyWidget
+                    weeklyActivity={weeklyActivity}
+                    weeklyActiveDays={weeklyActiveDays}
+                    weeklyGoal={weeklyGoal}
+                    weeklyTotalActivities={weeklyTotalActivities}
+                    weeklyRemaining={weeklyRemaining}
+                  />
                 </div>
               </div>
+
+              <HeroInsightPanel
+                displayAnnouncements={displayAnnouncements}
+                announcementIndex={announcementIndex}
+                fallbackThoughts={fallbackThoughts}
+                thoughtIndex={thoughtIndex}
+                navigate={navigate}
+              />
             </div>
           </div>
-          </section>
-        </div>
+        </motion.section>
 
         <div className="w-full px-4 sm:px-6 lg:px-10 space-y-12 pt-10 pb-16">
 

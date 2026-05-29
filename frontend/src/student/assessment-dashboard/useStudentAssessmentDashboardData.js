@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../utils/api';
 
 const EMPTY_DASHBOARD = {
@@ -13,6 +13,7 @@ const EMPTY_DASHBOARD = {
   },
   upcomingAssessments: [],
   ongoingAssessments: [],
+  completedAssessments: [],
   reports: [],
   history: [],
 };
@@ -21,6 +22,11 @@ export function useStudentAssessmentDashboardData() {
   const [dashboard, setDashboard] = useState(EMPTY_DASHBOARD);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
+
+  const refresh = useCallback(() => {
+    setReloadKey((key) => key + 1);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -49,7 +55,7 @@ export function useStudentAssessmentDashboardData() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [reloadKey]);
 
-  return { dashboard, loading, error };
+  return { dashboard, loading, error, refresh };
 }

@@ -47,7 +47,7 @@ export async function createFaceLandmarker(options = {}) {
     },
     runningMode: 'VIDEO',
     numFaces: Math.max(1, Math.min(2, Number(options.numFaces || 2))),
-    outputFaceBlendshapes: false,
+    outputFaceBlendshapes: true,
     outputFacialTransformationMatrixes: false,
   };
 

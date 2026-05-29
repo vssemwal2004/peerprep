@@ -62,6 +62,7 @@ export default function StudentAssessmentList() {
               <EmptyState text="No upcoming assessments." />
             )}
           </Section>
+
         </div>
       )}
 
