@@ -24,6 +24,11 @@ function setCachedUser(userId, user) {
   userCache.set(userId, { user, timestamp: Date.now() });
 }
 
+export function invalidateUserCache(userId) {
+  if (!userId) return;
+  userCache.delete(String(userId));
+}
+
 // Clean up expired cache entries every 5 minutes
 setInterval(() => {
   const now = Date.now();
@@ -57,7 +62,14 @@ export async function requireAuth(req, res, next) {
   
   const payload = verifyToken(token);
 
-  // Try to get user from cache first
+  // Session-sensitive fields must be read fresh. If activeSessionToken is
+  // cached, a just-created login token can be rejected against the old token.
+  const sessionState = await User.findById(payload.sub)
+    .select('_id activeSessionToken passwordChangedAt isActive')
+    .lean();
+  if (!sessionState) throw new HttpError(401, 'User not found');
+
+  // Try to get stable profile/authorization fields from cache first.
   let user = getCachedUser(payload.sub);
   
   if (!user) {
@@ -71,6 +83,12 @@ export async function requireAuth(req, res, next) {
     // Cache the user data
     setCachedUser(payload.sub, user);
   }
+  user = {
+    ...user,
+    activeSessionToken: sessionState.activeSessionToken,
+    passwordChangedAt: sessionState.passwordChangedAt,
+    isActive: sessionState.isActive,
+  };
   if (user.role === 'coordinator' && user.isActive === false) throw new HttpError(403, 'Coordinator account disabled');
   
   // SECURITY: Check if this is the active session for this user

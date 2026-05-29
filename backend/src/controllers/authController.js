@@ -12,6 +12,7 @@ import { validatePasswordStrength, validateEmail, generateSecureToken, hashToken
 import { checkEmailResetLimit, recordEmailResetAttempt } from '../middleware/rateLimiter.js';
 import { createNotification } from '../services/notificationService.js';
 import { normalizeCoordinatorPermissions } from '../services/coordinatorPermissions.js';
+import { invalidateUserCache } from '../middleware/auth.js';
 
 function getAuthCookieOptions() {
   return {
@@ -56,6 +57,7 @@ export async function changePassword(req, res) {
   user.passwordHash = await User.hashPassword(newPassword);
   user.mustChangePassword = false;
   await user.save();
+  invalidateUserCache(user._id);
 
   if (user.role === 'student') {
     try {
@@ -127,6 +129,7 @@ export async function changeAdminPassword(req, res) {
   user.passwordHash = await User.hashPassword(newPassword);
   user.mustChangePassword = false;
   await user.save();
+  invalidateUserCache(user._id);
   
   console.log(`[Admin Password Change] Password updated for admin: ${user.email}`);
   
@@ -391,6 +394,7 @@ export async function login(req, res) {
     admin.activeSessionToken = sessionTokenHash;
     admin.activeSessionCreatedAt = new Date();
     await admin.save();
+    invalidateUserCache(admin._id);
     console.log('[Session] Admin session created:', admin.email, sessionTokenHash.substring(0, 10) + '...');
     
     // SECURITY: Store JWT in HttpOnly cookie instead of sending in response
@@ -435,6 +439,7 @@ export async function login(req, res) {
     student.activeSessionToken = sessionTokenHash;
     student.activeSessionCreatedAt = new Date();
     await student.save();
+    invalidateUserCache(student._id);
     console.log('[Session] Student session created:', student.email, sessionTokenHash.substring(0, 10) + '...');
     
     // SECURITY: Store JWT in HttpOnly cookie
@@ -470,6 +475,7 @@ export async function login(req, res) {
     coordinator.activeSessionToken = sessionTokenHash;
     coordinator.activeSessionCreatedAt = new Date();
     await coordinator.save();
+    invalidateUserCache(coordinator._id);
     console.log('[Session] Coordinator session created:', coordinator.email, sessionTokenHash.substring(0, 10) + '...');
     
     // SECURITY: Store JWT in HttpOnly cookie
@@ -495,6 +501,7 @@ export async function forcePasswordChange(req, res) {
   user.passwordHash = await User.hashPassword(newPassword);
   user.mustChangePassword = false;
   await user.save();
+  invalidateUserCache(user._id);
   res.json({ message: 'Password updated' });
 }
 
@@ -649,6 +656,7 @@ export async function resetPassword(req, res) {
     }
 
     console.log('[Password Reset] Password reset successful for:', user.email);
+    invalidateUserCache(user._id);
     
     // SECURITY: Log password reset
     logActivity({

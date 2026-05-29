@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 
 export function AdminNavbar() {
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   const adminName = user?.name || localStorage.getItem('adminName') || 'Admin';
@@ -35,7 +35,8 @@ export function AdminNavbar() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isProfileOpen]);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await logout();
     localStorage.removeItem('token');
     localStorage.removeItem('isAdmin');
     localStorage.removeItem('adminName');

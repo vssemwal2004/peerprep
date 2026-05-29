@@ -7,7 +7,7 @@ import { useAuth } from "../context/AuthContext";
 
 export function CoordinatorNavbar() {
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [active, setActive] = useState(location.pathname);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -41,7 +41,8 @@ export function CoordinatorNavbar() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isProfileOpen]);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await logout();
     localStorage.removeItem("token");
     localStorage.removeItem("coordinatorName");
     localStorage.removeItem("coordinatorEmail");

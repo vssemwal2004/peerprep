@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { api } from '../utils/api';
+import { api, clearApiCache } from '../utils/api';
 
 const AuthContext = createContext(null);
 
@@ -21,11 +21,20 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [authChecked, setAuthChecked] = useState(false);
   const fetchingRef = useRef(false);
+  const fetchingPromiseRef = useRef(null);
   const cacheTimestampRef = useRef(0);
 
   const fetchUser = useCallback(async (force = false) => {
-    // Prevent concurrent fetches
-    if (fetchingRef.current) return;
+    // Prevent concurrent fetches. Forced refreshes wait for the current check
+    // and then run again, which avoids post-login races with the initial check.
+    if (fetchingRef.current) {
+      if (!force) return fetchingPromiseRef.current;
+      try {
+        await fetchingPromiseRef.current;
+      } catch {
+        // The forced refresh below will decide the final auth state.
+      }
+    }
 
     // Skip if cache is still fresh (unless forced)
     const now = Date.now();
@@ -34,17 +43,23 @@ export function AuthProvider({ children }) {
     }
 
     fetchingRef.current = true;
-    try {
-      const userData = await api.me(force);
-      setUser(userData);
-      cacheTimestampRef.current = Date.now();
-    } catch {
-      setUser(null);
-    } finally {
-      setLoading(false);
-      setAuthChecked(true);
-      fetchingRef.current = false;
-    }
+    fetchingPromiseRef.current = (async () => {
+      try {
+        const userData = await api.me(force);
+        setUser(userData);
+        cacheTimestampRef.current = Date.now();
+      } catch {
+        setUser(null);
+        cacheTimestampRef.current = Date.now();
+      } finally {
+        setLoading(false);
+        setAuthChecked(true);
+        fetchingRef.current = false;
+        fetchingPromiseRef.current = null;
+      }
+    })();
+
+    return fetchingPromiseRef.current;
   }, [authChecked]);
 
   // Initial auth check on mount
@@ -52,10 +67,16 @@ export function AuthProvider({ children }) {
     fetchUser();
   }, [fetchUser]);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    try {
+      await api.logout();
+    } catch {
+      // Continue local logout even if the network request fails.
+    }
     setUser(null);
     setAuthChecked(false);
     cacheTimestampRef.current = 0;
+    clearApiCache();
     localStorage.clear();
   }, []);
 

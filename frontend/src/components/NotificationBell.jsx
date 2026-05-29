@@ -45,12 +45,13 @@ function formatRelativeTime(dateValue) {
 }
 
 function NotificationBell() {
-  const { user } = useAuth();
+  const { user, authChecked, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [serverUnreadCount, setServerUnreadCount] = useState(0);
   const [announcementNotifications, setAnnouncementNotifications] = useState([]);
+  const canLoadNotifications = authChecked && isAuthenticated && Boolean(user?._id);
 
   const mergedSortedNotifications = useMemo(() => {
     return [...announcementNotifications, ...notifications].sort(
@@ -79,6 +80,7 @@ function NotificationBell() {
   };
 
   const fetchAnnouncementsForSidebar = async () => {
+    if (!canLoadNotifications) return;
     try {
       const res = await api.listStudentAnnouncements();
       const list = Array.isArray(res?.announcements) ? res.announcements : [];
@@ -100,6 +102,11 @@ function NotificationBell() {
   };
 
   useEffect(() => {
+    if (!canLoadNotifications) {
+      setNotifications([]);
+      setServerUnreadCount(0);
+      return undefined;
+    }
     let mounted = true;
     api.getNotifications()
       .then((data) => {
@@ -111,12 +118,16 @@ function NotificationBell() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [canLoadNotifications]);
 
   useEffect(() => {
+    if (!canLoadNotifications) {
+      setAnnouncementNotifications([]);
+      return;
+    }
     fetchAnnouncementsForSidebar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [canLoadNotifications]);
 
   useEffect(() => {
     if (!user?._id) return;
@@ -171,7 +182,9 @@ function NotificationBell() {
           prev.map((n) => (n._id === notification._id ? { ...n, isRead: true } : n))
         );
         setServerUnreadCount((prev) => Math.max(0, prev - 1));
-      } catch {}
+      } catch {
+        // Ignore read-status failures; the next fetch will resync state.
+      }
     }
     if (notification.actionUrl) {
       navigate(notification.actionUrl);
@@ -184,7 +197,9 @@ function NotificationBell() {
       await api.markAllNotificationsRead();
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
       setServerUnreadCount(0);
-    } catch {}
+    } catch {
+      // Ignore bulk read failures; announcements are still marked locally below.
+    }
 
     // Also mark announcements as seen.
     markAnnouncementsSeen();
@@ -195,7 +210,9 @@ function NotificationBell() {
       await api.clearAllNotifications();
       setNotifications([]);
       setServerUnreadCount(0);
-    } catch {}
+    } catch {
+      // Ignore clear failures; a later fetch will restore any server-side items.
+    }
 
     // Don't remove announcements (they're global), but consider them seen.
     markAnnouncementsSeen();

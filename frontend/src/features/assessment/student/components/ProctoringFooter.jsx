@@ -25,11 +25,11 @@ const STATUS_ITEMS = Object.freeze([
 ]);
 
 const ISSUE_STATES = Object.freeze({
-  faceModel: ['unavailable'],
+  faceModel: ['fallback', 'unavailable'],
   objectModel: ['unavailable'],
   camera: ['blocked', 'error'],
   face: ['missing', 'out_of_frame', 'multiple'],
-  eye: ['looking_away'],
+  eye: ['looking_away', 'unavailable'],
   mobile: ['detected'],
   person: ['multiple', 'missing'],
 });

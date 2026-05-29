@@ -3769,12 +3769,15 @@ function violationWeight(settings = {}, type = 'other') {
   return 1;
 }
 
-function isNonBlockingDetectionViolation(type) {
-  return type === 'fullscreen_exit' || isAiProctoringViolation(type) || NON_BLOCKING_CAMERA_VIOLATION_TYPES.includes(type);
+function isNonBlockingDetectionViolation(type, meta = {}) {
+  return meta?.warningOnly === true
+    || type === 'fullscreen_exit'
+    || isAiProctoringViolation(type)
+    || NON_BLOCKING_CAMERA_VIOLATION_TYPES.includes(type);
 }
 
 function decideViolationAction({ settings = {}, type, meta = {}, submission }) {
-  if (isNonBlockingDetectionViolation(type)) return 'warn';
+  if (isNonBlockingDetectionViolation(type, meta)) return 'warn';
 
   const totalWarnings = (submission.tabSwitches || 0)
     + (submission.fullscreenExits || 0)
@@ -3853,7 +3856,7 @@ export async function logStudentViolation(req, res) {
     const settings = assessment.settings || {};
     const now = new Date();
     const isAiViolation = isAiProctoringViolation(type);
-    const isDetectionOnlyViolation = isNonBlockingDetectionViolation(type);
+    const isDetectionOnlyViolation = isNonBlockingDetectionViolation(type, normalizedMeta.value);
     const weight = isDetectionOnlyViolation ? 0 : violationWeight(settings, type);
     const cleanMessage = sanitizeViolationMessage(message);
     const logMeta = {

@@ -67,7 +67,7 @@ export function ChartFrame({ children, minHeight = 300, empty, emptyTitle, empty
   if (empty) return <EmptyState title={emptyTitle} text={emptyText} />;
 
   return (
-    <div className="rounded-[16px] border border-slate-200 bg-white p-3.5 dark:border-white/10 dark:bg-slate-950/72">
+    <div className="rounded-[16px] border border-slate-200 bg-white p-3.5 dark:border-white/10 dark:bg-slate-950/75">
       <div style={{ minHeight }}>{children}</div>
     </div>
   );

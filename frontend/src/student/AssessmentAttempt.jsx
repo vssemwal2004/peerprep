@@ -93,7 +93,9 @@ const SOFT_FOOTER_WARNING_TYPES = new Set([
   'fullscreen_exit',
 ]);
 
-const SCREENSHOT_WARNING_GRACE_MS = 90000;
+const RESTRICTED_ACTION_WARNING_MS = 15000;
+const SCREENSHOT_WARNING_GRACE_MS = RESTRICTED_ACTION_WARNING_MS;
+const AI_PREVIEW_MARGIN_PX = 8;
 const CAMERA_WARNING_STREAK_LIMIT = 6;
 const FACE_CENTER_TOLERANCE_RATIO = 0.46;
 const FACE_MIN_WIDTH_RATIO = 0.08;
@@ -222,10 +224,21 @@ const getCodingStarterCode = (question, language) => (
   getStarterCodeForLanguage(getCodingDataFromQuestion(question), language)
 );
 
+const clampAiPreviewPosition = ({ x, y, width = 144, height = 96 }) => {
+  if (typeof window === 'undefined') return { x, y };
+  const maxX = Math.max(AI_PREVIEW_MARGIN_PX, window.innerWidth - width - AI_PREVIEW_MARGIN_PX);
+  const maxY = Math.max(AI_PREVIEW_MARGIN_PX, window.innerHeight - height - AI_PREVIEW_MARGIN_PX);
+  return {
+    x: Math.min(Math.max(AI_PREVIEW_MARGIN_PX, x), maxX),
+    y: Math.min(Math.max(AI_PREVIEW_MARGIN_PX, y), maxY),
+  };
+};
+
 export default function AssessmentAttempt() {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const aiPreviewStorageKey = `peerprep_ai_preview_position:${id}`;
 
   const [assessment, setAssessment] = useState(null);
   const [submission, setSubmission] = useState(null);
@@ -288,6 +301,7 @@ export default function AssessmentAttempt() {
     message: '',
     tone: 'warning',
   });
+  const [timedWarningRemainingSec, setTimedWarningRemainingSec] = useState(0);
   const [securityStatus, setSecurityStatus] = useState(CSE_STATUS_DEFAULTS);
   const [securityAction, setSecurityAction] = useState('warn');
   const [fullscreenRecovery, setFullscreenRecovery] = useState({ active: false, remaining: 0 });
@@ -298,10 +312,22 @@ export default function AssessmentAttempt() {
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [audioLevel, setAudioLevel] = useState(0);
   const [proctoringStatus, setProctoringStatus] = useState(null);
+  const [aiPreviewPosition, setAiPreviewPosition] = useState(() => {
+    try {
+      const raw = localStorage.getItem(`peerprep_ai_preview_position:${id}`);
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (Number.isFinite(parsed?.x) && Number.isFinite(parsed?.y)) return parsed;
+    } catch {
+      // Use the default bottom-right placement.
+    }
+    return null;
+  });
 
   const validationVideoRef = useRef(null);
   const monitorVideoRef = useRef(null);
   const aiProctoringVideoRef = useRef(null);
+  const aiPreviewRef = useRef(null);
+  const aiPreviewDragFrameRef = useRef(null);
   const monitorCanvasRef = useRef(null);
   const splitContainerRef = useRef(null);
   const problemPaneRef = useRef(null);
@@ -314,6 +340,9 @@ export default function AssessmentAttempt() {
   const fullscreenExitTimerRef = useRef(null);
   const fullscreenCountdownRef = useRef(null);
   const heartbeatFailureRef = useRef(0);
+  const restrictedActionGraceUntilRef = useRef(0);
+  const restrictedActionNoticeRef = useRef('Restricted action recorded as a warning. Continue the assessment.');
+  const timedWarningTimerRef = useRef(null);
   const screenshotGraceUntilRef = useRef(0);
   const lastScreenshotWarningAtRef = useRef(0);
   const thresholdNoticeRef = useRef({});
@@ -817,6 +846,37 @@ export default function AssessmentAttempt() {
     });
   }, [tabSwitchAction, tabSwitches, tabSwitchLimit]);
 
+  const closeSecurityPopup = useCallback(() => {
+    if (timedWarningTimerRef.current) {
+      clearInterval(timedWarningTimerRef.current);
+      timedWarningTimerRef.current = null;
+    }
+    setTimedWarningRemainingSec(0);
+    setSecurityPopup((prev) => ({ ...prev, open: false }));
+  }, []);
+
+  const showTimedSecurityWarning = useCallback(({ title, message, tone = 'warning', notice }) => {
+    const now = Date.now();
+    const warningUntil = now + RESTRICTED_ACTION_WARNING_MS;
+    restrictedActionGraceUntilRef.current = Math.max(restrictedActionGraceUntilRef.current, warningUntil);
+    restrictedActionNoticeRef.current = notice || message || 'Restricted action recorded as a warning. Continue the assessment.';
+
+    if (timedWarningTimerRef.current) clearInterval(timedWarningTimerRef.current);
+    setSecurityPopup({ open: true, title, message, tone });
+    setTimedWarningRemainingSec(Math.ceil(RESTRICTED_ACTION_WARNING_MS / 1000));
+    setSecurityNotice(restrictedActionNoticeRef.current);
+
+    timedWarningTimerRef.current = setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((warningUntil - Date.now()) / 1000));
+      setTimedWarningRemainingSec(remaining);
+      if (remaining <= 0) {
+        clearInterval(timedWarningTimerRef.current);
+        timedWarningTimerRef.current = null;
+        setSecurityPopup((prev) => ({ ...prev, open: false }));
+      }
+    }, 250);
+  }, []);
+
   const showScreenshotBlockedPopup = useCallback(() => {
     const now = Date.now();
     if (now - lastScreenshotWarningAtRef.current < 1500) return;
@@ -824,14 +884,14 @@ export default function AssessmentAttempt() {
     screenshotGraceUntilRef.current = now + SCREENSHOT_WARNING_GRACE_MS;
     const warningCount = totalWarnings + 1;
     setScreenshotWarnings((prev) => prev + 1);
-    setSecurityPopup({
-      open: true,
+    showTimedSecurityWarning({
       title: 'Screenshots are not allowed',
       message: `Screenshots are not allowed. Warning count: ${warningCount}.`,
       tone: 'warning',
+      notice: 'Screenshot attempt recorded as a warning. Continue the assessment.',
     });
     setSecurityNotice(`Screenshots are not allowed. Warning count: ${warningCount}.`);
-  }, [totalWarnings]);
+  }, [showTimedSecurityWarning, totalWarnings]);
 
   const recordViolation = useCallback(async (type, message, meta = {}) => {
     if (isSubmitted || !assessment?._id || !CSE_VALID_VIOLATIONS.has(type)) return null;
@@ -841,7 +901,7 @@ export default function AssessmentAttempt() {
     if (now - (violationThrottleRef.current[throttleKey] || 0) < throttleMs) return null;
     violationThrottleRef.current[throttleKey] = now;
 
-    const detectionOnly = NON_BLOCKING_DETECTION_TYPES.has(type);
+    const detectionOnly = NON_BLOCKING_DETECTION_TYPES.has(type) || meta.warningOnly === true;
     const weight = detectionOnly ? 0 : getViolationWeight(securitySettings, type);
     const entry = {
       type,
@@ -886,13 +946,15 @@ export default function AssessmentAttempt() {
       }
       if (SOFT_FOOTER_WARNING_TYPES.has(type)) {
         setSecurityNotice(message);
+      } else if (meta.localPopupShown) {
+        setSecurityNotice(message);
       } else {
         showSecurityPopup(type, message, entry.meta, result);
         toast.info(message);
       }
       return result;
     } catch {
-      if (SOFT_FOOTER_WARNING_TYPES.has(type)) {
+      if (SOFT_FOOTER_WARNING_TYPES.has(type) || meta.localPopupShown) {
         setSecurityNotice(message);
       } else {
         showSecurityPopup(type, message, entry.meta);
@@ -949,6 +1011,95 @@ export default function AssessmentAttempt() {
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp);
   };
+
+  const handleAiPreviewDragStart = useCallback((event) => {
+    if (event.button !== undefined && event.button !== 0) return;
+    const preview = aiPreviewRef.current;
+    if (!preview) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+      event.currentTarget?.setPointerCapture?.(event.pointerId);
+    } catch {
+      // ignore
+    }
+
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'grabbing';
+
+    const rect = preview.getBoundingClientRect();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startLeft = rect.left;
+    const startTop = rect.top;
+    const size = { width: rect.width, height: rect.height };
+    let nextPosition = clampAiPreviewPosition({ x: startLeft, y: startTop, ...size });
+    setAiPreviewPosition(nextPosition);
+
+    const schedule = (moveEvent) => {
+      nextPosition = clampAiPreviewPosition({
+        x: startLeft + (moveEvent.clientX - startX),
+        y: startTop + (moveEvent.clientY - startY),
+        ...size,
+      });
+      if (aiPreviewDragFrameRef.current) return;
+      aiPreviewDragFrameRef.current = requestAnimationFrame(() => {
+        aiPreviewDragFrameRef.current = null;
+        setAiPreviewPosition(nextPosition);
+      });
+    };
+
+    const handlePointerMove = (moveEvent) => {
+      schedule(moveEvent);
+    };
+
+    const handlePointerUp = () => {
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      if (aiPreviewDragFrameRef.current) {
+        cancelAnimationFrame(aiPreviewDragFrameRef.current);
+        aiPreviewDragFrameRef.current = null;
+      }
+      setAiPreviewPosition(nextPosition);
+      try {
+        localStorage.setItem(aiPreviewStorageKey, JSON.stringify(nextPosition));
+      } catch {
+        // Ignore storage failures; dragging should still work for this page.
+      }
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  }, [aiPreviewStorageKey]);
+
+  useEffect(() => {
+    if (!aiPreviewPosition) return undefined;
+    const handleResize = () => {
+      const rect = aiPreviewRef.current?.getBoundingClientRect();
+      const size = rect ? { width: rect.width, height: rect.height } : {};
+      setAiPreviewPosition((prev) => {
+        if (!prev) return prev;
+        const next = clampAiPreviewPosition({ ...prev, ...size });
+        try {
+          localStorage.setItem(aiPreviewStorageKey, JSON.stringify(next));
+        } catch {
+          // ignore
+        }
+        return next;
+      });
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [aiPreviewPosition, aiPreviewStorageKey]);
+
+  useEffect(() => {
+    return () => {
+      if (aiPreviewDragFrameRef.current) cancelAnimationFrame(aiPreviewDragFrameRef.current);
+    };
+  }, []);
 
   const loadAssessment = useCallback(async () => {
     setLoading(true);
@@ -1206,6 +1357,12 @@ export default function AssessmentAttempt() {
   }, [securityRecheckActive, securityRecheckStartedAt, securityRecheckTimeoutSec, handleSubmit, toast]);
 
   useEffect(() => {
+    return () => {
+      if (timedWarningTimerRef.current) clearInterval(timedWarningTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!secureActive || isSubmitted) return undefined;
     const interval = setInterval(() => {
       handleSave();
@@ -1230,10 +1387,11 @@ export default function AssessmentAttempt() {
     if (!secureActive || !tabGuardEnabled) return undefined;
     const reportFocusLoss = (source) => {
       const screenshotWarningActive = Date.now() < screenshotGraceUntilRef.current
+        || Date.now() < restrictedActionGraceUntilRef.current
         || Date.now() - lastScreenshotWarningAtRef.current < SCREENSHOT_WARNING_GRACE_MS;
       if (screenshotWarningActive) {
         setSecurityStatus((prev) => ({ ...prev, tabActive: true }));
-        setSecurityNotice('Screenshot attempt recorded as a warning. Continue the assessment.');
+        setSecurityNotice(restrictedActionNoticeRef.current);
         return;
       }
       const active = document.hasFocus() && !document.hidden;
@@ -1300,7 +1458,21 @@ export default function AssessmentAttempt() {
     };
     const handleContextMenu = (event) => {
       if (!blockRightClick) return;
-      stopRestrictedEvent(event, 'context_menu', 'Right-click menu blocked by assessment rules.');
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+      const warningCount = totalWarnings + 1;
+      showTimedSecurityWarning({
+        title: 'Right-click blocked',
+        message: `Right-click is disabled for this assessment. Warning count: ${warningCount}.`,
+        tone: 'warning',
+        notice: 'Right-click attempt recorded as a warning. Continue the assessment.',
+      });
+      void recordViolation('context_menu', 'Right-click menu blocked by assessment rules.', {
+        source: event.type,
+        warningOnly: true,
+        localPopupShown: true,
+      });
     };
     const handleDrop = (event) => {
       if (!copyBlockEnabled) return;
@@ -1368,7 +1540,7 @@ export default function AssessmentAttempt() {
       document.removeEventListener('keydown', handleKeydown, capture);
       window.removeEventListener('keyup', handleKeydown, capture);
     };
-  }, [secureActive, copyBlockEnabled, screenshotProtectionEnabled, blockRightClick, recordViolation, showScreenshotBlockedPopup]);
+  }, [secureActive, copyBlockEnabled, screenshotProtectionEnabled, blockRightClick, recordViolation, showScreenshotBlockedPopup, showTimedSecurityWarning, totalWarnings]);
 
   useEffect(() => {
     if (!secureActive || !idleDetection) return undefined;
@@ -1420,11 +1592,12 @@ export default function AssessmentAttempt() {
     const handleFullscreenEnforcement = () => {
       if (!document.fullscreenElement) {
         const screenshotWarningActive = Date.now() < screenshotGraceUntilRef.current
+          || Date.now() < restrictedActionGraceUntilRef.current
           || Date.now() - lastScreenshotWarningAtRef.current < SCREENSHOT_WARNING_GRACE_MS;
         if (screenshotWarningActive) {
           setSecurityStatus((prev) => ({ ...prev, fullscreen: true }));
           setFullscreenRecovery({ active: false, remaining: 0 });
-          setSecurityNotice('Screenshot attempt recorded as a warning. Continue the assessment.');
+          setSecurityNotice(restrictedActionNoticeRef.current);
           return;
         }
         setSecurityStatus((prev) => ({ ...prev, fullscreen: false }));
@@ -1796,11 +1969,13 @@ export default function AssessmentAttempt() {
     if (!secureActive) return undefined;
     const sendHeartbeat = async () => {
       const screenshotGraceActive = Date.now() < screenshotGraceUntilRef.current;
+      const restrictedWarningActive = Date.now() < restrictedActionGraceUntilRef.current;
       const screenshotWarningRecent = Date.now() - lastScreenshotWarningAtRef.current < SCREENSHOT_WARNING_GRACE_MS;
+      const warningGraceActive = screenshotGraceActive || restrictedWarningActive || screenshotWarningRecent;
       const fullscreenRecoveryActive = Boolean(fullscreenRecovery.active);
       const status = {
-        fullscreen: screenshotGraceActive || screenshotWarningRecent || fullscreenRecoveryActive || !fullscreenRequired || Boolean(document.fullscreenElement),
-        tabActive: screenshotGraceActive || screenshotWarningRecent || !tabGuardEnabled || (document.hasFocus() && !document.hidden),
+        fullscreen: warningGraceActive || fullscreenRecoveryActive || !fullscreenRequired || Boolean(document.fullscreenElement),
+        tabActive: warningGraceActive || !tabGuardEnabled || (document.hasFocus() && !document.hidden),
         cameraActive: !cameraRequired || Boolean(streamRef.current),
         idle: Boolean(securityStatusRef.current.idle),
         duplicateTab: Boolean(securityStatusRef.current.duplicateTab),
@@ -1816,11 +1991,11 @@ export default function AssessmentAttempt() {
         if (typeof result?.violationScore === 'number') setViolationScore(result.violationScore);
         if (typeof result?.pauseCount === 'number') setPauseCount(result.pauseCount);
         if (result?.lastPauseAt) setLastPauseAt(result.lastPauseAt);
-        if (result?.inconsistent && screenshotWarningRecent) {
-          setSecurityNotice('Screenshot attempt recorded as a warning. Continue the assessment.');
+        if (result?.inconsistent && warningGraceActive) {
+          setSecurityNotice(restrictedActionNoticeRef.current);
           return;
         }
-        if (result?.inconsistent && !screenshotGraceActive) {
+        if (result?.inconsistent && !warningGraceActive) {
           await recordViolation('heartbeat_failure', 'Security heartbeat reported an inconsistent session state.', {
             source: 'heartbeat_inconsistent',
             status,
@@ -1828,8 +2003,8 @@ export default function AssessmentAttempt() {
           return;
         }
       } catch {
-        if (screenshotGraceActive || screenshotWarningRecent) {
-          setSecurityNotice('Screenshot attempt recorded as a warning. Continue the assessment.');
+        if (warningGraceActive) {
+          setSecurityNotice(restrictedActionNoticeRef.current);
           return;
         }
         if (Date.now() - heartbeatFailureRef.current > 12000) {
@@ -2765,11 +2940,11 @@ export default function AssessmentAttempt() {
     },
   ];
   const aiFooterIssueStates = {
-    faceModel: ['unavailable'],
+    faceModel: ['fallback', 'unavailable'],
     objectModel: ['unavailable'],
     camera: ['blocked', 'error'],
     face: ['missing', 'out_of_frame', 'multiple'],
-    eye: ['looking_away'],
+    eye: ['looking_away', 'unavailable'],
     mobile: ['detected'],
     person: ['multiple', 'missing'],
   };
@@ -3560,17 +3735,22 @@ export default function AssessmentAttempt() {
             <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-gray-300">
               {securityPopup.message}
             </p>
+            {timedWarningRemainingSec > 0 && (
+              <div className="mt-4 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+                Warning closes in {timedWarningRemainingSec}s
+              </div>
+            )}
             <div className="mt-4 flex justify-end">
               <button
                 type="button"
-                onClick={() => setSecurityPopup((prev) => ({ ...prev, open: false }))}
+                onClick={closeSecurityPopup}
                 className={`rounded-2xl px-5 py-2.5 text-sm font-semibold text-white ${
                   securityPopup.tone === 'danger'
                     ? 'bg-rose-600 hover:bg-rose-500'
                     : 'bg-amber-600 hover:bg-amber-500'
                 }`}
               >
-                OK
+                Continue
               </button>
             </div>
           </div>
@@ -3924,10 +4104,21 @@ export default function AssessmentAttempt() {
             </>
           )}
           {aiProctoringEnabled && (
-            <div className="pointer-events-none fixed bottom-14 right-3 z-50 overflow-hidden rounded-2xl border border-white/60 bg-slate-950 shadow-2xl ring-1 ring-slate-900/10 sm:bottom-16 sm:right-4">
+            <div
+              ref={aiPreviewRef}
+              onPointerDown={handleAiPreviewDragStart}
+              className="fixed bottom-14 right-3 z-50 touch-none select-none overflow-hidden rounded-2xl border border-white/60 bg-slate-950 shadow-2xl ring-1 ring-slate-900/10 cursor-grab active:cursor-grabbing sm:bottom-16 sm:right-4"
+              style={aiPreviewPosition ? {
+                left: `${aiPreviewPosition.x}px`,
+                top: `${aiPreviewPosition.y}px`,
+                right: 'auto',
+                bottom: 'auto',
+              } : undefined}
+              title="Drag camera preview"
+            >
               <video
                 ref={aiProctoringVideoRef}
-                className="h-20 w-28 scale-x-[-1] object-cover sm:h-24 sm:w-36"
+                className="pointer-events-none h-20 w-28 scale-x-[-1] object-cover sm:h-24 sm:w-36"
                 muted
                 playsInline
                 autoPlay

@@ -47,7 +47,7 @@ export function Surface({ children, className = "", compact = false }) {
     <div
       className={[
         "rounded-[20px] border border-slate-200 bg-white shadow-[0_18px_50px_-42px_rgba(15,23,42,0.28)] backdrop-blur-xl",
-        "dark:border-white/10 dark:bg-slate-950/86 dark:shadow-[0_20px_60px_-46px_rgba(0,0,0,0.75)]",
+        "dark:border-white/10 dark:bg-slate-950/90 dark:shadow-[0_20px_60px_-46px_rgba(0,0,0,0.75)]",
         compact ? "p-3.5" : "p-4 sm:p-5",
         className,
       ].join(" ")}
@@ -110,7 +110,7 @@ export function MetricCard({ label, value, helper, Icon, tone = "sky", suffix = 
       {...fadeIn(delay, 10)}
       whileHover={{ y: -3 }}
       className={[
-        "group relative overflow-hidden rounded-[16px] border border-slate-200 bg-white shadow-sm transition-all duration-300 hover:border-sky-200 hover:shadow-[0_18px_44px_-36px_rgba(14,165,233,0.8)] dark:border-white/10 dark:bg-slate-950/72",
+        "group relative overflow-hidden rounded-[16px] border border-slate-200 bg-white shadow-sm transition-all duration-300 hover:border-sky-200 hover:shadow-[0_18px_44px_-36px_rgba(14,165,233,0.8)] dark:border-white/10 dark:bg-slate-950/75",
         compact ? "p-3" : "p-3.5",
       ].join(" ")}
     >

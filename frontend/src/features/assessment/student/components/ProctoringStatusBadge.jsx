@@ -1,5 +1,19 @@
 // AI Proctoring placeholder - implementation will be added in later steps.
 const STATUS_TEXT = Object.freeze({
+  faceModel: {
+    unknown: 'Face AI Checking',
+    loading: 'Face AI Loading',
+    ready: 'Face AI Ready',
+    fallback: 'Face Fallback',
+    unavailable: 'Face AI Unavailable',
+  },
+  objectModel: {
+    unknown: 'Object AI Checking',
+    loading: 'Object AI Loading',
+    ready: 'Object AI Ready',
+    fallback: 'Object Fallback',
+    unavailable: 'Object AI Unavailable',
+  },
   camera: {
     unknown: 'Camera Checking',
     ok: 'Camera OK',
@@ -16,7 +30,8 @@ const STATUS_TEXT = Object.freeze({
   eye: {
     unknown: 'Eye Checking',
     ok: 'Eye OK',
-    looking_away: 'Looking Away',
+    looking_away: 'Out of Screen',
+    unavailable: 'Eye AI Unavailable',
   },
   mobile: {
     unknown: 'Mobile Checking',
@@ -32,6 +47,8 @@ const STATUS_TEXT = Object.freeze({
 });
 
 const LABEL_TEXT = Object.freeze({
+  faceModel: 'Face AI',
+  objectModel: 'Object AI',
   camera: 'Camera',
   face: 'Face',
   eye: 'Eye',
@@ -41,7 +58,8 @@ const LABEL_TEXT = Object.freeze({
 
 function getTone(item, state) {
   if (!state || state === 'unknown') return 'unknown';
-  if (state === 'ok') return 'ok';
+  if (state === 'ok' || state === 'ready') return 'ok';
+  if (state === 'fallback' || state === 'unavailable') return 'issue';
   if (item === 'camera' && (state === 'blocked' || state === 'error')) return 'issue';
   if (item === 'face' && ['missing', 'out_of_frame', 'multiple'].includes(state)) return 'issue';
   if (item === 'eye' && state === 'looking_away') return 'issue';

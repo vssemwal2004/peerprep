@@ -5,7 +5,7 @@ export const AI_PROCTORING_CONFIDENCE_THRESHOLDS = Object.freeze({
   face: 0.6,
   mobile: 0.25,
   person: 0.55,
-  lookingAway: 0.45,
+  lookingAway: 0.7,
 });
 
 const CONFIDENCE_KEY_BY_EVENT = Object.freeze({

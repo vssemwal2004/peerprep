@@ -23,7 +23,7 @@ import NotificationBell from "./NotificationBell";
 
 export function StudentNavbar() {
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [active, setActive] = useState(location.pathname);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -60,7 +60,8 @@ export function StudentNavbar() {
   }, [isProfileOpen]);
 
   const navigate = useNavigate();
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await logout();
     localStorage.removeItem("isStudent");
     localStorage.removeItem("studentName");
     localStorage.removeItem("studentEmail");

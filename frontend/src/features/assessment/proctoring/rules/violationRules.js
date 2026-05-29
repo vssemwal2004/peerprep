@@ -18,10 +18,10 @@ export const AI_PROCTORING_RULES = Object.freeze({
     confirmStrategy: 'all',
   },
   [AI_PROCTORING_EVENTS.LOOKING_AWAY]: {
-    message: 'Student appears to be looking away',
+    message: 'Face or eyes were away from the screen for more than 5 seconds',
     severity: 'low',
-    confirmAfterMs: 5000,
-    confirmCount: 2,
+    confirmAfterMs: 5100,
+    confirmCount: 3,
     confirmStrategy: 'all',
   },
   [AI_PROCTORING_EVENTS.MOBILE_DETECTED]: {

@@ -80,12 +80,92 @@ function getCameraActive(videoElement, stream) {
   return hasLiveTrack && !videoElement.paused && !videoElement.ended;
 }
 
+function isVideoReady(videoElement) {
+  return Boolean(
+    videoElement
+      && videoElement.readyState >= 2
+      && videoElement.videoWidth > 0
+      && videoElement.videoHeight > 0,
+  );
+}
+
+function createFallbackUnknownFaceResult(reason) {
+  return {
+    facePresent: true,
+    faceCount: 1,
+    faceOutOfFrame: false,
+    lookingAway: false,
+    confidence: {
+      face: 0.35,
+      lookingAway: 0,
+    },
+    metadata: {
+      source: 'face_fallback',
+      skipped: reason,
+    },
+  };
+}
+
+function normalizeBrowserFaceResult(faces = [], videoElement) {
+  const normalizedFaces = Array.isArray(faces) ? faces : [];
+  const faceCount = normalizedFaces.length;
+  if (faceCount === 0) {
+    return {
+      facePresent: false,
+      faceCount: 0,
+      faceOutOfFrame: false,
+      lookingAway: false,
+      confidence: {
+        face: 0.82,
+        lookingAway: 0,
+      },
+      metadata: {
+        source: 'browser_face_detector',
+      },
+    };
+  }
+
+  const videoWidth = Math.max(1, Number(videoElement?.videoWidth || 1));
+  const videoHeight = Math.max(1, Number(videoElement?.videoHeight || 1));
+  const faceOutOfFrame = normalizedFaces.some((face) => {
+    const box = face?.boundingBox || {};
+    const x = Number(box.x || 0);
+    const y = Number(box.y || 0);
+    const width = Number(box.width || 0);
+    const height = Number(box.height || 0);
+    const centerX = x + (width / 2);
+    const centerY = y + (height / 2);
+    return Math.abs(centerX - videoWidth / 2) > videoWidth * FALLBACK_FACE_CENTER_TOLERANCE_RATIO
+      || Math.abs(centerY - videoHeight / 2) > videoHeight * FALLBACK_FACE_CENTER_TOLERANCE_RATIO
+      || width < videoWidth * FALLBACK_FACE_MIN_WIDTH_RATIO;
+  });
+
+  return {
+    facePresent: true,
+    faceCount,
+    faceOutOfFrame,
+    lookingAway: false,
+    confidence: {
+      face: 0.82,
+      lookingAway: 0,
+    },
+    metadata: {
+      source: 'browser_face_detector',
+      limitation: 'eye movement unavailable in browser fallback',
+      faces: faceCount,
+    },
+  };
+}
+
 const FOOTER_ISSUE_CONFIRM_MS = 600;
 const FOOTER_ISSUE_CONFIRM_COUNT = 1;
 const FOOTER_ISSUE_CONFIRM_MS_BY_TYPE = Object.freeze({
-  [AI_PROCTORING_EVENTS.LOOKING_AWAY]: 5000,
+  [AI_PROCTORING_EVENTS.LOOKING_AWAY]: 5100,
 });
 const MOBILE_STATUS_HOLD_MS = 1800;
+const FALLBACK_FACE_CENTER_TOLERANCE_RATIO = 0.32;
+const FALLBACK_FACE_MIN_WIDTH_RATIO = 0.12;
+const FALLBACK_FRAME_VARIANCE_THRESHOLD = 95;
 
 function isBufferedIssueVisible(buffer, type, timestamp = Date.now()) {
   const state = buffer?.getState?.(type);
@@ -162,8 +242,11 @@ export class ProctoringManager {
     this.modelsLoaded = false;
     this.faceDetector = null;
     this.objectDetector = null;
+    this.browserFaceDetector = null;
+    this.fallbackCanvas = null;
     this.faceDetectorAvailable = false;
     this.objectDetectorAvailable = false;
+    this.faceFallbackAvailable = false;
     this.detectionTickInProgress = false;
     this.confirmedViolationCount = 0;
     this.lastMobileSeenAt = 0;
@@ -258,11 +341,15 @@ export class ProctoringManager {
         this.faceDetectorAvailable = false;
         this.faceDetector?.dispose?.();
         this.faceDetector = null;
+        const fallbackReady = this.setupFaceFallback();
+        this.faceFallbackAvailable = fallbackReady;
         this.updateStatus({
-          faceModel: 'unavailable',
-          face: 'unknown',
-          eye: 'unknown',
-          error: error?.message || 'Face model failed to load',
+          faceModel: fallbackReady ? 'fallback' : 'unavailable',
+          face: fallbackReady ? 'unknown' : 'unknown',
+          eye: 'unavailable',
+          error: fallbackReady
+            ? 'Face AI model unavailable. Basic face fallback is active; eye movement detection is unavailable.'
+            : (error?.message || 'Face model failed to load'),
         });
         if (this.onError) this.safeCall(this.onError, error);
       }
@@ -298,8 +385,11 @@ export class ProctoringManager {
     this.objectDetector?.dispose?.();
     this.faceDetector = null;
     this.objectDetector = null;
+    this.browserFaceDetector = null;
+    this.fallbackCanvas = null;
     this.faceDetectorAvailable = false;
     this.objectDetectorAvailable = false;
+    this.faceFallbackAvailable = false;
     this.modelsLoaded = false;
     this.detectionTickInProgress = false;
     this.updateStatus({
@@ -358,6 +448,8 @@ export class ProctoringManager {
 
       if (cameraActive && this.faceDetectorAvailable && this.faceDetector && shouldUseFaceDetection(this.settings)) {
         faceResult = this.faceDetector.detect(this.videoElement, timestamp);
+      } else if (cameraActive && this.faceFallbackAvailable && shouldUseFaceDetection(this.settings)) {
+        faceResult = await this.detectWithFaceFallback(this.videoElement);
       }
 
       if (cameraActive && this.objectDetectorAvailable && this.objectDetector && shouldUseObjectDetection(this.settings)) {
@@ -441,9 +533,9 @@ export class ProctoringManager {
       if (confirmed) this.emitConfirmedViolation(candidate, confirmed);
     });
 
-    const statusPatch = getStatusFromDetectionResult(result, this.violationBuffer);
-    this.updateStatus({
-      ...statusPatch,
+      const statusPatch = getStatusFromDetectionResult(result, this.violationBuffer);
+      this.updateStatus({
+        ...statusPatch,
       error: this.getModelAvailabilityError(),
     });
   }
@@ -451,6 +543,9 @@ export class ProctoringManager {
   getModelAvailabilityError() {
     const faceRequired = shouldUseFaceDetection(this.settings);
     const objectRequired = shouldUseObjectDetection(this.settings);
+    if (faceRequired && this.faceFallbackAvailable && this.status.faceModel === 'fallback') {
+      return 'Face AI model unavailable. Basic fallback is active; eye movement detection is unavailable.';
+    }
     if (faceRequired && this.faceDetectorAvailable === false && this.status.faceModel === 'unavailable') {
       return 'AI face/eye model unavailable. Detection cannot run for face and eye checks.';
     }
@@ -458,6 +553,88 @@ export class ProctoringManager {
       return 'AI object model unavailable. Mobile and multiple-person detection cannot run.';
     }
     return null;
+  }
+
+  setupFaceFallback() {
+    if (typeof window === 'undefined') return false;
+
+    if ('FaceDetector' in window) {
+      try {
+        this.browserFaceDetector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 3 });
+        return true;
+      } catch {
+        this.browserFaceDetector = null;
+      }
+    }
+
+    if (typeof document !== 'undefined') {
+      this.fallbackCanvas = document.createElement('canvas');
+      return true;
+    }
+
+    return false;
+  }
+
+  async detectWithFaceFallback(videoElement) {
+    if (!isVideoReady(videoElement)) {
+      return createFallbackUnknownFaceResult('video_not_ready');
+    }
+
+    if (this.browserFaceDetector) {
+      try {
+        const faces = await this.browserFaceDetector.detect(videoElement);
+        return normalizeBrowserFaceResult(faces, videoElement);
+      } catch {
+        this.browserFaceDetector = null;
+      }
+    }
+
+    return this.detectWithFrameFallback(videoElement);
+  }
+
+  detectWithFrameFallback(videoElement) {
+    const canvas = this.fallbackCanvas || (typeof document !== 'undefined' ? document.createElement('canvas') : null);
+    const context = canvas?.getContext?.('2d', { willReadFrequently: true });
+    if (!canvas || !context) return createFallbackUnknownFaceResult('canvas_unavailable');
+
+    this.fallbackCanvas = canvas;
+    canvas.width = 160;
+    canvas.height = 90;
+    context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+    const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+    let sum = 0;
+    let sumSq = 0;
+    let count = 0;
+
+    for (let i = 0; i < data.length; i += 4) {
+      const value = (data[i] + data[i + 1] + data[i + 2]) / 3;
+      sum += value;
+      sumSq += value * value;
+      count += 1;
+    }
+
+    if (!count) return createFallbackUnknownFaceResult('empty_frame');
+
+    const avg = sum / count;
+    const variance = sumSq / count - avg * avg;
+    const blankOrCovered = variance < FALLBACK_FRAME_VARIANCE_THRESHOLD;
+
+    return {
+      facePresent: !blankOrCovered,
+      faceCount: blankOrCovered ? 0 : 1,
+      faceOutOfFrame: false,
+      lookingAway: false,
+      confidence: {
+        face: blankOrCovered ? 0.7 : 0.45,
+        lookingAway: 0,
+      },
+      metadata: {
+        source: 'frame_variance_fallback',
+        variance,
+        averageBrightness: avg,
+        limitation: 'blank-camera fallback only',
+      },
+    };
   }
 
   handleCameraError(error) {

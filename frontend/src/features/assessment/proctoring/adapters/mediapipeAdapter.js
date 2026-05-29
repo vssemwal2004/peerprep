@@ -3,11 +3,13 @@ import { createFaceLandmarker } from '../utils/modelLoader';
 
 const SOURCE = 'mediapipe_face_landmarker';
 const FRAME_EDGE_THRESHOLD = 0.015;
-const LOOKING_AWAY_HORIZONTAL_THRESHOLD = 0.31;
-const LOOKING_AWAY_VERTICAL_THRESHOLD = 0.34;
-const IRIS_HORIZONTAL_THRESHOLD = 0.38;
-const IRIS_VERTICAL_THRESHOLD = 0.55;
-const BLENDSHAPE_GAZE_THRESHOLD = 0.32;
+const LOOKING_AWAY_HORIZONTAL_THRESHOLD = 0.46;
+const LOOKING_AWAY_VERTICAL_THRESHOLD = 0.58;
+const IRIS_HORIZONTAL_THRESHOLD = 0.78;
+const IRIS_VERTICAL_THRESHOLD = 1.05;
+const BLENDSHAPE_GAZE_THRESHOLD = 0.62;
+const SUPPORTING_HEAD_HORIZONTAL_THRESHOLD = 0.28;
+const SUPPORTING_HEAD_VERTICAL_THRESHOLD = 0.34;
 const RIGHT_IRIS_INDICES = Object.freeze([468, 469, 470, 471, 472]);
 const LEFT_IRIS_INDICES = Object.freeze([473, 474, 475, 476, 477]);
 const RIGHT_EYE_INDICES = Object.freeze({ outer: 33, inner: 133, top: 159, bottom: 145 });
@@ -162,17 +164,27 @@ function isLookingAway(landmarks = [], box, blendshapes = null) {
   const offsets = getNoseOffsets(landmarks, box);
   const irisOffsets = getIrisOffsets(landmarks);
   const blendshapeOffset = getBlendshapeGazeOffset(blendshapes);
+  const headAway = Boolean(offsets && (
+    offsets.horizontal > LOOKING_AWAY_HORIZONTAL_THRESHOLD
+    || offsets.vertical > LOOKING_AWAY_VERTICAL_THRESHOLD
+  ));
+  const irisAway = Boolean(irisOffsets && (
+    irisOffsets.horizontal > IRIS_HORIZONTAL_THRESHOLD
+    || irisOffsets.vertical > IRIS_VERTICAL_THRESHOLD
+  ));
+  const blendshapeAway = blendshapeOffset > BLENDSHAPE_GAZE_THRESHOLD;
+  const headSupportsGaze = Boolean(offsets && (
+    offsets.horizontal > SUPPORTING_HEAD_HORIZONTAL_THRESHOLD
+    || offsets.vertical > SUPPORTING_HEAD_VERTICAL_THRESHOLD
+  ));
 
+  // Normal test taking includes frequent small eye movements while reading code,
+  // options, and long questions. Only flag when the head is clearly away, or
+  // when strong eye-gaze evidence is supported by face/head movement.
   return Boolean(
-    (offsets && (
-      offsets.horizontal > LOOKING_AWAY_HORIZONTAL_THRESHOLD
-      || offsets.vertical > LOOKING_AWAY_VERTICAL_THRESHOLD
-    ))
-    || (irisOffsets && (
-      irisOffsets.horizontal > IRIS_HORIZONTAL_THRESHOLD
-      || irisOffsets.vertical > IRIS_VERTICAL_THRESHOLD
-    ))
-    || blendshapeOffset > BLENDSHAPE_GAZE_THRESHOLD,
+    headAway
+    || (irisAway && (blendshapeAway || headSupportsGaze))
+    || (blendshapeAway && headSupportsGaze),
   );
 }
 
@@ -187,7 +199,7 @@ function getLookingAwayConfidence(landmarks = [], box, blendshapes = null) {
   const irisHorizontalExcess = Math.max(0, (irisOffsets?.horizontal || 0) - IRIS_HORIZONTAL_THRESHOLD);
   const irisVerticalExcess = Math.max(0, (irisOffsets?.vertical || 0) - IRIS_VERTICAL_THRESHOLD);
   const blendshapeExcess = Math.max(0, blendshapeOffset - BLENDSHAPE_GAZE_THRESHOLD);
-  return Math.min(0.95, 0.62 + Math.max(
+  return Math.min(0.95, 0.72 + Math.max(
     headHorizontalExcess,
     headVerticalExcess,
     irisHorizontalExcess,

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Activity,
@@ -94,7 +94,7 @@ function normalizeAnalysis(analysis) {
 
 function PageBackground() {
   return (
-    <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 bg-white dark:bg-slate-950">
+    <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-0 bg-white dark:bg-slate-950">
       <div className="absolute inset-0 bg-[linear-gradient(180deg,#ffffff_0%,#f7fbff_42%,#ffffff_100%)] transition-colors duration-500 dark:bg-[linear-gradient(180deg,#020617_0%,#08111f_50%,#020617_100%)]" />
       <div className="absolute inset-x-0 top-0 h-80 bg-[linear-gradient(180deg,rgba(14,165,233,0.1),transparent)] dark:opacity-70" />
       <div className="absolute inset-0 bg-[linear-gradient(rgba(14,165,233,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(14,165,233,0.045)_1px,transparent_1px)] bg-[size:64px_64px] opacity-55 dark:bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px)]" />
@@ -171,39 +171,70 @@ function ScoreExplanationPanel({ title = "Why this score?", explanations = [], c
 }
 
 function StickySectionNav({ activeSection, onChange }) {
+  const [isDocked, setIsDocked] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsDocked(window.scrollY > 36);
+    };
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
   return (
-    <div className="sticky top-[72px] z-30 mb-6 rounded-[18px] border border-slate-200 bg-white px-3 py-2 shadow-[0_18px_48px_-40px_rgba(15,23,42,0.42)] dark:border-white/10 dark:bg-slate-950">
-      <div className="flex gap-1.5 overflow-x-auto" role="tablist" aria-label="Analysis workspace">
-        {SECTIONS.map(({ id, label, eyebrow, Icon: SectionIcon }) => {
-          const active = activeSection === id;
-          const NavIcon = SectionIcon;
-          return (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => onChange(id)}
-              className={[
-                "group relative flex min-w-fit items-center gap-2 rounded-xl border px-2.5 py-1.5 text-left transition",
-                active
-                  ? "border-sky-600 bg-sky-600 text-white shadow-[0_14px_30px_-24px_rgba(14,165,233,0.9)]"
-                  : "border-transparent bg-transparent text-slate-600 hover:-translate-y-0.5 hover:border-sky-200 hover:bg-sky-50 hover:text-slate-950 dark:text-slate-300 dark:hover:border-sky-400/20 dark:hover:bg-sky-400/10 dark:hover:text-white",
-              ].join(" ")}
-            >
-              <span className={`flex h-7 w-7 items-center justify-center rounded-lg ${active ? "bg-white/15" : "bg-slate-100 text-slate-600 dark:bg-white/8"}`}>
-                <NavIcon className="h-3.5 w-3.5" />
-              </span>
-              <span>
-                <span className="hidden text-[9px] font-semibold uppercase tracking-[0.14em] opacity-65 sm:block">{eyebrow}</span>
-                <span className="block text-xs font-bold">{label}</span>
-              </span>
-              <span className={`absolute inset-x-3 -bottom-1 h-0.5 rounded-full bg-sky-500 transition ${active ? "opacity-100" : "opacity-0 group-hover:opacity-45"}`} />
-            </button>
-          );
-        })}
+    <>
+      <div className="fixed inset-x-0 top-[54px] z-40 pointer-events-none transition-all duration-300 ease-out sm:top-[60px] lg:top-[64px]">
+        <motion.div
+          initial={{ y: -14, opacity: 0 }}
+          animate={{ y: isDocked ? -6 : 0, opacity: 1 }}
+          transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+          className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8"
+        >
+          <div
+            className={[
+              "pointer-events-auto mx-auto w-full overflow-hidden border border-slate-200/90 px-3 shadow-[0_18px_48px_-40px_rgba(15,23,42,0.42)] backdrop-blur-xl transition-all duration-300 ease-out dark:border-white/10",
+              isDocked
+                ? "max-w-5xl rounded-[20px] bg-white/90 py-1.5 shadow-[0_24px_58px_-38px_rgba(15,23,42,0.52)] ring-1 ring-slate-900/5 dark:bg-slate-950/90 dark:ring-white/10"
+                : "max-w-7xl rounded-[24px] bg-white/96 py-2.5 dark:bg-slate-950/94",
+            ].join(" ")}
+          >
+            <div className="flex gap-1.5 overflow-x-auto py-0.5" role="tablist" aria-label="Analysis workspace">
+            {SECTIONS.map(({ id, label, eyebrow, Icon: SectionIcon }) => {
+              const active = activeSection === id;
+              const NavIcon = SectionIcon;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => onChange(id)}
+                  className={[
+                    "group relative flex min-w-fit items-center gap-2 rounded-xl border text-left transition-all duration-300",
+                    isDocked ? "px-2.5 py-1.5" : "px-3 py-2",
+                    active
+                      ? "border-sky-600 bg-sky-600 text-white shadow-[0_14px_30px_-24px_rgba(14,165,233,0.9)]"
+                      : "border-transparent bg-transparent text-slate-600 hover:-translate-y-0.5 hover:border-sky-200 hover:bg-sky-50 hover:text-slate-950 dark:text-slate-300 dark:hover:border-sky-400/20 dark:hover:bg-sky-400/10 dark:hover:text-white",
+                  ].join(" ")}
+                >
+                  <span className={`flex items-center justify-center rounded-lg transition-all duration-300 ${isDocked ? "h-7 w-7" : "h-9 w-9"} ${active ? "bg-white/15" : "bg-slate-100 text-slate-600 dark:bg-white/10"}`}>
+                    <NavIcon className="h-3.5 w-3.5" />
+                  </span>
+                  <span>
+                    <span className={`hidden font-semibold uppercase tracking-[0.14em] opacity-65 transition-all duration-300 sm:block ${isDocked ? "max-h-0 overflow-hidden text-[0px] opacity-0" : "max-h-4 text-[9px]"}`}>{eyebrow}</span>
+                    <span className={`block font-bold transition-all duration-300 ${isDocked ? "text-[11px]" : "text-sm"}`}>{label}</span>
+                  </span>
+                  <span className={`absolute inset-x-3 -bottom-1 h-0.5 rounded-full bg-sky-500 transition ${active ? "opacity-100" : "opacity-0 group-hover:opacity-45"}`} />
+                </button>
+              );
+            })}
+            </div>
+          </div>
+        </motion.div>
       </div>
-    </div>
+      <div className="h-[104px] sm:h-[112px]" aria-hidden="true" />
+    </>
   );
 }
 
@@ -1134,10 +1165,10 @@ export default function StudentAnalyticsPage() {
   if (loading) return <LoadingScreen />;
 
   return (
-    <div className="min-h-screen pb-12 pt-24 text-slate-950 transition-colors duration-500 dark:text-white">
+    <div className="relative isolate min-h-screen overflow-hidden bg-slate-50 pb-12 pt-24 text-slate-950 transition-colors duration-500 dark:bg-slate-950 dark:text-white">
       <PageBackground />
 
-      <main className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
+      <main className="relative z-10 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
         <ErrorBanner error={error} onRetry={refresh} />
         <StickySectionNav activeSection={activeSection} onChange={changeWorkspace} />
 
