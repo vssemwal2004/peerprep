@@ -4,6 +4,8 @@ import ProctoringStatusBadge from './ProctoringStatusBadge';
 const DEFAULT_STATUS = Object.freeze({
   running: false,
   camera: 'unknown',
+  faceModel: 'unknown',
+  objectModel: 'unknown',
   face: 'unknown',
   eye: 'unknown',
   mobile: 'unknown',
@@ -13,6 +15,8 @@ const DEFAULT_STATUS = Object.freeze({
 });
 
 const STATUS_ITEMS = Object.freeze([
+  { key: 'faceModel', label: 'Face AI' },
+  { key: 'objectModel', label: 'Object AI' },
   { key: 'camera', label: 'Camera' },
   { key: 'face', label: 'Face' },
   { key: 'eye', label: 'Eye' },
@@ -21,6 +25,8 @@ const STATUS_ITEMS = Object.freeze([
 ]);
 
 const ISSUE_STATES = Object.freeze({
+  faceModel: ['unavailable'],
+  objectModel: ['unavailable'],
   camera: ['blocked', 'error'],
   face: ['missing', 'out_of_frame', 'multiple'],
   eye: ['looking_away'],

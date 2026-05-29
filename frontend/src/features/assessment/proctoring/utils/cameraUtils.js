@@ -10,6 +10,9 @@ export const DEFAULT_CAMERA_CONSTRAINTS = Object.freeze({
 
 export async function requestCameraStream(constraints = DEFAULT_CAMERA_CONSTRAINTS) {
   if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+    if (typeof window !== 'undefined' && window.isSecureContext === false) {
+      throw new Error('Camera access requires HTTPS in production.');
+    }
     throw new Error('Camera API is not available in this browser.');
   }
 

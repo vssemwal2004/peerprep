@@ -8,6 +8,15 @@ export async function connectDb() {
   const uri = process.env.MONGODB_URI || 'memory';
   mongoose.set('strictQuery', true);
   let connectUri = uri;
+  const isProduction = process.env.NODE_ENV === 'production';
+  const connectionOptions = {
+    autoIndex: !isProduction,
+    serverSelectionTimeoutMS: Number(process.env.MONGODB_SERVER_SELECTION_TIMEOUT_MS || 8000),
+    socketTimeoutMS: Number(process.env.MONGODB_SOCKET_TIMEOUT_MS || 30000),
+    maxPoolSize: Number(process.env.MONGODB_MAX_POOL_SIZE || 20),
+    minPoolSize: Number(process.env.MONGODB_MIN_POOL_SIZE || 0),
+    maxIdleTimeMS: Number(process.env.MONGODB_MAX_IDLE_TIME_MS || 30000),
+  };
   const maskUri = (u) => {
     try {
       if (!u) return u;
@@ -21,15 +30,16 @@ export async function connectDb() {
     memServer = await MongoMemoryServer.create();
     connectUri = memServer.getUri();
     console.log('Using in-memory MongoDB');
-    await mongoose.connect(connectUri, { autoIndex: true });
+    await mongoose.connect(connectUri, { ...connectionOptions, autoIndex: true });
     console.log('Connected to in-memory MongoDB');
     return;
   }
 
   console.log('Attempting to connect to MongoDB at', maskUri(connectUri));
   try {
-    // set a reasonable server selection timeout so failures surface quickly
-    await mongoose.connect(connectUri, { autoIndex: true, serverSelectionTimeoutMS: 8000 });
+    // Set bounded timeouts and a production-ready pool so slow DB reads fail
+    // quickly instead of making the whole API feel stuck.
+    await mongoose.connect(connectUri, connectionOptions);
     console.log('Connected to MongoDB');
     return;
   } catch (err) {
@@ -49,7 +59,7 @@ export async function connectDb() {
       const { MongoMemoryServer } = await import('mongodb-memory-server');
       memServer = await MongoMemoryServer.create();
       connectUri = memServer.getUri();
-      await mongoose.connect(connectUri, { autoIndex: true });
+      await mongoose.connect(connectUri, { ...connectionOptions, autoIndex: true });
       console.log('Connected to in-memory MongoDB (fallback)');
       return;
     }

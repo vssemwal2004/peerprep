@@ -25,6 +25,8 @@ export const DEFAULT_AI_PROCTORING_SETTINGS = Object.freeze({
 export const DEFAULT_PROCTORING_STATUS = Object.freeze({
   running: false,
   camera: 'unknown',
+  faceModel: 'unknown',
+  objectModel: 'unknown',
   face: 'unknown',
   eye: 'unknown',
   mobile: 'unknown',

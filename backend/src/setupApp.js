@@ -8,6 +8,7 @@ import routes from './routes/index.js';
 import { notFound, errorHandler } from './utils/errors.js';
 import { mongoSanitizeMiddleware, xssProtectionMiddleware } from './middleware/sanitization.js';
 import { apiLimiter } from './middleware/rateLimiter.js';
+import { apiRequestTimeout } from './middleware/requestTimeout.js';
 
 const app = express();
 
@@ -52,6 +53,10 @@ if (process.env.NODE_ENV === 'production') {
 } else {
   app.use(morgan('dev'));
 }
+
+// Platform-wide request time budget. Slow endpoints fail fast instead of
+// tying up production workers and making dashboards wait indefinitely.
+app.use('/api', apiRequestTimeout);
 
 // General API rate limiting (generous limits)
 app.use('/api', apiLimiter);

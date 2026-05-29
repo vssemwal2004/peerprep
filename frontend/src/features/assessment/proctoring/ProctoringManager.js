@@ -155,7 +155,9 @@ export class ProctoringManager {
 
     this.status = { ...DEFAULT_PROCTORING_STATUS };
     this.listeners = new Set();
-    this.stream = null;
+    this.stream = options.stream || null;
+    this.ownsStream = false;
+    this.requireExistingStream = options.requireExistingStream === true;
     this.detectionIntervalId = null;
     this.modelsLoaded = false;
     this.faceDetector = null;
@@ -201,7 +203,7 @@ export class ProctoringManager {
     this.updateStatus({
       running: true,
       camera: 'ok',
-      error: null,
+      error: this.getModelAvailabilityError(),
     });
     this.startDetectionLoop();
     await this.runDetectionTick();
@@ -218,6 +220,8 @@ export class ProctoringManager {
     this.updateStatus({
       running: false,
       camera: 'unknown',
+      faceModel: 'unknown',
+      objectModel: 'unknown',
       face: 'unknown',
       eye: 'unknown',
       mobile: 'unknown',
@@ -244,27 +248,43 @@ export class ProctoringManager {
 
   async loadModels() {
     if (shouldUseFaceDetection(this.settings)) {
+      this.updateStatus({ faceModel: 'loading' });
       try {
         this.faceDetector = this.faceDetector || createFaceDetector();
         await this.faceDetector.load();
         this.faceDetectorAvailable = true;
+        this.updateStatus({ faceModel: 'ready' });
       } catch (error) {
         this.faceDetectorAvailable = false;
         this.faceDetector?.dispose?.();
         this.faceDetector = null;
+        this.updateStatus({
+          faceModel: 'unavailable',
+          face: 'unknown',
+          eye: 'unknown',
+          error: error?.message || 'Face model failed to load',
+        });
         if (this.onError) this.safeCall(this.onError, error);
       }
     }
 
     if (shouldUseObjectDetection(this.settings)) {
+      this.updateStatus({ objectModel: 'loading' });
       try {
         this.objectDetector = this.objectDetector || createObjectDetector();
         await this.objectDetector.load();
         this.objectDetectorAvailable = true;
+        this.updateStatus({ objectModel: 'ready' });
       } catch (error) {
         this.objectDetectorAvailable = false;
         this.objectDetector?.dispose?.();
         this.objectDetector = null;
+        this.updateStatus({
+          objectModel: 'unavailable',
+          mobile: 'unknown',
+          person: 'unknown',
+          error: error?.message || 'Object model failed to load',
+        });
         if (this.onError) this.safeCall(this.onError, error);
       }
     }
@@ -282,10 +302,20 @@ export class ProctoringManager {
     this.objectDetectorAvailable = false;
     this.modelsLoaded = false;
     this.detectionTickInProgress = false;
+    this.updateStatus({
+      faceModel: 'unknown',
+      objectModel: 'unknown',
+    });
   }
 
   async startCamera() {
-    this.stream = await requestCameraStream();
+    if (!this.stream) {
+      if (this.requireExistingStream) {
+        throw new Error('Assessment camera stream is not ready. Complete the camera security check before AI detection starts.');
+      }
+      this.stream = await requestCameraStream();
+      this.ownsStream = true;
+    }
     await attachStreamToVideo(this.videoElement, this.stream);
     return this.stream;
   }
@@ -294,8 +324,11 @@ export class ProctoringManager {
     if (this.videoElement) {
       this.videoElement.srcObject = null;
     }
-    stopCameraStream(this.stream);
+    if (this.ownsStream) {
+      stopCameraStream(this.stream);
+    }
     this.stream = null;
+    this.ownsStream = false;
   }
 
   startDetectionLoop() {
@@ -411,8 +444,20 @@ export class ProctoringManager {
     const statusPatch = getStatusFromDetectionResult(result, this.violationBuffer);
     this.updateStatus({
       ...statusPatch,
-      error: null,
+      error: this.getModelAvailabilityError(),
     });
+  }
+
+  getModelAvailabilityError() {
+    const faceRequired = shouldUseFaceDetection(this.settings);
+    const objectRequired = shouldUseObjectDetection(this.settings);
+    if (faceRequired && this.faceDetectorAvailable === false && this.status.faceModel === 'unavailable') {
+      return 'AI face/eye model unavailable. Detection cannot run for face and eye checks.';
+    }
+    if (objectRequired && this.objectDetectorAvailable === false && this.status.objectModel === 'unavailable') {
+      return 'AI object model unavailable. Mobile and multiple-person detection cannot run.';
+    }
+    return null;
   }
 
   handleCameraError(error) {

@@ -657,18 +657,20 @@ export default function AssessmentAttempt() {
 
     const limitExceeded = Boolean(event.metadata?.limitExceeded);
     setSecurityNotice(event.message || 'Camera attention needed. Please adjust and continue.');
+    setAiWarnings((prev) => prev + 1);
+
+    try {
+      await logAiProctoringViolation({
+        assessmentId: assessment._id,
+        submissionId: submission?._id,
+        violation: event,
+      });
+    } catch (err) {
+      console.warn('AI proctoring violation logging failed; assessment will continue.', err);
+    }
 
     if (limitExceeded) {
-      setAiWarnings((prev) => prev + 1);
-      try {
-        await logAiProctoringViolation({
-          assessmentId: assessment._id,
-          submissionId: submission?._id,
-          violation: event,
-        });
-      } catch (err) {
-        console.warn('AI proctoring violation logging failed; assessment will continue.', err);
-      }
+      setSecurityNotice(`${event.message || 'Camera attention needed.'} Repeated AI violation detected.`);
     }
   }, [assessment?._id, submission?._id]);
 
@@ -1540,7 +1542,9 @@ export default function AssessmentAttempt() {
   }, [stopAiProctoring]);
 
   useEffect(() => {
-    if (!secureActive || !aiProctoringEnabled || !assessment?._id || !submission?._id) {
+    const assessmentCameraReady = Boolean(streamRef.current);
+
+    if (!secureActive || !aiProctoringEnabled || !assessment?._id || !submission?._id || !assessmentCameraReady) {
       stopAiProctoring();
       return undefined;
     }
@@ -1553,6 +1557,8 @@ export default function AssessmentAttempt() {
       submissionId: submission._id,
       settings: securitySettings.aiProctoring,
       videoElement: aiProctoringVideoRef.current,
+      stream: streamRef.current,
+      requireExistingStream: true,
       onStatusChange: setProctoringStatus,
       onViolationConfirmed: handleAiViolationConfirmed,
       onError: handleAiProctoringError,
@@ -1575,6 +1581,7 @@ export default function AssessmentAttempt() {
     assessment?._id,
     submission?._id,
     securitySettings.aiProctoring,
+    securityStatus.cameraActive,
     stopAiProctoring,
     handleAiViolationConfirmed,
     handleAiProctoringError,
@@ -1891,7 +1898,7 @@ export default function AssessmentAttempt() {
   };
 
   const attachStream = (stream) => {
-    const videos = [validationVideoRef.current, monitorVideoRef.current];
+    const videos = [validationVideoRef.current, monitorVideoRef.current, aiProctoringVideoRef.current];
     videos.forEach((video) => {
       if (video && video.srcObject !== stream) {
         video.srcObject = stream;
@@ -2758,6 +2765,8 @@ export default function AssessmentAttempt() {
     },
   ];
   const aiFooterIssueStates = {
+    faceModel: ['unavailable'],
+    objectModel: ['unavailable'],
     camera: ['blocked', 'error'],
     face: ['missing', 'out_of_frame', 'multiple'],
     eye: ['looking_away'],
@@ -3915,7 +3924,20 @@ export default function AssessmentAttempt() {
             </>
           )}
           {aiProctoringEnabled && (
-            <video ref={aiProctoringVideoRef} className="fixed -left-[9999px] h-1 w-1 opacity-0" muted playsInline autoPlay />
+            <div className="pointer-events-none fixed bottom-14 right-3 z-50 overflow-hidden rounded-2xl border border-white/60 bg-slate-950 shadow-2xl ring-1 ring-slate-900/10 sm:bottom-16 sm:right-4">
+              <video
+                ref={aiProctoringVideoRef}
+                className="h-20 w-28 scale-x-[-1] object-cover sm:h-24 sm:w-36"
+                muted
+                playsInline
+                autoPlay
+              />
+              <span
+                className={`absolute left-2 top-2 h-2 w-2 rounded-full ${
+                  hasAiFooterIssue ? 'bg-rose-400 shadow-[0_0_10px_rgba(251,113,133,0.9)]' : 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.9)]'
+                }`}
+              />
+            </div>
           )}
         </>
       )}

@@ -11,33 +11,102 @@ const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000/api';
  * during transition period. Remove localStorage token on logout.
  */
 
-// Simple in-memory cache for GET requests (5 minute TTL)
+// Production-safe request budget and cache controls.
+// This keeps dashboard screens fast while preventing repeated GET storms.
 const apiCache = new Map();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const inFlightRequests = new Map();
+const requestQueue = [];
+let activeRequests = 0;
+
+const CACHE_TTL = Number(import.meta.env.VITE_API_CACHE_TTL_MS || 2 * 60 * 1000);
+const STALE_TTL = Number(import.meta.env.VITE_API_STALE_TTL_MS || 10 * 60 * 1000);
+const MAX_CACHE_ENTRIES = Number(import.meta.env.VITE_API_CACHE_MAX_ENTRIES || 120);
+const DEFAULT_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS || 12000);
+const MAX_CONCURRENT_REQUESTS = Number(import.meta.env.VITE_API_MAX_CONCURRENT || 8);
+const REQUEST_QUEUE_TIMEOUT_MS = Number(import.meta.env.VITE_API_QUEUE_TIMEOUT_MS || 8000);
 
 function getCacheKey(path, method) {
   return `${method}:${path}`;
 }
 
-function getFromCache(key) {
+function getCacheEntry(key) {
   const cached = apiCache.get(key);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    return cached.data;
+  if (!cached) return null;
+
+  const age = Date.now() - cached.timestamp;
+  const ttlMs = cached.ttlMs ?? CACHE_TTL;
+  if (age < ttlMs) {
+    return { data: cached.data, state: 'fresh' };
   }
+
+  if (age < ttlMs + STALE_TTL) {
+    return { data: cached.data, state: 'stale' };
+  }
+
   apiCache.delete(key);
   return null;
 }
 
-function setCache(key, data) {
-  apiCache.set(key, { data, timestamp: Date.now() });
+function setCache(key, data, ttlMs = CACHE_TTL) {
+  apiCache.set(key, { data, timestamp: Date.now(), ttlMs });
   
   // Clean old cache entries (keep cache size manageable)
-  if (apiCache.size > 50) {
+  if (apiCache.size > MAX_CACHE_ENTRIES) {
     const entries = Array.from(apiCache.entries());
     const sortedByAge = entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
-    // Remove oldest 10 entries
-    sortedByAge.slice(0, 10).forEach(([key]) => apiCache.delete(key));
+    sortedByAge.slice(0, Math.max(10, Math.ceil(MAX_CACHE_ENTRIES * 0.15))).forEach(([entryKey]) => apiCache.delete(entryKey));
   }
+}
+
+function createQueueTimeoutError() {
+  const err = new Error('The platform is busy. Please retry in a few seconds.');
+  err.response = { status: 429 };
+  return err;
+}
+
+function drainRequestQueue() {
+  while (activeRequests < MAX_CONCURRENT_REQUESTS && requestQueue.length > 0) {
+    const item = requestQueue.shift();
+    clearTimeout(item.timeoutId);
+    activeRequests++;
+    Promise.resolve()
+      .then(item.task)
+      .then(item.resolve, item.reject)
+      .finally(() => {
+        activeRequests--;
+        drainRequestQueue();
+      });
+  }
+}
+
+function runWithRequestBudget(task, { skipQueue = false, queueTimeoutMs = REQUEST_QUEUE_TIMEOUT_MS } = {}) {
+  if (skipQueue || activeRequests < MAX_CONCURRENT_REQUESTS) {
+    activeRequests++;
+    return Promise.resolve()
+      .then(task)
+      .finally(() => {
+        activeRequests--;
+        drainRequestQueue();
+      });
+  }
+
+  return new Promise((resolve, reject) => {
+    const item = {
+      task,
+      resolve,
+      reject,
+      timeoutId: null,
+    };
+
+    item.timeoutId = setTimeout(() => {
+      const index = requestQueue.indexOf(item);
+      if (index >= 0) requestQueue.splice(index, 1);
+      reject(createQueueTimeoutError());
+    }, queueTimeoutMs);
+
+    requestQueue.push(item);
+    drainRequestQueue();
+  });
 }
 
 function sleep(ms) {
@@ -78,15 +147,47 @@ async function request(path, {
   headers = {},
   formData,
   skipCache = false,
-  timeoutMs = 15000,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  cacheTtlMs = CACHE_TTL,
+  staleWhileRevalidate = true,
+  skipDedupe = false,
+  skipQueue = false,
+  queueTimeoutMs = REQUEST_QUEUE_TIMEOUT_MS,
 } = {}) {
+  method = method.toUpperCase();
+
   // Check cache for GET requests
   const cacheKey = getCacheKey(path, method);
   if (method === 'GET' && !skipCache) {
-    const cached = getFromCache(cacheKey);
-    if (cached) {
-      return cached;
+    const cached = getCacheEntry(cacheKey);
+    if (cached?.state === 'fresh') {
+      return cached.data;
     }
+    if (cached?.state === 'stale' && staleWhileRevalidate) {
+      if (!inFlightRequests.has(cacheKey)) {
+        const backgroundRefresh = request(path, {
+          method,
+          headers,
+          skipCache: false,
+          timeoutMs,
+          cacheTtlMs,
+          staleWhileRevalidate: false,
+          skipQueue,
+          queueTimeoutMs,
+        }).catch(() => null);
+        inFlightRequests.set(cacheKey, { promise: backgroundRefresh, timestamp: Date.now() });
+        backgroundRefresh.then(
+          () => inFlightRequests.delete(cacheKey),
+          () => inFlightRequests.delete(cacheKey)
+        );
+      }
+      return cached.data;
+    }
+  }
+
+  if (method === 'GET' && !skipDedupe) {
+    const inFlight = inFlightRequests.get(cacheKey);
+    if (inFlight) return inFlight.promise;
   }
   
   const opts = { 
@@ -107,11 +208,12 @@ async function request(path, {
   // if (token) opts.headers['Authorization'] = `Bearer ${token}`;
   
   const url = `${API_BASE}${path}`;
-  
-  let controller = null;
-  let timeoutId = null;
 
-  try {
+  const runNetworkRequest = async () => {
+    let controller = null;
+    let timeoutId = null;
+
+    try {
     if (timeoutMs && timeoutMs > 0) {
       // Default timeout keeps regular requests responsive, but callers can disable it.
       controller = new AbortController();
@@ -143,7 +245,7 @@ async function request(path, {
     
     // Cache GET requests
     if (method === 'GET' && !skipCache) {
-      setCache(cacheKey, result);
+      setCache(cacheKey, result, cacheTtlMs);
     }
     
     // Clear relevant cache on mutations
@@ -152,18 +254,31 @@ async function request(path, {
     }
     
     return result;
-  } catch (err) {
-    if (err.name === 'AbortError') {
+    } catch (err) {
+      if (err.name === 'AbortError') {
       const timeoutErr = new Error('Request timed out. Please check your connection and try again.');
       timeoutErr.response = { status: 0 };
       throw timeoutErr;
-    }
-    throw err;
-  } finally {
-    if (timeoutId) {
+      }
+      throw err;
+    } finally {
+      if (timeoutId) {
       clearTimeout(timeoutId);
+      }
     }
+  };
+
+  const promise = runWithRequestBudget(runNetworkRequest, { skipQueue, queueTimeoutMs });
+
+  if (method === 'GET' && !skipDedupe) {
+    inFlightRequests.set(cacheKey, { promise, timestamp: Date.now() });
+    promise.then(
+      () => inFlightRequests.delete(cacheKey),
+      () => inFlightRequests.delete(cacheKey)
+    );
   }
+
+  return promise;
 }
 
 export const api = {
@@ -176,9 +291,9 @@ export const api = {
     fd.append('avatar', file);
     return request('/auth/me/avatar', { method: 'PUT', formData: fd });
   },
-  getStudentActivity: () => request('/auth/activity', { skipCache: true }),
+  getStudentActivity: () => request('/auth/activity', { cacheTtlMs: 30 * 1000 }),
   debugStudentActivity: () => request('/auth/activity/debug', { skipCache: true }),
-  getStudentStats: () => request('/auth/stats', { skipCache: true }),
+  getStudentStats: () => request('/auth/stats', { cacheTtlMs: 60 * 1000 }),
   login: (identifier, password) => request('/auth/login', { method: 'POST', body: { identifier, password } }),
   logout: () => request('/auth/logout', { method: 'POST' }),
   changePassword: (currentPassword, newPassword) => request('/auth/password/change', { method: 'POST', body: { currentPassword, newPassword, confirmPassword: newPassword } }),
@@ -188,7 +303,7 @@ export const api = {
   resetPassword: (token, newPassword) => request('/auth/password/reset', { method: 'POST', body: { token, newPassword } }),
 
   // Notifications
-  getNotifications: () => request('/notifications', { skipCache: true }),
+  getNotifications: () => request('/notifications', { cacheTtlMs: 15 * 1000 }),
   markNotificationRead: (id) => request(`/notifications/${id}/read`, { method: 'PATCH' }),
   markAllNotificationsRead: () => request('/notifications/read-all', { method: 'PATCH' }),
   clearAllNotifications: () => request('/notifications/clear-all', { method: 'DELETE' }),
@@ -200,14 +315,14 @@ export const api = {
     Object.entries(params).forEach(([key, value]) => {
       if (value) qs.append(key, value);
     });
-    return request(`/admin/announcements${qs.toString() ? `?${qs.toString()}` : ''}`, { skipCache: true });
+    return request(`/admin/announcements${qs.toString() ? `?${qs.toString()}` : ''}`, { cacheTtlMs: 60 * 1000 });
   },
   updateAnnouncement: (id, body) => request(`/admin/announcements/${id}`, { method: 'PUT', body }),
   deleteAnnouncement: (id) => request(`/admin/announcements/${id}`, { method: 'DELETE' }),
-  listStudentAnnouncements: () => request('/student/announcements', { skipCache: true }),
+  listStudentAnnouncements: () => request('/student/announcements', { cacheTtlMs: 60 * 1000 }),
 
   // Company Insights (Admin)
-  listCompanyBenchmarks: () => request('/admin/company-insights', { skipCache: true }),
+  listCompanyBenchmarks: () => request('/admin/company-insights', { cacheTtlMs: 2 * 60 * 1000 }),
   createCompanyBenchmark: (body) => request('/admin/company-insights', { method: 'POST', body }),
   updateCompanyBenchmark: (id, body) => request(`/admin/company-insights/${id}`, { method: 'PUT', body }),
   deleteCompanyBenchmark: (id) => request(`/admin/company-insights/${id}`, { method: 'DELETE' }),
@@ -220,12 +335,12 @@ export const api = {
 
   // Student Analysis
   getStudentAnalysis: (forceRefresh = false) =>
-    request(`/student/analysis${forceRefresh ? '?refresh=1' : ''}`, { skipCache: true }),
-  listStudentCompanies: () => request('/student/analysis/companies', { skipCache: true }),
+    request(`/student/analysis${forceRefresh ? '?refresh=1' : ''}`, { skipCache: forceRefresh, cacheTtlMs: 2 * 60 * 1000 }),
+  listStudentCompanies: () => request('/student/analysis/companies', { cacheTtlMs: 10 * 60 * 1000 }),
   getCompanyReadiness: (companyId, forceRefresh = false) =>
     request(
       `/student/analysis/readiness?companyId=${encodeURIComponent(companyId)}${forceRefresh ? '&refresh=1' : ''}`,
-      { skipCache: true }
+      { skipCache: forceRefresh, cacheTtlMs: 2 * 60 * 1000 }
     ),
 
   // Students
@@ -391,7 +506,7 @@ export const api = {
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') qs.append(key, String(value));
     });
-    return request(`/admin/library/questions${qs.toString() ? `?${qs.toString()}` : ''}`, { skipCache: true });
+    return request(`/admin/library/questions${qs.toString() ? `?${qs.toString()}` : ''}`, { cacheTtlMs: 30 * 1000 });
   },
   createLibraryQuestion: (question) => request('/admin/library/questions', { method: 'POST', body: { question } }),
   createLibraryQuestionsBulk: (questions) => request('/admin/library/questions/bulk', { method: 'POST', body: { questions } }),
@@ -405,7 +520,7 @@ export const api = {
   markStudentAssessmentSetupStep: (id, step, meta) => request(`/student/assessment/${id}/setup-step`, { method: 'POST', body: { step, ...(meta ? { meta } : {}) } }),
   beginStudentAssessment: (id) => request(`/student/assessment/${id}/begin`, { method: 'POST' }),
   getStudentAssessment: (id) => request(`/student/assessment/${id}`),
-  logStudentAssessmentViolation: (id, body) => request(`/student/assessment/${id}/violations`, { method: 'POST', body }),
+  logStudentAssessmentViolation: (id, body) => request(`/student/assessment/${id}/violations`, { method: 'POST', body, timeoutMs: 10000, skipQueue: true }),
   sendStudentAssessmentHeartbeat: (id, body) => request(`/student/assessment/${id}/heartbeat`, { method: 'POST', body, timeoutMs: 6000 }),
   logStudentAssessmentMonitoring: (id, body) => request(`/student/assessment/${id}/monitoring`, { method: 'POST', body, timeoutMs: 10000 }),
   submitStudentAssessment: (body) => request('/student/assessment/submit', { method: 'POST', body }),
@@ -519,7 +634,7 @@ export const api = {
   approveJoinRequest: (requestId, data) => request(`/join/${requestId}/approve`, { method: 'POST', body: data }),
   rejectJoinRequest: (requestId, reason) => request(`/join/${requestId}/reject`, { method: 'POST', body: { reason } }),
   // Compiler Module
-  getCompilerOverview: () => request('/compiler/overview', { skipCache: true }),
+  getCompilerOverview: () => request('/compiler/overview', { cacheTtlMs: 30 * 1000 }),
   listCompilerProblems: ({ search = '', difficulty = '', tags = '', status = '', visibility = '', sortBy = 'updatedAt', sortOrder = 'desc', page = 1, limit = 8 } = {}) => {
     const params = new URLSearchParams();
     if (search) params.append('search', search);
@@ -531,7 +646,7 @@ export const api = {
     if (sortOrder) params.append('sortOrder', sortOrder);
     params.append('page', String(page));
     params.append('limit', String(limit));
-    return request(`/compiler/problems?${params.toString()}`, { skipCache: true });
+    return request(`/compiler/problems?${params.toString()}`, { cacheTtlMs: 30 * 1000 });
   },
   createCompilerProblem: (formData) => request('/compiler/problems', { method: 'POST', formData }),
   updateCompilerProblem: (problemId, formData) => request(`/compiler/problems/${problemId}`, { method: 'PUT', formData }),
@@ -574,7 +689,7 @@ export const api = {
     if (mode) params.append('mode', mode);
     params.append('page', String(page));
     params.append('limit', String(limit));
-    return request(`/compiler/submissions?${params.toString()}`, { skipCache: true });
+    return request(`/compiler/submissions?${params.toString()}`, { cacheTtlMs: 15 * 1000 });
   },
   getCompilerAnalytics: ({ studentId = '', problemId = '', dateFrom = '', dateTo = '' } = {}) => {
     const params = new URLSearchParams();
@@ -583,11 +698,11 @@ export const api = {
     if (dateFrom) params.append('dateFrom', dateFrom);
     if (dateTo) params.append('dateTo', dateTo);
     const query = params.toString();
-    return request(`/compiler/analytics${query ? `?${query}` : ''}`, { skipCache: true });
+    return request(`/compiler/analytics${query ? `?${query}` : ''}`, { cacheTtlMs: 30 * 1000 });
   },
-  getCompilerStudentAnalytics: (studentId) => request(`/compiler/student/${studentId}`, { skipCache: true }),
-  getCompilerAnalyticsOverview: () => request('/compiler/analytics/overview', { skipCache: true }),
-  getCompilerProblemAnalytics: (problemId) => request(`/compiler/analytics/problem/${problemId}`, { skipCache: true }),
+  getCompilerStudentAnalytics: (studentId) => request(`/compiler/student/${studentId}`, { cacheTtlMs: 30 * 1000 }),
+  getCompilerAnalyticsOverview: () => request('/compiler/analytics/overview', { cacheTtlMs: 30 * 1000 }),
+  getCompilerProblemAnalytics: (problemId) => request(`/compiler/analytics/problem/${problemId}`, { cacheTtlMs: 30 * 1000 }),
   getExecutionResult: (jobId) => request(`/results/${jobId}`, { skipCache: true }),
   waitForExecutionResult: async (jobId, { intervalMs = 1000, timeoutMs = 120000 } = {}) => {
     const startedAt = Date.now();
@@ -618,7 +733,7 @@ export const api = {
     if (sortOrder) params.append('sortOrder', sortOrder);
     params.append('page', String(page));
     params.append('limit', String(limit));
-    return request(`/compiler/problems?${params.toString()}`, { skipCache: true });
+    return request(`/compiler/problems?${params.toString()}`, { cacheTtlMs: 30 * 1000 });
   },
   getStudentProblem: (problemId) => request(`/compiler/problems/${problemId}`, { skipCache: true }),
   runStudentProblem: (problemId, {
