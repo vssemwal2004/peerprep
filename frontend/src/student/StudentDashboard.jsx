@@ -11,6 +11,7 @@ import {
   ChevronRight,
   BarChart3,
   CheckCircle2,
+  Megaphone,
   Sparkles
 } from "lucide-react";
 import { api } from "../utils/api";
@@ -542,12 +543,24 @@ function HeroWeeklyWidget({ weeklyActivity, weeklyActiveDays, weeklyGoal, weekly
 
 function HeroInsightPanel({ displayAnnouncements, announcementIndex, fallbackThoughts, thoughtIndex, navigate }) {
   const hasAnnouncement = displayAnnouncements.length > 0;
+  const activeAnnouncement = hasAnnouncement ? displayAnnouncements[announcementIndex] : null;
   const activeTitle = hasAnnouncement
-    ? displayAnnouncements[announcementIndex]?.title
+    ? activeAnnouncement?.title
     : fallbackThoughts[thoughtIndex]?.area;
   const activeText = hasAnnouncement
-    ? displayAnnouncements[announcementIndex]?.message
+    ? activeAnnouncement?.message
     : fallbackThoughts[thoughtIndex]?.text;
+  const announcementType = String(activeAnnouncement?.type || "info").toLowerCase();
+  const announcementTone = announcementType === "alert"
+    ? "border-rose-200/70 bg-rose-50/75 text-rose-700 dark:border-rose-300/10 dark:bg-rose-300/10 dark:text-rose-200"
+    : announcementType === "motivation"
+      ? "border-emerald-200/70 bg-emerald-50/75 text-emerald-700 dark:border-emerald-300/10 dark:bg-emerald-300/10 dark:text-emerald-200"
+      : "border-sky-200/70 bg-sky-50/70 text-sky-700 dark:border-sky-300/10 dark:bg-sky-300/10 dark:text-sky-200";
+  const dotTone = announcementType === "alert"
+    ? "bg-rose-500"
+    : announcementType === "motivation"
+      ? "bg-emerald-500"
+      : "bg-sky-500";
 
   return (
     <motion.div
@@ -560,16 +573,16 @@ function HeroInsightPanel({ displayAnnouncements, announcementIndex, fallbackTho
       <div className="absolute inset-y-6 right-1/3 w-px rotate-12 bg-gradient-to-b from-transparent via-sky-300/30 to-transparent" />
       <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0 flex-1">
-          <div className="inline-flex items-center gap-2 rounded-full border border-sky-200/70 bg-sky-50/70 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-sky-700 dark:border-sky-300/10 dark:bg-sky-300/10 dark:text-sky-200">
+          <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] ${hasAnnouncement ? announcementTone : "border-sky-200/70 bg-sky-50/70 text-sky-700 dark:border-sky-300/10 dark:bg-sky-300/10 dark:text-sky-200"}`}>
             <span className="relative flex h-2 w-2">
               <motion.span
-                className="absolute inline-flex h-full w-full rounded-full bg-sky-400/40"
+                className={`absolute inline-flex h-full w-full rounded-full ${hasAnnouncement ? dotTone : "bg-sky-400"} opacity-40`}
                 animate={{ scale: [1, 2, 1], opacity: [0.42, 0.02, 0.42] }}
                 transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
               />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-sky-500" />
+              <span className={`relative inline-flex h-2 w-2 rounded-full ${hasAnnouncement ? dotTone : "bg-sky-500"}`} />
             </span>
-            AI insights
+            {hasAnnouncement ? `${announcementType} announcement` : "AI insights"}
           </div>
           <AnimatePresence mode="wait">
             <motion.div
@@ -585,23 +598,35 @@ function HeroInsightPanel({ displayAnnouncements, announcementIndex, fallbackTho
               <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">
                 {hasAnnouncement ? activeText : activeText || "Understand your progress, identify gaps, and improve with intelligent insights."}
               </p>
+              {hasAnnouncement && displayAnnouncements.length > 1 && (
+                <div className="mt-3 text-xs font-bold uppercase tracking-[0.14em] text-slate-400">
+                  Update {announcementIndex + 1} of {displayAnnouncements.length}
+                </div>
+              )}
             </motion.div>
           </AnimatePresence>
         </div>
 
-        <motion.button
-          type="button"
-          onClick={() => navigate("/student/analysis")}
-          whileHover={{ scale: 1.025, y: -2 }}
-          whileTap={{ scale: 0.98 }}
-          transition={{ type: "spring", stiffness: 300, damping: 20 }}
-          className="group relative inline-flex min-h-12 w-full items-center justify-center gap-2 overflow-hidden rounded-2xl bg-gradient-to-r from-sky-500 via-blue-600 to-sky-500 px-6 py-3 text-sm font-black text-white shadow-[0_22px_60px_-34px_rgba(2,132,199,.95)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/50 sm:w-auto"
-        >
-          <span className="absolute inset-y-0 -left-1/3 w-1/3 skew-x-[-18deg] bg-white/25 opacity-0 blur-sm transition-all duration-700 group-hover:left-full group-hover:opacity-100" />
-          <Sparkles className="relative h-4 w-4" />
-          <span className="relative">Check Performance</span>
-          <ArrowRight className="relative h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
-        </motion.button>
+        {hasAnnouncement ? (
+          <div className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-white/70 bg-white/55 px-6 py-3 text-sm font-black capitalize text-slate-700 shadow-[0_22px_60px_-44px_rgba(15,23,42,.55)] dark:border-white/10 dark:bg-white/[0.06] dark:text-slate-200 sm:w-auto">
+            <Megaphone className="h-4 w-4 text-sky-600 dark:text-sky-300" />
+            {activeAnnouncement?.priority || "normal"} priority
+          </div>
+        ) : (
+          <motion.button
+            type="button"
+            onClick={() => navigate("/student/analysis")}
+            whileHover={{ scale: 1.025, y: -2 }}
+            whileTap={{ scale: 0.98 }}
+            transition={{ type: "spring", stiffness: 300, damping: 20 }}
+            className="group relative inline-flex min-h-12 w-full items-center justify-center gap-2 overflow-hidden rounded-2xl bg-gradient-to-r from-sky-500 via-blue-600 to-sky-500 px-6 py-3 text-sm font-black text-white shadow-[0_22px_60px_-34px_rgba(2,132,199,.95)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/50 sm:w-auto"
+          >
+            <span className="absolute inset-y-0 -left-1/3 w-1/3 skew-x-[-18deg] bg-white/25 opacity-0 blur-sm transition-all duration-700 group-hover:left-full group-hover:opacity-100" />
+            <Sparkles className="relative h-4 w-4" />
+            <span className="relative">Check Performance</span>
+            <ArrowRight className="relative h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
+          </motion.button>
+        )}
       </div>
     </motion.div>
   );

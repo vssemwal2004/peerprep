@@ -5,6 +5,7 @@ import {
   KEY_TO_LANGUAGE_ID,
   mapRunStatusCode,
   MAX_STDIN_SIZE_BYTES,
+  resolveLanguageRequest,
   runJudge0,
   sanitizeExecutionText,
 } from '../services/executionService.js';
@@ -22,6 +23,30 @@ export async function runCode(req, res) {
     body: req.body,
   });
   res.status(202).json(queuedJob);
+}
+
+export async function executeCode(req, res) {
+  const sourceCode = sanitizeExecutionText(
+    req.body.source_code ?? req.body.sourceCode ?? '',
+    50 * 1024,
+    'Source code',
+  );
+  if (!sourceCode.trim()) throw new HttpError(400, 'Source code is required.');
+
+  const { languageId } = resolveLanguageRequest(req.body);
+  const stdin = sanitizeExecutionText(req.body.stdin ?? '', MAX_STDIN_SIZE_BYTES, 'Input');
+  const result = await runJudge0(sourceCode, languageId, stdin);
+
+  res.json({
+    stdout: result.stdout || '',
+    stderr: result.stderr || '',
+    compile_output: result.compile_output || '',
+    message: result.message || '',
+    time: result.time ?? '',
+    memory: result.memory ?? '',
+    status_id: Number(result.status?.id || 13),
+    status: result.status?.description || 'Internal Error',
+  });
 }
 
 export async function submitCode(req, res) {

@@ -29,10 +29,18 @@ const DEFAULT_MEMORY_LIMIT_MB = 256;
 
 const KEY_TO_LANGUAGE_ID = {
   c: 50,
+  csharp: 51,
   cpp: 54,
+  go: 60,
   java: 62,
   javascript: 63,
+  php: 68,
   python: 71,
+  ruby: 72,
+  rust: 73,
+  typescript: 74,
+  kotlin: 78,
+  swift: 83,
 };
 
 function isAdminRequest(req) {

@@ -103,9 +103,11 @@ export default function CodeEditor({
   const splitterRef = useRef(null);
   const editorContainerRef = useRef(null);
   const consoleContainerRef = useRef(null);
-  const [consoleHeight, setConsoleHeight] = useState(132);
+  const [consoleHeight, setConsoleHeight] = useState(116);
   const [editorHeight, setEditorHeight] = useState(440);
+  const [activeResultCaseId, setActiveResultCaseId] = useState(null);
   const MIN_EDITOR_HEIGHT = 360;
+  const AUTO_OPEN_CONSOLE_HEIGHT = 320;
 
   const getLayoutRect = () => {
     const root = rootRef.current;
@@ -128,7 +130,7 @@ export default function CodeEditor({
   };
 
   const clampConsoleHeight = (height) => {
-    const min = 96;
+    const min = 88;
 
     if (!rootRef.current) {
       return Math.min(520, Math.max(min, height));
@@ -251,6 +253,37 @@ export default function CodeEditor({
   const isRunResult = isRunExecutionResult(result);
   const summary = summarizeExecutionResult(result);
   const runCaseResults = Array.isArray(result?.caseResults) ? result.caseResults : [];
+  const activeResultCase = (() => {
+    if (runCaseResults.length === 0) return null;
+    return runCaseResults.find((entry, index) => String(entry.id || index) === String(activeResultCaseId))
+      || runCaseResults[0];
+  })();
+
+  useEffect(() => {
+    if (!result) return;
+    setConsoleHeight((current) => clampConsoleHeight(Math.max(current, AUTO_OPEN_CONSOLE_HEIGHT)));
+    onConsoleTabChange?.('result');
+    if (runCaseResults.length > 0) {
+      setActiveResultCaseId(runCaseResults[0].id || 0);
+    }
+    // The result object marks a completed run/submit and should reveal the output panel.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result]);
+
+  const openResultPanel = () => {
+    setConsoleHeight((current) => clampConsoleHeight(Math.max(current, AUTO_OPEN_CONSOLE_HEIGHT)));
+    onConsoleTabChange?.('result');
+  };
+
+  const handleRun = () => {
+    openResultPanel();
+    onRun?.();
+  };
+
+  const handleSubmit = () => {
+    openResultPanel();
+    onSubmit?.();
+  };
 
   const activeTestCase = (() => {
     if (!Array.isArray(testCases) || testCases.length === 0) return null;
@@ -360,12 +393,12 @@ export default function CodeEditor({
   return (
     <div
       ref={rootRef}
-      className="flex h-full min-h-0 flex-col overflow-hidden rounded-[30px] border border-slate-200/80 bg-white/90 shadow-[0_24px_64px_-44px_rgba(15,23,42,0.35)] backdrop-blur-sm dark:border-gray-700 dark:bg-gray-900/88"
+      className="flex h-full min-h-0 flex-col overflow-hidden rounded-[24px] border border-transparent bg-white/90 shadow-[0_14px_40px_-32px_rgba(15,23,42,0.28)] backdrop-blur-sm dark:border-transparent dark:bg-gray-900/88"
     >
       {showToolbar ? (
         <div
           ref={toolbarRef}
-          className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(248,250,252,0.92)_100%)] px-4 py-3 backdrop-blur-sm dark:border-gray-800 dark:bg-gray-900/88"
+          className="flex flex-wrap items-center justify-between gap-2 border-b border-transparent bg-slate-50/55 px-4 py-2.5 backdrop-blur-sm dark:border-transparent dark:bg-gray-900/88"
         >
           <div className="flex flex-wrap items-center gap-3">
             <select
@@ -384,7 +417,7 @@ export default function CodeEditor({
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={onRun}
+              onClick={handleRun}
               disabled={isRunning || isSubmitting}
               className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-sky-600 dark:hover:bg-sky-500 dark:disabled:bg-gray-700"
             >
@@ -393,7 +426,7 @@ export default function CodeEditor({
             </button>
             <button
               type="button"
-              onClick={onSubmit}
+              onClick={handleSubmit}
               disabled={isRunning || isSubmitting}
               className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"
             >
@@ -417,7 +450,7 @@ export default function CodeEditor({
 
       <div
         ref={editorContainerRef}
-        className="relative z-0 min-h-0 bg-transparent px-4 pb-1 pt-1.5"
+        className="relative z-0 min-h-0 bg-transparent px-3 pb-0 pt-1"
         style={{ height: editorHeight }}
       >
         <MonacoCodeEditor
@@ -432,19 +465,19 @@ export default function CodeEditor({
         type="button"
         ref={splitterRef}
         onPointerDown={handleConsoleResizeStart}
-        className="group relative z-20 mx-4 flex h-3 w-auto cursor-row-resize items-center justify-center transition-colors"
+        className="group relative z-20 mx-3 flex h-2.5 w-auto cursor-row-resize items-center justify-center transition-colors"
         aria-label="Resize testcase panel"
       >
-        <div className="absolute left-0 right-0 top-1/2 h-px -translate-y-1/2 bg-slate-200/80 dark:bg-gray-700" />
-        <div className="relative z-10 h-1.5 w-12 rounded-full bg-slate-300 transition-colors group-hover:bg-sky-400 dark:bg-gray-700 dark:group-hover:bg-sky-500" />
+        <div className="absolute left-0 right-0 top-1/2 h-px -translate-y-1/2 bg-slate-200/45 dark:bg-gray-700/60" />
+        <div className="relative z-10 h-1 w-10 rounded-full bg-slate-300/80 transition-colors group-hover:bg-sky-400 dark:bg-gray-700 dark:group-hover:bg-sky-500" />
       </button>
 
       <div
         ref={consoleContainerRef}
-        className="relative z-20 mx-4 mb-3 flex min-h-0 flex-col overflow-hidden rounded-[24px] border border-slate-200/80 bg-white px-4 pb-3 pt-1 dark:border-gray-700 dark:bg-gray-900"
+        className="relative z-20 mx-3 mb-2.5 flex min-h-0 flex-col overflow-hidden rounded-2xl border border-transparent bg-slate-50/60 px-3 pb-2 pt-0.5 dark:border-transparent dark:bg-gray-900"
         style={{ height: clampConsoleHeight(consoleHeight) }}
       >
-        <div className="flex flex-none items-center gap-4 overflow-x-auto bg-white [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden dark:bg-gray-900">
+        <div className="flex flex-none items-center gap-5 overflow-x-auto bg-transparent [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <button
             type="button"
             onClick={() => onConsoleTabChange('testcase')}
@@ -505,9 +538,9 @@ export default function CodeEditor({
 
             </div>
           ) : (
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
-                <div className={`text-2xl font-bold ${headerStatusTone}`}>{verdictLabel || 'Test Result'}</div>
+            <div className="space-y-2.5">
+              <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
+                <div className={`text-xl font-bold ${headerStatusTone}`}>{verdictLabel || 'Test Result'}</div>
                 {runtimeLabel && (
                   <div className="text-sm text-slate-500 dark:text-gray-400">Runtime: {runtimeLabel}</div>
                 )}
@@ -531,26 +564,32 @@ export default function CodeEditor({
 
               {result && isRunResult && runCaseResults.length >= 1 && (
                 <div className="space-y-3">
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                     {runCaseResults.map((entry, index) => {
                       const entryStatus = normalizeRunCaseStatus(entry.status);
                       const toneClass = runStatusTone(entry.status);
+                      const resultCaseKey = entry.id || index;
+                      const isActiveResultCase = String(activeResultCase?.id || runCaseResults.indexOf(activeResultCase)) === String(resultCaseKey);
 
                       return (
-                        <div
+                        <button
+                          type="button"
                           key={entry.id || `run-case-${index + 1}`}
-                          className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:bg-gray-800 dark:text-gray-200"
+                          onClick={() => setActiveResultCaseId(resultCaseKey)}
+                          className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${isActiveResultCase ? 'bg-slate-800 text-white dark:bg-sky-600' : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'}`}
                         >
                           <span>{entry.label || `Case ${index + 1}`}</span>
                           <span className={`ml-2 rounded-full px-2 py-0.5 text-[11px] ${toneClass}`}>{entryStatus}</span>
-                        </div>
+                        </button>
                       );
                     })}
                   </div>
 
-                  <div className="space-y-3">
-                    {runCaseResults.map((entry, index) => (
-                      (() => {
+                  {activeResultCase && (
+                    <div>
+                      {(() => {
+                        const entry = activeResultCase;
+                        const index = runCaseResults.indexOf(entry);
                         const compileOutput = getCompileOutput(entry);
                         const errorOutput = getErrorOutput(entry);
                         const hasExpected = hasValue(entry.expectedOutput);
@@ -599,9 +638,9 @@ export default function CodeEditor({
                             </div>
                           </div>
                         );
-                      })()
-                    ))}
-                  </div>
+                      })()}
+                    </div>
+                  )}
                 </div>
               )}
 

@@ -9,6 +9,7 @@ const LONG_REQUEST_PATTERNS = [
   /^\/api\/feedback\/.*export/,
   /^\/api\/compiler\/submit/,
   /^\/api\/compiler\/problems\/[^/]+\/submit/,
+  /^\/api\/execute/,
   /^\/api\/student\/assessment\/submit/,
 ];
 

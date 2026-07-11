@@ -624,9 +624,9 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
         : 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300';
 
   return (
-    <div className="h-[calc(100vh-var(--app-navbar-height,5rem))] min-h-[680px] w-full overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.10),_transparent_34%),linear-gradient(180deg,_#f8fbff_0%,_#eff6ff_45%,_#f8fafc_100%)] shadow-[0_16px_45px_rgba(15,23,42,0.06)] dark:bg-[linear-gradient(180deg,_#0f172a_0%,_#111827_100%)]">
+    <div className="h-[calc(100vh-var(--app-navbar-height,5rem))] min-h-[680px] w-full overflow-hidden bg-[linear-gradient(180deg,_#f7fbff_0%,_#f1f7fc_100%)] dark:bg-[linear-gradient(180deg,_#0f172a_0%,_#111827_100%)]">
       <div className="flex h-full min-h-0 flex-col">
-        <div className="relative hidden h-full min-h-0 flex-1 overflow-hidden px-3 py-3 lg:flex">
+        <div className="relative hidden h-full min-h-0 flex-1 overflow-hidden p-2.5 lg:flex">
 
           <div
             ref={splitContainerRef}
@@ -637,9 +637,9 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
                 width: leftWidth === null ? 'clamp(300px, 38vw, 620px)' : `${leftWidth}px`,
                 willChange: 'width',
               }}
-              className="flex h-full min-w-[280px] shrink-0 flex-col overflow-hidden rounded-[30px] bg-white/84 shadow-[0_10px_32px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:bg-gray-900/84"
+              className="flex h-full min-w-[280px] shrink-0 flex-col overflow-hidden rounded-[24px] border border-transparent bg-white/72 shadow-[0_12px_36px_-28px_rgba(15,23,42,0.24)] backdrop-blur-sm dark:border-transparent dark:bg-gray-900/84"
             >
-              <div className="flex flex-none items-center justify-between gap-3 border-b border-slate-200/70 px-5 py-3 dark:border-gray-800">
+              <div className="flex flex-none items-center justify-between gap-3 border-b border-transparent px-5 py-3 dark:border-transparent">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-slate-900 dark:text-gray-100">{problem.title}</p>
                   <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusBadgeClass}`}>
@@ -686,8 +686,8 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
               className="group relative flex w-4 shrink-0 cursor-col-resize touch-none select-none items-center justify-center transition-colors"
               aria-label="Resize panels"
             >
-              <div className="absolute inset-y-5 left-1/2 w-px -translate-x-1/2 rounded-full bg-slate-200/90 dark:bg-gray-700" />
-              <div className="relative z-10 rounded-full bg-white/92 p-1 text-slate-400 shadow-[0_10px_20px_rgba(15,23,42,0.06)] transition-colors group-hover:text-sky-500 dark:bg-gray-900 dark:text-gray-500">
+              <div className="absolute inset-y-5 left-1/2 w-px -translate-x-1/2 rounded-full bg-slate-200/45 dark:bg-gray-700/60" />
+              <div className="relative z-10 rounded-full bg-white/70 p-1 text-slate-400 transition-colors group-hover:text-sky-500 dark:bg-gray-900 dark:text-gray-500">
                 <PanelLeftOpen className="h-3.5 w-3.5 rotate-90" />
               </div>
             </button>

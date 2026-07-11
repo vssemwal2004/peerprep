@@ -5,6 +5,20 @@ import { logActivity } from './adminActivityController.js';
 
 const PRIORITY_ORDER = { high: 0, normal: 1, low: 2 };
 
+function parseExpiryDate(value) {
+  if (!value) return undefined;
+  const expiry = new Date(value);
+  if (Number.isNaN(expiry.getTime())) return undefined;
+
+  // Date inputs arrive as YYYY-MM-DD. Treat that as the full selected day,
+  // otherwise an announcement expires at midnight before students see it.
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    expiry.setHours(23, 59, 59, 999);
+  }
+
+  return expiry;
+}
+
 function emitAnnouncementUpdate() {
   const io = getIo();
   if (io) {
@@ -23,7 +37,7 @@ export async function createAnnouncement(req, res) {
     status: status || 'inactive',
     priority: priority || 'normal',
     createdBy: req.user?._id,
-    expiryDate: expiryDate ? new Date(expiryDate) : undefined
+    expiryDate: parseExpiryDate(expiryDate)
   });
 
   logActivity({
@@ -82,7 +96,7 @@ export async function updateAnnouncement(req, res) {
     updates.message = String(updates.message).trim();
   }
   if (Object.prototype.hasOwnProperty.call(updates, 'expiryDate')) {
-    updates.expiryDate = updates.expiryDate ? new Date(updates.expiryDate) : null;
+    updates.expiryDate = parseExpiryDate(updates.expiryDate) || null;
   }
 
   const announcement = await Announcement.findByIdAndUpdate(id, updates, { new: true });
@@ -135,9 +149,11 @@ export async function deleteAnnouncement(req, res) {
 
 export async function listAnnouncementsStudent(req, res) {
   const now = new Date();
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
   const announcements = await Announcement.find({
     status: 'active',
-    $or: [{ expiryDate: null }, { expiryDate: { $exists: false } }, { expiryDate: { $gte: now } }]
+    $or: [{ expiryDate: null }, { expiryDate: { $exists: false } }, { expiryDate: { $gte: startOfToday } }]
   }).lean();
 
   const sorted = announcements.sort((a, b) => {

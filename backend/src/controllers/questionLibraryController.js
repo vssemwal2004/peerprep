@@ -199,6 +199,128 @@ export async function getLibraryQuestion(req, res) {
   }
 }
 
+function buildLibraryQuestionQuery(req, id) {
+  const query = { _id: id };
+  if (req.user?.role === 'coordinator') {
+    query.createdBy = req.user._id;
+  }
+  return query;
+}
+
+function normalizeStringArray(value = []) {
+  const source = Array.isArray(value)
+    ? value
+    : String(value || '').split(',');
+
+  return Array.from(new Set(
+    source
+      .map((item) => String(item || '').trim())
+      .filter(Boolean),
+  ));
+}
+
+export async function updateLibraryQuestion(req, res) {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid library question id' });
+    }
+
+    const question = await QuestionLibrary.findOne(buildLibraryQuestionQuery(req, id));
+    if (!question) return res.status(404).json({ error: 'Library question not found' });
+
+    const updates = {};
+    const dataUpdates = { ...(question.questionData || {}) };
+
+    if (Object.prototype.hasOwnProperty.call(req.body, 'questionText')) {
+      const questionText = String(req.body.questionText || '').trim();
+      if (!questionText) return res.status(400).json({ error: 'Question text is required' });
+      updates.questionText = questionText;
+      dataUpdates.questionText = questionText;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, 'tags')) {
+      const tags = normalizeStringArray(req.body.tags);
+      updates.tags = tags;
+      dataUpdates.tags = tags;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, 'difficulty')) {
+      updates.difficulty = String(req.body.difficulty || '').trim();
+      if (dataUpdates.problemDataSnapshot) {
+        dataUpdates.problemDataSnapshot = {
+          ...dataUpdates.problemDataSnapshot,
+          difficulty: updates.difficulty,
+        };
+      }
+      if (dataUpdates.coding) {
+        dataUpdates.coding = {
+          ...dataUpdates.coding,
+          difficulty: updates.difficulty,
+        };
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, 'visibility')) {
+      const visibility = String(req.body.visibility || '').trim().toLowerCase();
+      if (!['public', 'private'].includes(visibility)) {
+        return res.status(400).json({ error: 'Visibility must be public or private' });
+      }
+      updates.visibility = visibility;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, 'status')) {
+      const status = String(req.body.status || '').trim().toLowerCase();
+      if (!['draft', 'published', 'hidden', 'archived'].includes(status)) {
+        return res.status(400).json({ error: 'Invalid question status' });
+      }
+      updates.status = status;
+    }
+
+    const searchValues = [
+      updates.questionText ?? question.questionText,
+      ...(updates.tags ?? question.tags ?? []),
+      ...((question.keywords || [])),
+      dataUpdates.expectedAnswer,
+      ...((dataUpdates.options || [])),
+    ];
+
+    question.set({
+      ...updates,
+      questionData: dataUpdates,
+      searchPrefixes: buildSearchPrefixes(searchValues),
+    });
+    await question.save();
+
+    res.json({
+      question: {
+        ...formatLibraryQuestionSummary(question),
+        questionData: question.questionData,
+      },
+    });
+  } catch (err) {
+    console.error('Error updating library question:', err);
+    res.status(500).json({ error: 'Failed to update library question' });
+  }
+}
+
+export async function deleteLibraryQuestion(req, res) {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid library question id' });
+    }
+
+    const deleted = await QuestionLibrary.findOneAndDelete(buildLibraryQuestionQuery(req, id));
+    if (!deleted) return res.status(404).json({ error: 'Library question not found' });
+
+    res.json({ ok: true, id });
+  } catch (err) {
+    console.error('Error deleting library question:', err);
+    res.status(500).json({ error: 'Failed to delete library question' });
+  }
+}
+
 export async function resolveLibraryQuestions(req, res) {
   try {
     await ensureQuestionLibrarySynchronized();

@@ -214,7 +214,7 @@ export default function MonacoCodeEditor({
 
   return (
     <div
-      className="relative h-full min-h-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900"
+      className="relative h-full min-h-0 overflow-hidden rounded-xl border border-transparent bg-white shadow-none dark:border-transparent dark:bg-gray-900"
       style={{ height: resolvedHeight }}
     >
       {isLoading && (

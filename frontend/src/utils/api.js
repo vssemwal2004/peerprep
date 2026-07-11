@@ -319,7 +319,7 @@ export const api = {
   },
   updateAnnouncement: (id, body) => request(`/admin/announcements/${id}`, { method: 'PUT', body }),
   deleteAnnouncement: (id) => request(`/admin/announcements/${id}`, { method: 'DELETE' }),
-  listStudentAnnouncements: () => request('/student/announcements', { cacheTtlMs: 60 * 1000 }),
+  listStudentAnnouncements: () => request(`/student/announcements?ts=${Date.now()}`, { skipCache: true }),
 
   // Company Insights (Admin)
   listCompanyBenchmarks: () => request('/admin/company-insights', { cacheTtlMs: 2 * 60 * 1000 }),
@@ -504,13 +504,18 @@ export const api = {
   listLibraryQuestions: (params = {}) => {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== null && value !== '') qs.append(key, String(value));
+      if (key !== 'skipCache' && value !== undefined && value !== null && value !== '') qs.append(key, String(value));
     });
-    return request(`/admin/library/questions${qs.toString() ? `?${qs.toString()}` : ''}`, { cacheTtlMs: 30 * 1000 });
+    return request(`/admin/library/questions${qs.toString() ? `?${qs.toString()}` : ''}`, {
+      cacheTtlMs: 30 * 1000,
+      skipCache: Boolean(params.skipCache),
+    });
   },
   createLibraryQuestion: (question) => request('/admin/library/questions', { method: 'POST', body: { question } }),
   createLibraryQuestionsBulk: (questions) => request('/admin/library/questions/bulk', { method: 'POST', body: { questions } }),
   getLibraryQuestion: (id) => request(`/admin/library/questions/${id}`, { skipCache: true }),
+  updateLibraryQuestion: (id, body) => request(`/admin/library/questions/${id}`, { method: 'PATCH', body }),
+  deleteLibraryQuestion: (id) => request(`/admin/library/questions/${id}`, { method: 'DELETE' }),
   resolveLibraryQuestions: (ids = []) => request('/admin/library/questions/resolve', { method: 'POST', body: { ids } }),
 
   // Assessments (Student)

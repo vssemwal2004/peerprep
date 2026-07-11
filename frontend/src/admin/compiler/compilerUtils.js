@@ -4,6 +4,14 @@ export const COMPILER_LANGUAGES = [
   { id: 'java', label: 'Java', monacoLanguage: 'java', judge0LanguageId: 62 },
   { id: 'cpp', label: 'C++', monacoLanguage: 'cpp', judge0LanguageId: 54 },
   { id: 'c', label: 'C', monacoLanguage: 'c', judge0LanguageId: 50 },
+  { id: 'typescript', label: 'TypeScript', monacoLanguage: 'typescript', judge0LanguageId: 74 },
+  { id: 'csharp', label: 'C#', monacoLanguage: 'csharp', judge0LanguageId: 51 },
+  { id: 'php', label: 'PHP', monacoLanguage: 'php', judge0LanguageId: 68 },
+  { id: 'go', label: 'Go', monacoLanguage: 'go', judge0LanguageId: 60 },
+  { id: 'rust', label: 'Rust', monacoLanguage: 'rust', judge0LanguageId: 73 },
+  { id: 'kotlin', label: 'Kotlin', monacoLanguage: 'kotlin', judge0LanguageId: 78 },
+  { id: 'ruby', label: 'Ruby', monacoLanguage: 'ruby', judge0LanguageId: 72 },
+  { id: 'swift', label: 'Swift', monacoLanguage: 'swift', judge0LanguageId: 83 },
 ];
 
 export function createEmptySampleTestCase() {

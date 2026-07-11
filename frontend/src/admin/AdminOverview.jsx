@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createElement, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Activity,
@@ -11,7 +11,6 @@ import {
   ClipboardList,
   Code2,
   FileCode2,
-  Gauge,
   GraduationCap,
   Library,
   Mail,
@@ -20,7 +19,6 @@ import {
   Plus,
   RefreshCw,
   ShieldCheck,
-  Target,
   TrendingUp,
   UserPlus,
   Users,
@@ -125,7 +123,7 @@ function MetricCard({ label, value, helper, Icon, tone = 'sky', loading }) {
           <p className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400">{helper}</p>
         </div>
         <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${toneStyles[tone] || toneStyles.sky}`}>
-          <Icon className="h-5 w-5" />
+          {createElement(Icon, { className: 'h-5 w-5' })}
         </div>
       </div>
     </div>
@@ -185,7 +183,7 @@ function ActionLink({ to, icon: Icon, label, detail, tone = 'sky' }) {
     >
       <span className="flex min-w-0 items-center gap-3">
         <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${toneStyles[tone] || toneStyles.sky}`}>
-          <Icon className="h-5 w-5" />
+          {createElement(Icon, { className: 'h-5 w-5' })}
         </span>
         <span className="min-w-0">
           <span className="block text-sm font-bold text-slate-900 dark:text-white">{label}</span>
@@ -197,35 +195,39 @@ function ActionLink({ to, icon: Icon, label, detail, tone = 'sky' }) {
   );
 }
 
-function ModuleLane({ title, description, Icon, tone, metrics, actions }) {
+function ModuleLane({ title, Icon, tone, metrics, to }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.03]">
-      <div className="flex items-start gap-3">
+    <Link to={to} className="group rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-sky-200 hover:bg-white hover:shadow-md dark:border-white/10 dark:bg-white/[0.03] dark:hover:border-sky-400/30 dark:hover:bg-white/[0.06]">
+      <div className="flex items-center gap-3">
         <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${toneStyles[tone] || toneStyles.sky}`}>
-          <Icon className="h-5 w-5" />
+          {createElement(Icon, { className: 'h-5 w-5' })}
         </div>
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-bold text-slate-950 dark:text-white">{title}</h3>
-          <p className="mt-1 text-xs font-medium leading-5 text-slate-500 dark:text-slate-400">{description}</p>
         </div>
+        <ArrowRight className="h-4 w-4 text-slate-400 transition group-hover:translate-x-1 group-hover:text-sky-600" />
       </div>
-      <div className="mt-4 grid grid-cols-2 gap-2">
+      <div className="mt-4 flex items-center gap-5">
         {metrics.map((metric) => (
-          <div key={metric.label} className="rounded-lg bg-white p-3 dark:bg-gray-950/40">
-            <div className="text-lg font-bold text-slate-950 dark:text-white">{metric.value}</div>
-            <div className="mt-1 text-[11px] font-bold uppercase tracking-[0.1em] text-slate-400">{metric.label}</div>
+          <div key={metric.label} className="min-w-0">
+            <div className="text-xl font-extrabold tracking-tight text-slate-950 dark:text-white">{metric.value}</div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{metric.label}</div>
           </div>
         ))}
       </div>
-      <div className="mt-4 flex flex-wrap gap-2">
-        {actions.map((action) => (
-          <Link key={action.label} to={action.to} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:border-sky-200 hover:text-sky-700 dark:border-white/10 dark:bg-gray-950/40 dark:text-slate-200 dark:hover:text-sky-200">
-            {action.label}
-            <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
-        ))}
-      </div>
-    </div>
+    </Link>
+  );
+}
+
+function QuickLink({ to, Icon, label, tone = 'sky', badge }) {
+  return (
+    <Link to={to} className="group flex flex-col items-center justify-center gap-2 rounded-xl border border-transparent px-2 py-3 text-center transition hover:border-slate-200 hover:bg-slate-50 dark:hover:border-white/10 dark:hover:bg-white/[0.04]">
+      <span className={`relative flex h-11 w-11 items-center justify-center rounded-xl border ${toneStyles[tone] || toneStyles.sky}`}>
+        {createElement(Icon, { className: 'h-5 w-5' })}
+        {badge ? <span className="absolute -right-2 -top-2 min-w-5 rounded-full bg-slate-950 px-1.5 py-0.5 text-[9px] font-black text-white dark:bg-white dark:text-slate-950">{badge}</span> : null}
+      </span>
+      <span className="text-[11px] font-bold leading-4 text-slate-600 group-hover:text-slate-950 dark:text-slate-300 dark:group-hover:text-white">{label}</span>
+    </Link>
   );
 }
 
@@ -383,10 +385,8 @@ export default function AdminOverview() {
                 {loading ? 'Syncing' : `${model.operationsHealth}% health`}
               </TonePill>
             </div>
-            <h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-950 dark:text-white">Platform Overview</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-400">
-              Control students, interviews, assessments, coding practice, communications, and operational risk from one executive dashboard.
-            </p>
+            <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-slate-950 dark:text-white">Good overview, at a glance.</h1>
+            <p className="mt-2 text-sm font-medium text-slate-500 dark:text-slate-400">Live platform operations and priorities.</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -424,84 +424,63 @@ export default function AdminOverview() {
 
         <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]">
           <Panel
-            title="Platform Modules"
-            subtitle="Operational lanes for every major admin-owned area."
-            Icon={Gauge}
+            title="Core operations"
             action={<TonePill tone="slate">Updated {formatDateTime(lastUpdated)}</TonePill>}
           >
             <div className="grid gap-4 lg:grid-cols-2">
               <ModuleLane
                 title="People Operations"
-                description="Student onboarding, coordinator coverage, directories, and readiness monitoring."
                 Icon={Users}
                 tone="sky"
+                to="/admin/students"
                 metrics={[
                   { label: 'students', value: formatNumber(model.totalStudents) },
                   { label: 'coordinators', value: formatNumber(model.totalCoordinators) },
                 ]}
-                actions={[
-                  { label: 'Students', to: '/admin/students' },
-                  { label: 'Coordinators', to: '/admin/coordinator-directory' },
-                ]}
               />
               <ModuleLane
                 title="Interview Control"
-                description="Create events, watch scheduled rounds, and review past interview details."
                 Icon={CalendarDays}
                 tone="emerald"
+                to="/admin/interviews/scheduled"
                 metrics={[
                   { label: 'live', value: formatNumber(model.liveEvents) },
                   { label: 'upcoming', value: formatNumber(model.upcomingEvents) },
                 ]}
-                actions={[
-                  { label: 'Create', to: '/admin/event' },
-                  { label: 'Scheduled', to: '/admin/interviews/scheduled' },
-                ]}
               />
               <ModuleLane
                 title="Assessment Command"
-                description="Author tests, manage question banks, publish assessments, and inspect reports."
                 Icon={ClipboardList}
                 tone="amber"
+                to="/admin/assessment"
                 metrics={[
                   { label: 'published', value: formatNumber(model.publishedAssessments) },
                   { label: 'draft', value: formatNumber(model.draftAssessments) },
                 ]}
-                actions={[
-                  { label: 'Dashboard', to: '/admin/assessment' },
-                  { label: 'Reports', to: '/admin/assessment/reports' },
-                ]}
               />
               <ModuleLane
                 title="Compiler Workspace"
-                description="Coding catalog, judge analytics, submissions, and problem authoring."
                 Icon={Code2}
                 tone="rose"
+                to="/admin/compiler"
                 metrics={[
                   { label: 'problems', value: formatNumber(model.totalProblems) },
                   { label: 'acceptance', value: `${Math.round(model.acceptanceRate)}%` },
-                ]}
-                actions={[
-                  { label: 'Problems', to: '/admin/compiler/problems' },
-                  { label: 'Analytics', to: '/admin/compiler/analytics' },
                 ]}
               />
             </div>
           </Panel>
 
-          <Panel title="Operating Health" subtitle="Quick read on where admin attention should go next." Icon={TrendingUp}>
+          <Panel title="Operating health" Icon={TrendingUp}>
             <div className="space-y-4">
               <ProgressBar label="Assessment coverage" value={model.assessmentCoverage} tone={model.assessmentCoverage >= 60 ? 'emerald' : 'amber'} />
               <ProgressBar label="Interview momentum" value={model.eventMomentum} tone={model.eventMomentum >= 40 ? 'emerald' : 'sky'} />
               <ProgressBar label="Coding engagement" value={model.codeEngagement} tone={model.codeEngagement >= 35 ? 'emerald' : 'rose'} />
               <ProgressBar label="Daily operations load" value={Math.min(100, model.activeUsers * 4)} tone="indigo" />
             </div>
-            <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.03]">
-              <div className="flex items-center gap-2 text-sm font-bold text-slate-950 dark:text-white">
-                <Target className="h-4 w-4 text-sky-600" />
-                Control Priority
-              </div>
-              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">
+            <div className="mt-5 flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+              <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-amber-500" />
+              <p className="text-xs font-semibold leading-5 text-slate-600 dark:text-slate-300">
                 {model.draftAssessments
                   ? 'Draft assessments are waiting. Review publishing and report readiness first.'
                   : model.upcomingEvents
@@ -513,7 +492,7 @@ export default function AdminOverview() {
         </div>
 
         <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(320px,0.8fr)_minmax(0,1.2fr)]">
-          <Panel title="Admin Action Queue" subtitle="High-frequency tasks for running the platform." Icon={Zap}>
+          <Panel title="Needs attention" Icon={Zap}>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
               {controlQueue.map((item) => (
                 <ActionLink key={item.label} to={item.to} icon={item.Icon} label={item.label} detail={item.detail} tone={item.tone} />
@@ -522,8 +501,7 @@ export default function AdminOverview() {
           </Panel>
 
           <Panel
-            title="Recent Platform Activity"
-            subtitle="Latest admin actions and operational events."
+            title="Recent activity"
             Icon={Activity}
             action={<Link to="/admin/activity" className="inline-flex items-center gap-1.5 text-xs font-bold text-sky-700 hover:text-sky-900 dark:text-sky-300">View all <ArrowRight className="h-3.5 w-3.5" /></Link>}
           >
@@ -549,16 +527,18 @@ export default function AdminOverview() {
           </Panel>
         </div>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <ActionLink to="/admin/learning" icon={BookOpen} label="Learning Modules" detail="Semesters, subjects, topics, and progress" tone="sky" />
-          <ActionLink to="/admin/library" icon={Library} label="Question Library" detail="Reusable coding and assessment questions" tone="amber" />
-          <ActionLink to="/admin/company-insights" icon={Building2} label="Company Insights" detail="Benchmarks and hiring readiness signals" tone="indigo" />
-          <ActionLink to="/admin/feedback" icon={MessageSquare} label="Feedback Review" detail="Interview and platform feedback export" tone="emerald" />
-          <ActionLink to="/admin/announcements/manage" icon={Megaphone} label="Announcements" detail={`${model.announcements} messages in admin view`} tone="rose" />
-          <ActionLink to="/admin/settings/email-templates" icon={Mail} label="Email Templates" detail="Notification copy and lifecycle emails" tone="sky" />
-          <ActionLink to="/admin/coordinator-directory" icon={GraduationCap} label="Coordinator Directory" detail="Manage teaching and event owners" tone="emerald" />
-          <ActionLink to="/admin/company-insights/add" icon={Briefcase} label="Add Benchmark" detail="Upload or author company target data" tone="indigo" />
-        </div>
+        <Panel title="Explore modules" className="mt-5">
+          <div className="grid grid-cols-4 gap-1 sm:grid-cols-8">
+            <QuickLink to="/admin/learning" Icon={BookOpen} label="Learning" tone="sky" />
+            <QuickLink to="/admin/library" Icon={Library} label="Questions" tone="amber" />
+            <QuickLink to="/admin/company-insights" Icon={Building2} label="Insights" tone="indigo" />
+            <QuickLink to="/admin/feedback" Icon={MessageSquare} label="Feedback" tone="emerald" />
+            <QuickLink to="/admin/announcements/manage" Icon={Megaphone} label="Announcements" tone="rose" badge={model.announcements || null} />
+            <QuickLink to="/admin/settings/email-templates" Icon={Mail} label="Email" tone="sky" />
+            <QuickLink to="/admin/coordinator-directory" Icon={GraduationCap} label="Coordinators" tone="emerald" />
+            <QuickLink to="/admin/company-insights/add" Icon={Briefcase} label="Benchmarks" tone="indigo" />
+          </div>
+        </Panel>
       </div>
     </div>
   );

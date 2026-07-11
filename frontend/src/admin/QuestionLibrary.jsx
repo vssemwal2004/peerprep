@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowLeft, CheckSquare, Eye, Library, Search, Tag, X } from 'lucide-react';
+import { ArrowLeft, CheckSquare, Edit3, Eye, EyeOff, Globe2, Library, Lock, MoreVertical, Search, Tag, Trash2, X } from 'lucide-react';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import { queueQuestionSelection } from './assessment/assessmentProblemSelectionStore';
@@ -115,6 +115,13 @@ export default function QuestionLibrary() {
   const [activeQuestion, setActiveQuestion] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [tagsModal, setTagsModal] = useState({ open: false, questionText: '', tags: [] });
+  const [actionMenuId, setActionMenuId] = useState('');
+  const [bulkMenuOpen, setBulkMenuOpen] = useState(false);
+  const [bulkSelecting, setBulkSelecting] = useState(false);
+  const [editModal, setEditModal] = useState({ open: false, question: null, saving: false });
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', message: '', confirmLabel: 'Confirm', tone: 'default', onConfirm: null });
+  const [reloadKey, setReloadKey] = useState(0);
+  const rowSelectionActive = selectionMode || bulkSelecting;
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -141,6 +148,7 @@ export default function QuestionLibrary() {
           difficulty: filters.difficulty,
           page,
           limit: 20,
+          skipCache: reloadKey > 0,
         });
         if (!mounted) return;
         setQuestions(data.questions || []);
@@ -158,7 +166,7 @@ export default function QuestionLibrary() {
     };
     loadQuestions();
     return () => { mounted = false; };
-  }, [filters, page, toast]);
+  }, [filters, page, reloadKey, toast]);
 
   const categoryTabs = useMemo(() => {
     const coreTypes = ['mcq', 'one_line', 'short', 'coding'];
@@ -199,6 +207,33 @@ export default function QuestionLibrary() {
     });
   };
 
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+    setSelectedMeta({});
+  };
+
+  const toggleBulkSelecting = () => {
+    setBulkMenuOpen(false);
+    setBulkSelecting((current) => {
+      if (current) clearSelection();
+      return !current;
+    });
+  };
+
+  const toggleSelectVisibleQuestions = () => {
+    const allVisibleSelected = questions.length > 0 && questions.every((question) => selectedIds.has(question._id));
+    if (allVisibleSelected) {
+      clearSelection();
+      return;
+    }
+
+    setSelectedIds(new Set(questions.map((question) => question._id)));
+    setSelectedMeta(questions.reduce((acc, question) => {
+      acc[question._id] = question;
+      return acc;
+    }, {}));
+  };
+
   const openQuestion = async (questionId) => {
     setDetailLoading(true);
     try {
@@ -230,6 +265,198 @@ export default function QuestionLibrary() {
     setTagsModal({ open: true, questionText, tags });
   };
 
+  const refreshLibrary = () => {
+    setReloadKey((value) => value + 1);
+  };
+
+  const startEditQuestion = (question) => {
+    setActionMenuId('');
+
+    if (question?.questionType === 'coding') {
+      const problemId = question.sourceProblemId;
+      if (problemId) {
+        navigate(`${rolePrefix}/compiler/${problemId}/edit`, {
+          state: { returnTo: `${rolePrefix}/library?type=coding` },
+        });
+        return;
+      }
+
+      toast.error('This coding question is from an assessment and has no linked compiler problem to edit.');
+      return;
+    }
+
+    setEditModal({ open: true, question: { ...question }, saving: false });
+  };
+
+  const saveEditedQuestion = async (event) => {
+    event.preventDefault();
+    if (!editModal.question?._id || editModal.saving) return;
+
+    const form = new FormData(event.currentTarget);
+    const questionText = String(form.get('questionText') || '').trim();
+    if (!questionText) {
+      toast.error('Question text is required.');
+      return;
+    }
+
+    setEditModal((prev) => ({ ...prev, saving: true }));
+    try {
+      await api.updateLibraryQuestion(editModal.question._id, {
+        questionText,
+        tags: String(form.get('tags') || '')
+          .split(',')
+          .map((tag) => tag.trim())
+          .filter(Boolean),
+        difficulty: String(form.get('difficulty') || '').trim(),
+        status: String(form.get('status') || 'published').trim(),
+        visibility: String(form.get('visibility') || 'public').trim(),
+      });
+      toast.success('Question updated.');
+      setEditModal({ open: false, question: null, saving: false });
+      refreshLibrary();
+    } catch (error) {
+      toast.error(error.message || 'Failed to update question.');
+      setEditModal((prev) => ({ ...prev, saving: false }));
+    }
+  };
+
+  const openConfirmDialog = ({ title, message, confirmLabel = 'Confirm', tone = 'default', onConfirm }) => {
+    setConfirmDialog({ open: true, title, message, confirmLabel, tone, onConfirm });
+  };
+
+  const closeConfirmDialog = () => {
+    setConfirmDialog({ open: false, title: '', message: '', confirmLabel: 'Confirm', tone: 'default', onConfirm: null });
+  };
+
+  const runConfirmedAction = async () => {
+    const action = confirmDialog.onConfirm;
+    closeConfirmDialog();
+    if (typeof action === 'function') {
+      await action();
+    }
+  };
+
+  const toggleVisibility = async (question) => {
+    setActionMenuId('');
+    const nextVisibility = question.visibility === 'private' ? 'public' : 'private';
+    openConfirmDialog({
+      title: nextVisibility === 'public' ? 'Make Question Public?' : 'Make Question Private?',
+      message: nextVisibility === 'public'
+        ? 'This question will be visible wherever public library questions are available.'
+        : 'This question will be private and hidden from shared public library use.',
+      confirmLabel: nextVisibility === 'public' ? 'Make Public' : 'Make Private',
+      onConfirm: async () => {
+        try {
+          await api.updateLibraryQuestion(question._id, { visibility: nextVisibility });
+          toast.success(`Question is now ${nextVisibility}.`);
+          refreshLibrary();
+        } catch (error) {
+          toast.error(error.message || 'Failed to update visibility.');
+        }
+      },
+    });
+  };
+
+  const toggleHiddenStatus = async (question) => {
+    setActionMenuId('');
+    const nextStatus = question.status === 'hidden' ? 'published' : 'hidden';
+    openConfirmDialog({
+      title: nextStatus === 'hidden' ? 'Hide Question?' : 'Unhide Question?',
+      message: nextStatus === 'hidden'
+        ? 'This question will stay in the library, but it will be marked hidden for normal use.'
+        : 'This question will become published again and available for normal use.',
+      confirmLabel: nextStatus === 'hidden' ? 'Hide Question' : 'Unhide',
+      onConfirm: async () => {
+        try {
+          await api.updateLibraryQuestion(question._id, { status: nextStatus });
+          toast.success(nextStatus === 'hidden' ? 'Question hidden.' : 'Question published.');
+          refreshLibrary();
+        } catch (error) {
+          toast.error(error.message || 'Failed to update question status.');
+        }
+      },
+    });
+  };
+
+  const deleteQuestion = async (question) => {
+    setActionMenuId('');
+    openConfirmDialog({
+      title: 'Delete Question?',
+      message: `Delete "${question.questionText || 'this question'}" from the library? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      tone: 'danger',
+      onConfirm: async () => {
+        try {
+          await api.deleteLibraryQuestion(question._id);
+          toast.success('Question deleted.');
+          setQuestions((prev) => prev.filter((item) => item._id !== question._id));
+          refreshLibrary();
+        } catch (error) {
+          toast.error(error.message || 'Failed to delete question.');
+        }
+      },
+    });
+  };
+
+  const requireSelectedQuestions = () => {
+    if (!selectedIds.size) {
+      toast.error('Select at least one question first.');
+      return false;
+    }
+    return true;
+  };
+
+  const bulkUpdateQuestions = ({ title, message, confirmLabel, body, successMessage }) => {
+    setBulkMenuOpen(false);
+    if (!requireSelectedQuestions()) return;
+
+    const ids = Array.from(selectedIds);
+    openConfirmDialog({
+      title,
+      message,
+      confirmLabel,
+      onConfirm: async () => {
+        try {
+          await Promise.all(ids.map((id) => api.updateLibraryQuestion(id, body)));
+          toast.success(successMessage);
+          clearSelection();
+          refreshLibrary();
+        } catch (error) {
+          toast.error(error.message || 'Failed to update selected questions.');
+        }
+      },
+    });
+  };
+
+  const bulkDeleteQuestions = () => {
+    setBulkMenuOpen(false);
+    if (!requireSelectedQuestions()) return;
+
+    const ids = Array.from(selectedIds);
+    openConfirmDialog({
+      title: 'Delete Selected Questions?',
+      message: `Delete ${ids.length} selected question${ids.length === 1 ? '' : 's'} from the library? This cannot be undone.`,
+      confirmLabel: 'Delete Selected',
+      tone: 'danger',
+      onConfirm: async () => {
+        try {
+          await Promise.all(ids.map((id) => api.deleteLibraryQuestion(id)));
+          toast.success('Selected questions deleted.');
+          clearSelection();
+          setQuestions((prev) => prev.filter((item) => !ids.includes(item._id)));
+          refreshLibrary();
+        } catch (error) {
+          toast.error(error.message || 'Failed to delete selected questions.');
+        }
+      },
+    });
+  };
+
+  const openImportQuestions = () => {
+    setBulkMenuOpen(false);
+    navigate(`${rolePrefix}/library/add-question`);
+  };
+
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900 pt-20">
       <div className="mx-auto max-w-7xl px-4 py-6">
@@ -257,16 +484,101 @@ export default function QuestionLibrary() {
             </div>
           </div>
 
-          {selectionMode && (
-            <button
-              type="button"
-              onClick={handleAddSelected}
-              className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-500"
-            >
-              <CheckSquare className="h-4 w-4" />
-              Add Selected ({selectedIds.size})
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {selectionMode ? (
+              <button
+                type="button"
+                onClick={handleAddSelected}
+                className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-500"
+              >
+                <CheckSquare className="h-4 w-4" />
+                Add Selected ({selectedIds.size})
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={toggleBulkSelecting}
+                  className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-xs font-semibold transition-colors ${
+                    bulkSelecting
+                      ? 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  <CheckSquare className="h-4 w-4" />
+                  {bulkSelecting ? `Selected (${selectedIds.size})` : 'Select'}
+                </button>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setBulkMenuOpen((open) => !open)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+                    aria-label="Library bulk actions"
+                  >
+                    <MoreVertical className="h-4 w-4" />
+                  </button>
+                  {bulkMenuOpen && (
+                    <div className="absolute right-0 top-11 z-40 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white py-1 text-xs font-semibold text-slate-600 shadow-xl dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+                      <button type="button" onClick={openImportQuestions} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-gray-800">
+                        <Library className="h-3.5 w-3.5" /> Import / Add Questions
+                      </button>
+                      <button type="button" onClick={toggleBulkSelecting} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-gray-800">
+                        <CheckSquare className="h-3.5 w-3.5" /> {bulkSelecting ? 'Exit Selection' : 'Select Questions'}
+                      </button>
+                      <button type="button" onClick={toggleSelectVisibleQuestions} disabled={!bulkSelecting || !questions.length} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800">
+                        <CheckSquare className="h-3.5 w-3.5" /> Select Visible Page
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => bulkUpdateQuestions({
+                          title: 'Hide Selected Questions?',
+                          message: `Hide ${selectedIds.size} selected question${selectedIds.size === 1 ? '' : 's'} from normal use?`,
+                          confirmLabel: 'Hide Selected',
+                          body: { status: 'hidden' },
+                          successMessage: 'Selected questions hidden.',
+                        })}
+                        disabled={!selectedIds.size}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
+                      >
+                        <EyeOff className="h-3.5 w-3.5" /> Hide Selected
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => bulkUpdateQuestions({
+                          title: 'Make Selected Public?',
+                          message: `Make ${selectedIds.size} selected question${selectedIds.size === 1 ? '' : 's'} public?`,
+                          confirmLabel: 'Make Public',
+                          body: { visibility: 'public' },
+                          successMessage: 'Selected questions are public.',
+                        })}
+                        disabled={!selectedIds.size}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
+                      >
+                        <Globe2 className="h-3.5 w-3.5" /> Make Public
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => bulkUpdateQuestions({
+                          title: 'Make Selected Private?',
+                          message: `Make ${selectedIds.size} selected question${selectedIds.size === 1 ? '' : 's'} private?`,
+                          confirmLabel: 'Make Private',
+                          body: { visibility: 'private' },
+                          successMessage: 'Selected questions are private.',
+                        })}
+                        disabled={!selectedIds.size}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
+                      >
+                        <Lock className="h-3.5 w-3.5" /> Make Private
+                      </button>
+                      <button type="button" onClick={bulkDeleteQuestions} disabled={!selectedIds.size} className="flex w-full items-center gap-2 px-3 py-2 text-left text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-900/20">
+                        <Trash2 className="h-3.5 w-3.5" /> Delete Selected
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
         {selectionMode && (
@@ -278,6 +590,22 @@ export default function QuestionLibrary() {
               {lockType ? `Only ${labelForType(lockType).toLowerCase()} are available in this flow. Other question types are hidden to keep section mapping clean.` : (Object.keys(selectionSummary).length
                 ? Object.entries(selectionSummary).map(([type, count]) => `${count} ${labelForType(type)}`).join(' • ')
                 : 'Choose questions across any category. They will be grouped by type automatically when added to the assessment.')}
+            </div>
+          </div>
+        )}
+
+        {!selectionMode && bulkSelecting && (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-xs text-sky-700 dark:border-sky-900/50 dark:bg-sky-900/15 dark:text-sky-300">
+            <div className="font-semibold">
+              {selectedIds.size ? `${selectedIds.size} question${selectedIds.size === 1 ? '' : 's'} selected` : 'Select questions to run bulk actions.'}
+            </div>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={toggleSelectVisibleQuestions} className="rounded-lg border border-sky-200 bg-white px-3 py-1.5 font-semibold text-sky-700 hover:bg-sky-50 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300">
+                {questions.length > 0 && questions.every((question) => selectedIds.has(question._id)) ? 'Clear Page' : 'Select Page'}
+              </button>
+              <button type="button" onClick={clearSelection} disabled={!selectedIds.size} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+                Clear
+              </button>
             </div>
           </div>
         )}
@@ -354,14 +682,14 @@ export default function QuestionLibrary() {
         </div>
 
         <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
-          <div className={`grid gap-3 border-b border-slate-200 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:border-gray-700 ${selectionMode ? 'grid-cols-[42px_1.7fr_0.9fr_1.2fr_1fr_0.8fr]' : 'grid-cols-[1.9fr_0.9fr_1.2fr_1fr_0.8fr_72px]'}`}>
-            {selectionMode ? <div /> : null}
+          <div className={`grid gap-3 border-b border-slate-200 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:border-gray-700 ${rowSelectionActive ? 'grid-cols-[42px_1.7fr_0.9fr_1.2fr_1fr_0.8fr]' : 'grid-cols-[1.9fr_0.8fr_1.15fr_1fr_0.75fr_80px]'}`}>
+            {rowSelectionActive ? <div /> : null}
             <div>Question</div>
             <div>Type</div>
             <div>Question Tags / Topics</div>
             <div>Source</div>
             <div>Updated</div>
-            {!selectionMode ? <div className="text-right">View</div> : null}
+            {!rowSelectionActive ? <div className="text-right">Actions</div> : null}
           </div>
 
           {loading ? (
@@ -370,13 +698,20 @@ export default function QuestionLibrary() {
             <div className="p-8 text-center text-sm text-slate-500 dark:text-gray-400">No questions matched the current filters.</div>
           ) : (
             questions.map((question) => (
-              <button
+              <div
                 key={question._id}
-                type="button"
-                onClick={() => openQuestion(question._id)}
-                className={`grid w-full gap-3 border-b border-slate-100 px-4 py-3 text-left text-sm text-slate-600 transition-colors last:border-b-0 hover:bg-slate-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800/60 ${selectionMode ? 'grid-cols-[42px_1.7fr_0.9fr_1.2fr_1fr_0.8fr]' : 'grid-cols-[1.9fr_0.9fr_1.2fr_1fr_0.8fr_72px]'}`}
+                onClick={() => (bulkSelecting ? toggleSelection(question) : openQuestion(question._id))}
+                className={`grid w-full cursor-pointer gap-3 border-b border-slate-100 px-4 py-3 text-left text-sm text-slate-600 transition-colors last:border-b-0 hover:bg-slate-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800/60 ${rowSelectionActive ? 'grid-cols-[42px_1.7fr_0.9fr_1.2fr_1fr_0.8fr]' : 'grid-cols-[1.9fr_0.8fr_1.15fr_1fr_0.75fr_80px]'} ${selectedIds.has(question._id) ? 'bg-sky-50/60 dark:bg-sky-900/10' : ''}`}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    if (bulkSelecting) toggleSelection(question);
+                    else openQuestion(question._id);
+                  }
+                }}
               >
-                {selectionMode && (
+                {rowSelectionActive && (
                   <div className="flex items-center justify-center">
                     <input
                       type="checkbox"
@@ -397,6 +732,18 @@ export default function QuestionLibrary() {
                     <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 font-semibold text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
                       {SOURCE_LABELS[question.sourceType] || 'Library'}
                     </span>
+                    <span className={`rounded-full border px-2 py-0.5 font-semibold ${
+                      question.visibility === 'private'
+                        ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300'
+                        : 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300'
+                    }`}>
+                      {question.visibility === 'private' ? 'Private' : 'Public'}
+                    </span>
+                    {question.status === 'hidden' && (
+                      <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 font-semibold text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                        Hidden
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="text-xs font-semibold text-slate-700 dark:text-gray-200">{labelForType(question.questionType).replace(' Questions', '')}</div>
@@ -427,15 +774,46 @@ export default function QuestionLibrary() {
                 </div>
                 <div className="text-xs text-slate-500 dark:text-gray-400">{question.sourceTitle || question.sourceAssessmentTitle || '-'}</div>
                 <div className="text-xs text-slate-500 dark:text-gray-400">{question.updatedAt ? new Date(question.updatedAt).toLocaleDateString() : '-'}</div>
-                {!selectionMode && (
-                  <div className="flex justify-end">
-                    <span className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 dark:border-gray-700 dark:text-gray-300">
-                      <Eye className="h-3.5 w-3.5" />
-                      View
-                    </span>
+                {!rowSelectionActive && (
+                  <div className="relative flex justify-end">
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setActionMenuId((current) => current === question._id ? '' : question._id);
+                      }}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+                      aria-label="Question actions"
+                    >
+                      <MoreVertical className="h-4 w-4" />
+                    </button>
+                    {actionMenuId === question._id && (
+                      <div
+                        className="absolute right-0 top-10 z-30 w-48 overflow-hidden rounded-2xl border border-slate-200 bg-white py-1 text-xs font-semibold text-slate-600 shadow-xl dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <button type="button" onClick={() => openQuestion(question._id)} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-gray-800">
+                          <Eye className="h-3.5 w-3.5" /> View
+                        </button>
+                        <button type="button" onClick={() => startEditQuestion(question)} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-gray-800">
+                          <Edit3 className="h-3.5 w-3.5" /> Edit
+                        </button>
+                        <button type="button" onClick={() => toggleVisibility(question)} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-gray-800">
+                          {question.visibility === 'private' ? <Globe2 className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+                          {question.visibility === 'private' ? 'Make Public' : 'Make Private'}
+                        </button>
+                        <button type="button" onClick={() => toggleHiddenStatus(question)} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-gray-800">
+                          <EyeOff className="h-3.5 w-3.5" />
+                          {question.status === 'hidden' ? 'Unhide' : 'Hide'}
+                        </button>
+                        <button type="button" onClick={() => deleteQuestion(question)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20">
+                          <Trash2 className="h-3.5 w-3.5" /> Delete
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
-              </button>
+              </div>
             ))
           )}
         </div>
@@ -554,6 +932,182 @@ export default function QuestionLibrary() {
                   </div>
                 )}
               </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {confirmDialog.open && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[70] bg-slate-950/45 backdrop-blur-sm"
+              onClick={closeConfirmDialog}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.98, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.98, y: 10 }}
+              className="fixed inset-0 z-[71] flex items-center justify-center px-4"
+            >
+              <div
+                className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-900"
+                onClick={(event) => event.stopPropagation()}
+                role="dialog"
+                aria-modal="true"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Confirm Action</div>
+                    <h3 className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">{confirmDialog.title}</h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeConfirmDialog}
+                    className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <p className="mt-4 text-sm leading-6 text-slate-600 dark:text-gray-300">{confirmDialog.message}</p>
+                <div className="mt-6 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={closeConfirmDialog}
+                    className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={runConfirmedAction}
+                    className={`rounded-xl px-4 py-2 text-xs font-semibold text-white ${
+                      confirmDialog.tone === 'danger'
+                        ? 'bg-red-600 hover:bg-red-500'
+                        : 'bg-sky-600 hover:bg-sky-500'
+                    }`}
+                  >
+                    {confirmDialog.confirmLabel}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {editModal.open && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[60] bg-slate-950/45 backdrop-blur-sm"
+              onClick={() => setEditModal({ open: false, question: null, saving: false })}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 12 }}
+              className="fixed inset-0 z-[61] flex items-center justify-center px-4"
+            >
+              <form
+                onSubmit={saveEditedQuestion}
+                className="w-full max-w-2xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-900"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Edit Question</div>
+                    <h3 className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">
+                      {editModal.question?.questionText || 'Library question'}
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEditModal({ open: false, question: null, saving: false })}
+                    className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="mt-5 grid gap-4">
+                  <label className="grid gap-1.5 text-xs font-semibold text-slate-600 dark:text-gray-300">
+                    Question Text
+                    <textarea
+                      name="questionText"
+                      defaultValue={editModal.question?.questionText || ''}
+                      rows={4}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal text-slate-800 outline-none focus:border-sky-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                    />
+                  </label>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <label className="grid gap-1.5 text-xs font-semibold text-slate-600 dark:text-gray-300">
+                      Tags
+                      <input
+                        name="tags"
+                        defaultValue={(editModal.question?.tags || []).join(', ')}
+                        placeholder="comma, separated, tags"
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal text-slate-800 outline-none focus:border-sky-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                      />
+                    </label>
+                    <label className="grid gap-1.5 text-xs font-semibold text-slate-600 dark:text-gray-300">
+                      Difficulty
+                      <input
+                        name="difficulty"
+                        defaultValue={editModal.question?.difficulty || ''}
+                        placeholder="Easy / Medium / Hard"
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal text-slate-800 outline-none focus:border-sky-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                      />
+                    </label>
+                    <label className="grid gap-1.5 text-xs font-semibold text-slate-600 dark:text-gray-300">
+                      Visibility
+                      <select
+                        name="visibility"
+                        defaultValue={editModal.question?.visibility || 'public'}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal text-slate-800 outline-none focus:border-sky-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                      >
+                        <option value="public">Public</option>
+                        <option value="private">Private</option>
+                      </select>
+                    </label>
+                    <label className="grid gap-1.5 text-xs font-semibold text-slate-600 dark:text-gray-300">
+                      Status
+                      <select
+                        name="status"
+                        defaultValue={editModal.question?.status || 'published'}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal text-slate-800 outline-none focus:border-sky-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                      >
+                        <option value="published">Published</option>
+                        <option value="draft">Draft</option>
+                        <option value="hidden">Hidden</option>
+                        <option value="archived">Archived</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="mt-6 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditModal({ open: false, question: null, saving: false })}
+                    className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={editModal.saving}
+                    className="rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {editModal.saving ? 'Saving...' : 'Save Changes'}
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </>
         )}

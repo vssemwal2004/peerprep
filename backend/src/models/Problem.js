@@ -1,6 +1,9 @@
 import mongoose from 'mongoose';
 
-export const SUPPORTED_LANGUAGES = ['python', 'javascript', 'java', 'cpp', 'c'];
+export const SUPPORTED_LANGUAGES = [
+  'python', 'javascript', 'java', 'cpp', 'c', 'typescript', 'csharp',
+  'php', 'go', 'rust', 'kotlin', 'ruby', 'swift',
+];
 
 const problemSchema = new mongoose.Schema({
   title: {

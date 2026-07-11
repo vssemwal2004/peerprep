@@ -39,6 +39,7 @@ app.use(mongoSanitizeMiddleware);
 app.use((req, res, next) => {
   if (
     req.path.startsWith('/api/compiler') ||
+    req.path.startsWith('/api/execute') ||
     req.path.startsWith('/compiler') ||
     req.path.startsWith('/api/email-templates')
   ) {
