@@ -32,7 +32,7 @@ export default function AdminSidebar() {
           <NavLink
             key={label}
             to={to}
-            className={({ isActive: linkActive }) => {
+            className={() => {
               const active = isActive(to);
               return `flex items-center gap-3 rounded-xl px-3 py-2 text-xs font-semibold transition-all duration-200 ${
                 active

@@ -1177,10 +1177,6 @@ export default function StudentInterview() {
             const interviewerPair = eventPairs.find(p => getUserRoleInPair(p) === "interviewer");
             const intervieweePair = eventPairs.find(p => getUserRoleInPair(p) === "interviewee");
             
-            // Debug logging (can be removed in production)
-            if (eventPairs.length > 0) {
-            }
-            
             return (
               <div key={event._id} className="space-y-1">
                 <button

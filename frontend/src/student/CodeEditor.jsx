@@ -85,7 +85,6 @@ export default function CodeEditor({
   testCases = [],
   activeTestCaseId = null,
   onActiveTestCaseChange,
-  onTestCaseInputChange,
   expectedOutputForRun = null,
   runInputUsed = null,
   activeConsoleTab,

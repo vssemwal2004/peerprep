@@ -63,7 +63,8 @@ export default function FeedbackForm() {
             setSubmitted(true);
             setNotification("Feedback already submitted for this session.");
           }
-        } catch (err) {
+        } catch {
+          // Absence of prior feedback is expected for a new session.
         }
       } catch (err) {
         console.error('[FeedbackForm] Error loading pair details:', err);

@@ -24,8 +24,7 @@ export default function AdminLearning() {
   useEffect(() => {
     socketService.connect();
 
-    const handleLearningUpdate = (data) => {
-
+    const handleLearningUpdate = () => {
       loadSemesters();
     };
 

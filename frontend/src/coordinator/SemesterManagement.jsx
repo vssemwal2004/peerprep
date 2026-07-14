@@ -105,7 +105,6 @@ function SidebarSemesterDropdown({ semesters, selectedSemester, onSelectSemester
 }
 
 export default function SemesterManagement() {
-  const navigate = useNavigate();
   const toast = useToast();
   const [semesters, setSemesters] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -116,8 +115,6 @@ export default function SemesterManagement() {
   const [sidebarWidth, setSidebarWidth] = useState('wide'); // 'narrow', 'wide', 'extra-wide'
   const [defaultSemestersCreated, setDefaultSemestersCreated] = useState(false);
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
-  const [showAddSemester, setShowAddSemester] = useState(false);
-  const [newSemester, setNewSemester] = useState({ semesterName: '', semesterDescription: '' });
 
   // Memoize the sorting function to ensure it's stable across renders
   const sortSemestersAscending = useCallback((list = []) => {
@@ -313,63 +310,6 @@ export default function SemesterManagement() {
     if (newSet.has(chapterId)) newSet.delete(chapterId);
     else newSet.add(chapterId);
     setExpandedChapters(newSet);
-  };
-
-  const handleAddSemester = async () => {
-    if (!newSemester.semesterName.trim()) {
-      toast.error('Module name is required');
-      return;
-    }
-    
-    // Validate semester format: must contain "Semester" followed by a whole number
-    const semesterPattern = /^Semester\s+(\d+)$/i;
-    const match = newSemester.semesterName.trim().match(semesterPattern);
-    
-    if (!match) {
-      toast.error('Invalid format! Use: "Semester 1", "Semester 2", etc.');
-      return;
-    }
-    
-    const semesterNumber = parseInt(match[1]);
-    if (!Number.isInteger(semesterNumber) || semesterNumber < 1 || semesterNumber > 12) {
-      toast.error('Semester number must be a whole number between 1 and 12');
-      return;
-    }
-    
-    // Check for duplicate semester
-    const duplicate = semesters.find(
-      sem => sem.semesterName.toLowerCase() === newSemester.semesterName.trim().toLowerCase()
-    );
-    if (duplicate) {
-      toast.error('This learning module already exists');
-      return;
-    }
-    
-    try {
-      await api.createSemester(newSemester.semesterName, newSemester.semesterDescription);
-      toast.success('Learning module added successfully');
-      setNewSemester({ semesterName: '', semesterDescription: '' });
-      setShowAddSemester(false);
-      loadSemesters();
-    } catch (err) {
-      console.error('Failed to add learning module:', err);
-      toast.error(err.message || 'Failed to add learning module');
-    }
-  };
-
-  const handleDeleteSemester = async (semesterId) => {
-    if (!confirm('Delete this learning module and all its subjects/chapters/topics?')) return;
-    try {
-      await api.deleteSemester(semesterId);
-      toast.success('Learning module deleted');
-      if (selectedSemester?._id === semesterId) {
-        setSelectedSemester(null);
-      }
-      loadSemesters();
-    } catch (err) {
-      console.error('Failed to delete learning module:', err);
-      toast.error('Failed to delete learning module');
-    }
   };
 
   const getSidebarWidthClass = () => {
@@ -973,39 +913,6 @@ function ChapterCard({ chapter, semesterId, subjectId, isExpanded, onToggle, onD
     } catch (err) {
       console.error('Failed to delete topic:', err);
       toast.error('Failed to delete topic');
-    }
-  };
-
-  const handleReorderTopics = async (newOrder) => {
-    // Update local state immediately for smooth UI
-    const updatedSemesters = semesters.map(sem => {
-      if (sem._id === semesterId) {
-        return {
-          ...sem,
-          subjects: sem.subjects.map(subj => {
-            if (subj._id === subjectId) {
-              return {
-                ...subj,
-                chapters: subj.chapters.map(chap => 
-                  chap._id === chapter._id ? { ...chap, topics: newOrder } : chap
-                )
-              };
-            }
-            return subj;
-          })
-        };
-      }
-      return sem;
-    });
-    setSemesters(updatedSemesters);
-    
-    try {
-      const topicIds = newOrder.map(t => t._id);
-      await api.reorderTopics(semesterId, subjectId, chapter._id, topicIds);
-    } catch (err) {
-      console.error('Failed to reorder topics:', err);
-      toast.error('Failed to save order');
-      loadSemesters();
     }
   };
 

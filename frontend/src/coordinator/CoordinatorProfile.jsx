@@ -30,7 +30,7 @@ export default function CoordinatorProfile() {
     if (!avatarFile) return;
     setAvatarUploading(true); setError(''); setSuccess('');
     try {
-      const res = await api.updateMyAvatar(avatarFile);
+      await api.updateMyAvatar(avatarFile);
       setSuccess('Profile picture updated');
       // Refresh
       const me = await api.me();

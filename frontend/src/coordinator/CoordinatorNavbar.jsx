@@ -8,7 +8,6 @@ import { useAuth } from "../context/AuthContext";
 export function CoordinatorNavbar() {
   const location = useLocation();
   const { user, logout } = useAuth();
-  const [active, setActive] = useState(location.pathname);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
@@ -77,7 +76,7 @@ export function CoordinatorNavbar() {
         {/* Desktop Navigation - Left aligned after logo */}
         <div className="hidden md:flex items-center flex-1 gap-2 ml-4">
           {/* Scheduled Interview */}
-          <Link to="/coordinator" onClick={() => setActive("/coordinator")}>
+          <Link to="/coordinator">
             <motion.div
               whileHover={{ y: -2, scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
@@ -98,7 +97,7 @@ export function CoordinatorNavbar() {
           </Link>
 
           {/* Create Interview */}
-          <Link to="/coordinator/event/create" onClick={() => setActive("/coordinator/event/create")}>
+          <Link to="/coordinator/event/create">
             <motion.div
               whileHover={{ y: -2, scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
@@ -122,7 +121,7 @@ export function CoordinatorNavbar() {
             {navItems.map(({ path, label, Icon }) => {
               const isActive = location.pathname === path;
               return (
-                <Link key={path} to={path} onClick={() => setActive(path)}>
+                <Link key={path} to={path}>
                   <motion.div
                     whileHover={{ y: -2, scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
@@ -403,7 +402,6 @@ export function CoordinatorNavbar() {
                 {/* Scheduled Interview */}
                 <Link
                   to="/coordinator"
-                  onClick={() => setActive("/coordinator")}
                   className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
                     location.pathname === "/coordinator" ? "bg-sky-50 dark:bg-gray-800 text-sky-600 dark:text-sky-400" : "text-gray-600 dark:text-gray-300 hover:text-sky-500 dark:hover:text-sky-400 hover:bg-sky-50 dark:hover:bg-gray-800"
                   }`}
@@ -416,7 +414,6 @@ export function CoordinatorNavbar() {
                 {/* Create Interview */}
                 <Link
                   to="/coordinator/event/create"
-                  onClick={() => setActive("/coordinator/event/create")}
                   className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
                     location.pathname === "/coordinator/event/create" ? "bg-sky-50 dark:bg-gray-800 text-sky-600 dark:text-sky-400" : "text-gray-600 dark:text-gray-300 hover:text-sky-500 dark:hover:text-sky-400 hover:bg-sky-50 dark:hover:bg-gray-800"
                   }`}
@@ -434,7 +431,6 @@ export function CoordinatorNavbar() {
                       <Link
                         key={path}
                         to={path}
-                        onClick={() => setActive(path)}
                         className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
                           isActive ? "bg-sky-50 dark:bg-gray-800 text-sky-600 dark:text-sky-400" : "text-gray-600 dark:text-gray-300 hover:text-sky-500 dark:hover:text-sky-400 hover:bg-sky-50 dark:hover:bg-gray-800"
                         }`}

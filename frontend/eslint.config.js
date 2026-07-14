@@ -23,7 +23,13 @@ export default defineConfig([
       },
     },
     rules: {
-      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      'no-unused-vars': ['error', {
+        varsIgnorePattern: '^[A-Z_]|^motion$',
+        argsIgnorePattern: '^[A-Z_]',
+      }],
+      // Mixed component/helper modules are intentional in this codebase. This
+      // affects development hot reload only, not production correctness.
+      'react-refresh/only-export-components': 'warn',
     },
   },
 ])

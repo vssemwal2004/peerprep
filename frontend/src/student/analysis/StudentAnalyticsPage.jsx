@@ -57,7 +57,6 @@ import {
   buildReadinessScore,
   buildTopicAnalytics,
   CHART_COLORS,
-  clamp,
   formatPercent,
   getScoreTone,
   makeComparison,
