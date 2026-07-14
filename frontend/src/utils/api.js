@@ -635,9 +635,6 @@ export const api = {
   // Join Requests
   submitJoinRequest: (data) => request('/join/submit', { method: 'POST', body: data }),
   checkJoinStatus: (email) => request(`/join/status?email=${encodeURIComponent(email)}`),
-  listJoinRequests: (queryString) => request(`/join/list${queryString ? '?' + queryString : ''}`),
-  approveJoinRequest: (requestId, data) => request(`/join/${requestId}/approve`, { method: 'POST', body: data }),
-  rejectJoinRequest: (requestId, reason) => request(`/join/${requestId}/reject`, { method: 'POST', body: { reason } }),
   // Compiler Module
   getCompilerOverview: () => request('/compiler/overview', { cacheTtlMs: 30 * 1000 }),
   listCompilerProblems: ({ search = '', difficulty = '', tags = '', status = '', visibility = '', sortBy = 'updatedAt', sortOrder = 'desc', page = 1, limit = 8 } = {}) => {

@@ -280,7 +280,6 @@ export default function AssessmentAttempt() {
   const [locationData, setLocationData] = useState(null);
   const [isPaused, setIsPaused] = useState(false);
   const [allowedEndTime, setAllowedEndTime] = useState(null);
-  const [pauseStartedAt, setPauseStartedAt] = useState(null);
   const [securityRecheckStartedAt, setSecurityRecheckStartedAt] = useState(null);
   const [securityRecheckRemainingSec, setSecurityRecheckRemainingSec] = useState(0);
   const [violationMessage, setViolationMessage] = useState('');
@@ -310,7 +309,6 @@ export default function AssessmentAttempt() {
   const [sidebarPinned, setSidebarPinned] = useState(false);
   const [navTypeFilter, setNavTypeFilter] = useState('all');
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
-  const [audioLevel, setAudioLevel] = useState(0);
   const [proctoringStatus, setProctoringStatus] = useState(null);
   const [aiPreviewPosition, setAiPreviewPosition] = useState(() => {
     try {
@@ -459,14 +457,6 @@ export default function AssessmentAttempt() {
     return completedSetupStepSet.has(key);
   }, [completedSetupStepSet]);
   const currentSetupStepKey = setupSteps.find((item) => item.id === validationStep)?.key || setupSteps[0]?.key;
-  const getSetupStepId = useCallback(
-    (key) => setupSteps.find((item) => item.key === key)?.id || 1,
-    [setupSteps],
-  );
-  const invalidateSetupSteps = useCallback((keys = []) => {
-    if (!keys.length) return;
-    setCompletedSetupSteps((prev) => prev.filter((step) => !keys.includes(step)));
-  }, []);
   const resetSecuritySetupProgress = useCallback(() => {
     setCompletedSetupSteps([]);
     setValidationStep(1);
@@ -640,27 +630,6 @@ export default function AssessmentAttempt() {
     return value.answer && String(value.answer).trim().length > 0 ? 'answered' : 'unanswered';
   }, [answersMap, markedMap, assessment]);
 
-  const progressCounts = useMemo(() => {
-    let answered = 0;
-    let review = 0;
-    let unanswered = 0;
-    flatQuestions.forEach(({ sectionIndex, questionIndex }) => {
-      const key = answerKey(sectionIndex, questionIndex);
-      if (markedMap[key]) {
-        review += 1;
-        return;
-      }
-      const status = questionStatus(sectionIndex, questionIndex);
-      if (status === 'answered') answered += 1;
-      else unanswered += 1;
-    });
-    return {
-      total: totalQuestions,
-      answered,
-      review,
-      unanswered,
-    };
-  }, [flatQuestions, markedMap, totalQuestions, questionStatus]);
   useEffect(() => {
     securityStatusRef.current = securityStatus;
   }, [securityStatus]);
@@ -782,7 +751,6 @@ export default function AssessmentAttempt() {
     const pauseStartMs = new Date(nowIso).getTime();
     const effectivePauseStart = Number.isFinite(pauseStartMs) ? pauseStartMs : Date.now();
     setLastPauseAt(nowIso);
-    setPauseStartedAt((prev) => prev || effectivePauseStart);
     setSecurityRecheckStartedAt(effectivePauseStart);
     setSecurityRecheckRemainingSec(Number(serverState.securityRecheckTimeoutSec || securityRecheckTimeoutSec));
     securityRecheckAutoSubmitRef.current = false;
@@ -1174,13 +1142,11 @@ export default function AssessmentAttempt() {
       if (hasActiveSecurityPause) {
         const elapsedSec = Math.floor((Date.now() - pauseStartMs) / 1000);
         setIsPaused(true);
-        setPauseStartedAt(pauseStartMs);
         setSecurityRecheckStartedAt(pauseStartMs);
         setSecurityRecheckRemainingSec(Math.max(0, loadedTimeoutSec - elapsedSec));
         securityRecheckAutoSubmitRef.current = false;
       } else {
         setIsPaused(false);
-        setPauseStartedAt(null);
         setSecurityRecheckStartedAt(null);
         setSecurityRecheckRemainingSec(0);
       }
@@ -1944,7 +1910,6 @@ export default function AssessmentAttempt() {
       audioAnalyserRef.current.getByteFrequencyData(audioDataRef.current);
       const avg = audioDataRef.current.reduce((sum, value) => sum + value, 0) / Math.max(1, audioDataRef.current.length);
       const pseudoDb = Math.round((avg / 255) * 100);
-      setAudioLevel(pseudoDb);
       if (pseudoDb < threshold) return;
       const now = Date.now();
       if (now - (monitoringCooldownRef.current.audio || 0) < cooldownMs) return;
@@ -2053,14 +2018,6 @@ export default function AssessmentAttempt() {
         },
       };
     });
-  };
-
-  const toggleMarkForReview = () => {
-    const key = answerKey(activeSection, activeQuestion);
-    setMarkedMap((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
   };
 
   const requestFullscreen = () => {
@@ -2323,7 +2280,6 @@ export default function AssessmentAttempt() {
       setAllowedEndTime(serverAllowedEnd);
       setSubmission(data.submission);
       setIsPaused(false);
-      setPauseStartedAt(null);
       setSecurityRecheckStartedAt(null);
       setSecurityRecheckRemainingSec(0);
       securityRecheckAutoSubmitRef.current = false;

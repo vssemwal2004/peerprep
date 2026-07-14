@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useCallback } from 'react';
+import { lazy, Suspense, useMemo } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { BarChart3, FileCode2, LayoutDashboard, PlusSquare, TerminalSquare } from 'lucide-react';
 

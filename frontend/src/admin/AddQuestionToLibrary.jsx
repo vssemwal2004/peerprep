@@ -127,7 +127,6 @@ export default function AddQuestionToLibrary() {
     }
 
     if (type === 'mcq') {
-      const legacyHeadingIdx = getHeaderIndex(normalizedHeaders, ['heading', 'category', 'title']);
       const aIdx = getHeaderIndex(normalizedHeaders, ['optiona', 'option1', 'option 1', 'a']);
       const bIdx = getHeaderIndex(normalizedHeaders, ['optionb', 'option2', 'option 2', 'b']);
       const cIdx = getHeaderIndex(normalizedHeaders, ['optionc', 'option3', 'option 3', 'c']);

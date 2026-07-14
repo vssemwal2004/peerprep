@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Eye, EyeOff, Lock, CheckCircle, XCircle } from 'lucide-react';
 import { api } from '../utils/api';
-import { motion } from 'framer-motion';
 
 export default function ResetPassword() {
   const [searchParams] = useSearchParams();
@@ -82,7 +81,7 @@ export default function ResetPassword() {
 
     setLoading(true);
     try {
-      const response = await api.resetPassword(token, newPassword);
+      await api.resetPassword(token, newPassword);
       setSuccess(true);
       setTimeout(() => {
         navigate('/', { replace: true });

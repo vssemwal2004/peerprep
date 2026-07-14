@@ -2,7 +2,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useNavigate, useParams } from 'react-router-dom';
-import { motion } from 'framer-motion';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import { ArrowLeft, ClipboardList, Save, Send, AlertCircle, Plus, Eye, EyeOff, Hash, Lock, Shield, Globe, Copy, Camera, Volume2, Monitor, Shuffle, Droplet, Navigation, Layers, Timer, RotateCcw, CheckSquare, Clock, Unlock } from 'lucide-react';
@@ -287,6 +286,20 @@ export default function CreateAssessment() {
     setSelectedStudents(next);
     setDirty(true);
   };
+
+  useEffect(() => {
+    let active = true;
+    api.listAllStudents('', 'asc')
+      .then((data) => {
+        if (active) setAllStudents(Array.isArray(data?.students) ? data.students : []);
+      })
+      .catch((error) => {
+        if (active) toast.error(error.message || 'Failed to load students');
+      });
+    return () => {
+      active = false;
+    };
+  }, [toast]);
 
   const ensureQuestionMeta = (question, fallbackType) => ({
     ...question,
@@ -711,7 +724,7 @@ export default function CreateAssessment() {
         if (questionType !== 'coding') {
           return { ...question, type: questionType };
         }
-        const { codingEditorId, coding, problemDataSnapshot, problemId, ...restQuestion } = question;
+        const { codingEditorId: _codingEditorId, coding, problemDataSnapshot, problemId, ...restQuestion } = question;
         const snapshot = problemDataSnapshot || coding?.problemData || coding || null;
         const resolvedProblemId = problemId || coding?.problemId || snapshot?._id || '';
         return {

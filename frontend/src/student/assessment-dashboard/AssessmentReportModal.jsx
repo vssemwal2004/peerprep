@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { Clock3, Target, Trophy, X } from 'lucide-react';
 import { formatScore, formatSeconds } from './assessmentDashboardUtils';
 

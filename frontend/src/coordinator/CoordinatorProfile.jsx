@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { api } from '../utils/api';
-import { motion } from 'framer-motion';
 
 export default function CoordinatorProfile() {
   const [user, setUser] = useState(null);

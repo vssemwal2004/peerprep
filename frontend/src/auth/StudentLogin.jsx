@@ -105,7 +105,6 @@ export default function StudentLoginPage() {
         import('../admin/EventManagement');
         import('../admin/StudentDirectory');
       } else if (role === 'coordinator') {
-        import('../coordinator/CoordinatorDashboard');
         import('../coordinator/CoordinatorStudents');
       } else {
         import('../student/StudentDashboard');

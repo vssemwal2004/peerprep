@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Play, Plus, Trash2, Eye, EyeOff } from 'lucide-react';
+import { Plus, Trash2, Eye, EyeOff } from 'lucide-react';
 import MonacoCodeEditor from '../../compiler/MonacoCodeEditor';
 import RichTextEditor from '../../compiler/RichTextEditor';
 import { RichTextPreview } from '../../compiler/CompilerContentPreview';
-import { api } from '../../../utils/api';
-import { COMPILER_LANGUAGES, buildPreviewRunFormData, getLanguageLabel, getMonacoLanguage } from '../../compiler/compilerUtils';
+import { COMPILER_LANGUAGES, getLanguageLabel, getMonacoLanguage } from '../../compiler/compilerUtils';
 import { SectionCard } from '../../compiler/CompilerUi';
 
 const EDITOR_TABS = [
@@ -34,10 +33,6 @@ const emptyCase = () => ({ input: '', output: '', explanation: '' });
 export default function CodingQuestionEditor({ value, onChange, title, onTitleChange }) {
   const [activeLanguage, setActiveLanguage] = useState(value.supportedLanguages?.[0] || 'python');
   const [activeTab, setActiveTab] = useState('details');
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewInput, setPreviewInput] = useState('');
-  const [previewResult, setPreviewResult] = useState(null);
-  const [isRunning, setIsRunning] = useState(false);
   const [activeCaseTab, setActiveCaseTab] = useState('visible');
 
   const supportedLanguages = value.supportedLanguages?.length ? value.supportedLanguages : ['python', 'javascript'];
@@ -87,25 +82,6 @@ export default function CodingQuestionEditor({ value, onChange, title, onTitleCh
   const updateHiddenCase = (index, updates) => {
     const next = hiddenTestCases.map((entry, idx) => (idx === index ? { ...entry, ...updates } : entry));
     updateCoding({ hiddenTestCases: next });
-  };
-
-  const runPreview = async () => {
-    setIsRunning(true);
-    setPreviewResult(null);
-    try {
-      const formData = buildPreviewRunFormData({
-        supportedLanguages,
-        codeTemplates,
-        sampleTestCases: visibleTestCases,
-        timeLimitSeconds: value.timeLimitSeconds || 2,
-      }, activeLanguage, previewInput);
-      const result = await api.runCompilerPreview(formData);
-      setPreviewResult(result);
-    } catch (err) {
-      setPreviewResult({ status: 'ERROR', output: '', stderr: err.message || 'Preview failed.' });
-    } finally {
-      setIsRunning(false);
-    }
   };
 
   return (

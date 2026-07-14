@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { api } from "../utils/api";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
 import { Lock, Eye, EyeOff, CheckCircle, AlertCircle } from "lucide-react";
 
 export default function CoordinatorChangePassword() {

@@ -1,4 +1,3 @@
-import { motion } from 'framer-motion';
 import { CalendarDays, ArrowUpRight, CheckCircle2 } from 'lucide-react';
 import { formatDateTime } from './assessmentDashboardUtils';
 

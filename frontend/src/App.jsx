@@ -4,7 +4,6 @@ import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './components/CustomToast';
 import AdminLayout from './admin/AdminLayout';
-import SessionMonitor from './components/SessionMonitor';
 import { NavbarSkeleton, PageSkeleton, DashboardSkeleton } from './components/Skeletons';
 import { useAuth } from './context/AuthContext';
 import { hasPermission } from './admin/coordinatorPermissions';
@@ -76,7 +75,6 @@ const CoordinatorAccessDetails = lazy(() => import("./admin/CoordinatorAccessDet
 
 // Coordinator Pages
 const CoordinatorProtectedRoute = lazy(() => import("./coordinator/CoordinatorProtectedRoute"));
-const CoordinatorDashboard = lazy(() => import("./coordinator/CoordinatorDashboard"));
 const CoordinatorStudents = lazy(() => import("./coordinator/CoordinatorStudents"));
 const CoordinatorChangePassword = lazy(() => import("./coordinator/CoordinatorChangePassword"));
 const CoordinatorEventDetail = lazy(() => import("./coordinator/CoordinatorEventDetail"));
@@ -123,7 +121,6 @@ function RoutePrefetcher() {
   }, []);
 
   const prefetchCoordinatorRoutes = useCallback(() => {
-    import("./coordinator/CoordinatorDashboard");
     import("./coordinator/CoordinatorStudents");
   }, []);
 
@@ -220,7 +217,6 @@ function AppContent() {
 
   return (
     <div className="min-h-screen w-full flex flex-col">
-      <SessionMonitor />
       <RoutePrefetcher />
       {/* Navbar: Renders independently with its own Suspense boundary.
           Shows NavbarSkeleton briefly instead of nothing, so the page structure
