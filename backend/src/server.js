@@ -9,9 +9,12 @@ import { Server } from 'socket.io';
 import { verifyToken } from './utils/jwt.js';
 import { logSuspiciousActivity } from './utils/logger.js';
 import cookie from 'cookie';
+import crypto from 'crypto';
 import { seedEmailTemplates } from './services/emailTemplateService.js';
 import { setIo } from './utils/io.js';
 import { startEmbeddedWorkers } from './workers/startEmbeddedWorkers.js';
+import User from './models/User.js';
+import { hasCoordinatorPermission } from './services/coordinatorPermissions.js';
 //fufgv
 const PORT = process.env.PORT || 4000;
 //new file check
@@ -34,7 +37,7 @@ const io = new Server(httpServer, {
 
 // SECURITY: WebSocket authentication middleware
 // Now reads JWT from HttpOnly cookies to prevent XSS token theft
-io.use((socket, next) => {
+io.use(async (socket, next) => {
   try {
     let token = null;
     
@@ -58,9 +61,32 @@ io.use((socket, next) => {
     
     // Verify JWT token
     const payload = verifyToken(token);
-    socket.userId = payload.sub;
-    socket.userRole = payload.role;
-    socket.userEmail = payload.email;
+    const user = await User.findById(payload.sub)
+      .select('_id email role isActive activeSessionToken passwordChangedAt coordinatorPermissions')
+      .lean();
+    if (!user) {
+      return next(new Error('Invalid token'));
+    }
+    if (user.role === 'coordinator' && user.isActive === false) {
+      return next(new Error('Account disabled'));
+    }
+
+    const currentTokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    if (user.activeSessionToken && user.activeSessionToken !== currentTokenHash) {
+      return next(new Error('Session replaced'));
+    }
+    if (user.passwordChangedAt && payload.iat) {
+      const passwordChangedTime = Math.floor(new Date(user.passwordChangedAt).getTime() / 1000);
+      if (payload.iat < passwordChangedTime) {
+        return next(new Error('Session expired'));
+      }
+    }
+
+    socket.userId = String(user._id);
+    socket.userRole = user.role;
+    socket.userEmail = user.email;
+    socket.canMonitorCompiler = user.role === 'admin'
+      || hasCoordinatorPermission(user, 'coordinator.compiler.analytics');
     
     next();
   } catch (err) {
@@ -88,6 +114,13 @@ io.on('connection', (socket) => {
   }
   
   connectionsPerUser.set(userId, currentCount + 1);
+
+  // Every socket is always placed in its authenticated personal room. Clients
+  // cannot choose another user's room, and compiler monitors require permission.
+  socket.join(String(userId));
+  if (socket.canMonitorCompiler) {
+    socket.join('compiler:monitor');
+  }
   
   socket.on('disconnect', () => {
     console.log(`Client disconnected: ${socket.id} (User: ${socket.userEmail})`);

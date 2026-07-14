@@ -5,8 +5,8 @@ import { listNotifications, markNotificationRead, markAllRead, clearAllNotificat
 const router = Router();
 
 router.get('/', requireAuth, listNotifications);
-router.patch('/:id/read', requireAuth, markNotificationRead);
 router.patch('/read-all', requireAuth, markAllRead);
 router.delete('/clear-all', requireAuth, clearAllNotifications);
+router.patch('/:id/read', requireAuth, markNotificationRead);
 
 export default router;

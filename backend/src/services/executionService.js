@@ -1,10 +1,15 @@
 import { HttpError } from '../utils/errors.js';
 
-const JUDGE0_BASE_URL = process.env.JUDGE0_URL || process.env.JUDGE0_BASE_URL || 'https://ce.judge0.com';
-const JUDGE0_BASE_URLS = String(process.env.JUDGE0_URL || process.env.JUDGE0_BASE_URLS || JUDGE0_BASE_URL)
+const JUDGE0_URL_CONFIG = process.env.JUDGE0_URL
+  || process.env.JUDGE0_BASE_URLS
+  || process.env.JUDGE0_BASE_URL
+  || 'https://ce.judge0.com';
+const JUDGE0_BASE_URLS = String(JUDGE0_URL_CONFIG)
   .split(',')
   .map((url) => String(url || '').trim().replace(/\/+$/, ''))
   .filter(Boolean);
+const JUDGE0_AUTH_HEADER = String(process.env.JUDGE0_AUTH_HEADER || '').trim();
+const JUDGE0_AUTH_TOKEN = String(process.env.JUDGE0_AUTH_TOKEN || '').trim();
 
 const MAX_SOURCE_CODE_SIZE_BYTES = 50 * 1024;
 const MAX_STDIN_SIZE_BYTES = 64 * 1024;
@@ -84,6 +89,16 @@ function buildJudge0Error(message, statusCode = 502) {
   return new HttpError(statusCode, message);
 }
 
+function buildJudge0Headers() {
+  const headers = {
+    'Content-Type': 'application/json',
+  };
+  if (JUDGE0_AUTH_HEADER && JUDGE0_AUTH_TOKEN) {
+    headers[JUDGE0_AUTH_HEADER] = JUDGE0_AUTH_TOKEN;
+  }
+  return headers;
+}
+
 function clampNumber(value, min, max, fallback) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return fallback;
@@ -149,9 +164,7 @@ export function resolveLanguageRequest(body) {
 }
 
 async function judge0Request(path, { method = 'GET', body } = {}) {
-  const headers = {
-    'Content-Type': 'application/json',
-  };
+  const headers = buildJudge0Headers();
 
   const targets = getNextJudge0Targets();
   let lastError = null;
@@ -358,6 +371,7 @@ export async function checkJudge0Health() {
         const timeoutId = setTimeout(() => controller.abort(), Math.min(JUDGE0_REQUEST_TIMEOUT_MS, 5000));
         const response = await fetch(`${baseUrl}/languages`, {
           method: 'GET',
+          headers: buildJudge0Headers(),
           signal: controller.signal,
         });
         clearTimeout(timeoutId);

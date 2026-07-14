@@ -788,8 +788,10 @@ async function loadProblemShape(
 function emitSubmissionUpdate(req, submission) {
   const io = req.app.get('io');
   if (!io) return;
+  const userRoom = String(submission?.user || '');
+  if (!userRoom) return;
 
-  io.emit('compiler-submission-updated', serializeSubmission(submission, {
+  io.to(userRoom).to('compiler:monitor').emit('compiler-submission-updated', serializeSubmission(submission, {
     includeJudgeDetails: false,
   }));
 }

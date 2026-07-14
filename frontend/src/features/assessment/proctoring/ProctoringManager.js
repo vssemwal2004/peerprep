@@ -39,12 +39,6 @@ function createSafeDetectionResult(overrides = {}) {
     lookingAway: false,
     mobileDetected: false,
     personCount: faceCount || 0,
-    confidence: {
-      face: faceConfidence,
-      mobile: 0,
-      person: faceConfidence,
-      lookingAway: 0,
-    },
     ...overrides,
     confidence: {
       face: faceConfidence,

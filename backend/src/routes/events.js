@@ -17,13 +17,6 @@ router.get('/', requireAuth, listEvents);
 router.post('/', requireAuth, requireAdminOrCoordinator, upload.single('template'), createEvent);
 router.post('/special/check-csv', requireAuth, requireAdminOrCoordinator, upload.single('csv'), checkSpecialEventCsv);
 router.post('/special', requireAuth, requireAdminOrCoordinator, multi, createSpecialEvent);
-router.get('/:id', requireAuth, requireAdminOrCoordinator, getEvent);
-router.post('/:id/join', requireAuth, joinEvent);
-router.post('/:id/template', requireAuth, requireAdmin, upload.single('template'), replaceEventTemplate);
-router.get('/:id/participants.csv', requireAuth, requireAdminOrCoordinator, exportJoinedCsv);
-router.get('/:id/analytics', requireAuth, requireAdminOrCoordinator, eventAnalytics);
-router.get('/:id/template-url', requireAuth, getTemplateUrl);
-router.delete('/:id/template', requireAuth, requireAdmin, deleteEventTemplate);
 router.get('/__supabase/health', requireAuth, requireAdmin, async (req, res) => {
 	try {
 		if (!supabase) return res.status(500).json({ ok: false, reason: 'not_configured' });
@@ -50,6 +43,13 @@ router.get('/__supabase/write-test', requireAuth, requireAdmin, async (req, res)
 		return res.status(500).json({ ok: false, reason: 'exception', error: e?.message || String(e) });
 	}
 });
+router.get('/:id', requireAuth, requireAdminOrCoordinator, getEvent);
+router.post('/:id/join', requireAuth, joinEvent);
+router.post('/:id/template', requireAuth, requireAdmin, upload.single('template'), replaceEventTemplate);
+router.get('/:id/participants.csv', requireAuth, requireAdminOrCoordinator, exportJoinedCsv);
+router.get('/:id/analytics', requireAuth, requireAdminOrCoordinator, eventAnalytics);
+router.get('/:id/template-url', requireAuth, getTemplateUrl);
+router.delete('/:id/template', requireAuth, requireAdmin, deleteEventTemplate);
 
 // Coordinator-scoped event creation
 // Removed unused coordinator route here; coordinator events are handled in /api/coordinators/events

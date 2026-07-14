@@ -205,6 +205,56 @@ export async function completeQueueJob(queueName, commandClient, jobId) {
     .exec();
 }
 
+export async function touchQueueJob(commandClient, jobId) {
+  await commandClient.sendCommand(hmsetCommand(jobKey(jobId), {
+    status: 'processing',
+    updatedAt: String(Date.now()),
+  }));
+}
+
+export async function startStalledJobReaper(queueName, {
+  intervalMs = 15000,
+  stalledAfterMs = 120000,
+  stopSignal,
+} = {}) {
+  const client = await getCommandClient();
+  const processingKey = queueKey(queueName, 'processing');
+  const waitingKey = queueKey(queueName, 'waiting');
+
+  while (!stopSignal?.aborted) {
+    try {
+      const jobIds = await client.lRange(processingKey, 0, -1);
+      const cutoff = Date.now() - stalledAfterMs;
+
+      for (const id of jobIds) {
+        // The Lua check makes recovery atomic with respect to a worker heartbeat
+        // or completion. A stale snapshot cannot resurrect a completed job.
+        await client.sendCommand([
+          'EVAL',
+          `local status = redis.call('HGET', KEYS[3], 'status')
+local updatedAt = tonumber(redis.call('HGET', KEYS[3], 'updatedAt') or '0')
+if status ~= 'processing' or updatedAt > tonumber(ARGV[2]) then return 0 end
+redis.call('LREM', KEYS[1], 0, ARGV[1])
+redis.call('HMSET', KEYS[3], 'status', 'queued', 'updatedAt', ARGV[3], 'lastError', 'Recovered after worker heartbeat expired')
+redis.call('RPUSH', KEYS[2], ARGV[1])
+return 1`,
+          '3',
+          processingKey,
+          waitingKey,
+          jobKey(id),
+          String(id),
+          String(cutoff),
+          String(Date.now()),
+        ]);
+      }
+    } catch (error) {
+      console.warn(`[QueueManager] Stalled-job reaper failed for ${queueName}: ${error.message}`);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+}
+
 export async function retryQueueJob(queueName, commandClient, job, errorMessage = '') {
   const processingKey = queueKey(queueName, 'processing');
   const waitingKey = queueKey(queueName, 'waiting');

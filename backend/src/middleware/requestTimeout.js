@@ -30,10 +30,13 @@ export function apiRequestTimeout(req, res, next) {
   }
 
   let timedOut = false;
+  const abortController = new AbortController();
+  req.abortSignal = abortController.signal;
 
   const timer = setTimeout(() => {
     if (res.headersSent || res.writableEnded) return;
     timedOut = true;
+    abortController.abort(new Error(`Request exceeded ${timeoutMs}ms`));
     console.warn(`[SECURITY] API request timed out after ${timeoutMs}ms: ${req.method} ${req.originalUrl}`);
     res.status(503).json({
       error: 'Request timed out. Please retry in a moment.',
@@ -44,7 +47,12 @@ export function apiRequestTimeout(req, res, next) {
   res.setTimeout(timeoutMs + 1000);
 
   res.on('finish', () => clearTimeout(timer));
-  res.on('close', () => clearTimeout(timer));
+  res.on('close', () => {
+    clearTimeout(timer);
+    if (!res.writableEnded && !abortController.signal.aborted) {
+      abortController.abort(new Error('Client disconnected'));
+    }
+  });
 
   if (timedOut) return;
   next();

@@ -12,6 +12,21 @@ import { apiRequestTimeout } from './middleware/requestTimeout.js';
 
 const app = express();
 
+const configuredOrigins = String(process.env.FRONTEND_ORIGIN || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+if (process.env.NODE_ENV === 'production' && configuredOrigins.length === 0) {
+  throw new Error('FRONTEND_ORIGIN must be configured in production');
+}
+
+if (process.env.TRUST_PROXY) {
+  const trustProxy = /^\d+$/.test(process.env.TRUST_PROXY)
+    ? Number(process.env.TRUST_PROXY)
+    : process.env.TRUST_PROXY;
+  app.set('trust proxy', trustProxy);
+}
+
 // Gzip/Brotli compression - reduces response size by 3-5x
 app.use(compression());
 
@@ -21,8 +36,15 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false // Don't break existing functionality
 }));
 
-// CORS - already configured correctly, just preserving it
-app.use(cors({ origin: process.env.FRONTEND_ORIGIN?.split(',') || true, credentials: true }));
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || configuredOrigins.includes(origin) || (process.env.NODE_ENV !== 'production' && configuredOrigins.length === 0)) {
+      return callback(null, true);
+    }
+    return callback(new HttpError(403, 'Origin not allowed by CORS'));
+  },
+  credentials: true,
+}));
 
 // SECURITY: Cookie parser for HttpOnly JWT cookies
 app.use(cookieParser());

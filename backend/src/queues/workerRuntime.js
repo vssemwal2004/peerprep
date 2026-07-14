@@ -5,6 +5,8 @@ import {
   fetchNextQueueJob,
   retryQueueJob,
   startDelayedJobPromoter,
+  startStalledJobReaper,
+  touchQueueJob,
 } from './queueManager.js';
 
 function wait(ms) {
@@ -24,6 +26,11 @@ export async function startQueueWorker({
     intervalMs: Number(process.env.EXECUTION_PROMOTER_INTERVAL_MS || 1000),
     stopSignal: stopController.signal,
   });
+  void startStalledJobReaper(queueName, {
+    intervalMs: Number(process.env.EXECUTION_STALLED_REAPER_INTERVAL_MS || 15000),
+    stalledAfterMs: Number(process.env.EXECUTION_JOB_STALLED_AFTER_MS || 120000),
+    stopSignal: stopController.signal,
+  });
 
   const runLoop = async (blockingClient) => {
     while (!stopController.signal.aborted) {
@@ -34,10 +41,19 @@ export async function startQueueWorker({
           continue;
         }
 
+        const heartbeatMs = Math.max(1000, Number(process.env.EXECUTION_JOB_HEARTBEAT_MS || 10000));
+        const heartbeat = setInterval(() => {
+          void touchQueueJob(commandClient, job.id).catch((error) => {
+            console.warn(`[Worker:${queueName}] Heartbeat failed for ${job.id}: ${error.message}`);
+          });
+        }, heartbeatMs);
+
         try {
           await processJob(job);
+          clearInterval(heartbeat);
           await completeQueueJob(queueName, commandClient, job.id);
         } catch (error) {
+          clearInterval(heartbeat);
           const nextAttemptNumber = job.attemptsMade + 1;
           if (nextAttemptNumber < job.maxAttempts) {
             await retryQueueJob(queueName, commandClient, job, error.message || 'Worker execution failed');
@@ -46,6 +62,8 @@ export async function startQueueWorker({
               message: error.message || 'Worker execution failed',
             });
           }
+        } finally {
+          clearInterval(heartbeat);
         }
       } catch (error) {
         console.error(`[Worker:${queueName}] Loop failure:`, error);

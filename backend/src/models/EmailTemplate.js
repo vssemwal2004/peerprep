@@ -29,7 +29,4 @@ emailTemplateSchema.pre('validate', function preValidate(next) {
   next();
 });
 
-emailTemplateSchema.index({ type: 1 }, { unique: true });
-emailTemplateSchema.index({ templateKey: 1 }, { unique: true });
-
 export default mongoose.model('EmailTemplate', emailTemplateSchema);

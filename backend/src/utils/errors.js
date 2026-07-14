@@ -3,6 +3,12 @@ export function notFound(req, res, next) {
 }
 
 export function errorHandler(err, req, res, next) {
+  // Delegate to Express' final handler if another layer already committed the
+  // response (for example, the request-timeout middleware). Never write twice.
+  if (res.headersSent) {
+    return next(err);
+  }
+
   // Normalize common Mongoose casting errors so they don't appear as opaque 500s
   if (err?.name === 'CastError') {
     err.status = 400;

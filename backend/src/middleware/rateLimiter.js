@@ -144,6 +144,7 @@ export const authLimiter = rateLimit({
   legacyHeaders: false,
   // Skip successful requests from count
   skipSuccessfulRequests: true,
+  store: buildRateLimitStore('rl:auth:'),
   handler: (req, res) => {
     console.warn(`[SECURITY] Rate limit exceeded for ${req.ip} on ${req.path}`);
     res.status(429).json({
@@ -167,6 +168,7 @@ export const passwordResetLimiter = rateLimit({
     const email = req.body?.email || req.body?.identifier || '';
     return email.trim().toLowerCase() || req.ip; // Fallback to IP if no email provided
   },
+  store: buildRateLimitStore('rl:password-reset:'),
   handler: (req, res) => {
     const email = req.body?.email || req.body?.identifier || '';
     console.warn(`[SECURITY] Password reset limit exceeded for email: ${email} from IP: ${req.ip}`);
@@ -183,6 +185,7 @@ export const uploadLimiter = rateLimit({
   message: 'Too many upload requests',
   standardHeaders: true,
   legacyHeaders: false,
+  store: buildRateLimitStore('rl:upload:'),
   handler: (req, res) => {
     console.warn(`[SECURITY] Upload limit exceeded for ${req.ip}`);
     res.status(429).json({
@@ -198,6 +201,7 @@ export const bulkOperationLimiter = rateLimit({
   message: 'Too many bulk operation requests',
   standardHeaders: true,
   legacyHeaders: false,
+  store: buildRateLimitStore('rl:bulk:'),
   handler: (req, res) => {
     console.warn(`[SECURITY] Bulk operation limit exceeded for ${req.ip}`);
     res.status(429).json({
@@ -215,7 +219,8 @@ export const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   // Skip static health checks
-  skip: (req) => req.path === '/api/health',
+  skip: (req) => req.path === '/health' || req.path === '/api/health',
+  store: buildRateLimitStore('rl:api:'),
   handler: (req, res) => {
     console.warn(`[SECURITY] API rate limit exceeded for ${req.ip} on ${req.path}`);
     res.status(429).json({
@@ -231,6 +236,7 @@ export const feedbackLimiter = rateLimit({
   message: 'Too many feedback submissions',
   standardHeaders: true,
   legacyHeaders: false,
+  store: buildRateLimitStore('rl:feedback:'),
   handler: (req, res) => {
     console.warn(`[SECURITY] Feedback limit exceeded for user ${req.user?._id || req.ip}`);
     res.status(429).json({

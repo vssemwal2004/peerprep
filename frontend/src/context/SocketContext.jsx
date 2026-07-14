@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
+import React, { createContext, useEffect, useState, useRef } from 'react';
 import { io } from 'socket.io-client';
 
 const SocketContext = createContext(null);
@@ -45,11 +45,12 @@ export function SocketProvider({ children }) {
     socketRef.current = socketInstance;
 
     socketInstance.on('connect', () => {
-        // Socket connected
-      });
+      // Socket connected
+    });
 
-      socketInstance.on('disconnect', () => {
-        // Socket disconnected
+    socketInstance.on('disconnect', () => {
+      // Socket disconnected
+    });
 
     socketInstance.on('connect_error', (error) => {
       console.error('Socket connection error:', error.message);
@@ -70,10 +71,6 @@ export function SocketProvider({ children }) {
       {children}
     </SocketContext.Provider>
   );
-}
-
-export function useSocket() {
-  return useContext(SocketContext);
 }
 
 export default SocketContext;

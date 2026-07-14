@@ -289,12 +289,6 @@ export default function PairingAndScheduling() {
     }
   };
 
-  // Removed Add Slot: single input field approach
-
-  const removeSlot = (idx) => {
-    setSlots((s) => s.filter((_, i) => i !== idx));
-  };
-
   const handleConfirm = async (dt, link) => {
     if (!selectedPair) return;
     if (isLoading) {

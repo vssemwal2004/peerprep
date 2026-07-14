@@ -183,7 +183,9 @@ export function pickReferenceSolution(problem, preferredLanguageKey = '') {
 function emitSubmissionUpdate(submission) {
   const io = getIo();
   if (!io) return;
-  io.emit('compiler-submission-updated', serializeSubmission(submission, {
+  const userRoom = String(submission?.user || '');
+  if (!userRoom) return;
+  io.to(userRoom).to('compiler:monitor').emit('compiler-submission-updated', serializeSubmission(submission, {
     includeJudgeDetails: false,
   }));
 }

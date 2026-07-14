@@ -20,7 +20,6 @@ import {
   formatDateTime,
   formatDuration,
   getLanguageLabel,
-  submissionStatusClass,
 } from '../admin/compiler/compilerUtils';
 import { RichTextPreview } from '../admin/compiler/CompilerContentPreview';
 import {
@@ -138,6 +137,7 @@ function CodeWithLineNumbers({ code }) {
 }
 
 function Histogram({ values, highlightValue, formatLabel, markerLabel = 'You' }) {
+  const [hover, setHover] = useState(null);
   const numbers = (values || [])
     .map((v) => Number(v))
     .filter((v) => Number.isFinite(v));
@@ -163,7 +163,6 @@ function Histogram({ values, highlightValue, formatLabel, markerLabel = 'You' })
     counts[index] += 1;
   });
 
-  const maxCount = Math.max(...counts);
   const totalCount = counts.reduce((sum, count) => sum + count, 0);
   const percents = totalCount > 0 ? counts.map((count) => (count / totalCount) * 100) : counts.map(() => 0);
   const maxPercent = Math.max(...percents, 0);
@@ -187,9 +186,6 @@ function Histogram({ values, highlightValue, formatLabel, markerLabel = 'You' })
   const markerLeft = highlightIndex >= 0
     ? `${((highlightIndex + 0.5) / bins) * 100}%`
     : null;
-
-  // LeetCode-like hover tooltip.
-  const [hover, setHover] = useState(null);
 
   return (
     <div className="rounded-[26px] bg-white/78 px-4 py-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:bg-gray-900/80">
