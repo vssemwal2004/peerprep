@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Eye, EyeOff, Lock, CheckCircle, XCircle } from 'lucide-react';
-import { motion } from 'framer-motion';
 import { api } from '../utils/api';
 
 export default function ResetPassword() {
