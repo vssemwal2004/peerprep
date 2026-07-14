@@ -6,7 +6,7 @@ import TestCase from '../models/TestCase.js';
 import { HttpError } from '../utils/errors.js';
 import { validateObjectId } from '../utils/validators.js';
 import { parseBulkCasePair } from '../utils/testcaseBulkParser.js';
-import { readS3TextObject } from '../utils/s3.js';
+import { readTestcaseTextObject } from '../utils/testcaseStorage.js';
 import { createNotification } from './notificationService.js';
 import { getIo } from '../utils/io.js';
 import { serializeSubmission, refreshProblemStats } from '../controllers/compilerHelpers.js';
@@ -277,15 +277,15 @@ async function loadSubmissionTestCases(problem) {
   ]);
 
   let allTestCases = hiddenTestCasesDb.length > 0 ? hiddenTestCasesDb : [];
-  const isS3HiddenSource = problem.hiddenTestSource?.provider === 's3'
+  const isExternalHiddenSource = ['s3', 'supabase'].includes(problem.hiddenTestSource?.provider)
     && problem.hiddenTestSource?.inputObjectKey
     && problem.hiddenTestSource?.outputObjectKey;
 
-  if (allTestCases.length === 0 && isS3HiddenSource) {
+  if (allTestCases.length === 0 && isExternalHiddenSource) {
     try {
       const [inputsBlob, outputsBlob] = await Promise.all([
-        readS3TextObject(problem.hiddenTestSource.inputObjectKey),
-        readS3TextObject(problem.hiddenTestSource.outputObjectKey),
+        readTestcaseTextObject(problem.hiddenTestSource.inputObjectKey),
+        readTestcaseTextObject(problem.hiddenTestSource.outputObjectKey),
       ]);
       allTestCases = parseBulkCasePair(
         inputsBlob,
@@ -293,7 +293,7 @@ async function loadSubmissionTestCases(problem) {
         problem.hiddenTestSource.delimiter || '###CASE###',
       );
     } catch (error) {
-      throw new HttpError(500, `Failed to load hidden S3 testcases: ${error.message}`);
+      throw new HttpError(500, `Failed to load hidden testcases from storage: ${error.message}`);
     }
   }
 
