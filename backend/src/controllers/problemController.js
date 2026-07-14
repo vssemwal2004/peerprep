@@ -7,7 +7,7 @@ import { refreshProblemStats, serializeProblem, serializeSubmission, serializeSt
 import { runJudge0 } from '../services/executionService.js';
 import { removeProblemFromLibrary, syncProblemToLibrary } from '../services/questionLibraryService.js';
 import { parseBulkCasePair } from '../utils/testcaseBulkParser.js';
-import { isS3TestcaseStorageEnabled, readS3TextObject, uploadS3TextObject } from '../utils/s3.js';
+import { isTestcaseStorageEnabled, readTestcaseTextObject, uploadTestcaseTextObject } from '../utils/testcaseStorage.js';
 
 const STATUS_MAP = {
   draft: 'draft',
@@ -549,15 +549,15 @@ async function loadHiddenExecutionTestCases(problem) {
   }).sort({ position: 1 }).lean();
 
   let hiddenTestCases = hiddenTestCasesDb;
-  const isS3HiddenSource = problem.hiddenTestSource?.provider === 's3'
+  const isExternalHiddenSource = ['s3', 'supabase'].includes(problem.hiddenTestSource?.provider)
     && problem.hiddenTestSource?.inputObjectKey
     && problem.hiddenTestSource?.outputObjectKey;
 
-  if (hiddenTestCases.length === 0 && isS3HiddenSource) {
+  if (hiddenTestCases.length === 0 && isExternalHiddenSource) {
     try {
       const [inputsBlob, outputsBlob] = await Promise.all([
-        readS3TextObject(problem.hiddenTestSource.inputObjectKey),
-        readS3TextObject(problem.hiddenTestSource.outputObjectKey),
+        readTestcaseTextObject(problem.hiddenTestSource.inputObjectKey),
+        readTestcaseTextObject(problem.hiddenTestSource.outputObjectKey),
       ]);
       hiddenTestCases = parseBulkCasePair(
         inputsBlob,
@@ -565,7 +565,7 @@ async function loadHiddenExecutionTestCases(problem) {
         problem.hiddenTestSource.delimiter || '###CASE###',
       );
     } catch (error) {
-      throw new HttpError(500, `Failed to load hidden S3 testcases: ${error.message}`);
+      throw new HttpError(500, `Failed to load hidden testcases from storage: ${error.message}`);
     }
   }
 
@@ -672,31 +672,31 @@ async function replaceTestCases(problemId, userId, { sampleTestCases, hiddenTest
   }
 }
 
-async function uploadHiddenBulkToS3(problemId, payload) {
+async function uploadHiddenBulkToStorage(problemId, payload) {
   if (!payload.hiddenBulkProvided || !payload.hiddenBulkCases) {
     return null;
   }
 
-  if (!isS3TestcaseStorageEnabled()) {
-    throw new HttpError(500, 'S3 testcase storage is not configured on the server.');
+  if (!isTestcaseStorageEnabled()) {
+    throw new HttpError(500, 'Supabase testcase storage is not configured on the server.');
   }
 
   const inputs = payload.hiddenBulkCases.map((entry) => entry.input).join(`\n${payload.hiddenBulkDelimiter}\n`);
   const outputs = payload.hiddenBulkCases.map((entry) => entry.output).join(`\n${payload.hiddenBulkDelimiter}\n`);
   const versionTag = Date.now();
 
-  const inputObjectKey = await uploadS3TextObject({
+  const inputObjectKey = await uploadTestcaseTextObject({
     key: `${problemId}/hidden/${versionTag}/inputs.txt`,
     text: inputs,
   });
 
-  const outputObjectKey = await uploadS3TextObject({
+  const outputObjectKey = await uploadTestcaseTextObject({
     key: `${problemId}/hidden/${versionTag}/outputs.txt`,
     text: outputs,
   });
 
   return {
-    provider: 's3',
+    provider: 'supabase',
     inputObjectKey,
     outputObjectKey,
     delimiter: payload.hiddenBulkDelimiter,
@@ -1131,7 +1131,7 @@ export async function createProblem(req, res) {
 
   await replaceTestCases(problem._id, req.user._id, payload);
 
-  const hiddenBulkSource = await uploadHiddenBulkToS3(problem._id, payload);
+  const hiddenBulkSource = await uploadHiddenBulkToStorage(problem._id, payload);
   if (hiddenBulkSource) {
     await Problem.findByIdAndUpdate(problem._id, {
       $set: {
@@ -1217,7 +1217,7 @@ export async function updateProblem(req, res) {
   await replaceTestCases(existingProblem._id, req.user._id, payload);
 
   if (payload.hiddenBulkProvided) {
-    const hiddenBulkSource = await uploadHiddenBulkToS3(existingProblem._id, payload);
+    const hiddenBulkSource = await uploadHiddenBulkToStorage(existingProblem._id, payload);
     await Problem.findByIdAndUpdate(existingProblem._id, {
       $set: {
         hiddenTestSource: hiddenBulkSource,
@@ -1678,4 +1678,3 @@ export async function submitProblemCode(req, res) {
     throw error;
   }
 }
-

@@ -104,7 +104,7 @@ const problemSchema = new mongoose.Schema({
   hiddenTestSource: {
     provider: {
       type: String,
-      enum: ['none', 'db', 's3'],
+      enum: ['none', 'db', 's3', 'supabase'],
       default: 'none',
     },
     inputObjectKey: {
