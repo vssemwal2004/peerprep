@@ -69,7 +69,7 @@ export default function DateTimePicker({
             okButtonClickedRef.current = false;
             isCalendarOpenRef.current = false;
           }
-        } catch {}
+        } catch { /* calendar may already be closed */ }
       },
       onOpen: (selectedDates, dateStr, instance) => {
         isCalendarOpenRef.current = true;
@@ -102,11 +102,6 @@ export default function DateTimePicker({
           // Default time behavior
           if (isDateOnlyPick) {
             const picked = new Date(date);
-            const now = new Date();
-            const sameDayAsNow =
-              picked.getFullYear() === now.getFullYear() &&
-              picked.getMonth() === now.getMonth() &&
-              picked.getDate() === now.getDate();
             // Respect event min/max boundaries for defaulting
             const cfgMin = instance.config.minDate;
             const cfgMax = instance.config.maxDate;
@@ -146,7 +141,7 @@ export default function DateTimePicker({
               try {
                 if (instance.updateTimeDisabledStates)
                   instance.updateTimeDisabledStates();
-              } catch {}
+              } catch { /* optional Flatpickr helper */ }
               return;
             }
 
@@ -178,7 +173,7 @@ export default function DateTimePicker({
             try {
               if (instance.updateTimeDisabledStates)
                 instance.updateTimeDisabledStates();
-            } catch {}
+            } catch { /* optional Flatpickr helper */ }
             return;
           }
 
@@ -191,7 +186,7 @@ export default function DateTimePicker({
             try {
               if (instance.updateTimeDisabledStates)
                 instance.updateTimeDisabledStates();
-            } catch {}
+            } catch { /* optional Flatpickr helper */ }
             return;
           }
           // Convert to ISO format (YYYY-MM-DDTHH:mm)
@@ -212,13 +207,13 @@ export default function DateTimePicker({
           // Update stored last selected date again after potential external updates
           try {
             lastSelectedDateRef.current = new Date(date.getTime());
-          } catch {}
+          } catch { /* ignore invalid external date values */ }
           // Refresh hour/minute disabled states if helper present
           try {
             if (instance && instance.updateTimeDisabledStates) {
               instance.updateTimeDisabledStates();
             }
-          } catch {}
+          } catch { /* optional Flatpickr helper */ }
         }
       },
       onReady: (selectedDates, dateStr, instance) => {
@@ -245,7 +240,7 @@ export default function DateTimePicker({
           document.addEventListener("mousedown", onDocMouseDown, true);
           // Store for cleanup
           instance.__onDocMouseDown = onDocMouseDown;
-        } catch {}
+        } catch { /* calendar DOM may be unavailable during teardown */ }
         // Add custom styling to the calendar - check if container exists
         if (instance.calendarContainer) {
           instance.calendarContainer.classList.add("flatpickr-custom");
@@ -740,7 +735,7 @@ export default function DateTimePicker({
               flatpickrRef.current.__handleKeyDown
             );
           }
-        } catch {}
+        } catch { /* listener may already be detached */ }
         flatpickrRef.current.destroy();
         flatpickrRef.current = null;
       }
@@ -758,7 +753,7 @@ export default function DateTimePicker({
       // Sync external value without triggering onChange to avoid loops
       try {
         flatpickrRef.current.setDate(value, false);
-      } catch {}
+      } catch { /* Flatpickr rejects incomplete external values */ }
     }
   }, [value]);
 
@@ -774,7 +769,7 @@ export default function DateTimePicker({
         // Reopen if it was closed unexpectedly
         try {
           flatpickrRef.current.open();
-        } catch {}
+        } catch { /* instance may be destroyed during delayed open */ }
       }
     }, 100); // Check every 100ms
 

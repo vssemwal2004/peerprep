@@ -214,7 +214,7 @@ export default function CoordinatorStudents() {
     const s = selectedStudent;
     let stats = studentStats;
     if (!stats) {
-      try { const d = await api.getStudentStatsByAdmin(s._id); stats = d.stats; } catch (_) {}
+      try { const d = await api.getStudentStatsByAdmin(s._id); stats = d.stats; } catch { /* export can continue without optional stats */ }
     }
     const rows = [
       ['Name','Student ID','Email','Course','Branch','College','Semester','Group','Coordinator','Courses Enrolled','Videos Watched'],

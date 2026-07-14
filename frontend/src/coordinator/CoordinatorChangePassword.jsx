@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { motion } from "framer-motion";
 import { api } from "../utils/api";
 import { useNavigate } from "react-router-dom";
 import { Lock, Eye, EyeOff, CheckCircle, AlertCircle } from "lucide-react";

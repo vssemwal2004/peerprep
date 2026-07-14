@@ -1,5 +1,6 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../utils/api';

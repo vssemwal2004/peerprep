@@ -61,7 +61,7 @@ export function HorizontalProgress({ value, max, height = 6, color = '#0ea5e9', 
   );
 }
 
-export function AreaChart({ data, width = 360, height = 120, stroke = '#0ea5e9', fill = 'rgba(14,165,233,0.14)' }) {
+export function AreaChart({ data, width = 360, height = 120, stroke = '#0ea5e9' }) {
   if (!data || data.length < 2) return <div style={{ width, height }} />;
   const min = Math.min(...data);
   const max = Math.max(...data);

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   ChevronDown,
   ChevronRight,
@@ -59,7 +59,7 @@ const convertToEmbedUrl = (url) => {
 
 export default function LearningDetail() {
   const toast = useToast();
-  const { semester, subject, teacherId } = useParams();
+  const { teacherId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
   const { semesterId, subjectId, coordinatorName: initialCoordinatorName, coordinatorId: initialCoordinatorId } = location.state || {};
@@ -105,7 +105,7 @@ export default function LearningDetail() {
   useEffect(() => {
     socketService.connect();
 
-    const handleLearningUpdate = async (data) => {
+    const handleLearningUpdate = async () => {
       
       // Reload subjects first to get updated list
       await loadCoordinatorSubjects();
@@ -255,7 +255,7 @@ export default function LearningDetail() {
       if (ytPlayerRef.current?.getDuration) {
         duration = Math.floor(ytPlayerRef.current.getDuration() || 0);
       }
-    } catch (_) { /* player may already be destroyed */ }
+    } catch { /* player may already be destroyed */ }
 
     try {
       await api.trackWatchTime(data.topicId, {
@@ -312,7 +312,7 @@ export default function LearningDetail() {
 
     const initPlayer = () => {
       if (ytPlayerRef.current) {
-        try { ytPlayerRef.current.destroy(); } catch (_) {}
+        try { ytPlayerRef.current.destroy(); } catch { /* player may already be destroyed */ }
         ytPlayerRef.current = null;
       }
       ytPlayerRef.current = new window.YT.Player('yt-player-container', {
@@ -332,7 +332,7 @@ export default function LearningDetail() {
     return () => {
       clearInterval(watchIntervalRef.current);
       if (ytPlayerRef.current) {
-        try { ytPlayerRef.current.destroy(); } catch (_) {}
+        try { ytPlayerRef.current.destroy(); } catch { /* player may already be destroyed */ }
         ytPlayerRef.current = null;
       }
     };
@@ -390,7 +390,7 @@ export default function LearningDetail() {
         if (subjectIdToRefresh) loadSubjectProgress(subjectIdToRefresh);
       });
       if (ytPlayerRef.current) {
-        try { ytPlayerRef.current.destroy(); } catch (_) {}
+        try { ytPlayerRef.current.destroy(); } catch { /* player may already be destroyed */ }
         ytPlayerRef.current = null;
       }
     }

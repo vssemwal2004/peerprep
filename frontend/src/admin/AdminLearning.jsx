@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { api } from '../utils/api';
 import socketService from '../utils/socket';
 import { ChevronDown, ChevronRight, BookOpen, X, GraduationCap, Edit2, Trash2, Plus, Save } from 'lucide-react';
@@ -24,8 +24,7 @@ export default function AdminLearning() {
   useEffect(() => {
     socketService.connect();
 
-    const handleLearningUpdate = (data) => {
-
+    const handleLearningUpdate = () => {
       loadSemesters();
     };
 

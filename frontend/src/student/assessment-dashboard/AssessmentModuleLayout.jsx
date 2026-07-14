@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { motion } from 'framer-motion';
 import { NavLink, useLocation } from 'react-router-dom';
 import { BarChart3, ClipboardList, History } from 'lucide-react';
 

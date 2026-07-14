@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import socketService from '../utils/socket';
 import {
   ChevronDown,
@@ -53,10 +53,10 @@ const convertToEmbedUrl = (url) => {
 
 export default function AdminLearningDetail() {
   const toast = useToast();
-  const { semester, subject, teacherId } = useParams();
+  const { teacherId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const { semesterId, subjectId, coordinatorName: initialCoordinatorName, coordinatorId: initialCoordinatorId } = location.state || {};
+  const { semesterId, subjectId, coordinatorName: initialCoordinatorName } = location.state || {};
 
   const [allSubjects, setAllSubjects] = useState([]);
   const [selectedSubject, setSelectedSubject] = useState(null);
@@ -64,7 +64,6 @@ export default function AdminLearningDetail() {
   const [expandedChapters, setExpandedChapters] = useState({});
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [currentCoordinatorId, setCurrentCoordinatorId] = useState(initialCoordinatorId);
   const [currentCoordinatorName, setCurrentCoordinatorName] = useState(initialCoordinatorName);
   
   // Modal states
@@ -96,7 +95,7 @@ export default function AdminLearningDetail() {
   useEffect(() => {
     socketService.connect();
 
-    const handleLearningUpdate = (data) => {
+    const handleLearningUpdate = () => {
       loadCoordinatorSubjects();
       if (semesterId && subjectId) {
         loadSubjectDetails(semesterId, subjectId);
@@ -127,9 +126,6 @@ export default function AdminLearningDetail() {
     try {
       const data = await api.getSubjectDetails(semId, subjId);
       setSubjectDetails(data);
-      if (data.coordinatorId) {
-        setCurrentCoordinatorId(data.coordinatorId);
-      }
       if (data.coordinatorName) {
         setCurrentCoordinatorName(data.coordinatorName);
       }
