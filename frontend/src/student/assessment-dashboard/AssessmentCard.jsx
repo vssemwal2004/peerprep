@@ -1,4 +1,5 @@
 import { CalendarDays, ArrowUpRight, CheckCircle2 } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { formatDateTime } from './assessmentDashboardUtils';
 
 export default function AssessmentCard({ assessment, onLaunch }) {

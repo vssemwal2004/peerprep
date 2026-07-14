@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { api } from '../utils/api';
 import {
   BookOpen, Calendar, Loader2, AlertCircle, ChevronRight, Star,

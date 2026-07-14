@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Activity, BarChart3, CheckCircle2, FileCode2, Users } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { api } from '../../utils/api';
 import { useToast } from '../../components/CustomToast';
 import { formatPercent } from './compilerUtils';

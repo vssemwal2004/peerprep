@@ -1,4 +1,6 @@
 
+import { motion } from 'framer-motion';
+
 export default function AssessmentTable({
   columns,
   rows,

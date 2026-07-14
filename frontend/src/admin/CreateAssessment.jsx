@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useNavigate, useParams } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import { ArrowLeft, ClipboardList, Save, Send, AlertCircle, Plus, Eye, EyeOff, Hash, Lock, Shield, Globe, Copy, Camera, Volume2, Monitor, Shuffle, Droplet, Navigation, Layers, Timer, RotateCcw, CheckSquare, Clock, Unlock } from 'lucide-react';
@@ -1798,5 +1799,4 @@ export default function CreateAssessment() {
     </div>
   );
 }
-
 

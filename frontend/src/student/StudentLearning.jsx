@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronDown, ChevronRight, BookOpen, Users, X, GraduationCap } from 'lucide-react';
 import { api } from '../utils/api';
 import socketService from '../utils/socket';

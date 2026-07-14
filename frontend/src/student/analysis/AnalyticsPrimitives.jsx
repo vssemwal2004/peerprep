@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { AlertCircle, ArrowUpRight, Loader2 } from "lucide-react";
+import { motion } from "framer-motion";
 import { clamp, getToneClasses } from "./analyticsUtils";
 
 export function fadeIn(delay = 0, y = 16) {

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, Mail, Loader2, CheckCircle } from 'lucide-react';
 import { api } from '../utils/api';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 
 export default function ForgotPasswordModal({ isOpen, onClose }) {
   const [email, setEmail] = useState('');
