@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertCircle, CheckCircle2, Eye, EyeOff, Loader2, ShieldCheck, UserPlus, Users } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Download, Eye, EyeOff, FileText, Loader2, ShieldCheck, Upload, UserPlus, Users } from 'lucide-react';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import { defaultCoordinatorPermissions } from './coordinatorPermissions';
@@ -38,6 +38,24 @@ function Field({ label, value, onChange, error, type = 'text', placeholder, acti
   );
 }
 
+function parseCsvLine(line = '') {
+  const values = [];
+  let current = '';
+  let quoted = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    if (char === '"') {
+      if (quoted && line[index + 1] === '"') { current += '"'; index += 1; }
+      else quoted = !quoted;
+    } else if (char === ',' && !quoted) {
+      values.push(current.trim());
+      current = '';
+    } else current += char;
+  }
+  values.push(current.trim());
+  return values;
+}
+
 export default function CoordinatorOnboarding() {
   const toast = useToast();
   const [form, setForm] = useState(initialForm);
@@ -45,6 +63,12 @@ export default function CoordinatorOnboarding() {
   const [message, setMessage] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
   const [grantDefaultAccess, setGrantDefaultAccess] = useState(true);
+  const [mode, setMode] = useState('bulk');
+  const [bulkFile, setBulkFile] = useState(null);
+  const [bulkRows, setBulkRows] = useState([]);
+  const [bulkErrors, setBulkErrors] = useState([]);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkResult, setBulkResult] = useState(null);
 
   const errors = useMemo(() => {
     const next = {};
@@ -89,6 +113,87 @@ export default function CoordinatorOnboarding() {
     }
   };
 
+  const downloadTemplate = () => {
+    const csv = 'Name,Email,CoordinatorId,Password,Phone,Department,College,GrantDefaultAccess\nJane Doe,jane@university.edu,COO2026-001,,+919876543210,Computer Science,PeerPrep University,true\n';
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'peerprep-coordinator-upload-template.csv';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const readBulkFile = (file) => {
+    setBulkFile(file || null);
+    setBulkRows([]);
+    setBulkErrors([]);
+    setBulkResult(null);
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const lines = String(event.target?.result || '').split(/\r?\n/).filter((line) => line.trim());
+        const headers = parseCsvLine(lines.shift() || '').map((header) => header.toLowerCase().replace(/[\s_-]/g, ''));
+        const required = ['name', 'email', 'coordinatorid'];
+        const missing = required.filter((header) => !headers.includes(header));
+        if (missing.length) throw new Error(`Missing required columns: ${missing.join(', ')}`);
+        const rows = lines.map((line, index) => {
+          const values = parseCsvLine(line);
+          const raw = Object.fromEntries(headers.map((header, cellIndex) => [header, values[cellIndex] || '']));
+          return {
+            row: index + 2,
+            name: raw.name,
+            email: raw.email,
+            coordinatorId: raw.coordinatorid,
+            password: raw.password,
+            phone: raw.phone,
+            department: raw.department,
+            college: raw.college,
+            grantDefaultAccess: String(raw.grantdefaultaccess || 'true').toLowerCase() !== 'false',
+          };
+        });
+        if (!rows.length) throw new Error('The CSV does not contain coordinator rows.');
+        const seenEmails = new Set();
+        const seenIds = new Set();
+        const validationErrors = [];
+        rows.forEach((row) => {
+          if (!row.name || !row.email || !row.coordinatorId) validationErrors.push(`Row ${row.row}: Name, email, and Coordinator ID are required.`);
+          if (row.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) validationErrors.push(`Row ${row.row}: Invalid email address.`);
+          if (row.password && row.password.length < 6) validationErrors.push(`Row ${row.row}: Password must have at least 6 characters.`);
+          const emailKey = row.email.toLowerCase();
+          const idKey = row.coordinatorId.toLowerCase();
+          if (seenEmails.has(emailKey)) validationErrors.push(`Row ${row.row}: Duplicate email in this file.`);
+          if (seenIds.has(idKey)) validationErrors.push(`Row ${row.row}: Duplicate Coordinator ID in this file.`);
+          seenEmails.add(emailKey);
+          seenIds.add(idKey);
+        });
+        setBulkRows(rows);
+        setBulkErrors(validationErrors);
+      } catch (error) {
+        setBulkErrors([error.message || 'Unable to read CSV file.']);
+      }
+    };
+    reader.onerror = () => setBulkErrors(['Unable to read CSV file.']);
+    reader.readAsText(file);
+  };
+
+  const uploadBulk = async () => {
+    if (!bulkRows.length || bulkErrors.length || bulkLoading) return;
+    setBulkLoading(true);
+    setBulkResult(null);
+    try {
+      const response = await api.bulkCreateCoordinators(bulkRows);
+      setBulkResult(response);
+      toast.success(`${response.created} coordinator${response.created === 1 ? '' : 's'} created.`);
+    } catch (error) {
+      toast.error(error.message || 'Bulk coordinator upload failed.');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 pt-20 dark:bg-gray-950">
       <div className="mx-auto max-w-7xl px-4 py-6">
@@ -109,7 +214,26 @@ export default function CoordinatorOnboarding() {
           </Link>
         </div>
 
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="mb-5 inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm dark:border-white/10 dark:bg-gray-900">
+          {[['bulk', 'Bulk CSV Upload'], ['single', 'Individual Coordinator']].map(([value, label]) => <button key={value} type="button" onClick={() => setMode(value)} className={`rounded-lg px-4 py-2 text-sm font-bold transition ${mode === value ? 'bg-sky-600 text-white' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/[0.04]'}`}>{label}</button>)}
+        </div>
+
+        {mode === 'bulk' && (
+          <div className="space-y-5">
+            <div className="rounded-2xl border border-sky-200 bg-sky-50 p-5 dark:border-sky-400/20 dark:bg-sky-400/10">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="font-bold text-sky-950 dark:text-sky-100">Coordinator CSV guidelines</h2><p className="mt-1 text-sm text-sky-800/80 dark:text-sky-200/80">Required: Name, Email, CoordinatorId. Password defaults to CoordinatorId. Optional: Phone, Department, College, GrantDefaultAccess.</p></div><button type="button" onClick={downloadTemplate} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-500"><Download className="h-4 w-4" />Download template</button></div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-gray-900">
+              <label className="relative flex min-h-52 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 p-8 text-center transition hover:border-sky-400 hover:bg-sky-50 dark:border-white/15 dark:bg-white/[0.03] dark:hover:border-sky-400/50"><input type="file" accept=".csv,text/csv" onChange={(event) => readBulkFile(event.target.files?.[0])} className="absolute inset-0 cursor-pointer opacity-0" /><span className="flex h-12 w-12 items-center justify-center rounded-xl bg-sky-600 text-white"><Upload className="h-5 w-5" /></span><span className="mt-4 text-sm font-bold text-slate-900 dark:text-white">Drop or select coordinator CSV</span><span className="mt-1 text-xs text-slate-500">Maximum 500 coordinator rows</span></label>
+              {bulkFile && <div className="mt-3 flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-800 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-200"><FileText className="h-4 w-4" />{bulkFile.name}<span className="text-xs opacity-70">({(bulkFile.size / 1024).toFixed(1)} KB)</span></div>}
+            </div>
+            {bulkErrors.length > 0 && <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"><div className="font-bold">Fix these CSV problems before upload</div><ul className="mt-2 list-disc space-y-1 pl-5">{bulkErrors.slice(0, 20).map((error) => <li key={error}>{error}</li>)}</ul></div>}
+            {bulkRows.length > 0 && <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-gray-900"><div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-white/10"><div><h3 className="font-bold text-slate-950 dark:text-white">Upload preview</h3><p className="text-sm text-slate-500">{bulkRows.length} coordinator rows ready for server validation</p></div><button type="button" onClick={uploadBulk} disabled={bulkErrors.length > 0 || bulkLoading || Boolean(bulkResult)} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50 dark:bg-white dark:text-slate-950">{bulkLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}{bulkLoading ? 'Uploading...' : bulkResult ? 'Upload processed' : 'Upload coordinators'}</button></div><div className="overflow-x-auto"><table className="min-w-[900px] w-full text-sm"><thead className="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-400 dark:bg-white/[0.03]"><tr>{['Row', 'Name', 'Email', 'Coordinator ID', 'Department', 'College', 'Access', 'Result'].map((heading) => <th key={heading} className="px-4 py-3">{heading}</th>)}</tr></thead><tbody className="divide-y divide-slate-100 dark:divide-white/10">{bulkRows.slice(0, 100).map((row) => { const rowResult = bulkResult?.results?.find((item) => item.row === row.row); return <tr key={row.row}><td className="px-4 py-3 font-bold text-slate-500">{row.row}</td><td className="px-4 py-3 font-semibold text-slate-900 dark:text-white">{row.name}</td><td className="px-4 py-3 text-slate-600 dark:text-slate-300">{row.email}</td><td className="px-4 py-3 font-mono text-xs text-slate-600 dark:text-slate-300">{row.coordinatorId}</td><td className="px-4 py-3 text-slate-500">{row.department || '-'}</td><td className="px-4 py-3 text-slate-500">{row.college || '-'}</td><td className="px-4 py-3 text-slate-500">{row.grantDefaultAccess ? 'Default' : 'None'}</td><td className={`px-4 py-3 text-xs font-bold ${rowResult?.status === 'created' ? 'text-emerald-600' : rowResult ? 'text-rose-600' : 'text-slate-400'}`}>{rowResult ? (rowResult.status === 'created' ? 'Created' : rowResult.errors?.join(', ')) : 'Ready'}</td></tr>; })}</tbody></table></div>{bulkRows.length > 100 && <div className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">Showing first 100 rows. All {bulkRows.length} rows will be processed.</div>}</div>}
+            {bulkResult && <div className="grid gap-3 sm:grid-cols-4">{[['Created', bulkResult.created], ['Failed', bulkResult.failed], ['Emails sent', bulkResult.emailSent], ['Email failures', bulkResult.emailFailed]].map(([label, value]) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-gray-900"><div className="text-xs font-bold uppercase tracking-wider text-slate-400">{label}</div><div className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">{value || 0}</div></div>)}</div>}
+          </div>
+        )}
+
+        <div className={`${mode === 'single' ? 'grid' : 'hidden'} gap-5 xl:grid-cols-[minmax(0,1fr)_360px]`}>
           <form onSubmit={submit} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-gray-900">
             <div className="mb-5 flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-200">

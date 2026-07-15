@@ -7,8 +7,12 @@ import {
   updateAssessment,
   deleteAssessment,
   resetAssessmentSubmissions,
+  listAssessmentEligibleStudents,
+  resetAssessmentStudentSubmission,
+  removeAssessmentEligibleStudent,
   markAssessmentComplete,
   releaseAssessmentAnswers,
+  sendAssessmentInvitations,
   getAssessmentReports,
   getStudentAssessmentReport,
   getAssessmentReportsExportData,
@@ -42,9 +46,13 @@ router.get('/library/questions/:id', requireAuth, requireCoordinatorPermission('
 router.patch('/library/questions/:id', requireAuth, requireCoordinatorPermission('coordinator.library.create'), updateLibraryQuestion);
 router.delete('/library/questions/:id', requireAuth, requireCoordinatorPermission('coordinator.library.create'), deleteLibraryQuestion);
 router.get('/assessment/:id', requireAuth, requireCoordinatorPermission('coordinator.assessment.view'), getAssessment);
+router.get('/assessment/:id/eligible-students', requireAuth, requireCoordinatorPermission('coordinator.assessment.view'), listAssessmentEligibleStudents);
 router.post('/assessment/:id/reset-submissions', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), resetAssessmentSubmissions);
+router.post('/assessment/:id/students/:studentId/reset-submission', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), resetAssessmentStudentSubmission);
+router.delete('/assessment/:id/students/:studentId', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), removeAssessmentEligibleStudent);
 router.post('/assessment/:id/mark-complete', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), markAssessmentComplete);
 router.post('/assessment/:id/release-answers', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), releaseAssessmentAnswers);
+router.post('/assessment/:id/send-invitations', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), sendAssessmentInvitations);
 router.put('/assessment/:id', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), updateAssessment);
 router.delete('/assessment/:id', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), deleteAssessment);
 

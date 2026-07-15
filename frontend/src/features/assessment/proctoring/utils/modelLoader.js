@@ -58,7 +58,7 @@ async function withModelLoadTimeout(promise, label) {
 
 export async function loadMediaPipeVisionFiles() {
   if (!visionFilesetPromise) {
-    visionFilesetPromise = (async () => {
+    const loadPromise = (async () => {
       const { FilesetResolver } = await loadMediaPipeTasksVision();
       let lastError = null;
 
@@ -75,6 +75,10 @@ export async function loadMediaPipeVisionFiles() {
 
       throw lastError || new Error('MediaPipe WASM files failed to load.');
     })();
+    visionFilesetPromise = loadPromise.catch((error) => {
+      visionFilesetPromise = null;
+      throw error;
+    });
   }
   return visionFilesetPromise;
 }
@@ -142,7 +146,7 @@ export async function createCocoSsdModel(options = {}) {
 
   for (const modelUrl of modelUrls) {
     const loadOptions = {
-      base: options.base || 'lite_mobilenet_v2',
+      base: options.base || import.meta.env.VITE_COCO_SSD_BASE || 'mobilenet_v2',
     };
     if (modelUrl) loadOptions.modelUrl = modelUrl;
 

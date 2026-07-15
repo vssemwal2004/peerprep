@@ -3,7 +3,7 @@ import { AI_PROCTORING_EVENTS } from '../constants/proctoringEvents';
 
 export const AI_PROCTORING_CONFIDENCE_THRESHOLDS = Object.freeze({
   face: 0.6,
-  mobile: 0.25,
+  mobile: 0.62,
   person: 0.55,
   lookingAway: 0.7,
 });

@@ -157,6 +157,7 @@ const FOOTER_ISSUE_CONFIRM_MS_BY_TYPE = Object.freeze({
   [AI_PROCTORING_EVENTS.LOOKING_AWAY]: 5100,
 });
 const MOBILE_STATUS_HOLD_MS = 1800;
+const MOBILE_CONFIRM_CONSECUTIVE_FRAMES = 3;
 const FALLBACK_FACE_CENTER_TOLERANCE_RATIO = 0.32;
 const FALLBACK_FACE_MIN_WIDTH_RATIO = 0.12;
 const FALLBACK_FRAME_VARIANCE_THRESHOLD = 95;
@@ -245,6 +246,8 @@ export class ProctoringManager {
     this.confirmedViolationCount = 0;
     this.lastMobileSeenAt = 0;
     this.lastMobileConfidence = 0;
+    this.mobileDetectionStreak = 0;
+    this.mobileConfirmedUntil = 0;
     this.violationBuffer = new ViolationBuffer({
       cooldownMs: getCooldownMs(this.settings),
     });
@@ -270,6 +273,17 @@ export class ProctoringManager {
       return this.getStatus();
     }
 
+    // Camera monitoring is live immediately. Model downloads can take several
+    // seconds, so expose the running state and keep the footer responsive while
+    // face and object detection initialize in parallel.
+    this.updateStatus({
+      running: true,
+      camera: 'ok',
+      error: null,
+    });
+    this.startDetectionLoop();
+    await this.runDetectionTick();
+
     try {
       await this.loadModels();
     } catch (error) {
@@ -277,12 +291,13 @@ export class ProctoringManager {
       return this.getStatus();
     }
 
+    // The manager may have been stopped while an external model was loading.
+    if (!this.status.running) return this.getStatus();
+
     this.updateStatus({
-      running: true,
       camera: 'ok',
       error: this.getModelAvailabilityError(),
     });
-    this.startDetectionLoop();
     await this.runDetectionTick();
 
     return this.getStatus();
@@ -294,6 +309,10 @@ export class ProctoringManager {
     this.stopModels();
     this.violationBuffer.clear();
     this.confirmedViolationCount = 0;
+    this.lastMobileSeenAt = 0;
+    this.lastMobileConfidence = 0;
+    this.mobileDetectionStreak = 0;
+    this.mobileConfirmedUntil = 0;
     this.updateStatus({
       running: false,
       camera: 'unknown',
@@ -324,7 +343,8 @@ export class ProctoringManager {
   }
 
   async loadModels() {
-    if (shouldUseFaceDetection(this.settings)) {
+    const loadFaceModel = async () => {
+      if (!shouldUseFaceDetection(this.settings)) return;
       this.updateStatus({ faceModel: 'loading' });
       try {
         this.faceDetector = this.faceDetector || createFaceDetector();
@@ -347,9 +367,10 @@ export class ProctoringManager {
         });
         if (this.onError) this.safeCall(this.onError, error);
       }
-    }
+    };
 
-    if (shouldUseObjectDetection(this.settings)) {
+    const loadObjectModel = async () => {
+      if (!shouldUseObjectDetection(this.settings)) return;
       this.updateStatus({ objectModel: 'loading' });
       try {
         this.objectDetector = this.objectDetector || createObjectDetector();
@@ -368,7 +389,9 @@ export class ProctoringManager {
         });
         if (this.onError) this.safeCall(this.onError, error);
       }
-    }
+    };
+
+    await Promise.all([loadFaceModel(), loadObjectModel()]);
 
     this.modelsLoaded = true;
     return true;
@@ -456,13 +479,20 @@ export class ProctoringManager {
       const objectPersonConfidence = Number(objectResult?.confidence?.person || 0);
       const personCount = Math.max(faceCount || 0, objectPersonCount || 0);
       const personConfidence = Math.max(faceConfidence, objectPersonConfidence);
-      const rawMobileDetected = Boolean(objectResult?.mobileDetected);
+      const rawMobileCandidate = Boolean(objectResult?.mobileDetected);
       const mobileConfidence = Number(objectResult?.confidence?.mobile || 0);
+      if (rawMobileCandidate) {
+        this.mobileDetectionStreak += 1;
+      } else {
+        this.mobileDetectionStreak = 0;
+      }
+      const rawMobileDetected = this.mobileDetectionStreak >= MOBILE_CONFIRM_CONSECUTIVE_FRAMES;
       if (rawMobileDetected) {
         this.lastMobileSeenAt = timestamp;
         this.lastMobileConfidence = mobileConfidence;
+        this.mobileConfirmedUntil = timestamp + MOBILE_STATUS_HOLD_MS;
       }
-      const mobileVisible = rawMobileDetected || (timestamp - this.lastMobileSeenAt <= MOBILE_STATUS_HOLD_MS);
+      const mobileVisible = rawMobileDetected || timestamp <= this.mobileConfirmedUntil;
       const result = createSafeDetectionResult({
         timestamp,
         cameraActive,
@@ -479,7 +509,12 @@ export class ProctoringManager {
         },
         metadata: {
           face: faceResult?.metadata || null,
-          object: objectResult?.metadata || null,
+          object: {
+            ...(objectResult?.metadata || {}),
+            mobileCandidate: rawMobileCandidate,
+            mobileDetectionStreak: this.mobileDetectionStreak,
+            mobileConfirmConsecutiveFrames: MOBILE_CONFIRM_CONSECUTIVE_FRAMES,
+          },
         },
       });
 

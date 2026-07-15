@@ -78,11 +78,6 @@ const CAMERA_VIOLATION_TYPES = new Set([
   'face_out_of_frame',
 ]);
 
-const SOFT_CAMERA_WARNING_TYPES = new Set([
-  'camera_loss',
-  'camera_no_face',
-]);
-
 const NON_BLOCKING_DETECTION_TYPES = new Set([
   ...CAMERA_VIOLATION_TYPES,
   'fullscreen_exit',
@@ -95,8 +90,9 @@ const SOFT_FOOTER_WARNING_TYPES = new Set([
 
 const RESTRICTED_ACTION_WARNING_MS = 15000;
 const SCREENSHOT_WARNING_GRACE_MS = RESTRICTED_ACTION_WARNING_MS;
+const FOCUS_LOSS_SCREENSHOT_GRACE_MS = 1000;
 const AI_PREVIEW_MARGIN_PX = 8;
-const CAMERA_WARNING_STREAK_LIMIT = 6;
+const CAMERA_WARNING_STREAK_LIMIT = 3;
 const FACE_CENTER_TOLERANCE_RATIO = 0.46;
 const FACE_MIN_WIDTH_RATIO = 0.08;
 
@@ -242,6 +238,7 @@ export default function AssessmentAttempt() {
 
   const [assessment, setAssessment] = useState(null);
   const [submission, setSubmission] = useState(null);
+  const [candidate, setCandidate] = useState(null);
   const [answersMap, setAnswersMap] = useState({});
   const [markedMap, setMarkedMap] = useState({});
   const [activeSection, setActiveSection] = useState(0);
@@ -292,6 +289,7 @@ export default function AssessmentAttempt() {
   const [rulesReady, setRulesReady] = useState(false);
   const [hasSeenRules, setHasSeenRules] = useState(false);
   const [cameraIndicator, setCameraIndicator] = useState('idle');
+  const [cameraStreamReady, setCameraStreamReady] = useState(false);
   const [detectedTabs, setDetectedTabs] = useState([]);
   const [securityNotice, setSecurityNotice] = useState('');
   const [securityPopup, setSecurityPopup] = useState({
@@ -342,7 +340,9 @@ export default function AssessmentAttempt() {
   const restrictedActionNoticeRef = useRef('Restricted action recorded as a warning. Continue the assessment.');
   const timedWarningTimerRef = useRef(null);
   const screenshotGraceUntilRef = useRef(0);
+  const focusLossScreenshotGraceUntilRef = useRef(0);
   const lastScreenshotWarningAtRef = useRef(0);
+  const lastFocusLossAtRef = useRef(0);
   const thresholdNoticeRef = useRef({});
   const popupThrottleRef = useRef({});
   const securityStatusRef = useRef(CSE_STATUS_DEFAULTS);
@@ -356,6 +356,7 @@ export default function AssessmentAttempt() {
   const monitoringCooldownRef = useRef({});
   const cameraViolationStreakRef = useRef({ type: '', count: 0, at: 0 });
   const proctoringManagerRef = useRef(null);
+  const lastTabShortcutAtRef = useRef(0);
   const idleTimerRef = useRef(null);
   const lastActivityRef = useRef(Date.now());
   const tabInstanceIdRef = useRef(
@@ -372,10 +373,18 @@ export default function AssessmentAttempt() {
   const securitySettings = useMemo(() => assessment?.settings || {}, [assessment?.settings]);
   const watermarkConfig = useMemo(() => {
     const type = securitySettings.watermarkTextType || 'platform';
-    const student = submission?.studentSnapshot || {};
+    const student = candidate || submission?.studentSnapshot || {};
+    let storedName = '';
+    let storedEmail = '';
+    try {
+      storedName = localStorage.getItem('studentName') || '';
+      storedEmail = localStorage.getItem('studentEmail') || '';
+    } catch {
+      // The authenticated candidate payload remains the primary identity source.
+    }
     let text = 'PeerPrep';
-    if (type === 'candidate_name') text = student.name || submission?.studentName || 'Candidate';
-    else if (type === 'candidate_email') text = student.email || submission?.studentEmail || 'candidate@peerprep';
+    if (type === 'candidate_name') text = student.name || submission?.studentName || storedName || 'Candidate';
+    else if (type === 'candidate_email') text = student.email || submission?.studentEmail || storedEmail || 'candidate@peerprep';
     else if (type === 'candidate_id') text = student.studentId || submission?.studentRollNo || 'PP-Student';
     else if (type === 'custom') text = securitySettings.watermarkCustomText || 'PeerPrep';
     return {
@@ -387,10 +396,11 @@ export default function AssessmentAttempt() {
       spacing: Math.max(120, Number(securitySettings.watermarkSpacing || 220) || 220),
       fontSize: Math.max(14, Number(securitySettings.watermarkFontSize || 24) || 24),
     };
-  }, [securitySettings, submission]);
+  }, [securitySettings, submission, candidate]);
   const fullscreenRequired = Boolean(securitySettings.enableFullscreen);
-  const cameraRequired = Boolean(securitySettings.cameraMonitoring);
   const aiProctoringEnabled = Boolean(securitySettings.aiProctoring?.enabled);
+  const cameraRequired = Boolean(securitySettings.cameraMonitoring || aiProctoringEnabled);
+  const locationRequired = securitySettings.locationTracking !== false;
   const audioMonitoringEnabled = Boolean(securitySettings.audioMonitoring);
   const tabGuardEnabled = Boolean(securitySettings.tabSwitchDetection);
   const copyBlockEnabled = Boolean(securitySettings.disableCopyPaste);
@@ -421,7 +431,9 @@ export default function AssessmentAttempt() {
   const securityHeartbeat = useMemo(() => ({
     fullscreen: !fullscreenRequired || Boolean(document.fullscreenElement),
     tabActive: !tabGuardEnabled || (document.hasFocus() && !document.hidden),
-    cameraActive: !cameraRequired || Boolean(streamRef.current),
+    cameraActive: !cameraRequired || Boolean(
+      streamRef.current?.getVideoTracks?.().some((track) => track.readyState === 'live'),
+    ),
     idle: Boolean(securityStatus.idle),
     duplicateTab: preventMultipleTabs && duplicateTabCount > 0,
   }), [fullscreenRequired, tabGuardEnabled, cameraRequired, securityStatus.idle, preventMultipleTabs, duplicateTabCount]);
@@ -445,18 +457,20 @@ export default function AssessmentAttempt() {
     return rules;
   }, [fullscreenRequired, tabGuardEnabled, tabSwitchLimit, cameraRequired, copyBlockEnabled, preventMultipleTabs, securitySettings, allowSectionReview]);
   const setupSteps = useMemo(() => {
-    const steps = [{ id: 1, key: 'environment', title: 'Clean Environment Check', icon: <Monitor className="h-4 w-4" /> }];
-    if (cameraRequired) steps.push({ id: steps.length + 1, key: 'camera', title: 'Camera Verification', icon: <Video className="h-4 w-4" /> });
-    steps.push({ id: steps.length + 1, key: 'location', title: 'Location Permission', icon: <MapPin className="h-4 w-4" /> });
-    if (fullscreenRequired) steps.push({ id: steps.length + 1, key: 'fullscreen', title: 'Enable Full Screen', icon: <Maximize className="h-4 w-4" /> });
-    steps.push({ id: steps.length + 1, key: 'final', title: 'Final Verification', icon: <ShieldCheck className="h-4 w-4" /> });
-    return steps;
-  }, [cameraRequired, fullscreenRequired]);
+    const steps = [];
+    if (!securityRecheckActive) steps.push({ key: 'environment', title: 'Clean Environment Check', icon: <Monitor className="h-4 w-4" /> });
+    if (cameraRequired) steps.push({ key: 'camera', title: 'Camera Verification', icon: <Video className="h-4 w-4" /> });
+    if (!securityRecheckActive && locationRequired) steps.push({ key: 'location', title: 'Location Permission', icon: <MapPin className="h-4 w-4" /> });
+    if (fullscreenRequired) steps.push({ key: 'fullscreen', title: 'Enable Full Screen', icon: <Maximize className="h-4 w-4" /> });
+    steps.push({ key: 'final', title: 'Final Verification', icon: <ShieldCheck className="h-4 w-4" /> });
+    return steps.map((step, index) => ({ ...step, id: index + 1 }));
+  }, [cameraRequired, fullscreenRequired, locationRequired, securityRecheckActive]);
   const completedSetupStepSet = useMemo(() => new Set(completedSetupSteps), [completedSetupSteps]);
   const setupStepIsDone = useCallback((key) => {
     return completedSetupStepSet.has(key);
   }, [completedSetupStepSet]);
   const currentSetupStepKey = setupSteps.find((item) => item.id === validationStep)?.key || setupSteps[0]?.key;
+  const currentSetupStepNumber = setupSteps.find((item) => item.id === validationStep)?.id || validationStep;
   const resetSecuritySetupProgress = useCallback(() => {
     setCompletedSetupSteps([]);
     setValidationStep(1);
@@ -673,7 +687,8 @@ export default function AssessmentAttempt() {
   }, [assessment?._id, submission?._id]);
 
   const handleAiProctoringError = useCallback((error) => {
-    // AI proctoring should never interrupt the existing assessment flow in this step.
+    const message = error?.message || 'AI proctoring could not start. Check the camera and network connection.';
+    setSecurityNotice(message);
     console.warn('AI Proctoring error', error);
   }, []);
 
@@ -739,7 +754,7 @@ export default function AssessmentAttempt() {
   }, [assessment, answersArray, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violationScore, pauseCount, lastPauseAt, securityHeartbeat, violations, stopAiProctoring, toast, navigate]);
 
   const triggerForcePause = useCallback((type, message, serverState = {}) => {
-    if (SOFT_FOOTER_WARNING_TYPES.has(type)) {
+    if (type !== 'tab_switch') {
       setSecurityNotice(message || 'Security attention needed. Please correct it and continue.');
       setSecurityAction('warn');
       setIsPaused(false);
@@ -850,6 +865,7 @@ export default function AssessmentAttempt() {
     if (now - lastScreenshotWarningAtRef.current < 1500) return;
     lastScreenshotWarningAtRef.current = now;
     screenshotGraceUntilRef.current = now + SCREENSHOT_WARNING_GRACE_MS;
+    focusLossScreenshotGraceUntilRef.current = now + FOCUS_LOSS_SCREENSHOT_GRACE_MS;
     const warningCount = totalWarnings + 1;
     setScreenshotWarnings((prev) => prev + 1);
     showTimedSecurityWarning({
@@ -926,9 +942,6 @@ export default function AssessmentAttempt() {
         setSecurityNotice(message);
       } else {
         showSecurityPopup(type, message, entry.meta);
-      }
-      if (type === 'heartbeat_failure') {
-        triggerForcePause(type, message);
       }
       return null;
     } finally {
@@ -1083,6 +1096,7 @@ export default function AssessmentAttempt() {
       const attemptAssessment = transformAssessmentForAttempt(data.assessment, data.submission?._id || `${id}:preview`);
       setAssessment(attemptAssessment);
       setSubmission(data.submission);
+      setCandidate(data.candidate || null);
       const locallySawRules = localStorage.getItem(rulesSeenStorageKey) === '1';
       setHasSeenRules(Boolean(data.submission?.startedAt) || locallySawRules);
 
@@ -1138,7 +1152,9 @@ export default function AssessmentAttempt() {
         Math.max(30, Number(data.securityRecheckTimeoutSec || data.assessment?.settings?.securityRecheckTimeoutSec || 180) || 180),
       );
       const pauseStartMs = data.submission?.pauseStartedAt ? new Date(data.submission.pauseStartedAt).getTime() : null;
-      const hasActiveSecurityPause = data.submission?.status !== 'submitted' && Number.isFinite(pauseStartMs);
+      const hasActiveSecurityPause = data.submission?.status !== 'submitted'
+        && data.submission?.securityPauseReason === 'tab_switch'
+        && Number.isFinite(pauseStartMs);
       if (hasActiveSecurityPause) {
         const elapsedSec = Math.floor((Date.now() - pauseStartMs) / 1000);
         setIsPaused(true);
@@ -1351,10 +1367,24 @@ export default function AssessmentAttempt() {
 
   useEffect(() => {
     if (!secureActive || !tabGuardEnabled) return undefined;
+    const reportTabViolation = (source, extraMeta = {}) => {
+      const message = 'Tab switch or focus loss detected. Return to the assessment window.';
+      const meta = {
+        limit: tabSwitchLimit || null,
+        warnAt: tabSwitchWarnAt || null,
+        action: tabSwitchAction,
+        nextCount: tabSwitches + 1,
+        source,
+        localPopupShown: true,
+        ...extraMeta,
+      };
+      showSecurityPopup('tab_switch', message, meta);
+      void recordViolation('tab_switch', message, meta);
+    };
     const reportFocusLoss = (source) => {
-      const screenshotWarningActive = Date.now() < screenshotGraceUntilRef.current
-        || Date.now() < restrictedActionGraceUntilRef.current
-        || Date.now() - lastScreenshotWarningAtRef.current < SCREENSHOT_WARNING_GRACE_MS;
+      const now = Date.now();
+      const screenshotWarningActive = now < focusLossScreenshotGraceUntilRef.current
+        || now - lastScreenshotWarningAtRef.current < FOCUS_LOSS_SCREENSHOT_GRACE_MS;
       if (screenshotWarningActive) {
         setSecurityStatus((prev) => ({ ...prev, tabActive: true }));
         setSecurityNotice(restrictedActionNoticeRef.current);
@@ -1363,29 +1393,52 @@ export default function AssessmentAttempt() {
       const active = document.hasFocus() && !document.hidden;
       setSecurityStatus((prev) => ({ ...prev, tabActive: active }));
       if (!active) {
-        void recordViolation('tab_switch', 'Tab switch or focus loss detected. Return to the assessment window.', {
-          limit: tabSwitchLimit || null,
-          warnAt: tabSwitchWarnAt || null,
-          action: tabSwitchAction,
-          nextCount: tabSwitches + 1,
-          source,
-        });
+        if (now - lastFocusLossAtRef.current < 1000) return;
+        lastFocusLossAtRef.current = now;
+        reportTabViolation(source);
       }
+    };
+    const handleTabShortcut = (event) => {
+      const key = String(event.key || '').toLowerCase();
+      const code = String(event.code || '').toLowerCase();
+      const browserTabShortcut = (event.ctrlKey || event.metaKey)
+        && (key === 'tab' || key === 'pageup' || key === 'pagedown');
+      const operatingSystemSwitch = event.altKey
+        && (key === 'tab' || key === 'escape' || code === 'tab');
+      if (!browserTabShortcut && !operatingSystemSwitch) return;
+
+      const now = Date.now();
+      if (now - lastTabShortcutAtRef.current < 700) return;
+      lastTabShortcutAtRef.current = now;
+      lastFocusLossAtRef.current = now;
+      const shortcut = [
+        event.ctrlKey ? 'Ctrl' : '',
+        event.metaKey ? 'Meta' : '',
+        event.altKey ? 'Alt' : '',
+        event.shiftKey ? 'Shift' : '',
+        event.key,
+      ].filter(Boolean).join('+');
+      reportTabViolation('keyboard_tab_switch', { shortcut });
     };
     const handleVisibility = () => reportFocusLoss('visibilitychange');
     const handleBlur = () => reportFocusLoss('window_blur');
+    const handlePageHide = () => reportFocusLoss('pagehide');
     const handleFocus = () => {
       setSecurityStatus((prev) => ({ ...prev, tabActive: document.hasFocus() && !document.hidden }));
     };
     document.addEventListener('visibilitychange', handleVisibility);
+    document.addEventListener('keydown', handleTabShortcut, true);
     window.addEventListener('blur', handleBlur);
     window.addEventListener('focus', handleFocus);
+    window.addEventListener('pagehide', handlePageHide);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibility);
+      document.removeEventListener('keydown', handleTabShortcut, true);
       window.removeEventListener('blur', handleBlur);
       window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('pagehide', handlePageHide);
     };
-  }, [secureActive, tabGuardEnabled, tabSwitchLimit, tabSwitchWarnAt, tabSwitchAction, tabSwitches, recordViolation]);
+  }, [secureActive, tabGuardEnabled, tabSwitchLimit, tabSwitchWarnAt, tabSwitchAction, tabSwitches, recordViolation, showSecurityPopup]);
 
   useEffect(() => {
     if (!secureActive || !preventMultipleTabs) return;
@@ -1405,9 +1458,14 @@ export default function AssessmentAttempt() {
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation?.();
-      void recordViolation(type, message, {
+      const violationMeta = {
         source: event.type,
         ...meta,
+        localPopupShown: true,
+      };
+      showSecurityPopup(type, message, violationMeta);
+      void recordViolation(type, message, {
+        ...violationMeta,
       });
     };
     const handleCopy = (event) => {
@@ -1468,6 +1526,12 @@ export default function AssessmentAttempt() {
         event.stopPropagation();
         event.stopImmediatePropagation?.();
         showScreenshotBlockedPopup();
+        void recordViolation('other', 'Screenshot keyboard shortcut detected and blocked where supported by the browser.', {
+          source: 'screenshot_shortcut',
+          shortcut: event.code || event.key,
+          warningOnly: true,
+          localPopupShown: true,
+        });
         return;
       }
       if (!copyBlockEnabled) return;
@@ -1506,7 +1570,7 @@ export default function AssessmentAttempt() {
       document.removeEventListener('keydown', handleKeydown, capture);
       window.removeEventListener('keyup', handleKeydown, capture);
     };
-  }, [secureActive, copyBlockEnabled, screenshotProtectionEnabled, blockRightClick, recordViolation, showScreenshotBlockedPopup, showTimedSecurityWarning, totalWarnings]);
+  }, [secureActive, copyBlockEnabled, screenshotProtectionEnabled, blockRightClick, recordViolation, showScreenshotBlockedPopup, showTimedSecurityWarning, showSecurityPopup, totalWarnings]);
 
   useEffect(() => {
     if (!secureActive || !idleDetection) return undefined;
@@ -1681,7 +1745,10 @@ export default function AssessmentAttempt() {
   }, [stopAiProctoring]);
 
   useEffect(() => {
-    const assessmentCameraReady = Boolean(streamRef.current);
+    const assessmentCameraReady = Boolean(
+      cameraStreamReady
+      && streamRef.current?.getVideoTracks?.().some((track) => track.readyState === 'live'),
+    );
 
     if (!secureActive || !aiProctoringEnabled || !assessment?._id || !submission?._id || !assessmentCameraReady) {
       stopAiProctoring();
@@ -1720,7 +1787,7 @@ export default function AssessmentAttempt() {
     assessment?._id,
     submission?._id,
     securitySettings.aiProctoring,
-    securityStatus.cameraActive,
+    cameraStreamReady,
     stopAiProctoring,
     handleAiViolationConfirmed,
     handleAiProctoringError,
@@ -1737,9 +1804,6 @@ export default function AssessmentAttempt() {
     const video = monitorVideoRef.current;
     const canvas = monitorCanvasRef.current;
     const ctx = canvas?.getContext('2d');
-    if (streamRef.current) {
-      attachStream(streamRef.current);
-    }
     if (!faceDetectorRef.current && typeof window !== 'undefined' && 'FaceDetector' in window) {
       try {
         faceDetectorRef.current = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 3 });
@@ -1753,19 +1817,18 @@ export default function AssessmentAttempt() {
       const nextCount = sameType ? streak.count + 1 : 1;
       cameraViolationStreakRef.current = { type, count: nextCount, at: Date.now() };
       setCameraIndicator('warning');
-      setSecurityStatus((prev) => ({ ...prev, cameraActive: false }));
+      setSecurityStatus((prev) => ({ ...prev, cameraActive: type !== 'camera_loss' }));
       setSecurityNotice(message);
       if (type === 'camera_no_face') {
         setFaceStatus('idle');
       }
-      if (SOFT_CAMERA_WARNING_TYPES.has(type)) {
-        return;
-      }
-      if (nextCount >= CAMERA_WARNING_STREAK_LIMIT) {
+      const confirmationCount = type === 'camera_loss' ? 1 : CAMERA_WARNING_STREAK_LIMIT;
+      if (nextCount >= confirmationCount) {
         void recordViolation(type, message, {
           ...meta,
           source: 'camera_monitor',
           persistent: true,
+          warningOnly: true,
         });
       }
     };
@@ -1804,7 +1867,9 @@ export default function AssessmentAttempt() {
     };
     const sampleFrame = async () => {
       if (cancelled) return;
-      if (!streamRef.current || !video || !canvas || !ctx) {
+      const hasLiveVideo = Boolean(streamRef.current?.getVideoTracks?.().some((track) => track.readyState === 'live'));
+      if (!hasLiveVideo || !video || !canvas || !ctx) {
+        setCameraStreamReady(false);
         emitCameraViolation('camera_loss', 'Camera feed is not available.');
         return;
       }
@@ -1849,10 +1914,38 @@ export default function AssessmentAttempt() {
         });
       }
     };
-    intervalId = setInterval(() => {
-      void sampleFrame();
-    }, 1200);
-    void sampleFrame();
+    const initializeCameraMonitoring = async () => {
+      let stream = streamRef.current;
+      const hasLiveVideo = Boolean(stream?.getVideoTracks?.().some((track) => track.readyState === 'live'));
+      if (!hasLiveVideo) {
+        try {
+          stream = await navigator.mediaDevices?.getUserMedia?.({ video: true, audio: false });
+        } catch {
+          if (!cancelled) emitCameraViolation('camera_loss', 'Camera permission is required for this assessment.');
+          return;
+        }
+        if (!stream) {
+          if (!cancelled) emitCameraViolation('camera_loss', 'Camera API is not available in this browser.');
+          return;
+        }
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        streamRef.current = stream;
+      }
+
+      attachStream(stream);
+      setCameraStreamReady(true);
+      setSecurityStatus((prev) => ({ ...prev, cameraActive: true }));
+      await sampleFrame();
+      if (!cancelled) {
+        intervalId = setInterval(() => {
+          void sampleFrame();
+        }, 1200);
+      }
+    };
+    void initializeCameraMonitoring();
     return () => {
       cancelled = true;
       if (intervalId) clearInterval(intervalId);
@@ -1941,7 +2034,9 @@ export default function AssessmentAttempt() {
       const status = {
         fullscreen: warningGraceActive || fullscreenRecoveryActive || !fullscreenRequired || Boolean(document.fullscreenElement),
         tabActive: warningGraceActive || !tabGuardEnabled || (document.hasFocus() && !document.hidden),
-        cameraActive: !cameraRequired || Boolean(streamRef.current),
+        cameraActive: !cameraRequired || Boolean(
+          streamRef.current?.getVideoTracks?.().some((track) => track.readyState === 'live'),
+        ),
         idle: Boolean(securityStatusRef.current.idle),
         duplicateTab: Boolean(securityStatusRef.current.duplicateTab),
       };
@@ -1961,10 +2056,7 @@ export default function AssessmentAttempt() {
           return;
         }
         if (result?.inconsistent && !warningGraceActive) {
-          await recordViolation('heartbeat_failure', 'Security heartbeat reported an inconsistent session state.', {
-            source: 'heartbeat_inconsistent',
-            status,
-          });
+          setSecurityNotice('Security status changed. Monitoring continues and the event was retained for audit.');
           return;
         }
       } catch {
@@ -1974,16 +2066,22 @@ export default function AssessmentAttempt() {
         }
         if (Date.now() - heartbeatFailureRef.current > 12000) {
           heartbeatFailureRef.current = Date.now();
-          void recordViolation('heartbeat_failure', 'Security heartbeat failed. Please check your connection.', {
-            source: 'heartbeat_request',
-          });
+          setSecurityNotice('Security heartbeat could not reach the server. Check your connection; the assessment will continue.');
+          void api.logStudentAssessmentMonitoring(assessment._id, {
+            event: {
+              type: 'heartbeat_connection_warning',
+              at: new Date().toISOString(),
+              message: 'Security heartbeat request failed during assessment.',
+              meta: { source: 'heartbeat_request' },
+            },
+          }).catch(() => {});
         }
       }
     };
     void sendHeartbeat();
     const interval = setInterval(sendHeartbeat, 5000);
     return () => clearInterval(interval);
-  }, [secureActive, assessment?._id, fullscreenRequired, fullscreenRecovery.active, tabGuardEnabled, cameraRequired, cameraFlags, handleSubmit, recordViolation, triggerForcePause]);
+  }, [secureActive, assessment?._id, fullscreenRequired, fullscreenRecovery.active, tabGuardEnabled, cameraRequired, cameraFlags]);
 
   const updateAnswer = (sectionIndex, questionIndex, value) => {
     setAnswersMap((prev) => ({
@@ -2041,64 +2139,54 @@ export default function AssessmentAttempt() {
 
   const ensureCamera = async () => {
     if (!navigator.mediaDevices?.getUserMedia) return false;
-    if (streamRef.current) {
+    const hasLiveVideo = Boolean(streamRef.current?.getVideoTracks?.().some((track) => track.readyState === 'live'));
+    if (hasLiveVideo) {
       attachStream(streamRef.current);
+      setCameraStreamReady(true);
       return true;
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       streamRef.current = stream;
       attachStream(stream);
+      setCameraStreamReady(true);
       return true;
     } catch {
+      setCameraStreamReady(false);
       return false;
     }
   };
 
-  const verifyHumanPresence = async () => {
+  const verifyCameraFeed = async () => {
     const video = validationVideoRef.current;
-    if (!video) return false;
-    const waitForFrame = () => new Promise((resolve) => {
-      if (video.readyState >= 2) {
+    const stream = streamRef.current;
+    const hasLiveTrack = Boolean(stream?.getVideoTracks?.().some((track) => track.readyState === 'live'));
+    if (!video || !hasLiveTrack) return false;
+
+    return new Promise((resolve) => {
+      const frameReady = () => video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0;
+      if (frameReady()) {
         resolve(true);
         return;
       }
-      const timeout = setTimeout(() => resolve(false), 2500);
-      video.onloadeddata = () => {
-        clearTimeout(timeout);
+      const timeout = setTimeout(() => {
+        cleanup();
+        resolve(frameReady());
+      }, 4000);
+      const handleReady = () => {
+        if (!frameReady()) return;
+        cleanup();
         resolve(true);
       };
+      const cleanup = () => {
+        clearTimeout(timeout);
+        video.removeEventListener('loadeddata', handleReady);
+        video.removeEventListener('canplay', handleReady);
+      };
+      video.addEventListener('loadeddata', handleReady);
+      video.addEventListener('canplay', handleReady);
+      void video.play().catch(() => {});
     });
-    const ready = await waitForFrame();
-    if (!ready) return false;
-
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return false;
-    const width = 160;
-    const height = 90;
-    canvas.width = width;
-    canvas.height = height;
-
-    let detectedFrames = 0;
-    for (let frame = 0; frame < 3; frame += 1) {
-      ctx.drawImage(video, 0, 0, width, height);
-      const { data } = ctx.getImageData(0, 0, width, height);
-      let sum = 0;
-      let sumSq = 0;
-      let count = 0;
-      for (let i = 0; i < data.length; i += 4) {
-        const value = (data[i] + data[i + 1] + data[i + 2]) / 3;
-        sum += value;
-        sumSq += value * value;
-        count += 1;
-      }
-      const avg = count ? sum / count : 0;
-      const variance = count ? (sumSq / count) - (avg * avg) : 0;
-      if (variance > 120) detectedFrames += 1;
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    }
-    return detectedFrames >= 2;
   };
 
   const handleEnableFullscreen = async () => {
@@ -2166,10 +2254,10 @@ export default function AssessmentAttempt() {
       setSetupCheckingStep('');
     } else {
       setFaceStatus('detecting');
-      const faceOk = !cameraRequired || await verifyHumanPresence();
-      setValidationState((prev) => ({ ...prev, face: faceOk }));
-      setFaceStatus(faceOk ? 'detected' : 'idle');
-      if (faceOk) {
+      const feedOk = !cameraRequired || await verifyCameraFeed();
+      setValidationState((prev) => ({ ...prev, camera: feedOk, face: feedOk }));
+      setFaceStatus(feedOk ? 'detected' : 'idle');
+      if (feedOk) {
         try {
           let result = null;
           if (assessment?._id) {
@@ -2185,7 +2273,7 @@ export default function AssessmentAttempt() {
           setSetupCheckingStep('');
         }
       } else {
-        setValidationMessage('Camera is active, but human presence was not clearly detected. Please center your face and try again.');
+        setValidationMessage('Camera permission is active, but a live video frame was not received. Check whether another app is using the camera and try again.');
         setSetupCheckingStep('');
       }
     }
@@ -2232,8 +2320,8 @@ export default function AssessmentAttempt() {
     const fullscreenOk = !fullscreenRequired || Boolean(document.fullscreenElement);
     const focusOk = document.hasFocus() && !document.hidden;
     const tabsOk = !preventMultipleTabs || detectedTabs.filter((tab) => !tab.current).length === 0;
-    const cameraOk = !cameraRequired || (validationState.camera && validationState.face);
-    const locationOk = Boolean(validationState.location);
+    const cameraOk = !cameraRequired || validationState.camera;
+    const locationOk = !locationRequired || securityRecheckActive || Boolean(validationState.location);
     const ok = fullscreenOk && focusOk && tabsOk && cameraOk && locationOk;
     setValidationState((prev) => ({
       ...prev,
@@ -2259,7 +2347,11 @@ export default function AssessmentAttempt() {
     } else if (!tabsOk) {
       setValidationMessage('A duplicate assessment tab is still active. Close it and run the final check again.');
     } else {
-      setValidationMessage('Please ensure all required focus, camera, fullscreen, and location checks are satisfied.');
+      setValidationMessage(
+        securityRecheckActive
+          ? 'Please ensure focus, duplicate tabs, camera, and fullscreen checks are satisfied.'
+          : 'Please ensure all required focus, camera, fullscreen, and location checks are satisfied.',
+      );
     }
   };
 
@@ -2279,13 +2371,16 @@ export default function AssessmentAttempt() {
       setTimeLeft(serverAllowedEnd - serverTime);
       setAllowedEndTime(serverAllowedEnd);
       setSubmission(data.submission);
+      if (data.candidate) setCandidate(data.candidate);
       setIsPaused(false);
       setSecurityRecheckStartedAt(null);
       setSecurityRecheckRemainingSec(0);
       securityRecheckAutoSubmitRef.current = false;
       setSecurityStatus({
         fullscreen: !fullscreenRequired || Boolean(document.fullscreenElement),
-        cameraActive: !cameraRequired || Boolean(streamRef.current),
+        cameraActive: !cameraRequired || Boolean(
+          streamRef.current?.getVideoTracks?.().some((track) => track.readyState === 'live'),
+        ),
         tabActive: document.hasFocus() && !document.hidden,
         idle: false,
         duplicateTab: false,
@@ -3353,7 +3448,7 @@ export default function AssessmentAttempt() {
             <div className="min-h-0 flex-1 overflow-y-auto border-t border-slate-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900 sm:px-5">
               {currentSetupStepKey === 'environment' && (
                 <div className="space-y-3">
-                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Step 1: Clean Environment Check</div>
+                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Step {currentSetupStepNumber}: Clean Environment Check</div>
                   <p className="text-sm text-slate-600 dark:text-gray-300">Keep only this assessment tab active. Browser security prevents websites from listing every external tab, app, or extension, so PeerPrep verifies focus and detects duplicate assessment tabs within the platform.</p>
                   <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
                     <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-gray-300">
@@ -3406,7 +3501,7 @@ export default function AssessmentAttempt() {
               {currentSetupStepKey === 'camera' && (
                 <div className="space-y-4">
                   <div>
-                    <div className="text-sm font-bold text-slate-800 dark:text-white">Camera Verification</div>
+                    <div className="text-sm font-bold text-slate-800 dark:text-white">Step {currentSetupStepNumber}: Camera Verification</div>
                     <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">
                       {cameraRequired
                         ? 'Your webcam feed is required for identity verification during this assessment.'
@@ -3438,18 +3533,17 @@ export default function AssessmentAttempt() {
                                   ? 'bg-amber-300 animate-pulse'
                                   : 'bg-rose-300'
                             }`} />
-                            {faceStatus === 'detected' ? 'Face detected' : faceStatus === 'detecting' ? 'Scanning' : 'Waiting'}
+                            {faceStatus === 'detected' ? 'Feed ready' : faceStatus === 'detecting' ? 'Connecting' : 'Waiting'}
                           </div>
                         </div>
                       </div>
                       <div className="min-w-0 flex-1 space-y-2">
                         <div className="rounded-xl border border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-600 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
-                          Keep your face centered and clearly visible. A simple preview will appear as soon as the camera is active.
+                          Allow camera access and confirm that the live preview is visible. Face and object monitoring starts automatically after the assessment begins.
                         </div>
                         <div className="flex flex-wrap gap-2">
                           {[
                             ['Camera', validationState.camera ? 'Ready' : 'Pending'],
-                            ['Face', faceStatus === 'detected' ? 'Detected' : faceStatus === 'detecting' ? 'Scanning' : 'Waiting'],
                             ['Feed', streamRef.current ? 'Live' : 'Off'],
                           ].map(([label, value]) => (
                             <div key={label} className="rounded-full border border-slate-200 bg-white/85 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
@@ -3473,7 +3567,7 @@ export default function AssessmentAttempt() {
                   </div>
                   {validationState.camera && validationState.face && (
                     <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 dark:bg-emerald-900/20 dark:border-emerald-700 dark:text-emerald-300">
-                      <CheckCircle2 className="h-4 w-4" /> Camera identity verified successfully.
+                      <CheckCircle2 className="h-4 w-4" /> Live camera feed verified successfully.
                     </div>
                   )}
                 </div>
@@ -3481,7 +3575,7 @@ export default function AssessmentAttempt() {
 
               {currentSetupStepKey === 'location' && (
                 <div className="space-y-4">
-                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Step 3: Location Permission</div>
+                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Step {currentSetupStepNumber}: Location Permission</div>
                   <p className="text-sm text-slate-600 dark:text-gray-300">Allow location access. Coordinates are stored for admin audit.</p>
                   {locationData ? (
                     <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
@@ -3511,7 +3605,7 @@ export default function AssessmentAttempt() {
 
               {currentSetupStepKey === 'fullscreen' && (
                 <div className="space-y-4">
-                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Step 4: Fullscreen Mode Activation</div>
+                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Step {currentSetupStepNumber}: Fullscreen Mode Activation</div>
                   <p className="text-sm text-slate-600 dark:text-gray-300">{fullscreenRequired ? 'Fullscreen mode is required and exit attempts will be logged.' : 'Fullscreen is not required by the admin settings for this assessment.'}</p>
                   <button
                     type="button"
@@ -3532,7 +3626,7 @@ export default function AssessmentAttempt() {
 
               {currentSetupStepKey === 'final' && (
                 <div className="space-y-4">
-                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Step 5: Final System Check</div>
+                  <div className="text-sm font-semibold text-slate-800 dark:text-white">Step {currentSetupStepNumber}: Final System Check</div>
                   <div className="grid gap-2 text-sm text-slate-600 dark:text-gray-300">
                     <div className="flex items-center justify-between">
                       <span>Fullscreen active</span>
@@ -3558,12 +3652,14 @@ export default function AssessmentAttempt() {
                         {!preventMultipleTabs ? 'Not restricted' : detectedTabs.filter((tab) => !tab.current).length === 0 ? 'None' : 'Close duplicates'}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span>Location permission</span>
-                      <span className={validationState.location ? 'text-emerald-600' : 'text-rose-600'}>
-                        {validationState.location ? 'Granted' : 'Pending'}
-                      </span>
-                    </div>
+                    {!securityRecheckActive && locationRequired && (
+                      <div className="flex items-center justify-between">
+                        <span>Location permission</span>
+                        <span className={validationState.location ? 'text-emerald-600' : 'text-rose-600'}>
+                          {validationState.location ? 'Granted' : 'Pending'}
+                        </span>
+                      </div>
+                    )}
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
                     <button

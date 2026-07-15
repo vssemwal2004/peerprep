@@ -1,6 +1,6 @@
 import User from '../models/User.js';
 import Event from '../models/Event.js';
-import { sendMail, renderTemplate } from '../utils/mailer.js';
+import { sendCoordinatorOnboardingEmail } from '../utils/mailer.js';
 import { logActivity } from './adminActivityController.js';
 import {
   DEFAULT_COORDINATOR_PERMISSIONS,
@@ -145,23 +145,12 @@ export async function createCoordinator(req, res) {
 
     // Send onboarding email to coordinator
     if (process.env.EMAIL_ON_ONBOARD === 'true' && user.email) {
-      const subject = 'Coordinator Account Created - Your Credentials';
-      const html = `
-        <div style="font-family:Arial,sans-serif;font-size:15px;color:#222;max-width:600px;">
-          <p style="margin-bottom:16px;">Dear {name},</p>
-          <p style="margin-bottom:12px;">Your <strong>Coordinator</strong> account has been created.</p>
-          <div style="background:#f0f9ff;padding:16px;border-radius:8px;border-left:4px solid #0ea5e9;margin:16px 0;">
-            <table style="width:100%;font-size:15px;">
-              <tr><td style="padding:6px 0;width:40%;color:#475569;"><strong>Coordinator ID:</strong></td><td style="padding:6px 0;color:#0f172a;font-weight:600;">{coordinatorId}</td></tr>
-              <tr><td style="padding:6px 0;color:#475569;"><strong>Email:</strong></td><td style="padding:6px 0;color:#0f172a;font-weight:600;">{email}</td></tr>
-              <tr><td style="padding:6px 0;color:#475569;"><strong>Temporary Password:</strong></td><td style="padding:6px 0;color:#0f172a;font-weight:600;">{password}</td></tr>
-            </table>
-          </div>
-          <div style="background:#fef3c7;padding:12px;border-radius:6px;border-left:3px solid #f59e0b;">
-            <p style="margin:0;font-size:14px;color:#78350f;">Login with these credentials. Change password on first login.</p>
-          </div>
-        </div>`;
-      await sendMail({ to: user.email, subject, html: renderTemplate(html, { name: user.name || 'Coordinator', coordinatorId: user.coordinatorId, email: user.email, password: defaultPassword }) });
+      await sendCoordinatorOnboardingEmail({
+        to: user.email,
+        name: user.name,
+        coordinatorId: user.coordinatorId,
+        password: defaultPassword,
+      });
     }
 
     // Log activity
@@ -249,6 +238,120 @@ export async function updateCoordinator(req, res) {
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });
+  }
+}
+
+export async function bulkCreateCoordinators(req, res) {
+  try {
+    const rows = Array.isArray(req.body?.coordinators) ? req.body.coordinators : [];
+    if (!rows.length) return res.status(400).json({ error: 'At least one coordinator row is required.' });
+    if (rows.length > 500) return res.status(400).json({ error: 'A maximum of 500 coordinators can be uploaded at once.' });
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const seenEmails = new Set();
+    const seenIds = new Set();
+    const normalizedRows = rows.map((row, index) => ({
+      row: Number(row.row || index + 2),
+      name: String(row.name || row.coordinatorName || '').trim(),
+      email: String(row.email || row.coordinatorEmail || '').trim().toLowerCase(),
+      coordinatorId: String(row.coordinatorId || row.coordinatorID || '').trim(),
+      password: String(row.password || row.coordinatorPassword || '').trim(),
+      phone: String(row.phone || '').trim(),
+      department: String(row.department || '').trim(),
+      college: String(row.college || '').trim(),
+      grantDefaultAccess: row.grantDefaultAccess !== false && String(row.grantDefaultAccess || '').toLowerCase() !== 'false',
+    }));
+
+    const results = [];
+    const validRows = [];
+    for (const row of normalizedRows) {
+      const errors = [];
+      if (!row.name) errors.push('Name is required');
+      if (!row.email) errors.push('Email is required');
+      else if (!emailRegex.test(row.email)) errors.push('Email format is invalid');
+      if (!row.coordinatorId) errors.push('Coordinator ID is required');
+      if (row.password && row.password.length < 6) errors.push('Password must have at least 6 characters');
+      if (seenEmails.has(row.email)) errors.push('Duplicate email in file');
+      if (seenIds.has(row.coordinatorId.toLowerCase())) errors.push('Duplicate Coordinator ID in file');
+      seenEmails.add(row.email);
+      seenIds.add(row.coordinatorId.toLowerCase());
+      if (errors.length) results.push({ row: row.row, status: 'error', errors });
+      else validRows.push(row);
+    }
+
+    const existing = validRows.length ? await User.find({
+      role: 'coordinator',
+      $or: [
+        { email: { $in: validRows.map((row) => row.email) } },
+        { coordinatorId: { $in: validRows.map((row) => row.coordinatorId) } },
+      ],
+    }).select('email coordinatorId').lean() : [];
+    const existingEmails = new Set(existing.map((user) => String(user.email || '').toLowerCase()));
+    const existingIds = new Set(existing.map((user) => String(user.coordinatorId || '').toLowerCase()));
+    const created = [];
+
+    for (const row of validRows) {
+      if (existingEmails.has(row.email) || existingIds.has(row.coordinatorId.toLowerCase())) {
+        results.push({ row: row.row, status: 'exists', errors: ['Coordinator email or ID already exists'] });
+        continue;
+      }
+      try {
+        const temporaryPassword = row.password || row.coordinatorId;
+        const user = await User.create({
+          role: 'coordinator',
+          name: row.name,
+          email: row.email,
+          coordinatorId: row.coordinatorId,
+          phone: row.phone,
+          department: row.department,
+          college: row.college,
+          passwordHash: await User.hashPassword(temporaryPassword),
+          mustChangePassword: true,
+          isActive: true,
+          coordinatorPermissions: row.grantDefaultAccess ? DEFAULT_COORDINATOR_PERMISSIONS : [],
+        });
+        created.push({ user, temporaryPassword });
+        results.push({ row: row.row, status: 'created', id: user._id, coordinatorId: user.coordinatorId });
+      } catch (error) {
+        results.push({ row: row.row, status: 'error', errors: [error?.code === 11000 ? 'Coordinator email or ID already exists' : 'Coordinator could not be created'] });
+      }
+    }
+
+    let emailSent = 0;
+    let emailFailed = 0;
+    if (process.env.EMAIL_ON_ONBOARD === 'true' && created.length) {
+      const mailResults = await Promise.allSettled(created.map(({ user, temporaryPassword }) => sendCoordinatorOnboardingEmail({
+        to: user.email,
+        name: user.name,
+        coordinatorId: user.coordinatorId,
+        password: temporaryPassword,
+      })));
+      emailSent = mailResults.filter((result) => result.status === 'fulfilled').length;
+      emailFailed = mailResults.length - emailSent;
+    }
+
+    logActivity({
+      userEmail: req.user.email,
+      userRole: req.user.role,
+      actionType: 'BULK_CREATE',
+      targetType: 'COORDINATOR',
+      targetId: 'bulk-upload',
+      description: `Bulk uploaded ${created.length} coordinator${created.length === 1 ? '' : 's'}`,
+      metadata: { requested: rows.length, created: created.length, emailSent, emailFailed },
+      req,
+    });
+
+    return res.json({
+      requested: rows.length,
+      created: created.length,
+      failed: rows.length - created.length,
+      emailSent,
+      emailFailed,
+      results: results.sort((a, b) => a.row - b.row),
+    });
+  } catch (err) {
+    console.error('Error bulk creating coordinators:', err);
+    return res.status(500).json({ error: 'Failed to bulk create coordinators.' });
   }
 }
 

@@ -5,6 +5,8 @@ export const EMAIL_TEMPLATE_TYPES = {
   PASSWORD_RESET: 'PASSWORD_RESET',
   EVENT_NOTIFICATION: 'EVENT_NOTIFICATION',
   ASSESSMENT_NOTIFICATION: 'ASSESSMENT_NOTIFICATION',
+  ASSESSMENT_INVITATION: 'ASSESSMENT_INVITATION',
+  COORDINATOR_ONBOARDING: 'COORDINATOR_ONBOARDING',
   SLOT_PROPOSAL: 'SLOT_PROPOSAL',
   SLOT_ACCEPTED: 'SLOT_ACCEPTED',
   SLOT_COUNTER: 'SLOT_COUNTER',
@@ -161,6 +163,61 @@ const defaultTemplates = [
         </div>
         <p style="margin-top:28px;color:#64748b;font-size:14px;">If you have any questions or need assistance, please contact your program administrator.</p>
         <p style="margin-top:24px;">Best regards,<br/><strong>PeerPrep Team</strong></p>
+      </div>
+    `.trim(),
+  },
+  {
+    type: EMAIL_TEMPLATE_TYPES.ASSESSMENT_INVITATION,
+    name: 'Assessment Invitation',
+    subject: 'You are invited: {{assessmentTitle}} | PeerPrep',
+    variables: ['studentName', 'assessmentTitle', 'assessmentId', 'testType', 'description', 'startLabel', 'endLabel', 'duration', 'attemptLimit', 'passwordSection', 'assessmentUrl'],
+    htmlContent: `
+      <div style="margin:0;background:#f1f5f9;padding:32px 12px;font-family:Arial,sans-serif;color:#0f172a;">
+        <div style="max-width:640px;margin:0 auto;overflow:hidden;border:1px solid #e2e8f0;border-radius:18px;background:#ffffff;box-shadow:0 16px 40px rgba(15,23,42,.08);">
+          <div style="background:linear-gradient(135deg,#0369a1,#0ea5e9);padding:28px 32px;color:#ffffff;">
+            <div style="font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;opacity:.85;">PeerPrep Assessment</div>
+            <h1 style="margin:10px 0 0;font-size:26px;line-height:1.3;">{{assessmentTitle}}</h1>
+          </div>
+          <div style="padding:30px 32px;">
+            <p style="margin:0 0 16px;font-size:16px;">Hello <strong>{{studentName}}</strong>,</p>
+            <p style="margin:0 0 22px;color:#475569;line-height:1.7;">You are eligible for this assessment. Review the complete schedule and access details below before starting.</p>
+            <div style="border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+              <table role="presentation" style="width:100%;border-collapse:collapse;font-size:14px;">
+                <tr><td style="padding:12px 16px;background:#f8fafc;color:#64748b;width:38%;">Assessment ID</td><td style="padding:12px 16px;font-weight:700;">{{assessmentId}}</td></tr>
+                <tr><td style="padding:12px 16px;background:#f8fafc;color:#64748b;">Type</td><td style="padding:12px 16px;font-weight:700;">{{testType}}</td></tr>
+                <tr><td style="padding:12px 16px;background:#f8fafc;color:#64748b;">Starts</td><td style="padding:12px 16px;font-weight:700;">{{startLabel}}</td></tr>
+                <tr><td style="padding:12px 16px;background:#f8fafc;color:#64748b;">Ends</td><td style="padding:12px 16px;font-weight:700;">{{endLabel}}</td></tr>
+                <tr><td style="padding:12px 16px;background:#f8fafc;color:#64748b;">Duration</td><td style="padding:12px 16px;font-weight:700;">{{duration}}</td></tr>
+                <tr><td style="padding:12px 16px;background:#f8fafc;color:#64748b;">Attempt limit</td><td style="padding:12px 16px;font-weight:700;">{{attemptLimit}}</td></tr>
+              </table>
+            </div>
+            <div style="margin:20px 0;padding:16px;border-left:4px solid #38bdf8;border-radius:10px;background:#f0f9ff;color:#0c4a6e;line-height:1.6;">{{description}}</div>
+            {{passwordSection}}
+            <div style="margin:28px 0;text-align:center;"><a href="{{assessmentUrl}}" style="display:inline-block;border-radius:10px;background:#0284c7;padding:14px 28px;color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;">Open PeerPrep Assessments</a></div>
+            <p style="margin:0;color:#64748b;font-size:13px;line-height:1.6;">Use only your own PeerPrep account. The assessment security rules and permitted attempt window apply.</p>
+          </div>
+          <div style="border-top:1px solid #e2e8f0;background:#f8fafc;padding:18px 32px;color:#64748b;font-size:12px;">PeerPrep · Prepare. Practice. Perform.</div>
+        </div>
+      </div>
+    `.trim(),
+  },
+  {
+    type: EMAIL_TEMPLATE_TYPES.COORDINATOR_ONBOARDING,
+    name: 'Coordinator Welcome Email',
+    subject: 'Welcome to PeerPrep - Coordinator account created',
+    variables: ['name', 'coordinatorId', 'email', 'password', 'dashboardUrl'],
+    htmlContent: `
+      <div style="margin:0;background:#f1f5f9;padding:32px 12px;font-family:Arial,sans-serif;color:#0f172a;">
+        <div style="max-width:620px;margin:0 auto;border:1px solid #e2e8f0;border-radius:18px;background:#fff;overflow:hidden;">
+          <div style="background:#0c4a6e;padding:26px 30px;color:#fff;"><div style="font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#bae6fd;">PeerPrep Coordinator</div><h1 style="margin:9px 0 0;font-size:24px;">Welcome, {{name}}</h1></div>
+          <div style="padding:28px 30px;"><p style="margin:0 0 20px;color:#475569;line-height:1.7;">Your coordinator account is ready. Use the credentials below for your first sign-in.</p>
+            <div style="border:1px solid #bae6fd;background:#f0f9ff;border-radius:14px;padding:18px;">
+              <p style="margin:6px 0;"><strong>Coordinator ID:</strong> {{coordinatorId}}</p><p style="margin:10px 0;"><strong>Email:</strong> {{email}}</p><p style="margin:6px 0;"><strong>Temporary password:</strong> {{password}}</p>
+            </div>
+            <p style="margin:18px 0;color:#92400e;background:#fffbeb;border-left:4px solid #f59e0b;padding:14px;border-radius:8px;">You will be asked to change this password after signing in.</p>
+            <div style="text-align:center;margin:28px 0;"><a href="{{dashboardUrl}}" style="display:inline-block;border-radius:10px;background:#0284c7;padding:14px 28px;color:#fff;font-weight:700;text-decoration:none;">Sign in to PeerPrep</a></div>
+          </div>
+        </div>
       </div>
     `.trim(),
   },

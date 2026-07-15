@@ -67,6 +67,7 @@ const AddQuestionToLibrary = lazy(() => import("./admin/AddQuestionToLibrary"));
 const SelectProblemFromLibrary = lazy(() => import("./admin/assessment/SelectProblemFromLibrary"));
 const AdminAssessmentPreview = lazy(() => import("./admin/assessment/AdminAssessmentPreview"));
 const AdminEmailTemplates = lazy(() => import("./admin/EmailTemplates"));
+const StudentPromotion = lazy(() => import("./admin/StudentPromotion"));
 const AnnouncementCreate = lazy(() => import("./admin/AnnouncementCreate"));
 const AnnouncementManage = lazy(() => import("./admin/AnnouncementManage"));
 const CoordinatorOverview = lazy(() => import("./admin/CoordinatorOverview"));
@@ -309,6 +310,7 @@ function AppContent() {
         <Route path="/admin/company-insights" element={<AdminShell><AdminCompanyInsights /></AdminShell>} />
         <Route path="/admin/company-insights/add" element={<AdminShell><AdminCompanyBenchmarkAdd /></AdminShell>} />
         <Route path="/admin/settings/email-templates" element={<AdminShell><AdminEmailTemplates /></AdminShell>} />
+        <Route path="/admin/settings/promote-students" element={<AdminShell><StudentPromotion /></AdminShell>} />
         <Route path="/admin/announcements/add" element={<AdminShell><AnnouncementCreate /></AdminShell>} />
         <Route path="/admin/announcements/manage" element={<AdminShell><AnnouncementManage /></AdminShell>} />
         
@@ -326,6 +328,7 @@ function AppContent() {
         <Route path="/coordinator/profile" element={<CoordinatorShell permission="coordinator.profile.manage"><CoordinatorProfile /></CoordinatorShell>} />
         <Route path="/coordinator/change-password" element={<CoordinatorShell permission="coordinator.profile.manage"><CoordinatorChangePassword /></CoordinatorShell>} />
         <Route path="/coordinator/activity" element={<CoordinatorShell permission="coordinator.activity.view"><CoordinatorActivity /></CoordinatorShell>} />
+        <Route path="/coordinator/settings/promote-students" element={<CoordinatorShell permission="coordinator.students.promote"><StudentPromotion /></CoordinatorShell>} />
         
         {/* Extended Coordinator Features */}
         <Route path="/coordinator/assessment" element={<CoordinatorShell permission="coordinator.assessment.view"><AssessmentDashboard /></CoordinatorShell>} />

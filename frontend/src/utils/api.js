@@ -375,6 +375,9 @@ export const api = {
     return request('/students/upload', { method: 'POST', formData: fd });
   },
   createStudent: (body) => request('/students/create', { method: 'POST', body }),
+  listPromotionSemesters: () => request('/students/promotion/semesters', { skipCache: true }),
+  listPromotionStudents: (semester) => request(`/students/promotion/semesters/${semester}/students`, { skipCache: true }),
+  promoteStudents: (body) => request('/students/promotion/promote', { method: 'POST', body }),
   updateStudent: (studentId, body) => request(`/students/${studentId}`, { method: 'PUT', body }),
   deleteStudent: (studentId) => request(`/students/${studentId}`, { method: 'DELETE' }),
   exportStudentsCsv: async () => {
@@ -396,6 +399,7 @@ export const api = {
   // Coordinators
   listAllCoordinators: (search = '') => request(`/coordinators/list${search ? '?search=' + encodeURIComponent(search) : ''}`),
   createCoordinator: (body) => request('/coordinators/create', { method: 'POST', body }),
+  bulkCreateCoordinators: (coordinators) => request('/coordinators/bulk-create', { method: 'POST', body: { coordinators } }),
   updateCoordinator: (coordinatorId, body) => request(`/coordinators/${coordinatorId}`, { method: 'PUT', body }),
   getCoordinatorAccess: (coordinatorId) => request(`/coordinators/${coordinatorId}/access`, { skipCache: true }),
   updateCoordinatorAccess: (coordinatorId, body) => request(`/coordinators/${coordinatorId}/access`, { method: 'PUT', body }),
@@ -447,6 +451,10 @@ export const api = {
   updateAssessment: (id, body) => request(`/admin/assessment/${id}`, { method: 'PUT', body }),
   deleteAssessment: (id) => request(`/admin/assessment/${id}`, { method: 'DELETE' }),
   resetAssessmentSubmissions: (id) => request(`/admin/assessment/${id}/reset-submissions`, { method: 'POST' }),
+  listAssessmentEligibleStudents: (id) => request(`/admin/assessment/${id}/eligible-students`, { skipCache: true }),
+  resetAssessmentStudentSubmission: (id, studentId) => request(`/admin/assessment/${id}/students/${studentId}/reset-submission`, { method: 'POST' }),
+  removeAssessmentEligibleStudent: (id, studentId) => request(`/admin/assessment/${id}/students/${studentId}`, { method: 'DELETE' }),
+  sendAssessmentInvitations: (id, password = '') => request(`/admin/assessment/${id}/send-invitations`, { method: 'POST', body: { password } }),
   markAssessmentComplete: (id) => request(`/admin/assessment/${id}/mark-complete`, { method: 'POST' }),
   releaseAssessmentAnswers: (id) => request(`/admin/assessment/${id}/release-answers`, { method: 'POST' }),
   getAssessmentReports: (params = {}) => {

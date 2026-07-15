@@ -173,6 +173,59 @@ export async function sendAssessmentNotificationEmail({ to, assessment, student 
   });
 }
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+export async function sendAssessmentInvitationEmail({ to, assessment, student, password = '' }) {
+  const start = assessment.startTime ? new Date(assessment.startTime) : null;
+  const end = assessment.endTime ? new Date(assessment.endTime) : null;
+  const template = await getTemplateByType(EMAIL_TEMPLATE_TYPES.ASSESSMENT_INVITATION);
+  const assessmentUrl = `${getDashboardUrl()}student/assessments`;
+  const passwordSection = assessment.passwordEnabled
+    ? `<div style="margin:20px 0;padding:16px;border:1px solid #fde68a;border-radius:10px;background:#fffbeb;color:#78350f;"><div style="font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;">Assessment password</div><div style="margin-top:7px;font-size:19px;font-weight:800;letter-spacing:.08em;">${escapeHtml(password)}</div><div style="margin-top:7px;font-size:12px;">Keep this password private.</div></div>`
+    : '<div style="margin:20px 0;padding:14px;border-radius:10px;background:#ecfdf5;color:#065f46;font-size:13px;font-weight:700;">No assessment password is required.</div>';
+  const vars = {
+    studentName: escapeHtml(student?.name || 'Student'),
+    assessmentTitle: escapeHtml(assessment.title || 'Assessment'),
+    assessmentId: escapeHtml(assessment.assessmentId || String(assessment._id || '')),
+    testType: escapeHtml(assessment.testType || assessment.assessmentType || 'Assessment'),
+    description: escapeHtml(assessment.description || 'Please review the instructions in your PeerPrep dashboard before starting.'),
+    startLabel: start ? start.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' }) : '-',
+    endLabel: end ? end.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' }) : '-',
+    duration: assessment.duration ? `${assessment.duration} minutes` : '-',
+    attemptLimit: Number(assessment.attemptLimit || 1),
+    passwordSection,
+    assessmentUrl,
+  };
+  return sendMail({
+    to,
+    subject: renderTemplate(template.subject, vars),
+    html: renderTemplate(template.htmlContent, vars),
+  });
+}
+
+export async function sendCoordinatorOnboardingEmail({ to, name, coordinatorId, password }) {
+  const template = await getTemplateByType(EMAIL_TEMPLATE_TYPES.COORDINATOR_ONBOARDING);
+  const vars = {
+    name: escapeHtml(name || 'Coordinator'),
+    coordinatorId: escapeHtml(coordinatorId),
+    email: escapeHtml(to),
+    password: escapeHtml(password),
+    dashboardUrl: getDashboardUrl(),
+  };
+  return sendMail({
+    to,
+    subject: renderTemplate(template.subject, vars),
+    html: renderTemplate(template.htmlContent, vars),
+  });
+}
+
 // Slot proposal email (to interviewee)
 export async function sendSlotProposalEmail({ to, interviewer, slot }) {
   const slots = String(slot).split('|').map(s => s.trim()).filter(Boolean);

@@ -83,6 +83,14 @@ export const coordinatorPermissionCategories = [
         usage: 'Allows student drill-down pages under coordinator scope.',
         routes: ['/coordinator/students/:studentId'],
       },
+      {
+        key: 'coordinator.students.promote',
+        name: 'Promote Students',
+        description: 'Review semester rosters and promote selected or all assigned students to the next semester.',
+        accessType: 'Manage',
+        usage: 'Shows Promote Students under coordinator settings.',
+        routes: ['/coordinator/settings/promote-students'],
+      },
     ],
   },
   {

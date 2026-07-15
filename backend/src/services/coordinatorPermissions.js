@@ -20,6 +20,7 @@ export const COORDINATOR_PERMISSION_CATEGORIES = [
     permissions: [
       'coordinator.students.view',
       'coordinator.students.profile',
+      'coordinator.students.promote',
     ],
   },
   {

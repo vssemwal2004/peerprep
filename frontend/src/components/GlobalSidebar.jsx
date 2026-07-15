@@ -106,6 +106,15 @@ const buildNavItems = (role = 'admin') => {
           { label: 'View Benchmarks', to: '/coordinator/company-insights', icon: Building2, permissionKey: 'coordinator.company.view' },
         ],
       },
+      {
+        type: 'group',
+        key: 'settings',
+        label: 'Settings',
+        icon: Settings,
+        items: [
+          { label: 'Promote Students', to: '/coordinator/settings/promote-students', icon: GraduationCap, permissionKey: 'coordinator.students.promote' },
+        ],
+      },
     ];
   }
 
@@ -212,6 +221,7 @@ const buildNavItems = (role = 'admin') => {
       icon: Settings,
       items: [
         { label: 'Email Templates', to: '/admin/settings/email-templates', icon: Mail },
+        { label: 'Promote Students', to: '/admin/settings/promote-students', icon: GraduationCap },
       ],
     },
   ];

@@ -5,7 +5,7 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import compression from 'compression';
 import routes from './routes/index.js';
-import { notFound, errorHandler } from './utils/errors.js';
+import { HttpError, notFound, errorHandler } from './utils/errors.js';
 import { mongoSanitizeMiddleware, xssProtectionMiddleware } from './middleware/sanitization.js';
 import { apiLimiter } from './middleware/rateLimiter.js';
 import { apiRequestTimeout } from './middleware/requestTimeout.js';

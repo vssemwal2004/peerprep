@@ -79,6 +79,97 @@ export async function listAllStudents(req, res) {
   }
 }
 
+function promotionStudentScope(user = {}) {
+  return user.role === 'coordinator'
+    ? { role: 'student', teacherIds: user.coordinatorId }
+    : { role: 'student' };
+}
+
+export async function listPromotionSemesters(req, res) {
+  try {
+    const scope = promotionStudentScope(req.user);
+    const counts = await User.aggregate([
+      { $match: scope },
+      { $group: { _id: '$semester', count: { $sum: 1 } } },
+    ]);
+    const countMap = new Map(counts.map((entry) => [Number(entry._id), entry.count]));
+    return res.json({
+      semesters: Array.from({ length: 8 }, (_, index) => ({
+        semester: index + 1,
+        studentCount: countMap.get(index + 1) || 0,
+        promotable: index + 1 < 8,
+      })),
+    });
+  } catch (error) {
+    console.error('Error loading promotion semesters:', error);
+    return res.status(500).json({ error: 'Failed to load semester promotion data.' });
+  }
+}
+
+export async function listPromotionStudents(req, res) {
+  try {
+    const semester = Number(req.params.semester);
+    if (!Number.isInteger(semester) || semester < 1 || semester > 8) {
+      return res.status(400).json({ error: 'Semester must be between 1 and 8.' });
+    }
+    const students = await User.find({ ...promotionStudentScope(req.user), semester })
+      .select('_id name email studentId course branch college semester group teacherIds')
+      .sort({ name: 1, studentId: 1 })
+      .lean();
+    return res.json({ semester, count: students.length, students });
+  } catch (error) {
+    console.error('Error loading promotion students:', error);
+    return res.status(500).json({ error: 'Failed to load students for promotion.' });
+  }
+}
+
+export async function promoteStudents(req, res) {
+  try {
+    const fromSemester = Number(req.body?.fromSemester);
+    const promoteAll = req.body?.promoteAll === true;
+    const studentIds = Array.isArray(req.body?.studentIds) ? [...new Set(req.body.studentIds.map(String))] : [];
+    if (!Number.isInteger(fromSemester) || fromSemester < 1 || fromSemester > 8) {
+      return res.status(400).json({ error: 'Source semester must be between 1 and 8.' });
+    }
+    if (fromSemester === 8) return res.status(400).json({ error: 'Semester 8 is the final semester and cannot be promoted further.' });
+    if (!promoteAll && !studentIds.length) return res.status(400).json({ error: 'Select at least one student to promote.' });
+
+    const query = { ...promotionStudentScope(req.user), semester: fromSemester };
+    if (!promoteAll) {
+      const validIds = studentIds.filter((id) => {
+        try { validateObjectId(id, 'student ID'); return true; } catch { return false; }
+      });
+      if (!validIds.length) return res.status(400).json({ error: 'No valid students were selected.' });
+      query._id = { $in: validIds };
+    }
+    const eligible = await User.find(query).select('_id').lean();
+    if (!eligible.length) return res.status(400).json({ error: 'No eligible students were found in this semester.' });
+    const ids = eligible.map((student) => student._id);
+    const result = await User.updateMany({ _id: { $in: ids }, semester: fromSemester }, { $set: { semester: fromSemester + 1 } });
+
+    logActivity({
+      userEmail: req.user.email,
+      userRole: req.user.role,
+      actionType: 'BULK_UPDATE',
+      targetType: 'STUDENT',
+      targetId: 'semester-promotion',
+      description: `Promoted ${result.modifiedCount || 0} student${Number(result.modifiedCount || 0) === 1 ? '' : 's'} from semester ${fromSemester} to ${fromSemester + 1}`,
+      metadata: { fromSemester, toSemester: fromSemester + 1, promoteAll, selectedCount: studentIds.length, promotedCount: result.modifiedCount || 0 },
+      req,
+    });
+    return res.json({
+      ok: true,
+      fromSemester,
+      toSemester: fromSemester + 1,
+      requested: eligible.length,
+      promoted: result.modifiedCount || 0,
+    });
+  } catch (error) {
+    console.error('Error promoting students:', error);
+    return res.status(500).json({ error: 'Failed to promote students.' });
+  }
+}
+
 export async function getStudentById(req, res) {
   try {
     const user = req.user;

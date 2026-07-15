@@ -42,6 +42,7 @@ const assessmentSubmissionSchema = new mongoose.Schema({
   pauseCount: { type: Number, default: 0 },
   lastPauseAt: { type: Date },
   pauseStartedAt: { type: Date },
+  securityPauseReason: { type: String, enum: ['tab_switch'] },
   pausedDurationMs: { type: Number, default: 0 },
   securityHeartbeat: { type: mongoose.Schema.Types.Mixed, default: {} },
   violations: { type: [mongoose.Schema.Types.Mixed], default: [] },

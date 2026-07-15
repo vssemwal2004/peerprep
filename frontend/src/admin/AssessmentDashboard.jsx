@@ -1,5 +1,6 @@
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { api } from '../utils/api';
@@ -7,7 +8,8 @@ import { useToast } from '../components/CustomToast';
 import {
   Calendar, ClipboardList, Filter, Plus, Search, Trash2, Eye, EyeOff,
   Pencil, Copy, X, MoreVertical, Lock, Unlock, Globe, ShieldOff,
-  RotateCcw, CheckCircle2, AlertTriangle, FileCheck2,
+  RotateCcw, CheckCircle2, AlertTriangle, FileCheck2, Mail, Send, Loader2,
+  Users, UserMinus,
 } from 'lucide-react';
 import AssessmentCard from './assessment/components/AssessmentCard';
 import { SectionCard } from './compiler/CompilerUi';
@@ -29,15 +31,62 @@ const tabs = [
 
 const formatDateTime = (value) => (value ? new Date(value).toLocaleString() : '-');
 
-function ThreeDotsMenu({ assessment, onEdit, onDuplicate, onDelete, onToggleVisibility, onEditPassword, onResetSubmissions, onMarkComplete, onReleaseAnswers }) {
+function ThreeDotsMenu({ assessment, onEdit, onDuplicate, onDelete, onToggleVisibility, onEditPassword, onSendInvitations, onEligibleStudents, onResetSubmissions, onMarkComplete, onReleaseAnswers }) {
   const [open, setOpen] = useState(false);
+  const [menuStyle, setMenuStyle] = useState(null);
   const ref = useRef(null);
+  const buttonRef = useRef(null);
+  const menuRef = useRef(null);
 
   useEffect(() => {
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const handler = (e) => {
+      if (ref.current?.contains(e.target) || menuRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setMenuStyle(null);
+      return undefined;
+    }
+
+    const updatePosition = () => {
+      const button = buttonRef.current;
+      if (!button) return;
+      const rect = button.getBoundingClientRect();
+      const menuWidth = 240;
+      const menuHeight = menuRef.current?.getBoundingClientRect().height || 360;
+      const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+      const left = Math.max(8, Math.min(rect.right - menuWidth, viewportWidth - menuWidth - 8));
+      const opensUpward = rect.bottom + 8 + menuHeight > viewportHeight - 8;
+      const top = opensUpward
+        ? Math.max(8, rect.top - menuHeight - 8)
+        : Math.min(rect.bottom + 8, viewportHeight - menuHeight - 8);
+
+      setMenuStyle({ left, top, width: menuWidth, transformOrigin: opensUpward ? 'bottom right' : 'top right' });
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handler = (event) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [open]);
 
   const item = (icon, label, onClick, danger = false) => (
     <button
@@ -51,42 +100,414 @@ function ThreeDotsMenu({ assessment, onEdit, onDuplicate, onDelete, onToggleVisi
   );
 
   const isVisible = assessment.isVisible !== false;
+  const menu = (
+    <AnimatePresence>
+      {open && menuStyle && (
+        <motion.div
+          ref={menuRef}
+          initial={{ opacity: 0, scale: 0.95, y: -4 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: -4 }}
+          transition={{ duration: 0.12 }}
+          style={menuStyle}
+          className="fixed z-[90] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl ring-1 ring-slate-950/5 dark:border-gray-700 dark:bg-gray-900"
+        >
+          {item(<Pencil className="h-3.5 w-3.5" />, 'Edit Assessment', onEdit)}
+          {item(<Lock className="h-3.5 w-3.5" />, 'Edit Password', onEditPassword)}
+          {assessment.lifecycleStatus !== 'draft' && item(<Users className="h-3.5 w-3.5" />, 'Eligible Students', onEligibleStudents)}
+          {assessment.lifecycleStatus !== 'draft' && item(<Mail className="h-3.5 w-3.5" />, 'Send Mail to Eligible Students', onSendInvitations)}
+          {item(
+            isVisible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />,
+            isVisible ? 'Hide Test' : 'Show Test',
+            onToggleVisibility,
+          )}
+          {item(<Copy className="h-3.5 w-3.5" />, 'Duplicate', onDuplicate)}
+          <div className="my-1 h-px bg-slate-100 dark:bg-gray-700" />
+          {item(<RotateCcw className="h-3.5 w-3.5" />, 'Reset Test Submissions', onResetSubmissions)}
+          {item(<CheckCircle2 className="h-3.5 w-3.5" />, 'Mark as Complete', onMarkComplete)}
+          {item(<FileCheck2 className="h-3.5 w-3.5" />, 'Generate Answers', onReleaseAnswers)}
+          <div className="my-1 h-px bg-slate-100 dark:bg-gray-700" />
+          {item(<Trash2 className="h-3.5 w-3.5" />, 'Delete Assessment', onDelete, true)}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
 
   return (
     <div ref={ref} className="relative">
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
       >
         <MoreVertical className="h-3.5 w-3.5" />
       </button>
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: -4 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: -4 }}
-            transition={{ duration: 0.12 }}
-            className="absolute right-0 top-9 z-50 min-w-[180px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900"
-          >
-            {item(<Pencil className="h-3.5 w-3.5" />, 'Edit Assessment', onEdit)}
-            {item(<Lock className="h-3.5 w-3.5" />, 'Edit Password', onEditPassword)}
-            {item(
-              isVisible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />,
-              isVisible ? 'Hide Test' : 'Show Test',
-              onToggleVisibility,
-            )}
-            {item(<Copy className="h-3.5 w-3.5" />, 'Duplicate', onDuplicate)}
-            <div className="my-1 h-px bg-slate-100 dark:bg-gray-700" />
-            {item(<RotateCcw className="h-3.5 w-3.5" />, 'Reset Test Submissions', onResetSubmissions)}
-            {item(<CheckCircle2 className="h-3.5 w-3.5" />, 'Mark as Complete', onMarkComplete)}
-            {item(<FileCheck2 className="h-3.5 w-3.5" />, 'Generate Answers', onReleaseAnswers)}
-            <div className="my-1 h-px bg-slate-100 dark:bg-gray-700" />
-            {item(<Trash2 className="h-3.5 w-3.5" />, 'Delete Assessment', onDelete, true)}
-          </motion.div>
+      {createPortal(menu, document.body)}
+    </div>
+  );
+}
+
+function InvitationModal({ assessment, onClose }) {
+  const toast = useToast();
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const sendInvitations = async () => {
+    if (assessment.passwordEnabled && !password.trim()) {
+      toast.error('Enter the assessment password first.');
+      return;
+    }
+    setSending(true);
+    setResult(null);
+    try {
+      const response = await api.sendAssessmentInvitations(assessment._id, password);
+      setResult(response);
+      if (response.failed > 0) toast.info(`${response.sent} sent, ${response.failed} failed.`);
+      else toast.success(`Invitation sent to ${response.sent} eligible student${response.sent === 1 ? '' : 's'}.`);
+    } catch (error) {
+      toast.error(error.message || 'Failed to send invitations.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[75] flex items-center justify-center bg-slate-950/50 px-4 backdrop-blur-sm">
+      <motion.div initial={{ opacity: 0, scale: 0.96, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-600 dark:bg-sky-400/10 dark:text-sky-300"><Mail className="h-5 w-5" /></div>
+            <div><h3 className="text-base font-semibold text-slate-900 dark:text-white">Send assessment invitation</h3><p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Professional PeerPrep email for every eligible student.</p></div>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 p-1.5 text-slate-500 dark:border-gray-700"><X className="h-4 w-4" /></button>
+        </div>
+
+        <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-gray-700 dark:bg-gray-800">
+          <div className="font-semibold text-slate-900 dark:text-white">{assessment.title}</div>
+          <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-500 dark:text-gray-400">
+            <span>Starts: {formatDateTime(assessment.startTime)}</span><span>Duration: {assessment.duration || '-'} min</span>
+            <span>Target: {assessment.targetType === 'all' ? 'All eligible students' : `${assessment.assignedCount || 0} selected`}</span><span>{assessment.passwordEnabled ? 'Password protected' : 'No password'}</span>
+          </div>
+        </div>
+
+        {assessment.passwordEnabled && (
+          <div className="mt-4">
+            <label className="text-xs font-semibold text-slate-600 dark:text-gray-300">Confirm assessment password</label>
+            <div className="relative mt-1.5"><input type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Enter the current assessment password" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 pr-10 text-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-950 dark:text-white" /><button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div>
+            <p className="mt-1.5 text-xs text-slate-500">The server verifies this password before including it in the invitation; it is never read back from storage.</p>
+          </div>
         )}
-      </AnimatePresence>
+
+        {result && <div className={`mt-4 rounded-xl border p-3 text-sm font-semibold ${result.failed ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>{result.sent} sent · {result.failed} failed · {result.eligible} eligible</div>}
+        <div className="mt-5 flex justify-end gap-2"><button type="button" onClick={onClose} disabled={sending} className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 dark:border-gray-700 dark:text-gray-300">Close</button><button type="button" onClick={sendInvitations} disabled={sending || Boolean(result)} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-60">{sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{sending ? 'Sending...' : result ? 'Invitations processed' : 'Send to all eligible students'}</button></div>
+      </motion.div>
+    </div>
+  );
+}
+
+const submissionStatusStyles = {
+  none: 'border-slate-200 bg-slate-50 text-slate-500',
+  not_started: 'border-slate-200 bg-slate-50 text-slate-500',
+  in_progress: 'border-sky-200 bg-sky-50 text-sky-700',
+  submitted: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  violation: 'border-rose-200 bg-rose-50 text-rose-700',
+  expired: 'border-amber-200 bg-amber-50 text-amber-700',
+  incomplete: 'border-amber-200 bg-amber-50 text-amber-700',
+};
+
+const submissionLabel = (status) => {
+  if (!status) return 'Not started';
+  return String(status).replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
+function StudentActionsMenu({ student, onViewProfile, onResetSubmission, onRemoveStudent }) {
+  const [open, setOpen] = useState(false);
+  const [menuStyle, setMenuStyle] = useState(null);
+  const ref = useRef(null);
+  const buttonRef = useRef(null);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    const handler = (event) => {
+      if (ref.current?.contains(event.target) || menuRef.current?.contains(event.target)) return;
+      setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setMenuStyle(null);
+      return undefined;
+    }
+    const updatePosition = () => {
+      const button = buttonRef.current;
+      if (!button) return;
+      const rect = button.getBoundingClientRect();
+      const width = 210;
+      const height = menuRef.current?.getBoundingClientRect().height || 150;
+      const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+      const left = Math.max(8, Math.min(rect.right - width, viewportWidth - width - 8));
+      const top = rect.bottom + 8 + height > viewportHeight
+        ? Math.max(8, rect.top - height - 8)
+        : rect.bottom + 8;
+      setMenuStyle({ left, top, width });
+    };
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [open]);
+
+  const item = (icon, label, onClick, danger = false) => (
+    <button
+      type="button"
+      onClick={() => { setOpen(false); onClick(student); }}
+      className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs font-semibold transition-colors hover:bg-slate-50 dark:hover:bg-gray-800 ${danger ? 'text-rose-600 dark:text-rose-300' : 'text-slate-700 dark:text-gray-200'}`}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+
+  return (
+    <div ref={ref} className="inline-flex">
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+      >
+        <MoreVertical className="h-4 w-4" />
+      </button>
+      {createPortal(
+        <AnimatePresence>
+          {open && menuStyle && (
+            <motion.div
+              ref={menuRef}
+              initial={{ opacity: 0, scale: 0.96, y: -4 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: -4 }}
+              transition={{ duration: 0.12 }}
+              style={menuStyle}
+              className="fixed z-[95] overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-2xl ring-1 ring-slate-950/5 dark:border-gray-700 dark:bg-gray-900"
+            >
+              {item(<Eye className="h-3.5 w-3.5" />, 'View Profile', onViewProfile)}
+              {item(<RotateCcw className="h-3.5 w-3.5" />, 'Reset Submission', onResetSubmission)}
+              <div className="my-1 h-px bg-slate-100 dark:bg-gray-700" />
+              {item(<UserMinus className="h-3.5 w-3.5" />, 'Remove from Assessment', onRemoveStudent, true)}
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body,
+      )}
+    </div>
+  );
+}
+
+function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
+  const toast = useToast();
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [students, setStudents] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [search, setSearch] = useState('');
+  const [busyId, setBusyId] = useState('');
+
+  const loadStudents = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await api.listAssessmentEligibleStudents(assessment._id);
+      setStudents(data.students || []);
+      setSummary(data.summary || null);
+    } catch (error) {
+      toast.error(error.message || 'Failed to load eligible students.');
+    } finally {
+      setLoading(false);
+    }
+  }, [assessment._id, toast]);
+
+  useEffect(() => { loadStudents(); }, [loadStudents]);
+
+  const filteredStudents = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return students;
+    return students.filter((student) => [
+      student.name,
+      student.email,
+      student.studentId,
+      student.course,
+      student.branch,
+      student.college,
+      student.group,
+      student.submission?.status,
+    ].some((value) => String(value || '').toLowerCase().includes(query)));
+  }, [students, search]);
+
+  const openProfile = (student) => {
+    onClose();
+    navigate(`${rolePrefix}/students/${student._id}`);
+  };
+
+  const resetSubmission = async (student) => {
+    if (!confirm(`Reset submission for ${student.name || student.email || 'this student'}?`)) return;
+    setBusyId(student._id);
+    try {
+      const result = await api.resetAssessmentStudentSubmission(assessment._id, student._id);
+      toast.success(result.deletedSubmissions ? 'Student submission reset.' : 'No submission existed for this student.');
+      await loadStudents();
+      onChanged?.();
+    } catch (error) {
+      toast.error(error.message || 'Failed to reset student submission.');
+    } finally {
+      setBusyId('');
+    }
+  };
+
+  const removeStudent = async (student) => {
+    if (!confirm(`Remove ${student.name || student.email || 'this student'} from this assessment? Their existing submission will also be removed.`)) return;
+    setBusyId(student._id);
+    try {
+      await api.removeAssessmentEligibleStudent(assessment._id, student._id);
+      toast.success('Student removed from assessment.');
+      await loadStudents();
+      onChanged?.();
+    } catch (error) {
+      toast.error(error.message || 'Failed to remove student from assessment.');
+    } finally {
+      setBusyId('');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/50 px-4 py-5 backdrop-blur-sm">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96, y: 8 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900"
+      >
+        <div className="flex flex-col gap-4 border-b border-slate-200 p-5 dark:border-gray-700 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="inline-flex items-center gap-2 rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-sky-700 dark:border-sky-400/20 dark:bg-sky-900/20 dark:text-sky-200">
+              <Users className="h-3.5 w-3.5" />
+              Eligible Students
+            </div>
+            <h3 className="mt-2 text-lg font-bold text-slate-950 dark:text-white">{assessment.title || 'Assessment'}</h3>
+            <p className="mt-1 text-sm text-slate-500 dark:text-gray-400">
+              View assigned students, reset individual submissions, or remove students from this assessment.
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="self-start rounded-xl border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:hover:bg-gray-800">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="border-b border-slate-200 px-5 py-4 dark:border-gray-700">
+          <div className="grid gap-3 md:grid-cols-5">
+            {[
+              ['Total', summary?.total ?? students.length],
+              ['Not Started', summary?.notStarted ?? 0],
+              ['In Progress', summary?.inProgress ?? 0],
+              ['Submitted', summary?.submitted ?? 0],
+              ['Other', summary?.other ?? 0],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</div>
+                <div className="mt-1 text-lg font-bold text-slate-950 dark:text-white">{value}</div>
+              </div>
+            ))}
+          </div>
+          <div className="relative mt-4 max-w-md">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search students, email, ID, course..."
+              className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-950 dark:text-white"
+            />
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-auto">
+          {loading ? (
+            <div className="flex min-h-64 items-center justify-center text-sm text-slate-500">
+              <Loader2 className="mr-2 h-5 w-5 animate-spin text-sky-600" />
+              Loading eligible students...
+            </div>
+          ) : filteredStudents.length === 0 ? (
+            <div className="p-10 text-center text-sm text-slate-500">No eligible students found.</div>
+          ) : (
+            <table className="min-w-[1120px] w-full text-left text-sm">
+              <thead className="sticky top-0 z-10 bg-slate-50 text-xs font-bold uppercase tracking-wider text-slate-400 dark:bg-gray-800">
+                <tr>
+                  <th className="px-4 py-3">Student</th>
+                  <th className="px-4 py-3">Student ID</th>
+                  <th className="px-4 py-3">Course</th>
+                  <th className="px-4 py-3">Branch</th>
+                  <th className="px-4 py-3">Semester</th>
+                  <th className="px-4 py-3">Group</th>
+                  <th className="px-4 py-3">Submission</th>
+                  <th className="px-4 py-3">Score</th>
+                  <th className="px-4 py-3">Violations</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
+                {filteredStudents.map((student) => {
+                  const status = student.submission?.status || 'none';
+                  const score = Number(student.submission?.score);
+                  const maxMarks = Number(student.submission?.maxMarks);
+                  const violations = Number(student.submission?.tabSwitches || 0)
+                    + Number(student.submission?.fullscreenExits || 0)
+                    + Number(student.submission?.cameraFlags || 0)
+                    + Number(student.submission?.copyPasteCount || 0);
+                  return (
+                    <tr key={student._id} className={busyId === student._id ? 'opacity-60' : 'hover:bg-sky-50/50 dark:hover:bg-sky-400/5'}>
+                      <td className="px-4 py-3">
+                        <button type="button" onClick={() => openProfile(student)} className="text-left font-bold text-sky-700 hover:underline dark:text-sky-300">
+                          {student.name || 'Unnamed Student'}
+                        </button>
+                        <div className="mt-0.5 text-xs text-slate-500">{student.email || '-'}</div>
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs text-slate-600 dark:text-slate-300">{student.studentId || '-'}</td>
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{student.course || '-'}</td>
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{student.branch || '-'}</td>
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{student.semester || '-'}</td>
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{student.group || '-'}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-bold ${submissionStatusStyles[status] || submissionStatusStyles.none}`}>
+                          {submissionLabel(status)}
+                        </span>
+                        {student.submission?.updatedAt && <div className="mt-1 text-[11px] text-slate-400">{formatDateTime(student.submission.updatedAt)}</div>}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                        {Number.isFinite(score) ? `${score}${Number.isFinite(maxMarks) ? ` / ${maxMarks}` : ''}` : '-'}
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-slate-600 dark:text-slate-300">{violations}</td>
+                      <td className="px-4 py-3 text-right">
+                        <StudentActionsMenu
+                          student={student}
+                          onViewProfile={openProfile}
+                          onResetSubmission={resetSubmission}
+                          onRemoveStudent={removeStudent}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </motion.div>
     </div>
   );
 }
@@ -248,6 +669,8 @@ export default function AssessmentDashboard() {
   const [error, setError] = useState('');
   const [selected, setSelected] = useState(null);
   const [passwordTarget, setPasswordTarget] = useState(null);
+  const [invitationTarget, setInvitationTarget] = useState(null);
+  const [eligibleTarget, setEligibleTarget] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
   const [activeTab, setActiveTab] = useState('all');
   const [filters, setFilters] = useState({ status: 'All', search: '', startDate: '', endDate: '' });
@@ -490,6 +913,8 @@ export default function AssessmentDashboard() {
                             onDelete={() => handleDelete(assessment._id)}
                             onToggleVisibility={() => handleToggleVisibility(assessment)}
                             onEditPassword={() => setPasswordTarget(assessment)}
+                            onSendInvitations={() => setInvitationTarget(assessment)}
+                            onEligibleStudents={() => setEligibleTarget(assessment)}
                             onResetSubmissions={() => openResetSubmissions(assessment)}
                             onMarkComplete={() => openMarkComplete(assessment)}
                             onReleaseAnswers={() => openReleaseAnswers(assessment)}
@@ -585,6 +1010,15 @@ export default function AssessmentDashboard() {
           assessment={passwordTarget}
           onClose={() => setPasswordTarget(null)}
           onSave={loadAssessments}
+        />
+      )}
+      {invitationTarget && <InvitationModal assessment={invitationTarget} onClose={() => setInvitationTarget(null)} />}
+      {eligibleTarget && (
+        <EligibleStudentsModal
+          assessment={eligibleTarget}
+          rolePrefix={rolePrefix}
+          onClose={() => setEligibleTarget(null)}
+          onChanged={loadAssessments}
         />
       )}
       <ConfirmActionModal
