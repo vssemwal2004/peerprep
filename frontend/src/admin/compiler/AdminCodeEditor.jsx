@@ -156,6 +156,9 @@ export default function AdminCodeEditor({ problem }) {
           value={activeCode}
           onChange={updateDraft}
           height={520}
+          readOnly={false}
+          internalClipboardOnly={false}
+          contentKey={`admin-playground:${problem?._id || 'draft'}:${language}`}
         />
 
         <div className="flex flex-wrap gap-3">

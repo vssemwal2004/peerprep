@@ -715,6 +715,8 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
                 onSubmit={handleSubmit}
                 onReset={resetCode}
                 showToolbar
+                internalClipboardOnly={false}
+                editorKey={`admin-test:${problem?._id || 'draft'}`}
               />
             </section>
           </div>
@@ -795,6 +797,8 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
               onSubmit={handleSubmit}
               onReset={resetCode}
               showToolbar
+              internalClipboardOnly={false}
+              editorKey={`admin-test:${problem?._id || 'draft'}`}
             />
           </div>
         </div>

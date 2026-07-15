@@ -35,8 +35,11 @@ export default function CodingQuestionEditor({ value, onChange, title, onTitleCh
   const [activeTab, setActiveTab] = useState('details');
   const [activeCaseTab, setActiveCaseTab] = useState('visible');
 
-  const supportedLanguages = value.supportedLanguages?.length ? value.supportedLanguages : ['python', 'javascript'];
-  const starterCode = value.starterCode || [];
+  const supportedLanguages = useMemo(
+    () => (value.supportedLanguages?.length ? value.supportedLanguages : ['python', 'javascript']),
+    [value.supportedLanguages],
+  );
+  const starterCode = useMemo(() => value.starterCode || [], [value.starterCode]);
   const visibleTestCases = value.visibleTestCases || [];
   const hiddenTestCases = value.hiddenTestCases || [];
 
@@ -65,13 +68,18 @@ export default function CodingQuestionEditor({ value, onChange, title, onTitleCh
   };
 
   const toggleLanguage = (languageId) => {
-    const next = supportedLanguages.includes(languageId)
+    const isEnabled = supportedLanguages.includes(languageId);
+    if (isEnabled && supportedLanguages.length === 1) return;
+
+    const next = isEnabled
       ? supportedLanguages.filter((lang) => lang !== languageId)
       : [...supportedLanguages, languageId];
-    updateCoding({ supportedLanguages: next });
-    if (!supportedLanguages.includes(languageId)) {
-      updateStarterCode(languageId, codeTemplates[languageId] || '');
-    }
+    const hasTemplate = starterCode.some((entry) => entry.language === languageId);
+    const nextStarterCode = !isEnabled && !hasTemplate
+      ? [...starterCode, { language: languageId, code: '' }]
+      : starterCode;
+
+    updateCoding({ supportedLanguages: next, starterCode: nextStarterCode });
   };
 
   const updateVisibleCase = (index, updates) => {
@@ -376,6 +384,9 @@ export default function CodingQuestionEditor({ value, onChange, title, onTitleCh
                 value={codeTemplates[activeLanguage] || ''}
                 onChange={(code) => updateStarterCode(activeLanguage, code)}
                 height={280}
+                readOnly={false}
+                internalClipboardOnly={false}
+                contentKey={`assessment-template:${activeLanguage}`}
               />
             </div>
           </div>

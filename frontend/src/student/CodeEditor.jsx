@@ -96,6 +96,7 @@ function CodeEditor({
   onSubmit,
   onReset,
   showToolbar = true,
+  internalClipboardOnly = false,
   clipboardScope = 'assessment-editor',
   editorKey = '',
   onLiveCodeChange,
@@ -114,7 +115,9 @@ function CodeEditor({
   const [consoleHeight, setConsoleHeight] = useState(116);
   const [editorHeight, setEditorHeight] = useState(440);
   const [activeResultCaseId, setActiveResultCaseId] = useState(null);
-  const [clipboardNotice, setClipboardNotice] = useState('Editor-only clipboard');
+  const [clipboardNotice, setClipboardNotice] = useState(
+    internalClipboardOnly ? 'Editor-only clipboard' : '',
+  );
   const MIN_EDITOR_HEIGHT = 360;
   const AUTO_OPEN_CONSOLE_HEIGHT = 320;
 
@@ -256,6 +259,19 @@ function CodeEditor({
     if (pending) pending.commit(pending.value);
   }, []);
 
+  useEffect(() => {
+    if (internalClipboardOnly) {
+      setClipboardNotice((current) => current || 'Editor-only clipboard');
+      return;
+    }
+
+    if (clipboardNoticeTimerRef.current) {
+      clearTimeout(clipboardNoticeTimerRef.current);
+      clipboardNoticeTimerRef.current = null;
+    }
+    setClipboardNotice('');
+  }, [internalClipboardOnly]);
+
   const commitPendingCode = () => {
     if (codeCommitTimerRef.current) {
       clearTimeout(codeCommitTimerRef.current);
@@ -280,6 +296,7 @@ function CodeEditor({
   };
 
   const handleClipboardStatus = ({ message } = {}) => {
+    if (!internalClipboardOnly) return;
     setClipboardNotice(message || 'Editor-only clipboard');
     if (clipboardNoticeTimerRef.current) clearTimeout(clipboardNoticeTimerRef.current);
     clipboardNoticeTimerRef.current = setTimeout(() => {
@@ -528,17 +545,20 @@ function CodeEditor({
         className="relative z-0 min-h-0 bg-transparent px-3 pb-0 pt-1"
         style={{ height: editorHeight }}
       >
-        <div className="pointer-events-none absolute right-5 top-3 z-20 rounded-full border border-slate-200/80 bg-white/90 px-2.5 py-1 text-[9px] font-bold text-slate-500 shadow-sm backdrop-blur dark:border-gray-700 dark:bg-gray-900/90 dark:text-gray-300">
-          {clipboardNotice}
-        </div>
+        {internalClipboardOnly ? (
+          <div className="pointer-events-none absolute right-5 top-3 z-20 rounded-full border border-slate-200/80 bg-white/90 px-2.5 py-1 text-[9px] font-bold text-slate-500 shadow-sm backdrop-blur dark:border-gray-700 dark:bg-gray-900/90 dark:text-gray-300">
+            {clipboardNotice}
+          </div>
+        ) : null}
         <MonacoCodeEditor
           language={language}
           value={code}
           onChange={handleEditorCodeChange}
           height="100%"
-          internalClipboardOnly
+          internalClipboardOnly={internalClipboardOnly}
           clipboardScope={clipboardScope}
           onClipboardStatus={handleClipboardStatus}
+          contentKey={`${editorKey || 'code-editor'}:${language || 'plain'}`}
         />
       </div>
 
@@ -831,6 +851,7 @@ function codeEditorPropsEqual(previous, next) {
     && previous.isRunning === next.isRunning
     && previous.isSubmitting === next.isSubmitting
     && previous.showToolbar === next.showToolbar
+    && previous.internalClipboardOnly === next.internalClipboardOnly
     && previous.clipboardScope === next.clipboardScope
     && previous.editorKey === next.editorKey
     && sameStringList(previous.supportedLanguages, next.supportedLanguages)

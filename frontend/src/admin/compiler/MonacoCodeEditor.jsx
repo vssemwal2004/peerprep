@@ -1,5 +1,4 @@
-﻿/* eslint-disable react-hooks/exhaustive-deps */
-import { useEffect, useRef, useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { getMonacoLanguage } from './compilerUtils';
 
@@ -69,6 +68,7 @@ export default function MonacoCodeEditor({
   internalClipboardOnly = false,
   clipboardScope = 'peerprep-editor',
   onClipboardStatus,
+  contentKey = '',
 }) {
   const containerRef = useRef(null);
   const editorRef = useRef(null);
@@ -77,6 +77,12 @@ export default function MonacoCodeEditor({
   const resizeObserverRef = useRef(null);
   const layoutFrameRef = useRef(null);
   const applyingExternalValueRef = useRef(false);
+  const pendingLocalValueRef = useRef(null);
+  const contentKeyRef = useRef(contentKey);
+  const latestValueRef = useRef(value || '');
+  const latestLanguageRef = useRef(language);
+  const latestReadOnlyRef = useRef(readOnly);
+  const latestContentKeyRef = useRef(contentKey);
   const internalClipboardOnlyRef = useRef(internalClipboardOnly);
   const clipboardScopeRef = useRef(clipboardScope);
   const onClipboardStatusRef = useRef(onClipboardStatus);
@@ -88,6 +94,13 @@ export default function MonacoCodeEditor({
   useEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
+
+  useEffect(() => {
+    latestValueRef.current = value || '';
+    latestLanguageRef.current = language;
+    latestReadOnlyRef.current = readOnly;
+    latestContentKeyRef.current = contentKey;
+  }, [value, language, readOnly, contentKey]);
 
   useEffect(() => {
     internalClipboardOnlyRef.current = internalClipboardOnly;
@@ -123,14 +136,15 @@ export default function MonacoCodeEditor({
         });
 
         const editor = monaco.editor.create(containerRef.current, {
-          value: value || '',
-          language: getMonacoLanguage(language),
+          value: latestValueRef.current,
+          language: getMonacoLanguage(latestLanguageRef.current),
           theme: isDarkMode() ? 'peerprep-dark' : 'peerprep-light',
           automaticLayout: false,
           minimap: { enabled: false },
           fontSize: 13,
           lineHeight: 22,
-          readOnly,
+          readOnly: latestReadOnlyRef.current,
+          domReadOnly: latestReadOnlyRef.current,
           smoothScrolling: false,
           cursorSmoothCaretAnimation: 'off',
           scrollBeyondLastLine: false,
@@ -161,7 +175,9 @@ export default function MonacoCodeEditor({
 
         editor.onDidChangeModelContent(() => {
           if (applyingExternalValueRef.current) return;
-          onChangeRef.current?.(editor.getValue());
+          const nextValue = editor.getValue();
+          pendingLocalValueRef.current = nextValue;
+          onChangeRef.current?.(nextValue);
         });
 
         mutationObserverRef.current = new MutationObserver(() => {
@@ -173,6 +189,7 @@ export default function MonacoCodeEditor({
         });
 
         editorRef.current = editor;
+        contentKeyRef.current = latestContentKeyRef.current;
 
         // If the editor was initialized while the container had 0px height,
         // automaticLayout can get stuck. Force an initial layout and keep it in sync.
@@ -211,15 +228,33 @@ export default function MonacoCodeEditor({
     const editor = editorRef.current;
     if (!editor) return;
 
-    if (editor.getValue() !== value) {
+    const nextValue = value || '';
+    const contentChanged = contentKeyRef.current !== contentKey;
+    if (contentChanged) {
+      contentKeyRef.current = contentKey;
+      pendingLocalValueRef.current = null;
+    } else if (pendingLocalValueRef.current !== null) {
+      if (nextValue === pendingLocalValueRef.current) {
+        pendingLocalValueRef.current = null;
+        return;
+      }
+
+      // React can briefly render an older controlled value while Monaco already
+      // contains a newer keystroke. Keep the local edit until its parent update
+      // is acknowledged instead of replacing it with that stale value.
+      if (editor.getValue() === pendingLocalValueRef.current) return;
+      pendingLocalValueRef.current = null;
+    }
+
+    if (editor.getValue() !== nextValue) {
       applyingExternalValueRef.current = true;
       try {
-        editor.setValue(value || '');
+        editor.setValue(nextValue);
       } finally {
         applyingExternalValueRef.current = false;
       }
     }
-  }, [value]);
+  }, [value, contentKey]);
 
   useEffect(() => {
     const editor = editorRef.current;
@@ -230,7 +265,7 @@ export default function MonacoCodeEditor({
   }, [language]);
 
   useEffect(() => {
-    editorRef.current?.updateOptions({ readOnly });
+    editorRef.current?.updateOptions({ readOnly, domReadOnly: readOnly });
   }, [readOnly]);
 
   const reportClipboardStatus = (status, message) => {
@@ -333,9 +368,9 @@ export default function MonacoCodeEditor({
     return (
       <div
         data-assessment-code-editor={internalClipboardOnly ? 'internal' : undefined}
-        onCopyCapture={handleInternalCopy}
-        onCutCapture={handleInternalCut}
-        onPasteCapture={handleInternalPaste}
+        onCopyCapture={internalClipboardOnly ? handleInternalCopy : undefined}
+        onCutCapture={internalClipboardOnly ? handleInternalCut : undefined}
+        onPasteCapture={internalClipboardOnly ? handleInternalPaste : undefined}
         className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300"
       >
         <div className="flex items-start gap-2">
@@ -358,9 +393,9 @@ export default function MonacoCodeEditor({
   return (
     <div
       data-assessment-code-editor={internalClipboardOnly ? 'internal' : undefined}
-      onCopyCapture={handleInternalCopy}
-      onCutCapture={handleInternalCut}
-      onPasteCapture={handleInternalPaste}
+      onCopyCapture={internalClipboardOnly ? handleInternalCopy : undefined}
+      onCutCapture={internalClipboardOnly ? handleInternalCut : undefined}
+      onPasteCapture={internalClipboardOnly ? handleInternalPaste : undefined}
       className="relative h-full min-h-0 overflow-hidden rounded-xl border border-transparent bg-white shadow-none dark:border-transparent dark:bg-gray-900"
       style={{ height: resolvedHeight }}
     >

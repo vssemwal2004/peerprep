@@ -862,7 +862,15 @@ if (!isValidated || publishedProblem.status !== 'published') {
 
             <SectionCard title="Code Templates" subtitle="Provide starter code for each language. Students can fully replace it with any valid program entrypoint.">
               <div className="mb-4 flex flex-wrap gap-2">{form.supportedLanguages.map((languageId) => <button key={languageId} type="button" onClick={() => setActiveLanguage(languageId)} className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${activeLanguage === languageId ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}>{getLanguageLabel(languageId)}</button>)}</div>
-              <MonacoCodeEditor language={activeLanguage} value={activeTemplate} onChange={updateTemplate} height={380} />
+              <MonacoCodeEditor
+                language={activeLanguage}
+                value={activeTemplate}
+                onChange={updateTemplate}
+                height={380}
+                readOnly={false}
+                internalClipboardOnly={false}
+                contentKey={`problem-template:${activeLanguage}`}
+              />
             </SectionCard>
           </>
         ) : null}

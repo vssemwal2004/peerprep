@@ -3098,6 +3098,7 @@ export default function AssessmentAttempt() {
                         onSubmit={handleSubmitCoding}
                         onReset={handleResetCoding}
                         showToolbar={false}
+                        internalClipboardOnly
                         clipboardScope={`assessment:${assessment?._id || id}:submission:${submission?._id || 'active'}`}
                         editorKey={key}
                         onLiveCodeChange={(code) => {
