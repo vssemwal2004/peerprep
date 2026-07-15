@@ -62,8 +62,8 @@ export default function QuestionBuilder({ type, value, onChange, onRemove, group
                     Option {idx + 1}
                     <input
                       type="radio"
-                      name={groupName || `correct-${question.id || ''}`}
-                      checked={question.correctOptionIndex === idx}
+                      name={groupName || `correct-${question.questionId || question.id || 'question'}`}
+                      checked={Number(question.correctOptionIndex) === idx}
                       onChange={() => update({ correctOptionIndex: idx })}
                     />
                   </div>

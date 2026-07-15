@@ -428,14 +428,11 @@ export async function cleanupDuplicateLibraryEntries() {
 }
 
 export async function cleanupDraftQuestionsFromLibrary() {
-  // Remove all draft questions from library (only published should be in library)
+  // Only synchronized assessment/compiler drafts are disposable. Manual
+  // questions belong to users and must never be removed by a background sync.
   const result = await QuestionLibrary.deleteMany({
-    $or: [
-      { status: { $exists: false } },
-      { status: 'draft' },
-      { status: '' },
-      { status: null },
-    ],
+    sourceType: { $in: ['assessment', 'compiler'] },
+    status: { $in: ['draft', '', null] },
   });
   console.log(`[Library Cleanup] Removed ${result.deletedCount} draft/invalid questions`);
 }

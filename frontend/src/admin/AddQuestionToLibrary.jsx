@@ -157,9 +157,11 @@ export default function AddQuestionToLibrary() {
 
         const correct = correctRaw.toUpperCase().replace(/^OPTION\s*/i, '').trim();
         const map = { A: 0, B: 1, C: 2, D: 3, '1': 0, '2': 1, '3': 2, '4': 3 };
-        const correctOptionIndex = map[correct];
+        const optionTextIndex = [optA, optB, optC, optD]
+          .findIndex((option) => option.trim().toLowerCase() === correctRaw.toLowerCase());
+        const correctOptionIndex = map[correct] ?? (optionTextIndex >= 0 ? optionTextIndex : undefined);
         if (typeof correctOptionIndex !== 'number') {
-          errors.push(`Row ${r + 1}: Correct Answer must be A/B/C/D or 1/2/3/4.`);
+          errors.push(`Row ${r + 1}: Correct Answer must be A/B/C/D, 1/2/3/4, or the exact option text.`);
           continue;
         }
 
@@ -271,6 +273,10 @@ export default function AddQuestionToLibrary() {
     for (const q of validQuestions) {
       if (q.type === 'mcq' && !q.options.every(opt => opt.trim())) {
         toast.error('All options are required for MCQs.');
+        return;
+      }
+      if (q.type === 'mcq' && !Number.isInteger(Number(q.correctOptionIndex))) {
+        toast.error('Select the correct answer for every MCQ.');
         return;
       }
       if ((q.type === 'short' || q.type === 'one_line') && !q.expectedAnswer?.trim()) {

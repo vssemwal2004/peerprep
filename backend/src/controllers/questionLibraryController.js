@@ -381,6 +381,8 @@ export async function createLibraryQuestion(req, res) {
       questionText,
       tags,
       keywords,
+      status: 'published',
+      visibility: 'public',
       searchPrefixes,
       questionData: {
         ...question,
@@ -436,6 +438,8 @@ export async function createLibraryQuestionsBulk(req, res) {
         questionText,
         tags,
         keywords,
+        status: 'published',
+        visibility: 'public',
         searchPrefixes,
         questionData: {
           ...question,
