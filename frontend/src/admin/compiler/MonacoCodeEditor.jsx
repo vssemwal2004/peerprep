@@ -76,6 +76,7 @@ export default function MonacoCodeEditor({
   const mutationObserverRef = useRef(null);
   const resizeObserverRef = useRef(null);
   const layoutFrameRef = useRef(null);
+  const applyingExternalValueRef = useRef(false);
   const internalClipboardOnlyRef = useRef(internalClipboardOnly);
   const clipboardScopeRef = useRef(clipboardScope);
   const onClipboardStatusRef = useRef(onClipboardStatus);
@@ -159,6 +160,7 @@ export default function MonacoCodeEditor({
         });
 
         editor.onDidChangeModelContent(() => {
+          if (applyingExternalValueRef.current) return;
           onChangeRef.current?.(editor.getValue());
         });
 
@@ -210,7 +212,12 @@ export default function MonacoCodeEditor({
     if (!editor) return;
 
     if (editor.getValue() !== value) {
-      editor.setValue(value || '');
+      applyingExternalValueRef.current = true;
+      try {
+        editor.setValue(value || '');
+      } finally {
+        applyingExternalValueRef.current = false;
+      }
     }
   }, [value]);
 

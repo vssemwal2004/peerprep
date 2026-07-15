@@ -17,14 +17,16 @@ import {
   MapPin,
   Maximize,
   Monitor,
-  Pin,
-  PinOff,
+  Play,
+  RotateCcw,
+  Send,
   ShieldCheck,
   Video,
 } from 'lucide-react';
 import CodeEditor from './CodeEditor';
-import { RichTextPreview } from '../admin/compiler/CompilerContentPreview';
-import { getLanguageLabel } from '../admin/compiler/compilerUtils';
+import AssessmentCodingProblemPanel from './assessment/AssessmentCodingProblemPanel';
+import AssessmentLanguagePicker from './assessment/AssessmentLanguagePicker';
+import AssessmentQuestionPalette from './assessment/AssessmentQuestionPalette';
 import { getCodeValidationMessage, getStarterCodeForLanguage } from './problemUtils';
 import ProctoringFooter from '../features/assessment/student/components/ProctoringFooter';
 import { ProctoringManager } from '../features/assessment/proctoring';
@@ -38,8 +40,18 @@ const formatTime = (ms) => {
   return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 };
 
+const FULLSCREEN_RECOVERY_SECONDS = 15;
+
 const buildSampleTestCases = (codingData = {}) => {
-  const list = codingData.sampleTestCases || codingData.testCases || [];
+  const list = Array.isArray(codingData.sampleTestCases) && codingData.sampleTestCases.length
+    ? codingData.sampleTestCases
+    : (Array.isArray(codingData.examples) && codingData.examples.length
+      ? codingData.examples
+      : (Array.isArray(codingData.testCases)
+        ? codingData.testCases.filter((testCase) => testCase?.hidden !== true)
+        : ((codingData.sampleInput !== undefined || codingData.sampleOutput !== undefined)
+          ? [{ input: codingData.sampleInput, output: codingData.sampleOutput }]
+          : [])));
   if (!Array.isArray(list)) return [];
   return list.map((testCase, index) => ({
     id: testCase.id || `sample-${index + 1}`,
@@ -307,10 +319,10 @@ export default function AssessmentAttempt() {
   const [securityStatus, setSecurityStatus] = useState(CSE_STATUS_DEFAULTS);
   const [securityAction, setSecurityAction] = useState('warn');
   const [fullscreenRecovery, setFullscreenRecovery] = useState({ active: false, remaining: 0 });
-  const [leftWidth, setLeftWidth] = useState(420);
-  const [sidebarExpanded, setSidebarExpanded] = useState(true);
-  const [sidebarPinned, setSidebarPinned] = useState(false);
-  const [navTypeFilter, setNavTypeFilter] = useState('all');
+  const [leftWidth, setLeftWidth] = useState(() => {
+    if (typeof window === 'undefined') return 480;
+    return Math.min(560, Math.max(320, Math.round(window.innerWidth * 0.34)));
+  });
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [proctoringStatus, setProctoringStatus] = useState(null);
   const [aiPreviewPosition, setAiPreviewPosition] = useState(() => {
@@ -337,7 +349,6 @@ export default function AssessmentAttempt() {
   const streamRef = useRef(null);
   const violationThrottleRef = useRef({});
   const lastDuplicateTabViolationRef = useRef(0);
-  const lastIsCodingRef = useRef(false);
   const fullscreenExitTimerRef = useRef(null);
   const fullscreenCountdownRef = useRef(null);
   const heartbeatFailureRef = useRef(0);
@@ -354,6 +365,10 @@ export default function AssessmentAttempt() {
   const violationScoreRef = useRef(0);
   const pauseCountRef = useRef(0);
   const securityRecheckAutoSubmitRef = useRef(false);
+  const fullscreenAutoSubmitRef = useRef(false);
+  const submissionInFlightRef = useRef(false);
+  const handleSubmitRef = useRef(null);
+  const recordViolationRef = useRef(null);
   const faceDetectorRef = useRef(null);
   const audioContextRef = useRef(null);
   const audioAnalyserRef = useRef(null);
@@ -363,6 +378,7 @@ export default function AssessmentAttempt() {
   const proctoringManagerRef = useRef(null);
   const lastTabShortcutAtRef = useRef(0);
   const liveCodingCodeRef = useRef({});
+  const liveCodingLanguageRef = useRef({});
   const idleTimerRef = useRef(null);
   const lastActivityRef = useRef(Date.now());
   const tabInstanceIdRef = useRef(
@@ -375,6 +391,7 @@ export default function AssessmentAttempt() {
 
   useEffect(() => {
     liveCodingCodeRef.current = {};
+    liveCodingLanguageRef.current = {};
   }, [id]);
 
   const answerKey = (sectionIndex, questionIndex) => `${sectionIndex}-${questionIndex}`;
@@ -423,7 +440,6 @@ export default function AssessmentAttempt() {
   const autoSubmitOnEnd = securitySettings.autoSubmitOnEnd !== false;
   const restrictNavigation = Boolean(securitySettings.restrictNavigation);
   const allowSectionReview = securitySettings.allowSectionReview !== false;
-  const fullscreenTimeoutSec = Number(securitySettings.fullscreenTimeoutSec || 0);
   const configuredSecurityRecheckTimeoutSec = Number(securitySettings.securityRecheckTimeoutSec);
   const securityRecheckTimeoutSec = Number.isFinite(configuredSecurityRecheckTimeoutSec)
     ? Math.min(1800, Math.max(30, configuredSecurityRecheckTimeoutSec))
@@ -551,9 +567,22 @@ export default function AssessmentAttempt() {
   ), [answersMap, assessment]);
   const flatQuestions = useMemo(() => {
     const list = [];
+    let mcqCount = 0;
+    let codingCount = 0;
     (assessment?.sections || []).forEach((sec, secIdx) => {
       (sec.questions || []).forEach((question, qIdx) => {
-        list.push({ sectionIndex: secIdx, questionIndex: qIdx, section: sec, question });
+        const kind = sec?.type === 'coding' ? 'coding' : 'mcq';
+        if (kind === 'coding') codingCount += 1;
+        else mcqCount += 1;
+        list.push({
+          sectionIndex: secIdx,
+          questionIndex: qIdx,
+          section: sec,
+          question,
+          number: list.length + 1,
+          kind,
+          typeNumber: kind === 'coding' ? codingCount : mcqCount,
+        });
       });
     });
     return list;
@@ -588,20 +617,16 @@ export default function AssessmentAttempt() {
     return elapsedAssessmentMs > plan.endsAtMs + (sectionGraceSec * 1000);
   }, [sectionWiseLock, sectionLockPlan, elapsedAssessmentMs, sectionGraceSec]);
 
-  const sectionStarts = useMemo(() => {
-    let count = 0;
-    return (assessment?.sections || []).map((sec) => {
-      const start = count;
-      count += sec.questions?.length || 0;
-      return start;
-    });
-  }, [assessment]);
-
-  const sectionSummaries = useMemo(() => (
-    (assessment?.sections || []).map((sec, index) => {
+  const sectionSummaries = useMemo(() => {
+    let mcqStart = 0;
+    let codingStart = 0;
+    return (assessment?.sections || []).map((sec, index) => {
       const count = sec?.questions?.length || 0;
-      const start = (sectionStarts[index] || 0) + 1;
+      const isCodingSection = sec?.type === 'coding';
+      const start = (isCodingSection ? codingStart : mcqStart) + 1;
       const end = count > 0 ? start + count - 1 : start;
+      if (isCodingSection) codingStart += count;
+      else mcqStart += count;
       return {
         index,
         count,
@@ -610,32 +635,23 @@ export default function AssessmentAttempt() {
         label: sec?.sectionName || `Section ${index + 1}`,
         typeLabel: formatSectionTypeLabel(sec?.type),
       };
-    })
-  ), [assessment?.sections, sectionStarts]);
-
-  const typeQuestionNumbers = useMemo(() => {
-    let mcqCount = 0;
-    let codingCount = 0;
-    const map = {};
-    flatQuestions.forEach((item) => {
-      const key = `${item.sectionIndex}-${item.questionIndex}`;
-      if (item.section?.type === 'coding') {
-        codingCount += 1;
-        map[key] = codingCount;
-      } else {
-        mcqCount += 1;
-        map[key] = mcqCount;
-      }
     });
-    return map;
-  }, [flatQuestions]);
+  }, [assessment?.sections]);
 
   const currentFlatIndex = useMemo(() => (
     flatQuestions.findIndex((item) => item.sectionIndex === activeSection && item.questionIndex === activeQuestion)
   ), [flatQuestions, activeSection, activeQuestion]);
 
   const totalQuestions = flatQuestions.length;
-  const currentQuestionNumber = currentFlatIndex >= 0 ? currentFlatIndex + 1 : 1;
+  const questionTypeTotals = useMemo(() => flatQuestions.reduce((totals, item) => {
+    totals[item.kind] += 1;
+    return totals;
+  }, { mcq: 0, coding: 0 }), [flatQuestions]);
+  const currentQuestionItem = currentFlatIndex >= 0 ? flatQuestions[currentFlatIndex] : null;
+  const currentTypeQuestionNumber = currentQuestionItem?.typeNumber || 1;
+  const currentQuestionKind = currentQuestionItem?.kind || 'mcq';
+  const currentTypeQuestionTotal = questionTypeTotals[currentQuestionKind] || 0;
+  const currentQuestionTypeLabel = currentQuestionKind === 'coding' ? 'Coding' : 'MCQ / Short';
   const hasPrevQuestion = currentFlatIndex > 0;
   const hasNextQuestion = currentFlatIndex >= 0 && currentFlatIndex < totalQuestions - 1;
 
@@ -649,7 +665,12 @@ export default function AssessmentAttempt() {
       return value.answer !== undefined && value.answer !== null ? 'answered' : 'unanswered';
     }
     if (section.type === 'coding') {
-      return value.code && String(value.code).trim().length > 0 ? 'answered' : 'unanswered';
+      const question = section.questions?.[qIdx];
+      const codingData = getCodingDataFromQuestion(question);
+      const language = value.language || codingData.supportedLanguages?.[0] || 'javascript';
+      const starterCode = getStarterCodeForLanguage(codingData, language);
+      const submittedCode = String(value.code || '').trim();
+      return submittedCode && submittedCode !== String(starterCode || '').trim() ? 'answered' : 'unanswered';
     }
     return value.answer && String(value.answer).trim().length > 0 ? 'answered' : 'unanswered';
   }, [answersMap, markedMap, assessment]);
@@ -705,8 +726,8 @@ export default function AssessmentAttempt() {
   const clampLeftWidth = (value) => {
     if (!splitContainerRef.current) return value;
     const containerWidth = splitContainerRef.current.getBoundingClientRect().width;
-    const min = 280;
-    const max = Math.max(min + 160, Math.floor(containerWidth * 0.6));
+    const min = 320;
+    const max = Math.max(min, Math.min(680, containerWidth - 360));
     return Math.min(max, Math.max(min, value));
   };
 
@@ -735,8 +756,9 @@ export default function AssessmentAttempt() {
     }
   }, [assessment, isSubmitted, answersArray, phase, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violationScore, pauseCount, lastPauseAt, securityHeartbeat, violations, toast]);
 
-  const handleSubmit = useCallback(async (auto = false) => {
-    if (!assessment) return;
+  const handleSubmit = useCallback(async (auto = false, autoMessage = '') => {
+    if (!assessment || submissionInFlightRef.current) return false;
+    submissionInFlightRef.current = true;
     setSaving(true);
     try {
       await api.submitStudentAssessment({
@@ -754,11 +776,14 @@ export default function AssessmentAttempt() {
         violations,
       });
       stopAiProctoring();
-      toast.success(auto ? 'Time is up. Assessment auto-submitted.' : 'Assessment submitted successfully');
+      toast.success(auto ? (autoMessage || 'Time is up. Assessment auto-submitted.') : 'Assessment submitted successfully');
       navigate('/student/assessments');
+      return true;
     } catch (err) {
       toast.error(err.message || 'Failed to submit assessment');
+      return false;
     } finally {
+      submissionInFlightRef.current = false;
       setSaving(false);
     }
   }, [assessment, answersArray, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violationScore, pauseCount, lastPauseAt, securityHeartbeat, violations, stopAiProctoring, toast, navigate]);
@@ -930,8 +955,10 @@ export default function AssessmentAttempt() {
       const action = detectionOnly ? 'warn' : normalizeAction(result?.action, result?.autoSubmit ? 'autosubmit' : 'warn');
       setSecurityAction(action);
       if (action === 'autosubmit') {
-        toast.error('Violation limit reached. Assessment auto-submitted.');
-        await handleSubmit(true);
+        if (!meta.deferAutoSubmit) {
+          toast.error('Violation limit reached. Assessment auto-submitted.');
+          await handleSubmit(true);
+        }
         return result;
       }
       if (action === 'pause' && !SOFT_FOOTER_WARNING_TYPES.has(type)) {
@@ -960,6 +987,11 @@ export default function AssessmentAttempt() {
       }, 0);
     }
   }, [isSubmitted, assessment?._id, securitySettings, handleSave, handleSubmit, toast, triggerForcePause, showSecurityPopup]);
+
+  useEffect(() => {
+    handleSubmitRef.current = handleSubmit;
+    recordViolationRef.current = recordViolation;
+  }, [handleSubmit, recordViolation]);
 
   const handleResizeStart = (event) => {
     if (!splitContainerRef.current) return;
@@ -1140,6 +1172,8 @@ export default function AssessmentAttempt() {
           const language = existingAnswer.language || languages[0];
           const hasCode = typeof existingAnswer.code === 'string' && existingAnswer.code.trim();
           const initialCode = hasCode ? existingAnswer.code : getStarterCodeForLanguage(codingData, language);
+          liveCodingCodeRef.current[key] = initialCode;
+          liveCodingLanguageRef.current[key] = language;
           initialAnswers[key] = {
             ...existingAnswer,
             language,
@@ -1294,24 +1328,6 @@ export default function AssessmentAttempt() {
       }
     };
   }, [assessment?._id, assessment?.title, activeSessionStorageKey, phase, preventMultipleTabs]);
-
-  useEffect(() => {
-    if (!assessment) return;
-    if (isCodingForLayout && !lastIsCodingRef.current) {
-      setSidebarExpanded(false);
-      setSidebarPinned(false);
-    }
-    if (!isCodingForLayout && lastIsCodingRef.current) {
-      setSidebarExpanded(true);
-      setSidebarPinned(false);
-    }
-    lastIsCodingRef.current = Boolean(isCodingForLayout);
-  }, [assessment, isCodingForLayout]);
-
-  useEffect(() => {
-    const currentType = assessment?.sections?.[activeSection]?.type === 'coding' ? 'coding' : 'mcq';
-    setNavTypeFilter((prev) => (prev === 'all' ? currentType : prev));
-  }, [assessment, activeSection]);
 
   useEffect(() => {
     if (!isCodingForLayout) return;
@@ -1641,60 +1657,76 @@ export default function AssessmentAttempt() {
   }, [fullscreenRequired]);
 
   useEffect(() => {
-    if (!secureActive || !fullscreenRequired) return undefined;
-    const handleFullscreenEnforcement = () => {
-      if (!document.fullscreenElement) {
-        const screenshotWarningActive = Date.now() < screenshotGraceUntilRef.current
-          || Date.now() < restrictedActionGraceUntilRef.current
-          || Date.now() - lastScreenshotWarningAtRef.current < SCREENSHOT_WARNING_GRACE_MS;
-        if (screenshotWarningActive) {
-          setSecurityStatus((prev) => ({ ...prev, fullscreen: true }));
-          setFullscreenRecovery({ active: false, remaining: 0 });
-          setSecurityNotice(restrictedActionNoticeRef.current);
-          return;
-        }
-        setSecurityStatus((prev) => ({ ...prev, fullscreen: false }));
-        setFullscreenRecovery({ active: true, remaining: fullscreenTimeoutSec || 0 });
-        setSecurityNotice('Fullscreen is off. Re-enter fullscreen to continue without a warning.');
-        if (fullscreenTimeoutSec > 0) {
-          if (fullscreenExitTimerRef.current) clearTimeout(fullscreenExitTimerRef.current);
-          if (fullscreenCountdownRef.current) clearInterval(fullscreenCountdownRef.current);
-          const startedAt = Date.now();
-          fullscreenCountdownRef.current = setInterval(() => {
-            const remaining = Math.max(0, fullscreenTimeoutSec - Math.floor((Date.now() - startedAt) / 1000));
-            setFullscreenRecovery((prev) => (prev.active ? { ...prev, remaining } : prev));
-          }, 500);
-          fullscreenExitTimerRef.current = setTimeout(() => {
-            if (!document.fullscreenElement && !isSubmitted) {
-              void recordViolation('fullscreen_exit', 'Fullscreen was not restored within the configured timeout.', {
-                timeoutSec: fullscreenTimeoutSec,
-                source: 'fullscreen_timeout',
-                escalated: true,
-              });
-            }
-          }, fullscreenTimeoutSec * 1000);
-        } else {
-          void recordViolation('fullscreen_exit', 'Fullscreen was not restored immediately.', {
-            source: 'fullscreen_timeout',
-            escalated: true,
-          });
-        }
-      } else if (fullscreenExitTimerRef.current) {
-        clearTimeout(fullscreenExitTimerRef.current);
-        fullscreenExitTimerRef.current = null;
-        if (fullscreenCountdownRef.current) clearInterval(fullscreenCountdownRef.current);
-        fullscreenCountdownRef.current = null;
-        setFullscreenRecovery({ active: false, remaining: 0 });
-        setSecurityStatus((prev) => ({ ...prev, fullscreen: true }));
-      }
-    };
-    document.addEventListener('fullscreenchange', handleFullscreenEnforcement);
-    return () => {
-      document.removeEventListener('fullscreenchange', handleFullscreenEnforcement);
+    const clearFullscreenTimers = () => {
       if (fullscreenExitTimerRef.current) clearTimeout(fullscreenExitTimerRef.current);
       if (fullscreenCountdownRef.current) clearInterval(fullscreenCountdownRef.current);
+      fullscreenExitTimerRef.current = null;
+      fullscreenCountdownRef.current = null;
     };
-  }, [secureActive, fullscreenRequired, fullscreenTimeoutSec, isSubmitted, recordViolation]);
+
+    if (!secureActive || !fullscreenRequired) {
+      clearFullscreenTimers();
+      fullscreenAutoSubmitRef.current = false;
+      return undefined;
+    }
+
+    const handleFullscreenEnforcement = () => {
+      if (document.fullscreenElement) {
+        clearFullscreenTimers();
+        fullscreenAutoSubmitRef.current = false;
+        setFullscreenRecovery({ active: false, remaining: 0 });
+        setSecurityStatus((prev) => ({ ...prev, fullscreen: true }));
+        setSecurityNotice((prev) => (String(prev || '').toLowerCase().includes('fullscreen') ? '' : prev));
+        return;
+      }
+
+      if (fullscreenExitTimerRef.current || fullscreenAutoSubmitRef.current) return;
+
+      const deadline = Date.now() + (FULLSCREEN_RECOVERY_SECONDS * 1000);
+      setSecurityStatus((prev) => ({ ...prev, fullscreen: false }));
+      setFullscreenRecovery({ active: true, remaining: FULLSCREEN_RECOVERY_SECONDS });
+      setSecurityNotice(`Fullscreen is required. Re-enter within ${FULLSCREEN_RECOVERY_SECONDS} seconds or the assessment will be submitted.`);
+
+      fullscreenCountdownRef.current = setInterval(() => {
+        const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+        setFullscreenRecovery((prev) => (prev.active ? { ...prev, remaining } : prev));
+      }, 250);
+
+      fullscreenExitTimerRef.current = setTimeout(() => {
+        clearFullscreenTimers();
+        if (document.fullscreenElement || isSubmitted || fullscreenAutoSubmitRef.current) return;
+
+        fullscreenAutoSubmitRef.current = true;
+        setFullscreenRecovery({ active: true, remaining: 0 });
+        setSecurityNotice('Fullscreen was not restored. Submitting assessment now.');
+
+        void (async () => {
+          await recordViolationRef.current?.(
+            'fullscreen_exit',
+            'Fullscreen was not restored within 15 seconds. Assessment auto-submitted.',
+            {
+              timeoutSec: FULLSCREEN_RECOVERY_SECONDS,
+              source: 'fullscreen_timeout',
+              escalated: true,
+              deferAutoSubmit: true,
+            },
+          );
+          await handleSubmitRef.current?.(
+            true,
+            'Fullscreen was not restored. Assessment auto-submitted.',
+          );
+        })();
+      }, FULLSCREEN_RECOVERY_SECONDS * 1000);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenEnforcement);
+    handleFullscreenEnforcement();
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenEnforcement);
+      clearFullscreenTimers();
+    };
+  }, [secureActive, fullscreenRequired, isSubmitted]);
 
   useEffect(() => {
     if (phase !== 'validation') return;
@@ -2123,7 +2155,10 @@ export default function AssessmentAttempt() {
 
     const key = answerKey(sectionIndex, questionIndex);
     const currentAnswer = answersMap[key] || {};
-    const currentLanguage = currentAnswer.language || getCodingLanguagesFromData(getCodingDataFromQuestion(questionItem))[0];
+    const currentLanguage = liveCodingLanguageRef.current[key]
+      || currentAnswer.language
+      || getCodingLanguagesFromData(getCodingDataFromQuestion(questionItem))[0];
+    if (!nextLanguage || nextLanguage === currentLanguage) return;
     const liveCurrentCode = liveCodingCodeRef.current[key];
     const currentCode = typeof liveCurrentCode === 'string' ? liveCurrentCode : (currentAnswer.code || '');
     const preparedDrafts = {
@@ -2133,6 +2168,7 @@ export default function AssessmentAttempt() {
     const preparedNextCode = typeof preparedDrafts[nextLanguage] === 'string'
       ? preparedDrafts[nextLanguage]
       : getCodingStarterCode(questionItem, nextLanguage);
+    liveCodingLanguageRef.current[key] = nextLanguage;
     liveCodingCodeRef.current[key] = preparedNextCode;
 
     setAnswersMap((prev) => {
@@ -2590,6 +2626,7 @@ export default function AssessmentAttempt() {
     const supported = getCodingLanguagesFromData(codingData);
     const language = answersMap[key]?.language || supported[0];
     const starterCode = getStarterCodeForLanguage(codingData, language);
+    liveCodingLanguageRef.current[key] = language;
     liveCodingCodeRef.current[key] = starterCode;
     setAnswersMap((prev) => ({
       ...prev,
@@ -2765,7 +2802,7 @@ export default function AssessmentAttempt() {
   const isSubmitting = Boolean(isSubmittingMap[activeAnswerKey]);
   const runInputUsed = runInputUsedMap[activeAnswerKey] ?? null;
   const currentSectionLabel = section?.sectionName || `Section ${activeSection + 1}`;
-  const breadcrumbLabel = `${currentSectionLabel} > Question ${activeQuestion + 1}`;
+  const breadcrumbLabel = `${currentSectionLabel} / ${currentQuestionTypeLabel} ${currentTypeQuestionNumber}`;
   const fallbackRules = [
     { type: 'bullet', text: 'Fullscreen mode is required' },
     { type: 'bullet', text: 'Do not switch tabs during the test' },
@@ -2786,233 +2823,20 @@ export default function AssessmentAttempt() {
   const showAssessmentWorkspace = phase === 'active' || isSubmitted;
 
   const questionNavigatorPanel = (
-    (() => {
-      const hasMcq = flatQuestions.some((item) => item.section?.type !== 'coding');
-      const hasCoding = flatQuestions.some((item) => item.section?.type === 'coding');
-      const effectiveFilter = navTypeFilter === 'all'
-        ? (section?.type === 'coding' ? 'coding' : 'mcq')
-        : navTypeFilter;
-      const navItems = flatQuestions.filter((item) => {
-        const kind = item.section?.type === 'coding' ? 'coding' : 'mcq';
-        return effectiveFilter === 'coding' ? kind === 'coding' : kind === 'mcq';
-      });
-      const allowCollapse = Boolean(isCodingForLayout);
-      const isCollapsed = allowCollapse && !sidebarExpanded;
-      const togglePinned = () => {
-        if (!allowCollapse) return;
-        setSidebarPinned((prev) => {
-          const nextPinned = !prev;
-          setSidebarExpanded(nextPinned);
-          return nextPinned;
-        });
-      };
-      const answeredCnt = navItems.filter((item) => questionStatus(item.sectionIndex, item.questionIndex) === 'answered').length;
-      const reviewCnt = navItems.filter((item) => questionStatus(item.sectionIndex, item.questionIndex) === 'review').length;
-      const unansweredCnt = navItems.length - answeredCnt - reviewCnt;
-      const pct = navItems.length > 0 ? Math.round((answeredCnt / navItems.length) * 100) : 0;
-      const currentTypeLabel = effectiveFilter === 'coding' ? 'Coding' : 'MCQ / Short';
-      return (
-        <aside
-          onMouseEnter={() => { if (!allowCollapse || sidebarPinned) return; setSidebarExpanded(true); }}
-          onMouseLeave={() => { if (!allowCollapse || sidebarPinned) return; setSidebarExpanded(false); }}
-          className={`flex-none shrink-0 w-full lg:min-h-0 lg:overflow-y-auto transition-all duration-300 ease-in-out flex flex-col overflow-hidden rounded-[28px] border border-cyan-100/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(242,251,252,0.98)_48%,rgba(255,255,255,0.96)_100%)] shadow-[0_28px_70px_-44px_rgba(8,145,178,0.38)] backdrop-blur dark:border-slate-700 dark:bg-gray-900 ${isCollapsed ? 'lg:w-[4.5rem] lg:min-w-[4.5rem]' : 'lg:w-[21.5rem] lg:min-w-[21.5rem]'}`}
-          aria-label="Assessment sidebar"
-        >
-          {/* Header */}
-          <div className="relative flex items-center justify-between shrink-0 overflow-hidden border-b border-cyan-200/70 bg-[linear-gradient(135deg,#0f89ab_0%,#12a3bb_35%,#1abc87_100%)] px-5 py-5">
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.28),transparent_58%)]" />
-            {!isCollapsed && (
-              <div className="min-w-0 flex-1">
-                <div className="text-[10px] font-bold uppercase tracking-[0.28em] text-cyan-50/90">Question Palette</div>
-                <div className="mt-2 text-xl font-black text-white truncate leading-tight">{assessment?.title || 'Assessment'}</div>
-                <div className="mt-2 flex items-center gap-2 text-[12px] font-semibold text-cyan-50/95">
-                  <span>{currentTypeLabel}</span>
-                  <span className="h-1 w-1 rounded-full bg-white/80" />
-                  <span>{navItems.length} Questions</span>
-                </div>
-              </div>
-            )}
-            {allowCollapse && (
-              <button
-                type="button"
-                onClick={togglePinned}
-                className={`relative z-[1] flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/14 text-cyan-50 hover:bg-white/24 hover:text-white transition-colors ${isCollapsed ? 'mx-auto' : 'ml-3'}`}
-                aria-label={sidebarPinned ? 'Unpin sidebar' : 'Pin sidebar'}
-                title={sidebarPinned ? 'Unpin sidebar' : 'Pin sidebar'}
-              >
-                {sidebarPinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
-              </button>
-            )}
-          </div>
-
-          {isCollapsed ? (
-            <div className="flex flex-1 flex-col items-center gap-3 bg-white/90 py-5 dark:bg-gray-900">
-              <div className="flex flex-col items-center gap-1.5">
-                <div className="h-2.5 w-2.5 rounded-full bg-emerald-700" title={`Answered: ${answeredCnt}`} />
-                <div className="h-2.5 w-2.5 rounded-full bg-rose-600" title={`Not Answered: ${unansweredCnt}`} />
-                <div className="h-2.5 w-2.5 rounded-full bg-amber-500" title={`Marked: ${reviewCnt}`} />
-              </div>
-              <div className="h-px w-7 bg-slate-200 dark:bg-gray-700" />
-              <div className="text-[9px] font-black text-slate-400 tabular-nums">{pct}%</div>
-            </div>
-          ) : (
-            <div className="flex flex-1 flex-col overflow-y-auto bg-white/95 dark:bg-gray-900">
-              {/* Type filter */}
-              {(hasMcq && hasCoding) && (
-                <div className="px-4 pt-4 pb-0 shrink-0">
-                  <div className="flex gap-1.5 rounded-2xl border border-cyan-100 bg-[linear-gradient(180deg,#effbfc_0%,#eef8fb_100%)] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
-                  {hasMcq && (
-                    <button type="button" onClick={() => setNavTypeFilter('mcq')}
-                      className={`flex-1 rounded-xl px-3 py-2.5 text-[12px] font-extrabold transition-all ${effectiveFilter === 'mcq' ? 'bg-white text-cyan-800 shadow-[0_10px_24px_-18px_rgba(8,145,178,0.9)] ring-1 ring-cyan-200' : 'text-slate-600 hover:bg-white/80 hover:text-cyan-700 dark:text-gray-300'}`}>
-                      MCQ / Short
-                    </button>
-                  )}
-                  {hasCoding && (
-                    <button type="button" onClick={() => setNavTypeFilter('coding')}
-                      className={`flex-1 rounded-xl px-3 py-2.5 text-[12px] font-extrabold transition-all ${effectiveFilter === 'coding' ? 'bg-white text-emerald-800 shadow-[0_10px_24px_-18px_rgba(5,150,105,0.9)] ring-1 ring-emerald-200' : 'text-slate-600 hover:bg-white/80 hover:text-emerald-700 dark:text-gray-300'}`}>
-                      Coding
-                    </button>
-                  )}
-                  </div>
-                </div>
-              )}
-
-              {/* Legend */}
-              <div className="px-4 pt-4 pb-2 flex flex-wrap gap-x-4 gap-y-2 shrink-0">
-                {[['bg-emerald-700','Answered'],['bg-rose-600','Not Done'],['bg-amber-500','Review']].map(([color,label]) => (
-                  <span key={label} className="inline-flex items-center gap-2 text-[11px] font-semibold text-slate-600 dark:text-gray-500">
-                    <span className={`h-3 w-3 rounded-[4px] ${color} inline-block shadow-sm`} />{label}
-                  </span>
-                ))}
-              </div>
-
-              {/* Section map */}
-              <div className="px-4 pb-2 shrink-0">
-                <div className="rounded-2xl border border-cyan-100 bg-cyan-50/70 px-3 py-2.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-cyan-700">Sections</span>
-                    {restrictNavigation && (
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-bold text-amber-700">
-                        Back locked
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-2 space-y-1.5">
-                    {sectionSummaries.map((summary) => {
-                      const isCurrentSection = summary.index === activeSection;
-                      return (
-                        <div
-                          key={`section-map-${summary.index}`}
-                          className={`flex items-center justify-between gap-2 rounded-xl border px-2.5 py-2 text-[11px] font-semibold ${
-                            isCurrentSection
-                              ? 'border-cyan-300 bg-white text-cyan-900 shadow-sm'
-                              : 'border-cyan-100 bg-white/70 text-slate-600'
-                          }`}
-                        >
-                          <span className="min-w-0 truncate">{summary.label}</span>
-                          <span className="shrink-0 text-right text-[10px] font-black uppercase tracking-[0.08em]">
-                            Q{summary.start}-Q{summary.end} {summary.typeLabel}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {restrictNavigation && (
-                    <p className="mt-2 text-[10px] font-medium leading-4 text-slate-600">
-                      {allowSectionReview
-                        ? 'You can review only the section you are currently in. Previous sections stay locked.'
-                        : 'After moving forward, previous questions stay locked.'}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {/* Question grid */}
-              <div className="px-4 pt-2 pb-4 grid grid-cols-5 gap-3 shrink-0">
-                {navItems.map((item) => {
-                  const status = questionStatus(item.sectionIndex, item.questionIndex);
-                  const isActive = item.sectionIndex === activeSection && item.questionIndex === activeQuestion;
-                  const number = typeQuestionNumbers[`${item.sectionIndex}-${item.questionIndex}`] || (item.questionIndex + 1);
-                  const canNavigate = canNavigateToQuestion(item.sectionIndex, item.questionIndex);
-                  let cls = '';
-                  if (isActive) cls = 'relative z-10 border border-cyan-400 bg-[linear-gradient(135deg,#1095bb_0%,#0ea5c9_54%,#11b7d8_100%)] text-white shadow-[0_18px_34px_-18px_rgba(8,145,178,0.95)] ring-4 ring-cyan-100';
-                  else if (status === 'answered') cls = 'border border-emerald-300/80 bg-emerald-50 text-emerald-900 hover:bg-emerald-100 shadow-[0_10px_24px_-22px_rgba(5,150,105,0.9)] dark:bg-emerald-900/30 dark:border-emerald-700 dark:text-emerald-200';
-                  else if (status === 'review') cls = 'border border-amber-300/90 bg-amber-50 text-amber-800 hover:bg-amber-100 shadow-[0_10px_24px_-22px_rgba(245,158,11,0.85)] dark:bg-amber-900/30 dark:border-amber-700 dark:text-amber-200';
-                  else cls = 'border border-rose-300/80 bg-white text-rose-700 hover:border-rose-400 hover:bg-rose-50 shadow-[0_10px_24px_-24px_rgba(225,29,72,0.55)] dark:border-rose-800 dark:bg-rose-950/20 dark:text-rose-200';
-                  if (!canNavigate && !isActive) cls += ' cursor-not-allowed opacity-70 grayscale-[0.15]';
-                  return (
-                    <button
-                      key={`nav-${item.sectionIndex}-${item.questionIndex}`}
-                      type="button"
-                      onClick={() => navigateToQuestion(item.sectionIndex, item.questionIndex)}
-                      aria-disabled={!canNavigate}
-                      className={`h-12 w-full rounded-xl text-[15px] font-black transition-all duration-150 ${cls}`}
-                      aria-label={`Go to question ${number}`}
-                      title={canNavigate ? `Q${number} - ${status}` : 'Click to see why this question is locked'}
-                    >
-                      {number}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Progress */}
-              <div className="px-4 pb-4 shrink-0">
-                <div className="mb-3 rounded-[22px] border border-cyan-100 bg-white px-4 py-3 shadow-[0_18px_45px_-34px_rgba(8,145,178,0.3)]">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Progress</span>
-                  <span className="text-[12px] font-black text-cyan-700 dark:text-cyan-300">{pct}%</span>
-                </div>
-                <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-gray-700">
-                  <div className="h-full rounded-full bg-gradient-to-r from-sky-500 via-cyan-500 to-emerald-500 transition-all duration-500" style={{ width: `${pct}%` }} />
-                </div>
-              </div>
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="rounded-2xl bg-emerald-50 dark:bg-emerald-900/25 border border-emerald-200 dark:border-emerald-800 py-3">
-                    <div className="text-2xl font-black text-emerald-800 dark:text-emerald-200">{answeredCnt}</div>
-                    <div className="text-[11px] text-emerald-700 dark:text-emerald-300 font-semibold">Done</div>
-                  </div>
-                  <div className="rounded-2xl bg-rose-50 dark:bg-rose-900/25 border border-rose-200 dark:border-rose-800 py-3">
-                    <div className="text-2xl font-black text-rose-700 dark:text-rose-200">{unansweredCnt}</div>
-                    <div className="text-[11px] text-rose-600 dark:text-rose-300 font-semibold">Left</div>
-                  </div>
-                  <div className="rounded-2xl bg-amber-50 dark:bg-amber-900/25 border border-amber-200 dark:border-amber-800 py-3">
-                    <div className="text-2xl font-black text-amber-700 dark:text-amber-200">{reviewCnt}</div>
-                    <div className="text-[11px] text-amber-600 dark:text-amber-300 font-semibold">Review</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Timer */}
-              <div className="border-t border-cyan-100 px-4 pb-4 pt-3 shrink-0 dark:border-gray-700">
-                <div className="rounded-[22px] bg-[linear-gradient(135deg,#1e293b_0%,#25324a_100%)] dark:bg-gray-800 px-4 py-3.5 flex items-center justify-between shadow-[0_20px_46px_-34px_rgba(15,23,42,0.95)]">
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-5 w-5 shrink-0 text-cyan-300" />
-                    <span className="text-[2rem] leading-none font-black text-white tabular-nums tracking-tight">{formatTime(timeLeft)}</span>
-                  </div>
-                  <span className={`text-[11px] font-bold px-3 py-1 rounded-full ${saving ? 'bg-amber-500/20 text-amber-300' : 'bg-emerald-500/20 text-emerald-300'}`}>
-                    {saving ? 'Saving...' : 'Saved'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Submit */}
-              <div className="px-4 pb-5 shrink-0 mt-auto">
-                <button
-                  type="button"
-                  onClick={() => setShowSubmitConfirm(true)}
-                  disabled={isSubmitted}
-                  className="w-full rounded-[20px] bg-gradient-to-r from-emerald-600 to-emerald-500 py-4 text-xl font-black text-white shadow-[0_20px_40px_-24px_rgba(16,185,129,0.8)] dark:shadow-none hover:from-emerald-500 hover:to-emerald-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isSubmitted ? 'Submitted' : 'Submit Assessment'}
-                </button>
-                <p className="mt-2 text-center text-[11px] text-slate-400 dark:text-gray-500">Answers are auto-saved</p>
-              </div>
-            </div>
-          )}
-        </aside>
-      );
-    })()
+    <AssessmentQuestionPalette
+      assessmentTitle={assessment?.title || 'Assessment'}
+      questions={flatQuestions}
+      activeSection={activeSection}
+      activeQuestion={activeQuestion}
+      questionStatus={questionStatus}
+      canNavigate={canNavigateToQuestion}
+      onNavigate={navigateToQuestion}
+      onSubmit={() => setShowSubmitConfirm(true)}
+      isSubmitted={isSubmitted}
+      saving={saving}
+      dockable={isCoding}
+      navigationRevision={`${restrictNavigation}:${allowSectionReview}:${sectionLockPlan.map((_, index) => (isSectionLocked(index) ? '1' : '0')).join('')}`}
+    />
   );
 
   const securityStatusItems = [
@@ -3099,15 +2923,15 @@ export default function AssessmentAttempt() {
 
       {showAssessmentWorkspace && (
       <>
-      <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/92 backdrop-blur-xl shadow-[0_12px_32px_-24px_rgba(15,23,42,0.45)] dark:border-slate-700 dark:bg-gray-950/95">
-        <div className="flex w-full flex-wrap items-center gap-3 px-4 py-3">
+      <header className="sticky top-0 z-40 border-b border-slate-200/90 bg-white/96 backdrop-blur-xl shadow-[0_10px_30px_-24px_rgba(15,23,42,0.45)] dark:border-slate-700 dark:bg-gray-950/96">
+        <div className="flex min-h-[64px] w-full flex-wrap items-center gap-3 px-4 py-2.5">
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={goToPrevQuestion}
               disabled={!hasPrevQuestion}
               title={hasPrevQuestion ? 'Previous question' : 'No previous question'}
-              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50 hover:border-slate-300 disabled:opacity-40 transition-all shadow-sm"
+              className="inline-flex h-9 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-bold text-slate-600 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:opacity-40"
             >
               <ChevronLeft className="h-3.5 w-3.5" />
               Prev
@@ -3117,8 +2941,8 @@ export default function AssessmentAttempt() {
               <div className="text-[10px] text-slate-500 dark:text-gray-400">{breadcrumbLabel}</div>
             </div>
           </div>
-          <div className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
-            Q {currentQuestionNumber}/{totalQuestions || 1}
+          <div className="flex items-center gap-1.5 rounded-xl border border-sky-100 bg-sky-50 px-3 py-1.5 text-[11px] font-semibold text-sky-800 dark:border-sky-900/40 dark:bg-sky-900/20 dark:text-sky-200">
+            {currentQuestionTypeLabel} {currentTypeQuestionNumber}/{currentTypeQuestionTotal || 1}
           </div>
           <div className="flex flex-1 items-center justify-end gap-2">
             <button
@@ -3126,34 +2950,33 @@ export default function AssessmentAttempt() {
               onClick={goToNextQuestion}
               disabled={!hasNextQuestion}
               title="Next question"
-              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50 hover:border-slate-300 disabled:opacity-40 transition-all shadow-sm"
+              className="inline-flex h-9 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-bold text-slate-600 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:opacity-40"
             >
               Next
               <ChevronRight className="h-3.5 w-3.5" />
             </button>
-            <div className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
-              <Clock className="h-3.5 w-3.5" />
-              {formatTime(timeLeft)}
+            <div className="flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-slate-950 px-3 text-white shadow-sm dark:border-gray-700">
+              <Clock className="h-3.5 w-3.5 text-sky-300" />
+              <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">Time left</span>
+              <span className="text-xs font-bold tabular-nums">{formatTime(timeLeft)}</span>
             </div>
             {isCoding && (
-              <select
+              <AssessmentLanguagePicker
+                languages={codingLanguages}
                 value={activeLanguage}
-                onChange={(event) => updateCodingLanguage(activeSection, activeQuestion, event.target.value)}
-                className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
-              >
-                {codingLanguages.map((lang) => (
-                  <option key={lang} value={lang}>{getLanguageLabel(lang)}</option>
-                ))}
-              </select>
+                onChange={(language) => updateCodingLanguage(activeSection, activeQuestion, language)}
+                disabled={isRunning || isSubmitting || isSubmitted}
+              />
             )}
             {isCoding && (
               <button
                 type="button"
                 onClick={handleRunCoding}
                 disabled={isRunning || isSubmitting || isSubmitted}
-                className="rounded-md bg-slate-900 px-2 py-1 text-[11px] font-semibold text-white hover:bg-slate-800 dark:bg-sky-600 dark:hover:bg-sky-500"
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-slate-900 px-3 text-[11px] font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-sky-700 dark:hover:bg-sky-600"
               >
-                {isRunning ? '...' : 'Run'}
+                {isRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+                {isRunning ? 'Running' : 'Run'}
               </button>
             )}
             {isCoding && (
@@ -3161,17 +2984,20 @@ export default function AssessmentAttempt() {
                 type="button"
                 onClick={handleSubmitCoding}
                 disabled={isRunning || isSubmitting || isSubmitted}
-                className="rounded-md bg-sky-600 px-2 py-1 text-[11px] font-semibold text-white disabled:opacity-50"
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-sky-600 px-3 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isSubmitting ? '...' : 'Submit'}
+                {isSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                {isSubmitting ? 'Submitting' : 'Submit'}
               </button>
             )}
             {isCoding && (
               <button
                 type="button"
                 onClick={handleResetCoding}
-                className="rounded-md border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+                disabled={isRunning || isSubmitting || isSubmitted}
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
+                <RotateCcw className="h-3.5 w-3.5" />
                 Reset
               </button>
             )}
@@ -3189,88 +3015,28 @@ export default function AssessmentAttempt() {
               <div ref={splitContainerRef} className="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row lg:min-h-0">
                 <section
                   ref={problemPaneRef}
-                  style={{ width: leftWidth ? `${leftWidth}px` : undefined, flexBasis: leftWidth ? `${leftWidth}px` : undefined }}
-                  className={`rounded-[28px] bg-white/95 p-5 shadow-[0_24px_60px_-42px_rgba(15,23,42,0.35)] dark:bg-gray-900 lg:h-full lg:overflow-y-auto ${
-                    cameraStatusLine && !cameraStatusLine.ok ? 'border border-rose-300 shadow-[0_0_0_1px_rgba(244,63,94,0.08),0_24px_60px_-42px_rgba(225,29,72,0.35)]' : 'border border-slate-200/80 dark:border-gray-700'
-                  }`}
+                  style={{ '--assessment-problem-width': `${leftWidth}px` }}
+                  className={`min-h-[520px] w-full min-w-0 shrink-0 overflow-hidden rounded-[28px] lg:h-full lg:min-h-0 lg:w-[var(--assessment-problem-width)] lg:min-w-[320px] lg:basis-[var(--assessment-problem-width)] ${cameraStatusLine && !cameraStatusLine.ok ? 'border border-rose-300' : 'border border-slate-200/80 dark:border-gray-700'}`}
                 >
-                  <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 dark:border-gray-700 pb-3 mb-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 border border-violet-100 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-widest text-violet-600 dark:bg-violet-900/20 dark:border-violet-700 dark:text-violet-300 mb-1.5">
-                        Section {activeSection + 1} &middot; Coding &middot; {questionMarks}pt
-                      </div>
-                      <div className="text-[0.95rem] font-bold leading-snug text-slate-900 dark:text-white">
-                        {question?.questionText || question?.problemDataSnapshot?.title || question?.coding?.problemData?.title || question?.coding?.title}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-2 space-y-3 text-xs text-slate-700 dark:text-gray-200">
-                    <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-3 dark:border-gray-700 dark:bg-gray-800/60">
-                      <div className="text-[9px] font-extrabold uppercase tracking-[0.18em] text-slate-400 mb-2">Problem Statement</div>
-                      <div className="text-[0.82rem] leading-relaxed">
-                        {(codingData?.description || codingData?.statement)
-                          ? <RichTextPreview content={codingData.description || codingData.statement} />
-                          : <div className="text-slate-500">No statement available.</div>}
-                      </div>
-                    </div>
-
-                    {(codingData?.constraints || codingData?.inputFormat || codingData?.outputFormat) && (
-                      <div className="grid gap-2 text-[0.78rem] text-slate-600 dark:text-gray-300">
-                        {codingData.constraints && (
-                          <div className="rounded-lg bg-white dark:bg-gray-900 border border-slate-100 dark:border-gray-700 px-2.5 py-2">
-                            <div className="text-[9px] font-extrabold uppercase tracking-[0.16em] text-slate-400 mb-1">Constraints</div>
-                            <div className="leading-relaxed">{codingData.constraints}</div>
-                          </div>
-                        )}
-                        {codingData.inputFormat && (
-                          <div className="rounded-lg bg-white dark:bg-gray-900 border border-slate-100 dark:border-gray-700 px-2.5 py-2">
-                            <div className="text-[9px] font-extrabold uppercase tracking-[0.16em] text-slate-400 mb-1">Input Format</div>
-                            <div className="leading-relaxed">{codingData.inputFormat}</div>
-                          </div>
-                        )}
-                        {codingData.outputFormat && (
-                          <div className="rounded-lg bg-white dark:bg-gray-900 border border-slate-100 dark:border-gray-700 px-2.5 py-2">
-                            <div className="text-[9px] font-extrabold uppercase tracking-[0.16em] text-slate-400 mb-1">Output Format</div>
-                            <div className="leading-relaxed">{codingData.outputFormat}</div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="mt-3 flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={goToPrevQuestion}
-                  disabled={!hasPrevQuestion}
-                  title={hasPrevQuestion ? 'Go to previous question' : 'No previous question'}
-                  className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Prev
-                </button>
-                <button
-                  type="button"
-                  onClick={goToNextQuestion}
-                  title="Go to next question"
-                  className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-50"
-                >
-                  Next
-                </button>
-                  </div>
+                  <AssessmentCodingProblemPanel
+                    question={question}
+                    codingData={codingData || {}}
+                    marks={questionMarks}
+                    sectionLabel={currentSectionLabel}
+                  />
                 </section>
 
                 <button
                   type="button"
                   onPointerDown={handleResizeStart}
-                  className="hidden lg:flex w-3 shrink-0 cursor-col-resize items-center justify-center bg-slate-50 transition-colors hover:bg-slate-100"
+                  className="group relative hidden w-4 shrink-0 cursor-col-resize items-center justify-center rounded-full transition-colors hover:bg-sky-50 lg:flex dark:hover:bg-sky-950/30"
                   aria-label="Resize panels"
                 >
-                  <div className="h-12 w-1 rounded-full bg-slate-300" />
+                  <div className="h-14 w-1 rounded-full bg-slate-300 transition-colors group-hover:bg-sky-500 dark:bg-gray-600" />
                 </button>
 
-                <section ref={editorPaneRef} className={`flex min-h-[520px] flex-1 flex-col rounded-[28px] bg-white/96 shadow-[0_24px_60px_-42px_rgba(15,23,42,0.35)] dark:bg-gray-900 lg:min-h-0 lg:overflow-hidden ${
-                  cameraStatusLine && !cameraStatusLine.ok ? 'border border-rose-300 shadow-[0_0_0_1px_rgba(244,63,94,0.08),0_24px_60px_-42px_rgba(225,29,72,0.35)]' : 'border border-slate-200/80 dark:border-gray-700'
+                <section ref={editorPaneRef} className={`flex min-h-[520px] min-w-0 flex-1 flex-col overflow-hidden rounded-[28px] bg-white/96 dark:bg-gray-900 lg:min-h-0 ${
+                  cameraStatusLine && !cameraStatusLine.ok ? 'border border-rose-300' : 'border border-slate-200/80 dark:border-gray-700'
                 }`}>
                   {section?.type === 'coding' && (() => {
                     const answerValue = answersMap[answerKey(activeSection, activeQuestion)] || {};
@@ -3360,7 +3126,7 @@ export default function AssessmentAttempt() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-600">
-                      <span className="rounded-md bg-cyan-600 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-white">Question {currentQuestionNumber}</span><span className="rounded-md border border-cyan-100 bg-cyan-50 px-2.5 py-1 text-cyan-700">Marks: {questionMarks}</span><span className="rounded-md border border-slate-200 bg-white px-2.5 py-1">{section?.type === 'mcq' ? 'MCQ' : 'Short Answer'}</span>
+                      <span className="rounded-md bg-cyan-600 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-white">{currentQuestionTypeLabel} {currentTypeQuestionNumber}/{currentTypeQuestionTotal || 1}</span><span className="rounded-md border border-cyan-100 bg-cyan-50 px-2.5 py-1 text-cyan-700">Marks: {questionMarks}</span><span className="rounded-md border border-slate-200 bg-white px-2.5 py-1">{section?.type === 'mcq' ? 'MCQ' : 'Short Answer'}</span>
                     </div>
                     <div className="text-lg font-bold leading-snug text-slate-900 dark:text-white md:text-[1.15rem]">
                       {question?.questionText || 'Question'}
@@ -3929,10 +3695,10 @@ export default function AssessmentAttempt() {
                   </div>
                   <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
                     {[
-                      ['Total Questions', totalQuestions],
+                      ['MCQ / Short Questions', questionTypeTotals.mcq],
+                      ['Coding Questions', questionTypeTotals.coding],
                       ['Total Marks', assessment.totalMarks || 0],
                       ['Duration', `${assessment.duration} minutes`],
-                      ['Question Types', assessment.assessmentType || section?.type || 'mixed'],
                     ].map(([label, value]) => (
                       <div key={label} className="rounded-xl border border-slate-100 bg-slate-50 px-3.5 py-2.5">
                         <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">{label}</div>
@@ -4095,30 +3861,36 @@ export default function AssessmentAttempt() {
       )}
 
       {fullscreenRecovery.active && secureActive && (
-        <div className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-950/60 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-2xl border border-rose-200 bg-white p-6 shadow-2xl dark:border-rose-800 dark:bg-gray-900">
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950 px-4">
+          <div className="w-full max-w-lg rounded-[28px] border border-rose-200 bg-white p-7 shadow-2xl dark:border-rose-800 dark:bg-gray-900">
             <div className="flex items-center gap-2 text-rose-600">
               <AlertTriangle className="h-5 w-5" />
-              <span className="text-sm font-semibold">Fullscreen Required</span>
+              <span className="text-sm font-semibold">Fullscreen is required</span>
             </div>
-            <p className="mt-2 text-sm text-slate-600 dark:text-gray-300">
-              Re-enter fullscreen to continue the assessment. The session will escalate if fullscreen is not restored in time.
+            <h2 className="mt-3 text-xl font-bold text-slate-900 dark:text-white">Assessment paused and hidden</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-gray-300">
+              Re-enter fullscreen to continue. If fullscreen is not restored within 15 seconds, your assessment will be submitted automatically.
             </p>
-            <div className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300">
-              Time remaining: {fullscreenRecovery.remaining || 0}s
+            <div className="mt-5 rounded-2xl border border-rose-100 bg-rose-50 px-4 py-4 text-center dark:border-rose-800 dark:bg-rose-900/20">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-500">Auto-submit in</div>
+              <div className="mt-1 text-4xl font-black tabular-nums text-rose-700 dark:text-rose-300">
+                {fullscreenRecovery.remaining || 0}s
+              </div>
             </div>
             <button
               type="button"
               onClick={async () => {
                 await requestFullscreen();
                 const active = Boolean(document.fullscreenElement);
-                setFullscreenRecovery({ active: !active, remaining: active ? 0 : fullscreenRecovery.remaining });
-                setSecurityStatus((prev) => ({ ...prev, fullscreen: !fullscreenRequired || active }));
+                if (!active) {
+                  setSecurityNotice('Fullscreen could not be enabled. Allow fullscreen permission and try again before the countdown ends.');
+                }
               }}
-              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-500"
+              disabled={fullscreenRecovery.remaining <= 0}
+              className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 py-3 text-sm font-semibold text-white hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Maximize className="h-4 w-4" />
-              Re-enter Fullscreen
+              {fullscreenRecovery.remaining > 0 ? 'Re-enter Fullscreen' : 'Submitting Assessment...'}
             </button>
           </div>
         </div>
