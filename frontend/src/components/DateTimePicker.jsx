@@ -102,6 +102,7 @@ export default function DateTimePicker({
           // Default time behavior
           if (isDateOnlyPick) {
             const picked = new Date(date);
+            const now = new Date();
             // Respect event min/max boundaries for defaulting
             const cfgMin = instance.config.minDate;
             const cfgMax = instance.config.maxDate;
@@ -145,7 +146,8 @@ export default function DateTimePicker({
               return;
             }
 
-            // Start time default: always use current time
+            // Start time default: use the current local time without changing
+            // the calendar day selected by the user.
             picked.setHours(now.getHours(), now.getMinutes(), 0, 0);
             // If selected date is the min boundary day, ensure default is not before event start
             if (sameAsMinDay && minDateTime) {

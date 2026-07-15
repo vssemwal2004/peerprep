@@ -133,6 +133,12 @@ const toLocalIsoMinutes = (value) => {
   return `${year}-${month}-${day}T${hours}:${minutes}`;
 };
 
+const toUtcISOString = (value) => {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+};
+
 function Toggle({ value, onChange }) {
   return (
     <button
@@ -743,8 +749,11 @@ export default function CreateAssessment() {
       title: form.title,
       description: form.description,
       instructions: form.instructions,
-      startTime: form.startTime || null,
-      endTime: form.endTime || null,
+      // The picker stores wall-clock time locally for display. Send an
+      // explicit UTC timestamp so production server timezone cannot shift the
+      // selected calendar date/time during persistence.
+      startTime: toUtcISOString(form.startTime),
+      endTime: toUtcISOString(form.endTime),
       duration: form.duration,
       allowLateSubmission: form.allowLateSubmission,
       targetType: normalizedTargetType,
@@ -1135,6 +1144,7 @@ export default function CreateAssessment() {
             <div className="mt-1">
               <DateTimePicker
                 value={form.startTime}
+                autoSelectToday={false}
                 onChange={(isoDateTime) => {
                   updateForm({ startTime: isoDateTime });
                   if (
@@ -1157,6 +1167,7 @@ export default function CreateAssessment() {
             <div className="mt-1">
               <DateTimePicker
                 value={form.endTime}
+                autoSelectToday={false}
                 onChange={(isoDateTime) => updateForm({ endTime: isoDateTime })}
                 min={form.startTime || undefined}
                 disabled={!form.startTime}

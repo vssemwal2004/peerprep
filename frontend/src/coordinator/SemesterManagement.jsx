@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, Reorder, motion } from 'framer-motion';
 import { api } from '../utils/api';
 import socketService from '../utils/socket';
