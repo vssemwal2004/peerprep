@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import CodeEditor from './CodeEditor';
 import { RichTextPreview } from '../admin/compiler/CompilerContentPreview';
+import { getLanguageLabel } from '../admin/compiler/compilerUtils';
 import { getCodeValidationMessage, getStarterCodeForLanguage } from './problemUtils';
 import ProctoringFooter from '../features/assessment/student/components/ProctoringFooter';
 import { ProctoringManager } from '../features/assessment/proctoring';
@@ -101,6 +102,10 @@ const BLOCKED_INPUT_TYPES = new Set([
   'insertFromDrop',
   'insertReplacementText',
 ]);
+
+const isInternalCodeEditorEvent = (event) => Boolean(
+  event?.target?.closest?.('[data-assessment-code-editor="internal"]'),
+);
 
 const normalizeAction = (value, fallback = 'warn') => {
   if (value === 'terminate' || value === 'autosubmit') return 'autosubmit';
@@ -357,6 +362,7 @@ export default function AssessmentAttempt() {
   const cameraViolationStreakRef = useRef({ type: '', count: 0, at: 0 });
   const proctoringManagerRef = useRef(null);
   const lastTabShortcutAtRef = useRef(0);
+  const liveCodingCodeRef = useRef({});
   const idleTimerRef = useRef(null);
   const lastActivityRef = useRef(Date.now());
   const tabInstanceIdRef = useRef(
@@ -366,6 +372,10 @@ export default function AssessmentAttempt() {
   );
   const rulesSeenStorageKey = `peerprep_assessment_rules_seen:${id}`;
   const activeSessionStorageKey = `peerprep_assessment_active_session:${id}`;
+
+  useEffect(() => {
+    liveCodingCodeRef.current = {};
+  }, [id]);
 
   const answerKey = (sectionIndex, questionIndex) => `${sectionIndex}-${questionIndex}`;
   const isSubmitted = submission?.status === 'submitted';
@@ -532,7 +542,7 @@ export default function AssessmentAttempt() {
       const displayQuestion = assessment?.sections?.[sectionIndex]?.questions?.[questionIndex];
       const originSectionIndex = Number(displayQuestion?.__originSectionIndex ?? sectionIndex);
       const originQuestionIndex = Number(displayQuestion?.__originQuestionIndex ?? questionIndex);
-      const payload = { ...value };
+      const { codeByLanguage: _codeByLanguage, ...payload } = value;
       if (typeof value?.answer === 'number' && Array.isArray(displayQuestion?.__optionOrder)) {
         payload.answer = displayQuestion.__optionOrder[value.answer] ?? value.answer;
       }
@@ -1129,10 +1139,15 @@ export default function AssessmentAttempt() {
           const languages = getCodingLanguagesFromData(codingData);
           const language = existingAnswer.language || languages[0];
           const hasCode = typeof existingAnswer.code === 'string' && existingAnswer.code.trim();
+          const initialCode = hasCode ? existingAnswer.code : getStarterCodeForLanguage(codingData, language);
           initialAnswers[key] = {
             ...existingAnswer,
             language,
-            code: hasCode ? existingAnswer.code : getStarterCodeForLanguage(codingData, language),
+            code: initialCode,
+            codeByLanguage: {
+              ...(existingAnswer.codeByLanguage || {}),
+              [language]: initialCode,
+            },
           };
         });
       });
@@ -1470,14 +1485,17 @@ export default function AssessmentAttempt() {
     };
     const handleCopy = (event) => {
       if (!copyBlockEnabled) return;
+      if (isInternalCodeEditorEvent(event)) return;
       stopRestrictedEvent(event, 'copy_paste', 'Copy action blocked by assessment rules.');
     };
     const handleCut = (event) => {
       if (!copyBlockEnabled) return;
+      if (isInternalCodeEditorEvent(event)) return;
       stopRestrictedEvent(event, 'copy_paste', 'Cut action blocked by assessment rules.');
     };
     const handlePaste = (event) => {
       if (!copyBlockEnabled) return;
+      if (isInternalCodeEditorEvent(event)) return;
       stopRestrictedEvent(event, 'copy_paste', 'Paste action blocked by assessment rules.');
     };
     const handleContextMenu = (event) => {
@@ -1508,6 +1526,7 @@ export default function AssessmentAttempt() {
     };
     const handleBeforeInput = (event) => {
       if (!copyBlockEnabled) return;
+      if (isInternalCodeEditorEvent(event)) return;
       if (BLOCKED_INPUT_TYPES.has(event.inputType)) {
         stopRestrictedEvent(event, 'copy_paste', 'Paste or drop input blocked by assessment rules.', {
           inputType: event.inputType,
@@ -1536,6 +1555,10 @@ export default function AssessmentAttempt() {
       }
       if (!copyBlockEnabled) return;
       const ctrlOrMeta = event.ctrlKey || event.metaKey;
+      const internalEditorShortcut = isInternalCodeEditorEvent(event)
+        && ctrlOrMeta
+        && ['a', 'c', 'v', 'x'].includes(key);
+      if (internalEditorShortcut) return;
       const blockedCtrlKey = ctrlOrMeta && ['c', 'v', 'x', 'a', 's', 'p', 'u', 'r'].includes(key);
       const blockedInsert = key === 'insert' && (event.shiftKey || ctrlOrMeta);
       if (blockedCtrlKey || blockedInsert) {
@@ -2099,20 +2122,38 @@ export default function AssessmentAttempt() {
     }
 
     const key = answerKey(sectionIndex, questionIndex);
+    const currentAnswer = answersMap[key] || {};
+    const currentLanguage = currentAnswer.language || getCodingLanguagesFromData(getCodingDataFromQuestion(questionItem))[0];
+    const liveCurrentCode = liveCodingCodeRef.current[key];
+    const currentCode = typeof liveCurrentCode === 'string' ? liveCurrentCode : (currentAnswer.code || '');
+    const preparedDrafts = {
+      ...(currentAnswer.codeByLanguage || {}),
+      [currentLanguage]: currentCode,
+    };
+    const preparedNextCode = typeof preparedDrafts[nextLanguage] === 'string'
+      ? preparedDrafts[nextLanguage]
+      : getCodingStarterCode(questionItem, nextLanguage);
+    liveCodingCodeRef.current[key] = preparedNextCode;
+
     setAnswersMap((prev) => {
       const existingAnswer = prev[key] || {};
-      const previousLanguage = existingAnswer.language || getCodingLanguagesFromData(getCodingDataFromQuestion(questionItem))[0];
-      const currentCode = existingAnswer.code || '';
-      const previousStarter = getCodingStarterCode(questionItem, previousLanguage);
-      const nextStarter = getCodingStarterCode(questionItem, nextLanguage);
-      const shouldUseTemplate = !String(currentCode).trim()
-        || String(currentCode).trim() === String(previousStarter).trim();
+      const codeByLanguage = {
+        ...(existingAnswer.codeByLanguage || {}),
+        ...preparedDrafts,
+      };
+      const nextDraft = typeof codeByLanguage[nextLanguage] === 'string'
+        ? codeByLanguage[nextLanguage]
+        : preparedNextCode;
       return {
         ...prev,
         [key]: {
           ...existingAnswer,
           language: nextLanguage,
-          code: shouldUseTemplate ? nextStarter : currentCode,
+          code: nextDraft,
+          codeByLanguage: {
+            ...codeByLanguage,
+            [nextLanguage]: nextDraft,
+          },
         },
       };
     });
@@ -2399,7 +2440,7 @@ export default function AssessmentAttempt() {
     }
   };
 
-  const handleRunCoding = () => {
+  const handleRunCoding = (sourceOverride) => {
     if (!assessment || isSubmitted) return;
     const section = assessment?.sections?.[activeSection];
     if (!section || section.type !== 'coding') return;
@@ -2413,7 +2454,9 @@ export default function AssessmentAttempt() {
     }
     const supported = getCodingLanguagesFromData(codingData);
     const language = answersMap[key]?.language || supported[0];
-    const sourceCode = answersMap[key]?.code || '';
+    const sourceCode = typeof sourceOverride === 'string'
+      ? sourceOverride
+      : (liveCodingCodeRef.current[key] ?? answersMap[key]?.code ?? '');
     const validationMessage = getCodeValidationMessage(
       sourceCode,
       getStarterCodeForLanguage(codingData, language),
@@ -2484,7 +2527,7 @@ export default function AssessmentAttempt() {
     });
   };
 
-  const handleSubmitCoding = () => {
+  const handleSubmitCoding = (sourceOverride) => {
     if (!assessment || isSubmitted) return;
     const section = assessment?.sections?.[activeSection];
     if (!section || section.type !== 'coding') return;
@@ -2498,7 +2541,9 @@ export default function AssessmentAttempt() {
     }
     const supported = getCodingLanguagesFromData(codingData);
     const language = answersMap[key]?.language || supported[0];
-    const sourceCode = answersMap[key]?.code || '';
+    const sourceCode = typeof sourceOverride === 'string'
+      ? sourceOverride
+      : (liveCodingCodeRef.current[key] ?? answersMap[key]?.code ?? '');
     const validationMessage = getCodeValidationMessage(
       sourceCode,
       getStarterCodeForLanguage(codingData, language),
@@ -2544,12 +2589,18 @@ export default function AssessmentAttempt() {
     const codingData = getCodingDataFromQuestion(question);
     const supported = getCodingLanguagesFromData(codingData);
     const language = answersMap[key]?.language || supported[0];
+    const starterCode = getStarterCodeForLanguage(codingData, language);
+    liveCodingCodeRef.current[key] = starterCode;
     setAnswersMap((prev) => ({
       ...prev,
       [key]: {
         ...prev[key],
         language,
-        code: getStarterCodeForLanguage(codingData, language),
+        code: starterCode,
+        codeByLanguage: {
+          ...(prev[key]?.codeByLanguage || {}),
+          [language]: starterCode,
+        },
       },
     }));
   };
@@ -3091,7 +3142,7 @@ export default function AssessmentAttempt() {
                 className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
               >
                 {codingLanguages.map((lang) => (
-                  <option key={lang} value={lang}>{lang}</option>
+                  <option key={lang} value={lang}>{getLanguageLabel(lang)}</option>
                 ))}
               </select>
             )}
@@ -3146,7 +3197,7 @@ export default function AssessmentAttempt() {
                   <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 dark:border-gray-700 pb-3 mb-2">
                     <div className="flex-1 min-w-0">
                       <div className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 border border-violet-100 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-widest text-violet-600 dark:bg-violet-900/20 dark:border-violet-700 dark:text-violet-300 mb-1.5">
-                        Section {activeSection + 1} Â· Coding Â· {questionMarks}pt
+                        Section {activeSection + 1} &middot; Coding &middot; {questionMarks}pt
                       </div>
                       <div className="text-[0.95rem] font-bold leading-snug text-slate-900 dark:text-white">
                         {question?.questionText || question?.problemDataSnapshot?.title || question?.coding?.problemData?.title || question?.coding?.title}
@@ -3250,7 +3301,21 @@ export default function AssessmentAttempt() {
                         language={answerValue.language || codingLanguages[0]}
                         code={answerValue.code ?? getStarterCodeForLanguage(codingData, answerValue.language || codingLanguages[0])}
                         onLanguageChange={(lang) => updateCodingLanguage(activeSection, activeQuestion, lang)}
-                        onCodeChange={(code) => updateAnswer(activeSection, activeQuestion, { code })}
+                        onCodeChange={(code) => {
+                          const currentLanguage = answerValue.language || codingLanguages[0];
+                          setAnswersMap((prev) => ({
+                            ...prev,
+                            [key]: {
+                              ...(prev[key] || {}),
+                              language: currentLanguage,
+                              code,
+                              codeByLanguage: {
+                                ...(prev[key]?.codeByLanguage || {}),
+                                [currentLanguage]: code,
+                              },
+                            },
+                          }));
+                        }}
                         customInput=""
                         testCases={testCases}
                         activeTestCaseId={activeTestCaseId}
@@ -3267,6 +3332,11 @@ export default function AssessmentAttempt() {
                         onSubmit={handleSubmitCoding}
                         onReset={handleResetCoding}
                         showToolbar={false}
+                        clipboardScope={`assessment:${assessment?._id || id}:submission:${submission?._id || 'active'}`}
+                        editorKey={key}
+                        onLiveCodeChange={(code) => {
+                          liveCodingCodeRef.current[key] = code;
+                        }}
                       />
                     );
                   })()}

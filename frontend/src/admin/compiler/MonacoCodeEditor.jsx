@@ -5,6 +5,7 @@ import { getMonacoLanguage } from './compilerUtils';
 
 const MONACO_CDN_BASE = 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs';
 let monacoLoaderPromise = null;
+const internalEditorClipboards = new Map();
 
 function isDarkMode() {
   return typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
@@ -65,12 +66,19 @@ export default function MonacoCodeEditor({
   language,
   height = 420,
   readOnly = false,
+  internalClipboardOnly = false,
+  clipboardScope = 'peerprep-editor',
+  onClipboardStatus,
 }) {
   const containerRef = useRef(null);
   const editorRef = useRef(null);
   const onChangeRef = useRef(onChange);
   const mutationObserverRef = useRef(null);
   const resizeObserverRef = useRef(null);
+  const layoutFrameRef = useRef(null);
+  const internalClipboardOnlyRef = useRef(internalClipboardOnly);
+  const clipboardScopeRef = useRef(clipboardScope);
+  const onClipboardStatusRef = useRef(onClipboardStatus);
   const [loadError, setLoadError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
@@ -79,6 +87,12 @@ export default function MonacoCodeEditor({
   useEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
+
+  useEffect(() => {
+    internalClipboardOnlyRef.current = internalClipboardOnly;
+    clipboardScopeRef.current = clipboardScope || 'peerprep-editor';
+    onClipboardStatusRef.current = onClipboardStatus;
+  }, [internalClipboardOnly, clipboardScope, onClipboardStatus]);
 
   useEffect(() => {
     let cancelled = false;
@@ -111,18 +125,33 @@ export default function MonacoCodeEditor({
           value: value || '',
           language: getMonacoLanguage(language),
           theme: isDarkMode() ? 'peerprep-dark' : 'peerprep-light',
-          automaticLayout: true,
+          automaticLayout: false,
           minimap: { enabled: false },
           fontSize: 13,
           lineHeight: 22,
           readOnly,
-          smoothScrolling: true,
+          smoothScrolling: false,
+          cursorSmoothCaretAnimation: 'off',
           scrollBeyondLastLine: false,
+          folding: false,
+          glyphMargin: false,
+          codeLens: false,
+          links: false,
+          colorDecorators: false,
+          quickSuggestions: false,
+          suggestOnTriggerCharacters: false,
+          wordBasedSuggestions: 'off',
+          occurrencesHighlight: 'off',
+          selectionHighlight: false,
+          renderValidationDecorations: 'off',
+          stickyScroll: { enabled: false },
+          overviewRulerLanes: 0,
+          hideCursorInOverviewRuler: true,
           scrollbar: {
-            vertical: 'hidden',
-            horizontal: 'hidden',
-            verticalScrollbarSize: 0,
-            horizontalScrollbarSize: 0,
+            vertical: 'auto',
+            horizontal: 'auto',
+            verticalScrollbarSize: 8,
+            horizontalScrollbarSize: 8,
             alwaysConsumeMouseWheel: false,
           },
           roundedSelection: false,
@@ -146,7 +175,11 @@ export default function MonacoCodeEditor({
         // If the editor was initialized while the container had 0px height,
         // automaticLayout can get stuck. Force an initial layout and keep it in sync.
         resizeObserverRef.current = new ResizeObserver(() => {
-          editor.layout();
+          if (layoutFrameRef.current) cancelAnimationFrame(layoutFrameRef.current);
+          layoutFrameRef.current = requestAnimationFrame(() => {
+            layoutFrameRef.current = null;
+            editor.layout();
+          });
         });
         resizeObserverRef.current.observe(containerRef.current);
 
@@ -166,6 +199,7 @@ export default function MonacoCodeEditor({
       cancelled = true;
       mutationObserverRef.current?.disconnect();
       resizeObserverRef.current?.disconnect();
+      if (layoutFrameRef.current) cancelAnimationFrame(layoutFrameRef.current);
       editorRef.current?.dispose();
       editorRef.current = null;
     };
@@ -192,9 +226,111 @@ export default function MonacoCodeEditor({
     editorRef.current?.updateOptions({ readOnly });
   }, [readOnly]);
 
+  const reportClipboardStatus = (status, message) => {
+    onClipboardStatusRef.current?.({ status, message });
+  };
+
+  const getSelectedEditorText = (event) => {
+    const editor = editorRef.current;
+    const model = editor?.getModel();
+    const selection = editor?.getSelection();
+    if (model && selection && !selection.isEmpty()) {
+      return model.getValueInRange(selection);
+    }
+
+    const target = event?.target;
+    if (target && typeof target.selectionStart === 'number' && typeof target.selectionEnd === 'number') {
+      return String(target.value || '').slice(target.selectionStart, target.selectionEnd);
+    }
+    return '';
+  };
+
+  const replaceEditorSelection = (event, text) => {
+    const editor = editorRef.current;
+    const selection = editor?.getSelection();
+    if (editor && selection) {
+      editor.pushUndoStop();
+      editor.executeEdits('peerprep-internal-clipboard', [{
+        range: selection,
+        text,
+        forceMoveMarkers: true,
+      }]);
+      editor.pushUndoStop();
+      editor.focus();
+      return true;
+    }
+
+    const target = event?.target;
+    if (target && typeof target.selectionStart === 'number' && typeof target.selectionEnd === 'number') {
+      const source = String(target.value || '');
+      const start = target.selectionStart;
+      const end = target.selectionEnd;
+      const nextValue = `${source.slice(0, start)}${text}${source.slice(end)}`;
+      onChangeRef.current?.(nextValue);
+      requestAnimationFrame(() => {
+        target.selectionStart = start + text.length;
+        target.selectionEnd = start + text.length;
+        target.focus?.();
+      });
+      return true;
+    }
+    return false;
+  };
+
+  const stopClipboardEvent = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.nativeEvent?.stopImmediatePropagation?.();
+  };
+
+  const handleInternalCopy = (event) => {
+    if (!internalClipboardOnlyRef.current) return;
+    stopClipboardEvent(event);
+    const selectedText = getSelectedEditorText(event);
+    if (!selectedText) {
+      reportClipboardStatus('empty', 'Select code inside the editor before copying.');
+      return;
+    }
+    internalEditorClipboards.set(clipboardScopeRef.current, selectedText);
+    reportClipboardStatus('copied', 'Code copied to the protected editor clipboard.');
+  };
+
+  const handleInternalCut = (event) => {
+    if (!internalClipboardOnlyRef.current) return;
+    stopClipboardEvent(event);
+    if (readOnly) return;
+    const selectedText = getSelectedEditorText(event);
+    if (!selectedText) {
+      reportClipboardStatus('empty', 'Select code inside the editor before cutting.');
+      return;
+    }
+    internalEditorClipboards.set(clipboardScopeRef.current, selectedText);
+    replaceEditorSelection(event, '');
+    reportClipboardStatus('copied', 'Code moved to the protected editor clipboard.');
+  };
+
+  const handleInternalPaste = (event) => {
+    if (!internalClipboardOnlyRef.current) return;
+    stopClipboardEvent(event);
+    if (readOnly) return;
+    const protectedCode = internalEditorClipboards.get(clipboardScopeRef.current) || '';
+    if (!protectedCode) {
+      reportClipboardStatus('blocked', 'External paste blocked. Copy code inside this editor first.');
+      return;
+    }
+    replaceEditorSelection(event, protectedCode);
+    reportClipboardStatus('pasted', 'Protected editor code pasted.');
+  };
+
   if (loadError) {
     return (
-      <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300">
+      <div
+        data-assessment-code-editor={internalClipboardOnly ? 'internal' : undefined}
+        onCopyCapture={handleInternalCopy}
+        onCutCapture={handleInternalCut}
+        onPasteCapture={handleInternalPaste}
+        className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300"
+      >
         <div className="flex items-start gap-2">
           <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
           <div className="space-y-3">
@@ -214,6 +350,10 @@ export default function MonacoCodeEditor({
 
   return (
     <div
+      data-assessment-code-editor={internalClipboardOnly ? 'internal' : undefined}
+      onCopyCapture={handleInternalCopy}
+      onCutCapture={handleInternalCut}
+      onPasteCapture={handleInternalPaste}
       className="relative h-full min-h-0 overflow-hidden rounded-xl border border-transparent bg-white shadow-none dark:border-transparent dark:bg-gray-900"
       style={{ height: resolvedHeight }}
     >

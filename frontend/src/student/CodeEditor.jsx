@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { Play, RotateCcw, Send, TerminalSquare } from 'lucide-react';
 import MonacoCodeEditor from '../admin/compiler/MonacoCodeEditor';
 import { formatDuration, getLanguageLabel } from '../admin/compiler/compilerUtils';
@@ -75,7 +75,7 @@ function runStatusTone(status) {
   return 'bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300';
 }
 
-export default function CodeEditor({
+function CodeEditor({
   supportedLanguages = [],
   language,
   code,
@@ -96,15 +96,25 @@ export default function CodeEditor({
   onSubmit,
   onReset,
   showToolbar = true,
+  clipboardScope = 'assessment-editor',
+  editorKey = '',
+  onLiveCodeChange,
 }) {
   const rootRef = useRef(null);
   const toolbarRef = useRef(null);
   const splitterRef = useRef(null);
   const editorContainerRef = useRef(null);
   const consoleContainerRef = useRef(null);
+  const resizeFrameRef = useRef(null);
+  const codeCommitTimerRef = useRef(null);
+  const pendingCodeCommitRef = useRef(null);
+  const liveCodeRef = useRef(code || '');
+  const editorContextRef = useRef({ editorKey, language });
+  const clipboardNoticeTimerRef = useRef(null);
   const [consoleHeight, setConsoleHeight] = useState(116);
   const [editorHeight, setEditorHeight] = useState(440);
   const [activeResultCaseId, setActiveResultCaseId] = useState(null);
+  const [clipboardNotice, setClipboardNotice] = useState('Editor-only clipboard');
   const MIN_EDITOR_HEIGHT = 360;
   const AUTO_OPEN_CONSOLE_HEIGHT = 320;
 
@@ -189,7 +199,7 @@ export default function CodeEditor({
     // when the editor container is content-sized (prevents runaway growth).
     const reserved = toolbarH + splitterH + consoleH + editorChrome + consoleChrome;
     const next = Math.max(MIN_EDITOR_HEIGHT, Math.floor((layoutRect?.height || 0) - reserved));
-    setEditorHeight(next);
+    setEditorHeight((current) => (current === next ? current : next));
   };
 
   useEffect(() => {
@@ -197,14 +207,21 @@ export default function CodeEditor({
     if (!rootRef.current) return;
 
     const observer = new ResizeObserver(() => {
-      recomputeEditorHeight();
+      if (resizeFrameRef.current) cancelAnimationFrame(resizeFrameRef.current);
+      resizeFrameRef.current = requestAnimationFrame(() => {
+        resizeFrameRef.current = null;
+        recomputeEditorHeight();
+      });
     });
       observer.observe(rootRef.current);
       if (rootRef.current.parentElement) {
         observer.observe(rootRef.current.parentElement);
       }
 
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (resizeFrameRef.current) cancelAnimationFrame(resizeFrameRef.current);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -212,6 +229,63 @@ export default function CodeEditor({
     recomputeEditorHeight();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [consoleHeight]);
+
+  useEffect(() => {
+    const previousContext = editorContextRef.current;
+    const questionChanged = previousContext.editorKey !== editorKey;
+    const languageChanged = previousContext.language !== language;
+    if (questionChanged || languageChanged) {
+      if (codeCommitTimerRef.current) {
+        clearTimeout(codeCommitTimerRef.current);
+        codeCommitTimerRef.current = null;
+      }
+      const pending = pendingCodeCommitRef.current;
+      pendingCodeCommitRef.current = null;
+      // Preserve a fast final keystroke when navigating to another question.
+      // Language switching already captures the live draft before changing.
+      if (questionChanged && pending) pending.commit(pending.value);
+    }
+    liveCodeRef.current = code || '';
+    editorContextRef.current = { editorKey, language };
+  }, [code, language, editorKey]);
+
+  useEffect(() => () => {
+    if (codeCommitTimerRef.current) clearTimeout(codeCommitTimerRef.current);
+    if (clipboardNoticeTimerRef.current) clearTimeout(clipboardNoticeTimerRef.current);
+    const pending = pendingCodeCommitRef.current;
+    if (pending) pending.commit(pending.value);
+  }, []);
+
+  const commitPendingCode = () => {
+    if (codeCommitTimerRef.current) {
+      clearTimeout(codeCommitTimerRef.current);
+      codeCommitTimerRef.current = null;
+    }
+    const pending = pendingCodeCommitRef.current;
+    pendingCodeCommitRef.current = null;
+    if (pending) pending.commit(pending.value);
+  };
+
+  const handleEditorCodeChange = (nextCode) => {
+    liveCodeRef.current = nextCode;
+    onLiveCodeChange?.(nextCode);
+    if (codeCommitTimerRef.current) clearTimeout(codeCommitTimerRef.current);
+    pendingCodeCommitRef.current = { value: nextCode, commit: onCodeChange };
+    codeCommitTimerRef.current = setTimeout(() => {
+      codeCommitTimerRef.current = null;
+      const pending = pendingCodeCommitRef.current;
+      pendingCodeCommitRef.current = null;
+      pending?.commit(pending.value);
+    }, 120);
+  };
+
+  const handleClipboardStatus = ({ message } = {}) => {
+    setClipboardNotice(message || 'Editor-only clipboard');
+    if (clipboardNoticeTimerRef.current) clearTimeout(clipboardNoticeTimerRef.current);
+    clipboardNoticeTimerRef.current = setTimeout(() => {
+      setClipboardNotice('Editor-only clipboard');
+    }, 2600);
+  };
 
   const handleConsoleResizeStart = (event) => {
     if (!rootRef.current) return;
@@ -275,13 +349,15 @@ export default function CodeEditor({
   };
 
   const handleRun = () => {
+    commitPendingCode();
     openResultPanel();
-    onRun?.();
+    onRun?.(liveCodeRef.current);
   };
 
   const handleSubmit = () => {
+    commitPendingCode();
     openResultPanel();
-    onSubmit?.();
+    onSubmit?.(liveCodeRef.current);
   };
 
   const activeTestCase = (() => {
@@ -452,11 +528,17 @@ export default function CodeEditor({
         className="relative z-0 min-h-0 bg-transparent px-3 pb-0 pt-1"
         style={{ height: editorHeight }}
       >
+        <div className="pointer-events-none absolute right-5 top-3 z-20 rounded-full border border-slate-200/80 bg-white/90 px-2.5 py-1 text-[9px] font-bold text-slate-500 shadow-sm backdrop-blur dark:border-gray-700 dark:bg-gray-900/90 dark:text-gray-300">
+          {clipboardNotice}
+        </div>
         <MonacoCodeEditor
           language={language}
           value={code}
-          onChange={onCodeChange}
+          onChange={handleEditorCodeChange}
           height="100%"
+          internalClipboardOnly
+          clipboardScope={clipboardScope}
+          onClipboardStatus={handleClipboardStatus}
         />
       </div>
 
@@ -716,3 +798,43 @@ export default function CodeEditor({
     </div>
   );
 }
+
+function sameStringList(left = [], right = []) {
+  return left === right || (
+    left.length === right.length
+    && left.every((item, index) => item === right[index])
+  );
+}
+
+function sameTestCases(left = [], right = []) {
+  return left === right || (
+    left.length === right.length
+    && left.every((item, index) => {
+      const other = right[index];
+      return item?.id === other?.id
+        && item?.kind === other?.kind
+        && item?.input === other?.input
+        && item?.expectedOutput === other?.expectedOutput;
+    })
+  );
+}
+
+function codeEditorPropsEqual(previous, next) {
+  return previous.language === next.language
+    && previous.code === next.code
+    && previous.customInput === next.customInput
+    && previous.activeTestCaseId === next.activeTestCaseId
+    && previous.expectedOutputForRun === next.expectedOutputForRun
+    && previous.runInputUsed === next.runInputUsed
+    && previous.activeConsoleTab === next.activeConsoleTab
+    && previous.result === next.result
+    && previous.isRunning === next.isRunning
+    && previous.isSubmitting === next.isSubmitting
+    && previous.showToolbar === next.showToolbar
+    && previous.clipboardScope === next.clipboardScope
+    && previous.editorKey === next.editorKey
+    && sameStringList(previous.supportedLanguages, next.supportedLanguages)
+    && sameTestCases(previous.testCases, next.testCases);
+}
+
+export default memo(CodeEditor, codeEditorPropsEqual);
