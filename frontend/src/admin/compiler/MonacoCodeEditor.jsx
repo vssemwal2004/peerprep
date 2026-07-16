@@ -1,5 +1,5 @@
 ﻿import { useEffect, useRef, useState } from 'react';
-import { AlertCircle, Loader2 } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import { getMonacoLanguage } from './compilerUtils';
 
 const MONACO_CDN_BASE = 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs';
@@ -49,11 +49,18 @@ function ensureMonaco() {
     }
 
     const script = document.createElement('script');
+    script.dataset.peerprepCodeEditorLoader = 'true';
     script.src = `${MONACO_CDN_BASE}/loader.js`;
     script.async = true;
     script.onload = initializeEditor;
-    script.onerror = () => reject(new Error('Failed to load Monaco Editor.'));
+    script.onerror = () => {
+      script.remove();
+      reject(new Error('The advanced code editor could not load. You can continue in the basic editor.'));
+    };
     document.body.appendChild(script);
+  }).catch((error) => {
+    monacoLoaderPromise = null;
+    throw error;
   });
 
   return monacoLoaderPromise;
@@ -88,6 +95,7 @@ export default function MonacoCodeEditor({
   const onClipboardStatusRef = useRef(onClipboardStatus);
   const [loadError, setLoadError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [fallbackValue, setFallbackValue] = useState(value || '');
 
   const resolvedHeight = typeof height === 'number' ? `${height}px` : height;
 
@@ -153,9 +161,16 @@ export default function MonacoCodeEditor({
           codeLens: false,
           links: false,
           colorDecorators: false,
+          contextmenu: false,
+          hover: { enabled: false },
+          parameterHints: { enabled: false },
+          inlayHints: { enabled: 'off' },
+          lightbulb: { enabled: 'off' },
           quickSuggestions: false,
           suggestOnTriggerCharacters: false,
           wordBasedSuggestions: 'off',
+          bracketPairColorization: { enabled: false },
+          guides: { bracketPairs: false, indentation: false },
           occurrencesHighlight: 'off',
           selectionHighlight: false,
           renderValidationDecorations: 'off',
@@ -210,7 +225,7 @@ export default function MonacoCodeEditor({
       })
       .catch((error) => {
         if (cancelled) return;
-        setLoadError(error.message || 'Failed to load Monaco Editor.');
+        setLoadError(error.message || 'The advanced code editor could not load.');
         setIsLoading(false);
       });
 
@@ -225,9 +240,6 @@ export default function MonacoCodeEditor({
   }, []);
 
   useEffect(() => {
-    const editor = editorRef.current;
-    if (!editor) return;
-
     const nextValue = value || '';
     const contentChanged = contentKeyRef.current !== contentKey;
     if (contentChanged) {
@@ -236,15 +248,20 @@ export default function MonacoCodeEditor({
     } else if (pendingLocalValueRef.current !== null) {
       if (nextValue === pendingLocalValueRef.current) {
         pendingLocalValueRef.current = null;
+        setFallbackValue(nextValue);
         return;
       }
 
       // React can briefly render an older controlled value while Monaco already
       // contains a newer keystroke. Keep the local edit until its parent update
       // is acknowledged instead of replacing it with that stale value.
-      if (editor.getValue() === pendingLocalValueRef.current) return;
+      if ((editorRef.current?.getValue() || fallbackValue) === pendingLocalValueRef.current) return;
       pendingLocalValueRef.current = null;
     }
+
+    setFallbackValue(nextValue);
+    const editor = editorRef.current;
+    if (!editor) return;
 
     if (editor.getValue() !== nextValue) {
       applyingExternalValueRef.current = true;
@@ -254,7 +271,7 @@ export default function MonacoCodeEditor({
         applyingExternalValueRef.current = false;
       }
     }
-  }, [value, contentKey]);
+  }, [value, contentKey, fallbackValue]);
 
   useEffect(() => {
     const editor = editorRef.current;
@@ -400,14 +417,28 @@ export default function MonacoCodeEditor({
       style={{ height: resolvedHeight }}
     >
       {isLoading && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 backdrop-blur-sm dark:bg-gray-900/80">
-          <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading Monaco Editor
-          </div>
-        </div>
+        <textarea
+          value={fallbackValue}
+          onChange={(event) => {
+            const nextValue = event.target.value;
+            latestValueRef.current = nextValue;
+            pendingLocalValueRef.current = nextValue;
+            setFallbackValue(nextValue);
+            onChangeRef.current?.(nextValue);
+          }}
+          readOnly={readOnly}
+          aria-label="Code editor"
+          spellCheck={false}
+          autoCapitalize="off"
+          autoCorrect="off"
+          className="absolute inset-0 z-10 h-full w-full resize-none border-0 bg-white px-4 py-3.5 font-mono text-[13px] leading-[22px] text-slate-800 outline-none dark:bg-gray-900 dark:text-gray-100"
+        />
       )}
-      <div ref={containerRef} style={{ height: '100%' }} />
+      <div
+        ref={containerRef}
+        aria-hidden={isLoading ? 'true' : undefined}
+        style={{ height: '100%', visibility: isLoading ? 'hidden' : 'visible' }}
+      />
     </div>
   );
 }

@@ -157,7 +157,12 @@ const FOOTER_ISSUE_CONFIRM_MS_BY_TYPE = Object.freeze({
   [AI_PROCTORING_EVENTS.LOOKING_AWAY]: 5100,
 });
 const MOBILE_STATUS_HOLD_MS = 1800;
-const MOBILE_CONFIRM_CONSECUTIVE_FRAMES = 3;
+const MOBILE_CONFIRM_CONSECUTIVE_FRAMES = 2;
+const OBJECT_DETECTION_INTERVAL_MULTIPLIER = 4;
+const MOBILE_OBJECT_DETECTION_INTERVAL_MS = 2500;
+const OBJECT_DETECTION_WARMUP_INTERVAL_MS = 700;
+const OBJECT_DETECTION_WARMUP_SAMPLES = 3;
+const VIDEO_PLAYBACK_RETRY_MS = 1000;
 const FALLBACK_FACE_CENTER_TOLERANCE_RATIO = 0.32;
 const FALLBACK_FACE_MIN_WIDTH_RATIO = 0.12;
 const FALLBACK_FRAME_VARIANCE_THRESHOLD = 95;
@@ -248,6 +253,10 @@ export class ProctoringManager {
     this.lastMobileConfidence = 0;
     this.mobileDetectionStreak = 0;
     this.mobileConfirmedUntil = 0;
+    this.lastObjectDetectionAt = 0;
+    this.lastObjectResult = null;
+    this.objectDetectionSamples = 0;
+    this.lastVideoPlaybackRetryAt = 0;
     this.violationBuffer = new ViolationBuffer({
       cooldownMs: getCooldownMs(this.settings),
     });
@@ -313,6 +322,10 @@ export class ProctoringManager {
     this.lastMobileConfidence = 0;
     this.mobileDetectionStreak = 0;
     this.mobileConfirmedUntil = 0;
+    this.lastObjectDetectionAt = 0;
+    this.lastObjectResult = null;
+    this.objectDetectionSamples = 0;
+    this.lastVideoPlaybackRetryAt = 0;
     this.updateStatus({
       running: false,
       camera: 'unknown',
@@ -459,6 +472,7 @@ export class ProctoringManager {
     this.detectionTickInProgress = true;
     try {
       const timestamp = Date.now();
+      await this.ensureVideoPlayback(timestamp);
       const cameraActive = getCameraActive(this.videoElement, this.stream);
       let faceResult = null;
       let objectResult = null;
@@ -469,8 +483,15 @@ export class ProctoringManager {
         faceResult = await this.detectWithFaceFallback(this.videoElement);
       }
 
-      if (cameraActive && this.objectDetectorAvailable && this.objectDetector && shouldUseObjectDetection(this.settings)) {
+      if (cameraActive && this.shouldRunObjectDetection(timestamp)) {
         objectResult = await this.objectDetector.detect(this.videoElement);
+        this.lastObjectResult = objectResult;
+        this.lastObjectDetectionAt = timestamp;
+        if (objectResult?.metadata?.skipped !== 'video_not_ready') {
+          this.objectDetectionSamples += 1;
+        }
+      } else {
+        objectResult = this.lastObjectResult;
       }
 
       const faceCount = Number(faceResult?.faceCount ?? 1);
@@ -532,6 +553,8 @@ export class ProctoringManager {
   }
 
   updateStatus(nextStatus = {}) {
+    if (!hasMeaningfulStatusChange(this.status, nextStatus)) return;
+
     this.status = {
       ...this.status,
       ...nextStatus,
@@ -567,6 +590,38 @@ export class ProctoringManager {
         ...statusPatch,
       error: this.getModelAvailabilityError(),
     });
+  }
+
+  shouldRunObjectDetection(timestamp = Date.now()) {
+    if (!this.objectDetectorAvailable || !this.objectDetector || !shouldUseObjectDetection(this.settings)) {
+      return false;
+    }
+
+    const baseIntervalMs = Math.max(500, Math.min(5000, Number(this.settings.detectionIntervalMs || 500)));
+    const warmingUp = this.objectDetectionSamples < OBJECT_DETECTION_WARMUP_SAMPLES;
+    const objectIntervalMs = warmingUp
+      ? OBJECT_DETECTION_WARMUP_INTERVAL_MS
+      : isLikelyMobileDevice()
+        ? Math.max(MOBILE_OBJECT_DETECTION_INTERVAL_MS, baseIntervalMs * OBJECT_DETECTION_INTERVAL_MULTIPLIER)
+        : Math.max(1200, baseIntervalMs * 2);
+
+    return !this.lastObjectDetectionAt || timestamp - this.lastObjectDetectionAt >= objectIntervalMs;
+  }
+
+  async ensureVideoPlayback(timestamp = Date.now()) {
+    const video = this.videoElement;
+    if (!video || !this.stream || (!video.paused && !video.ended)) return;
+    if (timestamp - this.lastVideoPlaybackRetryAt < VIDEO_PLAYBACK_RETRY_MS) return;
+
+    this.lastVideoPlaybackRetryAt = timestamp;
+    if (video.srcObject !== this.stream) video.srcObject = this.stream;
+    video.muted = true;
+    video.playsInline = true;
+    try {
+      await video.play?.();
+    } catch {
+      // Retry on the next detection tick; a recent user gesture may unlock it.
+    }
   }
 
   getModelAvailabilityError() {
@@ -745,4 +800,18 @@ export class ProctoringManager {
       // Consumers should not break the proctoring loop.
     }
   }
+}
+
+function hasMeaningfulStatusChange(current = {}, patch = {}) {
+  return Object.keys(patch).some((key) => key !== 'lastUpdatedAt' && current[key] !== patch[key]);
+}
+
+function isLikelyMobileDevice() {
+  if (typeof navigator === 'undefined' && typeof window === 'undefined') return false;
+  const ua = String(navigator?.userAgent || navigator?.vendor || '').toLowerCase();
+  const coarsePointer = typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(pointer: coarse)').matches;
+  const narrowScreen = typeof window !== 'undefined' && Number(window.innerWidth || 0) <= 820;
+  return /android|iphone|ipad|ipod|mobile/.test(ua) || (coarsePointer && narrowScreen);
 }

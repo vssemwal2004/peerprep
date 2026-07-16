@@ -9,13 +9,14 @@ const MOBILE_CONFIDENCE_THRESHOLD = 0.62;
 const PERSON_CONFIDENCE_THRESHOLD = 0.55;
 const MAX_DETECTED_BOXES = 20;
 const MIN_DETECTION_SCORE = 0.2;
-const MOBILE_CROP_SIZE = 416;
 const MOBILE_CROP_CONFIDENCE_THRESHOLD = 0.72;
 const MIN_PHONE_ASPECT_RATIO = 1.25;
 const MAX_PHONE_ASPECT_RATIO = 3.8;
 const MIN_PHONE_AREA_RATIO = 0.0025;
 const MAX_PHONE_AREA_RATIO = 0.34;
 const MIN_PHONE_SHORT_SIDE_RATIO = 0.018;
+const FULL_FRAME_SCAN_SIZE = 320;
+const MOBILE_CROP_SCAN_SIZE = 288;
 const MOBILE_SCAN_REGIONS = Object.freeze([
   { name: 'bottom', x: 0, y: 0.42, width: 1, height: 0.58 },
   { name: 'left', x: 0, y: 0, width: 0.58, height: 1 },
@@ -29,6 +30,7 @@ export class CocoSsdAdapter {
     this.model = null;
     this.loaded = false;
     this.mobileScanCanvas = null;
+    this.fullFrameCanvas = null;
   }
 
   async load() {
@@ -50,16 +52,17 @@ export class CocoSsdAdapter {
       mobileThreshold: Number(this.options.mobileThreshold || MOBILE_CONFIDENCE_THRESHOLD),
       personThreshold: Number(this.options.personThreshold || PERSON_CONFIDENCE_THRESHOLD),
     };
+    const source = this.getFullFrameSource(videoElement);
     const predictions = await this.model.detect(
-      videoElement,
+      source || videoElement,
       detectOptions.maxNumBoxes,
       detectOptions.minScore,
     );
     const fullFrameResult = normalizeCocoSsdPredictions(predictions, {
       mobileThreshold: detectOptions.mobileThreshold,
       personThreshold: detectOptions.personThreshold,
-      frameWidth: Number(videoElement.videoWidth || 0),
-      frameHeight: Number(videoElement.videoHeight || 0),
+      frameWidth: Number(source?.width || videoElement.videoWidth || 0),
+      frameHeight: Number(source?.height || videoElement.videoHeight || 0),
       scanRegion: 'full',
     });
     if (fullFrameResult.mobileDetected) return fullFrameResult;
@@ -73,6 +76,7 @@ export class CocoSsdAdapter {
     this.model = null;
     this.loaded = false;
     this.mobileScanCanvas = null;
+    this.fullFrameCanvas = null;
   }
 
   async detectMobileInCrops(videoElement, options = {}) {
@@ -129,9 +133,26 @@ export class CocoSsdAdapter {
     if (typeof document === 'undefined') return null;
 
     const canvas = document.createElement('canvas');
-    canvas.width = MOBILE_CROP_SIZE;
-    canvas.height = MOBILE_CROP_SIZE;
+    canvas.width = MOBILE_CROP_SCAN_SIZE;
+    canvas.height = MOBILE_CROP_SCAN_SIZE;
     this.mobileScanCanvas = canvas;
+    return canvas;
+  }
+
+  getFullFrameSource(videoElement) {
+    if (typeof document === 'undefined') return videoElement;
+    const videoWidth = Number(videoElement?.videoWidth || 0);
+    const videoHeight = Number(videoElement?.videoHeight || 0);
+    if (!videoWidth || !videoHeight) return videoElement;
+
+    const canvas = this.fullFrameCanvas || document.createElement('canvas');
+    const scale = Math.min(1, FULL_FRAME_SCAN_SIZE / Math.max(videoWidth, videoHeight));
+    canvas.width = Math.max(1, Math.round(videoWidth * scale));
+    canvas.height = Math.max(1, Math.round(videoHeight * scale));
+    const context = canvas.getContext?.('2d', { willReadFrequently: false });
+    if (!context) return videoElement;
+    context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+    this.fullFrameCanvas = canvas;
     return canvas;
   }
 }
