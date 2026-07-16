@@ -5,6 +5,7 @@ import { ArrowLeft, CheckSquare, Edit3, Eye, EyeOff, Globe2, Library, Lock, More
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import { queueQuestionSelection } from './assessment/assessmentProblemSelectionStore';
+import { getLanguageLabel, getProblemSupportedLanguages } from './compiler/compilerUtils';
 
 const TYPE_LABELS = {
   all: 'All Questions',
@@ -51,6 +52,7 @@ function renderQuestionPreview(question = {}) {
 
   if (question.questionType === 'coding') {
     const coding = data.problemDataSnapshot || data.coding || {};
+    const supportedLanguages = getProblemSupportedLanguages(coding);
     return (
       <div className="grid gap-3 md:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
@@ -58,8 +60,14 @@ function renderQuestionPreview(question = {}) {
           <div className="mt-1 font-semibold text-slate-800 dark:text-white">{coding.difficulty || question.difficulty || '-'}</div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
-          <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Languages</div>
-          <div className="mt-1 font-semibold text-slate-800 dark:text-white">{coding.supportedLanguages?.length || 0}</div>
+          <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Allowed Languages</div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {supportedLanguages.length ? supportedLanguages.map((languageId) => (
+              <span key={languageId} className="rounded-full border border-sky-200 bg-white px-2 py-0.5 text-xs font-semibold text-sky-700 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300">
+                {getLanguageLabel(languageId)}
+              </span>
+            )) : <span className="font-semibold text-amber-600 dark:text-amber-300">Not configured</span>}
+          </div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 md:col-span-2">
           <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Statement</div>

@@ -453,6 +453,7 @@ export default function CreateAssessment() {
     const returnTo = currentId ? `${rolePrefix}/assessment/${currentId}/edit` : `${rolePrefix}/assessment/create`;
     const query = new URLSearchParams({
       mode: 'assessment',
+      tempId: editorId,
       assessment: assessmentKey,
       section: String(sectionIndex),
       question: String(questionIndex),

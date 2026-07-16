@@ -26,6 +26,7 @@ export default function AdminCompilerDashboard() {
   const assessmentContext = useMemo(() => {
     if (mode !== 'assessment') return undefined;
     return {
+      tempId: searchParams.get('tempId'),
       assessmentKey: searchParams.get('assessment'),
       sectionIndex: searchParams.get('section') ? parseInt(searchParams.get('section')) : 0,
       questionIndex: searchParams.get('question') ? parseInt(searchParams.get('question')) : 0,

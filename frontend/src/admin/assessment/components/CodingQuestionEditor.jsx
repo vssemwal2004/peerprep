@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, Eye, EyeOff } from 'lucide-react';
+import { Code2, Plus, TextCursorInput, Trash2, Eye, EyeOff } from 'lucide-react';
 import MonacoCodeEditor from '../../compiler/MonacoCodeEditor';
 import RichTextEditor from '../../compiler/RichTextEditor';
 import { RichTextPreview } from '../../compiler/CompilerContentPreview';
-import { COMPILER_LANGUAGES, getLanguageLabel, getMonacoLanguage } from '../../compiler/compilerUtils';
+import { COMPILER_LANGUAGES, getLanguageLabel } from '../../compiler/compilerUtils';
 import { SectionCard } from '../../compiler/CompilerUi';
 
 const EDITOR_TABS = [
@@ -34,6 +34,7 @@ export default function CodingQuestionEditor({ value, onChange, title, onTitleCh
   const [activeLanguage, setActiveLanguage] = useState(value.supportedLanguages?.[0] || 'python');
   const [activeTab, setActiveTab] = useState('details');
   const [activeCaseTab, setActiveCaseTab] = useState('visible');
+  const [templateEditorMode, setTemplateEditorMode] = useState('code');
 
   const supportedLanguages = useMemo(
     () => (value.supportedLanguages?.length ? value.supportedLanguages : ['python', 'javascript']),
@@ -363,31 +364,67 @@ export default function CodingQuestionEditor({ value, onChange, title, onTitleCh
             </div>
 
             <div className="mt-4">
-              <div className="mb-2 flex flex-wrap gap-2">
-                {supportedLanguages.map((lang) => (
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap gap-2">
+                  {supportedLanguages.map((lang) => (
+                    <button
+                      key={lang}
+                      type="button"
+                      onClick={() => setActiveLanguage(lang)}
+                      className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                        activeLanguage === lang
+                          ? 'bg-slate-900 text-white dark:bg-sky-600'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      {getLanguageLabel(lang)}
+                    </button>
+                  ))}
+                </div>
+                <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-gray-700 dark:bg-gray-800" role="group" aria-label="Template editor mode">
                   <button
-                    key={lang}
                     type="button"
-                    onClick={() => setActiveLanguage(lang)}
-                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
-                      activeLanguage === lang
-                        ? 'bg-slate-900 text-white dark:bg-sky-600'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
-                    }`}
+                    onClick={() => setTemplateEditorMode('code')}
+                    aria-pressed={templateEditorMode === 'code'}
+                    className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold ${templateEditorMode === 'code' ? 'bg-white text-sky-700 shadow-sm dark:bg-gray-900 dark:text-sky-300' : 'text-slate-500 dark:text-gray-400'}`}
                   >
-                    {getLanguageLabel(lang)}
+                    <Code2 className="h-3.5 w-3.5" />
+                    Code Editor
                   </button>
-                ))}
+                  <button
+                    type="button"
+                    onClick={() => setTemplateEditorMode('plain')}
+                    aria-pressed={templateEditorMode === 'plain'}
+                    className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold ${templateEditorMode === 'plain' ? 'bg-white text-sky-700 shadow-sm dark:bg-gray-900 dark:text-sky-300' : 'text-slate-500 dark:text-gray-400'}`}
+                  >
+                    <TextCursorInput className="h-3.5 w-3.5" />
+                    Plain Text
+                  </button>
+                </div>
               </div>
-              <MonacoCodeEditor
-                language={getMonacoLanguage(activeLanguage)}
-                value={codeTemplates[activeLanguage] || ''}
-                onChange={(code) => updateStarterCode(activeLanguage, code)}
-                height={280}
-                readOnly={false}
-                internalClipboardOnly={false}
-                contentKey={`assessment-template:${activeLanguage}`}
-              />
+              {templateEditorMode === 'code' ? (
+                <MonacoCodeEditor
+                  key={`assessment-template:${activeLanguage}`}
+                  language={activeLanguage}
+                  value={codeTemplates[activeLanguage] || ''}
+                  onChange={(code) => updateStarterCode(activeLanguage, code)}
+                  height={280}
+                  readOnly={false}
+                  internalClipboardOnly={false}
+                  contentKey={`assessment-template:${activeLanguage}`}
+                />
+              ) : (
+                <textarea
+                  key={`assessment-template-plain:${activeLanguage}`}
+                  value={codeTemplates[activeLanguage] || ''}
+                  onChange={(event) => updateStarterCode(activeLanguage, event.target.value)}
+                  aria-label={`${getLanguageLabel(activeLanguage)} code template`}
+                  spellCheck={false}
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  className="h-[280px] w-full resize-y rounded-lg border border-slate-200 bg-white px-4 py-3 font-mono text-sm leading-6 text-slate-800 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:focus:ring-sky-900/30"
+                />
+              )}
             </div>
           </div>
         </SectionCard>

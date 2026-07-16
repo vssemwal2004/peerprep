@@ -58,6 +58,44 @@ app.use(mongoSanitizeMiddleware);
 // NOTE: Do not sanitize compiler payloads with xss-clean.
 // It escapes angle brackets in source code (e.g., <bits/stdc++.h> -> &lt;bits...),
 // which breaks compilation and makes Judge0 output confusing.
+function collectExecutableCodeFields(value, path = [], preserved = []) {
+  if (!value || typeof value !== 'object') return preserved;
+
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => collectExecutableCodeFields(entry, [...path, index], preserved));
+    return preserved;
+  }
+
+  Object.entries(value).forEach(([key, entryValue]) => {
+    const nextPath = [...path, key];
+    const isCodeMap = ['codeTemplates', 'referenceSolutions', 'templates'].includes(key)
+      && entryValue && typeof entryValue === 'object' && !Array.isArray(entryValue);
+    const isDirectSource = ['sourceCode', 'source_code'].includes(key) && typeof entryValue === 'string';
+    const isLanguageCode = key === 'code' && typeof entryValue === 'string' && typeof value.language === 'string';
+
+    if (isCodeMap || isDirectSource || isLanguageCode) {
+      preserved.push({ path: nextPath, value: isCodeMap ? { ...entryValue } : entryValue });
+      return;
+    }
+    collectExecutableCodeFields(entryValue, nextPath, preserved);
+  });
+
+  return preserved;
+}
+
+function restoreExecutableCodeFields(root, preserved = []) {
+  preserved.forEach(({ path, value }) => {
+    let target = root;
+    for (let index = 0; index < path.length - 1; index += 1) {
+      if (!target || typeof target !== 'object') return;
+      target = target[path[index]];
+    }
+    if (target && typeof target === 'object') {
+      target[path[path.length - 1]] = value;
+    }
+  });
+}
+
 app.use((req, res, next) => {
   if (
     req.path.startsWith('/api/compiler') ||
@@ -67,7 +105,11 @@ app.use((req, res, next) => {
   ) {
     return next();
   }
-  return xssProtectionMiddleware(req, res, next);
+  const preservedCode = collectExecutableCodeFields(req.body);
+  return xssProtectionMiddleware(req, res, () => {
+    restoreExecutableCodeFields(req.body, preservedCode);
+    next();
+  });
 });
 
 // Request logging - use 'combined' in production, 'dev' in development

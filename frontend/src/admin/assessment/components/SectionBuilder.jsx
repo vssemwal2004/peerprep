@@ -1,6 +1,7 @@
 import React, { useEffect, useCallback, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, Code2, Download, FileSpreadsheet, Plus, Trash2, Upload } from 'lucide-react';
 import QuestionBuilder from './QuestionBuilder';
+import { getLanguageLabel, getProblemSupportedLanguages } from '../../compiler/compilerUtils';
 
 const questionTypes = [
   { value: 'mcq', label: 'MCQ' },
@@ -73,9 +74,10 @@ const getQuestionPreview = (sectionType, question = {}) => {
   }
   if (sectionType === 'coding') {
     const problemData = question.problemDataSnapshot || question.problemData || question.coding?.problemData || question.coding || {};
+    const supportedLanguages = getProblemSupportedLanguages(problemData);
     const parts = [
       problemData.difficulty,
-      problemData.supportedLanguages?.length ? `${problemData.supportedLanguages.length} languages` : '',
+      supportedLanguages.length ? supportedLanguages.map(getLanguageLabel).join(', ') : '',
       problemData.sampleTestCases?.length ? `${problemData.sampleTestCases.length} examples` : '',
     ].filter(Boolean);
     return parts.join(' • ') || 'Coding prompt not configured';
@@ -510,7 +512,8 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
   const renderCodingCard = (sectionIndex, questionIndex, question, section) => {
     const problemData = question.problemDataSnapshot || question.problemData || question.coding?.problemData || question.coding || {};
     const previewValidated = Boolean(problemData.previewValidated ?? problemData.previewTested ?? question.coding?.previewValidated ?? question.coding?.previewTested);
-    const languageCount = problemData.supportedLanguages?.length || 0;
+    const supportedLanguages = getProblemSupportedLanguages(problemData);
+    const languageLabels = supportedLanguages.map(getLanguageLabel);
     const sampleCount = problemData.sampleTestCases?.length || 0;
     const hiddenCount = problemData.hiddenTestCaseCount || problemData.hiddenTestCases?.length || 0;
     const hasTemplates = Object.values(problemData.codeTemplates || {}).some((value) => String(value || '').trim());
@@ -530,7 +533,7 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
               {problemData.title || question.questionText || 'Untitled Coding Question'}
             </div>
             <div className="mt-1 text-xs text-slate-500 dark:text-gray-400">
-              {[problemData.difficulty || 'Easy', `${languageCount} languages`, `${sampleCount} samples`, `${hiddenCount} hidden`].join(' • ')}
+              {[problemData.difficulty || 'Easy', `${sampleCount} samples`, `${hiddenCount} hidden`].join(' • ')}
             </div>
           </div>
           <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${
@@ -542,6 +545,19 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
           }`}>
             {status}
           </span>
+        </div>
+
+        <div className="mt-3">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Allowed Languages</div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {languageLabels.length ? languageLabels.map((label) => (
+              <span key={label} className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300">
+                {label}
+              </span>
+            )) : (
+              <span className="text-sm text-amber-600 dark:text-amber-300">No allowed languages configured.</span>
+            )}
+          </div>
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-2">

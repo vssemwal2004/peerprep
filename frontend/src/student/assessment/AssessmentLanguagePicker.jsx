@@ -60,7 +60,7 @@ function AssessmentLanguagePicker({ languages = [], value, onChange, disabled = 
         <div className="px-2.5 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
           Select language
         </div>
-        <div className="max-h-64 overflow-y-auto">
+        <div className="max-h-[min(24rem,calc(100vh-10rem))] overflow-y-auto overscroll-contain">
           {languages.map((language) => {
             const selected = language === value;
             return (

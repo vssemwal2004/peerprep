@@ -14,6 +14,51 @@ export const COMPILER_LANGUAGES = [
   { id: 'swift', label: 'Swift', monacoLanguage: 'swift', judge0LanguageId: 83 },
 ];
 
+const LANGUAGE_ID_ALIASES = {
+  'c++': 'cpp',
+  cpp: 'cpp',
+  'c#': 'csharp',
+  'c-sharp': 'csharp',
+  csharp: 'csharp',
+  js: 'javascript',
+  javascript: 'javascript',
+  ts: 'typescript',
+  typescript: 'typescript',
+};
+
+const COMPILER_LANGUAGE_IDS = new Set(COMPILER_LANGUAGES.map((language) => language.id));
+
+export function normalizeCompilerLanguageId(languageId) {
+  const normalized = String(languageId || '').trim().toLowerCase();
+  return LANGUAGE_ID_ALIASES[normalized] || normalized;
+}
+
+export function normalizeCompilerLanguageIds(languageIds = []) {
+  const source = Array.isArray(languageIds) ? languageIds : [languageIds];
+  return Array.from(new Set(
+    source
+      .map(normalizeCompilerLanguageId)
+      .filter((languageId) => COMPILER_LANGUAGE_IDS.has(languageId)),
+  ));
+}
+
+export function normalizeCompilerCodeMap(codeMap = {}) {
+  return Object.entries(codeMap || {}).reduce((normalizedMap, [languageId, code]) => {
+    const normalizedId = normalizeCompilerLanguageId(languageId);
+    if (COMPILER_LANGUAGE_IDS.has(normalizedId)) {
+      normalizedMap[normalizedId] = code;
+    }
+    return normalizedMap;
+  }, {});
+}
+
+export function getProblemSupportedLanguages(problem = {}) {
+  const configured = normalizeCompilerLanguageIds(problem.supportedLanguages || []);
+  if (configured.length > 0) return configured;
+
+  return normalizeCompilerLanguageIds(Object.keys(problem.codeTemplates || {}));
+}
+
 export function createEmptySampleTestCase() {
   return {
     input: '',
@@ -68,9 +113,8 @@ export function createDefaultProblemForm() {
 }
 
 export function createProblemFormFromProblem(problem) {
-  const supportedLanguages = problem?.supportedLanguages?.length
-    ? problem.supportedLanguages
-    : ['python'];
+  const configuredLanguages = getProblemSupportedLanguages(problem);
+  const supportedLanguages = configuredLanguages.length ? configuredLanguages : ['python'];
 
   return {
     title: problem?.title || '',
@@ -79,8 +123,8 @@ export function createProblemFormFromProblem(problem) {
     tags: (problem?.tags || []).join(', '),
     companyTags: (problem?.companyTags || []).join(', '),
     supportedLanguages,
-    codeTemplates: problem?.codeTemplates || {},
-    referenceSolutions: problem?.referenceSolutions || {},
+    codeTemplates: normalizeCompilerCodeMap(problem?.codeTemplates),
+    referenceSolutions: normalizeCompilerCodeMap(problem?.referenceSolutions),
     inputFormat: problem?.inputFormat || '',
     outputFormat: problem?.outputFormat || '',
     constraints: problem?.constraints || '',
@@ -120,14 +164,15 @@ export function createProblemFormFromProblem(problem) {
 
 export function buildProblemFormData(problemForm, status) {
   const formData = new FormData();
+  const supportedLanguages = normalizeCompilerLanguageIds(problemForm.supportedLanguages || []);
   formData.append('title', problemForm.title || '');
   formData.append('description', problemForm.description || '');
   formData.append('difficulty', problemForm.difficulty || 'Easy');
   formData.append('tags', problemForm.tags || '');
   formData.append('companyTags', problemForm.companyTags || '');
   formData.append('visibility', problemForm.visibility || 'public');
-  formData.append('supportedLanguages', JSON.stringify(problemForm.supportedLanguages || []));
-  formData.append('codeTemplates', JSON.stringify(problemForm.codeTemplates || {}));
+  formData.append('supportedLanguages', JSON.stringify(supportedLanguages));
+  formData.append('codeTemplates', JSON.stringify(normalizeCompilerCodeMap(problemForm.codeTemplates)));
   formData.append('inputFormat', problemForm.inputFormat || '');
   formData.append('outputFormat', problemForm.outputFormat || '');
   formData.append('constraints', problemForm.constraints || '');
@@ -150,8 +195,17 @@ export function buildProblemFormData(problemForm, status) {
     }
     formData.append('hiddenBulkDelimiter', problemForm.hiddenBulkDelimiter || '###CASE###');
   } else {
-    formData.append('hiddenTestCases', JSON.stringify(problemForm.hiddenTestCases || []));
-    (problemForm.hiddenTestFiles || []).forEach((file) => {
+    const hiddenTestCases = problemForm.hiddenTestCases || [];
+    const hiddenTestFiles = problemForm.hiddenTestFiles || [];
+    const hasHiddenTestCaseContent = hiddenTestCases.some((testCase) => (
+      String(testCase?.input || '').trim() || String(testCase?.output || '').trim()
+    ));
+
+    if (hasHiddenTestCaseContent || hiddenTestFiles.length > 0 || !problemForm.existingHiddenTestCaseCount) {
+      formData.append('hiddenTestCases', JSON.stringify(hiddenTestCases));
+    }
+
+    hiddenTestFiles.forEach((file) => {
       formData.append('hiddenTestFiles', file);
     });
   }
@@ -287,15 +341,18 @@ export function formatDate(value) {
 }
 
 export function getLanguageLabel(languageId) {
-  return COMPILER_LANGUAGES.find((language) => language.id === languageId)?.label || languageId;
+  const normalizedId = normalizeCompilerLanguageId(languageId);
+  return COMPILER_LANGUAGES.find((language) => language.id === normalizedId)?.label || languageId;
 }
 
 export function getMonacoLanguage(languageId) {
-  return COMPILER_LANGUAGES.find((language) => language.id === languageId)?.monacoLanguage || 'plaintext';
+  const normalizedId = normalizeCompilerLanguageId(languageId);
+  return COMPILER_LANGUAGES.find((language) => language.id === normalizedId)?.monacoLanguage || 'plaintext';
 }
 
 export function getJudge0LanguageId(languageId) {
-  return COMPILER_LANGUAGES.find((language) => language.id === languageId)?.judge0LanguageId || null;
+  const normalizedId = normalizeCompilerLanguageId(languageId);
+  return COMPILER_LANGUAGES.find((language) => language.id === normalizedId)?.judge0LanguageId || null;
 }
 
 

@@ -266,6 +266,84 @@ function sanitizeAssessmentForResponse(assessment) {
   return source;
 }
 
+function mapToPlainObject(value) {
+  if (!value) return {};
+  if (value instanceof Map) return Object.fromEntries(value.entries());
+  if (typeof value === 'object' && !Array.isArray(value)) return { ...value };
+  return {};
+}
+
+async function hydrateAssessmentCodingRuntime(assessment) {
+  if (!assessment) return assessment;
+  const source = typeof assessment.toObject === 'function' ? assessment.toObject() : { ...assessment };
+  const sections = Array.isArray(source.sections) ? source.sections : [];
+  const problemIds = Array.from(new Set(
+    sections.flatMap((section) => (section.questions || []).map((question) => (
+      question?.problemId
+      || question?.coding?.problemId
+      || question?.problemDataSnapshot?._id
+      || question?.coding?.problemData?._id
+      || null
+    )))
+      .filter((problemId) => mongoose.Types.ObjectId.isValid(problemId))
+      .map(String),
+  ));
+
+  if (!problemIds.length) return source;
+
+  const problems = await Problem.find({ _id: { $in: problemIds } })
+    .select('_id supportedLanguages codeTemplates')
+    .lean();
+  const problemsById = new Map(problems.map((problem) => [String(problem._id), problem]));
+
+  return {
+    ...source,
+    sections: sections.map((section) => ({
+      ...section,
+      questions: (section.questions || []).map((question) => {
+        if ((question?.type || section.type) !== 'coding') return question;
+        const problemId = question?.problemId
+          || question?.coding?.problemId
+          || question?.problemDataSnapshot?._id
+          || question?.coding?.problemData?._id;
+        const liveProblem = problemsById.get(String(problemId || ''));
+        if (!liveProblem) return question;
+
+        const supportedLanguages = Array.isArray(liveProblem.supportedLanguages)
+          ? liveProblem.supportedLanguages.filter(Boolean)
+          : [];
+        const codeTemplates = mapToPlainObject(liveProblem.codeTemplates);
+        const existingSnapshot = question.problemDataSnapshot
+          || question?.coding?.problemData
+          || question?.coding
+          || {};
+        const problemDataSnapshot = {
+          ...existingSnapshot,
+          _id: liveProblem._id,
+          supportedLanguages,
+          codeTemplates,
+        };
+
+        return {
+          ...question,
+          problemId: liveProblem._id,
+          problemDataSnapshot,
+          coding: question.coding ? {
+            ...question.coding,
+            problemId: liveProblem._id,
+            supportedLanguages,
+            starterCode: supportedLanguages.map((language) => ({
+              language,
+              code: codeTemplates[language] || '',
+            })),
+            problemData: problemDataSnapshot,
+          } : question.coding,
+        };
+      }),
+    })),
+  };
+}
+
 function clampSettingNumber(value, fallback, { min = null, max = null } = {}) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
@@ -420,7 +498,14 @@ function evaluateQuestionResponse(question = {}, section = {}, answer = null) {
 
   if (type === 'coding') {
     const hasCode = String(answer?.code || '').trim().length > 0;
-    return hasCode ? 'pending' : 'skipped';
+    if (!hasCode) return 'skipped';
+
+    const verdict = String(answer?.executionVerdict || '').trim().toUpperCase();
+    const status = String(answer?.executionStatus || '').trim().toLowerCase();
+    if (verdict === 'AC') return 'correct';
+    if (['WA', 'TLE', 'RE', 'CE', 'FAILED'].includes(verdict)) return 'wrong';
+    if (status === 'completed' || status === 'failed') return 'wrong';
+    return 'pending';
   }
 
   if (!hasMeaningfulValue(answer?.answer)) return 'skipped';
@@ -893,6 +978,30 @@ async function buildStudentRankInfoByAssessment(assessmentIds = [], studentId) {
   return rankInfoByAssessment;
 }
 
+function decodeLegacyCodeEntities(value) {
+  let decoded = String(value ?? '');
+  if (!decoded.includes('&')) return decoded;
+  for (let pass = 0; pass < 2; pass += 1) {
+    const next = decoded
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#39;', "'")
+      .replaceAll('&#x27;', "'")
+      .replaceAll('&amp;', '&');
+    if (next === decoded) break;
+    decoded = next;
+  }
+  return decoded;
+}
+
+function normalizeAssessmentCodeMap(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).map(([language, code]) => [language, decodeLegacyCodeEntities(code)]),
+  );
+}
+
 function normalizeAssessmentSections(sections = []) {
   if (!Array.isArray(sections)) return [];
   return sections.map((section) => {
@@ -912,11 +1021,31 @@ function normalizeAssessmentSections(sections = []) {
         || question?.coding?.problemId
         || snapshot?._id
         || null;
+      const normalizedSnapshot = snapshot ? {
+        ...snapshot,
+        codeTemplates: normalizeAssessmentCodeMap(snapshot.codeTemplates || snapshot.templates),
+      } : undefined;
+      const normalizedCoding = question.coding ? {
+        ...question.coding,
+        starterCode: Array.isArray(question.coding.starterCode)
+          ? question.coding.starterCode.map((entry) => ({
+            ...entry,
+            code: decodeLegacyCodeEntities(entry?.code),
+          }))
+          : question.coding.starterCode,
+        problemData: question.coding.problemData ? {
+          ...question.coding.problemData,
+          codeTemplates: normalizeAssessmentCodeMap(
+            question.coding.problemData.codeTemplates || question.coding.problemData.templates,
+          ),
+        } : question.coding.problemData,
+      } : question.coding;
       return {
         ...question,
         type: 'coding',
         problemId: resolvedProblemId || undefined,
-        problemDataSnapshot: snapshot || undefined,
+        problemDataSnapshot: normalizedSnapshot,
+        coding: normalizedCoding,
       };
     });
     return {
@@ -2398,8 +2527,9 @@ export async function getStudentAssessment(req, res) {
       await submission.save();
     }
 
+    const attemptAssessment = await hydrateAssessmentCodingRuntime(assessment);
     res.json({
-      assessment: sanitizeAssessmentForResponse(assessment),
+      assessment: sanitizeAssessmentForResponse(attemptAssessment),
       submission,
       candidate: buildCandidateIdentity(student),
       serverTime: now,
@@ -2471,9 +2601,10 @@ export async function startStudentAssessment(req, res) {
     }
     await submission.save();
 
+    const attemptAssessment = await hydrateAssessmentCodingRuntime(assessment);
     res.json({
       message: 'Assessment unlocked',
-      assessment: sanitizeAssessmentForResponse(assessment),
+      assessment: sanitizeAssessmentForResponse(attemptAssessment),
       submission,
       candidate: buildCandidateIdentity(student),
       serverTime: now,

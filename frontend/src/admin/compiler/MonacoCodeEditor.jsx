@@ -1,75 +1,95 @@
-﻿import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
+import Editor, { loader } from '@monaco-editor/react';
+import * as bundledMonaco from 'monaco-editor';
+import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
+import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
+import CssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker';
+import HtmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker';
+import TypeScriptWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker';
+import 'monaco-editor/esm/vs/basic-languages/cpp/cpp.contribution';
+import 'monaco-editor/esm/vs/basic-languages/csharp/csharp.contribution';
+import 'monaco-editor/esm/vs/basic-languages/go/go.contribution';
+import 'monaco-editor/esm/vs/basic-languages/java/java.contribution';
+import 'monaco-editor/esm/vs/basic-languages/javascript/javascript.contribution';
+import 'monaco-editor/esm/vs/basic-languages/kotlin/kotlin.contribution';
+import 'monaco-editor/esm/vs/basic-languages/php/php.contribution';
+import 'monaco-editor/esm/vs/basic-languages/python/python.contribution';
+import 'monaco-editor/esm/vs/basic-languages/ruby/ruby.contribution';
+import 'monaco-editor/esm/vs/basic-languages/rust/rust.contribution';
+import 'monaco-editor/esm/vs/basic-languages/swift/swift.contribution';
+import 'monaco-editor/esm/vs/basic-languages/typescript/typescript.contribution';
 import { getMonacoLanguage } from './compilerUtils';
 
-const MONACO_CDN_BASE = 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs';
-let monacoLoaderPromise = null;
 const internalEditorClipboards = new Map();
+
+if (typeof window !== 'undefined') {
+  window.MonacoEnvironment = {
+    getWorker: (_moduleId, label) => {
+      if (label === 'json') return new JsonWorker();
+      if (label === 'css' || label === 'scss' || label === 'less') return new CssWorker();
+      if (label === 'html' || label === 'handlebars' || label === 'razor') return new HtmlWorker();
+      if (label === 'typescript' || label === 'javascript') return new TypeScriptWorker();
+      return new EditorWorker();
+    },
+  };
+}
+
+loader.config({ monaco: bundledMonaco });
 
 function isDarkMode() {
   return typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
 }
 
-function ensureMonaco() {
-  if (typeof window === 'undefined') {
-    return Promise.reject(new Error('Monaco can only load in the browser.'));
-  }
-
-  if (window.monaco?.editor) {
-    return Promise.resolve(window.monaco);
-  }
-
-  if (monacoLoaderPromise) {
-    return monacoLoaderPromise;
-  }
-
-  monacoLoaderPromise = new Promise((resolve, reject) => {
-    window.MonacoEnvironment = {
-      getWorkerUrl: () => {
-        const workerSource = `self.MonacoEnvironment = { baseUrl: '${MONACO_CDN_BASE}' }; importScripts('${MONACO_CDN_BASE}/base/worker/workerMain.js');`;
-        return `data:text/javascript;charset=utf-8,${encodeURIComponent(workerSource)}`;
-      },
-    };
-
-    const initializeEditor = () => {
-      window.require.config({
-        paths: {
-          vs: MONACO_CDN_BASE,
-        },
-      });
-
-      window.require(['vs/editor/editor.main'], () => {
-        resolve(window.monaco);
-      }, reject);
-    };
-
-    if (window.require?.config) {
-      initializeEditor();
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.dataset.peerprepCodeEditorLoader = 'true';
-    script.src = `${MONACO_CDN_BASE}/loader.js`;
-    script.async = true;
-    script.onload = initializeEditor;
-    script.onerror = () => {
-      script.remove();
-      reject(new Error('The advanced code editor could not load. You can continue in the basic editor.'));
-    };
-    document.body.appendChild(script);
-  }).catch((error) => {
-    monacoLoaderPromise = null;
-    throw error;
+function definePeerprepThemes(monaco) {
+  monaco.editor.defineTheme('peerprep-light', {
+    base: 'vs',
+    inherit: true,
+    rules: [
+      { token: 'comment', foreground: '64748b', fontStyle: 'italic' },
+      { token: 'keyword', foreground: '7c3aed', fontStyle: 'bold' },
+      { token: 'type', foreground: '0369a1' },
+      { token: 'number', foreground: 'b45309' },
+      { token: 'string', foreground: '047857' },
+      { token: 'delimiter', foreground: '334155' },
+      { token: 'operator', foreground: 'be123c' },
+    ],
+    colors: {
+      'editor.background': '#ffffff',
+      'editor.foreground': '#1e293b',
+      'editorLineNumber.foreground': '#94a3b8',
+      'editorCursor.foreground': '#0284c7',
+      'editor.selectionBackground': '#bae6fd99',
+      'editor.lineHighlightBackground': '#f8fafc',
+    },
   });
 
-  return monacoLoaderPromise;
+  monaco.editor.defineTheme('peerprep-dark', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: 'comment', foreground: '94a3b8', fontStyle: 'italic' },
+      { token: 'keyword', foreground: 'c084fc', fontStyle: 'bold' },
+      { token: 'type', foreground: '7dd3fc' },
+      { token: 'number', foreground: 'fbbf24' },
+      { token: 'string', foreground: '86efac' },
+      { token: 'delimiter', foreground: 'cbd5e1' },
+      { token: 'operator', foreground: 'fb7185' },
+    ],
+    colors: {
+      'editor.background': '#111827',
+      'editor.foreground': '#e5e7eb',
+      'editorLineNumber.foreground': '#64748b',
+      'editorCursor.foreground': '#38bdf8',
+      'editor.selectionBackground': '#07598599',
+      'editor.lineHighlightBackground': '#172033',
+    },
+  });
 }
 
-// This utility intentionally shares Monaco's module-level loader promise.
 // eslint-disable-next-line react-refresh/only-export-components
 export function preloadMonacoEditor() {
-  return ensureMonaco().catch(() => null);
+  return loader.init().catch(() => null);
 }
 
 export default function MonacoCodeEditor({
@@ -83,25 +103,13 @@ export default function MonacoCodeEditor({
   onClipboardStatus,
   contentKey = '',
 }) {
-  const containerRef = useRef(null);
   const editorRef = useRef(null);
   const onChangeRef = useRef(onChange);
-  const mutationObserverRef = useRef(null);
-  const resizeObserverRef = useRef(null);
-  const layoutFrameRef = useRef(null);
-  const applyingExternalValueRef = useRef(false);
-  const pendingLocalValueRef = useRef(null);
-  const contentKeyRef = useRef(contentKey);
-  const latestValueRef = useRef(value || '');
-  const latestLanguageRef = useRef(language);
-  const latestReadOnlyRef = useRef(readOnly);
-  const latestContentKeyRef = useRef(contentKey);
-  const internalClipboardOnlyRef = useRef(internalClipboardOnly);
   const clipboardScopeRef = useRef(clipboardScope);
   const onClipboardStatusRef = useRef(onClipboardStatus);
   const [loadError, setLoadError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [fallbackValue, setFallbackValue] = useState(value || '');
+  const [theme, setTheme] = useState(() => (isDarkMode() ? 'peerprep-dark' : 'peerprep-light'));
 
   const resolvedHeight = typeof height === 'number' ? `${height}px` : height;
 
@@ -110,190 +118,29 @@ export default function MonacoCodeEditor({
   }, [onChange]);
 
   useEffect(() => {
-    latestValueRef.current = value || '';
-    latestLanguageRef.current = language;
-    latestReadOnlyRef.current = readOnly;
-    latestContentKeyRef.current = contentKey;
-  }, [value, language, readOnly, contentKey]);
-
-  useEffect(() => {
-    internalClipboardOnlyRef.current = internalClipboardOnly;
     clipboardScopeRef.current = clipboardScope || 'peerprep-editor';
     onClipboardStatusRef.current = onClipboardStatus;
-  }, [internalClipboardOnly, clipboardScope, onClipboardStatus]);
+  }, [clipboardScope, onClipboardStatus]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    ensureMonaco()
-      .then((monaco) => {
-        if (cancelled || !containerRef.current) return;
-
-        monaco.editor.defineTheme('peerprep-light', {
-          base: 'vs',
-          inherit: true,
-          rules: [],
-          colors: {
-            'editor.background': '#ffffff',
-            'editorLineNumber.foreground': '#94a3b8',
-          },
-        });
-
-        monaco.editor.defineTheme('peerprep-dark', {
-          base: 'vs-dark',
-          inherit: true,
-          rules: [],
-          colors: {
-            'editor.background': '#111827',
-            'editorLineNumber.foreground': '#64748b',
-          },
-        });
-
-        const editor = monaco.editor.create(containerRef.current, {
-          value: latestValueRef.current,
-          language: getMonacoLanguage(latestLanguageRef.current),
-          theme: isDarkMode() ? 'peerprep-dark' : 'peerprep-light',
-          automaticLayout: false,
-          minimap: { enabled: false },
-          fontSize: 13,
-          lineHeight: 22,
-          readOnly: latestReadOnlyRef.current,
-          domReadOnly: latestReadOnlyRef.current,
-          smoothScrolling: false,
-          cursorSmoothCaretAnimation: 'off',
-          scrollBeyondLastLine: false,
-          folding: false,
-          glyphMargin: false,
-          codeLens: false,
-          links: false,
-          colorDecorators: false,
-          contextmenu: !internalClipboardOnlyRef.current,
-          hover: { enabled: false },
-          parameterHints: { enabled: false },
-          inlayHints: { enabled: 'off' },
-          lightbulb: { enabled: 'off' },
-          quickSuggestions: false,
-          suggestOnTriggerCharacters: false,
-          wordBasedSuggestions: 'off',
-          bracketPairColorization: { enabled: false },
-          guides: { bracketPairs: false, indentation: false },
-          occurrencesHighlight: 'off',
-          selectionHighlight: false,
-          renderValidationDecorations: 'off',
-          stickyScroll: { enabled: false },
-          overviewRulerLanes: 0,
-          hideCursorInOverviewRuler: true,
-          scrollbar: {
-            vertical: 'auto',
-            horizontal: 'auto',
-            verticalScrollbarSize: 8,
-            horizontalScrollbarSize: 8,
-            alwaysConsumeMouseWheel: false,
-          },
-          roundedSelection: false,
-          padding: { top: 14, bottom: 14 },
-        });
-
-        editor.onDidChangeModelContent(() => {
-          if (applyingExternalValueRef.current) return;
-          const nextValue = editor.getValue();
-          pendingLocalValueRef.current = nextValue;
-          onChangeRef.current?.(nextValue);
-        });
-
-        mutationObserverRef.current = new MutationObserver(() => {
-          monaco.editor.setTheme(isDarkMode() ? 'peerprep-dark' : 'peerprep-light');
-        });
-        mutationObserverRef.current.observe(document.documentElement, {
-          attributes: true,
-          attributeFilter: ['class'],
-        });
-
-        editorRef.current = editor;
-        contentKeyRef.current = latestContentKeyRef.current;
-
-        // If the editor was initialized while the container had 0px height,
-        // automaticLayout can get stuck. Force an initial layout and keep it in sync.
-        resizeObserverRef.current = new ResizeObserver(() => {
-          if (layoutFrameRef.current) cancelAnimationFrame(layoutFrameRef.current);
-          layoutFrameRef.current = requestAnimationFrame(() => {
-            layoutFrameRef.current = null;
-            editor.layout();
-          });
-        });
-        resizeObserverRef.current.observe(containerRef.current);
-
-        requestAnimationFrame(() => {
-          editor.layout();
-        });
-
-        setIsLoading(false);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        setLoadError(error.message || 'The advanced code editor could not load.');
-        setIsLoading(false);
-      });
-
+    let mounted = true;
+    loader.init().catch((error) => {
+      if (!mounted) return;
+      setLoadError(error?.message || 'The code editor could not load.');
+      setIsLoading(false);
+    });
     return () => {
-      cancelled = true;
-      mutationObserverRef.current?.disconnect();
-      resizeObserverRef.current?.disconnect();
-      if (layoutFrameRef.current) cancelAnimationFrame(layoutFrameRef.current);
-      editorRef.current?.dispose();
-      editorRef.current = null;
+      mounted = false;
     };
   }, []);
 
   useEffect(() => {
-    const nextValue = value || '';
-    const contentChanged = contentKeyRef.current !== contentKey;
-    if (contentChanged) {
-      contentKeyRef.current = contentKey;
-      pendingLocalValueRef.current = null;
-    } else if (pendingLocalValueRef.current !== null) {
-      if (nextValue === pendingLocalValueRef.current) {
-        pendingLocalValueRef.current = null;
-        setFallbackValue(nextValue);
-        return;
-      }
-
-      // React can briefly render an older controlled value while Monaco already
-      // contains a newer keystroke. Keep the local edit until its parent update
-      // is acknowledged instead of replacing it with that stale value.
-      if ((editorRef.current?.getValue() || fallbackValue) === pendingLocalValueRef.current) return;
-      pendingLocalValueRef.current = null;
-    }
-
-    setFallbackValue(nextValue);
-    const editor = editorRef.current;
-    if (!editor) return;
-
-    if (editor.getValue() !== nextValue) {
-      applyingExternalValueRef.current = true;
-      try {
-        editor.setValue(nextValue);
-      } finally {
-        applyingExternalValueRef.current = false;
-      }
-    }
-  }, [value, contentKey, fallbackValue]);
-
-  useEffect(() => {
-    const editor = editorRef.current;
-    const model = editor?.getModel();
-    if (!editor || !model || !window.monaco?.editor) return;
-
-    window.monaco.editor.setModelLanguage(model, getMonacoLanguage(language));
-  }, [language]);
-
-  useEffect(() => {
-    editorRef.current?.updateOptions({ readOnly, domReadOnly: readOnly });
-  }, [readOnly]);
-
-  useEffect(() => {
-    editorRef.current?.updateOptions({ contextmenu: !internalClipboardOnly });
-  }, [internalClipboardOnly]);
+    const observer = new MutationObserver(() => {
+      setTheme(isDarkMode() ? 'peerprep-dark' : 'peerprep-light');
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const focusEditor = () => editorRef.current?.focus();
@@ -325,11 +172,7 @@ export default function MonacoCodeEditor({
     const selection = editor?.getSelection();
     if (editor && selection) {
       editor.pushUndoStop();
-      editor.executeEdits('peerprep-internal-clipboard', [{
-        range: selection,
-        text,
-        forceMoveMarkers: true,
-      }]);
+      editor.executeEdits('peerprep-internal-clipboard', [{ range: selection, text, forceMoveMarkers: true }]);
       editor.pushUndoStop();
       editor.focus();
       return true;
@@ -359,7 +202,7 @@ export default function MonacoCodeEditor({
   };
 
   const handleInternalCopy = (event) => {
-    if (!internalClipboardOnlyRef.current) return;
+    if (!internalClipboardOnly) return;
     stopClipboardEvent(event);
     const selectedText = getSelectedEditorText(event);
     if (!selectedText) {
@@ -371,7 +214,7 @@ export default function MonacoCodeEditor({
   };
 
   const handleInternalCut = (event) => {
-    if (!internalClipboardOnlyRef.current) return;
+    if (!internalClipboardOnly) return;
     stopClipboardEvent(event);
     if (readOnly) return;
     const selectedText = getSelectedEditorText(event);
@@ -385,7 +228,7 @@ export default function MonacoCodeEditor({
   };
 
   const handleInternalPaste = (event) => {
-    if (!internalClipboardOnlyRef.current) return;
+    if (!internalClipboardOnly) return;
     stopClipboardEvent(event);
     if (readOnly) return;
     const protectedCode = internalEditorClipboards.get(clipboardScopeRef.current) || '';
@@ -397,6 +240,19 @@ export default function MonacoCodeEditor({
     reportClipboardStatus('pasted', 'Protected editor code pasted.');
   };
 
+  const fallbackEditor = (
+    <textarea
+      value={value || ''}
+      onChange={(event) => onChangeRef.current?.(event.target.value)}
+      readOnly={readOnly}
+      aria-label="Code editor"
+      spellCheck={false}
+      autoCapitalize="off"
+      autoCorrect="off"
+      className="h-full w-full resize-none border-0 bg-white px-4 py-3.5 font-mono text-sm leading-[23px] text-slate-800 outline-none dark:bg-gray-900 dark:text-gray-100"
+    />
+  );
+
   if (loadError) {
     return (
       <div
@@ -404,21 +260,14 @@ export default function MonacoCodeEditor({
         onCopyCapture={internalClipboardOnly ? handleInternalCopy : undefined}
         onCutCapture={internalClipboardOnly ? handleInternalCut : undefined}
         onPasteCapture={internalClipboardOnly ? handleInternalPaste : undefined}
-        className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300"
+        className="overflow-hidden rounded-lg border border-rose-200 bg-white dark:border-rose-800 dark:bg-gray-900"
+        style={{ height: resolvedHeight }}
       >
-        <div className="flex items-start gap-2">
-          <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-          <div className="space-y-3">
-            <p>{loadError}</p>
-            <textarea
-              value={value}
-              onChange={(event) => onChangeRef.current?.(event.target.value)}
-              readOnly={readOnly}
-              style={{ height: resolvedHeight }}
-              className="w-full rounded-xl border border-rose-200 bg-white px-3 py-3 font-mono text-xs text-slate-700 outline-none dark:border-rose-800 dark:bg-gray-950 dark:text-gray-200"
-            />
-          </div>
+        <div className="flex items-center gap-2 border-b border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300">
+          <AlertCircle className="h-4 w-4 flex-shrink-0" />
+          Basic editor active because Monaco could not initialize.
         </div>
+        <div className="h-[calc(100%-37px)]">{fallbackEditor}</div>
       </div>
     );
   }
@@ -429,36 +278,81 @@ export default function MonacoCodeEditor({
       onCopyCapture={internalClipboardOnly ? handleInternalCopy : undefined}
       onCutCapture={internalClipboardOnly ? handleInternalCut : undefined}
       onPasteCapture={internalClipboardOnly ? handleInternalPaste : undefined}
-      className="relative h-full min-h-0 overflow-hidden rounded-xl border border-transparent bg-white shadow-none dark:border-transparent dark:bg-gray-900"
+      className="relative h-full min-h-0 overflow-hidden rounded-lg bg-white dark:bg-gray-900"
       style={{ height: resolvedHeight }}
     >
-      {isLoading && (
-        <textarea
-          value={fallbackValue}
-          onChange={(event) => {
-            const nextValue = event.target.value;
-            latestValueRef.current = nextValue;
-            pendingLocalValueRef.current = nextValue;
-            setFallbackValue(nextValue);
-            onChangeRef.current?.(nextValue);
-          }}
-          readOnly={readOnly}
-          aria-label="Code editor"
-          spellCheck={false}
-          autoCapitalize="off"
-          autoCorrect="off"
-          className="absolute inset-0 z-10 h-full w-full resize-none border-0 bg-white px-4 py-3.5 font-mono text-[13px] leading-[22px] text-slate-800 outline-none dark:bg-gray-900 dark:text-gray-100"
-        />
-      )}
-      <div
-        ref={containerRef}
-        aria-hidden={isLoading ? 'true' : undefined}
-        style={{ height: '100%', visibility: isLoading ? 'hidden' : 'visible' }}
+      <Editor
+        key={contentKey || 'peerprep-code-editor'}
+        height="100%"
+        language={getMonacoLanguage(language)}
+        value={value || ''}
+        theme={theme}
+        beforeMount={definePeerprepThemes}
+        onMount={(editor) => {
+          editorRef.current = editor;
+          setIsLoading(false);
+          requestAnimationFrame(() => editor.layout());
+        }}
+        onChange={(nextValue) => onChangeRef.current?.(nextValue || '')}
+        saveViewState={false}
+        keepCurrentModel={false}
+        loading={fallbackEditor}
+        options={{
+          automaticLayout: true,
+          minimap: { enabled: false },
+          fontFamily: "'JetBrains Mono', 'Cascadia Code', Consolas, monospace",
+          fontSize: 14,
+          lineHeight: 23,
+          fontLigatures: true,
+          readOnly,
+          domReadOnly: readOnly,
+          ariaLabel: 'Code editor',
+          smoothScrolling: true,
+          cursorSmoothCaretAnimation: 'on',
+          cursorBlinking: 'smooth',
+          scrollBeyondLastLine: false,
+          folding: true,
+          foldingHighlight: true,
+          showFoldingControls: 'mouseover',
+          glyphMargin: false,
+          codeLens: false,
+          links: false,
+          colorDecorators: true,
+          contextmenu: !internalClipboardOnly,
+          hover: { enabled: true, delay: 350 },
+          parameterHints: { enabled: true },
+          inlayHints: { enabled: 'off' },
+          lightbulb: { enabled: 'off' },
+          quickSuggestions: { other: true, comments: false, strings: false },
+          suggestOnTriggerCharacters: true,
+          wordBasedSuggestions: 'currentDocument',
+          bracketPairColorization: { enabled: true },
+          guides: { bracketPairs: true, indentation: true, highlightActiveIndentation: true },
+          occurrencesHighlight: 'off',
+          selectionHighlight: true,
+          renderValidationDecorations: 'off',
+          stickyScroll: { enabled: false },
+          tabSize: 2,
+          insertSpaces: true,
+          autoIndent: 'full',
+          formatOnPaste: true,
+          formatOnType: true,
+          copyWithSyntaxHighlighting: true,
+          mouseWheelZoom: true,
+          overviewRulerLanes: 0,
+          hideCursorInOverviewRuler: true,
+          scrollbar: {
+            vertical: 'auto',
+            horizontal: 'auto',
+            verticalScrollbarSize: 10,
+            horizontalScrollbarSize: 10,
+            alwaysConsumeMouseWheel: false,
+          },
+          roundedSelection: false,
+          padding: { top: 14, bottom: 14 },
+        }}
       />
+      {isLoading ? <span className="sr-only">Loading code editor</span> : null}
     </div>
   );
 }
-
-
-
-

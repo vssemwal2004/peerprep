@@ -73,23 +73,41 @@ function normalizeCodeForComparison(value) {
   return String(value ?? '').replace(/\r\n/g, '\n').trim();
 }
 
+export function decodeLegacyCodeEntities(value) {
+  let decoded = String(value ?? '');
+  if (!decoded.includes('&')) return decoded;
+
+  for (let pass = 0; pass < 2; pass += 1) {
+    const next = decoded
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#39;', "'")
+      .replaceAll('&#x27;', "'")
+      .replaceAll('&amp;', '&');
+    if (next === decoded) break;
+    decoded = next;
+  }
+  return decoded;
+}
+
 export function getStarterCodeForLanguage(problemLike, language) {
   const lang = String(language || '').trim();
   if (!problemLike || !lang) return '';
 
   const directTemplate = problemLike?.codeTemplates?.[lang];
-  if (typeof directTemplate === 'string') return directTemplate;
+  if (typeof directTemplate === 'string') return decodeLegacyCodeEntities(directTemplate);
 
   const starterCode = problemLike?.starterCode;
   if (Array.isArray(starterCode)) {
     const entry = starterCode.find((item) => String(item?.language || '').trim() === lang);
-    if (typeof entry?.code === 'string') return entry.code;
+    if (typeof entry?.code === 'string') return decodeLegacyCodeEntities(entry.code);
   } else if (starterCode && typeof starterCode === 'object' && typeof starterCode[lang] === 'string') {
-    return starterCode[lang];
+    return decodeLegacyCodeEntities(starterCode[lang]);
   }
 
   const template = problemLike?.templates?.[lang];
-  if (typeof template === 'string') return template;
+  if (typeof template === 'string') return decodeLegacyCodeEntities(template);
 
   const nestedSources = [
     problemLike?.problemDataSnapshot,

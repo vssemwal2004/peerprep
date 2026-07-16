@@ -208,10 +208,23 @@ function parseCommaOrJsonList(value) {
   return [];
 }
 
+const LANGUAGE_ALIASES = {
+  'c++': 'cpp',
+  'c#': 'csharp',
+  'c-sharp': 'csharp',
+  js: 'javascript',
+  ts: 'typescript',
+};
+
+function normalizeLanguageId(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return LANGUAGE_ALIASES[normalized] || normalized;
+}
+
 function normalizeSupportedLanguages(value) {
   const requested = parseCommaOrJsonList(value);
   const normalized = requested
-    .map((language) => language.toLowerCase())
+    .map(normalizeLanguageId)
     .filter((language) => SUPPORTED_LANGUAGES.includes(language));
 
   return normalizeUniqueList(normalized);
@@ -347,10 +360,17 @@ function normalizeCodeTemplates(value, supportedLanguages) {
     throw new HttpError(400, 'Code templates must be an object.');
   }
 
+  const normalizedTemplates = Object.entries(parsedTemplates).reduce((result, [language, template]) => {
+    const normalizedLanguage = normalizeLanguageId(language);
+    if (SUPPORTED_LANGUAGES.includes(normalizedLanguage)) {
+      result[normalizedLanguage] = template;
+    }
+    return result;
+  }, {});
   const templates = {};
 
   supportedLanguages.forEach((language) => {
-    const template = String(parsedTemplates[language] ?? '');
+    const template = String(normalizedTemplates[language] ?? '');
     templates[language] = template.replace(/\r\n/g, '\n');
   });
 
@@ -367,14 +387,21 @@ function normalizeReferenceSolutions(value, supportedLanguages) {
     throw new HttpError(400, 'Reference solutions must be an object.');
   }
 
+  const normalizedSolutions = Object.entries(parsedSolutions).reduce((result, [language, code]) => {
+    const normalizedLanguage = normalizeLanguageId(language);
+    if (SUPPORTED_LANGUAGES.includes(normalizedLanguage)) {
+      result[normalizedLanguage] = code;
+    }
+    return result;
+  }, {});
   const referenceSolutions = {};
 
   supportedLanguages.forEach((language) => {
-    if (parsedSolutions[language] === undefined || parsedSolutions[language] === null) {
+    if (normalizedSolutions[language] === undefined || normalizedSolutions[language] === null) {
       return;
     }
 
-    const code = String(parsedSolutions[language] ?? '');
+    const code = String(normalizedSolutions[language] ?? '');
     if (!code.trim()) {
       return;
     }

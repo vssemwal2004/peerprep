@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  ExternalLink,
   Hash,
   Layers,
   Loader2,
@@ -26,10 +27,11 @@ import {
 } from 'lucide-react';
 import CodeEditor from './CodeEditor';
 import { preloadMonacoEditor } from '../admin/compiler/MonacoCodeEditor';
+import { COMPILER_LANGUAGES, getProblemSupportedLanguages } from '../admin/compiler/compilerUtils';
 import AssessmentCodingProblemPanel from './assessment/AssessmentCodingProblemPanel';
 import AssessmentLanguagePicker from './assessment/AssessmentLanguagePicker';
 import AssessmentQuestionPalette from './assessment/AssessmentQuestionPalette';
-import { getCodeValidationMessage, getStarterCodeForLanguage } from './problemUtils';
+import { decodeLegacyCodeEntities, getCodeValidationMessage, getStarterCodeForLanguage } from './problemUtils';
 import ProctoringFooter from '../features/assessment/student/components/ProctoringFooter';
 import { ProctoringManager } from '../features/assessment/proctoring';
 import { logAiProctoringViolation } from '../features/assessment/proctoring/services/proctoringApi';
@@ -275,11 +277,15 @@ const getCodingDataFromQuestion = (question = {}) => (
   || {}
 );
 
-const getCodingLanguagesFromData = (codingData = {}) => (
-  Array.isArray(codingData?.supportedLanguages) && codingData.supportedLanguages.length
-    ? codingData.supportedLanguages
-    : ['python']
-);
+const getCodingLanguagesFromData = (codingData = {}) => {
+  const languages = getProblemSupportedLanguages(codingData);
+  if (!languages.length) return ['python'];
+  const languageOrder = new Map(COMPILER_LANGUAGES.map((language, index) => [language.id, index]));
+  return [...languages].sort((left, right) => (
+    (languageOrder.get(left) ?? Number.MAX_SAFE_INTEGER)
+    - (languageOrder.get(right) ?? Number.MAX_SAFE_INTEGER)
+  ));
+};
 
 const getCodingStarterCode = (question, language) => (
   getStarterCodeForLanguage(getCodingDataFromQuestion(question), language)
@@ -644,6 +650,9 @@ export default function AssessmentAttempt() {
       const originSectionIndex = Number(displayQuestion?.__originSectionIndex ?? sectionIndex);
       const originQuestionIndex = Number(displayQuestion?.__originQuestionIndex ?? questionIndex);
       const { codeByLanguage: _codeByLanguage, ...payload } = value;
+      if (typeof payload.code === 'string') {
+        payload.code = decodeLegacyCodeEntities(payload.code);
+      }
       if (typeof value?.answer === 'number' && Array.isArray(displayQuestion?.__optionOrder)) {
         payload.answer = displayQuestion.__optionOrder[value.answer] ?? value.answer;
       }
@@ -2462,6 +2471,32 @@ export default function AssessmentAttempt() {
     }
   };
 
+  const handleOpenSecureAssessmentTab = () => {
+    const secureUrl = new URL(window.location.href);
+    secureUrl.searchParams.set('secure', '1');
+
+    const secureWindow = window.open(
+      secureUrl.toString(),
+      `peerprep-secure-assessment-${assessment?._id || id}`,
+      'popup=yes,width=1440,height=960',
+    );
+
+    if (!secureWindow) {
+      setValidationMessage('The secure assessment tab was blocked. Allow pop-ups for PeerPrep, then try again.');
+      return;
+    }
+
+    try {
+      secureWindow.opener = null;
+      secureWindow.focus();
+    } catch {
+      // The secure tab is still usable when the browser blocks window controls.
+    }
+
+    setSecurityNotice('Secure assessment tab opened. Continue the fullscreen check in that window.');
+    setTimeout(() => navigate('/student/assessments', { replace: true }), 250);
+  };
+
   const handleEnvironmentCheck = async () => {
     setSetupCheckingStep('environment');
     const interference = detectBrowserInterference();
@@ -2678,9 +2713,9 @@ export default function AssessmentAttempt() {
     }
     const supported = getCodingLanguagesFromData(codingData);
     const language = answersMap[key]?.language || supported[0];
-    const sourceCode = typeof sourceOverride === 'string'
+    const sourceCode = decodeLegacyCodeEntities(typeof sourceOverride === 'string'
       ? sourceOverride
-      : (liveCodingCodeRef.current[key] ?? answersMap[key]?.code ?? '');
+      : (liveCodingCodeRef.current[key] ?? answersMap[key]?.code ?? ''));
     const validationMessage = getCodeValidationMessage(
       sourceCode,
       getStarterCodeForLanguage(codingData, language),
@@ -2765,9 +2800,9 @@ export default function AssessmentAttempt() {
     }
     const supported = getCodingLanguagesFromData(codingData);
     const language = answersMap[key]?.language || supported[0];
-    const sourceCode = typeof sourceOverride === 'string'
+    const sourceCode = decodeLegacyCodeEntities(typeof sourceOverride === 'string'
       ? sourceOverride
-      : (liveCodingCodeRef.current[key] ?? answersMap[key]?.code ?? '');
+      : (liveCodingCodeRef.current[key] ?? answersMap[key]?.code ?? ''));
     const validationMessage = getCodeValidationMessage(
       sourceCode,
       getStarterCodeForLanguage(codingData, language),
@@ -3009,6 +3044,7 @@ export default function AssessmentAttempt() {
     ...finalRules,
   ];
   const showAssessmentWorkspace = phase === 'active' || isSubmitted;
+  const isSecureAssessmentTab = new URLSearchParams(window.location.search).get('secure') === '1';
 
   const questionNavigatorPanel = (
     <AssessmentQuestionPalette
@@ -3636,15 +3672,30 @@ export default function AssessmentAttempt() {
               {currentSetupStepKey === 'fullscreen' && (
                 <div className="space-y-4">
                   <div className="text-sm font-semibold text-slate-800 dark:text-white">Step {currentSetupStepNumber}: Fullscreen Mode Activation</div>
-                  <p className="text-sm text-slate-600 dark:text-gray-300">{fullscreenRequired ? 'Fullscreen mode is required and exit attempts will be logged.' : 'Fullscreen is not required by the admin settings for this assessment.'}</p>
+                  <p className="text-sm text-slate-600 dark:text-gray-300">
+                    {fullscreenRequired
+                      ? (isSecureAssessmentTab
+                        ? 'This dedicated assessment window is ready. Enable fullscreen to complete the security check.'
+                        : 'Open the assessment in a dedicated window first. The original assessment tab will close to avoid duplicate-tab violations.')
+                      : 'Fullscreen is not required by the admin settings for this assessment.'}
+                  </p>
+                  {!isSecureAssessmentTab && fullscreenRequired && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+                      Browsers cannot launch Incognito mode or disable extensions from a website. For extension isolation, open PeerPrep manually in an Incognito or Private window before starting this check.
+                    </div>
+                  )}
                   <button
                     type="button"
-                    onClick={handleEnableFullscreen}
+                    onClick={fullscreenRequired && !isSecureAssessmentTab ? handleOpenSecureAssessmentTab : handleEnableFullscreen}
                     disabled={Boolean(setupCheckingStep)}
                     className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {setupCheckingStep === 'fullscreen' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Maximize className="h-4 w-4" />}
-                    {fullscreenRequired ? 'Enable Fullscreen' : 'Confirm Fullscreen Step'}
+                    {setupCheckingStep === 'fullscreen'
+                      ? <Loader2 className="h-4 w-4 animate-spin" />
+                      : (fullscreenRequired && !isSecureAssessmentTab ? <ExternalLink className="h-4 w-4" /> : <Maximize className="h-4 w-4" />)}
+                    {fullscreenRequired
+                      ? (isSecureAssessmentTab ? 'Enable Fullscreen' : 'Open Secure Assessment Tab')
+                      : 'Confirm Fullscreen Step'}
                   </button>
                   {(!fullscreenRequired || validationState.fullscreen) && (
                     <div className="flex items-center gap-2 text-sm text-emerald-600">
