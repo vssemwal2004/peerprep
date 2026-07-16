@@ -125,6 +125,38 @@ const hasVeryWeakConnection = () => {
     || (Number.isFinite(rtt) && rtt > 1500);
 };
 
+const detectBrowserInterference = () => {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return [];
+  const signals = new Set();
+  if (navigator.webdriver) signals.add('Browser automation is active');
+  const automationMarkers = [
+    '__webdriver_evaluate',
+    '__selenium_evaluate',
+    '__selenium_unwrapped',
+    '_Selenium_IDE_Recorder',
+    'callPhantom',
+    '_phantom',
+    'domAutomation',
+    'Cypress',
+  ];
+  if (automationMarkers.some((marker) => marker in window)) {
+    signals.add('Automation or testing software injected controls into this page');
+  }
+  const extensionUrlPattern = /^(chrome|moz|safari-web)-extension:\/\//i;
+  document.querySelectorAll('[src], [href]').forEach((node) => {
+    const resourceUrl = node.getAttribute('src') || node.getAttribute('href') || '';
+    if (extensionUrlPattern.test(resourceUrl)) {
+      signals.add('A browser extension injected content into this page');
+    }
+  });
+  performance.getEntriesByType?.('resource').forEach((entry) => {
+    if (extensionUrlPattern.test(entry?.name || '')) {
+      signals.add('A browser extension loaded a resource into this page');
+    }
+  });
+  return [...signals];
+};
+
 const BLOCKED_INPUT_TYPES = new Set([
   'insertFromPaste',
   'insertFromDrop',
@@ -305,6 +337,7 @@ export default function AssessmentAttempt() {
     final: false,
   });
   const [validationMessage, setValidationMessage] = useState('');
+  const [environmentInterference, setEnvironmentInterference] = useState([]);
   const [faceStatus, setFaceStatus] = useState('idle');
   const [setupCheckingStep, setSetupCheckingStep] = useState('');
   const [locationData, setLocationData] = useState(null);
@@ -1297,9 +1330,7 @@ export default function AssessmentAttempt() {
       if (hasActiveSecurityPause) {
         setPhase('validation');
       } else if (shouldSkipValidation) {
-        const isDedicatedLaunch = new URLSearchParams(window.location.search).get('secureLaunch') === '1'
-          && data.submission?.status === 'in_progress';
-        setPhase(isDedicatedLaunch ? 'launch' : 'active');
+        setPhase('active');
       } else {
         setPhase('validation');
       }
@@ -1674,6 +1705,15 @@ export default function AssessmentAttempt() {
       }
       if (!copyBlockEnabled) return;
       const ctrlOrMeta = event.ctrlKey || event.metaKey;
+      const platform = String(navigator.userAgentData?.platform || navigator.platform || '').toLowerCase();
+      const windowsClipboardHistory = platform.includes('win') && event.metaKey && key === 'v';
+      if (windowsClipboardHistory) {
+        stopRestrictedEvent(event, 'copy_paste', 'Windows clipboard history is blocked during this assessment.', {
+          source: 'windows_clipboard_history',
+          shortcut: 'Windows+V',
+        });
+        return;
+      }
       const internalEditorShortcut = isInternalCodeEditorEvent(event)
         && ctrlOrMeta
         && ['a', 'c', 'v', 'x'].includes(key);
@@ -2364,29 +2404,6 @@ export default function AssessmentAttempt() {
     }
   };
 
-  const enterDedicatedAssessment = async () => {
-    if (fullscreenRequired) {
-      await requestFullscreen();
-      if (!document.fullscreenElement) {
-        toast.error('Fullscreen is required before the assessment can continue.');
-        return;
-      }
-    }
-    if (cameraRequired) await ensureCamera();
-    const url = new URL(window.location.href);
-    url.searchParams.delete('secureLaunch');
-    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
-    setSecurityStatus((prev) => ({
-      ...prev,
-      fullscreen: !fullscreenRequired || Boolean(document.fullscreenElement),
-      cameraActive: !cameraRequired || Boolean(
-        streamRef.current?.getVideoTracks?.().some((track) => track.readyState === 'live'),
-      ),
-      tabActive: document.hasFocus() && !document.hidden,
-    }));
-    setPhase('active');
-  };
-
   const verifyCameraFeed = async () => {
     const video = validationVideoRef.current;
     const stream = streamRef.current;
@@ -2447,10 +2464,12 @@ export default function AssessmentAttempt() {
 
   const handleEnvironmentCheck = async () => {
     setSetupCheckingStep('environment');
+    const interference = detectBrowserInterference();
+    setEnvironmentInterference(interference);
     const focusOk = document.hasFocus() && !document.hidden;
     const duplicateAssessmentTabs = detectedTabs.filter((tab) => !tab.current);
     const tabsOk = !preventMultipleTabs || duplicateAssessmentTabs.length === 0;
-    const ok = focusOk && tabsOk;
+    const ok = focusOk && tabsOk && interference.length === 0;
     setValidationState((prev) => ({ ...prev, environment: ok }));
     if (ok) {
       try {
@@ -2466,6 +2485,9 @@ export default function AssessmentAttempt() {
       } finally {
         setSetupCheckingStep('');
       }
+    } else if (interference.length > 0) {
+      setValidationMessage(`Browser interference detected: ${interference.join('; ')}. Disable the responsible extension or automation tool, reload this page, and run the environment check again.`);
+      setSetupCheckingStep('');
     } else if (!tabsOk) {
       setValidationMessage('Close duplicate assessment tabs before continuing. Browser security only allows this platform to detect PeerPrep assessment tabs, not every external tab or application.');
       setSetupCheckingStep('');
@@ -2547,12 +2569,14 @@ export default function AssessmentAttempt() {
   };
 
   const handleFinalCheck = async () => {
+    const interference = detectBrowserInterference();
+    setEnvironmentInterference(interference);
     const fullscreenOk = !fullscreenRequired || Boolean(document.fullscreenElement);
     const focusOk = document.hasFocus() && !document.hidden;
     const tabsOk = !preventMultipleTabs || detectedTabs.filter((tab) => !tab.current).length === 0;
     const cameraOk = !cameraRequired || validationState.camera;
     const locationOk = !locationRequired || securityRecheckActive || Boolean(validationState.location);
-    const ok = fullscreenOk && focusOk && tabsOk && cameraOk && locationOk;
+    const ok = fullscreenOk && focusOk && tabsOk && cameraOk && locationOk && interference.length === 0;
     setValidationState((prev) => ({
       ...prev,
       fullscreen: fullscreenOk,
@@ -2574,6 +2598,8 @@ export default function AssessmentAttempt() {
       } finally {
         setSetupCheckingStep('');
       }
+    } else if (interference.length > 0) {
+      setValidationMessage(`Browser interference detected: ${interference.join('; ')}. Disable it, reload this page, and repeat the environment and final checks.`);
     } else if (!tabsOk) {
       setValidationMessage('A duplicate assessment tab is still active. Close it and run the final check again.');
     } else {
@@ -2591,32 +2617,14 @@ export default function AssessmentAttempt() {
       setPhase('validation');
       return;
     }
-    const isInitialDedicatedLaunch = !isPaused && phase === 'rules';
-    let examWindow = null;
-    if (isInitialDedicatedLaunch) {
-      examWindow = window.open('', '_blank');
-      if (!examWindow) {
-        toast.error('Allow pop-ups for PeerPrep, then start the assessment again.');
-        return;
-      }
-      examWindow.document.title = 'Starting secure assessment...';
-      examWindow.document.body.innerHTML = '<main style="display:grid;min-height:100vh;place-items:center;margin:0;background:#020617;color:#e2e8f0;font:600 15px system-ui">Preparing your secure assessment...</main>';
-      if (fullscreenRequired && examWindow.document.documentElement.requestFullscreen) {
-        void examWindow.document.documentElement.requestFullscreen().catch(() => {});
-      }
-    }
     try {
-      if (!isInitialDedicatedLaunch && fullscreenRequired) await requestFullscreen();
-      if (!isInitialDedicatedLaunch && cameraRequired) await ensureCamera();
-      const data = await api.beginStudentAssessment(assessment._id, assessmentSessionIdRef.current);
-      if (examWindow) {
-        const assessmentUrl = new URL(`/student/assessment/${assessment._id}`, window.location.origin);
-        assessmentUrl.searchParams.set('secureLaunch', '1');
-        examWindow.location.replace(assessmentUrl.href);
-        examWindow.opener = null;
-        navigate('/student/assessments', { replace: true });
+      if (fullscreenRequired) await requestFullscreen();
+      if (fullscreenRequired && !document.fullscreenElement) {
+        toast.error('Fullscreen is required before the assessment can start.');
         return;
       }
+      if (cameraRequired) await ensureCamera();
+      const data = await api.beginStudentAssessment(assessment._id, assessmentSessionIdRef.current);
       const serverTime = new Date(data.serverTime).getTime();
       const serverAllowedEnd = new Date(data.allowedEnd).getTime();
       setOffset(serverTime - Date.now());
@@ -2642,7 +2650,6 @@ export default function AssessmentAttempt() {
       setHasSeenRules(true);
       setPhase('active');
     } catch (err) {
-      examWindow?.close();
       if (err?.response?.status === 409 && err?.response?.data?.code === 'ACTIVE_ASSESSMENT_SESSION') {
         setActiveSessionConflict(true);
         return;
@@ -2655,6 +2662,7 @@ export default function AssessmentAttempt() {
       toast.error(err.message || 'Unable to start assessment.');
     }
   };
+
 
   const handleRunCoding = (sourceOverride) => {
     if (!assessment || isSubmitted) return;
@@ -3512,6 +3520,11 @@ export default function AssessmentAttempt() {
                       <CheckCircle2 className="h-4 w-4" /> Environment confirmed.
                     </div>
                   )}
+                  {environmentInterference.length > 0 && (
+                    <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-200">
+                      {environmentInterference.map((signal) => <div key={signal}>{signal}</div>)}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -3748,27 +3761,7 @@ export default function AssessmentAttempt() {
         </div>
       )}
 
-      {phase === 'launch' && !isSubmitted && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950 px-4">
-          <div className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-900 p-6 text-center shadow-2xl">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-sky-500/10 text-sky-300">
-              <Maximize className="h-6 w-6" />
-            </div>
-            <h2 className="mt-4 text-xl font-bold text-white">Secure exam tab ready</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-300">
-              Your completed security checks are preserved. Enter fullscreen to open the assessment workspace.
-            </p>
-            <button
-              type="button"
-              onClick={() => void enterDedicatedAssessment()}
-              className="mt-5 inline-flex items-center gap-2 rounded-lg bg-sky-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-sky-500"
-            >
-              <Maximize className="h-4 w-4" />
-              Enter Fullscreen and Continue
-            </button>
-          </div>
-        </div>
-      )}
+
 
       {showSubmitConfirm && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 px-4">
