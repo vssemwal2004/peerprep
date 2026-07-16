@@ -22,6 +22,7 @@ import {
   Send,
   ShieldCheck,
   Video,
+  WifiOff,
 } from 'lucide-react';
 import CodeEditor from './CodeEditor';
 import AssessmentCodingProblemPanel from './assessment/AssessmentCodingProblemPanel';
@@ -108,6 +109,20 @@ const AI_PREVIEW_MARGIN_PX = 8;
 const CAMERA_WARNING_STREAK_LIMIT = 3;
 const FACE_CENTER_TOLERANCE_RATIO = 0.46;
 const FACE_MIN_WIDTH_RATIO = 0.08;
+const NETWORK_FAILURES_BEFORE_PAUSE = 2;
+
+const hasVeryWeakConnection = () => {
+  if (typeof navigator === 'undefined') return false;
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (!connection) return false;
+  const effectiveType = String(connection.effectiveType || '').toLowerCase();
+  const downlink = Number(connection.downlink);
+  const rtt = Number(connection.rtt);
+  return effectiveType === 'slow-2g'
+    || effectiveType === '2g'
+    || (Number.isFinite(downlink) && downlink > 0 && downlink < 0.35)
+    || (Number.isFinite(rtt) && rtt > 1500);
+};
 
 const BLOCKED_INPUT_TYPES = new Set([
   'insertFromPaste',
@@ -325,6 +340,9 @@ export default function AssessmentAttempt() {
   });
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [proctoringStatus, setProctoringStatus] = useState(null);
+  const [networkStatus, setNetworkStatus] = useState(() => (
+    typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'online'
+  ));
   const [aiPreviewPosition, setAiPreviewPosition] = useState(() => {
     try {
       const raw = localStorage.getItem(`peerprep_ai_preview_position:${id}`);
@@ -352,6 +370,8 @@ export default function AssessmentAttempt() {
   const fullscreenExitTimerRef = useRef(null);
   const fullscreenCountdownRef = useRef(null);
   const heartbeatFailureRef = useRef(0);
+  const consecutiveNetworkFailuresRef = useRef(0);
+  const networkPauseStartedAtRef = useRef(null);
   const restrictedActionGraceUntilRef = useRef(0);
   const restrictedActionNoticeRef = useRef('Restricted action recorded as a warning. Continue the assessment.');
   const timedWarningTimerRef = useRef(null);
@@ -397,6 +417,7 @@ export default function AssessmentAttempt() {
   const answerKey = (sectionIndex, questionIndex) => `${sectionIndex}-${questionIndex}`;
   const isSubmitted = submission?.status === 'submitted';
   const secureActive = phase === 'active' && !isSubmitted;
+  const networkPaused = secureActive && networkStatus !== 'online';
   const securitySettings = useMemo(() => assessment?.settings || {}, [assessment?.settings]);
   const watermarkConfig = useMemo(() => {
     const type = securitySettings.watermarkTextType || 'platform';
@@ -512,6 +533,12 @@ export default function AssessmentAttempt() {
     setValidationMessage('');
     setFaceStatus('idle');
   }, []);
+
+  useEffect(() => {
+    if (networkPaused && !networkPauseStartedAtRef.current) {
+      networkPauseStartedAtRef.current = new Date().toISOString();
+    }
+  }, [networkPaused]);
   const syncCompletedSecuritySteps = useCallback((completedSteps = []) => {
     const orderedCompletedSteps = setupSteps
       .map((item) => item.key)
@@ -1239,6 +1266,33 @@ export default function AssessmentAttempt() {
   }, [loadAssessment]);
 
   useEffect(() => {
+    const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    const markOffline = () => {
+      consecutiveNetworkFailuresRef.current = NETWORK_FAILURES_BEFORE_PAUSE;
+      setNetworkStatus('offline');
+    };
+    const verifyConnection = () => {
+      if (navigator.onLine === false) {
+        markOffline();
+        return;
+      }
+      setNetworkStatus(hasVeryWeakConnection() ? 'weak' : 'reconnecting');
+    };
+
+    if (navigator.onLine === false) markOffline();
+    else if (hasVeryWeakConnection()) setNetworkStatus('weak');
+
+    window.addEventListener('offline', markOffline);
+    window.addEventListener('online', verifyConnection);
+    connection?.addEventListener?.('change', verifyConnection);
+    return () => {
+      window.removeEventListener('offline', markOffline);
+      window.removeEventListener('online', verifyConnection);
+      connection?.removeEventListener?.('change', verifyConnection);
+    };
+  }, []);
+
+  useEffect(() => {
     if (phase !== 'validation' || currentSetupStepKey !== 'environment') return undefined;
     const monitorEnvironment = () => {
       const focusOk = document.hasFocus() && !document.hidden;
@@ -1340,7 +1394,7 @@ export default function AssessmentAttempt() {
   }, [isCodingForLayout, activeSection, activeQuestion]);
 
   useEffect(() => {
-    if (!assessment || !allowedEndTime || isPaused || phase !== 'active') return undefined;
+    if (!assessment || !allowedEndTime || isPaused || networkPaused || phase !== 'active') return undefined;
     const timer = setInterval(() => {
       const now = Date.now() + offset;
       const remaining = allowedEndTime - now;
@@ -1350,7 +1404,7 @@ export default function AssessmentAttempt() {
       }
     }, 1000);
     return () => clearInterval(timer);
-  }, [assessment, submission, offset, allowedEndTime, isPaused, phase, autoSubmitOnEnd, handleSubmit]);
+  }, [assessment, submission, offset, allowedEndTime, isPaused, networkPaused, phase, autoSubmitOnEnd, handleSubmit]);
 
   useEffect(() => {
     if (!securityRecheckActive || !securityRecheckStartedAt) return undefined;
@@ -1376,12 +1430,12 @@ export default function AssessmentAttempt() {
   }, []);
 
   useEffect(() => {
-    if (!secureActive || isSubmitted) return undefined;
+    if (!secureActive || isSubmitted || networkPaused) return undefined;
     const interval = setInterval(() => {
       handleSave();
     }, 15000);
     return () => clearInterval(interval);
-  }, [secureActive, isSubmitted, handleSave]);
+  }, [secureActive, isSubmitted, networkPaused, handleSave]);
 
   useEffect(() => {
     if (!secureActive) return;
@@ -2102,7 +2156,20 @@ export default function AssessmentAttempt() {
           violationScore: violationScoreRef.current,
           pauseCount: pauseCountRef.current,
           cameraFlags,
+          networkPauseStartedAt: networkPauseStartedAtRef.current,
         });
+        consecutiveNetworkFailuresRef.current = 0;
+        networkPauseStartedAtRef.current = null;
+        setNetworkStatus('online');
+        if (result?.allowedEnd && result?.serverTime) {
+          const serverTime = new Date(result.serverTime).getTime();
+          const allowedEnd = new Date(result.allowedEnd).getTime();
+          if (Number.isFinite(serverTime) && Number.isFinite(allowedEnd)) {
+            setOffset(serverTime - Date.now());
+            setAllowedEndTime(allowedEnd);
+            setTimeLeft(Math.max(0, allowedEnd - serverTime));
+          }
+        }
         if (typeof result?.violationScore === 'number') setViolationScore(result.violationScore);
         if (typeof result?.pauseCount === 'number') setPauseCount(result.pauseCount);
         if (result?.lastPauseAt) setLastPauseAt(result.lastPauseAt);
@@ -2115,13 +2182,19 @@ export default function AssessmentAttempt() {
           return;
         }
       } catch {
+        consecutiveNetworkFailuresRef.current += 1;
+        if (navigator.onLine === false) {
+          setNetworkStatus('offline');
+        } else if (consecutiveNetworkFailuresRef.current >= NETWORK_FAILURES_BEFORE_PAUSE) {
+          setNetworkStatus('weak');
+        }
         if (warningGraceActive) {
           setSecurityNotice(restrictedActionNoticeRef.current);
           return;
         }
         if (Date.now() - heartbeatFailureRef.current > 12000) {
           heartbeatFailureRef.current = Date.now();
-          setSecurityNotice('Security heartbeat could not reach the server. Check your connection; the assessment will continue.');
+          setSecurityNotice('The server connection is unstable. Your answers remain stored locally while reconnection is attempted.');
           void api.logStudentAssessmentMonitoring(assessment._id, {
             event: {
               type: 'heartbeat_connection_warning',
@@ -3893,6 +3966,36 @@ export default function AssessmentAttempt() {
               <Maximize className="h-4 w-4" />
               {fullscreenRecovery.remaining > 0 ? 'Re-enter Fullscreen' : 'Submitting Assessment...'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {networkPaused && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/90 px-4 backdrop-blur-sm"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="network-pause-title"
+        >
+          <div className="w-full max-w-md rounded-2xl border border-amber-300 bg-white p-6 text-center shadow-2xl dark:border-amber-700 dark:bg-gray-900">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+              <WifiOff className="h-6 w-6" />
+            </div>
+            <h2 id="network-pause-title" className="mt-4 text-xl font-semibold text-slate-900 dark:text-white">
+              {networkStatus === 'offline' ? 'Internet connection lost' : 'Checking internet connection'}
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-gray-300">
+              {networkStatus === 'offline'
+                ? 'The assessment is paused on this device. Check Wi-Fi or mobile data to continue.'
+                : 'The connection is too weak to safely synchronize the assessment. Reconnecting automatically...'}
+            </p>
+            <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs font-medium text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200">
+              Your current answers are preserved locally. The assessment will unlock after the server connection is verified.
+            </div>
+            <div className="mt-5 flex items-center justify-center gap-2 text-xs font-semibold text-amber-700 dark:text-amber-300">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Reconnecting
+            </div>
           </div>
         </div>
       )}

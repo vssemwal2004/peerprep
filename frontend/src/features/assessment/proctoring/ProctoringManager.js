@@ -163,6 +163,8 @@ const MOBILE_OBJECT_DETECTION_INTERVAL_MS = 2500;
 const OBJECT_DETECTION_WARMUP_INTERVAL_MS = 700;
 const OBJECT_DETECTION_WARMUP_SAMPLES = 3;
 const VIDEO_PLAYBACK_RETRY_MS = 1000;
+const MODEL_RETRY_BASE_MS = 5000;
+const MODEL_RETRY_MAX_MS = 30000;
 const FALLBACK_FACE_CENTER_TOLERANCE_RATIO = 0.32;
 const FALLBACK_FACE_MIN_WIDTH_RATIO = 0.12;
 const FALLBACK_FRAME_VARIANCE_THRESHOLD = 95;
@@ -257,6 +259,10 @@ export class ProctoringManager {
     this.lastObjectResult = null;
     this.objectDetectionSamples = 0;
     this.lastVideoPlaybackRetryAt = 0;
+    this.modelRetryTimeoutId = null;
+    this.modelRetryAttempt = 0;
+    this.modelLoadInProgress = false;
+    this.handleOnline = () => this.scheduleModelRetry(0);
     this.violationBuffer = new ViolationBuffer({
       cooldownMs: getCooldownMs(this.settings),
     });
@@ -291,6 +297,7 @@ export class ProctoringManager {
       error: null,
     });
     this.startDetectionLoop();
+    globalThis.addEventListener?.('online', this.handleOnline);
     await this.runDetectionTick();
 
     try {
@@ -326,6 +333,8 @@ export class ProctoringManager {
     this.lastObjectResult = null;
     this.objectDetectionSamples = 0;
     this.lastVideoPlaybackRetryAt = 0;
+    this.clearModelRetry();
+    globalThis.removeEventListener?.('online', this.handleOnline);
     this.updateStatus({
       running: false,
       camera: 'unknown',
@@ -356,8 +365,10 @@ export class ProctoringManager {
   }
 
   async loadModels() {
+    if (this.modelLoadInProgress) return false;
+    this.modelLoadInProgress = true;
     const loadFaceModel = async () => {
-      if (!shouldUseFaceDetection(this.settings)) return;
+      if (!shouldUseFaceDetection(this.settings) || this.faceDetectorAvailable) return;
       this.updateStatus({ faceModel: 'loading' });
       try {
         this.faceDetector = this.faceDetector || createFaceDetector();
@@ -383,7 +394,7 @@ export class ProctoringManager {
     };
 
     const loadObjectModel = async () => {
-      if (!shouldUseObjectDetection(this.settings)) return;
+      if (!shouldUseObjectDetection(this.settings) || this.objectDetectorAvailable) return;
       this.updateStatus({ objectModel: 'loading' });
       try {
         this.objectDetector = this.objectDetector || createObjectDetector();
@@ -404,13 +415,22 @@ export class ProctoringManager {
       }
     };
 
-    await Promise.all([loadFaceModel(), loadObjectModel()]);
-
-    this.modelsLoaded = true;
-    return true;
+    try {
+      await Promise.all([loadFaceModel(), loadObjectModel()]);
+      this.modelsLoaded = this.faceDetectorAvailable || this.objectDetectorAvailable || this.faceFallbackAvailable;
+      if (this.hasUnavailableRequiredModel()) this.scheduleModelRetry();
+      else {
+        this.modelRetryAttempt = 0;
+        this.clearModelRetry();
+      }
+      return this.modelsLoaded;
+    } finally {
+      this.modelLoadInProgress = false;
+    }
   }
 
   stopModels() {
+    this.clearModelRetry();
     this.faceDetector?.dispose?.();
     this.objectDetector?.dispose?.();
     this.faceDetector = null;
@@ -622,6 +642,35 @@ export class ProctoringManager {
     } catch {
       // Retry on the next detection tick; a recent user gesture may unlock it.
     }
+  }
+
+  hasUnavailableRequiredModel() {
+    return (shouldUseFaceDetection(this.settings) && !this.faceDetectorAvailable)
+      || (shouldUseObjectDetection(this.settings) && !this.objectDetectorAvailable);
+  }
+
+  scheduleModelRetry(delayMs = null) {
+    if (!this.status.running || !this.hasUnavailableRequiredModel()) return;
+    this.clearModelRetry();
+    const retryDelay = delayMs === null
+      ? Math.min(MODEL_RETRY_MAX_MS, MODEL_RETRY_BASE_MS * (2 ** this.modelRetryAttempt))
+      : Math.max(0, delayMs);
+    this.modelRetryAttempt = Math.min(4, this.modelRetryAttempt + 1);
+    this.modelRetryTimeoutId = globalThis.setTimeout(async () => {
+      this.modelRetryTimeoutId = null;
+      if (!this.status.running || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
+        this.scheduleModelRetry();
+        return;
+      }
+      await this.loadModels();
+      if (this.status.running) await this.runDetectionTick();
+    }, retryDelay);
+  }
+
+  clearModelRetry() {
+    if (!this.modelRetryTimeoutId) return;
+    globalThis.clearTimeout(this.modelRetryTimeoutId);
+    this.modelRetryTimeoutId = null;
   }
 
   getModelAvailabilityError() {

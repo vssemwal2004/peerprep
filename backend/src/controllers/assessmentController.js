@@ -4136,14 +4136,17 @@ export async function logStudentHeartbeat(req, res) {
   try {
     const { id } = req.params;
     const studentId = req.user._id;
-    const { status = {}, violationScore, pauseCount, cameraFlags } = req.body || {};
-    const assessment = await findAssessmentForStudentRoute(id, { lean: true, select: 'settings' });
+    const { status = {}, violationScore, pauseCount, cameraFlags, networkPauseStartedAt } = req.body || {};
+    const assessment = await findAssessmentForStudentRoute(id, { lean: true, select: 'settings duration endTime' });
     if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
     const submission = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId });
     if (!submission) return res.status(404).json({ error: 'Submission not found.' });
     if (submission.status === 'submitted') return res.json({ ok: true, action: 'warn' });
     const settings = assessment.settings || {};
     const now = new Date();
+    const previousHeartbeatAt = submission.securityHeartbeat?.at
+      ? new Date(submission.securityHeartbeat.at).getTime()
+      : null;
     const normalizedStatus = {
       fullscreen: Boolean(status.fullscreen),
       tabActive: Boolean(status.tabActive),
@@ -4157,6 +4160,26 @@ export async function logStudentHeartbeat(req, res) {
     if (typeof violationScore === 'number') submission.violationScore = Math.max(submission.violationScore || 0, violationScore);
     if (typeof pauseCount === 'number') submission.pauseCount = Math.max(submission.pauseCount || 0, pauseCount);
     if (typeof cameraFlags === 'number') submission.cameraFlags = cameraFlags;
+
+    const requestedNetworkPauseAt = networkPauseStartedAt ? new Date(networkPauseStartedAt).getTime() : null;
+    const lastAppliedNetworkPauseAt = submission.lastNetworkPauseAt
+      ? new Date(submission.lastNetworkPauseAt).getTime()
+      : null;
+    const requestIsFresh = Number.isFinite(requestedNetworkPauseAt)
+      && requestedNetworkPauseAt <= now.getTime()
+      && (!Number.isFinite(lastAppliedNetworkPauseAt) || requestedNetworkPauseAt > lastAppliedNetworkPauseAt);
+    const followsLastHeartbeat = !Number.isFinite(previousHeartbeatAt)
+      || requestedNetworkPauseAt >= previousHeartbeatAt - 15000;
+    if (requestIsFresh && followsLastHeartbeat) {
+      const MAX_NETWORK_PAUSE_MS = 5 * 60 * 1000;
+      const pausedMs = Math.min(MAX_NETWORK_PAUSE_MS, Math.max(0, now.getTime() - requestedNetworkPauseAt));
+      if (pausedMs >= 1000) {
+        submission.pausedDurationMs = getPausedDurationMs(submission.pausedDurationMs) + pausedMs;
+        submission.pauseCount = (submission.pauseCount || 0) + 1;
+        submission.lastPauseAt = now;
+      }
+      submission.lastNetworkPauseAt = new Date(requestedNetworkPauseAt);
+    }
 
     let action = 'warn';
     let inconsistent = false;
@@ -4185,6 +4208,7 @@ export async function logStudentHeartbeat(req, res) {
     // allowed to create a security recheck pause.
 
     await submission.save();
+    const allowedEnd = computeAllowedEnd(assessment, submission.startedAt || now, submission.pausedDurationMs);
     return res.json({
       ok: true,
       action,
@@ -4194,6 +4218,8 @@ export async function logStudentHeartbeat(req, res) {
       lastPauseAt: submission.lastPauseAt,
       pauseStartedAt: submission.pauseStartedAt,
       securityRecheckTimeoutSec: getSecurityRecheckTimeoutSec(settings),
+      allowedEnd,
+      serverTime: now,
     });
   } catch (err) {
     console.error('Error logging heartbeat:', err);
