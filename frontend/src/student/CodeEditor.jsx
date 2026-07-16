@@ -292,7 +292,7 @@ function CodeEditor({
       const pending = pendingCodeCommitRef.current;
       pendingCodeCommitRef.current = null;
       pending?.commit(pending.value);
-    }, 450);
+    }, 1200);
   };
 
   const handleClipboardStatus = ({ message } = {}) => {

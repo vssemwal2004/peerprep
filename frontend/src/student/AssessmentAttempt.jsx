@@ -25,6 +25,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 import CodeEditor from './CodeEditor';
+import { preloadMonacoEditor } from '../admin/compiler/MonacoCodeEditor';
 import AssessmentCodingProblemPanel from './assessment/AssessmentCodingProblemPanel';
 import AssessmentLanguagePicker from './assessment/AssessmentLanguagePicker';
 import AssessmentQuestionPalette from './assessment/AssessmentQuestionPalette';
@@ -432,6 +433,11 @@ export default function AssessmentAttempt() {
     liveCodingCodeRef.current = {};
     liveCodingLanguageRef.current = {};
   }, [id]);
+
+  useEffect(() => {
+    const hasCodingSection = assessment?.sections?.some((section) => section?.type === 'coding');
+    if (hasCodingSection && phase !== 'active') void preloadMonacoEditor();
+  }, [assessment?.sections, phase]);
 
   const answerKey = (sectionIndex, questionIndex) => `${sectionIndex}-${questionIndex}`;
   const isSubmitted = submission?.status === 'submitted';
@@ -938,6 +944,7 @@ export default function AssessmentAttempt() {
     }
     setTimedWarningRemainingSec(0);
     setSecurityPopup((prev) => ({ ...prev, open: false }));
+    requestAnimationFrame(() => window.dispatchEvent(new Event('peerprep:focus-code-editor')));
   }, []);
 
   const showTimedSecurityWarning = useCallback(({ title, message, tone = 'warning', notice }) => {
@@ -1691,7 +1698,6 @@ export default function AssessmentAttempt() {
     document.addEventListener('dragstart', handleDragStart, capture);
     document.addEventListener('beforeinput', handleBeforeInput, capture);
     document.addEventListener('keydown', handleKeydown, capture);
-    window.addEventListener('keyup', handleKeydown, capture);
     return () => {
       document.removeEventListener('copy', handleCopy, capture);
       document.removeEventListener('cut', handleCut, capture);
@@ -1701,7 +1707,6 @@ export default function AssessmentAttempt() {
       document.removeEventListener('dragstart', handleDragStart, capture);
       document.removeEventListener('beforeinput', handleBeforeInput, capture);
       document.removeEventListener('keydown', handleKeydown, capture);
-      window.removeEventListener('keyup', handleKeydown, capture);
     };
   }, [secureActive, copyBlockEnabled, screenshotProtectionEnabled, blockRightClick, recordViolation, showScreenshotBlockedPopup, showTimedSecurityWarning, showSecurityPopup, totalWarnings]);
 
@@ -2561,10 +2566,32 @@ export default function AssessmentAttempt() {
       setPhase('validation');
       return;
     }
+    const isInitialDedicatedLaunch = !isPaused && phase === 'rules';
+    let examWindow = null;
+    if (isInitialDedicatedLaunch) {
+      examWindow = window.open('', '_blank');
+      if (!examWindow) {
+        toast.error('Allow pop-ups for PeerPrep, then start the assessment again.');
+        return;
+      }
+      examWindow.document.title = 'Starting secure assessment...';
+      examWindow.document.body.innerHTML = '<main style="display:grid;min-height:100vh;place-items:center;margin:0;background:#020617;color:#e2e8f0;font:600 15px system-ui">Preparing your secure assessment...</main>';
+      if (fullscreenRequired && examWindow.document.documentElement.requestFullscreen) {
+        void examWindow.document.documentElement.requestFullscreen().catch(() => {});
+      }
+    }
     try {
-      if (fullscreenRequired) await requestFullscreen();
-      if (cameraRequired) await ensureCamera();
+      if (!isInitialDedicatedLaunch && fullscreenRequired) await requestFullscreen();
+      if (!isInitialDedicatedLaunch && cameraRequired) await ensureCamera();
       const data = await api.beginStudentAssessment(assessment._id, assessmentSessionIdRef.current);
+      if (examWindow) {
+        const assessmentUrl = new URL(`/student/assessment/${assessment._id}`, window.location.origin);
+        assessmentUrl.searchParams.set('secureLaunch', '1');
+        examWindow.location.replace(assessmentUrl.href);
+        examWindow.opener = null;
+        navigate('/student/assessments', { replace: true });
+        return;
+      }
       const serverTime = new Date(data.serverTime).getTime();
       const serverAllowedEnd = new Date(data.allowedEnd).getTime();
       setOffset(serverTime - Date.now());
@@ -2590,6 +2617,7 @@ export default function AssessmentAttempt() {
       setHasSeenRules(true);
       setPhase('active');
     } catch (err) {
+      examWindow?.close();
       if (err?.response?.status === 409 && err?.response?.data?.code === 'ACTIVE_ASSESSMENT_SESSION') {
         setActiveSessionConflict(true);
         return;
@@ -3734,7 +3762,7 @@ export default function AssessmentAttempt() {
       )}
 
       {securityPopup.open && secureActive && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/35 px-4 backdrop-blur-[1px]">
+        <div className="pointer-events-none fixed right-3 top-20 z-[80] w-[min(28rem,calc(100vw-1.5rem))]" role="status" aria-live="polite">
           <div className={`w-full max-w-md rounded-[28px] border bg-white p-5 shadow-[0_28px_80px_-32px_rgba(15,23,42,0.42)] dark:bg-gray-900 ${
             securityPopup.tone === 'danger'
               ? 'border-rose-200 dark:border-rose-800'
@@ -3756,7 +3784,7 @@ export default function AssessmentAttempt() {
                 Warning closes in {timedWarningRemainingSec}s
               </div>
             )}
-            <div className="mt-4 flex justify-end">
+            <div className="pointer-events-auto mt-4 flex justify-end">
               <button
                 type="button"
                 onClick={closeSecurityPopup}

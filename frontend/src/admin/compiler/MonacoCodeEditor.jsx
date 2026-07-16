@@ -66,6 +66,12 @@ function ensureMonaco() {
   return monacoLoaderPromise;
 }
 
+// This utility intentionally shares Monaco's module-level loader promise.
+// eslint-disable-next-line react-refresh/only-export-components
+export function preloadMonacoEditor() {
+  return ensureMonaco().catch(() => null);
+}
+
 export default function MonacoCodeEditor({
   value,
   onChange,
@@ -288,6 +294,12 @@ export default function MonacoCodeEditor({
   useEffect(() => {
     editorRef.current?.updateOptions({ contextmenu: !internalClipboardOnly });
   }, [internalClipboardOnly]);
+
+  useEffect(() => {
+    const focusEditor = () => editorRef.current?.focus();
+    window.addEventListener('peerprep:focus-code-editor', focusEditor);
+    return () => window.removeEventListener('peerprep:focus-code-editor', focusEditor);
+  }, []);
 
   const reportClipboardStatus = (status, message) => {
     onClipboardStatusRef.current?.({ status, message });

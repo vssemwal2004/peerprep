@@ -117,19 +117,10 @@ export default function AssessmentLaunchModal({ assessment, open, onClose, onUnl
     }
     setSubmitting(true);
     setError('');
-    const testWindow = window.open('', '_blank');
-    if (!testWindow) {
-      setSubmitting(false);
-      setError('Allow pop-ups for PeerPrep, then start the test again.');
-      return;
-    }
-    testWindow.document.title = 'Opening assessment...';
-    testWindow.document.body.innerHTML = '<p style="font: 14px system-ui; padding: 24px; color: #334155">Preparing your secure assessment...</p>';
     try {
       await onUnlock(password);
-      onStart(testWindow);
+      onStart();
     } catch (err) {
-      testWindow.close();
       setError(err.message || 'Unable to start assessment.');
     } finally {
       setSubmitting(false);

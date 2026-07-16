@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import AssessmentModuleLayout from './assessment-dashboard/AssessmentModuleLayout';
 import AssessmentCard from './assessment-dashboard/AssessmentCard';
 import AssessmentLaunchModal from './assessment-dashboard/AssessmentLaunchModal';
@@ -23,6 +24,7 @@ function Section({ title, children }) {
 }
 
 export default function StudentAssessmentList() {
+  const navigate = useNavigate();
   const { dashboard, loading, error } = useStudentAssessmentDashboardData();
   const [launchAssessment, setLaunchAssessment] = useState(null);
 
@@ -72,12 +74,11 @@ export default function StudentAssessmentList() {
           if (!launchAssessment) return;
           await api.startStudentAssessment(launchAssessment._id, password);
         }}
-        onStart={(testWindow) => {
+        onStart={() => {
           if (!launchAssessment) return;
-          const assessmentUrl = new URL(`/student/assessment/${launchAssessment._id}`, window.location.origin);
-          testWindow.location.replace(assessmentUrl.href);
-          testWindow.opener = null;
+          const assessmentId = launchAssessment._id;
           setLaunchAssessment(null);
+          navigate(`/student/assessment/${assessmentId}`);
         }}
       />
     </AssessmentModuleLayout>
