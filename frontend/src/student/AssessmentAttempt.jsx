@@ -1297,7 +1297,9 @@ export default function AssessmentAttempt() {
       if (hasActiveSecurityPause) {
         setPhase('validation');
       } else if (shouldSkipValidation) {
-        setPhase('active');
+        const isDedicatedLaunch = new URLSearchParams(window.location.search).get('secureLaunch') === '1'
+          && data.submission?.status === 'in_progress';
+        setPhase(isDedicatedLaunch ? 'launch' : 'active');
       } else {
         setPhase('validation');
       }
@@ -2360,6 +2362,29 @@ export default function AssessmentAttempt() {
       setCameraStreamReady(false);
       return false;
     }
+  };
+
+  const enterDedicatedAssessment = async () => {
+    if (fullscreenRequired) {
+      await requestFullscreen();
+      if (!document.fullscreenElement) {
+        toast.error('Fullscreen is required before the assessment can continue.');
+        return;
+      }
+    }
+    if (cameraRequired) await ensureCamera();
+    const url = new URL(window.location.href);
+    url.searchParams.delete('secureLaunch');
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+    setSecurityStatus((prev) => ({
+      ...prev,
+      fullscreen: !fullscreenRequired || Boolean(document.fullscreenElement),
+      cameraActive: !cameraRequired || Boolean(
+        streamRef.current?.getVideoTracks?.().some((track) => track.readyState === 'live'),
+      ),
+      tabActive: document.hasFocus() && !document.hidden,
+    }));
+    setPhase('active');
   };
 
   const verifyCameraFeed = async () => {
@@ -3719,6 +3744,28 @@ export default function AssessmentAttempt() {
                 )}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {phase === 'launch' && !isSubmitted && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950 px-4">
+          <div className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-900 p-6 text-center shadow-2xl">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-sky-500/10 text-sky-300">
+              <Maximize className="h-6 w-6" />
+            </div>
+            <h2 className="mt-4 text-xl font-bold text-white">Secure exam tab ready</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-300">
+              Your completed security checks are preserved. Enter fullscreen to open the assessment workspace.
+            </p>
+            <button
+              type="button"
+              onClick={() => void enterDedicatedAssessment()}
+              className="mt-5 inline-flex items-center gap-2 rounded-lg bg-sky-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-sky-500"
+            >
+              <Maximize className="h-4 w-4" />
+              Enter Fullscreen and Continue
+            </button>
           </div>
         </div>
       )}
