@@ -168,7 +168,7 @@ function AssessmentQuestionPalette({
           <div className="flex items-center gap-3" aria-label="Question status counts">
             <span title="Answered"><i className="mr-1 inline-block h-2 w-2 rounded-full bg-emerald-500" />{counts.answered}</span>
             <span title="Marked for review"><i className="mr-1 inline-block h-2 w-2 rounded-full bg-amber-400" />{counts.review}</span>
-            <span title="Not answered"><i className="mr-1 inline-block h-2 w-2 rounded-full border border-slate-300 bg-white" />{counts.unanswered}</span>
+            <span title="Not answered"><i className="mr-1 inline-block h-2 w-2 rounded-full border border-slate-300 bg-white dark:border-gray-600 dark:bg-gray-900" />{counts.unanswered}</span>
           </div>
           <span>{rangeStart}-{rangeEnd} of {filteredQuestions.length}</span>
         </div>

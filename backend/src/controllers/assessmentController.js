@@ -2492,6 +2492,8 @@ export async function beginStudentAssessment(req, res) {
     const student = req.user;
     const studentId = student._id;
     const now = new Date();
+    const sessionId = String(req.body?.sessionId || '').trim().slice(0, 160);
+    if (!sessionId) return res.status(400).json({ error: 'Assessment session identifier is required.' });
 
     const assessment = await findAssessmentForStudentRoute(id);
     if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
@@ -2504,6 +2506,36 @@ export async function beginStudentAssessment(req, res) {
     if (now < assessment.startTime) return res.status(403).json({ error: 'Assessment has not started yet.', serverTime: now, startTime: assessment.startTime });
 
     let submission = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId });
+    const activeHeartbeatAt = submission?.activeSessionHeartbeatAt
+      ? new Date(submission.activeSessionHeartbeatAt).getTime()
+      : 0;
+    const activeSessionIsFresh = Boolean(
+      submission?.activeSessionId
+      && activeHeartbeatAt
+      && now.getTime() - activeHeartbeatAt < 30000,
+    );
+    if (activeSessionIsFresh && submission.activeSessionId !== sessionId) {
+      return res.status(409).json({
+        error: 'This assessment is already active in another tab, browser, or device.',
+        code: 'ACTIVE_ASSESSMENT_SESSION',
+        lastSeenAt: submission.activeSessionHeartbeatAt,
+      });
+    }
+    const otherActiveSubmission = await AssessmentSubmission.findOne({
+      studentId,
+      assessmentId: { $ne: assessment._id },
+      status: 'in_progress',
+      activeSessionHeartbeatAt: { $gte: new Date(now.getTime() - 30000) },
+      activeSessionId: { $nin: ['', null] },
+    }).select('assessmentId activeSessionHeartbeatAt').lean();
+    if (otherActiveSubmission) {
+      return res.status(409).json({
+        error: 'This account already has another assessment in progress.',
+        code: 'ACTIVE_ASSESSMENT_SESSION',
+        activeAssessmentId: otherActiveSubmission.assessmentId,
+        lastSeenAt: otherActiveSubmission.activeSessionHeartbeatAt,
+      });
+    }
     const settings = normalizeAssessmentSettings(assessment.settings || {});
     const allowPausedRecheck = isSecurityPauseWithinLimit(submission, settings, now);
     if (isAssessmentClosedForStudents(assessment, now) && !allowPausedRecheck) {
@@ -2558,6 +2590,12 @@ export async function beginStudentAssessment(req, res) {
       await submission.save();
     }
 
+    submission.activeSessionId = sessionId;
+    submission.activeSessionHeartbeatAt = now;
+    submission.lastIp = req.ip;
+    submission.lastUserAgent = req.headers['user-agent'];
+    await submission.save();
+
     const allowedEnd = computeAllowedEnd(assessment, submission.startedAt || now, submission.pausedDurationMs);
     return res.json({
       message: 'Assessment started',
@@ -2589,6 +2627,7 @@ export async function submitAssessment(req, res) {
       lastPauseAt,
       securityHeartbeat,
       violations,
+      sessionId,
     } = req.body || {};
 
     if (!assessmentId) return res.status(400).json({ error: 'assessmentId is required.' });
@@ -2611,6 +2650,17 @@ export async function submitAssessment(req, res) {
     }
 
     let submission = await AssessmentSubmission.findOne({ assessmentId, studentId });
+
+    if (
+      submission?.status === 'in_progress'
+      && submission.activeSessionId
+      && String(sessionId || '') !== submission.activeSessionId
+    ) {
+      return res.status(409).json({
+        error: 'This assessment is active in another tab, browser, or device.',
+        code: 'ACTIVE_ASSESSMENT_SESSION',
+      });
+    }
 
     const passwordCheck = await ensureAssessmentPasswordUnlocked(assessment, submission);
     if (!passwordCheck.ok) {
@@ -2693,6 +2743,8 @@ export async function submitAssessment(req, res) {
     }
 
     if (finalStatus === 'submitted' || finalStatus === 'violation') {
+      submission.activeSessionId = '';
+      submission.activeSessionHeartbeatAt = undefined;
       if (submission.pauseStartedAt) {
         finishSubmissionSecurityPause(submission, now);
       }
@@ -4136,7 +4188,7 @@ export async function logStudentHeartbeat(req, res) {
   try {
     const { id } = req.params;
     const studentId = req.user._id;
-    const { status = {}, violationScore, pauseCount, cameraFlags, networkPauseStartedAt } = req.body || {};
+    const { status = {}, violationScore, pauseCount, cameraFlags, networkPauseStartedAt, sessionId } = req.body || {};
     const assessment = await findAssessmentForStudentRoute(id, { lean: true, select: 'settings duration endTime' });
     if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
     const submission = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId });
@@ -4144,6 +4196,14 @@ export async function logStudentHeartbeat(req, res) {
     if (submission.status === 'submitted') return res.json({ ok: true, action: 'warn' });
     const settings = assessment.settings || {};
     const now = new Date();
+    if (submission.activeSessionId && String(sessionId || '') !== submission.activeSessionId) {
+      return res.status(409).json({
+        error: 'This assessment is already active in another tab, browser, or device.',
+        code: 'ACTIVE_ASSESSMENT_SESSION',
+      });
+    }
+    if (!submission.activeSessionId && sessionId) submission.activeSessionId = String(sessionId).slice(0, 160);
+    submission.activeSessionHeartbeatAt = now;
     const previousHeartbeatAt = submission.securityHeartbeat?.at
       ? new Date(submission.securityHeartbeat.at).getTime()
       : null;

@@ -51,8 +51,8 @@ function AssessmentCodingProblemPanel({ question, codingData = {}, marks = 0, se
   const description = codingData.description || codingData.statement || '';
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] bg-white/92 shadow-[0_12px_34px_rgba(15,23,42,0.05)] backdrop-blur-sm dark:bg-gray-900/92">
-      <div className="flex flex-none items-center justify-between gap-3 border-b border-slate-200/70 bg-white/94 px-5 pt-3 dark:border-gray-800 dark:bg-gray-900/94">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] bg-white shadow-[0_12px_34px_rgba(15,23,42,0.05)] backdrop-blur-sm dark:bg-gray-900 dark:shadow-black/30">
+      <div className="flex flex-none items-center justify-between gap-3 border-b border-slate-200/70 bg-white px-5 pt-3 dark:border-gray-800 dark:bg-gray-900">
         <div className="border-b-2 border-sky-600 pb-3 text-sm font-semibold text-slate-900 dark:border-sky-500 dark:text-gray-100">
           Description
         </div>

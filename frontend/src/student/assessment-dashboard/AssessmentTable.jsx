@@ -7,10 +7,10 @@ export default function AssessmentTable({
   emptyDescription,
 }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
       <div className="overflow-x-auto">
         <table className="min-w-full">
-          <thead className="border-b border-slate-200 bg-slate-50">
+          <thead className="border-b border-slate-200 bg-slate-50 dark:border-gray-800 dark:bg-gray-950">
             <tr>
               {columns.map((column) => (
                 <th
@@ -30,12 +30,12 @@ export default function AssessmentTable({
                 key={row.id || `${row.assessmentId}-${index}`}
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="border-b border-slate-100 transition-colors hover:bg-slate-50"
+                className="border-b border-slate-100 transition-colors hover:bg-slate-50 dark:border-gray-800 dark:hover:bg-gray-800/70"
               >
                 {columns.map((column) => (
                   <td
                     key={column.key}
-                    className={`px-5 py-4 text-sm text-slate-700 ${column.align === 'right' ? 'text-right' : ''}`}
+                    className={`px-5 py-4 text-sm text-slate-700 dark:text-gray-300 ${column.align === 'right' ? 'text-right' : ''}`}
                   >
                     {column.render ? column.render(row) : row[column.key]}
                   </td>
@@ -44,8 +44,8 @@ export default function AssessmentTable({
             )) : (
               <tr>
                 <td colSpan={columns.length} className="px-6 py-14 text-center">
-                  <div className="text-base font-semibold text-slate-900">{emptyTitle}</div>
-                  <div className="mt-2 text-sm text-slate-500">{emptyDescription}</div>
+                  <div className="text-base font-semibold text-slate-900 dark:text-white">{emptyTitle}</div>
+                  <div className="mt-2 text-sm text-slate-500 dark:text-gray-400">{emptyDescription}</div>
                 </td>
               </tr>
             )}

@@ -531,7 +531,7 @@ export const api = {
   getStudentAssessmentDashboard: () => request('/student/assessment-dashboard'),
   startStudentAssessment: (id, password = '') => request(`/student/assessment/${id}/start`, { method: 'POST', body: { password } }),
   markStudentAssessmentSetupStep: (id, step, meta) => request(`/student/assessment/${id}/setup-step`, { method: 'POST', body: { step, ...(meta ? { meta } : {}) } }),
-  beginStudentAssessment: (id) => request(`/student/assessment/${id}/begin`, { method: 'POST' }),
+  beginStudentAssessment: (id, sessionId) => request(`/student/assessment/${id}/begin`, { method: 'POST', body: { sessionId } }),
   getStudentAssessment: (id) => request(`/student/assessment/${id}`),
   logStudentAssessmentViolation: (id, body) => request(`/student/assessment/${id}/violations`, { method: 'POST', body, timeoutMs: 10000, skipQueue: true }),
   sendStudentAssessmentHeartbeat: (id, body) => request(`/student/assessment/${id}/heartbeat`, { method: 'POST', body, timeoutMs: 6000 }),

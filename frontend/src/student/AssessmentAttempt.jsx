@@ -330,6 +330,7 @@ export default function AssessmentAttempt() {
     message: '',
     tone: 'warning',
   });
+  const [activeSessionConflict, setActiveSessionConflict] = useState(false);
   const [timedWarningRemainingSec, setTimedWarningRemainingSec] = useState(0);
   const [securityStatus, setSecurityStatus] = useState(CSE_STATUS_DEFAULTS);
   const [securityAction, setSecurityAction] = useState('warn');
@@ -387,6 +388,10 @@ export default function AssessmentAttempt() {
   const securityRecheckAutoSubmitRef = useRef(false);
   const fullscreenAutoSubmitRef = useRef(false);
   const submissionInFlightRef = useRef(false);
+  const autoSaveInFlightRef = useRef(false);
+  const answersDirtyRef = useRef(false);
+  const autoSavePayloadRef = useRef(null);
+  const heartbeatInFlightRef = useRef(false);
   const handleSubmitRef = useRef(null);
   const recordViolationRef = useRef(null);
   const faceDetectorRef = useRef(null);
@@ -406,6 +411,20 @@ export default function AssessmentAttempt() {
       ? crypto.randomUUID()
       : `tab-${Date.now()}-${Math.random().toString(16).slice(2)}`,
   );
+  const assessmentSessionIdRef = useRef((() => {
+    const key = `peerprep_assessment_session:${id}`;
+    try {
+      const existing = sessionStorage.getItem(key);
+      if (existing) return existing;
+      const created = typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `session-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      sessionStorage.setItem(key, created);
+      return created;
+    } catch {
+      return `session-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+  })());
   const rulesSeenStorageKey = `peerprep_assessment_rules_seen:${id}`;
   const activeSessionStorageKey = `peerprep_assessment_active_session:${id}`;
 
@@ -592,6 +611,28 @@ export default function AssessmentAttempt() {
       return { sectionIndex: originSectionIndex, questionIndex: originQuestionIndex, ...payload };
     })
   ), [answersMap, assessment]);
+
+  useEffect(() => {
+    if (phase === 'active') answersDirtyRef.current = true;
+  }, [answersArray, phase]);
+
+  useEffect(() => {
+    autoSavePayloadRef.current = {
+      assessmentId: assessment?._id,
+      answers: answersArray,
+      status: 'in_progress',
+      tabSwitches,
+      fullscreenExits,
+      copyPasteCount,
+      cameraFlags,
+      violationScore,
+      pauseCount,
+      lastPauseAt,
+      securityHeartbeat,
+      violations,
+      sessionId: assessmentSessionIdRef.current,
+    };
+  }, [assessment?._id, answersArray, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violationScore, pauseCount, lastPauseAt, securityHeartbeat, violations]);
   const flatQuestions = useMemo(() => {
     const list = [];
     let mcqCount = 0;
@@ -759,29 +800,23 @@ export default function AssessmentAttempt() {
   };
 
   const handleSave = useCallback(async () => {
-    if (!assessment || isSubmitted || phase !== 'active') return;
+    if (!assessment || isSubmitted || phase !== 'active' || !answersDirtyRef.current || autoSaveInFlightRef.current) return;
+    autoSaveInFlightRef.current = true;
     setSaving(true);
     try {
-      await api.submitStudentAssessment({
-        assessmentId: assessment._id,
-        answers: answersArray,
-        status: 'in_progress',
-        tabSwitches,
-        fullscreenExits,
-        copyPasteCount,
-        cameraFlags,
-        violationScore,
-        pauseCount,
-        lastPauseAt,
-        securityHeartbeat,
-        violations,
-      });
+      await api.submitStudentAssessment(autoSavePayloadRef.current);
+      answersDirtyRef.current = false;
     } catch (err) {
+      if (err?.response?.status === 409 && err?.response?.data?.code === 'ACTIVE_ASSESSMENT_SESSION') {
+        setActiveSessionConflict(true);
+        return;
+      }
       toast.error(err.message || 'Auto-save failed');
     } finally {
+      autoSaveInFlightRef.current = false;
       setSaving(false);
     }
-  }, [assessment, isSubmitted, answersArray, phase, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violationScore, pauseCount, lastPauseAt, securityHeartbeat, violations, toast]);
+  }, [assessment, isSubmitted, phase, toast]);
 
   const handleSubmit = useCallback(async (auto = false, autoMessage = '') => {
     if (!assessment || submissionInFlightRef.current) return false;
@@ -801,12 +836,17 @@ export default function AssessmentAttempt() {
         lastPauseAt,
         securityHeartbeat,
         violations,
+        sessionId: assessmentSessionIdRef.current,
       });
       stopAiProctoring();
       toast.success(auto ? (autoMessage || 'Time is up. Assessment auto-submitted.') : 'Assessment submitted successfully');
       navigate('/student/assessments');
       return true;
     } catch (err) {
+      if (err?.response?.status === 409 && err?.response?.data?.code === 'ACTIVE_ASSESSMENT_SESSION') {
+        setActiveSessionConflict(true);
+        return false;
+      }
       toast.error(err.message || 'Failed to submit assessment');
       return false;
     } finally {
@@ -2050,8 +2090,8 @@ export default function AssessmentAttempt() {
       await sampleFrame();
       if (!cancelled) {
         intervalId = setInterval(() => {
-          void sampleFrame();
-        }, 1200);
+          if (!document.hidden) void sampleFrame();
+        }, 2500);
       }
     };
     void initializeCameraMonitoring();
@@ -2135,6 +2175,8 @@ export default function AssessmentAttempt() {
   useEffect(() => {
     if (!secureActive) return undefined;
     const sendHeartbeat = async () => {
+      if (heartbeatInFlightRef.current) return;
+      heartbeatInFlightRef.current = true;
       const screenshotGraceActive = Date.now() < screenshotGraceUntilRef.current;
       const restrictedWarningActive = Date.now() < restrictedActionGraceUntilRef.current;
       const screenshotWarningRecent = Date.now() - lastScreenshotWarningAtRef.current < SCREENSHOT_WARNING_GRACE_MS;
@@ -2157,6 +2199,7 @@ export default function AssessmentAttempt() {
           pauseCount: pauseCountRef.current,
           cameraFlags,
           networkPauseStartedAt: networkPauseStartedAtRef.current,
+          sessionId: assessmentSessionIdRef.current,
         });
         consecutiveNetworkFailuresRef.current = 0;
         networkPauseStartedAtRef.current = null;
@@ -2181,7 +2224,12 @@ export default function AssessmentAttempt() {
           setSecurityNotice('Security status changed. Monitoring continues and the event was retained for audit.');
           return;
         }
-      } catch {
+      } catch (err) {
+        if (err?.response?.status === 409 && err?.response?.data?.code === 'ACTIVE_ASSESSMENT_SESSION') {
+          setActiveSessionConflict(true);
+          setSecurityNotice('This assessment is active in another tab, browser, or device.');
+          return;
+        }
         consecutiveNetworkFailuresRef.current += 1;
         if (navigator.onLine === false) {
           setNetworkStatus('offline');
@@ -2204,10 +2252,12 @@ export default function AssessmentAttempt() {
             },
           }).catch(() => {});
         }
+      } finally {
+        heartbeatInFlightRef.current = false;
       }
     };
     void sendHeartbeat();
-    const interval = setInterval(sendHeartbeat, 5000);
+    const interval = setInterval(sendHeartbeat, 10000);
     return () => clearInterval(interval);
   }, [secureActive, assessment?._id, fullscreenRequired, fullscreenRecovery.active, tabGuardEnabled, cameraRequired, cameraFlags]);
 
@@ -2514,7 +2564,7 @@ export default function AssessmentAttempt() {
     try {
       if (fullscreenRequired) await requestFullscreen();
       if (cameraRequired) await ensureCamera();
-      const data = await api.beginStudentAssessment(assessment._id);
+      const data = await api.beginStudentAssessment(assessment._id, assessmentSessionIdRef.current);
       const serverTime = new Date(data.serverTime).getTime();
       const serverAllowedEnd = new Date(data.allowedEnd).getTime();
       setOffset(serverTime - Date.now());
@@ -2540,6 +2590,10 @@ export default function AssessmentAttempt() {
       setHasSeenRules(true);
       setPhase('active');
     } catch (err) {
+      if (err?.response?.status === 409 && err?.response?.data?.code === 'ACTIVE_ASSESSMENT_SESSION') {
+        setActiveSessionConflict(true);
+        return;
+      }
       if (err?.response?.status === 409) {
         toast.error(err.message || 'Security recheck time expired. Assessment was auto-submitted.');
         navigate('/student/assessments');
@@ -2959,7 +3013,7 @@ export default function AssessmentAttempt() {
     || (hasAiFooterIssue ? 'AI proctoring needs attention. Please adjust and continue.' : '');
 
   return (
-    <div className="relative min-h-screen bg-[linear-gradient(180deg,#f8fbff_0%,#f8fafc_36%,#eef2ff_100%)] text-slate-900 dark:bg-gray-900 lg:h-screen lg:overflow-hidden">
+    <div className="relative min-h-screen bg-[linear-gradient(180deg,#f8fbff_0%,#f8fafc_36%,#eef2ff_100%)] text-slate-900 dark:bg-none dark:bg-gray-950 dark:text-gray-100 lg:h-screen lg:overflow-hidden">
       {showAssessmentWorkspace && watermarkConfig.enabled && (
         <div className="pointer-events-none fixed inset-0 z-[1] overflow-hidden" aria-hidden="true">
           {watermarkColumns.map((item) => (
@@ -2982,7 +3036,7 @@ export default function AssessmentAttempt() {
       )}
       {!showAssessmentWorkspace && (
         <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.14),_transparent_42%),linear-gradient(180deg,#f8fbff_0%,#eef4ff_52%,#f8fafc_100%)] px-4 text-center dark:bg-gray-950">
-          <div className="max-w-md rounded-[28px] border border-white/80 bg-white/90 p-8 shadow-[0_30px_90px_-45px_rgba(15,23,42,0.35)] backdrop-blur">
+          <div className="max-w-md rounded-[28px] border border-white/80 bg-white/90 p-8 shadow-[0_30px_90px_-45px_rgba(15,23,42,0.35)] backdrop-blur dark:border-gray-700 dark:bg-gray-900/95">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-sky-50 text-sky-600 ring-1 ring-sky-100 dark:bg-sky-900/20 dark:text-sky-300">
               <ShieldCheck className="h-6 w-6" />
             </div>
@@ -3004,7 +3058,7 @@ export default function AssessmentAttempt() {
               onClick={goToPrevQuestion}
               disabled={!hasPrevQuestion}
               title={hasPrevQuestion ? 'Previous question' : 'No previous question'}
-              className="inline-flex h-9 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-bold text-slate-600 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:opacity-40"
+              className="inline-flex h-9 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-bold text-slate-600 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
             >
               <ChevronLeft className="h-3.5 w-3.5" />
               Prev
@@ -3023,7 +3077,7 @@ export default function AssessmentAttempt() {
               onClick={goToNextQuestion}
               disabled={!hasNextQuestion}
               title="Next question"
-              className="inline-flex h-9 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-bold text-slate-600 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:opacity-40"
+              className="inline-flex h-9 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-bold text-slate-600 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
             >
               Next
               <ChevronRight className="h-3.5 w-3.5" />
@@ -3068,7 +3122,7 @@ export default function AssessmentAttempt() {
                 type="button"
                 onClick={handleResetCoding}
                 disabled={isRunning || isSubmitting || isSubmitted}
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
                 Reset
@@ -3078,7 +3132,7 @@ export default function AssessmentAttempt() {
         </div>
       </header>
       {isCoding ? (
-        <div className={`w-full px-3 py-3 pb-16 md:px-4 lg:h-[calc(100vh-68px)] lg:overflow-hidden ${
+        <div className={`w-full px-3 py-3 pb-16 dark:!bg-gray-950 md:px-4 lg:h-[calc(100vh-68px)] lg:overflow-hidden ${
           cameraStatusLine && !cameraStatusLine.ok
             ? 'bg-[linear-gradient(180deg,#fff5f5_0%,#fffdfd_18%,#ffffff_52%,#fff5f5_100%)]'
             : 'bg-[linear-gradient(180deg,#eef7fb_0%,#f7fbfd_18%,#ffffff_52%,#f7fbfd_100%)]'
@@ -3187,7 +3241,7 @@ export default function AssessmentAttempt() {
           </div>
         </div>
       ) : (
-        <div className={`w-full px-3 py-3 pb-16 md:px-4 lg:h-[calc(100vh-68px)] lg:overflow-hidden ${
+        <div className={`w-full px-3 py-3 pb-16 dark:!bg-gray-950 md:px-4 lg:h-[calc(100vh-68px)] lg:overflow-hidden ${
           cameraStatusLine && !cameraStatusLine.ok
             ? 'bg-[linear-gradient(180deg,#fff5f5_0%,#ffffff_40%,#fff7f7_100%)]'
             : 'bg-[linear-gradient(180deg,rgba(248,250,252,0.95)_0%,rgba(255,255,255,0.98)_40%,rgba(248,250,252,1)_100%)]'
@@ -3196,11 +3250,11 @@ export default function AssessmentAttempt() {
             <section className={`flex min-h-0 flex-1 flex-col overflow-hidden rounded-[22px] bg-white shadow-[0_18px_48px_-36px_rgba(8,145,178,0.22)] dark:bg-gray-900 lg:min-h-0 lg:overflow-y-auto ${
               cameraStatusLine && !cameraStatusLine.ok ? 'border border-rose-300 shadow-[0_0_0_1px_rgba(244,63,94,0.08),0_18px_48px_-36px_rgba(225,29,72,0.34)]' : 'border border-cyan-100 dark:border-gray-700'
             }`}>
-              <div className="border-b border-cyan-100 bg-[linear-gradient(180deg,#f2fbff_0%,#ffffff_100%)] px-6 py-4">
+              <div className="border-b border-cyan-100 bg-[linear-gradient(180deg,#f2fbff_0%,#ffffff_100%)] px-6 py-4 dark:border-gray-700 dark:bg-none dark:bg-gray-900">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-600">
-                      <span className="rounded-md bg-cyan-600 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-white">{currentQuestionTypeLabel} {currentTypeQuestionNumber}/{currentTypeQuestionTotal || 1}</span><span className="rounded-md border border-cyan-100 bg-cyan-50 px-2.5 py-1 text-cyan-700">Marks: {questionMarks}</span><span className="rounded-md border border-slate-200 bg-white px-2.5 py-1">{section?.type === 'mcq' ? 'MCQ' : 'Short Answer'}</span>
+                      <span className="rounded-md bg-cyan-600 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-white">{currentQuestionTypeLabel} {currentTypeQuestionNumber}/{currentTypeQuestionTotal || 1}</span><span className="rounded-md border border-cyan-100 bg-cyan-50 px-2.5 py-1 text-cyan-700 dark:border-cyan-900 dark:bg-cyan-900/20 dark:text-cyan-300">Marks: {questionMarks}</span><span className="rounded-md border border-slate-200 bg-white px-2.5 py-1 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">{section?.type === 'mcq' ? 'MCQ' : 'Short Answer'}</span>
                     </div>
                     <div className="text-lg font-bold leading-snug text-slate-900 dark:text-white md:text-[1.15rem]">
                       {question?.questionText || 'Question'}
@@ -3251,7 +3305,7 @@ export default function AssessmentAttempt() {
                 </div>
               )}
 
-              <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-cyan-100 bg-[linear-gradient(180deg,#ffffff_0%,#f6fbfd_100%)] px-5 py-4 md:px-6 dark:border-gray-700">
+              <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-cyan-100 bg-[linear-gradient(180deg,#ffffff_0%,#f6fbfd_100%)] px-5 py-4 md:px-6 dark:border-gray-700 dark:bg-none dark:bg-gray-900">
                 <button
                   type="button"
                   onClick={goToPrevQuestion}
@@ -3602,7 +3656,7 @@ export default function AssessmentAttempt() {
                   type="button"
                   onClick={() => setValidationStep((prev) => Math.max(1, prev - 1))}
                   disabled={validationStep === 1}
-                  className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 disabled:opacity-50"
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
                 >
                   Back
                 </button>
@@ -3719,9 +3773,31 @@ export default function AssessmentAttempt() {
         </div>
       )}
 
+      {activeSessionConflict && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/85 px-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="active-session-title">
+          <div className="w-full max-w-md rounded-2xl border border-rose-200 bg-white p-6 shadow-2xl dark:border-rose-900 dark:bg-gray-900">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-rose-50 text-rose-600 dark:bg-rose-900/25 dark:text-rose-300">
+              <AlertTriangle className="h-5 w-5" />
+            </div>
+            <h2 id="active-session-title" className="mt-4 text-lg font-bold text-slate-900 dark:text-white">Assessment already active</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-gray-300">
+              This account is currently taking the assessment in another tab, browser, or device. Close the other assessment and wait up to 30 seconds before trying again.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => navigate('/student/assessments')} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:border-gray-700 dark:text-gray-200">
+                Back to assessments
+              </button>
+              <button type="button" onClick={() => window.location.reload()} className="rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-500">
+                Check again
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {phase === 'rules' && !isSubmitted && (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-slate-900/45 px-3 py-3 sm:px-4 sm:py-4">
-          <div className="flex h-[calc(100vh-1rem)] w-full max-w-[min(98vw,1500px)] flex-col overflow-hidden rounded-[26px] border border-sky-100 bg-[linear-gradient(180deg,#ffffff_0%,#f7fbff_100%)] p-4 shadow-[0_42px_120px_-54px_rgba(14,165,233,0.35)] dark:border-gray-700 dark:bg-gray-900 sm:h-[calc(100vh-1.5rem)] sm:p-5">
+          <div className="flex h-[calc(100vh-1rem)] w-full max-w-[min(98vw,1500px)] flex-col overflow-hidden rounded-[26px] border border-sky-100 bg-[linear-gradient(180deg,#ffffff_0%,#f7fbff_100%)] p-4 shadow-[0_42px_120px_-54px_rgba(14,165,233,0.35)] dark:border-gray-700 dark:bg-none dark:bg-gray-900 sm:h-[calc(100vh-1.5rem)] sm:p-5">
             <div className="flex flex-wrap items-start justify-between gap-3 border-b border-sky-100 pb-3">
               <div className="min-w-0 flex-1">
                 <div className="inline-flex items-center gap-2 rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.24em] text-sky-700">
@@ -3735,7 +3811,7 @@ export default function AssessmentAttempt() {
               </div>
 
               <div className="flex items-start gap-3 self-start">
-                <div className="min-w-[124px] rounded-2xl border border-sky-100 bg-white px-3.5 py-2.5 text-center shadow-[0_18px_40px_-30px_rgba(14,165,233,0.35)]">
+                <div className="min-w-[124px] rounded-2xl border border-sky-100 bg-white px-3.5 py-2.5 text-center shadow-[0_18px_40px_-30px_rgba(14,165,233,0.35)] dark:border-gray-700 dark:bg-gray-800">
                   <div className="text-[9px] font-semibold uppercase tracking-[0.22em] text-slate-400">Countdown</div>
                   <div className={`mt-1.5 text-[2rem] font-black tracking-tight ${rulesReady ? 'text-emerald-600' : 'animate-pulse text-sky-600'}`}>
                     {rulesCountdown}s
@@ -3762,7 +3838,7 @@ export default function AssessmentAttempt() {
 
             <div className="mt-3 grid min-h-0 flex-1 gap-3 xl:grid-cols-[0.9fr_1.1fr]">
               <div className="min-h-0 space-y-3 overflow-y-auto pr-1">
-                <div className="rounded-[22px] border border-sky-100 bg-white p-3.5 shadow-[0_20px_48px_-36px_rgba(14,165,233,0.28)]">
+                <div className="rounded-[22px] border border-sky-100 bg-white p-3.5 shadow-[0_20px_48px_-36px_rgba(14,165,233,0.28)] dark:border-gray-700 dark:bg-gray-800">
                   <div className="flex items-center gap-2 text-[13px] font-semibold text-slate-700 dark:text-gray-200">
                     <Layers className="h-4 w-4 text-sky-600" />
                     Assessment Overview
@@ -3774,7 +3850,7 @@ export default function AssessmentAttempt() {
                       ['Total Marks', assessment.totalMarks || 0],
                       ['Duration', `${assessment.duration} minutes`],
                     ].map(([label, value]) => (
-                      <div key={label} className="rounded-xl border border-slate-100 bg-slate-50 px-3.5 py-2.5">
+                      <div key={label} className="rounded-xl border border-slate-100 bg-slate-50 px-3.5 py-2.5 dark:border-gray-700 dark:bg-gray-900">
                         <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">{label}</div>
                         <div className="mt-1.5 text-base font-bold text-slate-900 dark:text-white">{value}</div>
                       </div>
@@ -3782,7 +3858,7 @@ export default function AssessmentAttempt() {
                   </div>
                 </div>
 
-                <div className="rounded-[22px] border border-sky-100 bg-white p-3.5 shadow-[0_20px_48px_-36px_rgba(14,165,233,0.28)]">
+                <div className="rounded-[22px] border border-sky-100 bg-white p-3.5 shadow-[0_20px_48px_-36px_rgba(14,165,233,0.28)] dark:border-gray-700 dark:bg-gray-800">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2 text-[13px] font-semibold text-slate-700 dark:text-gray-200">
                       <Hash className="h-4 w-4 text-sky-600" />
@@ -3803,7 +3879,7 @@ export default function AssessmentAttempt() {
                       const sectionLabel = sec?.sectionName || `Section ${idx + 1}`;
 
                       return (
-                        <div key={`${sectionLabel}-${idx}`} className="rounded-2xl border border-slate-100 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] p-3.5">
+                        <div key={`${sectionLabel}-${idx}`} className="rounded-2xl border border-slate-100 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] p-3.5 dark:border-gray-700 dark:bg-none dark:bg-gray-900">
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
                               <div className="flex items-center gap-2">
@@ -3822,17 +3898,17 @@ export default function AssessmentAttempt() {
                           </div>
 
                           <div className="mt-3 grid gap-2.5 sm:grid-cols-3">
-                            <div className="rounded-xl bg-slate-50 px-3 py-2">
+                            <div className="rounded-xl bg-slate-50 px-3 py-2 dark:bg-gray-800">
                               <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Questions</div>
-                              <div className="mt-1 text-[13px] font-semibold text-slate-800">{questionCount}</div>
+                              <div className="mt-1 text-[13px] font-semibold text-slate-800 dark:text-gray-200">{questionCount}</div>
                             </div>
-                            <div className="rounded-xl bg-slate-50 px-3 py-2">
+                            <div className="rounded-xl bg-slate-50 px-3 py-2 dark:bg-gray-800">
                               <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Marks Each</div>
-                              <div className="mt-1 text-[13px] font-semibold text-slate-800">{marksEach}</div>
+                              <div className="mt-1 text-[13px] font-semibold text-slate-800 dark:text-gray-200">{marksEach}</div>
                             </div>
-                            <div className="rounded-xl bg-slate-50 px-3 py-2">
+                            <div className="rounded-xl bg-slate-50 px-3 py-2 dark:bg-gray-800">
                               <div className="text-[10px] uppercase tracking-[0.16em] text-slate-400">Section Type</div>
-                              <div className="mt-1 text-[13px] font-semibold text-slate-800">{sectionType}</div>
+                              <div className="mt-1 text-[13px] font-semibold text-slate-800 dark:text-gray-200">{sectionType}</div>
                             </div>
                           </div>
                         </div>
@@ -3843,7 +3919,7 @@ export default function AssessmentAttempt() {
               </div>
 
               <div className="min-h-0 space-y-3 overflow-y-auto pr-1">
-                <div className="rounded-[22px] border border-sky-100 bg-white p-3.5 shadow-[0_20px_48px_-36px_rgba(14,165,233,0.28)]">
+                <div className="rounded-[22px] border border-sky-100 bg-white p-3.5 shadow-[0_20px_48px_-36px_rgba(14,165,233,0.28)] dark:border-gray-700 dark:bg-gray-800">
                   <div className="flex items-center gap-2 text-[13px] font-semibold text-slate-700 dark:text-gray-200">
                     <ShieldCheck className="h-4 w-4 text-sky-600" />
                     Rules & Regulations
@@ -3851,13 +3927,13 @@ export default function AssessmentAttempt() {
                   <div className="mt-3 space-y-2 text-[12.5px] text-slate-600 dark:text-gray-300 sm:text-[13px]">
                     {effectiveRules.map((block, idx) => (
                       block.type === 'paragraph' ? (
-                        <div key={`rule-${idx}`} className="rounded-xl border border-slate-100 bg-slate-50 px-3.5 py-2.5 font-medium leading-5 tracking-[0.01em]">
+                        <div key={`rule-${idx}`} className="rounded-xl border border-slate-100 bg-slate-50 px-3.5 py-2.5 font-medium leading-5 tracking-[0.01em] dark:border-gray-700 dark:bg-gray-900">
                           {block.text}
                         </div>
                       ) : (
-                        <div key={`rule-${idx}`} className="flex items-start gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3.5 py-2.5">
+                        <div key={`rule-${idx}`} className="flex items-start gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3.5 py-2.5 dark:border-gray-700 dark:bg-gray-900">
                           <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-sky-500" />
-                          <span className="font-medium leading-5 tracking-[0.01em] text-slate-700">{block.text}</span>
+                          <span className="font-medium leading-5 tracking-[0.01em] text-slate-700 dark:text-gray-300">{block.text}</span>
                         </div>
                       )
                     ))}
@@ -3865,34 +3941,34 @@ export default function AssessmentAttempt() {
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                  <div className="rounded-[22px] border border-sky-100 bg-white p-3.5 shadow-[0_20px_48px_-36px_rgba(14,165,233,0.28)]">
+                  <div className="rounded-[22px] border border-sky-100 bg-white p-3.5 shadow-[0_20px_48px_-36px_rgba(14,165,233,0.28)] dark:border-gray-700 dark:bg-gray-800">
                     <div className="flex items-center gap-2 text-[13px] font-semibold text-slate-700 dark:text-gray-200">
                       <Monitor className="h-4 w-4 text-sky-600" />
                       System Requirements
                     </div>
                     <ul className="mt-3 space-y-2 text-[12.5px] font-medium text-slate-700 dark:text-gray-300">
-                      <li className="rounded-xl bg-slate-50 px-3 py-2">Camera access enabled for monitoring only</li>
-                      <li className="rounded-xl bg-slate-50 px-3 py-2">Keep only one assessment tab open</li>
-                      <li className="rounded-xl bg-slate-50 px-3 py-2">Use a supported desktop browser</li>
+                      <li className="rounded-xl bg-slate-50 px-3 py-2 dark:bg-gray-900">Camera access enabled for monitoring only</li>
+                      <li className="rounded-xl bg-slate-50 px-3 py-2 dark:bg-gray-900">Keep only one assessment tab open</li>
+                      <li className="rounded-xl bg-slate-50 px-3 py-2 dark:bg-gray-900">Use a supported desktop browser</li>
                     </ul>
                   </div>
 
-                  <div className="rounded-[22px] border border-sky-100 bg-white p-3.5 shadow-[0_20px_48px_-36px_rgba(14,165,233,0.28)]">
+                  <div className="rounded-[22px] border border-sky-100 bg-white p-3.5 shadow-[0_20px_48px_-36px_rgba(14,165,233,0.28)] dark:border-gray-700 dark:bg-gray-800">
                     <div className="flex items-center gap-2 text-[13px] font-semibold text-slate-700 dark:text-gray-200">
                       <AlertCircle className="h-4 w-4 text-sky-600" />
                       Important Notes
                     </div>
                     <ul className="mt-3 space-y-2 text-[12.5px] font-medium text-slate-700 dark:text-gray-300">
-                      <li className="rounded-xl bg-slate-50 px-3 py-2">Your progress is auto-saved continuously</li>
-                      <li className="rounded-xl bg-slate-50 px-3 py-2">Camera and AI proctoring status appears in the footer during the test</li>
-                      <li className="rounded-xl bg-slate-50 px-3 py-2">Read every section carefully before the timer begins</li>
+                      <li className="rounded-xl bg-slate-50 px-3 py-2 dark:bg-gray-900">Your progress is auto-saved continuously</li>
+                      <li className="rounded-xl bg-slate-50 px-3 py-2 dark:bg-gray-900">Camera and AI proctoring status appears in the footer during the test</li>
+                      <li className="rounded-xl bg-slate-50 px-3 py-2 dark:bg-gray-900">Read every section carefully before the timer begins</li>
                     </ul>
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-2.5">
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-2.5 dark:border-sky-900/50 dark:bg-sky-900/15">
               <div className={`text-[13px] font-semibold ${rulesReady ? 'text-emerald-700' : 'text-sky-700 animate-pulse'}`}>
                 {rulesReady ? 'Countdown complete. You may begin the assessment now.' : `Starting unlocks in ${rulesCountdown} seconds.`}
               </div>

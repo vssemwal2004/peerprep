@@ -292,7 +292,7 @@ function CodeEditor({
       const pending = pendingCodeCommitRef.current;
       pendingCodeCommitRef.current = null;
       pending?.commit(pending.value);
-    }, 120);
+    }, 450);
   };
 
   const handleClipboardStatus = ({ message } = {}) => {
@@ -485,12 +485,12 @@ function CodeEditor({
   return (
     <div
       ref={rootRef}
-      className="flex h-full min-h-0 flex-col overflow-hidden rounded-[24px] border border-transparent bg-white/90 shadow-[0_14px_40px_-32px_rgba(15,23,42,0.28)] backdrop-blur-sm dark:border-transparent dark:bg-gray-900/88"
+      className="flex h-full min-h-0 flex-col overflow-hidden rounded-[24px] border border-transparent bg-white/90 shadow-[0_14px_40px_-32px_rgba(15,23,42,0.28)] backdrop-blur-sm dark:border-transparent dark:bg-gray-900"
     >
       {showToolbar ? (
         <div
           ref={toolbarRef}
-          className="flex flex-wrap items-center justify-between gap-2 border-b border-transparent bg-slate-50/55 px-4 py-2.5 backdrop-blur-sm dark:border-transparent dark:bg-gray-900/88"
+          className="flex flex-wrap items-center justify-between gap-2 border-b border-transparent bg-slate-50/55 px-4 py-2.5 backdrop-blur-sm dark:border-transparent dark:bg-gray-900"
         >
           <div className="flex flex-wrap items-center gap-3">
             <select

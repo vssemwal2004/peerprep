@@ -13,10 +13,10 @@ export default function AssessmentCard({ assessment, onLaunch }) {
   );
   const canLaunch = isLive && !isCompleted;
   const statusTone = isCompleted
-    ? 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200'
+    ? 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:ring-emerald-800'
     : isLive
-      ? 'bg-emerald-50 text-emerald-700'
-      : 'bg-amber-50 text-amber-700';
+      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/25 dark:text-emerald-300'
+      : 'bg-amber-50 text-amber-700 dark:bg-amber-900/25 dark:text-amber-300';
   const helperText = isCompleted
     ? assessment.submittedAt
       ? `Submitted ${formatDateTime(assessment.submittedAt)}`
@@ -34,17 +34,17 @@ export default function AssessmentCard({ assessment, onLaunch }) {
       whileHover={canLaunch ? { y: -2 } : undefined}
       className={`flex h-full flex-col rounded-xl border p-4 shadow-sm transition-shadow sm:p-5 ${
         isCompleted
-          ? 'border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-white shadow-emerald-900/5'
-          : 'border-slate-200 bg-white hover:shadow-md'
+          ? 'border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-white shadow-emerald-900/5 dark:border-emerald-800 dark:from-emerald-950/45 dark:via-gray-900 dark:to-gray-900'
+          : 'border-slate-200 bg-white hover:shadow-md dark:border-gray-800 dark:bg-gray-900 dark:shadow-black/20 dark:hover:border-gray-700'
       }`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className={`line-clamp-2 text-base font-semibold leading-6 sm:text-lg ${
-            isCompleted ? 'text-emerald-950' : 'text-slate-900'
+            isCompleted ? 'text-emerald-950 dark:text-emerald-100' : 'text-slate-900 dark:text-white'
           }`}>{assessment.title}</h3>
           <div className={`mt-3 flex items-start gap-2 text-sm leading-5 ${
-            isCompleted ? 'text-emerald-700' : 'text-slate-500'
+            isCompleted ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-500 dark:text-gray-400'
           }`}>
             <CalendarDays className="mt-0.5 h-4 w-4 flex-shrink-0" />
             <span>{formatDateTime(assessment.startTime)}</span>
@@ -58,7 +58,7 @@ export default function AssessmentCard({ assessment, onLaunch }) {
       </div>
 
       <div className="mt-auto flex flex-col gap-3 pt-5 sm:flex-row sm:items-center sm:justify-between">
-        <div className={`text-sm leading-5 ${isCompleted ? 'font-medium text-emerald-700' : 'text-slate-500'}`}>
+        <div className={`text-sm leading-5 ${isCompleted ? 'font-medium text-emerald-700 dark:text-emerald-300' : 'text-slate-500 dark:text-gray-400'}`}>
           {helperText}
         </div>
         <button
@@ -70,7 +70,7 @@ export default function AssessmentCard({ assessment, onLaunch }) {
           className={`inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors sm:w-auto ${
             isCompleted
               ? 'cursor-default bg-emerald-600 text-white shadow-sm shadow-emerald-900/10'
-              : 'bg-slate-900 text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500'
+              : 'bg-slate-900 text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 dark:bg-sky-600 dark:hover:bg-sky-500 dark:disabled:bg-gray-800 dark:disabled:text-gray-500'
           }`}
         >
           {isCompleted ? 'Completed' : assessment.hasSubmissionInProgress ? 'Continue' : 'Start'}

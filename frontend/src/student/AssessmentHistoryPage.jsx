@@ -35,22 +35,22 @@ export default function AssessmentHistoryPage() {
             { label: 'Best Score', value: scoredRows.length ? formatScore(bestScore) : 'Hidden', Icon: Trophy, tone: 'amber' },
             { label: 'Reports Ready', value: filteredRows.length, Icon: FileText, tone: 'sky' },
           ].map(({ label, value, Icon, tone }) => (
-            <div key={label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div key={label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
               <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-xl ${
-                tone === 'emerald' ? 'bg-emerald-50 text-emerald-600' : tone === 'amber' ? 'bg-amber-50 text-amber-600' : 'bg-sky-50 text-sky-600'
+                tone === 'emerald' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/25 dark:text-emerald-300' : tone === 'amber' ? 'bg-amber-50 text-amber-600 dark:bg-amber-900/25 dark:text-amber-300' : 'bg-sky-50 text-sky-600 dark:bg-sky-900/25 dark:text-sky-300'
               }`}>
                 <Icon className="h-5 w-5" />
               </div>
-              <div className="text-2xl font-semibold text-slate-900">{value}</div>
-              <div className="mt-1 text-sm text-slate-500">{label}</div>
+              <div className="text-2xl font-semibold text-slate-900 dark:text-white">{value}</div>
+              <div className="mt-1 text-sm text-slate-500 dark:text-gray-400">{label}</div>
             </div>
           ))}
         </div>
 
-        <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-base font-semibold text-slate-900">Completed Assessment Records</h2>
-            <p className="mt-1 text-sm text-slate-500">Open any completed test to review the available report details.</p>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">Completed Assessment Records</h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-gray-400">Open any completed test to review the available report details.</p>
           </div>
           <div className="relative w-full sm:max-w-xs">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -61,21 +61,21 @@ export default function AssessmentHistoryPage() {
                 setPage(1);
               }}
               placeholder="Search assessment"
-              className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-4 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400"
+              className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-4 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:placeholder:text-gray-500"
             />
           </div>
         </div>
 
         {loading ? (
-          <div className="h-96 animate-pulse rounded-2xl border border-slate-200 bg-white" />
+          <div className="h-96 animate-pulse rounded-2xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900" />
         ) : error ? (
-          <div className="rounded-2xl border border-rose-200 bg-white px-6 py-10 text-sm text-rose-600">{error}</div>
+          <div className="rounded-2xl border border-rose-200 bg-white px-6 py-10 text-sm text-rose-600 dark:border-rose-900/60 dark:bg-gray-900 dark:text-rose-300">{error}</div>
         ) : (
           <>
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
               <div className="overflow-x-auto">
                 <table className="min-w-full">
-                  <thead className="border-b border-slate-200 bg-slate-50">
+                  <thead className="border-b border-slate-200 bg-slate-50 dark:border-gray-800 dark:bg-gray-950">
                     <tr>
                       <th className="px-5 py-4 text-left text-xs font-semibold text-slate-500">Assessment Name</th>
                       <th className="px-5 py-4 text-left text-xs font-semibold text-slate-500">Completed On</th>
@@ -89,24 +89,24 @@ export default function AssessmentHistoryPage() {
                       <tr
                         key={row.id}
                         onClick={() => setSelectedReport(row)}
-                        className="cursor-pointer border-b border-slate-100 transition-colors hover:bg-slate-50"
+                        className="cursor-pointer border-b border-slate-100 transition-colors hover:bg-slate-50 dark:border-gray-800 dark:hover:bg-gray-800/70"
                       >
                         <td className="px-5 py-4">
-                          <div className="text-sm font-semibold text-slate-900">{row.assessmentName}</div>
+                          <div className="text-sm font-semibold text-slate-900 dark:text-white">{row.assessmentName}</div>
                           <div className="mt-1 text-xs text-slate-500">{row.assessmentType || 'mixed'} assessment</div>
                         </td>
-                        <td className="px-5 py-4 text-sm text-slate-700">
+                        <td className="px-5 py-4 text-sm text-slate-700 dark:text-gray-300">
                           <span className="inline-flex items-center gap-2">
                             <CalendarDays className="h-4 w-4 text-slate-400" />
                             {formatShortDate(row.submittedAt || row.dateAttempted)}
                           </span>
                         </td>
-                        <td className="px-5 py-4 text-sm font-semibold text-slate-800">
+                        <td className="px-5 py-4 text-sm font-semibold text-slate-800 dark:text-gray-200">
                           {row.score === null || row.score === undefined ? 'Hidden' : `${formatScore(row.score)}${row.totalMarks ? ` / ${formatScore(row.totalMarks)}` : ''}`}
                         </td>
-                        <td className="px-5 py-4 text-sm text-slate-700">{formatSeconds(row.timeTakenSec)}</td>
+                        <td className="px-5 py-4 text-sm text-slate-700 dark:text-gray-300">{formatSeconds(row.timeTakenSec)}</td>
                         <td className="px-5 py-4 text-sm">
-                          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-100">
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-100 dark:bg-emerald-900/25 dark:text-emerald-300 dark:ring-emerald-800">
                             <CheckCircle2 className="h-3.5 w-3.5" />
                             {row.status || 'Completed'}
                           </span>
@@ -118,7 +118,7 @@ export default function AssessmentHistoryPage() {
                           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
                             <FileText className="h-6 w-6" />
                           </div>
-                          <div className="mt-3 text-sm font-semibold text-slate-700">No completed assessments found</div>
+                          <div className="mt-3 text-sm font-semibold text-slate-700 dark:text-gray-300">No completed assessments found</div>
                           <div className="mt-1 text-sm text-slate-500">Submitted tests will appear here after completion.</div>
                         </td>
                       </tr>
@@ -129,14 +129,14 @@ export default function AssessmentHistoryPage() {
             </div>
 
             {!pagedRows.length ? null : (
-              <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm">
+              <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm dark:border-gray-800 dark:bg-gray-900">
                 <span className="text-slate-500">Page {page} of {totalPages}</span>
                 <div className="flex gap-2">
                   <button
                     type="button"
                     onClick={() => setPage((prev) => Math.max(1, prev - 1))}
                     disabled={page === 1}
-                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-slate-600 disabled:opacity-50"
+                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-slate-600 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
                   >
                     Prev
                   </button>
@@ -144,7 +144,7 @@ export default function AssessmentHistoryPage() {
                     type="button"
                     onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
                     disabled={page === totalPages}
-                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-slate-600 disabled:opacity-50"
+                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-slate-600 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
                   >
                     Next
                   </button>

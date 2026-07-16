@@ -161,7 +161,7 @@ export default function MonacoCodeEditor({
           codeLens: false,
           links: false,
           colorDecorators: false,
-          contextmenu: false,
+          contextmenu: !internalClipboardOnlyRef.current,
           hover: { enabled: false },
           parameterHints: { enabled: false },
           inlayHints: { enabled: 'off' },
@@ -284,6 +284,10 @@ export default function MonacoCodeEditor({
   useEffect(() => {
     editorRef.current?.updateOptions({ readOnly, domReadOnly: readOnly });
   }, [readOnly]);
+
+  useEffect(() => {
+    editorRef.current?.updateOptions({ contextmenu: !internalClipboardOnly });
+  }, [internalClipboardOnly]);
 
   const reportClipboardStatus = (status, message) => {
     onClipboardStatusRef.current?.({ status, message });

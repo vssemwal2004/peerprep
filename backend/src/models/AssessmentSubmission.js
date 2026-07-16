@@ -70,6 +70,8 @@ const assessmentSubmissionSchema = new mongoose.Schema({
   isLate: { type: Boolean, default: false },
   lastIp: { type: String },
   lastUserAgent: { type: String },
+  activeSessionId: { type: String, default: '' },
+  activeSessionHeartbeatAt: { type: Date },
   evaluationStatus: {
     type: String,
     enum: ['completed', 'processing', 'failed'],
@@ -83,6 +85,7 @@ assessmentSubmissionSchema.index({ assessmentId: 1, studentId: 1 }, { unique: tr
 assessmentSubmissionSchema.index({ assessmentId: 1, submittedAt: -1 });
 assessmentSubmissionSchema.index({ studentId: 1, submittedAt: -1 });
 assessmentSubmissionSchema.index({ status: 1, submittedAt: -1 });
+assessmentSubmissionSchema.index({ studentId: 1, status: 1, activeSessionHeartbeatAt: -1 });
 
 export default mongoose.model('AssessmentSubmission', assessmentSubmissionSchema);
 

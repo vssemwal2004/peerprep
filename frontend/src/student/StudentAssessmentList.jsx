@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import AssessmentModuleLayout from './assessment-dashboard/AssessmentModuleLayout';
 import AssessmentCard from './assessment-dashboard/AssessmentCard';
 import AssessmentLaunchModal from './assessment-dashboard/AssessmentLaunchModal';
@@ -8,7 +7,7 @@ import { api } from '../utils/api';
 
 function EmptyState({ text }) {
   return (
-    <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-12 text-center text-sm text-slate-500">
+    <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-12 text-center text-sm text-slate-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400">
       {text}
     </div>
   );
@@ -17,14 +16,13 @@ function EmptyState({ text }) {
 function Section({ title, children }) {
   return (
     <section className="space-y-4">
-      <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+      <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{title}</h2>
       {children}
     </section>
   );
 }
 
 export default function StudentAssessmentList() {
-  const navigate = useNavigate();
   const { dashboard, loading, error } = useStudentAssessmentDashboardData();
   const [launchAssessment, setLaunchAssessment] = useState(null);
 
@@ -32,11 +30,11 @@ export default function StudentAssessmentList() {
     <AssessmentModuleLayout title="Your Assessments">
       {loading ? (
         <div className="space-y-4">
-          <div className="h-56 animate-pulse rounded-2xl border border-slate-200 bg-white" />
-          <div className="h-56 animate-pulse rounded-2xl border border-slate-200 bg-white" />
+          <div className="h-56 animate-pulse rounded-2xl border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900" />
+          <div className="h-56 animate-pulse rounded-2xl border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900" />
         </div>
       ) : error ? (
-        <div className="rounded-2xl border border-rose-200 bg-white px-6 py-10 text-sm text-rose-600">{error}</div>
+        <div className="rounded-2xl border border-rose-200 bg-white px-6 py-10 text-sm text-rose-600 dark:border-rose-900/60 dark:bg-gray-900 dark:text-rose-300">{error}</div>
       ) : (
         <div className="space-y-8">
           <Section title="Ongoing Assessments">
@@ -74,9 +72,12 @@ export default function StudentAssessmentList() {
           if (!launchAssessment) return;
           await api.startStudentAssessment(launchAssessment._id, password);
         }}
-        onStart={() => {
+        onStart={(testWindow) => {
           if (!launchAssessment) return;
-          navigate(`/student/assessment/${launchAssessment._id}`);
+          const assessmentUrl = new URL(`/student/assessment/${launchAssessment._id}`, window.location.origin);
+          testWindow.location.replace(assessmentUrl.href);
+          testWindow.opener = null;
+          setLaunchAssessment(null);
         }}
       />
     </AssessmentModuleLayout>
