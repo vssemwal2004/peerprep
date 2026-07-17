@@ -2137,8 +2137,29 @@ export async function addAssessmentEligibleStudents(req, res) {
     const studentIds = Array.isArray(req.body?.studentIds)
       ? [...new Set(req.body.studentIds.map((value) => String(value || '').trim()).filter(Boolean))]
       : [];
+    const studentRefs = Array.isArray(req.body?.students) ? req.body.students : [];
+    const refObjectIds = [];
+    const refStudentIds = [];
+    const refEmails = [];
 
-    if (!studentIds.length) {
+    studentRefs.forEach((entry) => {
+      if (!entry || typeof entry !== 'object') return;
+      const objectId = String(entry._id || entry.id || '').trim();
+      const studentCode = String(entry.studentId || '').trim();
+      const email = String(entry.email || '').trim().toLowerCase();
+      if (objectId) refObjectIds.push(objectId);
+      if (studentCode) refStudentIds.push(studentCode);
+      if (email) refEmails.push(email);
+    });
+
+    const selectedObjectIds = [...new Set([...studentIds, ...refObjectIds].filter((value) => mongoose.Types.ObjectId.isValid(value)))];
+    const selectedStudentIds = [...new Set([
+      ...studentIds.filter((value) => !mongoose.Types.ObjectId.isValid(value)),
+      ...refStudentIds,
+    ].filter(Boolean))];
+    const selectedEmails = [...new Set(refEmails.filter(Boolean))];
+
+    if (!selectedObjectIds.length && !selectedStudentIds.length && !selectedEmails.length) {
       return res.status(400).json({ error: 'Select at least one student to add.' });
     }
 
@@ -2151,7 +2172,15 @@ export async function addAssessmentEligibleStudents(req, res) {
       return res.status(400).json({ error: 'Edit the draft target list before publishing.' });
     }
 
-    const students = await User.find({ _id: { $in: studentIds }, role: 'student' })
+    const lookup = [];
+    if (selectedObjectIds.length) lookup.push({ _id: { $in: selectedObjectIds } });
+    if (selectedStudentIds.length) lookup.push({ studentId: { $in: selectedStudentIds } });
+    if (selectedEmails.length) lookup.push({ email: { $in: selectedEmails } });
+
+    const students = await User.find({
+      role: 'student',
+      $or: lookup,
+    })
       .select('_id name email studentId')
       .lean();
     if (!students.length) {

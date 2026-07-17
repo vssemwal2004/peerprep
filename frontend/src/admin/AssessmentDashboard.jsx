@@ -377,6 +377,9 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
 
   const assignedIds = useMemo(() => new Set(students.map((student) => String(student._id))), [students]);
   const selectedCandidateIdSet = useMemo(() => new Set(selectedCandidateIds), [selectedCandidateIds]);
+  const selectedCandidateStudents = useMemo(() => (
+    allStudents.filter((student) => selectedCandidateIdSet.has(String(student._id || student.id || student.studentId || student.email || '')))
+  ), [allStudents, selectedCandidateIdSet]);
 
   const candidateStudents = useMemo(() => {
     const query = candidateSearch.trim().toLowerCase();
@@ -463,7 +466,7 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
     }
     setAddingStudents(true);
     try {
-      const result = await api.addAssessmentEligibleStudents(assessment._id, selectedCandidateIds);
+      const result = await api.addAssessmentEligibleStudents(assessment._id, selectedCandidateIds, selectedCandidateStudents);
       toast.success(`Added ${result.addedCount || selectedCandidateIds.length} student${(result.addedCount || selectedCandidateIds.length) === 1 ? '' : 's'} to assessment.`);
       setSelectedCandidateIds([]);
       setAddMode(false);
@@ -564,7 +567,7 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
               ) : (
                 <div className="grid gap-2 p-3 md:grid-cols-2 xl:grid-cols-3">
                   {candidateStudents.map((student) => {
-                    const studentId = String(student._id);
+                    const studentId = String(student._id || student.id || student.studentId || student.email || '');
                     const selected = selectedCandidateIdSet.has(studentId);
                     return (
                       <button
