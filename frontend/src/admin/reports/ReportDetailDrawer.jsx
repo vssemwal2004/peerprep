@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { X, Layers, LayoutList, Target, Timer, Zap, ShieldAlert, Clock, BookOpen, ChevronDown, ChevronUp } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { X, Layers, LayoutList, Target, Timer, Zap, ShieldAlert, BookOpen, ChevronDown, ChevronUp, Code2, CheckCircle2, XCircle, LoaderCircle } from 'lucide-react';
 import { formatDateTime, formatDuration } from './ReportComponents';
 import { DonutChart, HorizontalProgress } from './ReportCharts';
 import AIProctoringReportPanel from '../../features/assessment/admin/components/AIProctoringReportPanel';
@@ -53,29 +53,119 @@ function SectionBreakdown({ sections }) {
 }
 
 function QuestionPerformance({ questions }) {
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [questions]);
+
+  const selected = questions[Math.min(selectedIndex, Math.max(0, questions.length - 1))];
+  const isCoding = selected?.type === 'coding';
+  const isPending = selected?.status === 'pending';
+  const testSummary = selected?.testSummary || {};
+  const verdict = selected?.executionVerdict || (selected?.isCorrect ? 'AC' : isPending ? 'PENDING' : selected?.isSkipped ? 'SKIPPED' : 'WA');
+  const verdictStyle = selected?.isCorrect
+    ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300'
+    : isPending
+      ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300'
+      : selected?.isSkipped
+        ? 'border-slate-200 bg-slate-50 text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'
+        : 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300';
+
+  const answerText = selected?.studentAnswer === undefined || selected?.studentAnswer === null || selected?.studentAnswer === ''
+    ? 'No answer submitted'
+    : typeof selected.studentAnswer === 'string'
+      ? selected.studentAnswer
+      : JSON.stringify(selected.studentAnswer, null, 2);
+
   return (
-    <div className="space-y-2">
-      {questions.map((q, idx) => {
-        const isCorrect = q.isCorrect;
-        const isSkipped = q.isSkipped;
-        const border = isCorrect ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-900/10' : isSkipped ? 'border-slate-200 bg-slate-50 dark:border-gray-700 dark:bg-gray-800' : 'border-rose-200 bg-rose-50 dark:border-rose-800 dark:bg-rose-900/10';
-        const numColor = isCorrect ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : isSkipped ? 'bg-slate-100 text-slate-600 dark:bg-gray-700 dark:text-gray-300' : 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300';
-        const scoreColor = isCorrect ? 'text-emerald-700 dark:text-emerald-300' : isSkipped ? 'text-slate-500 dark:text-gray-400' : 'text-rose-700 dark:text-rose-300';
-        return (
-          <div key={idx} className={`flex items-center justify-between rounded-xl border px-4 py-3 ${border}`}>
-            <div className="flex items-center gap-3 min-w-0">
-              <div className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-[10px] font-bold ${numColor}`}>{idx + 1}</div>
-              <div className="max-w-[240px] truncate text-xs font-medium text-slate-700 dark:text-gray-200" title={q.questionText}>{q.questionText || 'Question'}</div>
+    <div className="grid min-h-[520px] overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900 sm:grid-cols-[220px_minmax(0,1fr)]">
+      <div className="max-h-56 overflow-y-auto border-b border-slate-200 bg-slate-50/70 p-2 dark:border-gray-700 dark:bg-gray-950/40 sm:max-h-[calc(100vh-15rem)] sm:border-b-0 sm:border-r">
+        <div className="mb-2 px-2 text-[10px] font-semibold uppercase text-slate-400">{questions.length} questions</div>
+        <div className="space-y-1">
+          {questions.map((question, index) => {
+            const pending = question.status === 'pending';
+            const Icon = question.isCorrect ? CheckCircle2 : pending ? LoaderCircle : question.isSkipped ? BookOpen : XCircle;
+            const iconColor = question.isCorrect ? 'text-emerald-600' : pending ? 'text-amber-600' : question.isSkipped ? 'text-slate-400' : 'text-rose-600';
+            return (
+              <button
+                key={`${question.sectionIndex}-${question.questionIndex}-${index}`}
+                type="button"
+                onClick={() => setSelectedIndex(index)}
+                className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-2 text-left transition-colors ${selectedIndex === index ? 'border-sky-300 bg-sky-50 dark:border-sky-700 dark:bg-sky-900/20' : 'border-transparent hover:bg-white dark:hover:bg-gray-800'}`}
+              >
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-white text-[11px] font-bold text-slate-700 shadow-sm dark:bg-gray-800 dark:text-gray-200">{index + 1}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-xs font-semibold text-slate-800 dark:text-gray-100">{question.questionText || `Question ${index + 1}`}</span>
+                  <span className="mt-0.5 block text-[10px] capitalize text-slate-400">{question.type || 'question'}</span>
+                </span>
+                <Icon className={`h-4 w-4 shrink-0 ${iconColor} ${pending ? 'animate-spin' : ''}`} />
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {selected && (
+        <div className="min-w-0 space-y-4 p-4 sm:p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[10px] font-semibold uppercase text-slate-400">{selected.sectionName || 'Assessment'} / Question {selectedIndex + 1}</div>
+              <h4 className="mt-1 text-sm font-semibold leading-6 text-slate-900 dark:text-white">{selected.questionText || 'Question'}</h4>
             </div>
-            <div className="flex items-center gap-3 flex-shrink-0">
-              <span className="text-[10px] text-slate-400 dark:text-gray-500">{q.timeSpentSec}s</span>
-              <span className={`text-xs font-bold ${scoreColor}`}>
-                {isCorrect ? '+' : isSkipped ? '0' : '-'}{q.marksObtained ?? 0}
-              </span>
-            </div>
+            <span className={`rounded-md border px-2 py-1 text-[11px] font-bold ${verdictStyle}`}>{verdict}</span>
           </div>
-        );
-      })}
+
+          {isCoding ? (
+            <>
+              <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                {[
+                  ['Language', selected.language || '-'],
+                  ['Tests', testSummary.total ? `${testSummary.passed || 0} / ${testSummary.total}` : verdict === 'AC' ? 'Passed' : '-'],
+                  ['Runtime', Number(testSummary.time) > 0 ? `${testSummary.time}s` : '-'],
+                  ['Memory', Number(testSummary.memory) > 0 ? `${testSummary.memory} KB` : '-'],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800">
+                    <div className="text-[10px] font-semibold uppercase text-slate-400">{label}</div>
+                    <div className="mt-1 truncate text-xs font-bold text-slate-800 dark:text-gray-100">{value}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950">
+                <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
+                  <span className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-300"><Code2 className="h-3.5 w-3.5" /> Submitted code</span>
+                  <span className="text-[10px] uppercase text-slate-500">{selected.language || 'text'}</span>
+                </div>
+                <pre className="max-h-[380px] overflow-auto p-4 text-xs leading-5 text-slate-100"><code>{selected.sourceCode || 'No code submitted'}</code></pre>
+              </div>
+
+              {(testSummary.error || testSummary.failedTestCase) && (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-200">
+                  <div className="font-bold">Execution details</div>
+                  {testSummary.error && <pre className="mt-2 overflow-auto whitespace-pre-wrap font-mono">{testSummary.error}</pre>}
+                  {testSummary.failedTestCase && (
+                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                      <div><span className="font-semibold">Expected:</span><pre className="mt-1 whitespace-pre-wrap font-mono">{testSummary.failedTestCase.expected || testSummary.failedTestCase.expectedOutput || '-'}</pre></div>
+                      <div><span className="font-semibold">Received:</span><pre className="mt-1 whitespace-pre-wrap font-mono">{testSummary.failedTestCase.actual || testSummary.failedTestCase.actualOutput || '-'}</pre></div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-gray-700 dark:bg-gray-800">
+              <div className="text-[10px] font-semibold uppercase text-slate-400">Student answer</div>
+              <pre className="mt-2 whitespace-pre-wrap text-sm text-slate-800 dark:text-gray-100">{answerText}</pre>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between border-t border-slate-200 pt-3 text-xs dark:border-gray-700">
+            <span className="text-slate-500 dark:text-gray-400">Score</span>
+            <span className="font-bold text-slate-900 dark:text-white">{selected.marksObtained ?? 0} / {selected.maxMarks ?? 0}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -123,7 +213,7 @@ export default function ReportDetailDrawer({ student, loading, data, onClose, op
   return (
     <div className="fixed inset-0 z-[80] flex justify-end">
       <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative flex h-full w-full max-w-xl flex-col border-l border-slate-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900 sm:max-w-2xl">
+      <div className="relative flex h-full w-full max-w-5xl flex-col border-l border-slate-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900">
         {/* Header */}
         <div className="flex items-start justify-between border-b border-slate-200 px-6 py-5 dark:border-gray-700">
           <div className="flex items-center gap-3">

@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import Assessment from '../models/Assessment.js';
 import AssessmentSubmission from '../models/AssessmentSubmission.js';
 import Problem from '../models/Problem.js';
+import Submission from '../models/Submission.js';
 import User from '../models/User.js';
 import { isEmailFeatureEnabled, sendOnboardingEmail, sendAssessmentNotificationEmail, sendAssessmentInvitationEmail } from '../utils/mailer.js';
 import { createNotification, createNotifications } from '../services/notificationService.js';
@@ -636,6 +637,97 @@ function getQuestionExplanation(question = {}) {
   return explainedCase?.explanation || '';
 }
 
+function getAssessmentQuestionProblemId(question = {}) {
+  return question?.problemId
+    || question?.coding?.problemId
+    || question?.problemDataSnapshot?._id
+    || question?.coding?.problemData?._id
+    || question?.problemData?._id
+    || null;
+}
+
+async function reconcileAssessmentCodingAnswers(assessment = {}, submission = {}) {
+  const codingQuestions = [];
+  (assessment.sections || []).forEach((section, sectionIndex) => {
+    (section.questions || []).forEach((question, questionIndex) => {
+      if ((question?.type || section?.type) !== 'coding') return;
+      const problemId = getAssessmentQuestionProblemId(question);
+      if (problemId) codingQuestions.push({ sectionIndex, questionIndex, problemId: String(problemId) });
+    });
+  });
+
+  if (!codingQuestions.length || !submission?.studentId || !assessment?._id) return submission;
+
+  const verifiedSubmissions = await Submission.find({
+    assessmentId: assessment._id,
+    user: submission.studentId,
+    problem: { $in: codingQuestions.map((item) => item.problemId) },
+    mode: 'submit',
+    status: { $in: ['AC', 'WA', 'TLE', 'RE', 'CE'] },
+  }).sort({ completedAt: -1, createdAt: -1 }).lean();
+
+  const latestByProblem = new Map();
+  verifiedSubmissions.forEach((entry) => {
+    const key = String(entry.problem);
+    if (!latestByProblem.has(key)) latestByProblem.set(key, entry);
+  });
+
+  const answers = (submission.answers || []).map((answer) => ({ ...answer }));
+  let changed = false;
+
+  codingQuestions.forEach(({ sectionIndex, questionIndex, problemId }) => {
+    const verified = latestByProblem.get(problemId);
+    if (!verified) return;
+
+    const answerIndex = answers.findIndex((answer) => (
+      Number(answer.sectionIndex) === sectionIndex && Number(answer.questionIndex) === questionIndex
+    ));
+    if (answerIndex < 0) return;
+
+    const answer = answers[answerIndex];
+    const currentVerdict = getCodingAnswerVerdict(answer);
+    const verifiedAt = new Date(verified.completedAt || verified.updatedAt || verified.createdAt || 0).getTime();
+    const evaluatedAt = new Date(answer.lastEvaluatedAt || 0).getTime();
+    const shouldReconcile = ['PENDING', ''].includes(currentVerdict) || verifiedAt > evaluatedAt;
+    if (!shouldReconcile) return;
+
+    answers[answerIndex] = {
+      ...answer,
+      language: verified.language || answer.language,
+      code: verified.sourceCode || answer.code,
+      executionStatus: 'completed',
+      executionVerdict: verified.status,
+      executionResult: {
+        status: verified.status === 'AC' ? 'Accepted' : verified.status,
+        passed: Number(verified.passedTestCases || 0),
+        total: Number(verified.totalTestCases || 0),
+        time: Number(((verified.executionTimeMs || 0) / 1000).toFixed(3)),
+        memory: Number(verified.memoryUsedKb || 0),
+        error: verified.compileOutput || verified.stderr || '',
+        failedTestCase: verified.failedCase || undefined,
+      },
+      lastEvaluatedAt: verified.completedAt || verified.updatedAt || verified.createdAt,
+    };
+    changed = true;
+  });
+
+  if (!changed) return submission;
+
+  const scoring = scoreAssessment(assessment, answers);
+  await AssessmentSubmission.updateOne(
+    { _id: submission._id },
+    {
+      $set: {
+        answers,
+        score: scoring.score,
+        maxMarks: scoring.maxMarks,
+        accuracy: scoring.accuracy,
+      },
+    },
+  );
+  return { ...submission, answers, ...scoring };
+}
+
 function buildStudentResultPermissions(assessment = {}, submission = {}, now = new Date()) {
   const settings = normalizeAssessmentSettings(assessment.settings || {});
   const submittedAt = submission?.submittedAt ? new Date(submission.submittedAt) : null;
@@ -693,7 +785,8 @@ function buildQuestionWiseReport(assessment = {}, submission = {}, permissions =
         sectionIndex,
         questionIndex,
         sectionName: section.sectionName || `Section ${sectionIndex + 1}`,
-        questionText: question?.questionText || `Question ${questionIndex + 1}`,
+        questionText: question?.questionText || question?.problemDataSnapshot?.title || question?.coding?.problemData?.title || `Question ${questionIndex + 1}`,
+        difficulty: question?.difficulty || question?.problemDataSnapshot?.difficulty || question?.coding?.problemData?.difficulty || '',
         type: question?.type || section?.type || 'mcq',
         timeSpentSec: 0,
         status: result === 'wrong' ? 'incorrect' : result,
@@ -707,6 +800,22 @@ function buildQuestionWiseReport(assessment = {}, submission = {}, permissions =
       if (permissions.canViewStudentAnswers) {
         row.studentAnswer = answer?.answer ?? answer?.code ?? '';
         row.selectedOptionIndex = Number.isFinite(selectedIndex) ? selectedIndex : null;
+        if ((question?.type || section?.type) === 'coding') {
+          const executionResult = answer?.executionResult || {};
+          row.language = answer?.language || '';
+          row.sourceCode = answer?.code || '';
+          row.executionStatus = answer?.executionStatus || '';
+          row.executionVerdict = getCodingAnswerVerdict(answer);
+          row.lastEvaluatedAt = answer?.lastEvaluatedAt || null;
+          row.testSummary = {
+            passed: Number(executionResult.passed ?? executionResult.passedTestCases ?? 0),
+            total: Number(executionResult.total ?? executionResult.totalTestCases ?? 0),
+            time: Number(executionResult.time ?? 0),
+            memory: Number(executionResult.memory ?? executionResult.memoryUsedKb ?? 0),
+            error: executionResult.error || executionResult.compileOutput || executionResult.stderr || '',
+            failedTestCase: executionResult.failedTestCase || executionResult.failedCase || null,
+          };
+        }
       }
       if (permissions.canViewCorrectAnswers) {
         row.correctAnswer = question?.expectedAnswer || (Number.isFinite(correctIndex) ? question.options?.[correctIndex] : '');
@@ -3667,7 +3776,7 @@ export async function getStudentAssessmentReport(req, res) {
       return res.status(400).json({ error: 'Invalid submissionId' });
     }
 
-    const submission = await AssessmentSubmission.findById(submissionId).lean();
+    let submission = await AssessmentSubmission.findById(submissionId).lean();
     if (!submission) {
       return res.status(404).json({ error: 'Submission not found' });
     }
@@ -3680,6 +3789,8 @@ export async function getStudentAssessmentReport(req, res) {
     if (req.user?.role === 'coordinator' && String(assessment.createdBy) !== String(req.user._id)) {
       return res.status(403).json({ error: 'Not authorized to view this report.' });
     }
+
+    submission = await reconcileAssessmentCodingAnswers(assessment, submission);
 
     const analytics = buildAssessmentAttemptAnalytics(assessment, submission);
     const sectionBreakdown = buildSectionBreakdownWithScores(assessment, submission);
