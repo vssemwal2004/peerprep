@@ -452,6 +452,7 @@ export const api = {
   deleteAssessment: (id) => request(`/admin/assessment/${id}`, { method: 'DELETE' }),
   resetAssessmentSubmissions: (id) => request(`/admin/assessment/${id}/reset-submissions`, { method: 'POST' }),
   listAssessmentEligibleStudents: (id) => request(`/admin/assessment/${id}/eligible-students`, { skipCache: true }),
+  addAssessmentEligibleStudents: (id, studentIds = []) => request(`/admin/assessment/${id}/students`, { method: 'POST', body: { studentIds } }),
   resetAssessmentStudentSubmission: (id, studentId) => request(`/admin/assessment/${id}/students/${studentId}/reset-submission`, { method: 'POST' }),
   removeAssessmentEligibleStudent: (id, studentId) => request(`/admin/assessment/${id}/students/${studentId}`, { method: 'DELETE' }),
   sendAssessmentInvitations: (id, password = '') => request(`/admin/assessment/${id}/send-invitations`, { method: 'POST', body: { password } }),

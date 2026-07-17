@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Redo2, Undo2 } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Edit3, Eye, MoreVertical, Power, Redo2, Trash2, Undo2 } from 'lucide-react';
 import { api } from '../utils/api';
 
 const HISTORY_LIMIT = 50;
@@ -33,6 +34,135 @@ const badgeClass = (isSystem) => (
     ? 'bg-slate-100 text-slate-600 border border-slate-200'
     : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
 );
+
+const enabledBadgeClass = (isEnabled) => (
+  isEnabled === false
+    ? 'border-amber-200 bg-amber-50 text-amber-700'
+    : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+);
+
+function TemplateActionsMenu({ template, onView, onEdit, onToggleEnabled, onDelete }) {
+  const [open, setOpen] = useState(false);
+  const [menuStyle, setMenuStyle] = useState(null);
+  const wrapperRef = useRef(null);
+  const buttonRef = useRef(null);
+  const menuRef = useRef(null);
+  const isEnabled = template.isEnabled !== false;
+
+  useEffect(() => {
+    const handler = (event) => {
+      if (wrapperRef.current?.contains(event.target) || menuRef.current?.contains(event.target)) return;
+      setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  useEffect(() => {
+    if (!open) {
+      setMenuStyle(null);
+      return undefined;
+    }
+
+    const updatePosition = () => {
+      const button = buttonRef.current;
+      if (!button) return;
+      const rect = button.getBoundingClientRect();
+      const width = 232;
+      const height = menuRef.current?.getBoundingClientRect().height || 220;
+      const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+      const left = Math.max(8, Math.min(rect.right - width, viewportWidth - width - 8));
+      const opensUpward = rect.bottom + 8 + height > viewportHeight - 8;
+      const top = opensUpward ? Math.max(8, rect.top - height - 8) : rect.bottom + 8;
+      setMenuStyle({ left, top, width });
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [open]);
+
+  const action = (icon, label, onClick, className = '') => (
+    <button
+      type="button"
+      onClick={() => {
+        setOpen(false);
+        onClick(template);
+      }}
+      className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs font-semibold transition-colors hover:bg-slate-50 dark:hover:bg-gray-800 ${className || 'text-slate-700 dark:text-slate-200'}`}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+
+  const menu = (
+    open && menuStyle ? (
+      <div
+        ref={menuRef}
+        style={menuStyle}
+        className="fixed z-[90] overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-2xl ring-1 ring-slate-950/5 dark:border-gray-700 dark:bg-gray-900"
+      >
+        {action(<Eye className="h-3.5 w-3.5" />, 'View Template', onView)}
+        {action(<Edit3 className="h-3.5 w-3.5" />, 'Edit Template', onEdit)}
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(false);
+            onToggleEnabled(template);
+          }}
+          className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-gray-800"
+        >
+          <span className="inline-flex items-center gap-2.5">
+            <Power className="h-3.5 w-3.5" />
+            {isEnabled ? 'Turn Off' : 'Turn On'}
+          </span>
+          <span className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${isEnabled ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-gray-700'}`}>
+            <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${isEnabled ? 'translate-x-4' : 'translate-x-1'}`} />
+          </span>
+        </button>
+        <div className="my-1 h-px bg-slate-100 dark:bg-gray-800" />
+        <button
+          type="button"
+          onClick={() => {
+            if (template.isSystem) return;
+            setOpen(false);
+            onDelete(template);
+          }}
+          disabled={template.isSystem}
+          className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs font-semibold transition-colors ${
+            template.isSystem
+              ? 'cursor-not-allowed text-slate-300 dark:text-gray-600'
+              : 'text-rose-600 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-900/20'
+          }`}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          Delete
+        </button>
+      </div>
+    ) : null
+  );
+
+  return (
+    <div ref={wrapperRef} className="inline-flex justify-end">
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+        aria-label="Template actions"
+      >
+        <MoreVertical className="h-4 w-4" />
+      </button>
+      {createPortal(menu, document.body)}
+    </div>
+  );
+}
 
 export default function EmailTemplates() {
   const [templates, setTemplates] = useState([]);
@@ -296,6 +426,19 @@ export default function EmailTemplates() {
     }
   };
 
+  const handleToggleEnabled = async (tpl) => {
+    try {
+      const updated = await api.updateEmailTemplate(tpl._id, {
+        isEnabled: tpl.isEnabled === false,
+      });
+      setTemplates((prev) => prev.map((t) => (t._id === updated._id ? updated : t)));
+      if (viewing?._id === updated._id) setViewing(updated);
+      if (editing?._id === updated._id) setEditing(updated);
+    } catch (err) {
+      setError(err?.message || 'Failed to update template status');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 px-6 py-6 dark:bg-gray-900">
       <div className="mx-auto flex max-w-6xl flex-col gap-6">
@@ -348,8 +491,13 @@ export default function EmailTemplates() {
                     <tr key={tpl._id} className="text-slate-700 dark:text-slate-200">
                       <td className="px-5 py-4">
                         <div className="font-semibold text-slate-900 dark:text-white">{tpl.name}</div>
-                        <div className={`mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${badgeClass(tpl.isSystem)}`}>
-                          {tpl.isSystem ? 'System' : 'Custom'}
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${badgeClass(tpl.isSystem)}`}>
+                            {tpl.isSystem ? 'System' : 'Custom'}
+                          </span>
+                          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${enabledBadgeClass(tpl.isEnabled !== false)}`}>
+                            {tpl.isEnabled === false ? 'Off' : 'On'}
+                          </span>
                         </div>
                       </td>
                       <td className="px-5 py-4 text-slate-600 dark:text-slate-300">{tpl.subject}</td>
@@ -361,25 +509,13 @@ export default function EmailTemplates() {
                       <td className="px-5 py-4 text-slate-500 dark:text-slate-400">{formatDate(tpl.updatedAt)}</td>
                       <td className="px-5 py-4">
                         <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => openView(tpl)}
-                            className="rounded-lg border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-slate-200 dark:hover:bg-gray-800"
-                          >
-                            View
-                          </button>
-                          <button
-                            onClick={() => openEdit(tpl)}
-                            className="rounded-lg bg-sky-600 px-3 py-1 text-xs font-semibold text-white hover:bg-sky-500"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => handleDelete(tpl)}
-                            disabled={tpl.isSystem}
-                            className={`rounded-lg border px-3 py-1 text-xs font-semibold ${tpl.isSystem ? 'cursor-not-allowed border-slate-200 text-slate-300' : 'border-rose-200 text-rose-600 hover:bg-rose-50'}`}
-                          >
-                            Delete
-                          </button>
+                          <TemplateActionsMenu
+                            template={tpl}
+                            onView={openView}
+                            onEdit={openEdit}
+                            onToggleEnabled={handleToggleEnabled}
+                            onDelete={handleDelete}
+                          />
                         </div>
                       </td>
                     </tr>

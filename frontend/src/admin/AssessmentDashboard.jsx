@@ -9,7 +9,7 @@ import {
   Calendar, ClipboardList, Filter, Plus, Search, Trash2, Eye, EyeOff,
   Pencil, Copy, X, MoreVertical, Lock, Unlock, Globe, ShieldOff,
   RotateCcw, CheckCircle2, AlertTriangle, FileCheck2, Mail, Send, Loader2,
-  Users, UserMinus,
+  Users, UserMinus, UserPlus,
 } from 'lucide-react';
 import AssessmentCard from './assessment/components/AssessmentCard';
 import { SectionCard } from './compiler/CompilerUi';
@@ -30,8 +30,18 @@ const tabs = [
 ];
 
 const formatDateTime = (value) => (value ? new Date(value).toLocaleString() : '-');
+const formatShortDate = (value) => (value ? new Date(value).toLocaleDateString() : '-');
 
-function ThreeDotsMenu({ assessment, onEdit, onDuplicate, onDelete, onToggleVisibility, onEditPassword, onSendInvitations, onEligibleStudents, onResetSubmissions, onMarkComplete, onReleaseAnswers }) {
+const getStudentAddedBadgeClass = (createdAt) => {
+  const createdTime = createdAt ? new Date(createdAt).getTime() : 0;
+  if (!createdTime) return 'border-slate-200 bg-slate-50 text-slate-500';
+  const ageDays = (Date.now() - createdTime) / (1000 * 60 * 60 * 24);
+  if (ageDays <= 7) return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+  if (ageDays <= 30) return 'border-sky-200 bg-sky-50 text-sky-700';
+  return 'border-slate-200 bg-slate-50 text-slate-500';
+};
+
+function ThreeDotsMenu({ assessment, onEdit, onDuplicate, onDelete, onToggleVisibility, onEditPassword, onSendInvitations, onEligibleStudents, onAddStudents, onResetSubmissions, onMarkComplete, onReleaseAnswers }) {
   const [open, setOpen] = useState(false);
   const [menuStyle, setMenuStyle] = useState(null);
   const ref = useRef(null);
@@ -115,6 +125,7 @@ function ThreeDotsMenu({ assessment, onEdit, onDuplicate, onDelete, onToggleVisi
           {item(<Pencil className="h-3.5 w-3.5" />, 'Edit Assessment', onEdit)}
           {item(<Lock className="h-3.5 w-3.5" />, 'Edit Password', onEditPassword)}
           {assessment.lifecycleStatus !== 'draft' && item(<Users className="h-3.5 w-3.5" />, 'Eligible Students', onEligibleStudents)}
+          {assessment.lifecycleStatus !== 'draft' && item(<UserPlus className="h-3.5 w-3.5" />, 'Add Student', onAddStudents)}
           {assessment.lifecycleStatus !== 'draft' && item(<Mail className="h-3.5 w-3.5" />, 'Send Mail to Eligible Students', onSendInvitations)}
           {item(
             isVisible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />,
@@ -321,6 +332,12 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
   const [summary, setSummary] = useState(null);
   const [search, setSearch] = useState('');
   const [busyId, setBusyId] = useState('');
+  const [addMode, setAddMode] = useState(Boolean(assessment.startInAddMode));
+  const [candidateSearch, setCandidateSearch] = useState('');
+  const [allStudents, setAllStudents] = useState([]);
+  const [loadingCandidates, setLoadingCandidates] = useState(false);
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState([]);
+  const [addingStudents, setAddingStudents] = useState(false);
 
   const loadStudents = useCallback(async () => {
     setLoading(true);
@@ -336,6 +353,50 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
   }, [assessment._id, toast]);
 
   useEffect(() => { loadStudents(); }, [loadStudents]);
+
+  useEffect(() => {
+    if (!addMode) return undefined;
+    let mounted = true;
+    const loadCandidates = async () => {
+      setLoadingCandidates(true);
+      try {
+        const data = await api.listAllStudents('', 'desc');
+        if (mounted) setAllStudents(data.students || []);
+      } catch (error) {
+        if (mounted) {
+          setAllStudents([]);
+          toast.error(error.message || 'Failed to load platform students.');
+        }
+      } finally {
+        if (mounted) setLoadingCandidates(false);
+      }
+    };
+    loadCandidates();
+    return () => { mounted = false; };
+  }, [addMode, toast]);
+
+  const assignedIds = useMemo(() => new Set(students.map((student) => String(student._id))), [students]);
+  const selectedCandidateIdSet = useMemo(() => new Set(selectedCandidateIds), [selectedCandidateIds]);
+
+  const candidateStudents = useMemo(() => {
+    const query = candidateSearch.trim().toLowerCase();
+    return allStudents
+      .filter((student) => !assignedIds.has(String(student._id)))
+      .filter((student) => {
+        if (!query) return true;
+        return [
+          student.name,
+          student.email,
+          student.studentId,
+          student.course,
+          student.branch,
+          student.college,
+          student.group,
+        ].some((value) => String(value || '').toLowerCase().includes(query));
+      })
+      .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+      .slice(0, 60);
+  }, [allStudents, assignedIds, candidateSearch]);
 
   const filteredStudents = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -387,6 +448,34 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
     }
   };
 
+  const toggleCandidate = (studentId) => {
+    setSelectedCandidateIds((previous) => (
+      previous.includes(studentId)
+        ? previous.filter((id) => id !== studentId)
+        : [...previous, studentId]
+    ));
+  };
+
+  const addSelectedStudents = async () => {
+    if (!selectedCandidateIds.length) {
+      toast.error('Select at least one student to add.');
+      return;
+    }
+    setAddingStudents(true);
+    try {
+      const result = await api.addAssessmentEligibleStudents(assessment._id, selectedCandidateIds);
+      toast.success(`Added ${result.addedCount || selectedCandidateIds.length} student${(result.addedCount || selectedCandidateIds.length) === 1 ? '' : 's'} to assessment.`);
+      setSelectedCandidateIds([]);
+      setAddMode(false);
+      await loadStudents();
+      onChanged?.();
+    } catch (error) {
+      toast.error(error.message || 'Failed to add students to assessment.');
+    } finally {
+      setAddingStudents(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/50 px-4 py-5 backdrop-blur-sm">
       <motion.div
@@ -402,12 +491,22 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
             </div>
             <h3 className="mt-2 text-lg font-bold text-slate-950 dark:text-white">{assessment.title || 'Assessment'}</h3>
             <p className="mt-1 text-sm text-slate-500 dark:text-gray-400">
-              View assigned students, reset individual submissions, or remove students from this assessment.
+              View assigned students, add recent platform students, reset individual submissions, or remove students from this assessment.
             </p>
           </div>
-          <button type="button" onClick={onClose} className="self-start rounded-xl border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:hover:bg-gray-800">
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-2 self-start">
+            <button
+              type="button"
+              onClick={() => setAddMode((value) => !value)}
+              className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition-colors ${addMode ? 'bg-slate-100 text-slate-700 dark:bg-gray-800 dark:text-gray-200' : 'bg-sky-600 text-white hover:bg-sky-500'}`}
+            >
+              <UserPlus className="h-4 w-4" />
+              {addMode ? 'Hide Add' : 'Add Student'}
+            </button>
+            <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:hover:bg-gray-800">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         <div className="border-b border-slate-200 px-5 py-4 dark:border-gray-700">
@@ -435,6 +534,81 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
             />
           </div>
         </div>
+
+        {addMode && (
+          <div className="border-b border-slate-200 bg-slate-50/70 px-5 py-4 dark:border-gray-700 dark:bg-gray-800/50">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div className="text-sm font-bold text-slate-900 dark:text-white">Recently added platform students</div>
+                <div className="mt-0.5 text-xs text-slate-500 dark:text-gray-400">Already eligible students are hidden from this list.</div>
+              </div>
+              <div className="relative w-full max-w-md">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={candidateSearch}
+                  onChange={(event) => setCandidateSearch(event.target.value)}
+                  placeholder="Search students to add..."
+                  className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-950 dark:text-white"
+                />
+              </div>
+            </div>
+
+            <div className="mt-3 max-h-72 overflow-auto rounded-xl border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+              {loadingCandidates ? (
+                <div className="flex items-center justify-center p-6 text-sm text-slate-500">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin text-sky-600" />
+                  Loading recent students...
+                </div>
+              ) : candidateStudents.length === 0 ? (
+                <div className="p-6 text-center text-sm text-slate-500">No recently added students are available to add.</div>
+              ) : (
+                <div className="grid gap-2 p-3 md:grid-cols-2 xl:grid-cols-3">
+                  {candidateStudents.map((student) => {
+                    const studentId = String(student._id);
+                    const selected = selectedCandidateIdSet.has(studentId);
+                    return (
+                      <button
+                        key={student._id}
+                        type="button"
+                        onClick={() => toggleCandidate(studentId)}
+                        className={`rounded-xl border p-3 text-left transition-colors ${selected ? 'border-sky-400 bg-sky-50 text-sky-900 dark:border-sky-400/60 dark:bg-sky-900/20 dark:text-sky-100' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800'}`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-bold">{student.name || 'Unnamed Student'}</div>
+                            <div className="mt-0.5 truncate text-xs text-slate-500">{student.email || '-'}</div>
+                          </div>
+                          <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${getStudentAddedBadgeClass(student.createdAt)}`}>
+                            {formatShortDate(student.createdAt)}
+                          </span>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1 text-[11px] text-slate-500">
+                          <span>{student.studentId || 'No ID'}</span>
+                          <span>·</span>
+                          <span>{student.branch || student.course || 'No course'}</span>
+                          {selected && <span className="ml-auto font-bold text-sky-700 dark:text-sky-300">Selected</span>}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <div className="text-xs font-semibold text-slate-500">{selectedCandidateIds.length} selected</div>
+              <button
+                type="button"
+                onClick={addSelectedStudents}
+                disabled={addingStudents || selectedCandidateIds.length === 0}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {addingStudents ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+                {addingStudents ? 'Adding...' : 'Add Selected'}
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="min-h-0 flex-1 overflow-auto">
           {loading ? (
@@ -915,6 +1089,7 @@ export default function AssessmentDashboard() {
                             onEditPassword={() => setPasswordTarget(assessment)}
                             onSendInvitations={() => setInvitationTarget(assessment)}
                             onEligibleStudents={() => setEligibleTarget(assessment)}
+                            onAddStudents={() => setEligibleTarget({ ...assessment, startInAddMode: true })}
                             onResetSubmissions={() => openResetSubmissions(assessment)}
                             onMarkComplete={() => openMarkComplete(assessment)}
                             onReleaseAnswers={() => openReleaseAnswers(assessment)}

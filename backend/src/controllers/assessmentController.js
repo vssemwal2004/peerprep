@@ -2131,6 +2131,75 @@ export async function listAssessmentEligibleStudents(req, res) {
   }
 }
 
+export async function addAssessmentEligibleStudents(req, res) {
+  try {
+    const { id } = req.params;
+    const studentIds = Array.isArray(req.body?.studentIds)
+      ? [...new Set(req.body.studentIds.map((value) => String(value || '').trim()).filter(Boolean))]
+      : [];
+
+    if (!studentIds.length) {
+      return res.status(400).json({ error: 'Select at least one student to add.' });
+    }
+
+    const assessment = await Assessment.findById(id);
+    if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
+    if (!canManageAssessmentForRequest(assessment, req.user)) {
+      return res.status(403).json({ error: 'Not allowed to add students to this assessment.' });
+    }
+    if (assessment.lifecycleStatus === 'draft') {
+      return res.status(400).json({ error: 'Edit the draft target list before publishing.' });
+    }
+
+    const students = await User.find({ _id: { $in: studentIds }, role: 'student' })
+      .select('_id name email studentId')
+      .lean();
+    if (!students.length) {
+      return res.status(404).json({ error: 'No valid students were found.' });
+    }
+
+    const currentStudents = await resolveEligibleAssessmentStudents(assessment);
+    const currentIdSet = new Set(currentStudents.map((student) => String(student._id)));
+    const addIds = students
+      .map((student) => String(student._id))
+      .filter((studentId) => !currentIdSet.has(studentId));
+
+    if (!addIds.length) {
+      return res.status(400).json({ error: 'Selected students are already eligible for this assessment.' });
+    }
+
+    assessment.targetType = 'selected';
+    assessment.assignedStudents = [...currentIdSet, ...addIds].map((studentId) => new mongoose.Types.ObjectId(studentId));
+    assessment.version = (assessment.version || 1) + 1;
+    assessment.versionUpdatedAt = new Date();
+    await assessment.save();
+
+    logActivity({
+      userEmail: req.user?.email,
+      userRole: req.user?.role,
+      actionType: 'UPDATE',
+      targetType: 'ASSESSMENT',
+      targetId: String(assessment._id),
+      description: `Added ${addIds.length} student${addIds.length === 1 ? '' : 's'} to assessment: ${assessment.title || 'Untitled'}`,
+      metadata: {
+        assessmentId: String(assessment._id),
+        addedStudentIds: addIds,
+        assignedStudentsCount: assessment.assignedStudents.length,
+      },
+      req,
+    });
+
+    return res.json({
+      ok: true,
+      addedCount: addIds.length,
+      assignedStudentsCount: assessment.assignedStudents.length,
+    });
+  } catch (err) {
+    console.error('Error adding assessment eligible students:', err);
+    return res.status(500).json({ error: 'Failed to add students to assessment.' });
+  }
+}
+
 export async function resetAssessmentStudentSubmission(req, res) {
   try {
     const { id, studentId } = req.params;

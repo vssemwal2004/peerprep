@@ -8,6 +8,7 @@ import {
   deleteAssessment,
   resetAssessmentSubmissions,
   listAssessmentEligibleStudents,
+  addAssessmentEligibleStudents,
   resetAssessmentStudentSubmission,
   removeAssessmentEligibleStudent,
   markAssessmentComplete,
@@ -48,6 +49,7 @@ router.delete('/library/questions/:id', requireAuth, requireCoordinatorPermissio
 router.get('/assessment/:id', requireAuth, requireCoordinatorPermission('coordinator.assessment.view'), getAssessment);
 router.get('/assessment/:id/eligible-students', requireAuth, requireCoordinatorPermission('coordinator.assessment.view'), listAssessmentEligibleStudents);
 router.post('/assessment/:id/reset-submissions', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), resetAssessmentSubmissions);
+router.post('/assessment/:id/students', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), addAssessmentEligibleStudents);
 router.post('/assessment/:id/students/:studentId/reset-submission', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), resetAssessmentStudentSubmission);
 router.delete('/assessment/:id/students/:studentId', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), removeAssessmentEligibleStudent);
 router.post('/assessment/:id/mark-complete', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), markAssessmentComplete);

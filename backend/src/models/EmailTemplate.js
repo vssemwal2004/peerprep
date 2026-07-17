@@ -20,6 +20,7 @@ const emailTemplateSchema = new mongoose.Schema({
   },
   variables: [{ type: String, trim: true }],
   isSystem: { type: Boolean, default: false },
+  isEnabled: { type: Boolean, default: true },
 }, { timestamps: true });
 
 emailTemplateSchema.pre('validate', function preValidate(next) {

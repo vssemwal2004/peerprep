@@ -112,6 +112,9 @@ async function getTemplateByType(type) {
   if (!template) {
     throw new Error(`Email template not found for type: ${type}`);
   }
+  if (template.isEnabled === false) {
+    throw new Error(`Email template is disabled for type: ${type}`);
+  }
   return template;
 }
 

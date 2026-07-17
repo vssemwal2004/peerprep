@@ -16,7 +16,7 @@ export async function listEmailTemplates(req, res) {
     : {};
 
   const templates = await EmailTemplate.find(query)
-    .select('name subject type updatedAt isSystem variables')
+    .select('name subject type updatedAt isSystem isEnabled variables')
     .sort({ name: 1 })
     .lean();
 
@@ -32,7 +32,7 @@ export async function getEmailTemplate(req, res) {
 }
 
 export async function createEmailTemplate(req, res) {
-  const { name, subject, htmlContent, type, variables } = req.body || {};
+  const { name, subject, htmlContent, type, variables, isEnabled } = req.body || {};
   if (!name || !subject || !htmlContent || !type) {
     throw new HttpError(400, 'Name, subject, htmlContent, and type are required');
   }
@@ -43,6 +43,7 @@ export async function createEmailTemplate(req, res) {
     type: String(type).trim().toUpperCase(),
     variables: Array.isArray(variables) ? variables.map(v => String(v).trim()) : [],
     isSystem: false,
+    isEnabled: isEnabled !== false,
   };
 
   const exists = await EmailTemplate.findOne({ type: payload.type }).select('_id').lean();
@@ -81,9 +82,10 @@ export async function updateEmailTemplate(req, res) {
     htmlContent: template.htmlContent,
     type: template.type,
     variables: Array.isArray(template.variables) ? [...template.variables] : [],
+    isEnabled: template.isEnabled !== false,
   };
 
-  const { name, subject, htmlContent, type, variables } = req.body || {};
+  const { name, subject, htmlContent, type, variables, isEnabled } = req.body || {};
 
   if (name !== undefined) template.name = String(name).trim();
   if (subject !== undefined) template.subject = String(subject);
@@ -100,6 +102,9 @@ export async function updateEmailTemplate(req, res) {
   if (variables !== undefined) {
     template.variables = Array.isArray(variables) ? variables.map(v => String(v).trim()) : [];
   }
+  if (isEnabled !== undefined) {
+    template.isEnabled = isEnabled !== false;
+  }
 
   await template.save();
 
@@ -109,6 +114,7 @@ export async function updateEmailTemplate(req, res) {
     htmlContent: template.htmlContent,
     type: template.type,
     variables: Array.isArray(template.variables) ? [...template.variables] : [],
+    isEnabled: template.isEnabled !== false,
   };
   const changes = {};
   Object.keys(after).forEach((k) => {
