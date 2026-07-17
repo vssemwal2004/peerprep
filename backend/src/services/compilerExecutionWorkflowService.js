@@ -936,6 +936,18 @@ function extractStoredAnswer(answers = [], sectionIndex, questionIndex) {
   ));
 }
 
+function getCodingAnswerVerdict(answer = {}) {
+  const resultStatus = String(answer?.executionResult?.status || '').trim();
+  const verdict = String(answer?.executionVerdict || resultStatus || '').trim().toUpperCase();
+  if (verdict === 'AC' || verdict === 'ACCEPTED' || resultStatus === 'Accepted') return 'AC';
+  if (['WA', 'WRONG ANSWER'].includes(verdict)) return 'WA';
+  if (['TLE', 'TIME LIMIT EXCEEDED'].includes(verdict)) return 'TLE';
+  if (['RE', 'RUNTIME ERROR'].includes(verdict)) return 'RE';
+  if (['CE', 'COMPILATION ERROR'].includes(verdict)) return 'CE';
+  if (verdict === 'FAILED') return 'FAILED';
+  return verdict || 'PENDING';
+}
+
 function scoreAssessmentWithCoding(assessment, answers = []) {
   const answerMap = new Map();
   (answers || []).forEach((answer) => {
@@ -981,7 +993,7 @@ function scoreAssessmentWithCoding(assessment, answers = []) {
       }
 
       if (questionType === 'coding') {
-        if (String(answer.executionVerdict || '').toUpperCase() === 'AC') {
+        if (getCodingAnswerVerdict(answer) === 'AC') {
           score += points;
         } else if (String(answer.code || '').trim()) {
           score -= negativePoints;

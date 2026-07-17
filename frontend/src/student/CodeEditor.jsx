@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Play, RotateCcw, Send, TerminalSquare } from 'lucide-react';
 import MonacoCodeEditor from '../admin/compiler/MonacoCodeEditor';
 import { formatDuration, getLanguageLabel } from '../admin/compiler/compilerUtils';
@@ -342,7 +342,10 @@ function CodeEditor({
 
   const isRunResult = isRunExecutionResult(result);
   const summary = summarizeExecutionResult(result);
-  const runCaseResults = Array.isArray(result?.caseResults) ? result.caseResults : [];
+  const runCaseResults = useMemo(
+    () => (Array.isArray(result?.caseResults) ? result.caseResults : []),
+    [result?.caseResults],
+  );
   const activeResultCase = (() => {
     if (runCaseResults.length === 0) return null;
     return runCaseResults.find((entry, index) => String(entry.id || index) === String(activeResultCaseId))
@@ -382,6 +385,11 @@ function CodeEditor({
     const found = testCases.find((entry) => String(entry.id) === String(activeTestCaseId));
     return found || testCases[0];
   })();
+
+  const latestRunCaseByIndex = useMemo(() => {
+    if (!Array.isArray(runCaseResults) || runCaseResults.length === 0) return new Map();
+    return new Map(runCaseResults.map((entry, index) => [index, entry]));
+  }, [runCaseResults]);
 
   const runDerivedVerdict = (() => {
     if (!result || !isRunResult) return null;
@@ -610,14 +618,21 @@ function CodeEditor({
                 <div className="flex items-center gap-1.5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden]">
                   {testCases.map((entry, index) => {
                     const isActive = activeTestCase && String(entry.id) === String(activeTestCase.id);
+                    const latestCase = latestRunCaseByIndex.get(index);
+                    const latestStatus = latestCase ? normalizeRunCaseStatus(latestCase.status) : '';
                     return (
                       <button
                         key={entry.id}
                         type="button"
                         onClick={() => onActiveTestCaseChange?.(entry.id)}
-                        className={`whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${isActive ? 'bg-slate-800 text-white dark:bg-sky-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}
+                        className={`inline-flex items-center gap-2 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${isActive ? 'bg-slate-800 text-white dark:bg-sky-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}
                       >
-                        Case {index + 1}
+                        <span>Case {index + 1}</span>
+                        {latestStatus && (
+                          <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${isActive ? 'bg-white/15 text-white' : runStatusTone(latestCase.status)}`}>
+                            {latestStatus}
+                          </span>
+                        )}
                       </button>
                     );
                   })}

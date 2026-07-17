@@ -643,14 +643,19 @@ export default function AssessmentAttempt() {
     };
   }, [cameraRequired, cameraIndicator, securityStatus.cameraActive, securityNotice]);
 
-  const answersArray = useMemo(() => (
+  const buildAnswersPayload = useCallback(() => (
     Object.entries(answersMap).map(([key, value]) => {
       const [sectionIndex, questionIndex] = key.split('-').map(Number);
       const displayQuestion = assessment?.sections?.[sectionIndex]?.questions?.[questionIndex];
       const originSectionIndex = Number(displayQuestion?.__originSectionIndex ?? sectionIndex);
       const originQuestionIndex = Number(displayQuestion?.__originQuestionIndex ?? questionIndex);
       const { codeByLanguage: _codeByLanguage, ...payload } = value;
-      if (typeof payload.code === 'string') {
+      const isCodingQuestion = (assessment?.sections?.[sectionIndex]?.type === 'coding')
+        || ((displayQuestion?.type || '') === 'coding');
+      const liveCode = liveCodingCodeRef.current[key];
+      if (isCodingQuestion && typeof liveCode === 'string') {
+        payload.code = decodeLegacyCodeEntities(liveCode);
+      } else if (typeof payload.code === 'string') {
         payload.code = decodeLegacyCodeEntities(payload.code);
       }
       if (typeof value?.answer === 'number' && Array.isArray(displayQuestion?.__optionOrder)) {
@@ -659,6 +664,8 @@ export default function AssessmentAttempt() {
       return { sectionIndex: originSectionIndex, questionIndex: originQuestionIndex, ...payload };
     })
   ), [answersMap, assessment]);
+
+  const answersArray = useMemo(() => buildAnswersPayload(), [buildAnswersPayload]);
 
   useEffect(() => {
     if (phase === 'active') answersDirtyRef.current = true;
@@ -873,7 +880,7 @@ export default function AssessmentAttempt() {
     try {
       await api.submitStudentAssessment({
         assessmentId: assessment._id,
-        answers: answersArray,
+        answers: buildAnswersPayload(),
         status: 'submitted',
         tabSwitches,
         fullscreenExits,
@@ -901,7 +908,7 @@ export default function AssessmentAttempt() {
       submissionInFlightRef.current = false;
       setSaving(false);
     }
-  }, [assessment, answersArray, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violationScore, pauseCount, lastPauseAt, securityHeartbeat, violations, stopAiProctoring, toast, navigate]);
+  }, [assessment, buildAnswersPayload, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violationScore, pauseCount, lastPauseAt, securityHeartbeat, violations, stopAiProctoring, toast, navigate]);
 
   const triggerForcePause = useCallback((type, message, serverState = {}) => {
     if (type !== 'tab_switch') {
@@ -2731,6 +2738,13 @@ export default function AssessmentAttempt() {
     const activeTestCaseId = activeTestCaseMap[key] || testCases[0]?.id || null;
     const activeTestCase = testCases.find((entry) => String(entry.id) === String(activeTestCaseId)) || testCases[0];
     const runInput = activeTestCase?.input ?? '';
+    const comparableTestCases = testCases
+      .filter((entry) => entry?.kind !== 'custom')
+      .slice(0, 12)
+      .map((entry) => ({
+        input: entry?.input ?? '',
+        expectedOutput: entry?.expectedOutput ?? entry?.output ?? '',
+      }));
 
     setRunInputUsedMap((prev) => ({ ...prev, [key]: runInput }));
     setIsRunningMap((prev) => ({ ...prev, [key]: true }));
@@ -2739,7 +2753,10 @@ export default function AssessmentAttempt() {
       language,
       sourceCode,
       customInput: runInput,
-      ...(activeTestCase?.expectedOutput !== null && activeTestCase?.expectedOutput !== undefined
+      ...(comparableTestCases.length > 0
+        ? { testCases: comparableTestCases }
+        : {}),
+      ...(comparableTestCases.length === 0 && activeTestCase?.expectedOutput !== null && activeTestCase?.expectedOutput !== undefined
         ? { expectedOutput: activeTestCase.expectedOutput }
         : {}),
       assessmentId: assessment?._id,
@@ -3833,6 +3850,7 @@ export default function AssessmentAttempt() {
               <button
                 type="button"
                 onClick={() => setShowSubmitConfirm(false)}
+                disabled={saving}
                 className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
               >
                 Cancel
@@ -3840,12 +3858,13 @@ export default function AssessmentAttempt() {
               <button
                 type="button"
                 onClick={() => {
-                  setShowSubmitConfirm(false);
                   void handleSubmit(false);
                 }}
-                className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500"
+                disabled={saving}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-400"
               >
-                Yes, Submit
+                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                {saving ? 'Submitting...' : 'Yes, Submit'}
               </button>
             </div>
           </div>

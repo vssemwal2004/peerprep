@@ -4,7 +4,7 @@ import Assessment from '../models/Assessment.js';
 import AssessmentSubmission from '../models/AssessmentSubmission.js';
 import Problem from '../models/Problem.js';
 import User from '../models/User.js';
-import { sendOnboardingEmail, sendAssessmentNotificationEmail, sendAssessmentInvitationEmail } from '../utils/mailer.js';
+import { isEmailFeatureEnabled, sendOnboardingEmail, sendAssessmentNotificationEmail, sendAssessmentInvitationEmail } from '../utils/mailer.js';
 import { createNotification, createNotifications } from '../services/notificationService.js';
 import { enqueueAssessmentCodingEvaluationJobs } from '../services/compilerExecutionWorkflowService.js';
 import { removeAssessmentQuestionsFromLibrary, syncAssessmentQuestionsToLibrary } from '../services/questionLibraryService.js';
@@ -473,6 +473,18 @@ function hasMeaningfulValue(value) {
   return true;
 }
 
+function getCodingAnswerVerdict(answer = {}) {
+  const resultStatus = String(answer?.executionResult?.status || '').trim();
+  const verdict = String(answer?.executionVerdict || resultStatus || '').trim().toUpperCase();
+  if (verdict === 'AC' || verdict === 'ACCEPTED' || resultStatus === 'Accepted') return 'AC';
+  if (['WA', 'WRONG ANSWER'].includes(verdict)) return 'WA';
+  if (['TLE', 'TIME LIMIT EXCEEDED'].includes(verdict)) return 'TLE';
+  if (['RE', 'RUNTIME ERROR'].includes(verdict)) return 'RE';
+  if (['CE', 'COMPILATION ERROR'].includes(verdict)) return 'CE';
+  if (verdict === 'FAILED') return 'FAILED';
+  return verdict || 'PENDING';
+}
+
 function evaluateQuestionResponse(question = {}, section = {}, answer = null) {
   const type = question.type || section.type;
 
@@ -500,7 +512,7 @@ function evaluateQuestionResponse(question = {}, section = {}, answer = null) {
     const hasCode = String(answer?.code || '').trim().length > 0;
     if (!hasCode) return 'skipped';
 
-    const verdict = String(answer?.executionVerdict || '').trim().toUpperCase();
+    const verdict = getCodingAnswerVerdict(answer);
     const status = String(answer?.executionStatus || '').trim().toLowerCase();
     if (verdict === 'AC') return 'correct';
     if (['WA', 'TLE', 'RE', 'CE', 'FAILED'].includes(verdict)) return 'wrong';
@@ -1136,7 +1148,7 @@ function scoreAssessment(assessment, answers = []) {
           score -= negativePoints;
         }
       } else if (questionType === 'coding') {
-        if (String(answer.executionVerdict || '').toUpperCase() === 'AC') {
+        if (getCodingAnswerVerdict(answer) === 'AC') {
           score += points;
         } else if (String(answer.code || '').trim()) {
           score -= negativePoints;
@@ -1495,7 +1507,7 @@ export async function createAssessment(req, res) {
 
     setImmediate(async () => {
       try {
-        if (normalizedLifecycle === 'published' && created.length > 0 && process.env.EMAIL_ON_ONBOARD === 'true') {
+        if (normalizedLifecycle === 'published' && created.length > 0 && isEmailFeatureEnabled('ONBOARD')) {
           await Promise.allSettled(
             created.map(student =>
               sendOnboardingEmail({
@@ -1520,7 +1532,7 @@ export async function createAssessment(req, res) {
           await createNotifications(accountNotifs);
         }
 
-        if (normalizedLifecycle === 'published' && sendEmail !== false && process.env.EMAIL_ON_ASSESSMENT === 'true') {
+        if (normalizedLifecycle === 'published' && sendEmail !== false && isEmailFeatureEnabled('ASSESSMENT')) {
           const emailJobs = users
             .filter(u => u.email)
             .map(u => sendAssessmentNotificationEmail({
@@ -1855,7 +1867,7 @@ export async function updateAssessment(req, res) {
 
     res.json({ message: 'Assessment updated', assessmentId: assessment._id });
 
-    if (assessment.lifecycleStatus === 'published' && sendEmail !== false && process.env.EMAIL_ON_ASSESSMENT === 'true') {
+    if (assessment.lifecycleStatus === 'published' && sendEmail !== false && isEmailFeatureEnabled('ASSESSMENT')) {
       const assignedUsers = await User.find({ _id: { $in: assessment.assignedStudents || [] } }).select('_id email name studentId').lean();
       setImmediate(async () => {
         try {

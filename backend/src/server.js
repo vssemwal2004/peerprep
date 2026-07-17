@@ -13,6 +13,7 @@ import crypto from 'crypto';
 import { seedEmailTemplates } from './services/emailTemplateService.js';
 import { setIo } from './utils/io.js';
 import { startEmbeddedWorkers } from './workers/startEmbeddedWorkers.js';
+import { verifyMailTransport } from './utils/mailer.js';
 import User from './models/User.js';
 import { hasCoordinatorPermission } from './services/coordinatorPermissions.js';
 //fufgv
@@ -256,6 +257,11 @@ httpServer.listen(PORT, () => {
   console.log(`API listening on port ${PORT}`);
   console.log(`Socket.IO ready for real-time updates`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  setImmediate(() => {
+    verifyMailTransport().catch((error) => {
+      console.error('[MAIL] SMTP startup check failed:', error.message);
+    });
+  });
 });
 
 export { io };

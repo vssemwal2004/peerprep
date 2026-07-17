@@ -2,7 +2,7 @@ import Papa from 'papaparse';
 import User from '../models/User.js';
 import Event from '../models/Event.js';
 import { sendMail, renderTemplate } from '../utils/mailer.js';
-import { sendOnboardingEmail } from '../utils/mailer.js';
+import { isEmailFeatureEnabled, sendOnboardingEmail } from '../utils/mailer.js';
 import { logActivity } from './adminActivityController.js';
 import { sanitizeCsvRow, sanitizeCsvField, validateObjectId, validateCsvImport, CSV_LIMITS } from '../utils/validators.js';
 import { createNotification, createNotifications } from '../services/notificationService.js';
@@ -628,7 +628,7 @@ export async function uploadStudentsCsv(req, res) {
       results.push({ row: row.__row, id: user._id, email, studentid, status: 'created' });
       
       // Store for async email sending
-      if (process.env.EMAIL_ON_ONBOARD === 'true' && email) {
+      if (isEmailFeatureEnabled('ONBOARD') && email) {
         newStudents.push({ email, studentId: studentid, password: generatedPassword });
       }
     } catch (err) {
@@ -759,7 +759,7 @@ export async function createStudent(req, res) {
     }
 
     // Send password via email
-    if (process.env.EMAIL_ON_ONBOARD === 'true' && email) {
+    if (isEmailFeatureEnabled('ONBOARD') && email) {
       await sendOnboardingEmail({
         to: email,
         studentId: studentid,

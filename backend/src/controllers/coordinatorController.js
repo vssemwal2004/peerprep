@@ -1,6 +1,6 @@
 import User from '../models/User.js';
 import Event from '../models/Event.js';
-import { sendCoordinatorOnboardingEmail } from '../utils/mailer.js';
+import { isEmailFeatureEnabled, sendCoordinatorOnboardingEmail } from '../utils/mailer.js';
 import { logActivity } from './adminActivityController.js';
 import {
   DEFAULT_COORDINATOR_PERMISSIONS,
@@ -144,7 +144,7 @@ export async function createCoordinator(req, res) {
     });
 
     // Send onboarding email to coordinator
-    if (process.env.EMAIL_ON_ONBOARD === 'true' && user.email) {
+    if (isEmailFeatureEnabled('ONBOARD') && user.email) {
       await sendCoordinatorOnboardingEmail({
         to: user.email,
         name: user.name,
@@ -319,7 +319,7 @@ export async function bulkCreateCoordinators(req, res) {
 
     let emailSent = 0;
     let emailFailed = 0;
-    if (process.env.EMAIL_ON_ONBOARD === 'true' && created.length) {
+    if (isEmailFeatureEnabled('ONBOARD') && created.length) {
       const mailResults = await Promise.allSettled(created.map(({ user, temporaryPassword }) => sendCoordinatorOnboardingEmail({
         to: user.email,
         name: user.name,

@@ -1,4 +1,4 @@
-import { sendSlotProposalEmail, sendSlotAcceptanceEmail, sendInterviewScheduledEmail, sendMail, renderTemplate, sendEventNotificationEmail, sendOnboardingEmail } from '../utils/mailer.js';
+import { isEmailFeatureEnabled, sendSlotProposalEmail, sendSlotAcceptanceEmail, sendInterviewScheduledEmail, sendMail, renderTemplate, sendEventNotificationEmail, sendOnboardingEmail } from '../utils/mailer.js';
 import Pair from '../models/Pair.js';
 import SlotProposal from '../models/SlotProposal.js';
 import bcrypt from 'bcrypt';
@@ -285,7 +285,7 @@ export async function createEvent(req, res) {
       }
       
       // Send event notification emails using unified mailer.js function
-      if (process.env.EMAIL_ON_EVENT === 'true') {
+      if (isEmailFeatureEnabled('EVENT')) {
         const emailPromises = students.map(s => {
           return sendEventNotificationEmail({
             to: s.email,
@@ -1036,7 +1036,7 @@ export async function createSpecialEvent(req, res) {
       }
 
       // Send onboarding emails to special students in parallel (only for new students)
-      if (process.env.EMAIL_ON_ONBOARD === 'true' && createdStudents.length > 0) {
+      if (isEmailFeatureEnabled('ONBOARD') && createdStudents.length > 0) {
         const studentsNeedingOnboarding = createdStudents.filter(s => s.shouldSendOnboarding);
         
         if (studentsNeedingOnboarding.length > 0) {
@@ -1077,7 +1077,7 @@ export async function createSpecialEvent(req, res) {
       }
 
       // Send event notification emails using unified mailer.js function
-      if (process.env.EMAIL_ON_EVENT === 'true') {
+      if (isEmailFeatureEnabled('EVENT')) {
         const emailPromises = createdStudents.map(s => {
           return sendEventNotificationEmail({
             to: s.email,

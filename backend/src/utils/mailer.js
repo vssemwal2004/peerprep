@@ -2,11 +2,16 @@ import nodemailer from 'nodemailer';
 import EmailTemplate from '../models/EmailTemplate.js';
 import { EMAIL_TEMPLATE_TYPES } from '../services/emailTemplateService.js';
 
+const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
+const smtpPort = Number(process.env.SMTP_PORT) || 587;
+const smtpConfigured = Boolean(process.env.SMTP_USER && process.env.SMTP_PASS);
+const isEmailGloballyDisabled = () => process.env.EMAIL_ENABLED === 'false';
+
 const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: Number(process.env.SMTP_PORT) || 587,
-  secure: Number(process.env.SMTP_PORT) === 465, // true for 465, false for other ports
-  auth: process.env.SMTP_USER && process.env.SMTP_PASS ? {
+  host: smtpHost,
+  port: smtpPort,
+  secure: smtpPort === 465, // true for 465, false for other ports
+  auth: smtpConfigured ? {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   } : undefined,
@@ -22,7 +27,46 @@ const transporter = nodemailer.createTransport({
   }
 });
 
+export function isSmtpConfigured() {
+  return smtpConfigured;
+}
+
+export function isEmailFeatureEnabled(feature) {
+  if (isEmailGloballyDisabled()) return false;
+  if (process.env.EMAIL_ENABLED === 'true') return true;
+  const key = `EMAIL_ON_${String(feature || '').trim().toUpperCase()}`;
+  return process.env[key] === 'true';
+}
+
+export async function verifyMailTransport() {
+  if (isEmailGloballyDisabled()) {
+    console.warn('[MAIL] EMAIL_ENABLED=false. Email sending is globally disabled.');
+    return false;
+  }
+
+  if (!smtpConfigured) {
+    console.warn('[MAIL] SMTP_USER or SMTP_PASS is missing. Email sending is disabled until SMTP credentials are configured.');
+    return false;
+  }
+
+  try {
+    await transporter.verify();
+    console.log(`[MAIL] SMTP verified: ${smtpHost}:${smtpPort} as ${process.env.SMTP_USER}`);
+    return true;
+  } catch (error) {
+    console.error(`[MAIL] SMTP verification failed: ${error.message}`);
+    if (error.code) console.error(`[MAIL] SMTP error code: ${error.code}`);
+    return false;
+  }
+}
+
 export async function sendMail({ to, subject, html, text, attachments }) {
+  if (isEmailGloballyDisabled()) {
+    throw new Error('Email sending is globally disabled. Set EMAIL_ENABLED=true to send mail.');
+  }
+  if (!smtpConfigured) {
+    throw new Error('SMTP is not configured. Set SMTP_USER and SMTP_PASS in the backend environment.');
+  }
   const from = process.env.MAIL_FROM || process.env.SMTP_USER || 'noreply@example.com';
   const info = await transporter.sendMail({ from, to, subject, html, text, attachments });
   console.log(`[MAIL] Sent to: ${to} | Subject: ${subject}`);
