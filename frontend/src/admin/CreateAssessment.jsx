@@ -273,6 +273,7 @@ export default function CreateAssessment() {
     }
   }
   const assessmentKey = currentId || sessionIdRef.current || 'new';
+  const isEditMode = Boolean(id);
 
   const updateForm = (updates) => {
     setForm((prev) => ({ ...prev, ...updates }));
@@ -1770,6 +1771,20 @@ export default function CreateAssessment() {
               </div>
 
               <div className="mt-4 space-y-2 text-xs text-slate-600 dark:text-gray-300">
+                {isEditMode && (
+                  <div className="flex items-center justify-between gap-4 rounded-xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-slate-700 dark:border-sky-900/40 dark:bg-sky-900/10 dark:text-gray-200">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-900 dark:text-white">Send mail to all students</div>
+                      <div className="mt-0.5 text-[11px] text-slate-500 dark:text-gray-400">
+                        Turn this off to save the edited assessment without emailing assigned students.
+                      </div>
+                    </div>
+                    <Toggle
+                      value={form.sendEmail}
+                      onChange={(value) => updateForm({ sendEmail: value })}
+                    />
+                  </div>
+                )}
                 <div className={`rounded-lg border px-3 py-2 ${assessmentValidation.totalQuestions > 0 ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300' : 'border-rose-200 bg-rose-50 text-rose-600 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300'}`}>
                   At least one question required.
                 </div>

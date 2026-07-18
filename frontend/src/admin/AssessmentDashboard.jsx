@@ -30,7 +30,11 @@ const tabs = [
 ];
 
 const formatDateTime = (value) => (value ? new Date(value).toLocaleString() : '-');
-const formatShortDate = (value) => (value ? new Date(value).toLocaleDateString() : '-');
+const formatShortDate = (value) => (
+  value
+    ? new Date(value).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })
+    : '-'
+);
 
 const getStudentAddedBadgeClass = (createdAt) => {
   const createdTime = createdAt ? new Date(createdAt).getTime() : 0;
@@ -486,14 +490,14 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
         animate={{ opacity: 1, scale: 1, y: 0 }}
         className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900"
       >
-        <div className="flex flex-col gap-4 border-b border-slate-200 p-5 dark:border-gray-700 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex flex-col gap-4 border-b border-slate-200 bg-white px-6 py-5 dark:border-gray-700 dark:bg-gray-900 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <div className="inline-flex items-center gap-2 rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-sky-700 dark:border-sky-400/20 dark:bg-sky-900/20 dark:text-sky-200">
               <Users className="h-3.5 w-3.5" />
               Eligible Students
             </div>
-            <h3 className="mt-2 text-lg font-bold text-slate-950 dark:text-white">{assessment.title || 'Assessment'}</h3>
-            <p className="mt-1 text-sm text-slate-500 dark:text-gray-400">
+            <h3 className="mt-2 text-xl font-bold text-slate-950 dark:text-white">{assessment.title || 'Assessment'}</h3>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500 dark:text-gray-400">
               View assigned students, add recent platform students, reset individual submissions, or remove students from this assessment.
             </p>
           </div>
@@ -512,7 +516,7 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
           </div>
         </div>
 
-        <div className="border-b border-slate-200 px-5 py-4 dark:border-gray-700">
+        <div className="border-b border-slate-200 bg-slate-50/40 px-6 py-4 dark:border-gray-700 dark:bg-gray-900/40">
           <div className="grid gap-3 md:grid-cols-5">
             {[
               ['Total', summary?.total ?? students.length],
@@ -521,42 +525,42 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
               ['Submitted', summary?.submitted ?? 0],
               ['Other', summary?.other ?? 0],
             ].map(([label, value]) => (
-              <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</div>
-                <div className="mt-1 text-lg font-bold text-slate-950 dark:text-white">{value}</div>
+              <div key={label} className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-gray-400">{label}</div>
+                <div className="mt-1 text-2xl font-bold text-slate-950 dark:text-white">{value}</div>
               </div>
             ))}
           </div>
-          <div className="relative mt-4 max-w-md">
+          <div className="relative mt-4 max-w-lg">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search students, email, ID, course..."
-              className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-950 dark:text-white"
+              className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-950 dark:text-white dark:focus:ring-sky-500/10"
             />
           </div>
         </div>
 
         {addMode && (
-          <div className="border-b border-slate-200 bg-slate-50/70 px-5 py-4 dark:border-gray-700 dark:bg-gray-800/50">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="border-b border-slate-200 bg-white px-6 py-4 dark:border-gray-700 dark:bg-gray-900">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <div className="text-sm font-bold text-slate-900 dark:text-white">Recently added platform students</div>
-                <div className="mt-0.5 text-xs text-slate-500 dark:text-gray-400">Already eligible students are hidden from this list.</div>
+                <div className="text-base font-bold text-slate-950 dark:text-white">Add Platform Students</div>
+                <div className="mt-1 text-sm text-slate-500 dark:text-gray-400">Recent students who are already eligible are hidden from this list.</div>
               </div>
-              <div className="relative w-full max-w-md">
+              <div className="relative w-full max-w-lg">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
                   value={candidateSearch}
                   onChange={(event) => setCandidateSearch(event.target.value)}
                   placeholder="Search students to add..."
-                  className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-950 dark:text-white"
+                  className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-950 dark:text-white dark:focus:ring-sky-500/10"
                 />
               </div>
             </div>
 
-            <div className="mt-3 max-h-72 overflow-auto rounded-xl border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+            <div className="mt-4 max-h-72 overflow-auto rounded-lg border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900">
               {loadingCandidates ? (
                 <div className="flex items-center justify-center p-6 text-sm text-slate-500">
                   <Loader2 className="mr-2 h-4 w-4 animate-spin text-sky-600" />
@@ -565,7 +569,14 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
               ) : candidateStudents.length === 0 ? (
                 <div className="p-6 text-center text-sm text-slate-500">No recently added students are available to add.</div>
               ) : (
-                <div className="grid gap-2 p-3 md:grid-cols-2 xl:grid-cols-3">
+                <div className="min-w-[760px]">
+                  <div className="grid grid-cols-[44px_1.4fr_1fr_1fr_140px] border-b border-slate-200 bg-slate-50 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
+                    <div />
+                    <div>Student</div>
+                    <div>Student ID</div>
+                    <div>Course / Branch</div>
+                    <div>Added On</div>
+                  </div>
                   {candidateStudents.map((student) => {
                     const studentId = String(student._id || student.id || student.studentId || student.email || '');
                     const selected = selectedCandidateIdSet.has(studentId);
@@ -574,22 +585,26 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
                         key={student._id}
                         type="button"
                         onClick={() => toggleCandidate(studentId)}
-                        className={`rounded-xl border p-3 text-left transition-colors ${selected ? 'border-sky-400 bg-sky-50 text-sky-900 dark:border-sky-400/60 dark:bg-sky-900/20 dark:text-sky-100' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800'}`}
+                        className={`grid w-full grid-cols-[44px_1.4fr_1fr_1fr_140px] items-center px-4 py-3 text-left transition-colors ${selected ? 'bg-sky-50 text-sky-950 dark:bg-sky-900/20 dark:text-sky-100' : 'bg-white text-slate-700 hover:bg-slate-50 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800'}`}
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="truncate text-sm font-bold">{student.name || 'Unnamed Student'}</div>
-                            <div className="mt-0.5 truncate text-xs text-slate-500">{student.email || '-'}</div>
-                          </div>
-                          <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${getStudentAddedBadgeClass(student.createdAt)}`}>
-                            {formatShortDate(student.createdAt)}
+                        <div>
+                          <span className={`flex h-5 w-5 items-center justify-center rounded border ${selected ? 'border-sky-600 bg-sky-600 text-white' : 'border-slate-300 bg-white dark:border-gray-600 dark:bg-gray-950'}`}>
+                            {selected && <CheckCircle2 className="h-3.5 w-3.5" />}
                           </span>
                         </div>
-                        <div className="mt-2 flex flex-wrap gap-1 text-[11px] text-slate-500">
-                          <span>{student.studentId || 'No ID'}</span>
-                          <span>·</span>
-                          <span>{student.branch || student.course || 'No course'}</span>
-                          {selected && <span className="ml-auto font-bold text-sky-700 dark:text-sky-300">Selected</span>}
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-bold">{student.name || 'Unnamed Student'}</div>
+                          <div className="mt-0.5 truncate text-xs text-slate-500 dark:text-gray-400">{student.email || '-'}</div>
+                        </div>
+                        <div className="font-mono text-xs text-slate-600 dark:text-slate-300">{student.studentId || '-'}</div>
+                        <div className="min-w-0 text-sm text-slate-600 dark:text-slate-300">
+                          <div className="truncate">{student.course || '-'}</div>
+                          <div className="mt-0.5 truncate text-xs text-slate-500 dark:text-gray-400">{student.branch || '-'}</div>
+                        </div>
+                        <div>
+                          <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-bold ${getStudentAddedBadgeClass(student.createdAt)}`}>
+                            {formatShortDate(student.createdAt)}
+                          </span>
                         </div>
                       </button>
                     );
@@ -599,12 +614,12 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
             </div>
 
             <div className="mt-3 flex items-center justify-between gap-3">
-              <div className="text-xs font-semibold text-slate-500">{selectedCandidateIds.length} selected</div>
+              <div className="text-sm font-semibold text-slate-600 dark:text-gray-300">{selectedCandidateIds.length} selected</div>
               <button
                 type="button"
                 onClick={addSelectedStudents}
                 disabled={addingStudents || selectedCandidateIds.length === 0}
-                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {addingStudents ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
                 {addingStudents ? 'Adding...' : 'Add Selected'}
@@ -623,9 +638,9 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
             <div className="p-10 text-center text-sm text-slate-500">No eligible students found.</div>
           ) : (
             <table className="min-w-[1120px] w-full text-left text-sm">
-              <thead className="sticky top-0 z-10 bg-slate-50 text-xs font-bold uppercase tracking-wider text-slate-400 dark:bg-gray-800">
+              <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-xs font-bold uppercase tracking-wider text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
                 <tr>
-                  <th className="px-4 py-3">Student</th>
+                  <th className="px-6 py-3">Student</th>
                   <th className="px-4 py-3">Student ID</th>
                   <th className="px-4 py-3">Course</th>
                   <th className="px-4 py-3">Branch</th>
@@ -634,7 +649,7 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
                   <th className="px-4 py-3">Submission</th>
                   <th className="px-4 py-3">Score</th>
                   <th className="px-4 py-3">Violations</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  <th className="px-6 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
@@ -647,29 +662,29 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
                     + Number(student.submission?.cameraFlags || 0)
                     + Number(student.submission?.copyPasteCount || 0);
                   return (
-                    <tr key={student._id} className={busyId === student._id ? 'opacity-60' : 'hover:bg-sky-50/50 dark:hover:bg-sky-400/5'}>
-                      <td className="px-4 py-3">
-                        <button type="button" onClick={() => openProfile(student)} className="text-left font-bold text-sky-700 hover:underline dark:text-sky-300">
+                    <tr key={student._id} className={busyId === student._id ? 'opacity-60' : 'hover:bg-slate-50 dark:hover:bg-sky-400/5'}>
+                      <td className="px-6 py-4">
+                        <button type="button" onClick={() => openProfile(student)} className="text-left font-bold text-slate-950 hover:text-sky-700 hover:underline dark:text-white dark:hover:text-sky-300">
                           {student.name || 'Unnamed Student'}
                         </button>
                         <div className="mt-0.5 text-xs text-slate-500">{student.email || '-'}</div>
                       </td>
-                      <td className="px-4 py-3 font-mono text-xs text-slate-600 dark:text-slate-300">{student.studentId || '-'}</td>
-                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{student.course || '-'}</td>
-                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{student.branch || '-'}</td>
-                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{student.semester || '-'}</td>
-                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{student.group || '-'}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-4 font-mono text-xs text-slate-600 dark:text-slate-300">{student.studentId || '-'}</td>
+                      <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{student.course || '-'}</td>
+                      <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{student.branch || '-'}</td>
+                      <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{student.semester || '-'}</td>
+                      <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{student.group || '-'}</td>
+                      <td className="px-4 py-4">
                         <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-bold ${submissionStatusStyles[status] || submissionStatusStyles.none}`}>
                           {submissionLabel(status)}
                         </span>
                         {student.submission?.updatedAt && <div className="mt-1 text-[11px] text-slate-400">{formatDateTime(student.submission.updatedAt)}</div>}
                       </td>
-                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                      <td className="px-4 py-4 text-slate-600 dark:text-slate-300">
                         {Number.isFinite(score) ? `${score}${Number.isFinite(maxMarks) ? ` / ${maxMarks}` : ''}` : '-'}
                       </td>
-                      <td className="px-4 py-3 font-semibold text-slate-600 dark:text-slate-300">{violations}</td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-4 py-4 font-semibold text-slate-600 dark:text-slate-300">{violations}</td>
+                      <td className="px-6 py-4 text-right">
                         <StudentActionsMenu
                           student={student}
                           onViewProfile={openProfile}
