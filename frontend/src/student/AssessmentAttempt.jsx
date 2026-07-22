@@ -345,6 +345,7 @@ export default function AssessmentAttempt() {
   const [isRunningMap, setIsRunningMap] = useState({});
   const [isSubmittingMap, setIsSubmittingMap] = useState({});
   const [runInputUsedMap, setRunInputUsedMap] = useState({});
+  const [codeValueVersion, setCodeValueVersion] = useState(0);
   const [rulesCountdown, setRulesCountdown] = useState(30);
   const [rulesReady, setRulesReady] = useState(false);
   const [hasSeenRules, setHasSeenRules] = useState(false);
@@ -2754,6 +2755,14 @@ export default function AssessmentAttempt() {
     const starterCode = getStarterCodeForLanguage(codingData, language);
     liveCodingLanguageRef.current[key] = language;
     liveCodingCodeRef.current[key] = starterCode;
+    setCodeValueVersion((current) => current + 1);
+    setCodeResultMap((prev) => {
+      if (!Object.prototype.hasOwnProperty.call(prev, key)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    setActiveConsoleTab('testcase');
     setAnswersMap((prev) => ({
       ...prev,
       [key]: {
@@ -3229,6 +3238,7 @@ export default function AssessmentAttempt() {
                         blockContextMenu={blockRightClick}
                         clipboardScope={`assessment:${assessment?._id || id}:submission:${submission?._id || 'active'}`}
                         editorKey={key}
+                        valueVersion={codeValueVersion}
                         onLiveCodeChange={(code) => {
                           liveCodingCodeRef.current[key] = code;
                         }}

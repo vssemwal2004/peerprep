@@ -11,7 +11,7 @@ function LcBlock({ label, children }) {
   return (
     <div className="space-y-2">
       <div className="text-xs font-semibold text-slate-500 dark:text-gray-400">{label}</div>
-      <div className="rounded-[22px] bg-slate-50/90 px-4 py-3 text-sm text-slate-800 dark:bg-gray-800/90 dark:text-gray-100">
+      <div className="rounded-md border border-slate-200 bg-slate-50/90 px-4 py-3 text-sm text-slate-800 dark:border-gray-700 dark:bg-gray-800/90 dark:text-gray-100">
         {children}
       </div>
     </div>
@@ -85,6 +85,7 @@ function CodeEditor({
   testCases = [],
   activeTestCaseId = null,
   onActiveTestCaseChange,
+  onTestCaseInputChange,
   expectedOutputForRun = null,
   runInputUsed = null,
   activeConsoleTab,
@@ -101,6 +102,7 @@ function CodeEditor({
   clipboardScope = 'assessment-editor',
   editorKey = '',
   onLiveCodeChange,
+  valueVersion = 0,
 }) {
   const rootRef = useRef(null);
   const toolbarRef = useRef(null);
@@ -108,12 +110,14 @@ function CodeEditor({
   const editorContainerRef = useRef(null);
   const consoleContainerRef = useRef(null);
   const resizeFrameRef = useRef(null);
+  const consoleDragFrameRef = useRef(null);
+  const pendingConsoleHeightRef = useRef(null);
   const resizeCleanupRef = useRef(null);
   const codeCommitTimerRef = useRef(null);
   const pendingCodeCommitRef = useRef(null);
   const liveCodeRef = useRef(code || '');
   const externalCodeRef = useRef(code || '');
-  const editorContextRef = useRef({ editorKey, language });
+  const editorContextRef = useRef({ editorKey, language, valueVersion });
   const clipboardNoticeTimerRef = useRef(null);
   const [consoleHeight, setConsoleHeight] = useState(116);
   const [editorHeight, setEditorHeight] = useState(440);
@@ -121,6 +125,7 @@ function CodeEditor({
   const [clipboardNotice, setClipboardNotice] = useState(
     internalClipboardOnly ? 'Editor-only clipboard' : '',
   );
+  const [localValueVersion, setLocalValueVersion] = useState(0);
   const MIN_EDITOR_HEIGHT = 360;
   const AUTO_OPEN_CONSOLE_HEIGHT = 320;
 
@@ -240,25 +245,27 @@ function CodeEditor({
     const previousContext = editorContextRef.current;
     const questionChanged = previousContext.editorKey !== editorKey;
     const languageChanged = previousContext.language !== language;
-    if (questionChanged || languageChanged) {
+    const valueWasReset = previousContext.valueVersion !== valueVersion;
+    if (questionChanged || languageChanged || valueWasReset) {
       if (codeCommitTimerRef.current) {
         clearTimeout(codeCommitTimerRef.current);
         codeCommitTimerRef.current = null;
       }
       const pending = pendingCodeCommitRef.current;
       pendingCodeCommitRef.current = null;
-      // Preserve a fast final keystroke when navigating to another question.
-      // Language switching already captures the live draft before changing.
-      if (questionChanged && pending) pending.commit(pending.value);
+      // The pending callback belongs to the previous task/language render, so
+      // committing here preserves the final keystroke in the correct draft.
+      if (pending && !valueWasReset) pending.commit(pending.value);
     }
     externalCodeRef.current = code || '';
     liveCodeRef.current = code || '';
-    editorContextRef.current = { editorKey, language };
-  }, [code, language, editorKey]);
+    editorContextRef.current = { editorKey, language, valueVersion };
+  }, [code, language, editorKey, valueVersion]);
 
   useEffect(() => () => {
     resizeCleanupRef.current?.();
     if (codeCommitTimerRef.current) clearTimeout(codeCommitTimerRef.current);
+    if (consoleDragFrameRef.current) cancelAnimationFrame(consoleDragFrameRef.current);
     if (clipboardNoticeTimerRef.current) clearTimeout(clipboardNoticeTimerRef.current);
     const pending = pendingCodeCommitRef.current;
     if (pending) pending.commit(pending.value);
@@ -338,12 +345,24 @@ function CodeEditor({
 
     const handlePointerMove = (moveEvent) => {
       const delta = startY - moveEvent.clientY;
-      setConsoleHeight(clampConsoleHeight(startHeight + delta));
+      pendingConsoleHeightRef.current = clampConsoleHeight(startHeight + delta);
+      if (consoleDragFrameRef.current) return;
+      consoleDragFrameRef.current = requestAnimationFrame(() => {
+        consoleDragFrameRef.current = null;
+        setConsoleHeight(pendingConsoleHeightRef.current);
+      });
     };
 
     const handlePointerUp = () => {
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
+      if (consoleDragFrameRef.current) {
+        cancelAnimationFrame(consoleDragFrameRef.current);
+        consoleDragFrameRef.current = null;
+      }
+      if (Number.isFinite(pendingConsoleHeightRef.current)) {
+        setConsoleHeight(pendingConsoleHeightRef.current);
+      }
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
       window.removeEventListener('pointercancel', handlePointerUp);
@@ -398,6 +417,16 @@ function CodeEditor({
     commitPendingCode();
     openResultPanel();
     onSubmit?.(liveCodeRef.current);
+  };
+
+  const handleReset = () => {
+    if (codeCommitTimerRef.current) {
+      clearTimeout(codeCommitTimerRef.current);
+      codeCommitTimerRef.current = null;
+    }
+    pendingCodeCommitRef.current = null;
+    setLocalValueVersion((current) => current + 1);
+    onReset?.();
   };
 
   const activeTestCase = (() => {
@@ -513,18 +542,18 @@ function CodeEditor({
   return (
     <div
       ref={rootRef}
-      className="flex h-full min-h-0 flex-col overflow-hidden rounded-[24px] border border-transparent bg-white/90 shadow-[0_14px_40px_-32px_rgba(15,23,42,0.28)] backdrop-blur-sm dark:border-transparent dark:bg-gray-900"
+      className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900"
     >
       {showToolbar ? (
         <div
           ref={toolbarRef}
-          className="flex flex-wrap items-center justify-between gap-2 border-b border-transparent bg-slate-50/55 px-4 py-2.5 backdrop-blur-sm dark:border-transparent dark:bg-gray-900"
+          className="flex min-h-12 flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50/80 px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
         >
           <div className="flex flex-wrap items-center gap-3">
             <select
               value={language}
               onChange={(event) => onLanguageChange(event.target.value)}
-              className="rounded-xl bg-white/90 px-2.5 py-1.5 text-xs font-semibold text-slate-700 outline-none shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-colors focus:bg-white focus:ring-2 focus:ring-sky-400 dark:bg-gray-800 dark:text-gray-200 dark:focus:ring-sky-500"
+              className="h-8 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 outline-none transition-colors focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:ring-sky-900/40"
             >
               {supportedLanguages.map((supportedLanguage) => (
                 <option key={supportedLanguage} value={supportedLanguage}>
@@ -539,7 +568,7 @@ function CodeEditor({
               type="button"
               onClick={handleRun}
               disabled={isRunning || isSubmitting}
-              className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-sky-600 dark:hover:bg-sky-500 dark:disabled:bg-gray-700"
+              className="inline-flex h-8 items-center gap-2 rounded-md bg-slate-900 px-3 text-xs font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-sky-700 dark:hover:bg-sky-600 dark:disabled:bg-gray-700"
             >
               <Play className="h-3.5 w-3.5" />
               {isRunning ? 'Running...' : 'Run Code'}
@@ -548,16 +577,16 @@ function CodeEditor({
               type="button"
               onClick={handleSubmit}
               disabled={isRunning || isSubmitting}
-              className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"
+              className="inline-flex h-8 items-center gap-2 rounded-md bg-sky-600 px-3 text-xs font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"
             >
               <Send className="h-3.5 w-3.5" />
               {isSubmitting ? 'Submitting...' : 'Submit Code'}
             </button>
             <button
               type="button"
-              onClick={onReset}
+              onClick={handleReset}
               disabled={isRunning || isSubmitting}
-              className="inline-flex items-center gap-2 rounded-xl bg-white/90 px-3 py-2 text-xs font-semibold text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.03)] transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+              className="inline-flex h-8 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
             >
               <RotateCcw className="h-3.5 w-3.5" />
               Reset Code
@@ -570,11 +599,11 @@ function CodeEditor({
 
       <div
         ref={editorContainerRef}
-        className="relative z-0 min-h-0 bg-transparent px-3 pb-0 pt-1"
+        className="relative z-0 min-h-0 bg-transparent"
         style={{ height: editorHeight }}
       >
         {internalClipboardOnly ? (
-          <div className="pointer-events-none absolute right-5 top-3 z-20 rounded-full border border-slate-200/80 bg-white/90 px-2.5 py-1 text-[9px] font-bold text-slate-500 shadow-sm backdrop-blur dark:border-gray-700 dark:bg-gray-900/90 dark:text-gray-300">
+          <div className="pointer-events-none absolute right-3 top-2 z-20 rounded-md border border-slate-200 bg-white/95 px-2 py-1 text-[9px] font-semibold text-slate-500 shadow-sm dark:border-gray-700 dark:bg-gray-900/95 dark:text-gray-300">
             {clipboardNotice}
           </div>
         ) : null}
@@ -588,6 +617,7 @@ function CodeEditor({
           clipboardScope={clipboardScope}
           onClipboardStatus={handleClipboardStatus}
           contentKey={`${editorKey || 'code-editor'}:${language || 'plain'}`}
+          valueVersion={`${valueVersion}:${localValueVersion}`}
         />
       </div>
 
@@ -595,17 +625,16 @@ function CodeEditor({
         type="button"
         ref={splitterRef}
         onPointerDown={handleConsoleResizeStart}
-        className="group relative z-20 mx-3 flex h-2.5 w-auto cursor-row-resize items-center justify-center transition-colors"
+        className="group relative z-20 flex h-2.5 w-full cursor-row-resize items-center justify-center border-y border-slate-200/70 bg-slate-50/70 transition-colors hover:bg-sky-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-sky-950/30"
         aria-label="Resize testcase panel"
       >
-        <div className="absolute left-0 right-0 top-1/2 h-px -translate-y-1/2 bg-slate-200/45 dark:bg-gray-700/60" />
         <div className="relative z-10 h-1 w-10 rounded-full bg-slate-300/80 transition-colors group-hover:bg-sky-400 dark:bg-gray-700 dark:group-hover:bg-sky-500" />
       </button>
 
       <div
         ref={consoleContainerRef}
-        className="relative z-20 mx-3 mb-2.5 flex min-h-0 flex-col overflow-hidden rounded-2xl border border-transparent bg-slate-50/60 px-3 pb-2 pt-0.5 dark:border-transparent dark:bg-gray-900"
-        style={{ height: clampConsoleHeight(consoleHeight) }}
+        className="relative z-20 flex min-h-0 flex-col overflow-hidden bg-slate-50/60 px-3 pb-2 pt-0.5 dark:bg-gray-900"
+        style={{ height: consoleHeight }}
       >
         <div className="flex flex-none items-center gap-5 overflow-x-auto bg-transparent [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <button
@@ -660,12 +689,23 @@ function CodeEditor({
                 </div>
               )}
 
-              {hasValue(activeTestCase?.input) && (
+              {hasValue(activeTestCase?.input) && activeTestCase?.kind === 'custom' && onTestCaseInputChange ? (
+                <div className="rounded-md bg-white px-3 py-2 ring-1 ring-slate-200 focus-within:ring-2 focus-within:ring-sky-200 dark:bg-gray-900 dark:ring-gray-700 dark:focus-within:ring-sky-900/50">
+                  <label htmlFor={`custom-input-${editorKey || 'editor'}`} className="mb-1 block text-[10px] font-semibold uppercase text-slate-400 dark:text-gray-500">Input</label>
+                  <textarea
+                    id={`custom-input-${editorKey || 'editor'}`}
+                    value={activeTestCase.input || ''}
+                    onChange={(event) => onTestCaseInputChange(activeTestCase.id, event.target.value)}
+                    spellCheck={false}
+                    className="min-h-16 w-full resize-y border-0 bg-transparent font-mono text-xs leading-relaxed text-slate-800 outline-none dark:text-gray-100"
+                  />
+                </div>
+              ) : hasValue(activeTestCase?.input) ? (
                 <div className="rounded-md bg-white px-3 py-2 ring-1 ring-slate-200 dark:bg-gray-900 dark:ring-gray-700">
                   <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-gray-500">Input</div>
                   <ResultValue value={activeTestCase.input || ''} />
                 </div>
-              )}
+              ) : null}
               {hasValue(activeTestCase?.expectedOutput) && (
                 <div className="rounded-md bg-white px-3 py-2 ring-1 ring-slate-200 dark:bg-gray-900 dark:ring-gray-700">
                   <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-gray-500">Expected Output</div>
@@ -694,7 +734,7 @@ function CodeEditor({
               )}
 
               {!result && (
-                <div className="rounded-[22px] bg-white/45 px-4 py-8 text-center text-sm text-slate-500 dark:bg-gray-900/35 dark:text-gray-400">
+                <div className="rounded-md border border-slate-200 bg-white/70 px-4 py-8 text-center text-sm text-slate-500 dark:border-gray-700 dark:bg-gray-900/35 dark:text-gray-400">
                   Run or submit to inspect the latest result.
                 </div>
               )}
@@ -735,7 +775,7 @@ function CodeEditor({
                         return (
                           <div
                             key={entry.id || `run-case-card-${index + 1}`}
-                            className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/50"
+                            className="rounded-md border border-slate-200/80 bg-slate-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/50"
                           >
                             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                               <div className="flex items-center gap-2">
@@ -810,7 +850,7 @@ function CodeEditor({
               {result && !isRunResult && (
                 <>
                   {result.status === 'Accepted' && (
-                    <div className="rounded-[22px] bg-emerald-50 px-4 py-4 text-sm text-emerald-700 dark:bg-emerald-900/10 dark:text-emerald-300">
+                    <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-900/10 dark:text-emerald-300">
                       All test cases passed.
                     </div>
                   )}
@@ -822,7 +862,7 @@ function CodeEditor({
                           Case {result.failedTestCase.index}
                         </span>
                       </div>
-                      <div className="rounded-[22px] bg-rose-50 px-4 py-4 text-sm text-rose-700 dark:bg-rose-900/10 dark:text-rose-300">
+                      <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/10 dark:text-rose-300">
                         One of the hidden test cases did not match the expected output.
                       </div>
                     </div>
@@ -841,7 +881,7 @@ function CodeEditor({
                   )}
 
                   {result.status === 'Time Limit Exceeded' && (
-                    <div className="rounded-[22px] bg-rose-50 px-4 py-4 text-sm text-rose-700 dark:bg-rose-900/10 dark:text-rose-300">
+                    <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/10 dark:text-rose-300">
                       The submission exceeded the configured execution limit.
                     </div>
                   )}
@@ -891,6 +931,7 @@ function codeEditorPropsEqual(previous, next) {
     && previous.blockContextMenu === next.blockContextMenu
     && previous.clipboardScope === next.clipboardScope
     && previous.editorKey === next.editorKey
+    && previous.valueVersion === next.valueVersion
     && sameStringList(previous.supportedLanguages, next.supportedLanguages)
     && sameTestCases(previous.testCases, next.testCases);
 }

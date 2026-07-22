@@ -21,6 +21,7 @@ import 'monaco-editor/esm/vs/basic-languages/typescript/typescript.contribution'
 import { getMonacoLanguage } from './compilerUtils';
 
 const internalEditorClipboards = new Map();
+const MAX_CACHED_MODELS = 24;
 
 if (typeof window !== 'undefined') {
   window.MonacoEnvironment = {
@@ -86,13 +87,33 @@ function definePeerprepThemes(monaco) {
 
 function ensureEditorWritable(editor) {
   if (!editor) return;
-  editor.updateOptions({ readOnly: false, domReadOnly: false });
+  const options = editor.getRawOptions();
+  if (options.readOnly || options.domReadOnly) {
+    editor.updateOptions({ readOnly: false, domReadOnly: false });
+  }
   const input = editor.getDomNode()?.querySelector('textarea.inputarea');
-  if (!input) return;
+  if (!input || (!input.readOnly && !input.disabled && !input.hasAttribute('readonly'))) return;
   input.readOnly = false;
   input.disabled = false;
   input.removeAttribute('readonly');
   input.setAttribute('aria-readonly', 'false');
+}
+
+function getModelKey(contentKey) {
+  return String(contentKey || 'peerprep-code-editor');
+}
+
+function trimModelCache(entries, activeKey) {
+  if (entries.size <= MAX_CACHED_MODELS) return;
+  const staleEntries = [...entries.entries()]
+    .filter(([key]) => key !== activeKey)
+    .sort(([, left], [, right]) => left.lastUsed - right.lastUsed);
+
+  while (entries.size > MAX_CACHED_MODELS && staleEntries.length > 0) {
+    const [key, entry] = staleEntries.shift();
+    entry.model.dispose();
+    entries.delete(key);
+  }
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -111,14 +132,17 @@ export default function MonacoCodeEditor({
   clipboardScope = 'peerprep-editor',
   onClipboardStatus,
   contentKey = '',
+  valueVersion = 0,
 }) {
   const containerRef = useRef(null);
   const editorRef = useRef(null);
   const onChangeRef = useRef(onChange);
   const applyingExternalValueRef = useRef(false);
-  const pendingLocalValueRef = useRef(null);
   const contentKeyRef = useRef(contentKey);
+  const valueVersionRef = useRef(valueVersion);
   const externalValueRef = useRef(value || '');
+  const modelEntriesRef = useRef(new Map());
+  const activeModelKeyRef = useRef(getModelKey(contentKey));
   const latestLanguageRef = useRef(language);
   const latestReadOnlyRef = useRef(readOnly);
   const latestBlockContextMenuRef = useRef(blockContextMenu);
@@ -147,52 +171,105 @@ export default function MonacoCodeEditor({
 
   useEffect(() => {
     const nextValue = value || '';
-    const previousExternalValue = externalValueRef.current;
-    const contentChanged = contentKeyRef.current !== contentKey;
+    const nextModelKey = getModelKey(contentKey);
+    const forceExternalValue = valueVersionRef.current !== valueVersion;
     externalValueRef.current = nextValue;
+    valueVersionRef.current = valueVersion;
+    setFallbackValue(nextValue);
+
+    const editor = editorRef.current;
+    if (!editor) {
+      contentKeyRef.current = contentKey;
+      activeModelKeyRef.current = nextModelKey;
+      return;
+    }
+
+    const entries = modelEntriesRef.current;
+    const previousModelKey = activeModelKeyRef.current;
+    const contentChanged = previousModelKey !== nextModelKey;
+    if (contentChanged) {
+      const previousEntry = entries.get(previousModelKey);
+      if (previousEntry) previousEntry.viewState = editor.saveViewState();
+    }
+
+    let entry = entries.get(nextModelKey);
+    if (!entry) {
+      entry = {
+        model: bundledMonaco.editor.createModel(nextValue, getMonacoLanguage(latestLanguageRef.current)),
+        viewState: null,
+        lastExternalValue: nextValue,
+        lastUsed: Date.now(),
+        dirty: false,
+      };
+      entries.set(nextModelKey, entry);
+    } else {
+      entry.lastUsed = Date.now();
+      bundledMonaco.editor.setModelLanguage(entry.model, getMonacoLanguage(latestLanguageRef.current));
+    }
+
+    const modelValue = entry.model.getValue();
+    const parentAcknowledgedLocalValue = modelValue === nextValue;
+    const staleParentRender = entry.dirty && nextValue === entry.lastExternalValue;
+    if (parentAcknowledgedLocalValue) {
+      entry.lastExternalValue = nextValue;
+      entry.dirty = false;
+    } else if (forceExternalValue || !staleParentRender) {
+      applyingExternalValueRef.current = true;
+      try {
+        entry.model.setValue(nextValue);
+        entry.lastExternalValue = nextValue;
+        entry.dirty = false;
+      } finally {
+        applyingExternalValueRef.current = false;
+      }
+    }
 
     if (contentChanged) {
       contentKeyRef.current = contentKey;
-      pendingLocalValueRef.current = null;
-    } else if (pendingLocalValueRef.current !== null) {
-      if (nextValue === pendingLocalValueRef.current) {
-        pendingLocalValueRef.current = null;
-        setFallbackValue(nextValue);
-        return;
+      activeModelKeyRef.current = nextModelKey;
+      editor.setModel(entry.model);
+      if (entry.viewState) {
+        editor.restoreViewState(entry.viewState);
+      } else {
+        editor.setPosition({ lineNumber: 1, column: 1 });
+        editor.setScrollTop(0);
+        editor.setScrollLeft(0);
       }
-      if (nextValue === previousExternalValue) return;
-      pendingLocalValueRef.current = null;
+      editor.layout();
     }
-
-    setFallbackValue(nextValue);
-    const editor = editorRef.current;
-    if (!editor || editor.getValue() === nextValue) return;
-
-    applyingExternalValueRef.current = true;
-    try {
-      editor.setValue(nextValue);
-    } finally {
-      applyingExternalValueRef.current = false;
-    }
-  }, [value, contentKey]);
+    trimModelCache(entries, nextModelKey);
+    if (!latestReadOnlyRef.current) ensureEditorWritable(editor);
+  }, [value, contentKey, valueVersion]);
 
   useEffect(() => {
     if (!containerRef.current) return undefined;
 
     let editor;
-    let model;
     let changeSubscription;
     let focusSubscription;
     let readOnlyAttemptSubscription;
     let mutationObserver;
     let resizeObserver;
     let layoutFrame;
+    const modelEntries = modelEntriesRef.current;
 
     try {
       definePeerprepThemes(bundledMonaco);
+      const initialModelKey = getModelKey(contentKeyRef.current);
+      const initialModel = bundledMonaco.editor.createModel(
+        externalValueRef.current,
+        getMonacoLanguage(latestLanguageRef.current),
+      );
+      modelEntries.set(initialModelKey, {
+        model: initialModel,
+        viewState: null,
+        lastExternalValue: externalValueRef.current,
+        lastUsed: Date.now(),
+        dirty: false,
+      });
+      activeModelKeyRef.current = initialModelKey;
       editor = bundledMonaco.editor.create(containerRef.current, {
-        value: externalValueRef.current,
-        language: getMonacoLanguage(latestLanguageRef.current),
+        model: initialModel,
         theme: isDarkMode() ? 'peerprep-dark' : 'peerprep-light',
         automaticLayout: false,
         minimap: { enabled: false },
@@ -200,6 +277,9 @@ export default function MonacoCodeEditor({
         fontSize: 14,
         lineHeight: 23,
         fontLigatures: true,
+        smoothScrolling: true,
+        cursorBlinking: 'smooth',
+        cursorSmoothCaretAnimation: 'explicit',
         readOnly: Boolean(latestReadOnlyRef.current),
         domReadOnly: Boolean(latestReadOnlyRef.current),
         ariaLabel: 'Code editor',
@@ -231,6 +311,12 @@ export default function MonacoCodeEditor({
         formatOnPaste: false,
         formatOnType: false,
         copyWithSyntaxHighlighting: false,
+        largeFileOptimizations: true,
+        maxTokenizationLineLength: 20000,
+        renderLineHighlight: 'line',
+        renderWhitespace: 'selection',
+        mouseWheelZoom: true,
+        fixedOverflowWidgets: true,
         overviewRulerLanes: 0,
         hideCursorInOverviewRuler: true,
         scrollbar: {
@@ -244,15 +330,17 @@ export default function MonacoCodeEditor({
         padding: { top: 14, bottom: 14 },
       });
 
-      model = editor.getModel();
       editorRef.current = editor;
       if (!latestReadOnlyRef.current) ensureEditorWritable(editor);
 
       changeSubscription = editor.onDidChangeModelContent(() => {
         if (applyingExternalValueRef.current) return;
         const nextValue = editor.getValue();
-        pendingLocalValueRef.current = nextValue;
-        setFallbackValue(nextValue);
+        const activeEntry = modelEntries.get(activeModelKeyRef.current);
+        if (activeEntry) {
+          activeEntry.dirty = true;
+          activeEntry.lastUsed = Date.now();
+        }
         onChangeRef.current?.(nextValue);
       });
       focusSubscription = editor.onDidFocusEditorText(() => {
@@ -296,8 +384,10 @@ export default function MonacoCodeEditor({
       changeSubscription?.dispose();
       focusSubscription?.dispose();
       readOnlyAttemptSubscription?.dispose();
+      editor?.setModel(null);
       editor?.dispose();
-      model?.dispose();
+      modelEntries.forEach((entry) => entry.model.dispose());
+      modelEntries.clear();
       editorRef.current = null;
     };
   }, []);
@@ -328,7 +418,6 @@ export default function MonacoCodeEditor({
   }, []);
 
   const handleEditorChange = (nextValue) => {
-    pendingLocalValueRef.current = nextValue;
     setFallbackValue(nextValue);
     onChangeRef.current?.(nextValue);
   };

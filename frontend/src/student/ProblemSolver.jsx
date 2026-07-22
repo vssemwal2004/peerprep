@@ -948,6 +948,7 @@ export default function ProblemSolver() {
   const [lastRunInput, setLastRunInput] = useState('');
   const [lastRunCaseId, setLastRunCaseId] = useState(null);
   const [result, setResult] = useState(null);
+  const [codeValueVersion, setCodeValueVersion] = useState(0);
   const [submissions, setSubmissions] = useState([]);
   const [submissionsLoading, setSubmissionsLoading] = useState(false);
   const [selectedSubmissionId, setSelectedSubmissionId] = useState(null);
@@ -1262,6 +1263,7 @@ export default function ProblemSolver() {
       ...previous,
       [language]: problem.codeTemplates?.[language] || '',
     }));
+    setCodeValueVersion((current) => current + 1);
     setResult(null);
   };
 
@@ -1715,6 +1717,7 @@ export default function ProblemSolver() {
               onSubmit={handleSubmit}
               onReset={resetCode}
               showToolbar={false}
+              valueVersion={codeValueVersion}
             />
           </section>
           </div>
@@ -1772,6 +1775,7 @@ export default function ProblemSolver() {
               onSubmit={handleSubmit}
               onReset={resetCode}
               showToolbar={false}
+              valueVersion={codeValueVersion}
             />
           </div>
         </div>
