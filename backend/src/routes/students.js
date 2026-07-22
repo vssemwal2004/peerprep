@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { uploadStudentsCsv, createStudent, checkStudentsCsv, listAllStudents, listAllSpecialStudents, listSpecialStudentsByEvent, deleteStudent, updateStudent, exportStudentsCsv, getStudentById, listPromotionSemesters, listPromotionStudents, promoteStudents } from '../controllers/studentController.js';
+import { uploadStudentsCsv, createStudent, checkStudentsCsv, listAllStudents, listAllSpecialStudents, listSpecialStudentsByEvent, deleteStudent, updateStudent, bulkDeleteStudents, exportStudentsCsv, getStudentById, listPromotionSemesters, listPromotionStudents, promoteStudents } from '../controllers/studentController.js';
 import { getStudentActivityByAdmin, getStudentStats, getStudentVideosWatched, getStudentCoursesEnrolled } from '../controllers/activityController.js';
 import { requireAuth, requireAdmin, requireAdminOrCoordinator, requireCoordinatorPermission } from '../middleware/auth.js';
 import { authorizeStudent } from '../middleware/authorization.js';
@@ -28,6 +28,7 @@ router.post('/upload', requireAuth, requireAdmin, uploadLimiter, bulkOperationLi
 router.post('/create', requireAuth, requireAdmin, async (req, res) => {
 	return createStudent(req, res);
 });
+router.post('/bulk-delete', requireAuth, requireAdmin, bulkOperationLimiter, bulkDeleteStudents);
 router.put('/:studentId', requireAuth, requireAdmin, updateStudent);
 router.delete('/:studentId', requireAuth, requireAdmin, deleteStudent);
 

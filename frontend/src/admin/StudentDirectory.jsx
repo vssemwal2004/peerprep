@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../utils/api";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronLeft, ChevronRight, Download, Edit2, Filter, Loader2, Save, Search, Trash2, Users, X } from "lucide-react";
+import { CheckSquare, ChevronLeft, ChevronRight, ClipboardCopy, Download, Edit2, Eye, FileDown, Filter, Loader2, MoreVertical, Save, Search, Trash2, UserX, Users, X } from "lucide-react";
 import ContributionCalendar from "../components/ContributionCalendar";
 import { useToast } from "../components/CustomToast";
 import {
@@ -53,8 +53,15 @@ export default function StudentDirectory() {
   const [facets, setFacets] = useState({});
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0, limit: 25 });
+  const [selectedStudentIds, setSelectedStudentIds] = useState(new Set());
+  const [selectedStudentMap, setSelectedStudentMap] = useState({});
+  const [activeRowMenuId, setActiveRowMenuId] = useState(null);
+  const [showBulkMenu, setShowBulkMenu] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const loadRequestRef = useRef(0);
   const filterPanelRef = useRef(null);
+  const rowActionMenuRef = useRef(null);
+  const bulkMenuRef = useRef(null);
   
   // State for detailed videos/courses modals
   const [showVideosModal, setShowVideosModal] = useState(false);
@@ -113,6 +120,36 @@ export default function StudentDirectory() {
   }, [showFilters]);
 
   useEffect(() => {
+    if (!activeRowMenuId && !showBulkMenu) return undefined;
+    const handleOutsideClick = (event) => {
+      if (activeRowMenuId && rowActionMenuRef.current && !rowActionMenuRef.current.contains(event.target)) {
+        setActiveRowMenuId(null);
+      }
+      if (showBulkMenu && bulkMenuRef.current && !bulkMenuRef.current.contains(event.target)) {
+        setShowBulkMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [activeRowMenuId, showBulkMenu]);
+
+  useEffect(() => {
+    if (!selectedStudentIds.size || !filteredStudents.length) return;
+    setSelectedStudentMap((current) => {
+      let changed = false;
+      const next = { ...current };
+      filteredStudents.forEach((student) => {
+        const id = String(student._id || '');
+        if (id && selectedStudentIds.has(id) && next[id] !== student) {
+          next[id] = student;
+          changed = true;
+        }
+      });
+      return changed ? next : current;
+    });
+  }, [filteredStudents, selectedStudentIds]);
+
+  useEffect(() => {
     loadData();
     // loadData uses a request revision guard to ignore stale search responses.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -122,6 +159,17 @@ export default function StudentDirectory() {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
   const paginatedStudents = filteredStudents;
+  const pageStudentIds = useMemo(
+    () => paginatedStudents.map((student) => String(student._id || '')).filter(Boolean),
+    [paginatedStudents],
+  );
+  const selectedCount = selectedStudentIds.size;
+  const selectedStudents = useMemo(
+    () => Array.from(selectedStudentIds).map((id) => selectedStudentMap[id]).filter(Boolean),
+    [selectedStudentIds, selectedStudentMap],
+  );
+  const allPageSelected = pageStudentIds.length > 0 && pageStudentIds.every((id) => selectedStudentIds.has(id));
+  const somePageSelected = pageStudentIds.some((id) => selectedStudentIds.has(id));
 
   const handlePageChange = (page) => {
     setCurrentPage(page);
@@ -199,8 +247,80 @@ export default function StudentDirectory() {
     setShowFilters(false);
   };
 
+  const clearSelection = () => {
+    setSelectedStudentIds(new Set());
+    setSelectedStudentMap({});
+    setShowBulkMenu(false);
+  };
+
+  const toggleStudentSelection = (student, event) => {
+    event?.stopPropagation();
+    const id = String(student?._id || '');
+    if (!id) return;
+
+    setSelectedStudentIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+    setSelectedStudentMap((current) => {
+      if (selectedStudentIds.has(id)) {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      }
+      return { ...current, [id]: student };
+    });
+  };
+
+  const toggleSelectPage = () => {
+    if (!pageStudentIds.length) return;
+    setSelectedStudentIds((current) => {
+      const next = new Set(current);
+      if (allPageSelected) {
+        pageStudentIds.forEach((id) => next.delete(id));
+      } else {
+        pageStudentIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+    setSelectedStudentMap((current) => {
+      const next = { ...current };
+      if (allPageSelected) {
+        pageStudentIds.forEach((id) => delete next[id]);
+      } else {
+        paginatedStudents.forEach((student) => {
+          const id = String(student._id || '');
+          if (id) next[id] = student;
+        });
+      }
+      return next;
+    });
+    setShowBulkMenu(false);
+  };
+
   const openStudentProfile = (student) => {
     navigate(`/admin/students/${student._id}`);
+  };
+
+  const handleCopyStudentValue = async (student, value, label, event) => {
+    event?.stopPropagation();
+    setActiveRowMenuId(null);
+    const text = String(value || '').trim();
+    if (!text) {
+      toast.error(`${label} is not available.`);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(`${label} copied.`);
+    } catch {
+      toast.error(`Failed to copy ${label.toLowerCase()}.`);
+    }
   };
 
   const loadStudentActivity = async (studentId) => {
@@ -290,6 +410,7 @@ export default function StudentDirectory() {
 
   const handleDeleteStudent = async (student, e) => {
     e.stopPropagation(); // Prevent row click from opening profile
+    setActiveRowMenuId(null);
     
     if (!confirm(`Are you sure you want to delete ${student.name}? This action cannot be undone.`)) {
       return;
@@ -297,6 +418,19 @@ export default function StudentDirectory() {
     
     try {
       await api.deleteStudent(student._id);
+      const deletedId = String(student._id || '');
+      setSelectedStudentIds((current) => {
+        if (!deletedId || !current.has(deletedId)) return current;
+        const next = new Set(current);
+        next.delete(deletedId);
+        return next;
+      });
+      setSelectedStudentMap((current) => {
+        if (!deletedId || !current[deletedId]) return current;
+        const next = { ...current };
+        delete next[deletedId];
+        return next;
+      });
       await loadData();
       toast.success(`Student ${student.name} has been deleted successfully.`);
     } catch (err) {
@@ -306,6 +440,7 @@ export default function StudentDirectory() {
 
   const handleEditStudent = (student, e) => {
     e.stopPropagation(); // Prevent row click from opening profile
+    setActiveRowMenuId(null);
     setEditingStudent(student);
     setEditForm({
       name: student.name || '',
@@ -373,10 +508,9 @@ export default function StudentDirectory() {
     URL.revokeObjectURL(url);
   };
 
-  const handleDownloadStudentData = async () => {
-    if (!selectedStudent) return;
-    const s = selectedStudent;
-    let stats = studentStats;
+  const exportSingleStudentData = async (student, statsOverride = null) => {
+    const s = student;
+    let stats = statsOverride;
     if (!stats) {
       try { const d = await api.getStudentStatsByAdmin(s._id); stats = d.stats; } catch { /* export can continue without optional stats */ }
     }
@@ -387,6 +521,66 @@ export default function StudentDirectory() {
     ];
     downloadCsv(rows, `student_${s.studentId || s._id}_${new Date().toISOString().slice(0,10)}.csv`);
     toast.success('Student data downloaded!');
+  };
+
+  const handleDownloadStudentData = async () => {
+    if (!selectedStudent) return;
+    await exportSingleStudentData(selectedStudent, studentStats);
+  };
+
+  const handleDownloadStudentRow = async (student, event) => {
+    event?.stopPropagation();
+    setActiveRowMenuId(null);
+    await exportSingleStudentData(student);
+  };
+
+  const handleExportSelected = () => {
+    if (!selectedStudents.length) {
+      toast.error('Select at least one student to export.');
+      return;
+    }
+    const rows = [
+      ['Name', 'Student ID', 'Email', 'Course', 'Branch', 'College', 'Semester', 'Group', 'Coordinator'],
+      ...selectedStudents.map((student) => [
+        student.name,
+        student.studentId,
+        student.email,
+        student.course,
+        student.branch,
+        student.college,
+        student.semester,
+        student.group,
+        student.teacherId,
+      ]),
+    ];
+    downloadCsv(rows, `selected-students-${new Date().toISOString().slice(0,10)}.csv`);
+    setShowBulkMenu(false);
+    toast.success(`${selectedStudents.length} selected student${selectedStudents.length === 1 ? '' : 's'} exported.`);
+  };
+
+  const handleBulkDeleteStudents = async () => {
+    const ids = Array.from(selectedStudentIds);
+    if (!ids.length) {
+      toast.error('Select at least one student to delete.');
+      return;
+    }
+    if (!confirm(`Delete ${ids.length} selected student${ids.length === 1 ? '' : 's'}? This action cannot be undone.`)) {
+      setShowBulkMenu(false);
+      return;
+    }
+
+    setIsBulkDeleting(true);
+    setShowBulkMenu(false);
+    try {
+      const result = await api.bulkDeleteStudents(ids);
+      clearSelection();
+      await loadData();
+      toast.success(`${result.deleted || ids.length} selected student${(result.deleted || ids.length) === 1 ? '' : 's'} deleted.`);
+    } catch (err) {
+      toast.error(err.message || 'Failed to delete selected students');
+    } finally {
+      setIsBulkDeleting(false);
+    }
   };
 
   const handleExportCsv = async () => {
@@ -580,10 +774,98 @@ export default function StudentDirectory() {
           ) : (
             // Students Table (no tabs, clear and scannable)
             <div>
-              <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-gray-700">
+              <div className="mb-2 flex flex-col gap-2 rounded-md border border-slate-200 bg-slate-50/70 px-2.5 py-2 dark:border-gray-700 dark:bg-gray-800/70 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={toggleSelectPage}
+                    disabled={!pageStudentIds.length}
+                    className={`inline-flex h-8 items-center gap-2 rounded-md border px-2.5 text-xs font-semibold shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                      allPageSelected
+                        ? 'border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-700 dark:bg-sky-950/30 dark:text-sky-300'
+                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    <span className={`flex h-4 w-4 items-center justify-center rounded border ${
+                      allPageSelected || somePageSelected
+                        ? 'border-sky-600 bg-sky-600 text-white'
+                        : 'border-slate-300 bg-white dark:border-gray-600 dark:bg-gray-800'
+                    }`}>
+                      {allPageSelected ? <CheckSquare className="h-3 w-3" /> : somePageSelected ? <span className="h-0.5 w-2 rounded bg-white" /> : null}
+                    </span>
+                    {allPageSelected ? 'Page selected' : 'Select page'}
+                  </button>
+                  <span className="text-xs font-medium text-slate-500 dark:text-gray-400">
+                    {selectedCount > 0
+                      ? `${selectedCount} selected`
+                      : `${pageStudentIds.length} visible on this page`}
+                  </span>
+                  {selectedCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={clearSelection}
+                      className="text-xs font-semibold text-slate-500 transition hover:text-slate-800 dark:text-gray-400 dark:hover:text-gray-100"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                <div ref={bulkMenuRef} className="relative self-start sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={() => setShowBulkMenu((open) => !open)}
+                    disabled={!selectedCount || isBulkDeleting}
+                    title="Bulk actions"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-700"
+                  >
+                    {isBulkDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreVertical className="h-4 w-4" />}
+                  </button>
+
+                  {showBulkMenu && selectedCount > 0 && (
+                    <div className="absolute right-0 top-9 z-40 w-52 overflow-hidden rounded-md border border-slate-200 bg-white py-1 shadow-xl dark:border-gray-700 dark:bg-gray-900">
+                      <button
+                        type="button"
+                        onClick={handleExportSelected}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800"
+                      >
+                        <FileDown className="h-4 w-4 text-emerald-600" />
+                        Export selected CSV
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleBulkDeleteStudents}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+                      >
+                        <UserX className="h-4 w-4" />
+                        Delete selected
+                      </button>
+                      <button
+                        type="button"
+                        onClick={clearSelection}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-slate-600 transition hover:bg-slate-50 dark:text-gray-300 dark:hover:bg-gray-800"
+                      >
+                        <X className="h-4 w-4" />
+                        Clear selection
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="overflow-x-auto overflow-y-visible rounded-lg border border-slate-200 dark:border-gray-700">
               <table className="min-w-full divide-y divide-slate-200">
                 <thead className="bg-slate-50 dark:bg-gray-700">
                   <tr>
+                    <th scope="col" className="w-10 px-3 py-2 text-left">
+                      <input
+                        type="checkbox"
+                        checked={allPageSelected}
+                        onChange={toggleSelectPage}
+                        aria-label={allPageSelected ? 'Unselect visible students' : 'Select visible students'}
+                        className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500 dark:border-gray-600 dark:bg-gray-800"
+                      />
+                    </th>
                     <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Student</th>
                     <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Email</th>
                     <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Branch</th>
@@ -603,8 +885,20 @@ export default function StudentDirectory() {
                 <tbody className="divide-y divide-slate-100 dark:divide-gray-700 bg-white dark:bg-gray-800">
                   {paginatedStudents.map((s) => {
                     const initial = s.name?.charAt(0)?.toUpperCase() || "?";
+                    const studentId = String(s._id || '');
+                    const isSelected = selectedStudentIds.has(studentId);
                     return (
-                      <tr key={s._id} className="hover:bg-slate-50 dark:hover:bg-gray-700">
+                      <tr key={s._id} className={`${isSelected ? 'bg-sky-50/70 dark:bg-sky-950/20' : ''} hover:bg-slate-50 dark:hover:bg-gray-700`}>
+                        <td className="px-3 py-1.5 align-middle">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(event) => toggleStudentSelection(s, event)}
+                            onClick={(event) => event.stopPropagation()}
+                            aria-label={`Select ${s.name || 'student'}`}
+                            className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500 dark:border-gray-600 dark:bg-gray-800"
+                          />
+                        </td>
                         <td className="px-3 py-1.5">
                           <div className="flex items-center gap-2 min-w-[190px]">
                             {s.avatarUrl ? (
@@ -640,21 +934,80 @@ export default function StudentDirectory() {
                         <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300">{s.teacherId || "-"}</td>
                         {activeTab === "students" && (
                           <td className="px-3 py-1.5">
-                            <div className="flex items-center justify-end gap-1">
+                            <div
+                              ref={activeRowMenuId === studentId ? rowActionMenuRef : null}
+                              className="relative flex items-center justify-end"
+                            >
                               <button
-                                onClick={(e) => handleEditStudent(s, e)}
-                                className="inline-flex h-7 w-7 items-center justify-center rounded text-blue-600 transition-colors hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/20"
-                                title="Edit student"
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setShowBulkMenu(false);
+                                  setActiveRowMenuId((current) => current === studentId ? null : studentId);
+                                }}
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white"
+                                title="Student actions"
                               >
-                                <Edit2 className="w-4 h-4" />
+                                <MoreVertical className="h-4 w-4" />
                               </button>
-                              <button
-                                onClick={(e) => handleDeleteStudent(s, e)}
-                                className="inline-flex h-7 w-7 items-center justify-center rounded text-red-600 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
-                                title="Delete student"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+
+                              {activeRowMenuId === studentId && (
+                                <div className="absolute right-0 top-8 z-40 w-52 overflow-hidden rounded-md border border-slate-200 bg-white py-1 text-left shadow-xl dark:border-gray-700 dark:bg-gray-900">
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setActiveRowMenuId(null);
+                                      openStudentProfile(s);
+                                    }}
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800"
+                                  >
+                                    <Eye className="h-4 w-4 text-sky-600" />
+                                    View profile
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(event) => handleEditStudent(s, event)}
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800"
+                                  >
+                                    <Edit2 className="h-4 w-4 text-blue-600" />
+                                    Edit details
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(event) => handleCopyStudentValue(s, s.email, 'Email', event)}
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800"
+                                  >
+                                    <ClipboardCopy className="h-4 w-4 text-slate-500" />
+                                    Copy email
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(event) => handleCopyStudentValue(s, s.studentId, 'Student ID', event)}
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800"
+                                  >
+                                    <ClipboardCopy className="h-4 w-4 text-slate-500" />
+                                    Copy student ID
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(event) => handleDownloadStudentRow(s, event)}
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800"
+                                  >
+                                    <FileDown className="h-4 w-4 text-emerald-600" />
+                                    Download data
+                                  </button>
+                                  <div className="my-1 border-t border-slate-100 dark:border-gray-800" />
+                                  <button
+                                    type="button"
+                                    onClick={(event) => handleDeleteStudent(s, event)}
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                    Delete student
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           </td>
                         )}

@@ -1094,6 +1094,79 @@ export async function deleteStudent(req, res) {
   }
 }
 
+export async function bulkDeleteStudents(req, res) {
+  try {
+    const studentIds = Array.isArray(req.body?.studentIds)
+      ? [...new Set(req.body.studentIds.map((id) => String(id).trim()).filter(Boolean))]
+      : [];
+
+    if (!studentIds.length) {
+      return res.status(400).json({ error: 'Select at least one student to delete.' });
+    }
+    if (studentIds.length > 500) {
+      return res.status(400).json({ error: 'Bulk delete is limited to 500 students at a time.' });
+    }
+
+    const validIds = studentIds.filter((id) => {
+      try {
+        validateObjectId(id, 'student ID');
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    if (validIds.length !== studentIds.length) {
+      return res.status(400).json({ error: 'One or more selected students are invalid.' });
+    }
+
+    const students = await User.find({ _id: { $in: validIds }, role: 'student' })
+      .select('_id name email studentId')
+      .lean();
+
+    if (!students.length) {
+      return res.status(404).json({ error: 'No selected students were found.' });
+    }
+
+    const idsToDelete = students.map((student) => student._id);
+    const result = await User.deleteMany({ _id: { $in: idsToDelete }, role: 'student' });
+
+    logActivity({
+      userEmail: req.user.email,
+      userRole: req.user.role,
+      actionType: 'BULK_DELETE',
+      targetType: 'STUDENT',
+      targetId: 'bulk-delete',
+      description: `Deleted ${result.deletedCount || 0} selected student${Number(result.deletedCount || 0) === 1 ? '' : 's'}`,
+      metadata: {
+        requestedCount: studentIds.length,
+        deletedCount: result.deletedCount || 0,
+        students: students.map((student) => ({
+          id: String(student._id),
+          name: student.name,
+          email: student.email,
+          studentId: student.studentId,
+        })),
+      },
+      req,
+    });
+
+    return res.json({
+      message: 'Selected students deleted successfully',
+      requested: studentIds.length,
+      deleted: result.deletedCount || 0,
+      students: students.map((student) => ({
+        id: student._id,
+        name: student.name,
+        email: student.email,
+        studentId: student.studentId,
+      })),
+    });
+  } catch (err) {
+    console.error('Error bulk deleting students:', err);
+    return res.status(500).json({ error: 'Failed to delete selected students' });
+  }
+}
+
 // Update a student (admin only)
 export async function updateStudent(req, res) {
   try {

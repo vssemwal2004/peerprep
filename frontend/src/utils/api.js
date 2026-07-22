@@ -396,6 +396,7 @@ export const api = {
   promoteStudents: (body) => request('/students/promotion/promote', { method: 'POST', body }),
   updateStudent: (studentId, body) => request(`/students/${studentId}`, { method: 'PUT', body }),
   deleteStudent: (studentId) => request(`/students/${studentId}`, { method: 'DELETE' }),
+  bulkDeleteStudents: (studentIds) => request('/students/bulk-delete', { method: 'POST', body: { studentIds } }),
   exportStudentsCsv: async (options = {}) => {
     const params = new URLSearchParams();
     ['search', 'sortOrder', 'semester', 'branch', 'course', 'college', 'group', 'coordinator'].forEach((key) => {
