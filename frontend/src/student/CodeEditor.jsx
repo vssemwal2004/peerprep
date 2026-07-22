@@ -107,9 +107,11 @@ function CodeEditor({
   const editorContainerRef = useRef(null);
   const consoleContainerRef = useRef(null);
   const resizeFrameRef = useRef(null);
+  const resizeCleanupRef = useRef(null);
   const codeCommitTimerRef = useRef(null);
   const pendingCodeCommitRef = useRef(null);
   const liveCodeRef = useRef(code || '');
+  const externalCodeRef = useRef(code || '');
   const editorContextRef = useRef({ editorKey, language });
   const clipboardNoticeTimerRef = useRef(null);
   const [consoleHeight, setConsoleHeight] = useState(116);
@@ -248,11 +250,13 @@ function CodeEditor({
       // Language switching already captures the live draft before changing.
       if (questionChanged && pending) pending.commit(pending.value);
     }
+    externalCodeRef.current = code || '';
     liveCodeRef.current = code || '';
     editorContextRef.current = { editorKey, language };
   }, [code, language, editorKey]);
 
   useEffect(() => () => {
+    resizeCleanupRef.current?.();
     if (codeCommitTimerRef.current) clearTimeout(codeCommitTimerRef.current);
     if (clipboardNoticeTimerRef.current) clearTimeout(clipboardNoticeTimerRef.current);
     const pending = pendingCodeCommitRef.current;
@@ -285,6 +289,16 @@ function CodeEditor({
   const handleEditorCodeChange = (nextCode) => {
     liveCodeRef.current = nextCode;
     onLiveCodeChange?.(nextCode);
+
+    if (nextCode === externalCodeRef.current) {
+      if (codeCommitTimerRef.current) {
+        clearTimeout(codeCommitTimerRef.current);
+        codeCommitTimerRef.current = null;
+      }
+      pendingCodeCommitRef.current = null;
+      return;
+    }
+
     if (codeCommitTimerRef.current) clearTimeout(codeCommitTimerRef.current);
     pendingCodeCommitRef.current = { value: nextCode, commit: onCodeChange };
     codeCommitTimerRef.current = setTimeout(() => {
@@ -307,6 +321,7 @@ function CodeEditor({
   const handleConsoleResizeStart = (event) => {
     if (!rootRef.current) return;
     event.preventDefault();
+    resizeCleanupRef.current?.();
 
     try {
       event.currentTarget?.setPointerCapture?.(event.pointerId);
@@ -332,12 +347,16 @@ function CodeEditor({
       window.removeEventListener('pointerup', handlePointerUp);
       window.removeEventListener('pointercancel', handlePointerUp);
       window.removeEventListener('lostpointercapture', handlePointerUp);
+      window.removeEventListener('blur', handlePointerUp);
+      resizeCleanupRef.current = null;
     };
 
+    resizeCleanupRef.current = handlePointerUp;
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp);
     window.addEventListener('pointercancel', handlePointerUp);
     window.addEventListener('lostpointercapture', handlePointerUp);
+    window.addEventListener('blur', handlePointerUp);
   };
 
   const isRunResult = isRunExecutionResult(result);

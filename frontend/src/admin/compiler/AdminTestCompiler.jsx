@@ -354,6 +354,11 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
 
   const splitContainerRef = useRef(null);
   const dragFrameRef = useRef(null);
+  const resizeCleanupRef = useRef(null);
+
+  useEffect(() => () => {
+    resizeCleanupRef.current?.();
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -441,10 +446,11 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
     toast.success(`Reset ${getLanguageLabel(language)} starter code.`);
   };
 
-  const handleRun = async () => {
+  const handleRun = async (sourceOverride) => {
     if (!problem?._id) return;
 
-    const validationMessage = getCodeValidationMessage(activeCode, getStarterCodeForLanguage(problem, language), 'run');
+    const sourceCode = typeof sourceOverride === 'string' ? sourceOverride : activeCode;
+    const validationMessage = getCodeValidationMessage(sourceCode, getStarterCodeForLanguage(problem, language), 'run');
     if (validationMessage) {
       toast.error(validationMessage);
       return;
@@ -462,7 +468,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
         runnableCases.map(async (testCase, index) => {
           const response = await api.runCompilerProblem(problem._id, {
             language,
-            sourceCode: activeCode,
+            sourceCode,
             customInput: testCase?.input || '',
           });
 
@@ -485,10 +491,11 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
     }
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (sourceOverride) => {
     if (!problem?._id) return;
 
-    const validationMessage = getCodeValidationMessage(activeCode, getStarterCodeForLanguage(problem, language), 'submit');
+    const sourceCode = typeof sourceOverride === 'string' ? sourceOverride : activeCode;
+    const validationMessage = getCodeValidationMessage(sourceCode, getStarterCodeForLanguage(problem, language), 'submit');
     if (validationMessage) {
       toast.error(validationMessage);
       return;
@@ -500,7 +507,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
     try {
       const response = await api.submitCompilerProblem(problem._id, {
         language,
-        sourceCode: activeCode,
+        sourceCode,
       });
       const normalized = normalizeSubmitResult(response);
       setResult(normalized);
@@ -557,6 +564,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
     if (!splitContainerRef.current) return;
 
     event.preventDefault();
+    resizeCleanupRef.current?.();
     document.body.style.userSelect = 'none';
     document.body.style.cursor = 'col-resize';
 
@@ -591,15 +599,23 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
       document.body.style.cursor = '';
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+      window.removeEventListener('lostpointercapture', handlePointerUp);
+      window.removeEventListener('blur', handlePointerUp);
 
       if (dragFrameRef.current) {
         cancelAnimationFrame(dragFrameRef.current);
         dragFrameRef.current = null;
       }
+      resizeCleanupRef.current = null;
     };
 
+    resizeCleanupRef.current = handlePointerUp;
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+    window.addEventListener('lostpointercapture', handlePointerUp);
+    window.addEventListener('blur', handlePointerUp);
   };
 
   if (loading) {

@@ -105,10 +105,14 @@ export default function MonacoCodeEditor({
 }) {
   const editorRef = useRef(null);
   const onChangeRef = useRef(onChange);
+  const contentKeyRef = useRef(contentKey);
+  const externalValueRef = useRef(value || '');
+  const pendingLocalValueRef = useRef(null);
   const clipboardScopeRef = useRef(clipboardScope);
   const onClipboardStatusRef = useRef(onClipboardStatus);
   const [loadError, setLoadError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [editorValue, setEditorValue] = useState(value || '');
   const [theme, setTheme] = useState(() => (isDarkMode() ? 'peerprep-dark' : 'peerprep-light'));
 
   const resolvedHeight = typeof height === 'number' ? `${height}px` : height;
@@ -116,6 +120,35 @@ export default function MonacoCodeEditor({
   useEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
+
+  useEffect(() => {
+    const nextValue = value || '';
+    const previousExternalValue = externalValueRef.current;
+    const contentChanged = contentKeyRef.current !== contentKey;
+
+    externalValueRef.current = nextValue;
+
+    if (contentChanged) {
+      contentKeyRef.current = contentKey;
+      pendingLocalValueRef.current = null;
+      setEditorValue(nextValue);
+      return;
+    }
+
+    if (pendingLocalValueRef.current !== null) {
+      if (nextValue === pendingLocalValueRef.current) {
+        pendingLocalValueRef.current = null;
+        return;
+      }
+
+      // A genuinely new external value is authoritative (for example Reset).
+      // An unchanged value is just a parent re-render while a local edit is pending.
+      if (nextValue === previousExternalValue) return;
+      pendingLocalValueRef.current = null;
+    }
+
+    setEditorValue(nextValue);
+  }, [value, contentKey]);
 
   useEffect(() => {
     clipboardScopeRef.current = clipboardScope || 'peerprep-editor';
@@ -147,6 +180,20 @@ export default function MonacoCodeEditor({
     window.addEventListener('peerprep:focus-code-editor', focusEditor);
     return () => window.removeEventListener('peerprep:focus-code-editor', focusEditor);
   }, []);
+
+  useEffect(() => {
+    editorRef.current?.updateOptions({
+      readOnly: Boolean(readOnly),
+      domReadOnly: Boolean(readOnly),
+      contextmenu: !internalClipboardOnly,
+    });
+  }, [readOnly, internalClipboardOnly]);
+
+  const handleEditorChange = (nextValue = '') => {
+    pendingLocalValueRef.current = nextValue;
+    setEditorValue(nextValue);
+    onChangeRef.current?.(nextValue);
+  };
 
   const reportClipboardStatus = (status, message) => {
     onClipboardStatusRef.current?.({ status, message });
@@ -242,8 +289,8 @@ export default function MonacoCodeEditor({
 
   const fallbackEditor = (
     <textarea
-      value={value || ''}
-      onChange={(event) => onChangeRef.current?.(event.target.value)}
+      value={editorValue}
+      onChange={(event) => handleEditorChange(event.target.value)}
       readOnly={readOnly}
       aria-label="Code editor"
       spellCheck={false}
@@ -285,15 +332,20 @@ export default function MonacoCodeEditor({
         key={contentKey || 'peerprep-code-editor'}
         height="100%"
         language={getMonacoLanguage(language)}
-        value={value || ''}
+        value={editorValue}
         theme={theme}
         beforeMount={definePeerprepThemes}
         onMount={(editor) => {
           editorRef.current = editor;
+          editor.updateOptions({
+            readOnly: Boolean(readOnly),
+            domReadOnly: Boolean(readOnly),
+            contextmenu: !internalClipboardOnly,
+          });
           setIsLoading(false);
           requestAnimationFrame(() => editor.layout());
         }}
-        onChange={(nextValue) => onChangeRef.current?.(nextValue || '')}
+        onChange={(nextValue) => handleEditorChange(nextValue || '')}
         saveViewState={false}
         keepCurrentModel={false}
         loading={fallbackEditor}
