@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { Code2, Eye, FilePlus2, Plus, Save, TextCursorInput, Trash2, Upload, X } from 'lucide-react';
+import { Eye, FilePlus2, Plus, Save, Trash2, Upload, X } from 'lucide-react';
 import { api } from '../../utils/api';
 import { useToast } from '../../components/CustomToast';
 import RichTextEditor from './RichTextEditor';
@@ -213,7 +213,6 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
   const [form, setForm] = useState(() => createDefaultProblemForm());
   const [activeTab, setActiveTab] = useState('details');
   const [activeLanguage, setActiveLanguage] = useState('python');
-  const [templateEditorMode, setTemplateEditorMode] = useState('code');
   const [currentProblemId, setCurrentProblemId] = useState(finalAssessmentContext?.problemId || (isAssessment ? '' : (id || '')));
   const [currentStatus, setCurrentStatus] = useState('draft');
   const [previewValidated, setPreviewValidated] = useState(false);
@@ -862,52 +861,18 @@ if (!isValidated || publishedProblem.status !== 'published') {
             </SectionCard>
 
             <SectionCard title="Code Templates" subtitle="Provide starter code for each language. Students can fully replace it with any valid program entrypoint.">
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="mb-4 flex flex-wrap gap-2">
                 <div className="flex flex-wrap gap-2">{form.supportedLanguages.map((languageId) => <button key={languageId} type="button" onClick={() => setActiveLanguage(languageId)} className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${activeLanguage === languageId ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}>{getLanguageLabel(languageId)}</button>)}</div>
-                <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-gray-700 dark:bg-gray-800" role="group" aria-label="Template editor mode">
-                  <button
-                    type="button"
-                    onClick={() => setTemplateEditorMode('code')}
-                    aria-pressed={templateEditorMode === 'code'}
-                    className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors ${templateEditorMode === 'code' ? 'bg-white text-sky-700 shadow-sm dark:bg-gray-900 dark:text-sky-300' : 'text-slate-500 hover:text-slate-800 dark:text-gray-400 dark:hover:text-gray-200'}`}
-                  >
-                    <Code2 className="h-3.5 w-3.5" />
-                    Code Editor
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTemplateEditorMode('plain')}
-                    aria-pressed={templateEditorMode === 'plain'}
-                    className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors ${templateEditorMode === 'plain' ? 'bg-white text-sky-700 shadow-sm dark:bg-gray-900 dark:text-sky-300' : 'text-slate-500 hover:text-slate-800 dark:text-gray-400 dark:hover:text-gray-200'}`}
-                  >
-                    <TextCursorInput className="h-3.5 w-3.5" />
-                    Plain Text
-                  </button>
-                </div>
               </div>
-              {templateEditorMode === 'code' ? (
-                <MonacoCodeEditor
-                  key={`problem-template:${activeLanguage}`}
-                  language={activeLanguage}
-                  value={activeTemplate}
-                  onChange={(nextTemplate) => updateTemplate(activeLanguage, nextTemplate)}
-                  height={380}
-                  readOnly={false}
-                  internalClipboardOnly={false}
-                  contentKey={`problem-template:${activeLanguage}`}
-                />
-              ) : (
-                <textarea
-                  key={`problem-template-plain:${activeLanguage}`}
-                  value={activeTemplate}
-                  onChange={(event) => updateTemplate(activeLanguage, event.target.value)}
-                  aria-label={`${getLanguageLabel(activeLanguage)} code template`}
-                  spellCheck={false}
-                  autoCapitalize="off"
-                  autoCorrect="off"
-                  className="h-[380px] w-full resize-y rounded-lg border border-slate-200 bg-white px-4 py-3 font-mono text-sm leading-6 text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:focus:ring-sky-900/30"
-                />
-              )}
+              <MonacoCodeEditor
+                language={activeLanguage}
+                value={activeTemplate}
+                onChange={(nextTemplate) => updateTemplate(activeLanguage, nextTemplate)}
+                height={380}
+                readOnly={false}
+                internalClipboardOnly={false}
+                contentKey={`problem-template:${activeLanguage}`}
+              />
             </SectionCard>
           </>
         ) : null}

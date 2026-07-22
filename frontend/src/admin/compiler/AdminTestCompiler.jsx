@@ -733,6 +733,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
                 showToolbar
                 internalClipboardOnly={false}
                 editorKey={`admin-test:${problem?._id || 'draft'}`}
+                onLiveCodeChange={updateDraft}
               />
             </section>
           </div>
@@ -815,6 +816,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
               showToolbar
               internalClipboardOnly={false}
               editorKey={`admin-test:${problem?._id || 'draft'}`}
+              onLiveCodeChange={updateDraft}
             />
           </div>
         </div>

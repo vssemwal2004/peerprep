@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
-import Editor, { loader } from '@monaco-editor/react';
 import * as bundledMonaco from 'monaco-editor';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
@@ -34,8 +33,6 @@ if (typeof window !== 'undefined') {
     },
   };
 }
-
-loader.config({ monaco: bundledMonaco });
 
 function isDarkMode() {
   return typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
@@ -87,9 +84,20 @@ function definePeerprepThemes(monaco) {
   });
 }
 
+function ensureEditorWritable(editor) {
+  if (!editor) return;
+  editor.updateOptions({ readOnly: false, domReadOnly: false });
+  const input = editor.getDomNode()?.querySelector('textarea.inputarea');
+  if (!input) return;
+  input.readOnly = false;
+  input.disabled = false;
+  input.removeAttribute('readonly');
+  input.setAttribute('aria-readonly', 'false');
+}
+
 // eslint-disable-next-line react-refresh/only-export-components
 export function preloadMonacoEditor() {
-  return loader.init().catch(() => null);
+  return Promise.resolve(bundledMonaco);
 }
 
 export default function MonacoCodeEditor({
@@ -99,21 +107,26 @@ export default function MonacoCodeEditor({
   height = 420,
   readOnly = false,
   internalClipboardOnly = false,
+  blockContextMenu = false,
   clipboardScope = 'peerprep-editor',
   onClipboardStatus,
   contentKey = '',
 }) {
+  const containerRef = useRef(null);
   const editorRef = useRef(null);
   const onChangeRef = useRef(onChange);
+  const applyingExternalValueRef = useRef(false);
+  const pendingLocalValueRef = useRef(null);
   const contentKeyRef = useRef(contentKey);
   const externalValueRef = useRef(value || '');
-  const pendingLocalValueRef = useRef(null);
+  const latestLanguageRef = useRef(language);
+  const latestReadOnlyRef = useRef(readOnly);
+  const latestBlockContextMenuRef = useRef(blockContextMenu);
   const clipboardScopeRef = useRef(clipboardScope);
   const onClipboardStatusRef = useRef(onClipboardStatus);
+  const [fallbackValue, setFallbackValue] = useState(value || '');
   const [loadError, setLoadError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [editorValue, setEditorValue] = useState(value || '');
-  const [theme, setTheme] = useState(() => (isDarkMode() ? 'peerprep-dark' : 'peerprep-light'));
 
   const resolvedHeight = typeof height === 'number' ? `${height}px` : height;
 
@@ -122,33 +135,10 @@ export default function MonacoCodeEditor({
   }, [onChange]);
 
   useEffect(() => {
-    const nextValue = value || '';
-    const previousExternalValue = externalValueRef.current;
-    const contentChanged = contentKeyRef.current !== contentKey;
-
-    externalValueRef.current = nextValue;
-
-    if (contentChanged) {
-      contentKeyRef.current = contentKey;
-      pendingLocalValueRef.current = null;
-      setEditorValue(nextValue);
-      return;
-    }
-
-    if (pendingLocalValueRef.current !== null) {
-      if (nextValue === pendingLocalValueRef.current) {
-        pendingLocalValueRef.current = null;
-        return;
-      }
-
-      // A genuinely new external value is authoritative (for example Reset).
-      // An unchanged value is just a parent re-render while a local edit is pending.
-      if (nextValue === previousExternalValue) return;
-      pendingLocalValueRef.current = null;
-    }
-
-    setEditorValue(nextValue);
-  }, [value, contentKey]);
+    latestLanguageRef.current = language;
+    latestReadOnlyRef.current = readOnly;
+    latestBlockContextMenuRef.current = blockContextMenu;
+  }, [language, readOnly, blockContextMenu]);
 
   useEffect(() => {
     clipboardScopeRef.current = clipboardScope || 'peerprep-editor';
@@ -156,24 +146,180 @@ export default function MonacoCodeEditor({
   }, [clipboardScope, onClipboardStatus]);
 
   useEffect(() => {
-    let mounted = true;
-    loader.init().catch((error) => {
-      if (!mounted) return;
+    const nextValue = value || '';
+    const previousExternalValue = externalValueRef.current;
+    const contentChanged = contentKeyRef.current !== contentKey;
+    externalValueRef.current = nextValue;
+
+    if (contentChanged) {
+      contentKeyRef.current = contentKey;
+      pendingLocalValueRef.current = null;
+    } else if (pendingLocalValueRef.current !== null) {
+      if (nextValue === pendingLocalValueRef.current) {
+        pendingLocalValueRef.current = null;
+        setFallbackValue(nextValue);
+        return;
+      }
+      if (nextValue === previousExternalValue) return;
+      pendingLocalValueRef.current = null;
+    }
+
+    setFallbackValue(nextValue);
+    const editor = editorRef.current;
+    if (!editor || editor.getValue() === nextValue) return;
+
+    applyingExternalValueRef.current = true;
+    try {
+      editor.setValue(nextValue);
+    } finally {
+      applyingExternalValueRef.current = false;
+    }
+  }, [value, contentKey]);
+
+  useEffect(() => {
+    if (!containerRef.current) return undefined;
+
+    let editor;
+    let model;
+    let changeSubscription;
+    let focusSubscription;
+    let readOnlyAttemptSubscription;
+    let mutationObserver;
+    let resizeObserver;
+    let layoutFrame;
+
+    try {
+      definePeerprepThemes(bundledMonaco);
+      editor = bundledMonaco.editor.create(containerRef.current, {
+        value: externalValueRef.current,
+        language: getMonacoLanguage(latestLanguageRef.current),
+        theme: isDarkMode() ? 'peerprep-dark' : 'peerprep-light',
+        automaticLayout: false,
+        minimap: { enabled: false },
+        fontFamily: "'JetBrains Mono', 'Cascadia Code', Consolas, monospace",
+        fontSize: 14,
+        lineHeight: 23,
+        fontLigatures: true,
+        readOnly: Boolean(latestReadOnlyRef.current),
+        domReadOnly: Boolean(latestReadOnlyRef.current),
+        ariaLabel: 'Code editor',
+        scrollBeyondLastLine: false,
+        folding: true,
+        glyphMargin: false,
+        codeLens: false,
+        links: false,
+        contextmenu: !latestBlockContextMenuRef.current,
+        hover: { enabled: false },
+        parameterHints: { enabled: false },
+        inlayHints: { enabled: 'off' },
+        lightbulb: { enabled: 'off' },
+        quickSuggestions: false,
+        suggestOnTriggerCharacters: false,
+        wordBasedSuggestions: 'off',
+        inlineSuggest: { enabled: false },
+        tabCompletion: 'off',
+        acceptSuggestionOnEnter: 'off',
+        bracketPairColorization: { enabled: true },
+        guides: { bracketPairs: true, indentation: true, highlightActiveIndentation: true },
+        occurrencesHighlight: 'off',
+        selectionHighlight: true,
+        renderValidationDecorations: 'off',
+        stickyScroll: { enabled: false },
+        tabSize: 2,
+        insertSpaces: true,
+        autoIndent: 'full',
+        formatOnPaste: false,
+        formatOnType: false,
+        copyWithSyntaxHighlighting: false,
+        overviewRulerLanes: 0,
+        hideCursorInOverviewRuler: true,
+        scrollbar: {
+          vertical: 'auto',
+          horizontal: 'auto',
+          verticalScrollbarSize: 10,
+          horizontalScrollbarSize: 10,
+          alwaysConsumeMouseWheel: false,
+        },
+        roundedSelection: false,
+        padding: { top: 14, bottom: 14 },
+      });
+
+      model = editor.getModel();
+      editorRef.current = editor;
+      if (!latestReadOnlyRef.current) ensureEditorWritable(editor);
+
+      changeSubscription = editor.onDidChangeModelContent(() => {
+        if (applyingExternalValueRef.current) return;
+        const nextValue = editor.getValue();
+        pendingLocalValueRef.current = nextValue;
+        setFallbackValue(nextValue);
+        onChangeRef.current?.(nextValue);
+      });
+      focusSubscription = editor.onDidFocusEditorText(() => {
+        if (!latestReadOnlyRef.current) ensureEditorWritable(editor);
+      });
+      readOnlyAttemptSubscription = editor.onDidAttemptReadOnlyEdit(() => {
+        if (!latestReadOnlyRef.current) {
+          ensureEditorWritable(editor);
+          editor.focus();
+        }
+      });
+
+      mutationObserver = new MutationObserver(() => {
+        bundledMonaco.editor.setTheme(isDarkMode() ? 'peerprep-dark' : 'peerprep-light');
+      });
+      mutationObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+
+      resizeObserver = new ResizeObserver(() => {
+        if (layoutFrame) cancelAnimationFrame(layoutFrame);
+        layoutFrame = requestAnimationFrame(() => {
+          layoutFrame = null;
+          editor.layout();
+        });
+      });
+      resizeObserver.observe(containerRef.current);
+
+      layoutFrame = requestAnimationFrame(() => {
+        layoutFrame = null;
+        editor.layout();
+      });
+      setIsLoading(false);
+    } catch (error) {
       setLoadError(error?.message || 'The code editor could not load.');
       setIsLoading(false);
-    });
+    }
+
     return () => {
-      mounted = false;
+      mutationObserver?.disconnect();
+      resizeObserver?.disconnect();
+      if (layoutFrame) cancelAnimationFrame(layoutFrame);
+      changeSubscription?.dispose();
+      focusSubscription?.dispose();
+      readOnlyAttemptSubscription?.dispose();
+      editor?.dispose();
+      model?.dispose();
+      editorRef.current = null;
     };
   }, []);
 
   useEffect(() => {
-    const observer = new MutationObserver(() => {
-      setTheme(isDarkMode() ? 'peerprep-dark' : 'peerprep-light');
-    });
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-    return () => observer.disconnect();
-  }, []);
+    const model = editorRef.current?.getModel();
+    if (model) bundledMonaco.editor.setModelLanguage(model, getMonacoLanguage(language));
+  }, [language]);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    if (readOnly) {
+      editor.updateOptions({ readOnly: true, domReadOnly: true });
+      return;
+    }
+    ensureEditorWritable(editor);
+  }, [readOnly]);
+
+  useEffect(() => {
+    editorRef.current?.updateOptions({ contextmenu: !blockContextMenu });
+  }, [blockContextMenu]);
 
   useEffect(() => {
     const focusEditor = () => editorRef.current?.focus();
@@ -181,18 +327,14 @@ export default function MonacoCodeEditor({
     return () => window.removeEventListener('peerprep:focus-code-editor', focusEditor);
   }, []);
 
-  useEffect(() => {
-    editorRef.current?.updateOptions({
-      readOnly: Boolean(readOnly),
-      domReadOnly: Boolean(readOnly),
-      contextmenu: !internalClipboardOnly,
-    });
-  }, [readOnly, internalClipboardOnly]);
-
-  const handleEditorChange = (nextValue = '') => {
+  const handleEditorChange = (nextValue) => {
     pendingLocalValueRef.current = nextValue;
-    setEditorValue(nextValue);
+    setFallbackValue(nextValue);
     onChangeRef.current?.(nextValue);
+  };
+
+  const enforceWritableState = () => {
+    if (!readOnly) ensureEditorWritable(editorRef.current);
   };
 
   const reportClipboardStatus = (status, message) => {
@@ -203,9 +345,7 @@ export default function MonacoCodeEditor({
     const editor = editorRef.current;
     const model = editor?.getModel();
     const selection = editor?.getSelection();
-    if (model && selection && !selection.isEmpty()) {
-      return model.getValueInRange(selection);
-    }
+    if (model && selection && !selection.isEmpty()) return model.getValueInRange(selection);
 
     const target = event?.target;
     if (target && typeof target.selectionStart === 'number' && typeof target.selectionEnd === 'number') {
@@ -231,7 +371,7 @@ export default function MonacoCodeEditor({
       const start = target.selectionStart;
       const end = target.selectionEnd;
       const nextValue = `${source.slice(0, start)}${text}${source.slice(end)}`;
-      onChangeRef.current?.(nextValue);
+      handleEditorChange(nextValue);
       requestAnimationFrame(() => {
         target.selectionStart = start + text.length;
         target.selectionEnd = start + text.length;
@@ -287,9 +427,18 @@ export default function MonacoCodeEditor({
     reportClipboardStatus('pasted', 'Protected editor code pasted.');
   };
 
-  const fallbackEditor = (
+  const captureProps = internalClipboardOnly
+    ? {
+        'data-assessment-code-editor': 'internal',
+        onCopyCapture: handleInternalCopy,
+        onCutCapture: handleInternalCut,
+        onPasteCapture: handleInternalPaste,
+      }
+    : {};
+
+  const basicEditor = (
     <textarea
-      value={editorValue}
+      value={fallbackValue}
       onChange={(event) => handleEditorChange(event.target.value)}
       readOnly={readOnly}
       aria-label="Code editor"
@@ -302,109 +451,26 @@ export default function MonacoCodeEditor({
 
   if (loadError) {
     return (
-      <div
-        data-assessment-code-editor={internalClipboardOnly ? 'internal' : undefined}
-        onCopyCapture={internalClipboardOnly ? handleInternalCopy : undefined}
-        onCutCapture={internalClipboardOnly ? handleInternalCut : undefined}
-        onPasteCapture={internalClipboardOnly ? handleInternalPaste : undefined}
-        className="overflow-hidden rounded-lg border border-rose-200 bg-white dark:border-rose-800 dark:bg-gray-900"
-        style={{ height: resolvedHeight }}
-      >
+      <div {...captureProps} className="overflow-hidden rounded-lg border border-rose-200 bg-white dark:border-rose-800 dark:bg-gray-900" style={{ height: resolvedHeight }}>
         <div className="flex items-center gap-2 border-b border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300">
           <AlertCircle className="h-4 w-4 flex-shrink-0" />
           Basic editor active because Monaco could not initialize.
         </div>
-        <div className="h-[calc(100%-37px)]">{fallbackEditor}</div>
+        <div className="h-[calc(100%-37px)]">{basicEditor}</div>
       </div>
     );
   }
 
   return (
     <div
-      data-assessment-code-editor={internalClipboardOnly ? 'internal' : undefined}
-      onCopyCapture={internalClipboardOnly ? handleInternalCopy : undefined}
-      onCutCapture={internalClipboardOnly ? handleInternalCut : undefined}
-      onPasteCapture={internalClipboardOnly ? handleInternalPaste : undefined}
+      {...captureProps}
+      onPointerDownCapture={enforceWritableState}
+      onFocusCapture={enforceWritableState}
       className="relative h-full min-h-0 overflow-hidden rounded-lg bg-white dark:bg-gray-900"
       style={{ height: resolvedHeight }}
     >
-      <Editor
-        key={contentKey || 'peerprep-code-editor'}
-        height="100%"
-        language={getMonacoLanguage(language)}
-        value={editorValue}
-        theme={theme}
-        beforeMount={definePeerprepThemes}
-        onMount={(editor) => {
-          editorRef.current = editor;
-          editor.updateOptions({
-            readOnly: Boolean(readOnly),
-            domReadOnly: Boolean(readOnly),
-            contextmenu: !internalClipboardOnly,
-          });
-          setIsLoading(false);
-          requestAnimationFrame(() => editor.layout());
-        }}
-        onChange={(nextValue) => handleEditorChange(nextValue || '')}
-        saveViewState={false}
-        keepCurrentModel={false}
-        loading={fallbackEditor}
-        options={{
-          automaticLayout: true,
-          minimap: { enabled: false },
-          fontFamily: "'JetBrains Mono', 'Cascadia Code', Consolas, monospace",
-          fontSize: 14,
-          lineHeight: 23,
-          fontLigatures: true,
-          readOnly,
-          domReadOnly: readOnly,
-          ariaLabel: 'Code editor',
-          smoothScrolling: true,
-          cursorSmoothCaretAnimation: 'on',
-          cursorBlinking: 'smooth',
-          scrollBeyondLastLine: false,
-          folding: true,
-          foldingHighlight: true,
-          showFoldingControls: 'mouseover',
-          glyphMargin: false,
-          codeLens: false,
-          links: false,
-          colorDecorators: true,
-          contextmenu: !internalClipboardOnly,
-          hover: { enabled: true, delay: 350 },
-          parameterHints: { enabled: true },
-          inlayHints: { enabled: 'off' },
-          lightbulb: { enabled: 'off' },
-          quickSuggestions: { other: true, comments: false, strings: false },
-          suggestOnTriggerCharacters: true,
-          wordBasedSuggestions: 'currentDocument',
-          bracketPairColorization: { enabled: true },
-          guides: { bracketPairs: true, indentation: true, highlightActiveIndentation: true },
-          occurrencesHighlight: 'off',
-          selectionHighlight: true,
-          renderValidationDecorations: 'off',
-          stickyScroll: { enabled: false },
-          tabSize: 2,
-          insertSpaces: true,
-          autoIndent: 'full',
-          formatOnPaste: true,
-          formatOnType: true,
-          copyWithSyntaxHighlighting: true,
-          mouseWheelZoom: true,
-          overviewRulerLanes: 0,
-          hideCursorInOverviewRuler: true,
-          scrollbar: {
-            vertical: 'auto',
-            horizontal: 'auto',
-            verticalScrollbarSize: 10,
-            horizontalScrollbarSize: 10,
-            alwaysConsumeMouseWheel: false,
-          },
-          roundedSelection: false,
-          padding: { top: 14, bottom: 14 },
-        }}
-      />
-      {isLoading ? <span className="sr-only">Loading code editor</span> : null}
+      {isLoading ? <div className="absolute inset-0 z-10">{basicEditor}</div> : null}
+      <div ref={containerRef} aria-hidden={isLoading ? 'true' : undefined} className="h-full w-full" style={{ visibility: isLoading ? 'hidden' : 'visible' }} />
     </div>
   );
 }

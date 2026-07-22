@@ -287,7 +287,6 @@ export default function AdminAssessmentPreview() {
                               </div>
                             </div>
                             <MonacoCodeEditor
-                              key={`assessment-preview:${questionKey}:${previewLanguage}`}
                               language={previewLanguage}
                               value={previewCode}
                               onChange={updatePreviewCode}

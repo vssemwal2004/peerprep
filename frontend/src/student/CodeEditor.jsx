@@ -97,6 +97,7 @@ function CodeEditor({
   onReset,
   showToolbar = true,
   internalClipboardOnly = false,
+  blockContextMenu = false,
   clipboardScope = 'assessment-editor',
   editorKey = '',
   onLiveCodeChange,
@@ -583,6 +584,7 @@ function CodeEditor({
           onChange={handleEditorCodeChange}
           height="100%"
           internalClipboardOnly={internalClipboardOnly}
+          blockContextMenu={blockContextMenu}
           clipboardScope={clipboardScope}
           onClipboardStatus={handleClipboardStatus}
           contentKey={`${editorKey || 'code-editor'}:${language || 'plain'}`}
@@ -886,6 +888,7 @@ function codeEditorPropsEqual(previous, next) {
     && previous.isSubmitting === next.isSubmitting
     && previous.showToolbar === next.showToolbar
     && previous.internalClipboardOnly === next.internalClipboardOnly
+    && previous.blockContextMenu === next.blockContextMenu
     && previous.clipboardScope === next.clipboardScope
     && previous.editorKey === next.editorKey
     && sameStringList(previous.supportedLanguages, next.supportedLanguages)
