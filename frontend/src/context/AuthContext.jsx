@@ -49,6 +49,7 @@ export function AuthProvider({ children }) {
         setUser(userData);
         cacheTimestampRef.current = Date.now();
       } catch {
+        clearApiCache();
         setUser(null);
         cacheTimestampRef.current = Date.now();
       } finally {

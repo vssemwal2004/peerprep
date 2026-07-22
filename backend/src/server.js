@@ -26,11 +26,30 @@ await seedEmailTemplates();
 const httpServer = createServer(app);
 
 let isShuttingDown = false;
+const configuredSocketOrigins = String(process.env.FRONTEND_ORIGIN || 'http://localhost:5173')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const localSocketHosts = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+const localSocketPorts = new Set(['5173', '5174', '5175']);
+const isAllowedSocketOrigin = (origin) => {
+  if (!origin || configuredSocketOrigins.includes(origin)) return true;
+  if (process.env.NODE_ENV === 'production') return false;
+  try {
+    const url = new URL(origin);
+    return localSocketHosts.has(url.hostname) && localSocketPorts.has(url.port || '80');
+  } catch {
+    return false;
+  }
+};
 
 // Setup Socket.IO with CORS
 const io = new Server(httpServer, {
   cors: {
-    origin: process.env.FRONTEND_ORIGIN || 'http://localhost:5173',
+    origin(origin, callback) {
+      if (isAllowedSocketOrigin(origin)) return callback(null, true);
+      return callback(new Error('Origin not allowed by CORS'));
+    },
     methods: ['GET', 'POST'],
     credentials: true
   }

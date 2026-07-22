@@ -1,35 +1,9 @@
 import { io } from 'socket.io-client';
+import { getSocketBase } from './apiBase';
 
 // Determine Socket URL: use environment variable, or detect production, or fallback to localhost
 const getSocketURL = () => {
-  const configuredBase = import.meta.env.VITE_SOCKET_URL
-    || import.meta.env.VITE_API_URL
-    || import.meta.env.VITE_API_BASE;
-
-  // Prefer an explicit config, and normalize common ".../api" base URLs.
-  if (configuredBase) {
-    const raw = String(configuredBase).trim();
-    if (!raw) return 'http://localhost:4000';
-    try {
-      const url = new URL(raw);
-      if (url.pathname === '/api' || url.pathname === '/api/') {
-        url.pathname = '/';
-      }
-      url.search = '';
-      url.hash = '';
-      return url.toString().replace(/\/$/, '');
-    } catch {
-      return raw.replace(/\/api\/?$/, '');
-    }
-  }
-  
-  // If running on production domain, use production URL
-  if (typeof window !== 'undefined' && window.location.hostname === 'peerprep.co.in') {
-    return 'https://peerprep.co.in';
-  }
-  
-  // Default to localhost for development
-  return 'http://localhost:4000';
+  return getSocketBase();
 };
 
 class SocketService {

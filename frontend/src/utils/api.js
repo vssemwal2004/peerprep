@@ -1,5 +1,7 @@
 import { getJudge0LanguageId } from '../admin/compiler/compilerUtils';
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000/api';
+import { getApiBase } from './apiBase';
+
+const API_BASE = getApiBase();
 
 /**
  * SECURITY: JWT now stored in HttpOnly cookies instead of localStorage
@@ -294,7 +296,12 @@ export const api = {
   getStudentActivity: () => request('/auth/activity', { cacheTtlMs: 30 * 1000 }),
   debugStudentActivity: () => request('/auth/activity/debug', { skipCache: true }),
   getStudentStats: () => request('/auth/stats', { cacheTtlMs: 60 * 1000 }),
-  login: (identifier, password) => request('/auth/login', { method: 'POST', body: { identifier, password } }),
+  login: async (identifier, password) => {
+    clearApiCache();
+    const result = await request('/auth/login', { method: 'POST', body: { identifier, password } });
+    clearApiCache();
+    return result;
+  },
   logout: () => request('/auth/logout', { method: 'POST' }),
   changePassword: (currentPassword, newPassword) => request('/auth/password/change', { method: 'POST', body: { currentPassword, newPassword, confirmPassword: newPassword } }),
   changeStudentPassword: (currentPassword, newPassword, confirmPassword) => request('/auth/password/change', { method: 'POST', body: { currentPassword, newPassword, confirmPassword } }),
@@ -390,7 +397,6 @@ export const api = {
   updateStudent: (studentId, body) => request(`/students/${studentId}`, { method: 'PUT', body }),
   deleteStudent: (studentId) => request(`/students/${studentId}`, { method: 'DELETE' }),
   exportStudentsCsv: async (options = {}) => {
-    const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000/api';
     const params = new URLSearchParams();
     ['search', 'sortOrder', 'semester', 'branch', 'course', 'college', 'group', 'coordinator'].forEach((key) => {
       if (options[key] !== undefined && options[key] !== '') params.append(key, options[key]);
@@ -493,7 +499,6 @@ export const api = {
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') qs.append(key, String(value));
     });
-    const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000/api';
     const res = await fetch(`${API_BASE}/admin/assessment/reports/export${qs.toString() ? `?${qs.toString()}` : ''}`, { credentials: 'include' });
     if (!res.ok) throw new Error('Failed to export report');
     const blob = await res.blob();
@@ -511,7 +516,6 @@ export const api = {
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') qs.append(key, String(value));
     });
-    const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000/api';
     const res = await fetch(`${API_BASE}/admin/assessment/reports/export/excel${qs.toString() ? `?${qs.toString()}` : ''}`, { credentials: 'include' });
     if (!res.ok) throw new Error('Failed to export Excel report');
     const blob = await res.blob();

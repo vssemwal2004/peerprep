@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Download, Search, RefreshCw, ChevronLeft, ChevronRight, Filter, X, Activity } from 'lucide-react';
 import { api } from '../utils/api';
+import { getApiBase } from '../utils/apiBase';
 import { useToast } from '../components/CustomToast';
 
 const actionTypeColors = {
@@ -126,10 +127,7 @@ export default function CoordinatorActivity() {
         params.append('search', searchQuery);
       }
 
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/activity/export?${params}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
+      const response = await fetch(`${getApiBase()}/activity/export?${params}`, {
         credentials: 'include'
       });
 

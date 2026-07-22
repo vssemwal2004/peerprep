@@ -57,7 +57,12 @@
     <script type="module">
       // Backend cold-start wake-up ping.
       // Uses Vite env if provided; otherwise falls back to local dev.
-      const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:4000/api';
+      const localHosts = new Set(['localhost', '127.0.0.1', '::1']);
+      const formatHost = (hostname) => hostname.includes(':') && !hostname.startsWith('[') ? `[${hostname}]` : hostname;
+      const apiBase = import.meta.env.VITE_API_BASE
+        || (localHosts.has(window.location.hostname)
+          ? `${window.location.protocol}//${formatHost(window.location.hostname)}:4000/api`
+          : `${window.location.origin}/api`);
       fetch(apiBase + '/health', { method: 'GET', credentials: 'omit', mode: 'cors' })
         .catch(() => { /* ignore errors — this is a best-effort warm-up */ });
 

@@ -16,6 +16,17 @@ const configuredOrigins = String(process.env.FRONTEND_ORIGIN || '')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
+const localDevHosts = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+const localDevPorts = new Set(['5173', '5174', '5175']);
+const isLocalDevOrigin = (origin) => {
+  if (process.env.NODE_ENV === 'production') return false;
+  try {
+    const url = new URL(origin);
+    return localDevHosts.has(url.hostname) && localDevPorts.has(url.port || '80');
+  } catch {
+    return false;
+  }
+};
 if (process.env.NODE_ENV === 'production' && configuredOrigins.length === 0) {
   throw new Error('FRONTEND_ORIGIN must be configured in production');
 }
@@ -38,7 +49,12 @@ app.use(helmet({
 
 app.use(cors({
   origin(origin, callback) {
-    if (!origin || configuredOrigins.includes(origin) || (process.env.NODE_ENV !== 'production' && configuredOrigins.length === 0)) {
+    if (
+      !origin ||
+      configuredOrigins.includes(origin) ||
+      isLocalDevOrigin(origin) ||
+      (process.env.NODE_ENV !== 'production' && configuredOrigins.length === 0)
+    ) {
       return callback(null, true);
     }
     return callback(new HttpError(403, 'Origin not allowed by CORS'));
