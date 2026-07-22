@@ -28,9 +28,13 @@ function parseTeacherIds(teacheridField) {
     .filter(Boolean);
 }
 
+function escapeRegex(value = '') {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export async function listAllStudents(req, res) {
   try {
-    const { search, sortOrder } = req.query;
+    const { search, sortOrder, semester, page, limit } = req.query;
     const user = req.user;
     // Show ALL users with role='student' regardless of special tag
     // Since special-event CSV creates users with role='student' AND isSpecialStudent=true,
@@ -39,32 +43,54 @@ export async function listAllStudents(req, res) {
       ? { role: 'student', teacherIds: user.coordinatorId }
       : { role: 'student' };
 
-    let query = baseQuery;
+    const filters = [];
 
-    // Add search filter if provided (server-side callers only; admin UI does client-side search)
     if (search && search.trim()) {
-      const searchRegex = new RegExp(search.trim(), 'i');
-      query = {
-        $and: [
-          baseQuery,
-          {
-            $or: [
-              { name: searchRegex },
-              { email: searchRegex },
-              { studentId: searchRegex },
-            ],
-          },
+      const searchRegex = new RegExp(escapeRegex(search.trim().slice(0, 120)), 'i');
+      filters.push({
+        $or: [
+          { name: searchRegex },
+          { email: searchRegex },
+          { studentId: searchRegex },
+          { branch: searchRegex },
+          { course: searchRegex },
+          { college: searchRegex },
+          { group: searchRegex },
+          { teacherIds: searchRegex },
         ],
-      };
+      });
     }
+
+    const semesterNumber = Number(semester);
+    if (semester !== undefined && semester !== '' && Number.isInteger(semesterNumber)) {
+      filters.push({ semester: semesterNumber });
+    }
+
+    const query = filters.length > 0 ? { $and: [baseQuery, ...filters] } : baseQuery;
     
     // Sort order: 'asc' or 1 for ascending (oldest first, Excel order), 'desc' or -1 for descending (newest first)
     const sort = sortOrder === 'desc' || sortOrder === '-1' ? -1 : 1;
     
-    const students = await User.find(query)
+    const requestedPage = Math.max(1, Number.parseInt(page, 10) || 1);
+    const requestedLimit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 25));
+    const paginated = page !== undefined || limit !== undefined;
+    const studentQuery = User.find(query)
       .select('name email studentId course branch college semester group teacherIds avatarUrl createdAt isSpecialStudent bio linkedinUrl githubUrl portfolioUrl')
-      .sort({ createdAt: sort })
-      .lean();
+      .sort({ createdAt: sort, _id: sort });
+    if (paginated) {
+      studentQuery.skip((requestedPage - 1) * requestedLimit).limit(requestedLimit);
+    }
+
+    const [students, total, semesterCounts] = await Promise.all([
+      studentQuery.lean(),
+      User.countDocuments(query),
+      User.aggregate([
+        { $match: baseQuery },
+        { $match: { semester: { $gte: 1, $lte: 8 } } },
+        { $group: { _id: '$semester', count: { $sum: 1 } } },
+        { $sort: { _id: 1 } },
+      ]),
+    ]);
     
     // Map teacherIds to teacherId for backwards compatibility with frontend
     const studentsWithTeacherId = students.map(s => ({
@@ -72,7 +98,25 @@ export async function listAllStudents(req, res) {
       teacherId: Array.isArray(s.teacherIds) ? s.teacherIds.join(', ') : (s.teacherIds || '')
     }));
     
-    res.json({ count: studentsWithTeacherId.length, students: studentsWithTeacherId });
+    const pages = paginated ? Math.max(1, Math.ceil(total / requestedLimit)) : 1;
+    res.json({
+      count: studentsWithTeacherId.length,
+      total,
+      students: studentsWithTeacherId,
+      pagination: {
+        page: paginated ? Math.min(requestedPage, pages) : 1,
+        limit: paginated ? requestedLimit : total,
+        pages,
+        total,
+      },
+      facets: {
+        semesters: semesterCounts.map((entry) => ({
+          value: Number(entry._id),
+          label: `Semester ${entry._id}`,
+          count: entry.count,
+        })),
+      },
+    });
   } catch (err) {
     console.error('Error listing students:', err);
     res.status(500).json({ error: 'Failed to fetch students' });

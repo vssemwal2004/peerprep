@@ -56,6 +56,9 @@ const userSchema = new mongoose.Schema({
   portfolioUrl: { type: String, trim: true },
 }, { timestamps: true });
 
+userSchema.index({ role: 1, semester: 1, createdAt: 1 });
+userSchema.index({ role: 1, teacherIds: 1, semester: 1, createdAt: 1 });
+
 userSchema.methods.verifyPassword = async function (pw) {
   return bcrypt.compare(pw, this.passwordHash);
 };

@@ -345,9 +345,15 @@ export const api = {
 
   // Students
   listAllStudents: (search = '', sortOrder = 'asc') => {
+    const options = search && typeof search === 'object'
+      ? search
+      : { search, sortOrder };
     const params = new URLSearchParams();
-    if (search) params.append('search', search);
-    if (sortOrder) params.append('sortOrder', sortOrder);
+    if (options.search) params.append('search', options.search);
+    if (options.sortOrder) params.append('sortOrder', options.sortOrder);
+    if (options.semester !== undefined && options.semester !== '') params.append('semester', options.semester);
+    if (options.page) params.append('page', options.page);
+    if (options.limit) params.append('limit', options.limit);
     const queryString = params.toString();
     return request(`/students/list${queryString ? '?' + queryString : ''}`);
   },

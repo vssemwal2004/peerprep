@@ -1,12 +1,12 @@
 /* eslint-disable no-unused-vars */
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../utils/api";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Users, Loader2, X, Trash2, Edit2, Save, Download } from "lucide-react";
-import Fuse from "fuse.js";
+import { ChevronLeft, ChevronRight, Download, Edit2, Filter, Loader2, Save, Search, Trash2, Users, X } from "lucide-react";
 import ContributionCalendar from "../components/ContributionCalendar";
 import { useToast } from "../components/CustomToast";
+import { mergeSemesterOptions } from "../utils/semesterOptions";
 
 export default function StudentDirectory() {
   const navigate = useNavigate();
@@ -30,9 +30,15 @@ export default function StudentDirectory() {
   const [isSaving, setIsSaving] = useState(false);
   const [eventsStudent, setEventsStudent] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = useState(25);
   const [sortOrder, setSortOrder] = useState('asc'); // 'asc' or 'desc'
   const [isExporting, setIsExporting] = useState(false);
+  const [selectedSemester, setSelectedSemester] = useState('');
+  const [managedSemesters, setManagedSemesters] = useState([]);
+  const [semesterFacets, setSemesterFacets] = useState([]);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0, limit: 25 });
+  const loadRequestRef = useRef(0);
   
   // State for detailed videos/courses modals
   const [showVideosModal, setShowVideosModal] = useState(false);
@@ -42,60 +48,38 @@ export default function StudentDirectory() {
   const [loadingVideos, setLoadingVideos] = useState(false);
   const [loadingCourses, setLoadingCourses] = useState(false);
 
-  // Configure Fuse.js for optimized fuzzy search
-  const currentStudents = activeTab === "students" ? students : specialStudents;
-  
-  const fuse = useMemo(() => {
-    return new Fuse(currentStudents, {
-      keys: [
-        { name: 'name', weight: 2 },
-        { name: 'studentId', weight: 2 },
-        { name: 'email', weight: 1.5 },
-        { name: 'branch', weight: 1 },
-        { name: 'course', weight: 1 },
-        { name: 'college', weight: 0.8 }
-      ],
-      threshold: 0.4, // More forgiving for variations like B.Tech vs btech
-      includeScore: true,
-      ignoreLocation: true,
-      minMatchCharLength: 2,
-      useExtendedSearch: true,
-      // Case insensitive and removes special characters for matching
-      getFn: (obj, path) => {
-        const value = Fuse.config.getFn(obj, path);
-        if (typeof value === 'string') {
-          // Normalize: lowercase, remove dots, spaces, and special chars
-          return value.toLowerCase().replace(/[.\s-]/g, '');
-        }
-        return value;
-      }
-    });
-  }, [currentStudents]);
+  const semesterOptions = useMemo(
+    () => mergeSemesterOptions(managedSemesters, semesterFacets),
+    [managedSemesters, semesterFacets],
+  );
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    let mounted = true;
+    api.getAllSemestersForStudent()
+      .then((data) => {
+        if (mounted) setManagedSemesters(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (mounted) setManagedSemesters([]);
+      });
+    return () => { mounted = false; };
+  }, []);
 
   useEffect(() => {
     loadData();
-  }, [activeTab, sortOrder]);
+    // loadData uses a request revision guard to ignore stale search responses.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, sortOrder, selectedSemester, currentPage, itemsPerPage, debouncedSearch]);
 
-  useEffect(() => {
-    // Use Fuse.js for optimized fuzzy search
-    if (!searchQuery.trim()) {
-      setFilteredStudents(currentStudents);
-    } else {
-      // Normalize search query to match getFn normalization
-      const normalizedQuery = searchQuery.toLowerCase().replace(/[.\s-]/g, '');
-      const results = fuse.search(normalizedQuery);
-      // Extract the items from Fuse results
-      const filtered = results.map(result => result.item);
-      setFilteredStudents(filtered);
-    }
-    setCurrentPage(1); // Reset to first page on search
-  }, [searchQuery, currentStudents, fuse]);
-
-  // Calculate pagination
-  const totalPages = Math.ceil(filteredStudents.length / itemsPerPage);
+  const totalPages = pagination.pages || 1;
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
-  const paginatedStudents = filteredStudents.slice(startIndex, endIndex);
+  const paginatedStudents = filteredStudents;
 
   const handlePageChange = (page) => {
     setCurrentPage(page);
@@ -103,35 +87,53 @@ export default function StudentDirectory() {
   };
 
   const loadData = async () => {
+    const requestId = loadRequestRef.current + 1;
+    loadRequestRef.current = requestId;
     setIsLoading(true);
     setError("");
-    setSearchQuery(""); // Clear search when switching tabs
     try {
       if (activeTab === "students") {
-        const data = await api.listAllStudents('', sortOrder);
-        setStudents(data.students || []);
-        setFilteredStudents(data.students || []);
+        const data = await api.listAllStudents({
+          search: debouncedSearch,
+          sortOrder,
+          semester: selectedSemester,
+          page: currentPage,
+          limit: itemsPerPage,
+        });
+        if (loadRequestRef.current !== requestId) return;
+        const nextStudents = data.students || [];
+        setStudents(nextStudents);
+        setFilteredStudents(nextStudents);
+        setSemesterFacets(data.facets?.semesters || []);
+        const nextPagination = data.pagination || { page: 1, pages: 1, total: data.total ?? data.count ?? nextStudents.length, limit: itemsPerPage };
+        setPagination(nextPagination);
+        if (nextPagination.page !== currentPage) setCurrentPage(nextPagination.page);
       } else {
         const data = await api.listAllSpecialStudents('', sortOrder);
+        if (loadRequestRef.current !== requestId) return;
         setSpecialStudents(data.students || []);
         setFilteredStudents(data.students || []);
+        setPagination({ page: 1, pages: 1, total: data.count || data.students?.length || 0, limit: itemsPerPage });
       }
     } catch (err) {
-      setError(err.message || "Failed to load students");
+      if (loadRequestRef.current === requestId) {
+        setError(err.message || "Failed to load students");
+      }
     } finally {
-      setIsLoading(false);
+      if (loadRequestRef.current === requestId) setIsLoading(false);
     }
   };
 
   const handleSearch = async (e) => {
     e.preventDefault();
-    // Search is now handled by the useEffect with Fuse.js
-    // No need for server-side search since we have all students loaded
+    setDebouncedSearch(searchQuery.trim());
+    setCurrentPage(1);
   };
 
   const clearSearch = () => {
     setSearchQuery("");
-    loadData();
+    setDebouncedSearch('');
+    setCurrentPage(1);
   };
 
   const openStudentProfile = (student) => {
@@ -232,16 +234,7 @@ export default function StudentDirectory() {
     
     try {
       await api.deleteStudent(student._id);
-      
-      // Remove from local state
-      if (activeTab === "students") {
-        setStudents(prev => prev.filter(s => s._id !== student._id));
-      } else {
-        setSpecialStudents(prev => prev.filter(s => s._id !== student._id));
-      }
-      setFilteredStudents(prev => prev.filter(s => s._id !== student._id));
-      
-      // Show success message
+      await loadData();
       toast.success(`Student ${student.name} has been deleted successfully.`);
     } catch (err) {
       toast.error(err.message || 'Failed to delete student');
@@ -346,56 +339,61 @@ export default function StudentDirectory() {
   };
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 flex flex-col pt-20">
+    <div className="min-h-screen bg-slate-50/60 pt-20 dark:bg-gray-950 flex flex-col">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: "easeOut" }}
-        className="flex-1 w-full mx-auto px-4 py-6"
+        className="flex-1 w-full mx-auto px-3 py-3"
       >
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-slate-200 dark:border-gray-700 p-3 sm:p-4 lg:p-6">
-          {/* Tabs */}
-          <div className="flex items-center gap-2 mb-6 border-b border-slate-200 dark:border-gray-700">
-            <button
-              onClick={() => setActiveTab("students")}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === "students"
-                  ? "border-emerald-500 dark:border-emerald-400 text-emerald-600 dark:text-emerald-400"
-                  : "border-transparent text-slate-600 dark:text-white hover:text-slate-800 dark:hover:text-white"
-              }`}
-            >
-              Students
-            </button>
-          </div>
+        <div className="bg-white dark:bg-gray-900 rounded-lg border border-slate-200 dark:border-gray-700 p-3 shadow-sm">
           
           {/* Header Section with Search and Sort */}
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
-            <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center flex-shrink-0 ${
+          <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2.5">
+              <div className={`w-9 h-9 rounded-md flex items-center justify-center flex-shrink-0 ${
                 activeTab === "students" ? "bg-emerald-100 dark:bg-emerald-900" : "bg-indigo-100 dark:bg-indigo-900"
               }`}>
-                <Users className={`w-5 h-5 sm:w-6 sm:h-6 ${
+                <Users className={`w-4 h-4 ${
                   activeTab === "students" ? "text-emerald-600" : "text-indigo-600"
                 }`} />
               </div>
               <div>
-                <h2 className="text-lg sm:text-xl lg:text-2xl font-semibold text-slate-800 dark:text-white">
+                <h1 className="text-base font-semibold text-slate-900 dark:text-white">
                   {activeTab === "students" ? "Student Database" : "Special Event Students"}
-                </h2>
-                <p className="text-slate-600 dark:text-white text-xs sm:text-sm hidden sm:block">
-                  {activeTab === "students" 
-                    ? "View and search all registered students" 
-                    : "View students from special events"}
+                </h1>
+                <p className="text-[11px] text-slate-500 dark:text-gray-400">
+                  {pagination.total.toLocaleString()} registered student{pagination.total === 1 ? '' : 's'}
                 </p>
               </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-[150px] flex-1 sm:flex-none">
+                <Filter className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <select
+                  value={selectedSemester}
+                  onChange={(event) => {
+                    setSelectedSemester(event.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="h-9 w-full appearance-none rounded-md border border-slate-200 bg-white pl-8 pr-7 text-xs font-medium text-slate-700 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:ring-sky-900/40"
+                  aria-label="Filter by semester"
+                >
+                  <option value="">All semesters</option>
+                  {semesterOptions.map((semester) => (
+                    <option key={semester.value} value={semester.value}>
+                      {semester.label}{Number.isFinite(semester.count) ? ` (${semester.count})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* Export CSV Button */}
               <button
                 onClick={handleExportCsv}
                 disabled={isExporting}
-                className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 rounded-lg transition-colors"
+                className="order-last inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-3 text-xs font-semibold text-white transition-colors hover:bg-emerald-700 disabled:bg-emerald-400 sm:order-none"
               >
                 {isExporting ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -406,66 +404,41 @@ export default function StudentDirectory() {
               </button>
 
               {/* Sort Order Dropdown */}
-              <div className="flex flex-col">
+              <div>
                 <select
                   value={sortOrder}
-                  onChange={(e) => setSortOrder(e.target.value)}
-                  className="px-3 py-2 text-sm border border-slate-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-emerald-500 dark:focus:ring-emerald-600 focus:border-emerald-500 dark:focus:border-emerald-600 text-slate-700 dark:text-white bg-white dark:bg-gray-700 cursor-pointer"
+                  onChange={(e) => { setSortOrder(e.target.value); setCurrentPage(1); }}
+                  className="h-9 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:ring-sky-900/40"
+                  aria-label="Sort students"
                 >
                   <option value="asc">Oldest First</option>
                   <option value="desc">Newest First</option>
                 </select>
-                <p className="text-xs text-slate-500 dark:text-white mt-1 ml-1 hidden sm:block">
-                  Sort by creation date
-                </p>
               </div>
 
               {/* Compact Search Bar */}
-              <form onSubmit={handleSearch} className="w-full sm:w-64 lg:w-80">
+              <form onSubmit={handleSearch} className="min-w-[220px] flex-1 sm:w-72 sm:flex-none">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input
                     type="text"
                     placeholder="Search students..."
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-9 pr-9 py-2 text-sm border border-slate-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-emerald-500 dark:focus:ring-emerald-600 focus:border-emerald-500 dark:focus:border-emerald-600 text-slate-700 dark:text-white bg-white dark:bg-gray-700 placeholder:text-gray-400 dark:placeholder:text-gray-400"
+                    onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                    className="h-9 w-full rounded-md border border-slate-200 bg-white pl-9 pr-9 text-xs text-slate-700 outline-none placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:ring-sky-900/40"
                   />
                   {searchQuery && (
                     <button
                       type="button"
                       onClick={clearSearch}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-100 dark:hover:bg-gray-600 rounded transition-colors"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 hover:bg-slate-100 dark:hover:bg-gray-600 transition-colors"
                     >
                       <X className="w-3 h-3 text-slate-500" />
                     </button>
                   )}
                 </div>
-                <p className="text-xs text-slate-500 dark:text-white mt-1 ml-1 hidden lg:block">
-                  Search by name, ID, email, branch, course, or college
-                </p>
               </form>
-            </div>
-          </div>
-
-          {/* Stats */}
-          <div className="mb-4 sm:mb-6 p-3 sm:p-4 bg-slate-50 dark:bg-gray-700 rounded-lg border border-slate-200 dark:border-gray-600">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Users className="w-4 h-4 sm:w-5 sm:h-5 text-slate-600 dark:text-white" />
-                <span className="text-xs sm:text-sm font-medium text-slate-700 dark:text-white">
-                  Total {activeTab === "students" ? "Students" : "Special Students"}: <span className={`font-semibold ${
-                    activeTab === "students" ? "text-emerald-600 dark:text-emerald-400" : "text-indigo-600 dark:text-indigo-400"
-                  }`}>{currentStudents.length}</span>
-                </span>
-              </div>
-              {searchQuery && (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs sm:text-sm text-slate-600 dark:text-white">
-                    Showing: <span className="font-semibold text-slate-800 dark:text-white">{filteredStudents.length}</span> results
-                  </span>
-                </div>
-              )}
+              {isLoading && <Loader2 className="h-4 w-4 animate-spin text-sky-500" aria-label="Loading students" />}
             </div>
           </div>
 
@@ -491,34 +464,28 @@ export default function StudentDirectory() {
               <Users className="w-16 h-16 text-slate-300 dark:text-gray-600 mx-auto mb-4" />
               <h3 className="text-lg font-semibold text-slate-700 dark:text-white mb-2">No students found</h3>
               <p className="text-slate-500 dark:text-white text-sm">
-                {searchQuery
-                  ? "Try adjusting your search query"
+                {searchQuery || selectedSemester
+                  ? "Try adjusting the current filters"
                   : "No students have been registered yet"}
               </p>
             </div>
           ) : (
             // Students Table (no tabs, clear and scannable)
             <div>
-              <div className="mb-3 px-2">
-                <p className="text-sm text-slate-600 dark:text-white flex items-center gap-2">
-                  <span className="font-medium text-sky-600 dark:text-sky-400">💡 Tip:</span>
-                  Click on a student's name to open their full analytics profile
-                </p>
-              </div>
               <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-gray-700">
               <table className="min-w-full divide-y divide-slate-200">
                 <thead className="bg-slate-50 dark:bg-gray-700">
                   <tr>
-                    <th scope="col" className="px-4 py-2 text-left text-xs font-semibold tracking-wider text-slate-600 dark:text-white">Student</th>
-                    <th scope="col" className="px-4 py-2 text-left text-xs font-semibold tracking-wider text-slate-600 dark:text-white">Email</th>
-                    <th scope="col" className="px-4 py-2 text-left text-xs font-semibold tracking-wider text-slate-600 dark:text-white">Branch</th>
-                    <th scope="col" className="px-4 py-2 text-left text-xs font-semibold tracking-wider text-slate-600 dark:text-white">Course</th>
-                    <th scope="col" className="px-4 py-2 text-left text-xs font-semibold tracking-wider text-slate-600 dark:text-white">Semester</th>
-                    <th scope="col" className="px-4 py-2 text-left text-xs font-semibold tracking-wider text-slate-600 dark:text-white">Group</th>
-                    <th scope="col" className="px-4 py-2 text-left text-xs font-semibold tracking-wider text-slate-600 dark:text-white">College</th>
-                    <th scope="col" className="px-4 py-2 text-left text-xs font-semibold tracking-wider text-slate-600 dark:text-white">Coordinator Assigned</th>
+                    <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Student</th>
+                    <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Email</th>
+                    <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Branch</th>
+                    <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Course</th>
+                    <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Semester</th>
+                    <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Group</th>
+                    <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">College</th>
+                    <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Coordinator</th>
                     {activeTab === "students" && (
-                      <th scope="col" className="px-4 py-2 text-left text-xs font-semibold tracking-wider text-slate-600 dark:text-white">Actions</th>
+                      <th scope="col" className="px-3 py-2 text-right text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Actions</th>
                     )}
                     {activeTab === "special" && (
                       <th scope="col" className="px-4 py-2 text-left text-xs font-semibold tracking-wider text-slate-600 dark:text-white">Special Events</th>
@@ -530,52 +497,52 @@ export default function StudentDirectory() {
                     const initial = s.name?.charAt(0)?.toUpperCase() || "?";
                     return (
                       <tr key={s._id} className="hover:bg-slate-50 dark:hover:bg-gray-700">
-                        <td className="px-4 py-2">
-                          <div className="flex items-center gap-3 min-w-[220px]">
+                        <td className="px-3 py-1.5">
+                          <div className="flex items-center gap-2 min-w-[190px]">
                             {s.avatarUrl ? (
                               <img 
                                 src={s.avatarUrl} 
                                 alt={s.name} 
-                                className="w-8 h-8 rounded-full object-cover border border-slate-200"
+                                className="h-7 w-7 rounded-full object-cover border border-slate-200"
                               />
                             ) : (
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-semibold text-sm ${
+                              <div className={`h-7 w-7 rounded-full flex items-center justify-center font-semibold text-xs ${
                                 activeTab === "students" ? "bg-sky-100 text-sky-700" : "bg-indigo-100 text-indigo-700"
                               }`}>
                                 {initial}
                               </div>
                             )}
-                            <div className="max-w-[280px]">
+                            <div className="max-w-[220px] leading-tight">
                               <button
                                 onClick={() => openStudentProfile(s)}
-                                className="font-medium text-slate-900 dark:text-white hover:text-sky-600 dark:hover:text-sky-400 truncate text-sm transition-colors text-left"
+                                className="block max-w-full truncate text-left text-xs font-semibold text-slate-900 transition-colors hover:text-sky-600 dark:text-white dark:hover:text-sky-400"
                               >
                                 {s.name || "Unknown"}
                               </button>
-                              <div className="text-xs text-slate-500 dark:text-white truncate">{s.studentId || "N/A"}</div>
+                              <div className="truncate text-[10px] text-slate-500 dark:text-gray-400">{s.studentId || "N/A"}</div>
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-2 text-slate-700 dark:text-white max-w-[260px] text-sm"><span className="truncate block">{s.email || "-"}</span></td>
-                        <td className="px-4 py-2 text-slate-700 dark:text-white text-sm">{s.branch || "-"}</td>
-                        <td className="px-4 py-2 text-slate-600 dark:text-white text-sm">{s.course || "-"}</td>
-                        <td className="px-4 py-2 text-slate-600 dark:text-white text-sm">{s.semester || "-"}</td>
-                        <td className="px-4 py-2 text-slate-600 dark:text-white text-sm">{s.group || "-"}</td>
-                        <td className="px-4 py-2 text-slate-600 dark:text-white text-sm max-w-[200px]"><span className="truncate block">{s.college || "-"}</span></td>
-                        <td className="px-4 py-2 text-slate-700 dark:text-white text-sm">{s.teacherId || "-"}</td>
+                        <td className="max-w-[230px] px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300"><span className="block truncate">{s.email || "-"}</span></td>
+                        <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300">{s.branch || "-"}</td>
+                        <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300">{s.course || "-"}</td>
+                        <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300">{s.semester ? `Sem ${s.semester}` : "-"}</td>
+                        <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300">{s.group || "-"}</td>
+                        <td className="max-w-[180px] px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300"><span className="block truncate">{s.college || "-"}</span></td>
+                        <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300">{s.teacherId || "-"}</td>
                         {activeTab === "students" && (
-                          <td className="px-4 py-2">
-                            <div className="flex items-center gap-2">
+                          <td className="px-3 py-1.5">
+                            <div className="flex items-center justify-end gap-1">
                               <button
                                 onClick={(e) => handleEditStudent(s, e)}
-                                className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
+                                className="inline-flex h-7 w-7 items-center justify-center rounded text-blue-600 transition-colors hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/20"
                                 title="Edit student"
                               >
                                 <Edit2 className="w-4 h-4" />
                               </button>
                               <button
                                 onClick={(e) => handleDeleteStudent(s, e)}
-                                className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                                className="inline-flex h-7 w-7 items-center justify-center rounded text-red-600 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
                                 title="Delete student"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -602,8 +569,8 @@ export default function StudentDirectory() {
 
             {/* Pagination Controls */}
             {filteredStudents.length > 0 && (
-              <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-4 px-2">
-                <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-white">
+              <div className="mt-3 flex flex-col items-center justify-between gap-2 px-1 sm:flex-row">
+                <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-gray-400">
                   <span>Show</span>
                   <select
                     value={itemsPerPage}
@@ -611,62 +578,35 @@ export default function StudentDirectory() {
                       setItemsPerPage(Number(e.target.value));
                       setCurrentPage(1);
                     }}
-                    className="px-3 py-1 border border-slate-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-slate-700 dark:text-white focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-400 focus:border-transparent"
+                    className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700 outline-none focus:border-sky-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
                   >
-                    <option value={10}>10</option>
                     <option value={25}>25</option>
                     <option value={50}>50</option>
                     <option value={100}>100</option>
                   </select>
                   <span>
-                    Showing {startIndex + 1}-{Math.min(endIndex, filteredStudents.length)} of {filteredStudents.length}
+                    {startIndex + 1}-{Math.min(endIndex, pagination.total)} of {pagination.total.toLocaleString()}
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => handlePageChange(currentPage - 1)}
                     disabled={currentPage === 1}
-                    className="px-3 py-1.5 text-sm font-medium rounded-lg border border-slate-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                    aria-label="Previous page"
                   >
-                    Previous
+                    <ChevronLeft className="h-4 w-4" />
                   </button>
-                  
-                  <div className="flex items-center gap-1">
-                    {[...Array(totalPages)].map((_, i) => {
-                      const page = i + 1;
-                      // Show first page, last page, current page, and pages around current
-                      if (
-                        page === 1 ||
-                        page === totalPages ||
-                        (page >= currentPage - 1 && page <= currentPage + 1)
-                      ) {
-                        return (
-                          <button
-                            key={page}
-                            onClick={() => handlePageChange(page)}
-                            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                              currentPage === page
-                                ? 'bg-sky-600 dark:bg-sky-500 text-white'
-                                : 'border border-slate-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-gray-700'
-                            }`}
-                          >
-                            {page}
-                          </button>
-                        );
-                      } else if (page === currentPage - 2 || page === currentPage + 2) {
-                        return <span key={page} className="px-2 text-slate-500 dark:text-gray-400">...</span>;
-                      }
-                      return null;
-                    })}
-                  </div>
+                  <span className="min-w-24 text-center text-xs font-medium text-slate-600 dark:text-gray-300">Page {currentPage} of {totalPages}</span>
 
                   <button
                     onClick={() => handlePageChange(currentPage + 1)}
                     disabled={currentPage === totalPages}
-                    className="px-3 py-1.5 text-sm font-medium rounded-lg border border-slate-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                    aria-label="Next page"
                   >
-                    Next
+                    <ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
               </div>

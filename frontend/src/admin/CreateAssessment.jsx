@@ -247,7 +247,7 @@ export default function CreateAssessment() {
   const [sections, setSections] = useState([]);
   const [selectedStudents, setSelectedStudents] = useState([]);
   const [csvState, setCsvState] = useState(emptyCsvState);
-  const [allStudents, setAllStudents] = useState([]);
+  const [studentTotal, setStudentTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState('');
@@ -297,9 +297,9 @@ export default function CreateAssessment() {
 
   useEffect(() => {
     let active = true;
-    api.listAllStudents('', 'asc')
+    api.listAllStudents({ sortOrder: 'asc', page: 1, limit: 1 })
       .then((data) => {
-        if (active) setAllStudents(Array.isArray(data?.students) ? data.students : []);
+        if (active) setStudentTotal(Number(data?.pagination?.total ?? data?.total ?? data?.count ?? 0));
       })
       .catch((error) => {
         if (active) toast.error(error.message || 'Failed to load students');
@@ -679,23 +679,20 @@ export default function CreateAssessment() {
 
   const assignedSummary = useMemo(() => {
     if (form.targetMode === 'all') {
-      return { count: allStudents.length || 'All Students', newAccounts: 0 };
+      return { count: studentTotal || 'All Students', newAccounts: 0, accountSummary: 'Existing students' };
     }
     if (form.targetMode === 'individual') {
-      return { count: selectedStudents.length, newAccounts: 0 };
+      return { count: selectedStudents.length, newAccounts: 0, accountSummary: 'Existing students' };
     }
     if (!csvState.rows.length) {
-      return { count: 0, newAccounts: 0 };
+      return { count: 0, newAccounts: 0, accountSummary: 'No CSV students' };
     }
-    const emailSet = new Set(allStudents.map((s) => (s.email || '').toLowerCase()));
-    const idSet = new Set(allStudents.map((s) => (s.studentId || '').toLowerCase()));
-    const newAccounts = csvState.rows.filter((row) => {
-      const email = (row.email || '').toLowerCase();
-      const sid = (row.studentid || row.student_id || row.sid || '').toLowerCase();
-      return !(emailSet.has(email) || idSet.has(sid));
-    }).length;
-    return { count: csvState.rows.length, newAccounts };
-  }, [form.targetMode, selectedStudents, csvState.rows, allStudents]);
+    return {
+      count: csvState.rows.length,
+      newAccounts: 'On publish',
+      accountSummary: 'Accounts matched on publish',
+    };
+  }, [form.targetMode, selectedStudents, csvState.rows, studentTotal]);
 
   const assessmentValidation = useMemo(() => {
     const sectionsArray = Array.isArray(sections) ? sections : [];
@@ -1124,7 +1121,6 @@ export default function CreateAssessment() {
 
           {form.targetMode === 'individual' && (
             <StudentSelector
-              students={allStudents}
               selected={selectedStudents}
               onChange={updateSelectedStudents}
             />
@@ -1596,7 +1592,7 @@ export default function CreateAssessment() {
           <AssessmentCard
             label="Assigned Students"
             value={assignedSummary.count}
-            helper={form.targetMode === 'csv' ? `${assignedSummary.newAccounts} new accounts` : 'Existing students'}
+            helper={assignedSummary.accountSummary}
           />
           <SectionCard title="Notification Settings" subtitle="Review email notification settings.">
             <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-gray-200">
@@ -1745,7 +1741,7 @@ export default function CreateAssessment() {
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Total Students</div>
                   <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-white">{assignedSummary.count}</div>
-                  <div className="mt-1 text-[11px] text-slate-500">{assignedSummary.newAccounts} new accounts</div>
+                  <div className="mt-1 text-[11px] text-slate-500">{assignedSummary.accountSummary}</div>
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Total Questions</div>
@@ -1766,7 +1762,9 @@ export default function CreateAssessment() {
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">New Accounts</div>
                   <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-white">{assignedSummary.newAccounts}</div>
-                  <div className="mt-1 text-[11px] text-slate-500">Will be created on publish</div>
+                  <div className="mt-1 text-[11px] text-slate-500">
+                    {form.targetMode === 'csv' ? 'Existing records are matched during publish' : 'No CSV onboarding'}
+                  </div>
                 </div>
               </div>
 

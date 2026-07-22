@@ -9,10 +9,11 @@ import {
   Calendar, ClipboardList, Filter, Plus, Search, Trash2, Eye, EyeOff,
   Pencil, Copy, X, MoreVertical, Lock, Unlock, Globe, ShieldOff,
   RotateCcw, CheckCircle2, AlertTriangle, FileCheck2, Mail, Send, Loader2,
-  Users, UserMinus, UserPlus,
+  Users, UserMinus, UserPlus, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import AssessmentCard from './assessment/components/AssessmentCard';
 import { SectionCard } from './compiler/CompilerUi';
+import { mergeSemesterOptions } from '../utils/semesterOptions';
 
 const statusStyles = {
   Draft: 'bg-slate-100 text-slate-600 border-slate-200',
@@ -338,10 +339,16 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
   const [busyId, setBusyId] = useState('');
   const [addMode, setAddMode] = useState(Boolean(assessment.startInAddMode));
   const [candidateSearch, setCandidateSearch] = useState('');
+  const [debouncedCandidateSearch, setDebouncedCandidateSearch] = useState('');
+  const [candidateSemester, setCandidateSemester] = useState('');
+  const [managedSemesters, setManagedSemesters] = useState([]);
+  const [candidateSemesterFacets, setCandidateSemesterFacets] = useState([]);
+  const [candidatePagination, setCandidatePagination] = useState({ page: 1, pages: 1, total: 0 });
   const [allStudents, setAllStudents] = useState([]);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [selectedCandidateIds, setSelectedCandidateIds] = useState([]);
   const [addingStudents, setAddingStudents] = useState(false);
+  const candidateRequestRef = useRef(0);
 
   const loadStudents = useCallback(async () => {
     setLoading(true);
@@ -359,51 +366,68 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
   useEffect(() => { loadStudents(); }, [loadStudents]);
 
   useEffect(() => {
+    const timer = setTimeout(() => setDebouncedCandidateSearch(candidateSearch.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [candidateSearch]);
+
+  useEffect(() => {
+    if (!addMode || managedSemesters.length > 0) return undefined;
+    let active = true;
+    api.getAllSemestersForStudent()
+      .then((data) => {
+        if (active) setManagedSemesters(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (active) setManagedSemesters([]);
+      });
+    return () => { active = false; };
+  }, [addMode, managedSemesters.length]);
+
+  useEffect(() => {
     if (!addMode) return undefined;
-    let mounted = true;
-    const loadCandidates = async () => {
-      setLoadingCandidates(true);
-      try {
-        const data = await api.listAllStudents('', 'desc');
-        if (mounted) setAllStudents(data.students || []);
-      } catch (error) {
-        if (mounted) {
-          setAllStudents([]);
-          toast.error(error.message || 'Failed to load platform students.');
-        }
-      } finally {
-        if (mounted) setLoadingCandidates(false);
-      }
-    };
-    loadCandidates();
-    return () => { mounted = false; };
-  }, [addMode, toast]);
+    const requestId = candidateRequestRef.current + 1;
+    candidateRequestRef.current = requestId;
+    setLoadingCandidates(true);
+    api.listAllStudents({
+      search: debouncedCandidateSearch,
+      semester: candidateSemester,
+      sortOrder: 'desc',
+      page: candidatePagination.page,
+      limit: 25,
+    })
+      .then((data) => {
+        if (candidateRequestRef.current !== requestId) return;
+        const nextPagination = data.pagination || {
+          page: 1,
+          pages: 1,
+          total: data.total ?? data.count ?? 0,
+        };
+        setAllStudents(data.students || []);
+        setCandidateSemesterFacets(data.facets?.semesters || []);
+        setCandidatePagination((current) => ({ ...current, ...nextPagination }));
+      })
+      .catch((error) => {
+        if (candidateRequestRef.current !== requestId) return;
+        setAllStudents([]);
+        toast.error(error.message || 'Failed to load platform students.');
+      })
+      .finally(() => {
+        if (candidateRequestRef.current === requestId) setLoadingCandidates(false);
+      });
+    return undefined;
+  }, [addMode, candidatePagination.page, candidateSemester, debouncedCandidateSearch, toast]);
 
   const assignedIds = useMemo(() => new Set(students.map((student) => String(student._id))), [students]);
   const selectedCandidateIdSet = useMemo(() => new Set(selectedCandidateIds), [selectedCandidateIds]);
-  const selectedCandidateStudents = useMemo(() => (
-    allStudents.filter((student) => selectedCandidateIdSet.has(String(student._id || student.id || student.studentId || student.email || '')))
-  ), [allStudents, selectedCandidateIdSet]);
-
   const candidateStudents = useMemo(() => {
-    const query = candidateSearch.trim().toLowerCase();
     return allStudents
       .filter((student) => !assignedIds.has(String(student._id)))
-      .filter((student) => {
-        if (!query) return true;
-        return [
-          student.name,
-          student.email,
-          student.studentId,
-          student.course,
-          student.branch,
-          student.college,
-          student.group,
-        ].some((value) => String(value || '').toLowerCase().includes(query));
-      })
-      .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
-      .slice(0, 60);
-  }, [allStudents, assignedIds, candidateSearch]);
+      .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  }, [allStudents, assignedIds]);
+  const candidateSemesterOptions = useMemo(
+    () => mergeSemesterOptions(managedSemesters, candidateSemesterFacets),
+    [managedSemesters, candidateSemesterFacets],
+  );
 
   const filteredStudents = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -470,7 +494,7 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
     }
     setAddingStudents(true);
     try {
-      const result = await api.addAssessmentEligibleStudents(assessment._id, selectedCandidateIds, selectedCandidateStudents);
+      const result = await api.addAssessmentEligibleStudents(assessment._id, selectedCandidateIds);
       toast.success(`Added ${result.addedCount || selectedCandidateIds.length} student${(result.addedCount || selectedCandidateIds.length) === 1 ? '' : 's'} to assessment.`);
       setSelectedCandidateIds([]);
       setAddMode(false);
@@ -549,14 +573,38 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
                 <div className="text-base font-bold text-slate-950 dark:text-white">Add Platform Students</div>
                 <div className="mt-1 text-sm text-slate-500 dark:text-gray-400">Recent students who are already eligible are hidden from this list.</div>
               </div>
-              <div className="relative w-full max-w-lg">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input
-                  value={candidateSearch}
-                  onChange={(event) => setCandidateSearch(event.target.value)}
-                  placeholder="Search students to add..."
-                  className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-950 dark:text-white dark:focus:ring-sky-500/10"
-                />
+              <div className="flex w-full flex-col gap-2 sm:flex-row lg:max-w-2xl">
+                <div className="relative min-w-0 flex-1">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    value={candidateSearch}
+                    onChange={(event) => {
+                      setCandidateSearch(event.target.value);
+                      setCandidatePagination((current) => ({ ...current, page: 1 }));
+                    }}
+                    placeholder="Search students to add..."
+                    className="h-9 w-full rounded-md border border-slate-200 bg-white pl-9 pr-3 text-xs outline-none transition-colors placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-950 dark:text-white dark:focus:ring-sky-500/10"
+                  />
+                </div>
+                <div className="relative min-w-[170px]">
+                  <Filter className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                  <select
+                    value={candidateSemester}
+                    onChange={(event) => {
+                      setCandidateSemester(event.target.value);
+                      setCandidatePagination((current) => ({ ...current, page: 1 }));
+                    }}
+                    aria-label="Filter candidates by semester"
+                    className="h-9 w-full appearance-none rounded-md border border-slate-200 bg-white pl-9 pr-7 text-xs font-semibold text-slate-700 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:focus:ring-sky-500/10"
+                  >
+                    <option value="">All semesters</option>
+                    {candidateSemesterOptions.map((semester) => (
+                      <option key={semester.value} value={semester.value}>
+                        {semester.label}{Number.isFinite(semester.count) ? ` (${semester.count})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -570,11 +618,12 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
                 <div className="p-6 text-center text-sm text-slate-500">No recently added students are available to add.</div>
               ) : (
                 <div className="min-w-[760px]">
-                  <div className="grid grid-cols-[44px_1.4fr_1fr_1fr_140px] border-b border-slate-200 bg-slate-50 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
+                  <div className="grid grid-cols-[36px_1.4fr_1fr_1fr_90px_120px] border-b border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
                     <div />
                     <div>Student</div>
                     <div>Student ID</div>
                     <div>Course / Branch</div>
+                    <div>Semester</div>
                     <div>Added On</div>
                   </div>
                   {candidateStudents.map((student) => {
@@ -585,7 +634,7 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
                         key={student._id}
                         type="button"
                         onClick={() => toggleCandidate(studentId)}
-                        className={`grid w-full grid-cols-[44px_1.4fr_1fr_1fr_140px] items-center px-4 py-3 text-left transition-colors ${selected ? 'bg-sky-50 text-sky-950 dark:bg-sky-900/20 dark:text-sky-100' : 'bg-white text-slate-700 hover:bg-slate-50 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800'}`}
+                        className={`grid w-full grid-cols-[36px_1.4fr_1fr_1fr_90px_120px] items-center px-3 py-2 text-left transition-colors ${selected ? 'bg-sky-50 text-sky-950 dark:bg-sky-900/20 dark:text-sky-100' : 'bg-white text-slate-700 hover:bg-slate-50 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800'}`}
                       >
                         <div>
                           <span className={`flex h-5 w-5 items-center justify-center rounded border ${selected ? 'border-sky-600 bg-sky-600 text-white' : 'border-slate-300 bg-white dark:border-gray-600 dark:bg-gray-950'}`}>
@@ -601,6 +650,9 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
                           <div className="truncate">{student.course || '-'}</div>
                           <div className="mt-0.5 truncate text-xs text-slate-500 dark:text-gray-400">{student.branch || '-'}</div>
                         </div>
+                        <div className="text-xs font-semibold text-slate-600 dark:text-gray-300">
+                          {student.semester ? `Sem ${student.semester}` : '-'}
+                        </div>
                         <div>
                           <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-bold ${getStudentAddedBadgeClass(student.createdAt)}`}>
                             {formatShortDate(student.createdAt)}
@@ -613,8 +665,35 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
               )}
             </div>
 
-            <div className="mt-3 flex items-center justify-between gap-3">
-              <div className="text-sm font-semibold text-slate-600 dark:text-gray-300">{selectedCandidateIds.length} selected</div>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="text-xs font-semibold text-slate-600 dark:text-gray-300">{selectedCandidateIds.length} selected</div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    title="Previous candidate page"
+                    aria-label="Previous candidate page"
+                    disabled={loadingCandidates || candidatePagination.page <= 1}
+                    onClick={() => setCandidatePagination((current) => ({ ...current, page: current.page - 1 }))}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 dark:border-gray-700 dark:hover:bg-gray-800"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </button>
+                  <span className="min-w-[72px] text-center text-[10px] text-slate-500 dark:text-gray-400">
+                    Page {candidatePagination.page} of {candidatePagination.pages || 1}
+                  </span>
+                  <button
+                    type="button"
+                    title="Next candidate page"
+                    aria-label="Next candidate page"
+                    disabled={loadingCandidates || candidatePagination.page >= (candidatePagination.pages || 1)}
+                    onClick={() => setCandidatePagination((current) => ({ ...current, page: current.page + 1 }))}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 dark:border-gray-700 dark:hover:bg-gray-800"
+                  >
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={addSelectedStudents}
