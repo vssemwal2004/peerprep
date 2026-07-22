@@ -32,41 +32,77 @@ function escapeRegex(value = '') {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function studentScope(user = {}) {
+  return user.role === 'coordinator'
+    ? { role: 'student', teacherIds: user.coordinatorId }
+    : { role: 'student' };
+}
+
+function buildStudentListQuery(user, params = {}) {
+  const baseQuery = studentScope(user);
+  const filters = [];
+  const search = String(params.search || '').trim().slice(0, 120);
+
+  if (search) {
+    const searchRegex = new RegExp(escapeRegex(search), 'i');
+    filters.push({
+      $or: [
+        { name: searchRegex },
+        { email: searchRegex },
+        { studentId: searchRegex },
+        { branch: searchRegex },
+        { course: searchRegex },
+        { college: searchRegex },
+        { group: searchRegex },
+        { teacherIds: searchRegex },
+      ],
+    });
+  }
+
+  const semesterNumber = Number(params.semester);
+  if (params.semester !== undefined && params.semester !== '' && Number.isInteger(semesterNumber)) {
+    filters.push({ semester: semesterNumber });
+  }
+
+  [
+    ['branch', 'branch'],
+    ['course', 'course'],
+    ['college', 'college'],
+    ['group', 'group'],
+    ['coordinator', 'teacherIds'],
+  ].forEach(([paramName, fieldName]) => {
+    const value = String(params[paramName] || '').trim().slice(0, 120);
+    if (value) filters.push({ [fieldName]: new RegExp(`^${escapeRegex(value)}$`, 'i') });
+  });
+
+  return {
+    baseQuery,
+    query: filters.length > 0 ? { $and: [baseQuery, ...filters] } : baseQuery,
+  };
+}
+
+function stringFacet(field, unwind = false) {
+  const pipeline = [];
+  if (unwind) pipeline.push({ $unwind: `$${field}` });
+  pipeline.push(
+    { $match: { [field]: { $type: 'string', $ne: '' } } },
+    { $group: { _id: `$${field}`, count: { $sum: 1 } } },
+    { $sort: { _id: 1 } },
+  );
+  return pipeline;
+}
+
+function mapFacet(entries = []) {
+  return entries
+    .map((entry) => ({ value: String(entry._id || '').trim(), label: String(entry._id || '').trim(), count: entry.count }))
+    .filter((entry) => entry.value);
+}
+
 export async function listAllStudents(req, res) {
   try {
-    const { search, sortOrder, semester, page, limit } = req.query;
+    const { sortOrder, page, limit } = req.query;
     const user = req.user;
-    // Show ALL users with role='student' regardless of special tag
-    // Since special-event CSV creates users with role='student' AND isSpecialStudent=true,
-    // querying by role='student' will include both regular and special students
-    const baseQuery = user.role === 'coordinator'
-      ? { role: 'student', teacherIds: user.coordinatorId }
-      : { role: 'student' };
-
-    const filters = [];
-
-    if (search && search.trim()) {
-      const searchRegex = new RegExp(escapeRegex(search.trim().slice(0, 120)), 'i');
-      filters.push({
-        $or: [
-          { name: searchRegex },
-          { email: searchRegex },
-          { studentId: searchRegex },
-          { branch: searchRegex },
-          { course: searchRegex },
-          { college: searchRegex },
-          { group: searchRegex },
-          { teacherIds: searchRegex },
-        ],
-      });
-    }
-
-    const semesterNumber = Number(semester);
-    if (semester !== undefined && semester !== '' && Number.isInteger(semesterNumber)) {
-      filters.push({ semester: semesterNumber });
-    }
-
-    const query = filters.length > 0 ? { $and: [baseQuery, ...filters] } : baseQuery;
+    const { baseQuery, query } = buildStudentListQuery(user, req.query);
     
     // Sort order: 'asc' or 1 for ascending (oldest first, Excel order), 'desc' or -1 for descending (newest first)
     const sort = sortOrder === 'desc' || sortOrder === '-1' ? -1 : 1;
@@ -81,14 +117,25 @@ export async function listAllStudents(req, res) {
       studentQuery.skip((requestedPage - 1) * requestedLimit).limit(requestedLimit);
     }
 
-    const [students, total, semesterCounts] = await Promise.all([
+    const [students, total, facetResults] = await Promise.all([
       studentQuery.lean(),
       User.countDocuments(query),
       User.aggregate([
         { $match: baseQuery },
-        { $match: { semester: { $gte: 1, $lte: 8 } } },
-        { $group: { _id: '$semester', count: { $sum: 1 } } },
-        { $sort: { _id: 1 } },
+        {
+          $facet: {
+            semesters: [
+              { $match: { semester: { $gte: 1, $lte: 8 } } },
+              { $group: { _id: '$semester', count: { $sum: 1 } } },
+              { $sort: { _id: 1 } },
+            ],
+            branches: stringFacet('branch'),
+            courses: stringFacet('course'),
+            colleges: stringFacet('college'),
+            groups: stringFacet('group'),
+            coordinators: stringFacet('teacherIds', true),
+          },
+        },
       ]),
     ]);
     
@@ -99,6 +146,7 @@ export async function listAllStudents(req, res) {
     }));
     
     const pages = paginated ? Math.max(1, Math.ceil(total / requestedLimit)) : 1;
+    const facets = facetResults[0] || {};
     res.json({
       count: studentsWithTeacherId.length,
       total,
@@ -110,11 +158,16 @@ export async function listAllStudents(req, res) {
         total,
       },
       facets: {
-        semesters: semesterCounts.map((entry) => ({
+        semesters: (facets.semesters || []).map((entry) => ({
           value: Number(entry._id),
           label: `Semester ${entry._id}`,
           count: entry.count,
         })),
+        branches: mapFacet(facets.branches),
+        courses: mapFacet(facets.courses),
+        colleges: mapFacet(facets.colleges),
+        groups: mapFacet(facets.groups),
+        coordinators: mapFacet(facets.coordinators),
       },
     });
   } catch (err) {
@@ -246,13 +299,12 @@ export async function getStudentById(req, res) {
 export async function exportStudentsCsv(req, res) {
   try {
     const user = req.user;
-    const baseQuery = user.role === 'coordinator'
-      ? { role: 'student', teacherIds: user.coordinatorId }
-      : { role: 'student' };
+    const { query } = buildStudentListQuery(user, req.query);
+    const sort = req.query.sortOrder === 'desc' || req.query.sortOrder === '-1' ? -1 : 1;
     
-    const students = await User.find(baseQuery)
+    const students = await User.find(query)
       .select('name email studentId course branch college semester group teacherIds bio linkedinUrl githubUrl portfolioUrl')
-      .sort({ createdAt: 1 }) // Oldest first (Excel order)
+      .sort({ createdAt: sort, _id: sort })
       .lean();
     
     // Build CSV with same columns as upload template
@@ -278,9 +330,13 @@ export async function exportStudentsCsv(req, res) {
     });
     
     const csv = header + '\n' + rows.join('\n');
+    const hasFilters = ['search', 'semester', 'branch', 'course', 'college', 'group', 'coordinator']
+      .some((key) => String(req.query[key] || '').trim());
+    const filename = hasFilters ? 'students-filtered-export.csv' : 'students-export.csv';
     
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename="students-export.csv"');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Exported-Count', String(students.length));
     res.send(csv);
   } catch (err) {
     console.error('Error exporting students:', err);

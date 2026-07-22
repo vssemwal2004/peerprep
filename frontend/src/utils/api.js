@@ -352,6 +352,9 @@ export const api = {
     if (options.search) params.append('search', options.search);
     if (options.sortOrder) params.append('sortOrder', options.sortOrder);
     if (options.semester !== undefined && options.semester !== '') params.append('semester', options.semester);
+    ['branch', 'course', 'college', 'group', 'coordinator'].forEach((key) => {
+      if (options[key] !== undefined && options[key] !== '') params.append(key, options[key]);
+    });
     if (options.page) params.append('page', options.page);
     if (options.limit) params.append('limit', options.limit);
     const queryString = params.toString();
@@ -386,20 +389,26 @@ export const api = {
   promoteStudents: (body) => request('/students/promotion/promote', { method: 'POST', body }),
   updateStudent: (studentId, body) => request(`/students/${studentId}`, { method: 'PUT', body }),
   deleteStudent: (studentId) => request(`/students/${studentId}`, { method: 'DELETE' }),
-  exportStudentsCsv: async () => {
-    // Direct download - fetch the CSV and trigger download
+  exportStudentsCsv: async (options = {}) => {
     const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000/api';
-    const res = await fetch(`${API_BASE}/students/export`, { credentials: 'include' });
+    const params = new URLSearchParams();
+    ['search', 'sortOrder', 'semester', 'branch', 'course', 'college', 'group', 'coordinator'].forEach((key) => {
+      if (options[key] !== undefined && options[key] !== '') params.append(key, options[key]);
+    });
+    const queryString = params.toString();
+    const res = await fetch(`${API_BASE}/students/export${queryString ? `?${queryString}` : ''}`, { credentials: 'include' });
     if (!res.ok) throw new Error('Failed to export students');
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'students-export.csv';
+    const disposition = res.headers.get('Content-Disposition') || '';
+    a.download = disposition.match(/filename="?([^";]+)"?/i)?.[1] || 'students-export.csv';
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+    return { count: Number(res.headers.get('X-Exported-Count')) || 0 };
   },
 
   // Coordinators

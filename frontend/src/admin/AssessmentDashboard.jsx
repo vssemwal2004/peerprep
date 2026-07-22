@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import AssessmentCard from './assessment/components/AssessmentCard';
 import { SectionCard } from './compiler/CompilerUi';
-import { mergeSemesterOptions } from '../utils/semesterOptions';
+import { deriveStudentFacets, filterStudentsLocally, mergeSemesterOptions } from '../utils/semesterOptions';
 
 const statusStyles = {
   Draft: 'bg-slate-100 text-slate-600 border-slate-200',
@@ -397,13 +397,22 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
     })
       .then((data) => {
         if (candidateRequestRef.current !== requestId) return;
-        const nextPagination = data.pagination || {
-          page: 1,
-          pages: 1,
-          total: data.total ?? data.count ?? 0,
-        };
-        setAllStudents(data.students || []);
-        setCandidateSemesterFacets(data.facets?.semesters || []);
+        const responseStudents = Array.isArray(data.students) ? data.students : [];
+        let nextStudents = responseStudents;
+        let nextPagination = data.pagination;
+        if (!nextPagination) {
+          const locallyFiltered = filterStudentsLocally(responseStudents, {
+            search: debouncedCandidateSearch,
+            semester: candidateSemester,
+          });
+          const pages = Math.max(1, Math.ceil(locallyFiltered.length / 25));
+          const page = Math.min(candidatePagination.page, pages);
+          const offset = (page - 1) * 25;
+          nextStudents = locallyFiltered.slice(offset, offset + 25);
+          nextPagination = { page, pages, total: locallyFiltered.length };
+        }
+        setAllStudents(nextStudents);
+        setCandidateSemesterFacets((current) => data.facets?.semesters || (current.length > 0 ? current : deriveStudentFacets(responseStudents).semesters));
         setCandidatePagination((current) => ({ ...current, ...nextPagination }));
       })
       .catch((error) => {
@@ -425,8 +434,12 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
       .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
   }, [allStudents, assignedIds]);
   const candidateSemesterOptions = useMemo(
-    () => mergeSemesterOptions(managedSemesters, candidateSemesterFacets),
-    [managedSemesters, candidateSemesterFacets],
+    () => mergeSemesterOptions(
+      managedSemesters,
+      candidateSemesterFacets,
+      allStudents.map((student) => student.semester),
+    ),
+    [managedSemesters, candidateSemesterFacets, allStudents],
   );
 
   const filteredStudents = useMemo(() => {

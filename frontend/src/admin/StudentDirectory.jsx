@@ -6,7 +6,21 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, ChevronRight, Download, Edit2, Filter, Loader2, Save, Search, Trash2, Users, X } from "lucide-react";
 import ContributionCalendar from "../components/ContributionCalendar";
 import { useToast } from "../components/CustomToast";
-import { mergeSemesterOptions } from "../utils/semesterOptions";
+import {
+  deriveStudentFacets,
+  filterStudentsLocally,
+  mergeFilterOptions,
+  mergeSemesterOptions,
+} from "../utils/semesterOptions";
+
+const EMPTY_FILTERS = {
+  semester: '',
+  branch: '',
+  course: '',
+  college: '',
+  group: '',
+  coordinator: '',
+};
 
 export default function StudentDirectory() {
   const navigate = useNavigate();
@@ -33,12 +47,14 @@ export default function StudentDirectory() {
   const [itemsPerPage, setItemsPerPage] = useState(25);
   const [sortOrder, setSortOrder] = useState('asc'); // 'asc' or 'desc'
   const [isExporting, setIsExporting] = useState(false);
-  const [selectedSemester, setSelectedSemester] = useState('');
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const [showFilters, setShowFilters] = useState(false);
   const [managedSemesters, setManagedSemesters] = useState([]);
-  const [semesterFacets, setSemesterFacets] = useState([]);
+  const [facets, setFacets] = useState({});
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0, limit: 25 });
   const loadRequestRef = useRef(0);
+  const filterPanelRef = useRef(null);
   
   // State for detailed videos/courses modals
   const [showVideosModal, setShowVideosModal] = useState(false);
@@ -48,10 +64,27 @@ export default function StudentDirectory() {
   const [loadingVideos, setLoadingVideos] = useState(false);
   const [loadingCourses, setLoadingCourses] = useState(false);
 
-  const semesterOptions = useMemo(
-    () => mergeSemesterOptions(managedSemesters, semesterFacets),
-    [managedSemesters, semesterFacets],
-  );
+  const fallbackFacets = useMemo(() => deriveStudentFacets(students), [students]);
+  const semesterOptions = useMemo(() => mergeSemesterOptions(
+    managedSemesters,
+    facets.semesters,
+    fallbackFacets.semesters,
+  ), [managedSemesters, facets.semesters, fallbackFacets.semesters]);
+  const filterOptions = useMemo(() => ({
+    branches: mergeFilterOptions(facets.branches, fallbackFacets.branches),
+    courses: mergeFilterOptions(facets.courses, fallbackFacets.courses),
+    colleges: mergeFilterOptions(facets.colleges, fallbackFacets.colleges),
+    groups: mergeFilterOptions(facets.groups, fallbackFacets.groups),
+    coordinators: mergeFilterOptions(facets.coordinators, fallbackFacets.coordinators),
+  }), [facets, fallbackFacets]);
+  const activeFilterCount = Object.values(filters).filter(Boolean).length;
+  const advancedFilterDefinitions = [
+    { key: 'branch', label: 'Branch', allLabel: 'All branches', options: filterOptions.branches },
+    { key: 'course', label: 'Course', allLabel: 'All courses', options: filterOptions.courses },
+    { key: 'college', label: 'College', allLabel: 'All colleges', options: filterOptions.colleges },
+    { key: 'group', label: 'Group', allLabel: 'All groups', options: filterOptions.groups },
+    { key: 'coordinator', label: 'Coordinator', allLabel: 'All coordinators', options: filterOptions.coordinators },
+  ];
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
@@ -71,10 +104,19 @@ export default function StudentDirectory() {
   }, []);
 
   useEffect(() => {
+    if (!showFilters) return undefined;
+    const handleOutsideClick = (event) => {
+      if (!filterPanelRef.current?.contains(event.target)) setShowFilters(false);
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [showFilters]);
+
+  useEffect(() => {
     loadData();
     // loadData uses a request revision guard to ignore stale search responses.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, sortOrder, selectedSemester, currentPage, itemsPerPage, debouncedSearch]);
+  }, [activeTab, sortOrder, filters, currentPage, itemsPerPage, debouncedSearch]);
 
   const totalPages = pagination.pages || 1;
   const startIndex = (currentPage - 1) * itemsPerPage;
@@ -96,16 +138,26 @@ export default function StudentDirectory() {
         const data = await api.listAllStudents({
           search: debouncedSearch,
           sortOrder,
-          semester: selectedSemester,
+          ...filters,
           page: currentPage,
           limit: itemsPerPage,
         });
         if (loadRequestRef.current !== requestId) return;
-        const nextStudents = data.students || [];
-        setStudents(nextStudents);
+        const responseStudents = Array.isArray(data.students) ? data.students : [];
+        setStudents(responseStudents);
+        setFacets((current) => data.facets || (Object.keys(current).length > 0 ? current : deriveStudentFacets(responseStudents)));
+
+        let nextStudents = responseStudents;
+        let nextPagination = data.pagination;
+        if (!nextPagination) {
+          const locallyFiltered = filterStudentsLocally(responseStudents, { search: debouncedSearch, ...filters });
+          const pages = Math.max(1, Math.ceil(locallyFiltered.length / itemsPerPage));
+          const page = Math.min(currentPage, pages);
+          const offset = (page - 1) * itemsPerPage;
+          nextStudents = locallyFiltered.slice(offset, offset + itemsPerPage);
+          nextPagination = { page, pages, total: locallyFiltered.length, limit: itemsPerPage };
+        }
         setFilteredStudents(nextStudents);
-        setSemesterFacets(data.facets?.semesters || []);
-        const nextPagination = data.pagination || { page: 1, pages: 1, total: data.total ?? data.count ?? nextStudents.length, limit: itemsPerPage };
         setPagination(nextPagination);
         if (nextPagination.page !== currentPage) setCurrentPage(nextPagination.page);
       } else {
@@ -134,6 +186,17 @@ export default function StudentDirectory() {
     setSearchQuery("");
     setDebouncedSearch('');
     setCurrentPage(1);
+  };
+
+  const updateFilter = (key, value) => {
+    setFilters((current) => ({ ...current, [key]: value }));
+    setCurrentPage(1);
+  };
+
+  const clearFilters = () => {
+    setFilters(EMPTY_FILTERS);
+    setCurrentPage(1);
+    setShowFilters(false);
   };
 
   const openStudentProfile = (student) => {
@@ -329,8 +392,12 @@ export default function StudentDirectory() {
   const handleExportCsv = async () => {
     setIsExporting(true);
     try {
-      await api.exportStudentsCsv();
-      toast.success('Students exported successfully!');
+      const result = await api.exportStudentsCsv({
+        search: searchQuery.trim(),
+        sortOrder,
+        ...filters,
+      });
+      toast.success(`${result.count || pagination.total} matching student${(result.count || pagination.total) === 1 ? '' : 's'} exported.`);
     } catch (err) {
       toast.error(err.message || 'Failed to export students');
     } finally {
@@ -363,69 +430,21 @@ export default function StudentDirectory() {
                   {activeTab === "students" ? "Student Database" : "Special Event Students"}
                 </h1>
                 <p className="text-[11px] text-slate-500 dark:text-gray-400">
-                  {pagination.total.toLocaleString()} registered student{pagination.total === 1 ? '' : 's'}
+                  {pagination.total.toLocaleString()} {debouncedSearch || activeFilterCount > 0 ? 'matching' : 'registered'} student{pagination.total === 1 ? '' : 's'}
                 </p>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative min-w-[150px] flex-1 sm:flex-none">
-                <Filter className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                <select
-                  value={selectedSemester}
-                  onChange={(event) => {
-                    setSelectedSemester(event.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className="h-9 w-full appearance-none rounded-md border border-slate-200 bg-white pl-8 pr-7 text-xs font-medium text-slate-700 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:ring-sky-900/40"
-                  aria-label="Filter by semester"
-                >
-                  <option value="">All semesters</option>
-                  {semesterOptions.map((semester) => (
-                    <option key={semester.value} value={semester.value}>
-                      {semester.label}{Number.isFinite(semester.count) ? ` (${semester.count})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Export CSV Button */}
-              <button
-                onClick={handleExportCsv}
-                disabled={isExporting}
-                className="order-last inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-3 text-xs font-semibold text-white transition-colors hover:bg-emerald-700 disabled:bg-emerald-400 sm:order-none"
-              >
-                {isExporting ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Download className="w-4 h-4" />
-                )}
-                {isExporting ? 'Exporting...' : 'Export CSV'}
-              </button>
-
-              {/* Sort Order Dropdown */}
-              <div>
-                <select
-                  value={sortOrder}
-                  onChange={(e) => { setSortOrder(e.target.value); setCurrentPage(1); }}
-                  className="h-9 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:ring-sky-900/40"
-                  aria-label="Sort students"
-                >
-                  <option value="asc">Oldest First</option>
-                  <option value="desc">Newest First</option>
-                </select>
-              </div>
-
-              {/* Compact Search Bar */}
-              <form onSubmit={handleSearch} className="min-w-[220px] flex-1 sm:w-72 sm:flex-none">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
+              <form onSubmit={handleSearch} className="min-w-[240px] flex-1 xl:max-w-sm">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input
                     type="text"
-                    placeholder="Search students..."
+                    placeholder="Search name, ID, email, branch, course..."
                     value={searchQuery}
                     onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                    className="h-9 w-full rounded-md border border-slate-200 bg-white pl-9 pr-9 text-xs text-slate-700 outline-none placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:ring-sky-900/40"
+                    className="h-9 w-full rounded-md border border-slate-200 bg-white pl-9 pr-9 text-xs text-slate-700 shadow-sm outline-none placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:ring-sky-900/40"
                   />
                   {searchQuery && (
                     <button
@@ -438,6 +457,95 @@ export default function StudentDirectory() {
                   )}
                 </div>
               </form>
+
+              <div className="relative min-w-[160px]">
+                <Filter className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <select
+                  value={filters.semester}
+                  onChange={(event) => updateFilter('semester', event.target.value)}
+                  className="h-9 w-full appearance-none rounded-md border border-slate-200 bg-white pl-8 pr-7 text-xs font-semibold text-slate-700 shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:ring-sky-900/40"
+                  aria-label="Filter by semester"
+                >
+                  <option value="">All semesters</option>
+                  {semesterOptions.map((semester) => (
+                    <option key={semester.value} value={semester.value}>
+                      {semester.label}{Number.isFinite(semester.count) ? ` (${semester.count})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div ref={filterPanelRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowFilters((open) => !open)}
+                  className={`inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs font-semibold shadow-sm transition-colors ${showFilters || activeFilterCount > (filters.semester ? 1 : 0) ? 'border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-700 dark:bg-sky-950/30 dark:text-sky-300' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'}`}
+                  aria-expanded={showFilters}
+                >
+                  <Filter className="h-3.5 w-3.5" />
+                  Filters
+                  {activeFilterCount > 0 && (
+                    <span className="inline-flex h-4 min-w-4 items-center justify-center rounded bg-sky-600 px-1 text-[9px] text-white">{activeFilterCount}</span>
+                  )}
+                </button>
+
+                {showFilters && (
+                  <div className="absolute right-0 top-11 z-30 w-[min(680px,calc(100vw-7rem))] rounded-lg border border-slate-200 bg-white p-3 shadow-xl dark:border-gray-700 dark:bg-gray-900">
+                    <div className="mb-3 flex items-center justify-between">
+                      <div>
+                        <div className="text-xs font-semibold text-slate-900 dark:text-white">Filter students</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={clearFilters}
+                        disabled={activeFilterCount === 0}
+                        className="text-[10px] font-semibold text-sky-700 disabled:opacity-40 dark:text-sky-300"
+                      >
+                        Clear all
+                      </button>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                      {advancedFilterDefinitions.map((definition) => (
+                        <label key={definition.key} className="min-w-0">
+                          <span className="mb-1 block text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-400">{definition.label}</span>
+                          <select
+                            value={filters[definition.key]}
+                            onChange={(event) => updateFilter(definition.key, event.target.value)}
+                            className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700 outline-none focus:border-sky-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                          >
+                            <option value="">{definition.allLabel}</option>
+                            {definition.options.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}{Number.isFinite(option.count) ? ` (${option.count})` : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <select
+                value={sortOrder}
+                onChange={(e) => { setSortOrder(e.target.value); setCurrentPage(1); }}
+                className="h-9 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:ring-sky-900/40"
+                aria-label="Sort students"
+              >
+                <option value="asc">Oldest first</option>
+                <option value="desc">Newest first</option>
+              </select>
+
+              <button
+                onClick={handleExportCsv}
+                disabled={isExporting || isLoading}
+                title="Export the currently searched and filtered students"
+                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-3 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-400"
+              >
+                {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                {isExporting ? 'Exporting...' : 'Export results'}
+              </button>
               {isLoading && <Loader2 className="h-4 w-4 animate-spin text-sky-500" aria-label="Loading students" />}
             </div>
           </div>
@@ -464,7 +572,7 @@ export default function StudentDirectory() {
               <Users className="w-16 h-16 text-slate-300 dark:text-gray-600 mx-auto mb-4" />
               <h3 className="text-lg font-semibold text-slate-700 dark:text-white mb-2">No students found</h3>
               <p className="text-slate-500 dark:text-white text-sm">
-                {searchQuery || selectedSemester
+                {searchQuery || activeFilterCount > 0
                   ? "Try adjusting the current filters"
                   : "No students have been registered yet"}
               </p>

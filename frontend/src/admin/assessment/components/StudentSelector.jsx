@@ -10,7 +10,7 @@ import {
   X,
 } from 'lucide-react';
 import { api } from '../../../utils/api';
-import { mergeSemesterOptions } from '../../../utils/semesterOptions';
+import { deriveStudentFacets, filterStudentsLocally, mergeSemesterOptions } from '../../../utils/semesterOptions';
 
 const PAGE_SIZE = 20;
 
@@ -23,6 +23,7 @@ export default function StudentSelector({ selected = [], onChange }) {
   const [semesterFacets, setSemesterFacets] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 });
   const [loading, setLoading] = useState(true);
+  const [bulkSelecting, setBulkSelecting] = useState(false);
   const [error, setError] = useState('');
   const requestRef = useRef(0);
 
@@ -31,8 +32,8 @@ export default function StudentSelector({ selected = [], onChange }) {
     [selected],
   );
   const semesterOptions = useMemo(
-    () => mergeSemesterOptions(managedSemesters, semesterFacets),
-    [managedSemesters, semesterFacets],
+    () => mergeSemesterOptions(managedSemesters, semesterFacets, students.map((student) => student.semester)),
+    [managedSemesters, semesterFacets, students],
   );
 
   useEffect(() => {
@@ -67,13 +68,22 @@ export default function StudentSelector({ selected = [], onChange }) {
     })
       .then((data) => {
         if (requestRef.current !== requestId) return;
-        const nextPagination = data.pagination || {
-          page: 1,
-          pages: 1,
-          total: data.total ?? data.count ?? 0,
-        };
-        setStudents(Array.isArray(data.students) ? data.students : []);
-        setSemesterFacets(data.facets?.semesters || []);
+        const responseStudents = Array.isArray(data.students) ? data.students : [];
+        let nextStudents = responseStudents;
+        let nextPagination = data.pagination;
+        if (!nextPagination) {
+          const locallyFiltered = filterStudentsLocally(responseStudents, {
+            search: debouncedQuery,
+            semester: selectedSemester,
+          });
+          const pages = Math.max(1, Math.ceil(locallyFiltered.length / PAGE_SIZE));
+          const page = Math.min(pagination.page, pages);
+          const offset = (page - 1) * PAGE_SIZE;
+          nextStudents = locallyFiltered.slice(offset, offset + PAGE_SIZE);
+          nextPagination = { page, pages, total: locallyFiltered.length };
+        }
+        setStudents(nextStudents);
+        setSemesterFacets((current) => data.facets?.semesters || (current.length > 0 ? current : deriveStudentFacets(responseStudents).semesters));
         setPagination((current) => ({ ...current, ...nextPagination }));
         if (nextPagination.page !== pagination.page) {
           setPagination((current) => ({ ...current, page: nextPagination.page }));
@@ -101,6 +111,28 @@ export default function StudentSelector({ selected = [], onChange }) {
   const selectVisible = () => {
     const additions = students.filter((student) => !selectedIds.has(String(student._id)));
     if (additions.length > 0) onChange([...selected, ...additions]);
+  };
+
+  const useSelectedSemester = async () => {
+    if (!selectedSemester) return;
+    setBulkSelecting(true);
+    setError('');
+    try {
+      const data = await api.listAllStudents({
+        search: debouncedQuery,
+        semester: selectedSemester,
+        sortOrder: 'asc',
+      });
+      const matchingStudents = filterStudentsLocally(data.students || [], {
+        search: debouncedQuery,
+        semester: selectedSemester,
+      });
+      onChange(matchingStudents);
+    } catch (selectionError) {
+      setError(selectionError.message || `Failed to select Semester ${selectedSemester}`);
+    } finally {
+      setBulkSelecting(false);
+    }
   };
 
   const visibleSelected = students.filter((student) => selectedIds.has(String(student._id))).length;
@@ -161,12 +193,17 @@ export default function StudentSelector({ selected = [], onChange }) {
 
         <button
           type="button"
-          onClick={selectVisible}
-          disabled={loading || allVisibleSelected || students.length === 0}
+          onClick={selectedSemester ? useSelectedSemester : selectVisible}
+          disabled={loading || bulkSelecting || students.length === 0 || (!selectedSemester && allVisibleSelected)}
+          title={selectedSemester ? `Replace the target list with all Semester ${selectedSemester} students` : 'Select students on this page'}
           className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-700"
         >
-          <Check className="h-3.5 w-3.5" />
-          {allVisibleSelected ? 'Page selected' : 'Select page'}
+          {bulkSelecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+          {bulkSelecting
+            ? 'Selecting...'
+            : selectedSemester
+              ? `Use Semester ${selectedSemester}`
+              : allVisibleSelected ? 'Page selected' : 'Select page'}
         </button>
       </div>
 
