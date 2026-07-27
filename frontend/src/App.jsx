@@ -4,7 +4,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './components/CustomToast';
 import AdminLayout from './admin/AdminLayout';
-import { NavbarSkeleton, PageSkeleton, DashboardSkeleton } from './components/Skeletons';
+import { LandingPageSkeleton, NavbarSkeleton, PageSkeleton, DashboardSkeleton } from './components/Skeletons';
 import { useAuth } from './context/AuthContext';
 import { hasPermission } from './admin/coordinatorPermissions';
 
@@ -233,6 +233,7 @@ function AppContent() {
           immediately as skeleton shapes, then real content swaps in when loaded */}
       <main className={gradientBg + " dark:bg-gray-900 flex-grow"}>
         <Suspense fallback={
+          isMain ? <LandingPageSkeleton /> :
           isAdmin ? <DashboardSkeleton /> :
           isCoordinator ? <DashboardSkeleton /> :
           isStudentDashboard ? <PageSkeleton /> :

@@ -1,89 +1,161 @@
-const FAQS = [
+import { useState } from "react";
+
+const faqs = [
   {
-    q: "What is PeerPrep?",
-    a: "PeerPrep is a placement preparation platform that combines mock interviews, DSA practice, assessments, and performance analytics into one focused workflow.",
+    question: "What is PeerPrep?",
+    answer:
+      "PeerPrep is a placement preparation platform where students can practice coding problems, follow learning modules, take assessments, and prepare through peer mock interviews.",
   },
   {
-    q: "How do mock interviews work?",
-    a: "You join an interview event, get paired automatically, propose a suitable time, confirm a slot with your partner, and join the session using the generated meeting link.",
+    question: "Who can use PeerPrep?",
+    answer:
+      "PeerPrep is built for college students preparing for internships, campus placements, coding tests, and technical interviews.",
   },
   {
-    q: "When will the meeting link be available?",
-    a: "After the interview is scheduled, a meeting link is generated. The UI typically allows joining closer to the interview time to keep sessions organized.",
+    question: "Does PeerPrep provide coding practice?",
+    answer:
+      "Yes. Students can solve topic-wise coding problems, practice DSA, and improve through structured problem-solving flows.",
   },
   {
-    q: "Can I reschedule if the proposed time doesn’t work?",
-    a: "Yes. You and your partner can propose a new time and confirm it. The scheduling flow keeps the latest proposal active and records past proposals for clarity.",
+    question: "Are assessment tests available?",
+    answer:
+      "Yes. PeerPrep supports assessment-style practice so students can test speed, accuracy, and readiness before company rounds.",
   },
   {
-    q: "Who can submit feedback and when?",
-    a: "Feedback is submitted after the session by the interviewer. This keeps feedback consistent and aligned with the completed interview.",
+    question: "Can students track their performance?",
+    answer:
+      "Yes. The platform is designed to help students understand progress, weak areas, consistency, and improvement over time.",
   },
   {
-    q: "What do assessments include?",
-    a: "Assessments are structured practice tests with clear rules and a timed environment. Your submissions and outcomes are tracked so you can review progress.",
+    question: "How do mock interviews work?",
+    answer:
+      "Students can practice with other students in a peer-to-peer mock interview setup and exchange feedback after the session.",
   },
   {
-    q: "How does Problem Solve help my preparation?",
-    a: "It helps you practice curated DSA problems with a clean workflow for revision, pattern-building, and steady improvement.",
+    question: "Is the mock interview real-time?",
+    answer:
+      "The mock interview section represents live practice where students collaborate, solve questions, and build interview confidence.",
   },
   {
-    q: "What can I see in Analyse Performance?",
-    a: "You can view trends and gaps across practice and sessions to prioritize what to improve next, instead of relying on guesswork.",
+    question: "Does PeerPrep help with semester-wise preparation?",
+    answer:
+      "Yes. The learning module is planned around semester-wise placement preparation so students can follow the right order.",
   },
   {
-    q: "Do I need to install anything to use PeerPrep?",
-    a: "No. PeerPrep runs in the browser. You just need an internet connection and a modern browser.",
+    question: "What is included in the learning module?",
+    answer:
+      "The learning module can include curated playlists, notes, content resources, topic order, and progress tracking.",
   },
   {
-    q: "Is my data private?",
-    a: "PeerPrep is designed to handle your account and preparation data responsibly. You can review the Privacy Policy for full details.",
+    question: "Are playlists curated by professors?",
+    answer:
+      "The section is designed to represent trusted, professor-curated or expert-recommended learning playlists and resources.",
+  },
+  {
+    question: "Can PeerPrep be used for DSA preparation?",
+    answer:
+      "Yes. DSA practice is one of the core areas, including topic-based practice and company-style problem solving.",
+  },
+  {
+    question: "Can beginners start with PeerPrep?",
+    answer:
+      "Yes. The flow is structured so beginners can start with basics and gradually move toward assessments and interviews.",
+  },
+  {
+    question: "Is PeerPrep only for final-year students?",
+    answer:
+      "No. Students from earlier semesters can also use it to build coding and interview skills step by step.",
+  },
+  {
+    question: "Does it show company preparation context?",
+    answer:
+      "Yes. The landing page includes recruiter/company context to show placement-focused preparation.",
+  },
+  {
+    question: "Can students revise solved problems?",
+    answer:
+      "The problem-solving flow is designed to support revision, marked problems, and repeated practice.",
+  },
+  {
+    question: "Will students get feedback?",
+    answer:
+      "Peer mock interviews are planned around practical peer feedback, helping students improve communication and problem-solving clarity.",
+  },
+  {
+    question: "Does PeerPrep support coding test readiness?",
+    answer:
+      "Yes. Assessment tests and timed practice help students prepare for screening rounds and coding evaluations.",
+  },
+  {
+    question: "Is the landing page optimized for fast loading?",
+    answer:
+      "Yes. The landing page uses lightweight sections, optimized images, lazy loading, and simple UI patterns.",
+  },
+  {
+    question: "Can this platform be expanded later?",
+    answer:
+      "Yes. The landing page is being built section by section so more modules, testimonials, stats, and features can be added cleanly.",
+  },
+  {
+    question: "How do I start using PeerPrep?",
+    answer:
+      "Click the login or start button and continue into the student area to begin preparation.",
+  },
+  {
+    question: "Is PeerPrep focused on placement preparation?",
+    answer:
+      "Yes. Every major section is aligned with placement readiness: learning, practice, assessments, mock interviews, and performance improvement.",
+  },
+  {
+    question: "Who developed PeerPrep?",
+    answer: "PeerPrep is developed by Anubhav and Vivek.",
   },
 ];
 
-export default function FAQSection({ sectionRef } = {}) {
+export default function FAQSection() {
+  const [showAll, setShowAll] = useState(false);
+  const visibleFaqs = showAll ? faqs : faqs.slice(0, 6);
+
   return (
-    <section id="faqs" className="relative z-10 py-20" ref={sectionRef}>
-      <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8">
-        <div className="max-w-3xl">
-          <h2 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-50 sm:text-4xl">
-            FAQs
-            <span className="mt-2 block bg-gradient-to-r from-slate-900 via-sky-800 to-indigo-900 bg-clip-text text-transparent dark:from-slate-100 dark:via-sky-300 dark:to-indigo-300">
-              Quick answers about PeerPrep
-            </span>
+    <section id="faq" className="bg-white py-12 sm:py-14 lg:py-16" aria-labelledby="faq-heading">
+      <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-3xl text-center">
+          <p className="text-sm font-bold uppercase tracking-[0.22em] text-sky-500">FAQ</p>
+          <h2 id="faq-heading" className="mt-3 text-3xl font-medium leading-tight text-slate-700 sm:text-4xl">
+            Questions students usually ask before starting.
           </h2>
-          <p className="mt-4 text-base leading-8 text-slate-600 dark:text-slate-300 sm:text-lg">
-            Everything you need to know about mock interviews, scheduling, feedback, assessments, and analytics.
+          <p className="mt-4 text-base font-medium leading-7 text-slate-500">
+            Clear answers about practice, assessments, learning modules, mock interviews, and placement preparation.
           </p>
         </div>
 
-        <div className="mt-10 grid gap-4 md:grid-cols-2">
-          {FAQS.map((item) => (
+        <div className="mt-8 grid gap-3">
+          {visibleFaqs.map((faq, index) => (
             <details
-              key={item.q}
-              className="group rounded-2xl border border-slate-200/80 bg-white/70 p-5 shadow-[0_18px_45px_-30px_rgba(15,23,42,0.14)] backdrop-blur-xl dark:border-slate-700/75 dark:bg-slate-900/40 dark:shadow-none"
+              key={faq.question}
+              className="group rounded-xl border border-sky-100 bg-[#f8fcff] px-5 py-4 shadow-[0_8px_24px_rgba(14,116,144,0.045)] open:bg-white open:shadow-[0_14px_32px_rgba(14,116,144,0.08)]"
+              open={index === 0}
             >
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-4">
-                <span className="truncate text-sm font-bold text-slate-900 dark:text-slate-50 sm:text-base">{item.q}</span>
-                <span className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200/80 bg-white/70 text-slate-700 transition-transform duration-200 group-open:rotate-180 dark:border-slate-700/80 dark:bg-slate-900/40 dark:text-slate-200">
-                  <svg
-                    viewBox="0 0 24 24"
-                    width="18"
-                    height="18"
-                    aria-hidden="true"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M6 9l6 6 6-6" />
-                  </svg>
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-left text-base font-extrabold text-slate-800 marker:hidden">
+                <span>{faq.question}</span>
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-100 text-lg leading-none text-sky-700 transition group-open:rotate-45">
+                  +
                 </span>
               </summary>
-              <p className="mt-4 text-sm leading-7 text-slate-600 dark:text-slate-300 sm:text-base">{item.a}</p>
+              <p className="mt-3 max-w-4xl text-sm font-medium leading-6 text-slate-500">{faq.answer}</p>
             </details>
           ))}
+        </div>
+
+        <div className="mt-7 text-center">
+          <button
+            type="button"
+            onClick={() => setShowAll((current) => !current)}
+            className="inline-flex items-center justify-center rounded-lg border border-sky-200 bg-white px-6 py-3 text-sm font-extrabold text-sky-700 shadow-[0_10px_24px_rgba(14,116,144,0.06)] transition hover:-translate-y-0.5 hover:border-sky-300 hover:bg-sky-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+            aria-expanded={showAll}
+          >
+            {showAll ? "Show fewer questions" : "Show more questions"}
+          </button>
         </div>
       </div>
     </section>

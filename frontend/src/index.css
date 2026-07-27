@@ -5,6 +5,10 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
   /* Hide scrollbars globally while keeping scrolling functional */
   * {
     -ms-overflow-style: none; /* IE and Edge */

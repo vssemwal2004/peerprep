@@ -16,6 +16,40 @@ function Shimmer({ className = '' }) {
   );
 }
 
+// Lightweight shape-matched fallback for the lazy-loaded landing page.
+export function LandingPageSkeleton() {
+  return (
+    <div
+      className="h-screen overflow-hidden bg-[#fbfdff]"
+      role="status"
+      aria-label="Loading PeerPrep"
+    >
+      <div className="flex h-8 items-center justify-center bg-[#123d79] px-4">
+        <div className="h-5 w-64 max-w-[78vw] animate-pulse rounded-full bg-white/20" />
+      </div>
+
+      <div className="flex h-[60px] items-center justify-between bg-white px-4 sm:h-16 sm:px-6 lg:px-8">
+        <div className="h-10 w-40 animate-pulse rounded-lg bg-sky-100 sm:w-44" />
+        <div className="h-10 w-20 animate-pulse rounded-lg bg-sky-200 sm:w-24" />
+      </div>
+
+      <div className="relative flex h-[calc(100svh-92px)] min-h-[520px] flex-col items-center overflow-hidden px-4 pt-7 text-center sm:h-[calc(100svh-96px)] sm:pt-9">
+        <div className="absolute -right-[44%] top-[29%] h-[84%] w-[128%] rotate-[-4deg] rounded-[50%] bg-[#e8f5ff] sm:-right-[30%] sm:top-[24%] sm:w-[116%]" />
+        <div className="absolute -right-[48%] top-[51%] h-[68%] w-[112%] rotate-[-3deg] rounded-[50%] bg-[#fbfdff] sm:-right-[32%] sm:top-[48%] sm:w-[101%]" />
+        <div className="absolute -left-[31%] top-[61%] h-[58%] w-[79%] rotate-[7deg] rounded-[50%] bg-[#f0f8ff] sm:-left-[20%] sm:top-[57%] sm:w-[67%]" />
+        <div className="absolute -left-[19%] top-[74%] h-[47%] w-[108%] rotate-[3deg] rounded-[50%] bg-[#f8fbff] sm:-left-[12%] sm:top-[72%]" />
+        <div className="relative h-11 w-full max-w-2xl animate-pulse rounded-xl bg-sky-100 sm:h-14" />
+        <div className="relative mt-3 h-11 w-[78%] max-w-lg animate-pulse rounded-xl bg-sky-200/70 sm:h-14" />
+        <div className="relative mt-6 h-4 w-full max-w-xl animate-pulse rounded bg-white/80" />
+        <div className="relative mt-2 h-4 w-[72%] max-w-md animate-pulse rounded bg-sky-100" />
+        <div className="relative mt-8 h-12 w-56 animate-pulse rounded-xl bg-sky-400/75" />
+        <div className="relative mt-auto mb-3 h-48 w-[92%] max-w-5xl animate-pulse rounded-[3rem] bg-white/55 sm:h-64" />
+      </div>
+      <span className="sr-only">Loading PeerPrep…</span>
+    </div>
+  );
+}
+
 // Skeleton for navbar area
 export function NavbarSkeleton() {
   return (
