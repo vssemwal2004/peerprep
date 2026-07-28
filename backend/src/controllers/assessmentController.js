@@ -1623,6 +1623,22 @@ export async function createAssessment(req, res) {
                 to: student.email,
                 studentId: student.studentId,
                 password: student.password,
+              }).then(() => User.updateOne({ _id: student.id }, {
+                $set: {
+                  credentialEmailStatus: 'sent',
+                  credentialEmailSentAt: new Date(),
+                  credentialEmailLastAttemptAt: new Date(),
+                },
+                $unset: { credentialEmailLastError: 1 },
+              })).catch(async (error) => {
+                await User.updateOne({ _id: student.id }, {
+                  $set: {
+                    credentialEmailStatus: 'failed',
+                    credentialEmailLastAttemptAt: new Date(),
+                    credentialEmailLastError: String(error.message || 'Email delivery failed.').slice(0, 500),
+                  },
+                });
+                throw error;
               })
             )
           );

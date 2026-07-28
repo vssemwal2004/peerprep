@@ -20,6 +20,7 @@ const EMPTY_FILTERS = {
   college: '',
   group: '',
   coordinator: '',
+  credentialEmailStatus: '',
 };
 
 export default function StudentDirectory() {
@@ -87,6 +88,16 @@ export default function StudentDirectory() {
   }), [facets, fallbackFacets]);
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
   const advancedFilterDefinitions = [
+    {
+      key: 'credentialEmailStatus',
+      label: 'Credential mail',
+      allLabel: 'All mail statuses',
+      options: [
+        { value: 'sent', label: 'Mail sent' },
+        { value: 'not_sent', label: 'Not sent / failed' },
+        { value: 'unconfirmed', label: 'Historical status unconfirmed' },
+      ],
+    },
     { key: 'branch', label: 'Branch', allLabel: 'All branches', options: filterOptions.branches },
     { key: 'course', label: 'Course', allLabel: 'All courses', options: filterOptions.courses },
     { key: 'college', label: 'College', allLabel: 'All colleges', options: filterOptions.colleges },
@@ -918,6 +929,7 @@ export default function StudentDirectory() {
                     <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Group</th>
                     <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">College</th>
                     <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Coordinator</th>
+                    <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Credential Mail</th>
                     {activeTab === "students" && (
                       <th scope="col" className="px-3 py-2 text-right text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Actions</th>
                     )}
@@ -976,6 +988,19 @@ export default function StudentDirectory() {
                         <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300">{s.group || "-"}</td>
                         <td className="max-w-[180px] px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300"><span className="block truncate">{s.college || "-"}</span></td>
                         <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300">{s.teacherId || "-"}</td>
+                        <td className="px-3 py-1.5 text-xs">
+                          {s.credentialEmailStatus === 'sent' ? (
+                            <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">Sent</span>
+                          ) : s.credentialEmailStatus === 'pending' ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"><Loader2 className="h-3 w-3 animate-spin" />Sending</span>
+                          ) : s.credentialEmailStatus === 'failed' ? (
+                            <span className="inline-flex rounded-full bg-red-50 px-2 py-0.5 font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-300">Failed</span>
+                          ) : s.credentialEmailStatus === 'unconfirmed' ? (
+                            <span title="This email may have been sent before delivery tracking was added" className="inline-flex rounded-full bg-violet-50 px-2 py-0.5 font-semibold text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">Unconfirmed</span>
+                          ) : (
+                            <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600 dark:bg-gray-700 dark:text-gray-300">Not sent</span>
+                          )}
+                        </td>
                         {activeTab === "students" && (
                           <td className="px-3 py-1.5">
                             <div

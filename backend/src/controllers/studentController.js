@@ -64,6 +64,21 @@ function buildStudentListQuery(user, params = {}) {
     filters.push({ semester: semesterNumber });
   }
 
+  const credentialEmailStatus = String(params.credentialEmailStatus || '').trim();
+  if (credentialEmailStatus === 'sent') {
+    filters.push({ credentialEmailStatus: 'sent' });
+  } else if (credentialEmailStatus === 'not_sent') {
+    filters.push({ credentialEmailStatus: { $in: ['not_sent', 'failed'] } });
+  } else if (credentialEmailStatus === 'unconfirmed') {
+    filters.push({
+      $or: [
+        { credentialEmailStatus: { $exists: false } },
+        { credentialEmailStatus: null },
+        { credentialEmailStatus: '' },
+      ],
+    });
+  }
+
   [
     ['branch', 'branch'],
     ['course', 'course'],
@@ -111,7 +126,7 @@ export async function listAllStudents(req, res) {
     const requestedLimit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 25));
     const paginated = page !== undefined || limit !== undefined;
     const studentQuery = User.find(query)
-      .select('name email studentId course branch college semester group teacherIds avatarUrl createdAt isSpecialStudent bio linkedinUrl githubUrl portfolioUrl mustChangePassword activeSessionCreatedAt')
+      .select('name email studentId course branch college semester group teacherIds avatarUrl createdAt isSpecialStudent bio linkedinUrl githubUrl portfolioUrl mustChangePassword activeSessionCreatedAt credentialEmailStatus credentialEmailSentAt')
       .sort({ createdAt: sort, _id: sort });
     if (paginated) {
       studentQuery.skip((requestedPage - 1) * requestedLimit).limit(requestedLimit);
@@ -144,6 +159,8 @@ export async function listAllStudents(req, res) {
       ...s,
       teacherId: Array.isArray(s.teacherIds) ? s.teacherIds.join(', ') : (s.teacherIds || ''),
       canResendCredentials: s.mustChangePassword === true && !s.activeSessionCreatedAt,
+      // Historical deliveries were not tracked. Never claim they were not sent.
+      credentialEmailStatus: s.credentialEmailStatus || 'unconfirmed',
       mustChangePassword: undefined,
       activeSessionCreatedAt: undefined,
     }));
@@ -217,6 +234,16 @@ export async function resendStudentCredentials(req, res) {
         studentId: student.studentId,
         password: temporaryPassword,
       });
+      await User.updateOne({ _id: student._id }, {
+        $set: {
+          credentialEmailStatus: 'sent',
+          credentialEmailSentAt: new Date(),
+          credentialEmailLastAttemptAt: new Date(),
+        },
+        $unset: { credentialEmailLastError: 1 },
+      }).catch((statusError) => {
+        console.error('[resendStudentCredentials] Email sent but status update failed:', statusError.message);
+      });
       results.push({ studentId: student._id, status: 'sent' });
     } catch (error) {
       // Keep the previous temporary credential usable when email delivery fails.
@@ -230,6 +257,15 @@ export async function resendStudentCredentials(req, res) {
           console.error('[resendStudentCredentials] Password rollback failed:', rollbackError.message);
         }
       }
+      await User.updateOne({ _id: student._id }, {
+        $set: {
+          credentialEmailStatus: 'failed',
+          credentialEmailLastAttemptAt: new Date(),
+          credentialEmailLastError: String(error.message || 'Email delivery failed.').slice(0, 500),
+        },
+      }).catch((statusError) => {
+        console.error('[resendStudentCredentials] Failed to record email status:', statusError.message);
+      });
       results.push({ studentId: student._id, status: 'failed', error: error.message || 'Email delivery failed.' });
     }
   }
@@ -805,13 +841,14 @@ export async function uploadStudentsCsv(req, res) {
         semester: semesterNum,
         group: row.group,
         mustChangePassword: true,
+        credentialEmailStatus: isEmailFeatureEnabled('ONBOARD') && email ? 'pending' : 'not_sent',
       });
       createdUserIds.push(user._id);
       results.push({ row: row.__row, id: user._id, email, studentid, status: 'created' });
       
       // Store for async email sending
       if (isEmailFeatureEnabled('ONBOARD') && email) {
-        newStudents.push({ email, studentId: studentid, password: generatedPassword });
+        newStudents.push({ id: user._id, email, studentId: studentid, password: generatedPassword });
       }
     } catch (err) {
       results.push({ row: row.__row, email, studentid, status: 'error', message: err.message });
@@ -841,18 +878,34 @@ export async function uploadStudentsCsv(req, res) {
     setImmediate(async () => {
       try {
         // Send all emails in parallel for faster delivery
-        const emailPromises = newStudents.map(student => 
-          sendOnboardingEmail({
-            to: student.email,
-            studentId: student.studentId,
-            password: student.password,
-          }).catch(err => {
+        // Send sequentially because small SMTP accounts often throttle bursts.
+        for (const student of newStudents) {
+          const attemptedAt = new Date();
+          try {
+            await sendOnboardingEmail({
+              to: student.email,
+              studentId: student.studentId,
+              password: student.password,
+            });
+            await User.updateOne({ _id: student.id }, {
+              $set: {
+                credentialEmailStatus: 'sent',
+                credentialEmailSentAt: new Date(),
+                credentialEmailLastAttemptAt: attemptedAt,
+              },
+              $unset: { credentialEmailLastError: 1 },
+            });
+          } catch (err) {
             console.error(`[uploadStudentsCsv] Failed to send email to ${student.email}:`, err.message);
-            return null; // Continue with other emails even if one fails
-          })
-        );
-        
-        await Promise.all(emailPromises);
+            await User.updateOne({ _id: student.id }, {
+              $set: {
+                credentialEmailStatus: 'failed',
+                credentialEmailLastAttemptAt: attemptedAt,
+                credentialEmailLastError: String(err.message || 'Email delivery failed.').slice(0, 500),
+              },
+            });
+          }
+        }
         console.log(`[uploadStudentsCsv] Sent onboarding emails to ${newStudents.length} new students`);
       } catch (err) {
         console.error('[uploadStudentsCsv] Error sending onboarding emails:', err.message);
@@ -917,7 +970,12 @@ export async function createStudent(req, res) {
     // Generate random password (7-8 characters)
     const generatedPassword = generateRandomPassword();
     const passwordHash = await User.hashPassword(generatedPassword);
-    const userData = { role: 'student', name, email, studentId: studentid, passwordHash, branch, course, college, teacherIds: teacherIdList, semester: semesterNum, mustChangePassword: true };
+    const shouldSendCredentialEmail = isEmailFeatureEnabled('ONBOARD') && Boolean(email);
+    const userData = {
+      role: 'student', name, email, studentId: studentid, passwordHash, branch, course, college,
+      teacherIds: teacherIdList, semester: semesterNum, mustChangePassword: true,
+      credentialEmailStatus: shouldSendCredentialEmail ? 'pending' : 'not_sent',
+    };
     
     // Add group if provided
     if (group) {
@@ -940,15 +998,6 @@ export async function createStudent(req, res) {
       console.error('[createStudent] Notification error:', e.message);
     }
 
-    // Send password via email
-    if (isEmailFeatureEnabled('ONBOARD') && email) {
-      await sendOnboardingEmail({
-        to: email,
-        studentId: studentid,
-        password: generatedPassword,
-      });
-    }
-
     // Log activity
     logActivity({
       userEmail: req.user.email,
@@ -961,7 +1010,35 @@ export async function createStudent(req, res) {
       req
     });
 
-    return res.status(201).json({ id: user._id, email: user.email, studentid: user.studentId, status: 'created' });
+    res.status(201).json({ id: user._id, email: user.email, studentid: user.studentId, status: 'created' });
+
+    // Do not keep the create-student request open while a slow SMTP server responds.
+    if (shouldSendCredentialEmail) {
+      setImmediate(async () => {
+        const attemptedAt = new Date();
+        try {
+          await sendOnboardingEmail({ to: email, studentId: studentid, password: generatedPassword });
+          await User.updateOne({ _id: user._id }, {
+            $set: {
+              credentialEmailStatus: 'sent',
+              credentialEmailSentAt: new Date(),
+              credentialEmailLastAttemptAt: attemptedAt,
+            },
+            $unset: { credentialEmailLastError: 1 },
+          });
+        } catch (mailError) {
+          console.error(`[createStudent] Failed to send credential email to ${email}:`, mailError.message);
+          await User.updateOne({ _id: user._id }, {
+            $set: {
+              credentialEmailStatus: 'failed',
+              credentialEmailLastAttemptAt: attemptedAt,
+              credentialEmailLastError: String(mailError.message || 'Email delivery failed.').slice(0, 500),
+            },
+          }).catch((statusError) => console.error('[createStudent] Failed to record email status:', statusError.message));
+        }
+      });
+    }
+    return;
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

@@ -1045,8 +1045,22 @@ export async function createSpecialEvent(req, res) {
               to: student.email,
               studentId: student.studentId,
               password: student.password,
-            }).catch(err => {
+            }).then(() => User.updateOne({ _id: student._id }, {
+              $set: {
+                credentialEmailStatus: 'sent',
+                credentialEmailSentAt: new Date(),
+                credentialEmailLastAttemptAt: new Date(),
+              },
+              $unset: { credentialEmailLastError: 1 },
+            })).catch(async err => {
               console.error(`[createSpecialEvent] Failed to send onboarding email to ${student.email}:`, err.message);
+              await User.updateOne({ _id: student._id }, {
+                $set: {
+                  credentialEmailStatus: 'failed',
+                  credentialEmailLastAttemptAt: new Date(),
+                  credentialEmailLastError: String(err.message || 'Email delivery failed.').slice(0, 500),
+                },
+              }).catch(() => {});
               return null;
             })
           );

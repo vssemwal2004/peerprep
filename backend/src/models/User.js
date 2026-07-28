@@ -11,6 +11,14 @@ const userSchema = new mongoose.Schema({
   teacherIds: [String], // For students: links to coordinator's coordinatorID (supports multiple)
   passwordHash: { type: String, required: true },
   mustChangePassword: { type: Boolean, default: false },
+  credentialEmailStatus: {
+    type: String,
+    enum: ['not_sent', 'pending', 'sent', 'failed'],
+    default: 'not_sent',
+  },
+  credentialEmailSentAt: Date,
+  credentialEmailLastAttemptAt: Date,
+  credentialEmailLastError: String,
   course: String,
   branch: String,
   college: String,

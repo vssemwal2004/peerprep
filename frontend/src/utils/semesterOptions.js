@@ -101,8 +101,12 @@ export function filterStudentsLocally(students = [], options = {}) {
       const coordinators = Array.isArray(student.teacherIds)
         ? student.teacherIds
         : String(student.teacherId || '').split(',');
-      return coordinators.some((value) => String(value).trim().toLocaleLowerCase() === String(options.coordinator).toLocaleLowerCase());
+      const matchesCoordinator = coordinators.some((value) => String(value).trim().toLocaleLowerCase() === String(options.coordinator).toLocaleLowerCase());
+      if (!matchesCoordinator) return false;
     }
+    if (options.credentialEmailStatus === 'sent' && student.credentialEmailStatus !== 'sent') return false;
+    if (options.credentialEmailStatus === 'not_sent' && !['not_sent', 'failed'].includes(student.credentialEmailStatus)) return false;
+    if (options.credentialEmailStatus === 'unconfirmed' && student.credentialEmailStatus !== 'unconfirmed') return false;
     return true;
   });
 }
