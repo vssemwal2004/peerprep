@@ -231,7 +231,7 @@ export default function CreateAssessment() {
     duration: 60,
     allowLateSubmission: false,
     targetMode: 'all',
-    sendEmail: true,
+    sendEmail: false,
     lifecycleStatus: 'draft',
     testType: '',
     assessmentId: generateUniqueAssessmentId(),
@@ -541,7 +541,7 @@ export default function CreateAssessment() {
           allowLateSubmission: Boolean(assessment.allowLateSubmission),
           targetMode: resolvedTargetMode,
           lifecycleStatus: assessment.lifecycleStatus || 'draft',
-          sendEmail: true,
+          sendEmail: false,
           testType: assessment.testType || '',
           assessmentId: assessment.assessmentId || '',
           isVisible: assessment.isVisible !== false,
@@ -760,7 +760,7 @@ export default function CreateAssessment() {
       assignedStudents: form.targetMode === 'all' ? [] : assignedStudents,
       sections: normalizedSections,
       lifecycleStatus,
-      sendEmail: form.sendEmail,
+      sendEmail: false,
       testType: form.testType || '',
       assessmentId: form.assessmentId || '',
       isVisible: form.isVisible !== false,
@@ -1598,10 +1598,11 @@ export default function CreateAssessment() {
             <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-gray-200">
               <input
                 type="checkbox"
-                checked={form.sendEmail}
-                onChange={(e) => updateForm({ sendEmail: e.target.checked })}
+                checked={false}
+                disabled
+                onChange={() => {}}
               />
-              Send email notification on publish
+              Invitations are sent manually after publishing
             </div>
             <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
               Email preview will include assessment title, time window, and instructions.
@@ -1778,8 +1779,9 @@ export default function CreateAssessment() {
                       </div>
                     </div>
                     <Toggle
-                      value={form.sendEmail}
-                      onChange={(value) => updateForm({ sendEmail: value })}
+                      value={false}
+                      disabled
+                      onChange={() => {}}
                     />
                   </div>
                 )}

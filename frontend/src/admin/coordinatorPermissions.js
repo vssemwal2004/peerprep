@@ -58,6 +58,38 @@ export const coordinatorPermissionCategories = [
         usage: 'Shows Scheduled Interviews and event detail screens.',
         routes: ['/coordinator', '/coordinator/interviews', '/coordinator/event/:id'],
       },
+      {
+        key: 'coordinator.interviews.edit',
+        name: 'Edit Interviews',
+        description: 'Edit interview title, description, and schedule.',
+        accessType: 'Update',
+        usage: 'Enables interview detail editing for owned interviews.',
+        routes: ['/coordinator/event/:id'],
+      },
+      {
+        key: 'coordinator.interviews.manage',
+        name: 'Manage Lifecycle',
+        description: 'Publish, start, complete, cancel, or archive interviews.',
+        accessType: 'Manage',
+        usage: 'Enables interview lifecycle actions.',
+        routes: ['/coordinator/event/:id'],
+      },
+      {
+        key: 'coordinator.interviews.participants',
+        name: 'Manage Participants',
+        description: 'Review, add, and remove assigned interview students.',
+        accessType: 'Manage',
+        usage: 'Enables participant assignment controls.',
+        routes: ['/coordinator/event/:id'],
+      },
+      {
+        key: 'coordinator.interviews.delete',
+        name: 'Archive Interviews',
+        description: 'Archive owned interviews from active views.',
+        accessType: 'Delete',
+        usage: 'Enables the archive action without permanently deleting records.',
+        routes: ['/coordinator/event/:id'],
+      },
     ],
   },
   {
@@ -325,7 +357,8 @@ export const coordinatorPermissions = coordinatorPermissionCategories.flatMap((c
 export const defaultCoordinatorPermissions = coordinatorPermissions.map((permission) => permission.key);
 
 export function normalizePermissions(permissions) {
-  if (!Array.isArray(permissions)) return defaultCoordinatorPermissions;
+  // Missing permission data must never imply full coordinator access.
+  if (!Array.isArray(permissions)) return [];
   const known = new Set(defaultCoordinatorPermissions);
   return [...new Set(permissions.filter((permission) => known.has(permission)))];
 }

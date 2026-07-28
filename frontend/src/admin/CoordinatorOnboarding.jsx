@@ -62,7 +62,7 @@ export default function CoordinatorOnboarding() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
-  const [grantDefaultAccess, setGrantDefaultAccess] = useState(true);
+  const [grantDefaultAccess, setGrantDefaultAccess] = useState(false);
   const [mode, setMode] = useState('bulk');
   const [bulkFile, setBulkFile] = useState(null);
   const [bulkRows, setBulkRows] = useState([]);
@@ -99,7 +99,7 @@ export default function CoordinatorOnboarding() {
       };
       const result = await api.createCoordinator(payload);
       setForm(initialForm);
-      setGrantDefaultAccess(true);
+      setGrantDefaultAccess(false);
       setMessage({ type: 'success', text: `Coordinator created with ${result.permissionCount ?? 0} assigned permissions.` });
       toast.success('Coordinator created successfully.');
     } catch (err) {
@@ -114,7 +114,7 @@ export default function CoordinatorOnboarding() {
   };
 
   const downloadTemplate = () => {
-    const csv = 'Name,Email,CoordinatorId,Password,Phone,Department,College,GrantDefaultAccess\nJane Doe,jane@university.edu,COO2026-001,,+919876543210,Computer Science,PeerPrep University,true\n';
+    const csv = 'Name,Email,CoordinatorId,Password,Phone,Department,College,GrantDefaultAccess\nJane Doe,jane@university.edu,COO2026-001,,+919876543210,Computer Science,PeerPrep University,false\n';
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
     const anchor = document.createElement('a');
     anchor.href = url;
@@ -151,7 +151,7 @@ export default function CoordinatorOnboarding() {
             phone: raw.phone,
             department: raw.department,
             college: raw.college,
-            grantDefaultAccess: String(raw.grantdefaultaccess || 'true').toLowerCase() !== 'false',
+            grantDefaultAccess: String(raw.grantdefaultaccess || 'false').toLowerCase() === 'true',
           };
         });
         if (!rows.length) throw new Error('The CSV does not contain coordinator rows.');

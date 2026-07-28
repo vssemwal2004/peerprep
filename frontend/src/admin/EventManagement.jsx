@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../utils/api";
 import { useActivityLogger } from "../hooks/useActivityLogger";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle, AlertCircle, ToggleRight, ToggleLeft, Calendar, FileText, Upload, X, Download } from "lucide-react";
+import { CheckCircle, AlertCircle, ToggleRight, ToggleLeft, Calendar, FileText, Upload, X, Download, Search, Users } from "lucide-react";
 import { useToast } from '../components/CustomToast';
 import DateTimePicker from "../components/DateTimePicker";
 
@@ -24,7 +24,18 @@ export default function EventManagement() {
   const [userRole, setUserRole] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCsvValidating, setIsCsvValidating] = useState(false);
+  const [selectionMode, setSelectionMode] = useState('all');
+  const [participantFilters, setParticipantFilters] = useState({ semester: '', branch: '', course: '', college: '', group: '' });
+  const [studentOptions, setStudentOptions] = useState([]);
+  const [studentSearch, setStudentSearch] = useState('');
+  const [selectedStudentIds, setSelectedStudentIds] = useState([]);
+  const [loadingStudents, setLoadingStudents] = useState(false);
+  const [availableSemesters, setAvailableSemesters] = useState([]);
+  const [participantCsvFile, setParticipantCsvFile] = useState(null);
+  const [participantCsvResult, setParticipantCsvResult] = useState(null);
+  const [participantCsvLoading, setParticipantCsvLoading] = useState(false);
   const csvInputRef = useRef(null);
+  const participantCsvInputRef = useRef(null);
   const navigate = useNavigate();
   const toast = useToast();
 
@@ -51,6 +62,14 @@ export default function EventManagement() {
     setIsSubmitting(false);
     setIsCsvValidating(false);
     setMsg("");
+    setSelectionMode('all');
+    setParticipantFilters({ semester: '', branch: '', course: '', college: '', group: '' });
+    setStudentOptions([]);
+    setStudentSearch('');
+    setSelectedStudentIds([]);
+    setAvailableSemesters([]);
+    setParticipantCsvFile(null);
+    setParticipantCsvResult(null);
     // Reset the file input
     if (csvInputRef.current) {
       csvInputRef.current.value = '';
@@ -156,6 +175,49 @@ export default function EventManagement() {
     return () => clearInterval(t);
   }, []);
 
+  useEffect(() => {
+    if (specialMode || selectionMode !== 'selected') return undefined;
+    const timer = setTimeout(async () => {
+      setLoadingStudents(true);
+      try {
+        const data = await api.listAllStudents({
+          search: studentSearch,
+          semester: participantFilters.semester,
+        });
+        setStudentOptions(data.students || []);
+        setAvailableSemesters((data.facets?.semesters || []).filter((item) => item.count > 0));
+      } catch (error) {
+        toast.error(error.message || 'Failed to load students.');
+      } finally {
+        setLoadingStudents(false);
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [selectionMode, specialMode, studentSearch, participantFilters.semester, toast]);
+
+  const handleParticipantCsvChange = async (event) => {
+    const file = event.target.files?.[0] || null;
+    setParticipantCsvFile(file);
+    setParticipantCsvResult(null);
+    if (!file) return;
+    setParticipantCsvLoading(true);
+    try {
+      const result = await api.checkInterviewParticipantCsv(file);
+      setParticipantCsvResult(result);
+      if (result.results?.some((row) => row.status !== 'ready')) {
+        toast.error('Some uploaded students are invalid. Review the results before creating the interview.');
+        return;
+      }
+      setSelectedStudentIds((current) => [...new Set([...current, ...(result.studentIds || []).map(String)])]);
+      setSelectionMode('selected');
+      toast.success(`${result.readyCount || 0} registered student(s) selected from the file.`);
+    } catch (error) {
+      toast.error(error.message || 'Unable to validate participant CSV.');
+    } finally {
+      setParticipantCsvLoading(false);
+    }
+  };
+
   // Auto-dismiss toast after 3 seconds
   // react-toastify will auto-dismiss; no local timer needed
 
@@ -207,6 +269,22 @@ export default function EventManagement() {
         toast.error('Please fix CSV validation errors before creating the event.');
         return;
       }
+    }
+    if (!specialMode && selectionMode === 'selected' && selectedStudentIds.length === 0) {
+      toast.error('Select at least one student for this interview.');
+      return;
+    }
+    if (!specialMode && participantCsvLoading) {
+      toast.error('Please wait for the participant CSV validation to finish.');
+      return;
+    }
+    if (!specialMode && participantCsvResult?.results?.some((row) => row.status !== 'ready')) {
+      toast.error('Fix the invalid participant CSV rows before creating the interview.');
+      return;
+    }
+    if (!specialMode && selectionMode === 'filters' && !Object.values(participantFilters).some((value) => String(value).trim())) {
+      toast.error('Choose at least one student filter.');
+      return;
     }
     
     // client-side validation: ensure start >= now and end >= start
@@ -260,14 +338,23 @@ export default function EventManagement() {
         });
         
         // Navigate based on user role
-        const redirectPath = userRole === 'coordinator' ? `/coordinator/event/${newId}` : `/admin/event/${newId}`;
+        const redirectPath = userRole === 'coordinator' ? `/coordinator/event/${newId}` : `/admin/interviews/${newId}`;
         if (newId) navigate(redirectPath, { state: { eventCreated: true } });
         
         // Show email notification
-        toast.info('Invitation emails are being sent to participants...');
+        toast.info('Students assigned. Send invitation emails manually from interview details.');
         
       } else {
-        ev = await api.createEvent({ name: title, description, startDate: payloadStart, endDate: payloadEnd, template });
+        ev = await api.createEvent({
+          name: title,
+          description,
+          startDate: payloadStart,
+          endDate: payloadEnd,
+          template,
+          selectionMode,
+          participantFilters,
+          allowedParticipants: selectedStudentIds,
+        });
         const eventName = ev.name || title;
         
         // Show success toast
@@ -284,11 +371,11 @@ export default function EventManagement() {
         });
         
         // Navigate based on user role
-        const redirectPath = userRole === 'coordinator' ? `/coordinator/event/${ev._id}` : `/admin/event/${ev._id}`;
+        const redirectPath = userRole === 'coordinator' ? `/coordinator/event/${ev._id}` : `/admin/interviews/${ev._id}`;
         if (ev && ev._id) navigate(redirectPath, { state: { eventCreated: true } });
         
         // Show email notification
-        toast.info('Notification emails are being sent to all students...');
+        toast.info('Students assigned. Send invitation emails manually from interview details.');
       }
     } catch (err) {
       const errorMessage = err?.message || 'Failed to create interview';
@@ -466,6 +553,100 @@ export default function EventManagement() {
                   </p>
                 </div>
               </div>
+
+              {!specialMode && (
+                <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                  <div className="mb-3 flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white"><Users className="h-4 w-4 text-sky-600" />Choose participants</div>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Choose all students, or select registered students semester-wise or by CSV.</p>
+                    </div>
+                    <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-sky-700 shadow-sm dark:bg-gray-900 dark:text-sky-300">
+                      {selectionMode === 'all' ? 'All students' : `${selectedStudentIds.length} selected`}
+                    </span>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {[
+                      ['all', 'All students', 'Every active registered student'],
+                      ['selected', 'Select students', 'Choose a semester, students, or upload CSV'],
+                    ].map(([value, label, helper]) => (
+                      <button key={value} type="button" onClick={() => setSelectionMode(value)} className={`rounded-xl border p-3 text-left transition ${selectionMode === value ? 'border-sky-400 bg-sky-50 ring-2 ring-sky-100 dark:bg-sky-400/10 dark:ring-sky-400/10' : 'border-slate-200 bg-white hover:border-sky-200 dark:border-white/10 dark:bg-gray-900'}`}>
+                        <div className="text-xs font-bold text-slate-900 dark:text-white">{label}</div>
+                        <div className="mt-1 text-[10px] leading-4 text-slate-500 dark:text-slate-400">{helper}</div>
+                      </button>
+                    ))}
+                  </div>
+
+                  {selectionMode === 'selected' && (
+                    <div className="mt-4 space-y-3">
+                      <div className="grid gap-2 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+                        <label>
+                          <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Semester</span>
+                          <select
+                            value={participantFilters.semester}
+                            onChange={(event) => setParticipantFilters((current) => ({ ...current, semester: event.target.value }))}
+                            className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold outline-none focus:border-sky-400 dark:border-white/10 dark:bg-gray-900 dark:text-white"
+                          >
+                            <option value="">Select uploaded semester</option>
+                            {availableSemesters.map((item) => (
+                              <option key={item.value} value={item.value}>Semester {item.value} ({item.count} students)</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Search selected semester</span>
+                          <span className="relative block">
+                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        <input value={studentSearch} onChange={(event) => setStudentSearch(event.target.value)} placeholder="Search by name, student ID, or email..." className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-xs font-semibold outline-none focus:border-sky-400 dark:border-white/10 dark:bg-gray-900 dark:text-white" />
+                          </span>
+                        </label>
+                      </div>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                          {participantFilters.semester ? `${studentOptions.length} student(s) in Semester ${participantFilters.semester}` : 'Select a semester to view its students'}
+                        </span>
+                        {participantFilters.semester && studentOptions.length > 0 && (
+                          <button type="button" onClick={() => {
+                            const visibleIds = studentOptions.map((student) => String(student._id));
+                            const allSelected = visibleIds.every((id) => selectedStudentIds.includes(id));
+                            setSelectedStudentIds((current) => allSelected ? current.filter((id) => !visibleIds.includes(id)) : [...new Set([...current, ...visibleIds])]);
+                          }} className="rounded-lg border border-sky-200 bg-white px-3 py-1.5 text-xs font-bold text-sky-700 hover:bg-sky-50 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300">
+                            {studentOptions.every((student) => selectedStudentIds.includes(String(student._id))) ? 'Clear semester' : 'Select all semester'}
+                          </button>
+                        )}
+                      </div>
+                      <div className="mt-2 max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white dark:border-white/10 dark:bg-gray-900">
+                        {!participantFilters.semester ? <div className="p-6 text-center text-xs text-slate-500">Choose a semester from the dropdown.</div> : loadingStudents ? <div className="p-6 text-center text-xs text-slate-500">Loading students...</div> : studentOptions.length === 0 ? <div className="p-6 text-center text-xs text-slate-500">No students found in this semester.</div> : studentOptions.map((student) => {
+                          const id = String(student._id);
+                          const checked = selectedStudentIds.includes(id);
+                          return (
+                            <label key={id} className="flex cursor-pointer items-center gap-3 border-b border-slate-100 px-3 py-2.5 last:border-0 hover:bg-sky-50/60 dark:border-white/10 dark:hover:bg-sky-400/10">
+                              <input type="checkbox" checked={checked} onChange={() => setSelectedStudentIds((current) => checked ? current.filter((item) => item !== id) : [...current, id])} className="h-4 w-4 rounded border-slate-300 text-sky-600" />
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate text-xs font-bold text-slate-900 dark:text-white">{student.name || 'Unnamed student'}</div>
+                                <div className="truncate text-[10px] text-slate-500">{student.studentId || '-'} · {student.email || '-'} · Sem {student.semester || '-'}</div>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-sky-300 bg-sky-50/70 p-3 text-xs font-bold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/20 dark:text-sky-300">
+                        <Upload className="h-4 w-4" />
+                        {participantCsvLoading ? 'Validating registered students...' : 'Upload registered students CSV'}
+                        <input ref={participantCsvInputRef} type="file" accept=".csv,text/csv" onChange={handleParticipantCsvChange} className="hidden" />
+                      </label>
+                      {participantCsvFile && (
+                        <div className={`rounded-lg border p-2 text-xs ${participantCsvResult?.results?.some((row) => row.status !== 'ready') ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+                          <strong>{participantCsvFile.name}</strong> — {participantCsvResult ? `${participantCsvResult.readyCount || 0} ready of ${participantCsvResult.count || 0}` : 'validating'}
+                          {participantCsvResult?.results?.filter((row) => row.status !== 'ready').slice(0, 5).map((row) => (
+                            <div key={`${row.row}-${row.status}`}>Row {row.row}: {row.message || row.status}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </section>
+              )}
 
               {/* Template Upload */}
               <div>

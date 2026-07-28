@@ -428,15 +428,21 @@ export const api = {
   updateCoordinatorAccess: (coordinatorId, body) => request(`/coordinators/${coordinatorId}/access`, { method: 'PUT', body }),
   updateCoordinatorStatus: (coordinatorId, isActive) => request(`/coordinators/${coordinatorId}/status`, { method: 'PATCH', body: { isActive } }),
   deleteCoordinator: (coordinatorId) => request(`/coordinators/${coordinatorId}`, { method: 'DELETE' }),
+  resendCoordinatorCredentials: (coordinatorIds) => request('/coordinators/resend-credentials', { method: 'POST', body: { coordinatorIds } }),
 
   // Events
   listEvents: () => request('/events'),
-  createEvent: ({ name, description, startDate, endDate, template }) => {
+  createEvent: ({ name, description, startDate, endDate, template, selectionMode = 'all', participantFilters = {}, allowedParticipants = [], excludedParticipants = [], status = 'published' }) => {
     const fd = new FormData();
     fd.append('name', name);
     fd.append('description', description);
     if (startDate) fd.append('startDate', startDate);
     if (endDate) fd.append('endDate', endDate);
+    fd.append('selectionMode', selectionMode);
+    fd.append('participantFilters', JSON.stringify(participantFilters));
+    fd.append('allowedParticipants', JSON.stringify(allowedParticipants));
+    fd.append('excludedParticipants', JSON.stringify(excludedParticipants));
+    fd.append('status', status);
     if (template) fd.append('template', template);
     return request('/events', { method: 'POST', formData: fd });
   },
@@ -444,6 +450,11 @@ export const api = {
     const fd = new FormData();
     fd.append('csv', file);
     return request('/events/special/check-csv', { method: 'POST', formData: fd });
+  },
+  checkInterviewParticipantCsv: (file) => {
+    const fd = new FormData();
+    fd.append('csv', file);
+    return request('/events/participants/check-csv', { method: 'POST', formData: fd });
   },
   createSpecialEvent: ({ name, description, startDate, endDate, template, csv }) => {
     const fd = new FormData();
@@ -463,7 +474,17 @@ export const api = {
     return request(`/events/${eventId}/template`, { method: 'POST', formData: fd });
   },
   deleteEventTemplate: (eventId) => request(`/events/${eventId}/template`, { method: 'DELETE' }),
-  getEvent: (eventId) => request(`/events/${eventId}`),
+    getEvent: (eventId) => request(`/events/${eventId}`),
+    updateEvent: (eventId, body) => request(`/events/${eventId}`, { method: 'PATCH', body }),
+    updateEventStatus: (eventId, status) => request(`/events/${eventId}/status`, { method: 'PATCH', body: { status } }),
+    listEventParticipants: (eventId) => request(`/events/${eventId}/participants`),
+    addEventParticipants: (eventId, studentIds) => request(`/events/${eventId}/participants`, { method: 'POST', body: { studentIds } }),
+    removeEventParticipant: (eventId, studentId, reason = '') => request(`/events/${eventId}/participants/${studentId}`, { method: 'DELETE', body: { reason } }),
+  sendEventInvitations: (eventId, studentIds = []) => request(`/events/${eventId}/invitations`, { method: 'POST', body: { studentIds } }),
+    getMailBatchStatus: (batchId) => request(`/mail-queue/batches/${batchId}`, { skipCache: true }),
+    retryFailedMailBatch: (batchId) => request(`/mail-queue/batches/${batchId}/retry`, { method: 'POST' }),
+    listTargetMailStatus: (targetType, targetId) => request(`/mail-queue/targets/${targetType}/${targetId}`, { skipCache: true }),
+    archiveEvent: (eventId) => request(`/events/${eventId}`, { method: 'DELETE' }),
   getEventAnalytics: (eventId) => request(`/events/${eventId}/analytics`),
   getEventTemplateUrl: (eventId) => request(`/events/${eventId}/template-url`),
 

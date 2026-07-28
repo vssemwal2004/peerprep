@@ -325,6 +325,26 @@ export default function StudentDirectory() {
     setShowBulkMenu(false);
   };
 
+  const selectAllFilteredStudents = async () => {
+    try {
+      setIsLoading(true);
+      const data = await api.listAllStudents({
+        search: debouncedSearch,
+        sortOrder,
+        ...filters,
+      });
+      const eligible = (data.students || []).filter((student) => student.canResendCredentials);
+      setSelectedStudentIds(new Set(eligible.map((student) => String(student._id))));
+      setSelectedStudentMap(Object.fromEntries(eligible.map((student) => [String(student._id), student])));
+      setShowBulkMenu(false);
+      toast.success(`${eligible.length} eligible student${eligible.length === 1 ? '' : 's'} selected across all filtered results.`);
+    } catch (error) {
+      toast.error(error.message || 'Failed to select filtered students.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const openStudentProfile = (student) => {
     navigate(`/admin/students/${student._id}`);
   };
@@ -868,15 +888,23 @@ export default function StudentDirectory() {
                   <button
                     type="button"
                     onClick={() => setShowBulkMenu((open) => !open)}
-                    disabled={!selectedCount || isBulkDeleting || isSendingCredentials}
+                    disabled={isBulkDeleting || isSendingCredentials}
                     title="Bulk actions"
                     className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-700"
                   >
                     {isBulkDeleting || isSendingCredentials ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreVertical className="h-4 w-4" />}
                   </button>
 
-                  {showBulkMenu && selectedCount > 0 && (
+                  {showBulkMenu && (
                     <div className="absolute right-0 top-9 z-40 w-52 overflow-hidden rounded-md border border-slate-200 bg-white py-1 shadow-xl dark:border-gray-700 dark:bg-gray-900">
+                      <button
+                        type="button"
+                        onClick={selectAllFilteredStudents}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-indigo-700 transition hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/30"
+                      >
+                        <CheckSquare className="h-4 w-4" />
+                        Select all filtered students
+                      </button>
                       <button
                         type="button"
                         onClick={handleExportSelected}

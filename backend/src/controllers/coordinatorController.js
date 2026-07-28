@@ -1,12 +1,18 @@
 import User from '../models/User.js';
 import Event from '../models/Event.js';
-import { isEmailFeatureEnabled, sendCoordinatorOnboardingEmail } from '../utils/mailer.js';
 import { logActivity } from './adminActivityController.js';
 import {
   DEFAULT_COORDINATOR_PERMISSIONS,
   COORDINATOR_PERMISSION_CATEGORIES,
   normalizeCoordinatorPermissions,
 } from '../services/coordinatorPermissions.js';
+import { enqueueMailJobs } from '../services/mailQueueService.js';
+import crypto from 'crypto';
+
+function generateTemporaryPassword(length = 10) {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  return Array.from({ length }, () => alphabet[crypto.randomInt(0, alphabet.length)]).join('');
+}
 
 function summarizePermissions(user) {
   const permissions = normalizeCoordinatorPermissions(user.coordinatorPermissions);
@@ -36,7 +42,7 @@ export async function listAllCoordinators(req, res) {
     }
 
     const users = await User.find(query)
-      .select('name email phone role coordinatorId department college createdAt updatedAt avatarUrl isActive coordinatorPermissions coordinatorPermissionHistory activeSessionCreatedAt')
+      .select('name email phone role coordinatorId department college createdAt updatedAt avatarUrl isActive coordinatorPermissions coordinatorPermissionHistory activeSessionCreatedAt credentialEmailStatus credentialEmailSentAt credentialEmailLastAttemptAt')
       .sort({ createdAt: -1 })
       .lean();
 
@@ -141,17 +147,8 @@ export async function createCoordinator(req, res) {
       mustChangePassword: true,
       isActive: true,
       coordinatorPermissions: normalizeCoordinatorPermissions(permissions),
+      credentialEmailStatus: 'not_sent',
     });
-
-    // Send onboarding email to coordinator
-    if (isEmailFeatureEnabled('ONBOARD') && user.email) {
-      await sendCoordinatorOnboardingEmail({
-        to: user.email,
-        name: user.name,
-        coordinatorId: user.coordinatorId,
-        password: defaultPassword,
-      });
-    }
 
     // Log activity
     logActivity({
@@ -180,6 +177,7 @@ export async function updateCoordinator(req, res) {
     if (!coordinator) {
       return res.status(404).json({ error: 'Coordinator not found' });
     }
+    const previousCoordinatorCode = coordinator.coordinatorId;
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (coordinatorEmail && !emailRegex.test(coordinatorEmail)) {
@@ -215,6 +213,35 @@ export async function updateCoordinator(req, res) {
     if (college !== undefined) coordinator.college = college;
 
     await coordinator.save();
+
+    if (coordinatorID && previousCoordinatorCode && coordinatorID !== previousCoordinatorCode) {
+      await Promise.all([
+        User.updateMany(
+          { role: 'student', teacherIds: previousCoordinatorCode },
+          [{
+            $set: {
+              teacherIds: {
+                $map: {
+                  input: '$teacherIds',
+                  as: 'teacherId',
+                  in: {
+                    $cond: [
+                      { $eq: ['$$teacherId', previousCoordinatorCode] },
+                      coordinatorID,
+                      '$$teacherId',
+                    ],
+                  },
+                },
+              },
+            },
+          }],
+        ),
+        Event.updateMany(
+          { coordinatorId: previousCoordinatorCode },
+          { $set: { coordinatorId: coordinatorID } },
+        ),
+      ]);
+    }
 
     logActivity({
       userEmail: req.user.email,
@@ -259,7 +286,7 @@ export async function bulkCreateCoordinators(req, res) {
       phone: String(row.phone || '').trim(),
       department: String(row.department || '').trim(),
       college: String(row.college || '').trim(),
-      grantDefaultAccess: row.grantDefaultAccess !== false && String(row.grantDefaultAccess || '').toLowerCase() !== 'false',
+      grantDefaultAccess: row.grantDefaultAccess === true || String(row.grantDefaultAccess || '').toLowerCase() === 'true',
     }));
 
     const results = [];
@@ -309,6 +336,7 @@ export async function bulkCreateCoordinators(req, res) {
           mustChangePassword: true,
           isActive: true,
           coordinatorPermissions: row.grantDefaultAccess ? DEFAULT_COORDINATOR_PERMISSIONS : [],
+          credentialEmailStatus: 'not_sent',
         });
         created.push({ user, temporaryPassword });
         results.push({ row: row.row, status: 'created', id: user._id, coordinatorId: user.coordinatorId });
@@ -317,18 +345,8 @@ export async function bulkCreateCoordinators(req, res) {
       }
     }
 
-    let emailSent = 0;
-    let emailFailed = 0;
-    if (isEmailFeatureEnabled('ONBOARD') && created.length) {
-      const mailResults = await Promise.allSettled(created.map(({ user, temporaryPassword }) => sendCoordinatorOnboardingEmail({
-        to: user.email,
-        name: user.name,
-        coordinatorId: user.coordinatorId,
-        password: temporaryPassword,
-      })));
-      emailSent = mailResults.filter((result) => result.status === 'fulfilled').length;
-      emailFailed = mailResults.length - emailSent;
-    }
+    const emailSent = 0;
+    const emailFailed = 0;
 
     logActivity({
       userEmail: req.user.email,
@@ -355,6 +373,87 @@ export async function bulkCreateCoordinators(req, res) {
   }
 }
 
+export async function resendCoordinatorCredentials(req, res) {
+  const coordinatorIds = [...new Set((req.body?.coordinatorIds || []).map(String))];
+  if (!coordinatorIds.length) return res.status(400).json({ error: 'Select at least one coordinator.' });
+  if (coordinatorIds.length > 1000) return res.status(400).json({ error: 'A maximum of 1000 coordinators can be queued at once.' });
+  const stalePendingBefore = new Date(Date.now() - 10 * 60 * 1000);
+  const candidates = await User.find({
+    _id: { $in: coordinatorIds },
+    role: 'coordinator',
+    mustChangePassword: true,
+    activeSessionCreatedAt: { $exists: false },
+  }).select('_id name email coordinatorId passwordHash').lean();
+  const batchId = crypto.randomUUID();
+  const claimed = [];
+  for (const candidate of candidates) {
+    const coordinator = await User.findOneAndUpdate(
+      {
+        _id: candidate._id,
+        role: 'coordinator',
+        mustChangePassword: true,
+        activeSessionCreatedAt: { $exists: false },
+        $or: [
+          { credentialEmailStatus: { $ne: 'pending' } },
+          { credentialEmailLastAttemptAt: { $lt: stalePendingBefore } },
+          { credentialEmailLastAttemptAt: { $exists: false } },
+        ],
+      },
+      {
+        $set: {
+          credentialEmailStatus: 'pending',
+          credentialEmailLastAttemptAt: new Date(),
+          credentialEmailBatchId: batchId,
+        },
+        $unset: { credentialEmailLastError: 1 },
+      },
+      { new: false },
+    ).select('_id name email coordinatorId passwordHash');
+    if (coordinator) claimed.push(coordinator);
+  }
+  const jobs = claimed.filter((user) => user.email).map((user) => {
+    const password = generateTemporaryPassword();
+    return {
+      type: 'coordinator_onboarding',
+      to: user.email,
+      recipientId: user._id,
+      targetType: 'COORDINATOR',
+      targetId: user._id,
+      idempotencyKey: `coordinator-credentials:${user._id}:${batchId}`,
+      payload: {
+        to: user.email,
+        name: user.name,
+        coordinatorId: user.coordinatorId,
+        password,
+        previousPasswordHash: user.passwordHash,
+      },
+    };
+  });
+  await enqueueMailJobs(jobs, {
+    batchId,
+    requestedBy: req.user._id,
+    requestedByEmail: req.user.email,
+  });
+  const queuedCoordinatorIds = new Set(jobs.map((job) => String(job.recipientId)));
+  const missingDeliveryDetails = claimed.filter((user) => !queuedCoordinatorIds.has(String(user._id)));
+  if (missingDeliveryDetails.length) await User.updateMany(
+    { _id: { $in: missingDeliveryDetails.map((user) => user._id) }, credentialEmailBatchId: batchId },
+    {
+      $set: {
+        credentialEmailStatus: 'failed',
+        credentialEmailLastError: 'Email address is missing.',
+      },
+      $unset: { credentialEmailBatchId: 1 },
+    },
+  );
+  return res.status(202).json({
+    batchId,
+    requested: coordinatorIds.length,
+    queued: jobs.length,
+    skipped: coordinatorIds.length - jobs.length,
+  });
+}
+
 export async function getCoordinatorAccess(req, res) {
   try {
     const { coordinatorId } = req.params;
@@ -365,7 +464,6 @@ export async function getCoordinatorAccess(req, res) {
     if (!coordinator) {
       return res.status(404).json({ error: 'Coordinator not found' });
     }
-
     return res.json({
       coordinator: {
         ...coordinator,
@@ -417,6 +515,9 @@ export async function updateCoordinatorAccess(req, res) {
         coordinatorId: coordinator.coordinatorId,
         previousCount: previousPermissions.length,
         nextCount: nextPermissions.length,
+        grantedPermissions: nextPermissions.filter((permission) => !previousPermissions.includes(permission)),
+        revokedPermissions: previousPermissions.filter((permission) => !nextPermissions.includes(permission)),
+        note: note || 'Permissions updated by admin',
       },
       req,
     });
@@ -475,10 +576,22 @@ export async function deleteCoordinator(req, res) {
   try {
     const { coordinatorId } = req.params;
 
-    const coordinator = await User.findOneAndDelete({ _id: coordinatorId, role: 'coordinator' });
+    const coordinator = await User.findOne({ _id: coordinatorId, role: 'coordinator' });
     if (!coordinator) {
       return res.status(404).json({ error: 'Coordinator not found' });
     }
+    const [assignedStudents, ownedEvents] = await Promise.all([
+      User.countDocuments({ role: 'student', teacherIds: coordinator.coordinatorId }),
+      Event.countDocuments({ coordinatorId: coordinator.coordinatorId }),
+    ]);
+    if (assignedStudents || ownedEvents) {
+      return res.status(409).json({
+        error: `Coordinator cannot be deleted while assigned to ${assignedStudents} student(s) and ${ownedEvents} interview(s). Reassign those records or disable the account instead.`,
+        assignedStudents,
+        ownedEvents,
+      });
+    }
+    await coordinator.deleteOne();
 
     logActivity({
       userEmail: req.user.email,

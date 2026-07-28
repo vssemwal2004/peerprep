@@ -287,7 +287,7 @@ export default function StudentOnboarding() {
         toast.success(msg);
         setUploadSuccess(true);
       } else if (updatedCount > 0 && createdCount > 0) {
-        const msg = `Successfully added ${createdCount} new student(s) and updated ${updatedCount} existing student(s). Sending emails to newly added users. Wait till we complete.`;
+        const msg = `Successfully added ${createdCount} new student(s) and updated ${updatedCount} existing student(s). Credential emails can be sent manually from Student Data.`;
         setSuccess(msg);
         toast.success(msg);
         setUploadSuccess(true);
@@ -298,7 +298,7 @@ export default function StudentOnboarding() {
           toast.success(followup);
         }, 3000);
       } else {
-        const msg = `Successfully added ${createdCount} student(s) to the system! Sending emails to newly added users. Wait till we complete.`;
+        const msg = `Successfully added ${createdCount} student(s) to the system. Credential emails can be sent manually from Student Data.`;
         setSuccess(msg);
         toast.success(msg);
         setUploadSuccess(true);

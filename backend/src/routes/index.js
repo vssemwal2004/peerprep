@@ -20,6 +20,7 @@ import companyInsightsRoutes from './companyInsights.js';
 import studentAnalysisRoutes from './studentAnalysis.js';
 import resultsRoutes from './results.js';
 import executeRoutes from './execute.js';
+import mailQueueRoutes from './mailQueue.js';
 
 const router = Router();
 router.use('/auth', authRoutes);
@@ -43,5 +44,6 @@ router.use('/admin/company-insights', companyInsightsRoutes);
 router.use('/student/analysis', studentAnalysisRoutes);
 router.use('/results', resultsRoutes);
 router.use('/execute', executeRoutes);
+router.use('/mail-queue', mailQueueRoutes);
 
 export default router;

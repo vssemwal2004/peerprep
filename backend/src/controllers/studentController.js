@@ -1,11 +1,11 @@
 import Papa from 'papaparse';
 import User from '../models/User.js';
 import Event from '../models/Event.js';
-import { sendMail, renderTemplate } from '../utils/mailer.js';
-import { isEmailFeatureEnabled, sendOnboardingEmail } from '../utils/mailer.js';
 import { logActivity } from './adminActivityController.js';
 import { sanitizeCsvRow, sanitizeCsvField, validateObjectId, validateCsvImport, CSV_LIMITS } from '../utils/validators.js';
 import { createNotification, createNotifications } from '../services/notificationService.js';
+import { enqueueMailJobs } from '../services/mailQueueService.js';
+import crypto from 'crypto';
 
 // Generate random password (7-8 characters)
 function generateRandomPassword() {
@@ -202,86 +202,12 @@ export async function listAllStudents(req, res) {
   }
 }
 
-async function processCredentialEmailBatch(students, batchId) {
-  const results = [];
-
-  for (const student of students) {
-    if (!student.email || !student.studentId) {
-      await User.updateOne(
-        { _id: student._id, credentialEmailBatchId: batchId },
-        {
-          $set: {
-            credentialEmailStatus: 'failed',
-            credentialEmailLastAttemptAt: new Date(),
-            credentialEmailLastError: 'Email or student ID is missing.',
-          },
-          $unset: { credentialEmailBatchId: 1 },
-        },
-      ).catch(() => {});
-      results.push({ studentId: student._id, status: 'failed' });
-      continue;
-    }
-
-    const temporaryPassword = generateRandomPassword();
-    const previousPasswordHash = student.passwordHash;
-    try {
-      const passwordHash = await User.hashPassword(temporaryPassword);
-      const passwordUpdate = await User.updateOne(
-        { _id: student._id, credentialEmailBatchId: batchId },
-        { $set: { passwordHash, mustChangePassword: true } },
-      );
-      if (passwordUpdate.matchedCount !== 1) {
-        throw new Error('Credential delivery was cancelled because the batch is no longer active.');
-      }
-      await sendOnboardingEmail({
-        to: student.email,
-        studentId: student.studentId,
-        password: temporaryPassword,
-      });
-      await User.updateOne(
-        { _id: student._id, credentialEmailBatchId: batchId },
-        {
-          $set: {
-            credentialEmailStatus: 'sent',
-            credentialEmailSentAt: new Date(),
-            credentialEmailLastAttemptAt: new Date(),
-          },
-          $unset: { credentialEmailLastError: 1, credentialEmailBatchId: 1 },
-        },
-      ).catch((statusError) => {
-        // The credential was delivered and must remain valid even if status persistence fails.
-        console.error('[processCredentialEmailBatch] Email sent but status update failed:', statusError.message);
-      });
-      results.push({ studentId: student._id, status: 'sent' });
-    } catch (error) {
-      // Restore the credential that was valid before this delivery attempt.
-      await User.updateOne(
-        { _id: student._id, credentialEmailBatchId: batchId },
-        {
-          $set: {
-            passwordHash: previousPasswordHash,
-            credentialEmailStatus: 'failed',
-            credentialEmailLastAttemptAt: new Date(),
-            credentialEmailLastError: String(error.message || 'Email delivery failed.').slice(0, 500),
-          },
-          $unset: { credentialEmailBatchId: 1 },
-        },
-      ).catch((rollbackError) => {
-        console.error('[processCredentialEmailBatch] Failed to record failure:', rollbackError.message);
-      });
-      results.push({ studentId: student._id, status: 'failed' });
-    }
-  }
-
-  return results;
-}
-
 export async function resendStudentCredentials(req, res) {
   const requestedIds = Array.isArray(req.body?.studentIds) ? req.body.studentIds : [];
   const studentIds = [...new Set(requestedIds.map((id) => String(id || '').trim()).filter(Boolean))];
 
   if (!studentIds.length) return res.status(400).json({ error: 'Select at least one student.' });
-  if (studentIds.length > 100) return res.status(400).json({ error: 'You can send credentials to at most 100 students at once.' });
+  if (studentIds.length > 5000) return res.status(400).json({ error: 'You can queue credentials for at most 5000 students at once.' });
   try {
     studentIds.forEach((id) => validateObjectId(id, 'student ID'));
   } catch {
@@ -294,7 +220,7 @@ export async function resendStudentCredentials(req, res) {
     mustChangePassword: true,
     activeSessionCreatedAt: { $exists: false },
   }).select('_id name email studentId passwordHash mustChangePassword activeSessionCreatedAt');
-  const batchId = `credential-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const batchId = crypto.randomUUID();
   const students = [];
 
   // Atomically claim each student so double-clicks cannot queue duplicate passwords.
@@ -326,6 +252,42 @@ export async function resendStudentCredentials(req, res) {
   }
 
   const skipped = studentIds.length - students.length;
+  const jobs = students.map((student) => {
+    const password = generateRandomPassword();
+    return {
+      type: 'student_credentials',
+      to: student.email,
+      recipientId: student._id,
+      targetType: 'STUDENT',
+      targetId: student._id,
+      idempotencyKey: `student-credentials:${student._id}:${batchId}`,
+      payload: {
+        to: student.email,
+        studentId: student.studentId,
+        password,
+        previousPasswordHash: student.passwordHash,
+      },
+    };
+  }).filter((job) => job.to);
+  const queuedStudentIds = new Set(jobs.map((job) => String(job.recipientId)));
+  const missingDeliveryDetails = students.filter((student) => !queuedStudentIds.has(String(student._id)));
+  if (missingDeliveryDetails.length) {
+    await User.updateMany(
+      { _id: { $in: missingDeliveryDetails.map((student) => student._id) }, credentialEmailBatchId: batchId },
+      {
+        $set: {
+          credentialEmailStatus: 'failed',
+          credentialEmailLastError: 'Email address is missing.',
+        },
+        $unset: { credentialEmailBatchId: 1 },
+      },
+    );
+  }
+  await enqueueMailJobs(jobs, {
+    batchId,
+    requestedBy: req.user._id,
+    requestedByEmail: req.user.email,
+  });
 
   logActivity({
     userEmail: req.user.email,
@@ -342,19 +304,11 @@ export async function resendStudentCredentials(req, res) {
       ? `${students.length} credential email${students.length === 1 ? '' : 's'} queued for background delivery.`
       : 'No eligible credential emails were queued.',
     requested: studentIds.length,
-    queued: students.length,
+    queued: jobs.length,
     skipped,
     batchId,
   });
 
-  if (students.length > 0) {
-    setImmediate(async () => {
-      const results = await processCredentialEmailBatch(students, batchId);
-      const sent = results.filter((result) => result.status === 'sent').length;
-      const failed = results.length - sent;
-      console.log(`[Credential batch ${batchId}] Complete: ${sent} sent, ${failed} failed`);
-    });
-  }
 }
 
 function promotionStudentScope(user = {}) {
@@ -793,7 +747,6 @@ export async function uploadStudentsCsv(req, res) {
   }
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  const newStudents = []; // Collect new students for async email sending
   const createdUserIds = [];
 
   for (const row of normalizedRows) {
@@ -904,15 +857,10 @@ export async function uploadStudentsCsv(req, res) {
         semester: semesterNum,
         group: row.group,
         mustChangePassword: true,
-        credentialEmailStatus: isEmailFeatureEnabled('ONBOARD') && email ? 'pending' : 'not_sent',
+        credentialEmailStatus: 'not_sent',
       });
       createdUserIds.push(user._id);
       results.push({ row: row.__row, id: user._id, email, studentid, status: 'created' });
-      
-      // Store for async email sending
-      if (isEmailFeatureEnabled('ONBOARD') && email) {
-        newStudents.push({ id: user._id, email, studentId: studentid, password: generatedPassword });
-      }
     } catch (err) {
       results.push({ row: row.__row, email, studentid, status: 'error', message: err.message });
     }
@@ -935,46 +883,6 @@ export async function uploadStudentsCsv(req, res) {
 
   // Send response immediately
   res.json({ count: results.length, results });
-
-  // Send emails asynchronously after response
-  if (newStudents.length > 0) {
-    setImmediate(async () => {
-      try {
-        // Send all emails in parallel for faster delivery
-        // Send sequentially because small SMTP accounts often throttle bursts.
-        for (const student of newStudents) {
-          const attemptedAt = new Date();
-          try {
-            await sendOnboardingEmail({
-              to: student.email,
-              studentId: student.studentId,
-              password: student.password,
-            });
-            await User.updateOne({ _id: student.id }, {
-              $set: {
-                credentialEmailStatus: 'sent',
-                credentialEmailSentAt: new Date(),
-                credentialEmailLastAttemptAt: attemptedAt,
-              },
-              $unset: { credentialEmailLastError: 1 },
-            });
-          } catch (err) {
-            console.error(`[uploadStudentsCsv] Failed to send email to ${student.email}:`, err.message);
-            await User.updateOne({ _id: student.id }, {
-              $set: {
-                credentialEmailStatus: 'failed',
-                credentialEmailLastAttemptAt: attemptedAt,
-                credentialEmailLastError: String(err.message || 'Email delivery failed.').slice(0, 500),
-              },
-            });
-          }
-        }
-        console.log(`[uploadStudentsCsv] Sent onboarding emails to ${newStudents.length} new students`);
-      } catch (err) {
-        console.error('[uploadStudentsCsv] Error sending onboarding emails:', err.message);
-      }
-    });
-  }
 
   if (createdUserIds.length > 0) {
     setImmediate(async () => {
@@ -1033,11 +941,10 @@ export async function createStudent(req, res) {
     // Generate random password (7-8 characters)
     const generatedPassword = generateRandomPassword();
     const passwordHash = await User.hashPassword(generatedPassword);
-    const shouldSendCredentialEmail = isEmailFeatureEnabled('ONBOARD') && Boolean(email);
     const userData = {
       role: 'student', name, email, studentId: studentid, passwordHash, branch, course, college,
       teacherIds: teacherIdList, semester: semesterNum, mustChangePassword: true,
-      credentialEmailStatus: shouldSendCredentialEmail ? 'pending' : 'not_sent',
+      credentialEmailStatus: 'not_sent',
     };
     
     // Add group if provided
@@ -1075,32 +982,6 @@ export async function createStudent(req, res) {
 
     res.status(201).json({ id: user._id, email: user.email, studentid: user.studentId, status: 'created' });
 
-    // Do not keep the create-student request open while a slow SMTP server responds.
-    if (shouldSendCredentialEmail) {
-      setImmediate(async () => {
-        const attemptedAt = new Date();
-        try {
-          await sendOnboardingEmail({ to: email, studentId: studentid, password: generatedPassword });
-          await User.updateOne({ _id: user._id }, {
-            $set: {
-              credentialEmailStatus: 'sent',
-              credentialEmailSentAt: new Date(),
-              credentialEmailLastAttemptAt: attemptedAt,
-            },
-            $unset: { credentialEmailLastError: 1 },
-          });
-        } catch (mailError) {
-          console.error(`[createStudent] Failed to send credential email to ${email}:`, mailError.message);
-          await User.updateOne({ _id: user._id }, {
-            $set: {
-              credentialEmailStatus: 'failed',
-              credentialEmailLastAttemptAt: attemptedAt,
-              credentialEmailLastError: String(mailError.message || 'Email delivery failed.').slice(0, 500),
-            },
-          }).catch((statusError) => console.error('[createStudent] Failed to record email status:', statusError.message));
-        }
-      });
-    }
     return;
   } catch (err) {
     return res.status(500).json({ error: err.message });

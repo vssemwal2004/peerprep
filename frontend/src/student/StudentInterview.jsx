@@ -45,7 +45,7 @@ export default function StudentInterview() {
   const [isMounted, setIsMounted] = useState(false);
   
   // Sidebar collapse/expand state
-  const [sidebarPinned, setSidebarPinned] = useState(false);
+  const [sidebarPinned, setSidebarPinned] = useState(true);
   const [sidebarHovered, setSidebarHovered] = useState(false);
   const sidebarExpanded = sidebarPinned || sidebarHovered;
 
@@ -2203,14 +2203,14 @@ export default function StudentInterview() {
   );
 
   const EventDetails = () => (
-    <div className="flex-1 flex flex-col">
+    <div className="flex-1 flex flex-col bg-slate-50/70 p-4 sm:p-6 lg:p-8 dark:bg-gray-950/40">
       {/* If a pair is selected, show pairing details instead of event details */}
       {selectedPairRole && selectedPair ? (
         <PairingDetails />
       ) : (
         <>
           {/* Mobile Header */}
-          <div className="lg:hidden flex items-center gap-2 mb-3 sm:mb-4 p-2.5 sm:p-3 bg-white dark:bg-gray-800 border-b border-slate-200 dark:border-gray-700 sticky top-0 z-10">
+          <div className="lg:hidden sticky top-0 z-10 mb-4 flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800">
             <button
               onClick={() => {
                 setSelectedEvent(null);
@@ -2224,8 +2224,8 @@ export default function StudentInterview() {
             <h2 className="text-base sm:text-lg font-semibold text-slate-800 dark:text-gray-100 truncate">{selectedEvent.name}</h2>
           </div>
 
-      <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3 sm:gap-4 mb-3 sm:mb-4">
-        <div className="flex-1">
+      <div className="mx-auto mb-5 flex w-full max-w-6xl flex-col gap-6 overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7 lg:flex-row lg:items-start lg:justify-between dark:border-gray-700 dark:bg-gray-800">
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 mb-3 flex-wrap">
             {selectedEvent.isSpecial && (
               <div className="flex items-center gap-1 px-2 py-0.5 bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 rounded text-xs font-medium">
@@ -2253,33 +2253,31 @@ export default function StudentInterview() {
             )}
           </div>
           
-          <h2 className="hidden lg:block text-lg sm:text-xl font-semibold text-slate-800 dark:text-gray-100 mb-2 sm:mb-3">
+          <p className="hidden text-xs font-bold uppercase tracking-[0.2em] text-sky-600 lg:block dark:text-sky-400">Interview workspace</p>
+          <h2 className="mt-2 hidden text-3xl font-black tracking-tight text-slate-950 lg:block dark:text-white">
             {selectedEvent.name}
           </h2>
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600 dark:text-gray-300">{selectedEvent.description || 'Your interview details and preparation resources are available below.'}</p>
           
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2 sm:mb-3">
-            <div className="flex items-center gap-2 p-2 bg-slate-50 dark:bg-gray-700 rounded">
-              <Clock className="w-4 h-4 text-sky-500 dark:text-sky-400 flex-shrink-0" />
+          <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-gray-700 dark:bg-gray-900/50">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-100 text-sky-600 dark:bg-sky-900/40 dark:text-sky-300"><Clock className="h-5 w-5" /></span>
               <div className="min-w-0 flex-1">
-                <div className="text-xs text-slate-500 dark:text-gray-400">Start Time</div>
-                <div className="font-medium text-slate-800 dark:text-gray-100 text-sm truncate">{fmt(selectedEvent.startDate)}</div>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Starts</div>
+                <div className="mt-1 font-bold text-slate-900 dark:text-white">{fmt(selectedEvent.startDate)}</div>
               </div>
             </div>
-            <div className="flex items-center gap-2 p-2 bg-slate-50 dark:bg-gray-700 rounded">
-              <Clock className="w-4 h-4 text-indigo-500 dark:text-indigo-400 flex-shrink-0" />
+            <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-gray-700 dark:bg-gray-900/50">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-300"><Calendar className="h-5 w-5" /></span>
               <div className="min-w-0 flex-1">
-                <div className="text-xs text-slate-500 dark:text-gray-400">End Time</div>
-                <div className="font-medium text-slate-800 dark:text-gray-100 text-sm truncate">{fmt(selectedEvent.endDate)}</div>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Ends</div>
+                <div className="mt-1 font-bold text-slate-900 dark:text-white">{fmt(selectedEvent.endDate)}</div>
               </div>
             </div>
           </div>
-          
-          <p className="text-slate-700 dark:text-gray-300 text-sm bg-slate-50 dark:bg-gray-700 p-3 rounded">
-            {selectedEvent.description}
-          </p>
         </div>
         
-        <div className="flex flex-col sm:items-end gap-2 w-full sm:w-auto">
+        <div className="flex w-full flex-col gap-2 lg:w-auto lg:min-w-44 lg:items-end">
           {!selectedEvent.joined && (() => {
             const now = new Date();
             const joinDisabled = selectedEvent.joinDisabled || (selectedEvent.joinDisableTime && now > new Date(selectedEvent.joinDisableTime));
@@ -2287,41 +2285,47 @@ export default function StudentInterview() {
               <button
                 onClick={handleJoinEvent}
                 disabled={joinDisabled}
-                className={`w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-lg font-medium text-white text-sm transition-colors ${
-                  joinDisabled ? "bg-slate-400 dark:bg-gray-600 cursor-not-allowed" : "bg-sky-500 hover:bg-sky-600 active:bg-sky-700 dark:bg-sky-600 dark:hover:bg-sky-700 dark:active:bg-sky-800"
+                className={`w-full rounded-xl px-5 py-3 text-sm font-bold text-white shadow-sm transition lg:w-auto ${
+                  joinDisabled ? "cursor-not-allowed bg-slate-400 dark:bg-gray-600" : "bg-sky-600 hover:-translate-y-0.5 hover:bg-sky-700 hover:shadow-md dark:bg-sky-600 dark:hover:bg-sky-500"
                 }`}
               >
                 {joinDisabled ? "Participation Closed" : "Join Interview"}
               </button>
             );
           })()}
+          {selectedEvent.joined && (
+            <div className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700 lg:w-auto dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300">
+              <CheckCircle className="h-4 w-4" /> Participation confirmed
+            </div>
+          )}
         </div>
       </div>
 
       {/* Template Section */}
       {selectedEvent && (
-        <div className="bg-sky-50 dark:bg-sky-900/20 rounded-lg p-3 border border-sky-200 dark:border-sky-700 mb-3">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="p-1.5 bg-sky-500 dark:bg-sky-600 rounded">
-              <Info className="w-3 h-3 text-white" />
+        <div className="mx-auto mb-5 w-full max-w-6xl rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 dark:border-gray-700 dark:bg-gray-800">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-sky-100 text-sky-600 dark:bg-sky-900/40 dark:text-sky-300">
+              <BookOpen className="h-6 w-6" />
             </div>
-            <h3 className="font-medium text-slate-800 dark:text-gray-100 text-sm">Interview Preparation</h3>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-600 dark:text-sky-400">Preparation resource</p>
+              <h3 className="mt-1 text-base font-bold text-slate-950 dark:text-white">Interview template</h3>
+              <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-gray-400">Review the format, expectations and topics before your session begins.</p>
+            </div>
           </div>
-          <p className="text-slate-700 dark:text-gray-300 text-xs mb-2">
-            Review the template to prepare for this session.
-          </p>
-          <div className="flex justify-end">
             <button
               onClick={(e) => { if (selectedEvent.templateUrl) window.open(selectedEvent.templateUrl, '_blank'); }}
               disabled={!selectedEvent.templateUrl}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+              className={`inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition ${
                 !selectedEvent.templateUrl 
-                  ? 'bg-slate-100 dark:bg-gray-700 text-slate-400 dark:text-gray-500 cursor-not-allowed' 
-                  : 'bg-white dark:bg-gray-800 border border-sky-300 dark:border-sky-600 text-sky-600 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-gray-700'
+                  ? 'cursor-not-allowed bg-slate-100 text-slate-400 dark:bg-gray-700 dark:text-gray-500' 
+                  : 'border border-sky-200 bg-sky-50 text-sky-700 hover:-translate-y-0.5 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300'
               }`}
             >
-              <BookOpen size={12} />
-              <span>View Template</span>
+              <BookOpen size={16} />
+              <span>{selectedEvent.templateUrl ? 'Open template' : 'Template unavailable'}</span>
             </button>
           </div>
         </div>
@@ -2339,7 +2343,7 @@ export default function StudentInterview() {
           if (!interviewerPair && !intervieweePair) return null;
           
           return (
-            <div className="lg:hidden bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-3 border border-indigo-200 dark:border-indigo-700 mb-3">
+            <div className="mx-auto mb-5 w-full max-w-6xl rounded-3xl border border-indigo-200 bg-indigo-50 p-5 lg:hidden dark:border-indigo-800 dark:bg-indigo-900/20">
               <div className="flex items-center gap-2 mb-3">
                 <div className="p-1.5 bg-indigo-500 dark:bg-indigo-600 rounded">
                   <Users className="w-3 h-3 text-white" />
@@ -2691,15 +2695,15 @@ export default function StudentInterview() {
 
   return (
     <RequirePasswordChange user={user}>
-      <div className="min-h-screen w-full bg-slate-50 dark:bg-gray-900 flex flex-col pt-16">
+      <div className="min-h-screen w-full bg-slate-50 dark:bg-gray-950 flex flex-col pt-14">
         <div className="flex-1 w-full flex">
           {/* ── Collapsible Sidebar ──────────────────────────────────────
               Collapsed: 60px (icons only)
               Expanded:  320px (on hover or when pinned)
           ─────────────────────────────────────────────────────────── */}
           <div
-            className={`hidden lg:flex flex-col flex-shrink-0 bg-white dark:bg-gray-800 border-r border-slate-200 dark:border-gray-700 h-[calc(100vh-4rem)] sticky top-16 transition-all duration-300 ease-in-out overflow-hidden ${
-              sidebarExpanded ? 'w-[320px]' : 'w-[60px]'
+            className={`hidden lg:flex flex-col flex-shrink-0 bg-white dark:bg-gray-900 border-r border-slate-200 dark:border-gray-800 h-[calc(100vh-3.5rem)] sticky top-14 transition-all duration-300 ease-in-out overflow-hidden ${
+              sidebarExpanded ? 'w-[300px]' : 'w-[68px]'
             }`}
             onMouseEnter={() => setSidebarHovered(true)}
             onMouseLeave={() => setSidebarHovered(false)}
@@ -3133,7 +3137,7 @@ export default function StudentInterview() {
 
           {/* ── Main Content Area ── */}
           <div className={`${selectedEvent ? 'block' : 'hidden'} lg:block flex-1 min-w-0`}>
-            <div className="bg-white dark:bg-gray-800 lg:rounded-none border-l-0 lg:border-l border-slate-200 dark:border-gray-700 h-[calc(100vh-5rem)] sm:h-[calc(100vh-4rem)] flex flex-col overflow-auto">
+            <div className="h-[calc(100vh-3.5rem)] overflow-auto bg-slate-50 dark:bg-gray-950">
               {selectedEvent ? <EventDetails /> : <Placeholder />}
             </div>
           </div>

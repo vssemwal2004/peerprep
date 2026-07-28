@@ -15,16 +15,16 @@ const transporter = nodemailer.createTransport({
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   } : undefined,
-  pool: true, // Use pooled connections for faster sending
-  maxConnections: 5, // Allow up to 5 parallel connections
-  maxMessages: 100, // Reuse connections for multiple messages
-  connectionTimeout: 10000, // 10 seconds
-  greetingTimeout: 10000, // 10 seconds
-  socketTimeout: 30000, // 30 seconds
+  pool: true,
+  maxConnections: Math.max(1, Number(process.env.SMTP_MAX_CONNECTIONS || 1)),
+  maxMessages: Math.max(1, Number(process.env.SMTP_MAX_MESSAGES || 50)),
+  connectionTimeout: Math.max(5000, Number(process.env.SMTP_CONNECTION_TIMEOUT_MS || 20000)),
+  greetingTimeout: Math.max(5000, Number(process.env.SMTP_GREETING_TIMEOUT_MS || 20000)),
+  socketTimeout: Math.max(10000, Number(process.env.SMTP_SOCKET_TIMEOUT_MS || 60000)),
   tls: {
-    rejectUnauthorized: false, // Allow self-signed certificates (for development)
-    ciphers: 'SSLv3' // Compatibility with older servers
-  }
+    rejectUnauthorized: process.env.SMTP_ALLOW_SELF_SIGNED !== 'true',
+    minVersion: 'TLSv1.2',
+  },
 });
 
 export function isSmtpConfigured() {

@@ -135,6 +135,7 @@ const buildNavItems = (role = 'admin') => {
         { label: 'Create Interview', to: '/admin/event', icon: CalendarPlus },
         { label: 'Scheduled Interviews', to: '/admin/interviews/scheduled', icon: CalendarClock },
         { label: 'Past Interview Details', to: '/admin/interviews/past', icon: History },
+        { label: 'Feedback', to: '/admin/feedback', icon: MessageSquare },
       ],
     },
     {
@@ -160,7 +161,6 @@ const buildNavItems = (role = 'admin') => {
       ],
     },
     { type: 'link', label: 'Learning Modules', to: '/admin/learning', icon: BookOpen },
-    { type: 'link', label: 'Feedback', to: '/admin/feedback', icon: MessageSquare },
     {
       type: 'group',
       key: 'assessment',

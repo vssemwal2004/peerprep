@@ -12,6 +12,10 @@ export const COORDINATOR_PERMISSION_CATEGORIES = [
     permissions: [
       'coordinator.interviews.create',
       'coordinator.interviews.view',
+      'coordinator.interviews.edit',
+      'coordinator.interviews.manage',
+      'coordinator.interviews.participants',
+      'coordinator.interviews.delete',
     ],
   },
   {
@@ -91,7 +95,8 @@ export const DEFAULT_COORDINATOR_PERMISSIONS = COORDINATOR_PERMISSION_CATEGORIES
   .flatMap((category) => category.permissions);
 
 export function normalizeCoordinatorPermissions(permissions) {
-  if (!Array.isArray(permissions)) return DEFAULT_COORDINATOR_PERMISSIONS;
+  // Fail closed. Coordinator access must always be granted explicitly by an admin.
+  if (!Array.isArray(permissions)) return [];
   const allowed = new Set(DEFAULT_COORDINATOR_PERMISSIONS);
   return [...new Set(permissions.filter((permission) => allowed.has(permission)))];
 }

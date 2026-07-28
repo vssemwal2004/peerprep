@@ -5,11 +5,12 @@ import AssessmentSubmission from '../models/AssessmentSubmission.js';
 import Problem from '../models/Problem.js';
 import Submission from '../models/Submission.js';
 import User from '../models/User.js';
-import { isEmailFeatureEnabled, sendOnboardingEmail, sendAssessmentNotificationEmail, sendAssessmentInvitationEmail } from '../utils/mailer.js';
 import { createNotification, createNotifications } from '../services/notificationService.js';
 import { enqueueAssessmentCodingEvaluationJobs } from '../services/compilerExecutionWorkflowService.js';
 import { removeAssessmentQuestionsFromLibrary, syncAssessmentQuestionsToLibrary } from '../services/questionLibraryService.js';
 import { logActivity } from './adminActivityController.js';
+import { enqueueMailJobs } from '../services/mailQueueService.js';
+import crypto from 'crypto';
 import {
   AI_PROCTORING_VIOLATION_TYPES,
   applyAiProctoringViolationToSummary,
@@ -1616,34 +1617,6 @@ export async function createAssessment(req, res) {
 
     setImmediate(async () => {
       try {
-        if (normalizedLifecycle === 'published' && created.length > 0 && isEmailFeatureEnabled('ONBOARD')) {
-          await Promise.allSettled(
-            created.map(student =>
-              sendOnboardingEmail({
-                to: student.email,
-                studentId: student.studentId,
-                password: student.password,
-              }).then(() => User.updateOne({ _id: student.id }, {
-                $set: {
-                  credentialEmailStatus: 'sent',
-                  credentialEmailSentAt: new Date(),
-                  credentialEmailLastAttemptAt: new Date(),
-                },
-                $unset: { credentialEmailLastError: 1 },
-              })).catch(async (error) => {
-                await User.updateOne({ _id: student.id }, {
-                  $set: {
-                    credentialEmailStatus: 'failed',
-                    credentialEmailLastAttemptAt: new Date(),
-                    credentialEmailLastError: String(error.message || 'Email delivery failed.').slice(0, 500),
-                  },
-                });
-                throw error;
-              })
-            )
-          );
-        }
-
         if (normalizedLifecycle === 'published' && created.length > 0) {
           const accountNotifs = created.map(student => ({
             userId: student.id,
@@ -1655,17 +1628,6 @@ export async function createAssessment(req, res) {
             dedupeKey: `account-created:${student.id}`
           }));
           await createNotifications(accountNotifs);
-        }
-
-        if (normalizedLifecycle === 'published' && sendEmail !== false && isEmailFeatureEnabled('ASSESSMENT')) {
-          const emailJobs = users
-            .filter(u => u.email)
-            .map(u => sendAssessmentNotificationEmail({
-              to: u.email,
-              assessment,
-              student: u,
-            }));
-          await Promise.allSettled(emailJobs);
         }
 
         if (normalizedLifecycle === 'published' && users.length > 0) {
@@ -1991,24 +1953,6 @@ export async function updateAssessment(req, res) {
     });
 
     res.json({ message: 'Assessment updated', assessmentId: assessment._id });
-
-    if (assessment.lifecycleStatus === 'published' && sendEmail !== false && isEmailFeatureEnabled('ASSESSMENT')) {
-      const assignedUsers = await User.find({ _id: { $in: assessment.assignedStudents || [] } }).select('_id email name studentId').lean();
-      setImmediate(async () => {
-        try {
-          const emailJobs = assignedUsers
-            .filter(u => u.email)
-            .map(u => sendAssessmentNotificationEmail({
-              to: u.email,
-              assessment,
-              student: u,
-            }));
-          await Promise.allSettled(emailJobs);
-        } catch (err) {
-          console.error('[Assessment] Email send failed:', err.message);
-        }
-      });
-    }
 
     if (assessment.lifecycleStatus === 'published') {
       const assignedUsers = await User.find({ _id: { $in: assessment.assignedStudents || [] } }).select('_id').lean();
@@ -2459,33 +2403,37 @@ export async function sendAssessmentInvitations(req, res) {
     const students = (await resolveEligibleAssessmentStudents(assessment)).filter((student) => student.email);
     if (!students.length) return res.status(400).json({ error: 'No eligible students with email addresses were found.' });
 
-    const results = [];
-    const batchSize = 20;
-    for (let index = 0; index < students.length; index += batchSize) {
-      const batch = students.slice(index, index + batchSize);
-      const settled = await Promise.allSettled(batch.map((student) => sendAssessmentInvitationEmail({
+    const batchId = crypto.randomUUID();
+    const queuedResult = await enqueueMailJobs(students.map((student) => ({
+      type: 'assessment_invitation',
+      to: student.email,
+      recipientId: student._id,
+      targetType: 'ASSESSMENT',
+      targetId: assessment._id,
+      idempotencyKey: `assessment:${assessment._id}:${student._id}:${batchId}`,
+      payload: {
         to: student.email,
-        assessment,
+        assessment: assessment.toObject(),
         student,
         password: assessment.passwordEnabled ? suppliedPassword : '',
-      })));
-      results.push(...settled);
-    }
-
-    const sent = results.filter((result) => result.status === 'fulfilled').length;
-    const failed = results.length - sent;
+      },
+    })), {
+      batchId,
+      requestedBy: req.user._id,
+      requestedByEmail: req.user.email,
+    });
     logActivity({
       userEmail: req.user?.email,
       userRole: req.user?.role,
       actionType: 'UPDATE',
       targetType: 'ASSESSMENT',
       targetId: String(assessment._id),
-      description: `Sent assessment invitation to ${sent} eligible student${sent === 1 ? '' : 's'}`,
-      metadata: { assessmentId: String(assessment._id), eligible: students.length, sent, failed },
+      description: `Queued assessment invitations for ${students.length} eligible student${students.length === 1 ? '' : 's'}`,
+      metadata: { assessmentId: String(assessment._id), eligible: students.length, batchId },
       req,
     });
 
-    return res.json({ ok: failed === 0, eligible: students.length, sent, failed });
+    return res.status(202).json({ ok: true, eligible: students.length, ...queuedResult });
   } catch (err) {
     console.error('Error sending assessment invitations:', err);
     return res.status(500).json({ error: 'Failed to send assessment invitations.' });

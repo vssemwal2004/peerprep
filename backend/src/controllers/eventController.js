@@ -1,4 +1,4 @@
-import { isEmailFeatureEnabled, sendSlotProposalEmail, sendSlotAcceptanceEmail, sendInterviewScheduledEmail, sendMail, renderTemplate, sendEventNotificationEmail, sendOnboardingEmail } from '../utils/mailer.js';
+import { sendSlotProposalEmail, sendSlotAcceptanceEmail, sendInterviewScheduledEmail, sendMail, renderTemplate } from '../utils/mailer.js';
 import Pair from '../models/Pair.js';
 import SlotProposal from '../models/SlotProposal.js';
 import bcrypt from 'bcrypt';
@@ -9,8 +9,11 @@ import { HttpError } from '../utils/errors.js';
 import { supabase } from '../utils/supabase.js';
 import { logActivity } from './adminActivityController.js';
 import Event from '../models/Event.js';
+import EventParticipant from '../models/EventParticipant.js';
 import User from '../models/User.js';
 import { createNotifications } from '../services/notificationService.js';
+import { enqueueMailJobs } from '../services/mailQueueService.js';
+import crypto from 'crypto';
 
 // Fisher-Yates shuffle algorithm for random array shuffling
 function shuffleArray(array) {
@@ -136,11 +139,26 @@ async function uploadTemplate(file) {
 }
 
 export async function createEvent(req, res) {
-  const { name, description, startDate, endDate, allowedParticipants } = req.body;
+  const {
+    name,
+    description,
+    startDate,
+    endDate,
+    allowedParticipants,
+    selectionMode = 'all',
+    participantFilters,
+    excludedParticipants,
+    status = 'published',
+  } = req.body;
   // Validate dates
   const start = startDate ? new Date(startDate) : null;
   const end = endDate ? new Date(endDate) : null;
   const now = Date.now();
+  if (!name?.trim()) throw new HttpError(400, 'Interview title is required');
+  if (start && Number.isNaN(start.getTime())) throw new HttpError(400, 'Invalid start date');
+  if (end && Number.isNaN(end.getTime())) throw new HttpError(400, 'Invalid end date');
+  if (start && start.getTime() < now) throw new HttpError(400, 'Start date cannot be in the past');
+  if (start && end && end.getTime() < start.getTime()) throw new HttpError(400, 'End date must be after the start date');
     // Normalize allowedParticipants from body (may come as string in multipart)
     let coordinatorId = undefined;
     let finalAllowed = [];
@@ -155,6 +173,21 @@ export async function createEvent(req, res) {
           finalAllowed = allowedParticipants.split(',').map(s=>s.trim()).filter(Boolean);
         }
       }
+    }
+    const parseJsonValue = (value, fallback) => {
+      if (value === undefined || value === null || value === '') return fallback;
+      if (typeof value !== 'string') return value;
+      try { return JSON.parse(value); } catch { return fallback; }
+    };
+    const finalFilters = parseJsonValue(participantFilters, {});
+    const finalExcluded = parseJsonValue(excludedParticipants, []);
+    const normalizedSelectionMode = ['all', 'filters', 'selected'].includes(selectionMode) ? selectionMode : 'all';
+    const normalizedStatus = ['draft', 'scheduled', 'published'].includes(status) ? status : 'published';
+    if (normalizedSelectionMode === 'selected' && !finalAllowed.length) {
+      throw new HttpError(400, 'Select at least one student');
+    }
+    if (normalizedSelectionMode === 'filters' && !Object.values(finalFilters || {}).some(Boolean)) {
+      throw new HttpError(400, 'Choose at least one student filter');
     }
 
     // If a coordinator is creating the event, scope participants to their students
@@ -182,6 +215,13 @@ export async function createEvent(req, res) {
       endDate: end || undefined,
       ...tpl,
       allowedParticipants: finalAllowed,
+      excludedParticipants: Array.isArray(finalExcluded) ? finalExcluded : [],
+      selectionMode: normalizedSelectionMode,
+      participantFilters: finalFilters,
+      status: normalizedStatus,
+      publishedAt: normalizedStatus === 'published' ? new Date() : undefined,
+      createdBy: req.user._id,
+      updatedBy: req.user._id,
       coordinatorId,
     });
 
@@ -200,6 +240,8 @@ export async function createEvent(req, res) {
   // Send response immediately - emails will be sent asynchronously
   res.status(201).json(event);
   
+  if (event.status === 'draft') return;
+
   // Send emails and generate pairs asynchronously (non-blocking)
   setImmediate(async () => {
     try {
@@ -208,16 +250,41 @@ export async function createEvent(req, res) {
       if (event.coordinatorId) {
         studentsQuery = { ...studentsQuery, teacherIds: event.coordinatorId };
       }
+      if (event.selectionMode === 'filters') {
+        const filters = event.participantFilters || {};
+        const semester = Number(filters.semester);
+        if (Number.isInteger(semester) && semester >= 1 && semester <= 8) studentsQuery.semester = semester;
+        ['branch', 'course', 'college', 'group'].forEach((field) => {
+          if (filters[field]) studentsQuery[field] = String(filters[field]).trim();
+        });
+      }
       let students = await User.find(studentsQuery, '_id email name');
       // If allowedParticipants was provided, intersect with it
       if (Array.isArray(event.allowedParticipants) && event.allowedParticipants.length) {
         const allowedSet = new Set(event.allowedParticipants.map(id => id.toString()));
         students = students.filter(s => allowedSet.has(s._id.toString()));
       }
+      if (Array.isArray(event.excludedParticipants) && event.excludedParticipants.length) {
+        const excludedSet = new Set(event.excludedParticipants.map((id) => String(id)));
+        students = students.filter((student) => !excludedSet.has(String(student._id)));
+      }
       const ids = students.map(s => s._id.toString());
-      // Set participants to eligible students only
-      event.participants = students.map(s => s._id);
-      await event.save();
+      if (students.length) {
+        await EventParticipant.bulkWrite(students.map((student) => ({
+          updateOne: {
+            filter: { eventId: event._id, studentId: student._id },
+            update: {
+              $set: {
+                selectionSource: event.selectionMode,
+                assignmentStatus: 'assigned',
+              },
+              $setOnInsert: { invitationStatus: 'not_sent' },
+            },
+            upsert: true,
+          },
+        })));
+      }
+      // Assignment is stored separately; participants contains students who actually joined.
 
       // Real-time notifications: Event assigned
       try {
@@ -284,28 +351,6 @@ export async function createEvent(req, res) {
         }
       }
       
-      // Send event notification emails using unified mailer.js function
-      if (isEmailFeatureEnabled('EVENT')) {
-        const emailPromises = students.map(s => {
-          return sendEventNotificationEmail({
-            to: s.email,
-            event: {
-              title: name,
-              date: formatDateTime(startDate),
-              details: description,
-              templateUrl: tpl.templateUrl
-            },
-            interviewer: s.name || s.email,
-            interviewee: ''
-          }).catch(err => {
-            console.error(`[createEvent] Failed to send email to ${s.email}:`, err.message);
-            return null;
-          });
-        });
-        
-        await Promise.all(emailPromises);
-        console.log(`[createEvent] Sent ${students.length} event notification emails`);
-      }
     } catch (e) {
       console.error('[createEvent] Async email/pairing failed', e.message);
     }
@@ -518,6 +563,18 @@ export async function checkSpecialEventCsv(req, res) {
       const userByEmail = existingUsersByEmail.get(lowerEmail);
       const userById = existingUsersById.get(studentid);
 
+      if (!userByEmail && !userById) {
+        results.push({
+          row: row.__row,
+          name,
+          email,
+          studentid,
+          status: 'student_not_registered',
+          message: 'No registered student matches this email or Student ID. Create the student account before assigning an interview.',
+        });
+        continue;
+      }
+
       // Validate that Teacher ID (if provided) belongs to a coordinator
       if (teacherid && !validCoordinatorIds.has(teacherid)) {
         results.push({
@@ -623,8 +680,55 @@ export async function checkSpecialEventCsv(req, res) {
   res.json({ count: results.length, results });
 }
 
+export async function checkInterviewParticipantCsv(req, res) {
+  if (!req.file) throw new HttpError(400, 'CSV file required');
+  let rows;
+  try {
+    rows = parse(req.file.buffer.toString('utf8'), { columns: true, skip_empty_lines: true });
+  } catch (error) {
+    throw new HttpError(400, `Invalid CSV: ${error.message || error}`);
+  }
+  if (rows.length > 1000) throw new HttpError(400, 'A maximum of 1000 students can be selected at once');
+
+  const normalizedRows = rows.map((row, index) => ({ ...normalizeSpecialEventRow(row), __row: index + 2 }));
+  const emails = normalizedRows.map((row) => row.email?.toLowerCase()).filter(Boolean);
+  const studentIds = normalizedRows.map((row) => row.studentid).filter(Boolean);
+  const query = {
+    role: 'student',
+    $or: [{ email: { $in: emails } }, { studentId: { $in: studentIds } }],
+  };
+  if (req.user.role === 'coordinator') query.teacherIds = req.user.coordinatorId;
+  const students = await User.find(query).select('_id name email studentId semester branch course college group').lean();
+  const byEmail = new Map(students.map((student) => [student.email?.toLowerCase(), student]));
+  const byStudentId = new Map(students.map((student) => [String(student.studentId), student]));
+  const seen = new Set();
+  const results = normalizedRows.map((row) => {
+    const student = byEmail.get(row.email?.toLowerCase()) || byStudentId.get(row.studentid);
+    if (!student) {
+      return { row: row.__row, email: row.email, studentid: row.studentid, status: 'student_not_registered', message: 'Registered student not found or outside coordinator scope.' };
+    }
+    const id = student._id.toString();
+    if (seen.has(id)) return { row: row.__row, email: row.email, studentid: row.studentid, status: 'duplicate_in_file', message: 'Student appears more than once.' };
+    seen.add(id);
+    if (row.email && student.email?.toLowerCase() !== row.email.toLowerCase()) {
+      return { row: row.__row, email: row.email, studentid: row.studentid, status: 'data_mismatch', message: 'Email does not match the registered student.' };
+    }
+    if (row.studentid && String(student.studentId) !== row.studentid) {
+      return { row: row.__row, email: row.email, studentid: row.studentid, status: 'data_mismatch', message: 'Student ID does not match the registered student.' };
+    }
+    return { row: row.__row, status: 'ready', student };
+  });
+  res.json({
+    count: results.length,
+    readyCount: results.filter((result) => result.status === 'ready').length,
+    studentIds: results.filter((result) => result.status === 'ready').map((result) => result.student._id),
+    results,
+  });
+}
+
 export async function createSpecialEvent(req, res) {
   const { name, description, startDate, endDate } = req.body;
+  if (!name?.trim()) throw new HttpError(400, 'Interview title is required');
   
   // Validate dates
   const start = startDate ? new Date(startDate) : null;
@@ -696,6 +800,13 @@ export async function createSpecialEvent(req, res) {
       const lowerEmail = email.toLowerCase();
       const user = usersByEmail.get(lowerEmail) || usersById.get(studentid);
 
+      if (!user) {
+        throw new HttpError(
+          400,
+          `Row ${row.__row}: No registered student matches ${email || studentid}. Create the student account before assigning this interview.`,
+        );
+      }
+
       // Teacher ID must reference an existing coordinator when provided
       if (teacherid && !validCoordinatorIds.has(teacherid)) {
         throw new HttpError(
@@ -755,6 +866,11 @@ export async function createSpecialEvent(req, res) {
     endDate: end || undefined,
     ...tpl,
     isSpecial: true,
+    selectionMode: 'csv',
+    status: 'published',
+    publishedAt: new Date(),
+    createdBy: req.user._id,
+    updatedBy: req.user._id,
     // For special events, participants are regular User IDs tagged as special students
     allowedParticipants: [],
     participants: [],
@@ -828,7 +944,7 @@ export async function createSpecialEvent(req, res) {
       const existingUser = await User.findOne({ 
         role: 'student',
         $or: [{ email }, { studentId: studentid }],
-        teacherId: coordinatorId
+        teacherIds: coordinatorId
       });
       
       if (!existingUser) {
@@ -897,48 +1013,12 @@ export async function createSpecialEvent(req, res) {
         continue;
       }
 
-      // No existing user: only admins can create new special-student users
-      if (coordinatorId) {
-        results.push({
-          row: row.__row,
-          email,
-          studentid,
-          status: 'error',
-          message: 'Coordinators cannot create new students. Student must exist in the main database first.'
-        });
-        continue;
-      }
-
-      // New student - create User with special-student tag (admin only)
-      const passwordHash = await User.hashPassword(defaultPassword);
-
-      const user = await User.create({
-        role: 'student',
-        name,
+      results.push({
+        row: row.__row,
         email,
-        studentId: studentid,
-        branch,
-        course: course || undefined,
-        college: college || undefined,
-        semester: semester || undefined,
-        group: group || undefined,
-        teacherIds: effectiveTeacherId ? [effectiveTeacherId] : [],
-        passwordHash,
-        mustChangePassword: true,
-        isSpecialStudent: true,
-        specialEvents: [event._id],
-      });
-
-      results.push({ row: row.__row, id: user._id, email, studentid, status: 'created' });
-
-      // Add to createdStudents and send onboarding email
-      createdStudents.push({
-        _id: user._id,
-        email: user.email,
-        name: user.name,
-        studentId: user.studentId,
-        password: defaultPassword,
-        shouldSendOnboarding: true,
+        studentid,
+        status: 'student_not_registered',
+        message: 'Student must already be registered before being assigned to an interview.',
       });
     } catch (err) {
       results.push({ row: row.__row, email, studentid, status: 'error', message: err.message });
@@ -947,8 +1027,20 @@ export async function createSpecialEvent(req, res) {
   
   // Update event with created student IDs
   event.allowedParticipants = createdStudents.map(s => s._id);
-  event.participants = createdStudents.map(s => s._id);
+  event.selectionMode = 'csv';
   await event.save();
+  if (createdStudents.length) {
+    await EventParticipant.bulkWrite(createdStudents.map((student) => ({
+      updateOne: {
+        filter: { eventId: event._id, studentId: student._id },
+        update: {
+          $set: { selectionSource: 'csv', assignmentStatus: 'assigned' },
+          $setOnInsert: { invitationStatus: 'not_sent' },
+        },
+        upsert: true,
+      },
+    })));
+  }
 
   // Real-time notifications: Event assigned
   try {
@@ -1035,43 +1127,6 @@ export async function createSpecialEvent(req, res) {
         }
       }
 
-      // Send onboarding emails to special students in parallel (only for new students)
-      if (isEmailFeatureEnabled('ONBOARD') && createdStudents.length > 0) {
-        const studentsNeedingOnboarding = createdStudents.filter(s => s.shouldSendOnboarding);
-        
-        if (studentsNeedingOnboarding.length > 0) {
-          const emailPromises = studentsNeedingOnboarding.map(student =>
-            sendOnboardingEmail({
-              to: student.email,
-              studentId: student.studentId,
-              password: student.password,
-            }).then(() => User.updateOne({ _id: student._id }, {
-              $set: {
-                credentialEmailStatus: 'sent',
-                credentialEmailSentAt: new Date(),
-                credentialEmailLastAttemptAt: new Date(),
-              },
-              $unset: { credentialEmailLastError: 1 },
-            })).catch(async err => {
-              console.error(`[createSpecialEvent] Failed to send onboarding email to ${student.email}:`, err.message);
-              await User.updateOne({ _id: student._id }, {
-                $set: {
-                  credentialEmailStatus: 'failed',
-                  credentialEmailLastAttemptAt: new Date(),
-                  credentialEmailLastError: String(err.message || 'Email delivery failed.').slice(0, 500),
-                },
-              }).catch(() => {});
-              return null;
-            })
-          );
-
-          await Promise.all(emailPromises);
-          console.log(`[createSpecialEvent] Sent onboarding emails to ${studentsNeedingOnboarding.length} new special students`);
-        } else {
-          console.log(`[createSpecialEvent] No new students requiring onboarding emails`);
-        }
-      }
-
       // Account created notifications for new students
       try {
         const newStudentNotifs = createdStudents
@@ -1088,29 +1143,6 @@ export async function createSpecialEvent(req, res) {
         await createNotifications(newStudentNotifs);
       } catch (e) {
         console.error('[createSpecialEvent] Account notification error:', e.message);
-      }
-
-      // Send event notification emails using unified mailer.js function
-      if (isEmailFeatureEnabled('EVENT')) {
-        const emailPromises = createdStudents.map(s => {
-          return sendEventNotificationEmail({
-            to: s.email,
-            event: {
-              title: event.name,
-              date: formatDateTime(startDate),
-              details: description,
-              templateUrl: event.templateUrl
-            },
-            interviewer: s.name || s.email,
-            interviewee: ''
-          }).catch(err => {
-            console.error(`[createSpecialEvent] Failed to send event email to ${s.email}:`, err.message);
-            return null;
-          });
-        });
-
-        await Promise.all(emailPromises);
-        console.log(`[createSpecialEvent] Sent ${createdStudents.length} event notification emails`);
       }
 
       console.log(`[createSpecialEvent] Successfully processed event: ${event._id}`);
@@ -1136,6 +1168,171 @@ export async function getEvent(req, res) {
   res.json({ ...event, ended, canDeleteTemplate, participantCount: event.participants?.length || 0 });
 }
 
+async function getManagedEvent(req) {
+  const event = await Event.findById(req.params.id);
+  if (!event) throw new HttpError(404, 'Interview not found');
+  if (req.user?.role === 'coordinator' && event.coordinatorId !== req.user.coordinatorId) {
+    throw new HttpError(403, 'You can only manage your own interviews');
+  }
+  return event;
+}
+
+export async function updateEvent(req, res) {
+  const event = await getManagedEvent(req);
+  const editable = ['name', 'description', 'startDate', 'endDate'];
+  editable.forEach((field) => {
+    if (req.body?.[field] !== undefined) event[field] = req.body[field] || undefined;
+  });
+  if (!event.name?.trim()) throw new HttpError(400, 'Interview title is required');
+  if (event.startDate && event.endDate && new Date(event.endDate) < new Date(event.startDate)) {
+    throw new HttpError(400, 'End date must be after the start date');
+  }
+  event.updatedBy = req.user._id;
+  await event.save();
+  logActivity({
+    userEmail: req.user.email,
+    userRole: req.user.role,
+    actionType: 'UPDATE',
+    targetType: 'EVENT',
+    targetId: event._id.toString(),
+    description: `Updated interview: ${event.name}`,
+    metadata: { status: event.status },
+    req,
+  });
+  res.json(event);
+}
+
+export async function updateEventStatus(req, res) {
+  const event = await getManagedEvent(req);
+  const status = String(req.body?.status || '').trim();
+  const allowed = ['draft', 'scheduled', 'published', 'live', 'completed', 'cancelled', 'archived'];
+  if (!allowed.includes(status)) throw new HttpError(400, 'Invalid interview status');
+  event.status = status;
+  event.updatedBy = req.user._id;
+  if (status === 'published') event.publishedAt = new Date();
+  if (status === 'cancelled') event.cancelledAt = new Date();
+  if (status === 'archived') event.archivedAt = new Date();
+  await event.save();
+  logActivity({
+    userEmail: req.user.email,
+    userRole: req.user.role,
+    actionType: 'UPDATE',
+    targetType: 'EVENT',
+    targetId: event._id.toString(),
+    description: `Changed interview status to ${status}: ${event.name}`,
+    metadata: { status },
+    req,
+  });
+  res.json({ _id: event._id, status: event.status });
+}
+
+export async function listEventParticipants(req, res) {
+  const event = await getManagedEvent(req);
+  const assignments = await EventParticipant.find({ eventId: event._id })
+    .populate('studentId', 'name email studentId semester branch course college group')
+    .sort({ createdAt: -1 })
+    .lean();
+  res.json(assignments);
+}
+
+export async function addEventParticipants(req, res) {
+  const event = await getManagedEvent(req);
+  const studentIds = [...new Set((req.body?.studentIds || []).map(String))];
+  if (!studentIds.length) throw new HttpError(400, 'Select at least one student');
+  const scope = { _id: { $in: studentIds }, role: 'student' };
+  if (req.user.role === 'coordinator') scope.teacherIds = req.user.coordinatorId;
+  const students = await User.find(scope).select('_id').lean();
+  if (students.length !== studentIds.length) {
+    throw new HttpError(400, 'One or more students are invalid or outside your assigned scope');
+  }
+  await EventParticipant.bulkWrite(students.map((student) => ({
+    updateOne: {
+      filter: { eventId: event._id, studentId: student._id },
+      update: {
+        $set: { selectionSource: 'manual', assignmentStatus: 'assigned' },
+        $unset: { removedAt: 1, removedBy: 1, removalReason: 1 },
+        $setOnInsert: { invitationStatus: 'not_sent' },
+      },
+      upsert: true,
+    },
+  })));
+  event.selectionMode = event.selectionMode === 'all' ? 'selected' : event.selectionMode;
+  event.updatedBy = req.user._id;
+  await event.save();
+  res.json({ added: students.length });
+}
+
+export async function removeEventParticipant(req, res) {
+  const event = await getManagedEvent(req);
+  const assignment = await EventParticipant.findOneAndUpdate(
+    { eventId: event._id, studentId: req.params.studentId },
+    {
+      $set: {
+        assignmentStatus: 'removed',
+        removedAt: new Date(),
+        removedBy: req.user._id,
+        removalReason: String(req.body?.reason || '').slice(0, 300),
+      },
+    },
+    { new: true },
+  );
+  if (!assignment) throw new HttpError(404, 'Student assignment not found');
+  event.participants = event.participants.filter((id) => id.toString() !== req.params.studentId);
+  await event.save();
+  res.json({ removed: true });
+}
+
+export async function archiveEvent(req, res) {
+  const event = await getManagedEvent(req);
+  event.status = 'archived';
+  event.archivedAt = new Date();
+  event.updatedBy = req.user._id;
+  await event.save();
+  res.json({ archived: true, _id: event._id });
+}
+
+export async function sendEventInvitations(req, res) {
+  const event = await getManagedEvent(req);
+  const requestedIds = Array.isArray(req.body?.studentIds)
+    ? [...new Set(req.body.studentIds.map(String))]
+    : [];
+  const query = { eventId: event._id, assignmentStatus: 'assigned' };
+  if (requestedIds.length) query.studentId = { $in: requestedIds };
+  const assignments = await EventParticipant.find(query).populate('studentId', 'name email').lean();
+  if (!assignments.length) throw new HttpError(400, 'No assigned students were found');
+
+  const validAssignments = assignments.filter((assignment) => assignment.studentId?.email);
+  const batchId = crypto.randomUUID();
+  const queued = await enqueueMailJobs(validAssignments.map((assignment) => ({
+    type: 'event_invitation',
+    to: assignment.studentId.email,
+    recipientId: assignment.studentId._id,
+    targetType: 'EVENT',
+    targetId: event._id,
+    idempotencyKey: `event:${event._id}:${assignment.studentId._id}:${batchId}`,
+    payload: {
+      to: assignment.studentId.email,
+      event: {
+        title: event.name,
+        date: event.startDate ? formatDateTime(event.startDate) : 'To be announced',
+        details: event.description,
+        templateUrl: event.templateUrl,
+      },
+      interviewer: assignment.studentId.name || assignment.studentId.email,
+      interviewee: '',
+    },
+  })), {
+    batchId,
+    requestedBy: req.user._id,
+    requestedByEmail: req.user.email,
+  });
+  await EventParticipant.updateMany(
+    { _id: { $in: validAssignments.map((assignment) => assignment._id) } },
+    { $set: { invitationStatus: 'pending' } },
+  );
+  res.status(202).json({ ...queued, message: `${validAssignments.length} invitation email(s) queued.` });
+}
+
 export async function listEvents(req, res) {
   const userId = req.user?._id;
   const isAdmin = req.user?.role === 'admin';
@@ -1156,20 +1353,26 @@ export async function listEvents(req, res) {
     if (req.user?.role === 'coordinator') {
       query.coordinatorId = req.user.coordinatorId;
     } else if (req.user?.role === 'student') {
-      const teacherId = req.user?.teacherId;
+      const teacherIds = Array.isArray(req.user?.teacherIds) ? req.user.teacherIds : [];
       const orClauses = [];
       // Unscoped events (no coordinator) should be visible
       orClauses.push({ coordinatorId: { $exists: false } });
       orClauses.push({ coordinatorId: null });
       // Events for this coordinator only
-      if (teacherId) {
-        orClauses.push({ coordinatorId: teacherId });
+      if (teacherIds.length) {
+        orClauses.push({ coordinatorId: { $in: teacherIds } });
       }
       // Explicitly allowed (special or otherwise)
       orClauses.push({ allowedParticipants: req.user._id });
       query.$or = orClauses;
     }
     const events = await Event.find(query).sort({ createdAt: -1 }).lean();
+    const assignedEventIds = req.user?.role === 'student'
+      ? new Set((await EventParticipant.find({
+        studentId: userId,
+        assignmentStatus: 'assigned',
+      }).select('eventId').lean()).map((assignment) => assignment.eventId.toString()))
+      : new Set();
   
   // Populate coordinator names for events that have coordinatorId
   const eventsWithCoordinator = await Promise.all(events.map(async (event) => {
@@ -1193,6 +1396,8 @@ export async function listEvents(req, res) {
   const visible = eventsWithCoordinator.filter(e => {
     // Admins and coordinators see all their events (no filtering needed)
     if (isAdmin || req.user?.role === 'coordinator') return true;
+
+    if (['draft', 'cancelled', 'archived'].includes(e.status)) return false;
     
     // Students should only see events created after their registration
     // Filter out events created before the student was registered
@@ -1220,12 +1425,13 @@ export async function listEvents(req, res) {
       }
     }
     
-    // Non-special events are visible to everyone (if created after registration)
-    if (!e.isSpecial) return true;
+    const restricted = e.isSpecial || ['selected', 'filters', 'csv'].includes(e.selectionMode);
+    if (!restricted) return true;
     
     // For special events, only show if the current student is explicitly allowed
     if (!userId) return false;
-    const canSee = e.allowedParticipants?.some?.(p => p.toString() === userId.toString());
+    const canSee = assignedEventIds.has(e._id.toString())
+      || e.allowedParticipants?.some?.(p => p.toString() === userId.toString());
     console.log('[listEvents] Special event visibility check:', {
       eventName: e.name,
       eventId: e._id.toString(),
@@ -1254,6 +1460,9 @@ export async function joinEvent(req, res) {
   const event = await Event.findById(req.params.id);
   if (!event) throw new HttpError(404, 'Event not found');
   const userId = req.user._id;
+  if (['draft', 'cancelled', 'archived', 'completed'].includes(event.status)) {
+    throw new HttpError(403, `This interview is ${event.status} and cannot be joined.`);
+  }
   // Restrict joining events that were created before the student's registration time
   // Applies to all students (timestamps stored on unified User model)
   try {
@@ -1266,11 +1475,28 @@ export async function joinEvent(req, res) {
     if (e instanceof HttpError) throw e;
     // Fallback: if timestamps are missing, allow normal flow
   }
-  if (event.isSpecial && !event.allowedParticipants?.some?.(p => p.equals(userId))) throw new HttpError(403, 'Not allowed for this special event');
+  const restricted = event.isSpecial || ['selected', 'filters', 'csv'].includes(event.selectionMode);
+  if (restricted) {
+    const assigned = await EventParticipant.exists({
+      eventId: event._id,
+      studentId: userId,
+      assignmentStatus: 'assigned',
+    });
+    const legacyAllowed = event.allowedParticipants?.some?.((participantId) => participantId.equals(userId));
+    if (!assigned && !legacyAllowed) throw new HttpError(403, 'You are not assigned to this interview.');
+  }
   if (event.participants.some(p => p.equals(userId))) return res.json({ message: 'Already joined' });
   // capacity removed - no limit enforced
   event.participants.push(userId);
   await event.save();
+  await EventParticipant.updateOne(
+    { eventId: event._id, studentId: userId },
+    {
+      $set: { joinedAt: new Date(), assignmentStatus: 'assigned' },
+      $setOnInsert: { selectionSource: event.selectionMode || (event.isSpecial ? 'csv' : 'all') },
+    },
+    { upsert: true },
+  );
   res.json({ message: 'Joined', eventId: event._id });
 }
 

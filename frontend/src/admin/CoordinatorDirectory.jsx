@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowUpDown, Edit2, Eye, Loader2, Lock, Search, ShieldCheck, ToggleLeft, ToggleRight, UserPlus, Users, X } from 'lucide-react';
+import { ArrowUpDown, Edit2, Eye, Loader2, Lock, Mail, MoreVertical, Search, ShieldCheck, ToggleLeft, ToggleRight, Trash2, UserPlus, Users, X } from 'lucide-react';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 
@@ -25,7 +25,29 @@ function StatusPill({ active }) {
   );
 }
 
-function CoordinatorCard({ coordinator, onEdit, onToggle, onView, onAccess }) {
+function CoordinatorActionMenu({ coordinator, onEdit, onToggle, onView, onAccess, onDelete, onMail }) {
+  const [open, setOpen] = useState(false);
+  const active = coordinator.isActive !== false;
+  const action = (callback) => () => { setOpen(false); callback(coordinator); };
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => setOpen((value) => !value)} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/10" aria-label="Coordinator actions"><MoreVertical className="h-4 w-4" /></button>
+      {open ? (
+        <div className="absolute right-0 top-10 z-40 w-52 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl dark:border-white/10 dark:bg-gray-900">
+          <button onClick={action(onView)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-bold text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-white/10"><Eye className="h-4 w-4" />View details</button>
+          <button onClick={action(onEdit)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-bold text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-white/10"><Edit2 className="h-4 w-4" />Edit coordinator</button>
+          <button onClick={action(onAccess)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-bold text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-400/10"><ShieldCheck className="h-4 w-4" />Manage access</button>
+          <button onClick={action(onMail)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-bold text-indigo-700 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-400/10"><Mail className="h-4 w-4" />{coordinator.credentialEmailStatus === 'sent' ? 'Resend credentials' : 'Send credentials'}</button>
+          <button onClick={action(onToggle)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-bold text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-white/10">{active ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}{active ? 'Disable account' : 'Enable account'}</button>
+          <div className="my-1 border-t border-slate-100 dark:border-white/10" />
+          <button onClick={action(onDelete)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-bold text-rose-600 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-400/10"><Trash2 className="h-4 w-4" />Delete coordinator</button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CoordinatorCard({ coordinator, onEdit, onToggle, onView, onAccess, onDelete, onMail }) {
   const active = coordinator.isActive !== false;
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-gray-900 lg:hidden">
@@ -39,7 +61,7 @@ function CoordinatorCard({ coordinator, onEdit, onToggle, onView, onAccess }) {
             <p className="truncate text-xs font-semibold text-slate-500 dark:text-slate-400">{coordinator.email}</p>
           </div>
         </button>
-        <StatusPill active={active} />
+        <div className="flex items-center gap-2"><StatusPill active={active} /><CoordinatorActionMenu coordinator={coordinator} onView={onView} onEdit={onEdit} onAccess={onAccess} onToggle={onToggle} onDelete={onDelete} onMail={onMail} /></div>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
         <div className="rounded-xl bg-slate-50 p-3 dark:bg-white/[0.04]">
@@ -50,15 +72,6 @@ function CoordinatorCard({ coordinator, onEdit, onToggle, onView, onAccess }) {
           <div className="truncate text-sm font-bold text-slate-950 dark:text-white">{formatDate(coordinator.lastActive)}</div>
           <div className="text-[11px] font-bold uppercase tracking-[0.1em] text-slate-400">Last Active</div>
         </div>
-      </div>
-      <div className="mt-4 flex flex-wrap gap-2">
-        <button onClick={() => onView(coordinator)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 dark:border-white/10 dark:text-slate-200"><Eye className="h-3.5 w-3.5" />View</button>
-        <button onClick={() => onEdit(coordinator)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 dark:border-white/10 dark:text-slate-200"><Edit2 className="h-3.5 w-3.5" />Edit</button>
-        <button onClick={() => onAccess(coordinator)} className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-bold text-sky-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-200"><ShieldCheck className="h-3.5 w-3.5" />Access</button>
-        <button onClick={() => onToggle(coordinator)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 dark:border-white/10 dark:text-slate-200">
-          {active ? <ToggleRight className="h-3.5 w-3.5" /> : <ToggleLeft className="h-3.5 w-3.5" />}
-          {active ? 'Disable' : 'Enable'}
-        </button>
       </div>
     </div>
   );
@@ -80,6 +93,8 @@ export default function CoordinatorDirectory() {
   const [editing, setEditing] = useState(null);
   const [editForm, setEditForm] = useState({});
   const [saving, setSaving] = useState(false);
+  const [selectedCoordinatorIds, setSelectedCoordinatorIds] = useState(new Set());
+  const [bulkMenuOpen, setBulkMenuOpen] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -134,6 +149,40 @@ export default function CoordinatorDirectory() {
       toast.success(`Coordinator ${result.status}.`);
     } catch (err) {
       toast.error(err.message || 'Failed to update coordinator status.');
+    }
+  };
+
+  const deleteCoordinator = async (coordinator) => {
+    if (!confirm(`Permanently delete ${coordinator.name || coordinator.email}? Use this only when the coordinator has no resources that need reassignment.`)) return;
+    try {
+      await api.deleteCoordinator(coordinator._id);
+      setCoordinators((current) => current.filter((item) => item._id !== coordinator._id));
+      toast.success('Coordinator deleted.');
+    } catch (err) {
+      toast.error(err.message || 'Failed to delete coordinator.');
+    }
+  };
+
+  const sendCoordinatorMail = async (coordinator) => {
+    try {
+      const result = await api.resendCoordinatorCredentials([coordinator._id]);
+      setCoordinators((current) => current.map((item) => item._id === coordinator._id ? { ...item, credentialEmailStatus: 'pending' } : item));
+      toast.success(`${result.queued || 0} coordinator credential email queued.`);
+    } catch (err) {
+      toast.error(err.message || 'Failed to queue coordinator credentials.');
+    }
+  };
+
+  const sendSelectedCoordinatorMail = async () => {
+    const ids = [...selectedCoordinatorIds];
+    if (!ids.length) return toast.error('Select at least one coordinator.');
+    try {
+      const result = await api.resendCoordinatorCredentials(ids);
+      setCoordinators((current) => current.map((item) => selectedCoordinatorIds.has(String(item._id)) ? { ...item, credentialEmailStatus: 'pending' } : item));
+      setBulkMenuOpen(false);
+      toast.success(`${result.queued || 0} coordinator credential email(s) queued.`);
+    } catch (err) {
+      toast.error(err.message || 'Failed to queue coordinator credentials.');
     }
   };
 
@@ -216,6 +265,18 @@ export default function CoordinatorDirectory() {
 
         {error ? <div className="mb-5 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700 dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-200">{error}</div> : null}
 
+        <div className="mb-4 flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-gray-900">
+          <span className="text-xs font-bold text-slate-500">{selectedCoordinatorIds.size} coordinator(s) selected</span>
+          <div className="relative">
+            <button type="button" onClick={() => setBulkMenuOpen((open) => !open)} className="rounded-lg border border-slate-200 p-2 dark:border-white/10"><MoreVertical className="h-4 w-4" /></button>
+            {bulkMenuOpen && <div className="absolute right-0 top-10 z-40 w-56 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-white/10 dark:bg-gray-900">
+              <button type="button" onClick={() => setSelectedCoordinatorIds(new Set(filtered.map((item) => String(item._id))))} className="w-full rounded-lg px-3 py-2 text-left text-xs font-bold hover:bg-slate-50 dark:hover:bg-white/10">Select all filtered</button>
+              <button type="button" onClick={sendSelectedCoordinatorMail} disabled={!selectedCoordinatorIds.size} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold text-indigo-700 hover:bg-indigo-50 disabled:opacity-40 dark:text-indigo-300"><Mail className="h-4 w-4" />Send/Resend selected</button>
+              <button type="button" onClick={() => setSelectedCoordinatorIds(new Set())} className="w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-slate-500 hover:bg-slate-50 dark:hover:bg-white/10">Clear selection</button>
+            </div>}
+          </div>
+        </div>
+
         {loading ? (
           <div className="flex min-h-[320px] items-center justify-center rounded-2xl border border-slate-200 bg-white dark:border-white/10 dark:bg-gray-900">
             <Loader2 className="h-8 w-8 animate-spin text-sky-600" />
@@ -230,7 +291,7 @@ export default function CoordinatorDirectory() {
           <>
             <div className="space-y-3 lg:hidden">
               {pageItems.map((coordinator) => (
-                <CoordinatorCard key={coordinator._id} coordinator={coordinator} onView={setSelected} onEdit={startEdit} onToggle={toggleStatus} onAccess={(item) => navigate(`/admin/coordinator-access/${item._id}`)} />
+                <CoordinatorCard key={coordinator._id} coordinator={coordinator} onView={setSelected} onEdit={startEdit} onToggle={toggleStatus} onDelete={deleteCoordinator} onMail={sendCoordinatorMail} onAccess={(item) => navigate(`/admin/coordinator-access/${item._id}`)} />
               ))}
             </div>
 
@@ -238,7 +299,7 @@ export default function CoordinatorDirectory() {
               <table className="min-w-full divide-y divide-slate-100 dark:divide-white/10">
                 <thead className="bg-slate-50 dark:bg-white/[0.04]">
                   <tr>
-                    {['Name', 'Email', 'Phone', 'Role', 'Status', 'Permissions', 'Last Active', 'Actions'].map((heading) => (
+                    {['Select', 'Name', 'Email', 'Phone', 'Role', 'Status', 'Permissions', 'Last Active', 'Actions'].map((heading) => (
                       <th key={heading} className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{heading}</th>
                     ))}
                   </tr>
@@ -248,6 +309,7 @@ export default function CoordinatorDirectory() {
                     const active = coordinator.isActive !== false;
                     return (
                       <tr key={coordinator._id} className="transition hover:bg-sky-50/60 dark:hover:bg-sky-400/10">
+                        <td className="px-4 py-3"><input type="checkbox" checked={selectedCoordinatorIds.has(String(coordinator._id))} onChange={() => setSelectedCoordinatorIds((current) => { const next = new Set(current); const key = String(coordinator._id); if (next.has(key)) next.delete(key); else next.add(key); return next; })} /></td>
                         <td className="px-4 py-3">
                           <button onClick={() => setSelected(coordinator)} className="flex min-w-[220px] items-center gap-3 text-left">
                             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sm font-bold text-sky-700 dark:bg-sky-400/10 dark:text-sky-200">{(coordinator.name || '?').charAt(0).toUpperCase()}</div>
@@ -264,14 +326,7 @@ export default function CoordinatorDirectory() {
                         <td className="px-4 py-3 text-sm font-bold text-slate-950 dark:text-white">{coordinator.permissionCount || 0}</td>
                         <td className="px-4 py-3 text-sm font-semibold text-slate-600 dark:text-slate-300">{formatDate(coordinator.lastActive)}</td>
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-1.5">
-                            <button onClick={() => setSelected(coordinator)} title="View" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-white/10"><Eye className="h-4 w-4" /></button>
-                            <button onClick={() => startEdit(coordinator)} title="Edit" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-white/10"><Edit2 className="h-4 w-4" /></button>
-                            <button onClick={() => navigate(`/admin/coordinator-access/${coordinator._id}`)} title="Manage Access" className="rounded-lg p-2 text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-400/10"><ShieldCheck className="h-4 w-4" /></button>
-                            <button onClick={() => toggleStatus(coordinator)} title={active ? 'Disable' : 'Enable'} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-white/10">
-                              {active ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}
-                            </button>
-                          </div>
+                          <CoordinatorActionMenu coordinator={coordinator} onView={setSelected} onEdit={startEdit} onAccess={(item) => navigate(`/admin/coordinator-access/${item._id}`)} onToggle={toggleStatus} onDelete={deleteCoordinator} onMail={sendCoordinatorMail} />
                         </td>
                       </tr>
                     );

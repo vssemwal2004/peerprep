@@ -84,6 +84,7 @@ const SemesterManagement = lazy(() => import("./coordinator/SemesterManagement")
 const CoordinatorFeedback = lazy(() => import("./coordinator/CoordinatorFeedback"));
 const CoordinatorActivity = lazy(() => import("./coordinator/CoordinatorActivity"));
 const CoordinatorDatabase = lazy(() => import("./coordinator/CoordinatorDatabase"));
+const CoordinatorDashboard = lazy(() => import("./coordinator/CoordinatorDashboard"));
 
 const gradientBg = "bg-white";
 
@@ -316,7 +317,7 @@ function AppContent() {
         <Route path="/admin/announcements/manage" element={<AdminShell><AnnouncementManage /></AdminShell>} />
         
         {/* Coordinator Routes - Protected */}
-        <Route path="/coordinator/overview" element={<CoordinatorShell permission="coordinator.dashboard.overview"><AdminOverview /></CoordinatorShell>} />
+        <Route path="/coordinator/overview" element={<CoordinatorShell permission="coordinator.dashboard.overview"><CoordinatorDashboard /></CoordinatorShell>} />
         <Route path="/coordinator" element={<CoordinatorShell permission="coordinator.interviews.view"><CoordinatorEventDetail /></CoordinatorShell>} />
         <Route path="/coordinator/interviews" element={<CoordinatorShell permission="coordinator.interviews.view"><CoordinatorEventDetail /></CoordinatorShell>} />
         <Route path="/coordinator/event/:id" element={<CoordinatorShell permission="coordinator.interviews.view"><CoordinatorEventDetail /></CoordinatorShell>} />

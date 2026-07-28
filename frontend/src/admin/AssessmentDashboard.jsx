@@ -181,8 +181,7 @@ function InvitationModal({ assessment, onClose }) {
     try {
       const response = await api.sendAssessmentInvitations(assessment._id, password);
       setResult(response);
-      if (response.failed > 0) toast.info(`${response.sent} sent, ${response.failed} failed.`);
-      else toast.success(`Invitation sent to ${response.sent} eligible student${response.sent === 1 ? '' : 's'}.`);
+      toast.success(`${response.queued || 0} invitation${response.queued === 1 ? '' : 's'} queued. Delivery will continue in the background.`);
     } catch (error) {
       toast.error(error.message || 'Failed to send invitations.');
     } finally {
@@ -217,8 +216,8 @@ function InvitationModal({ assessment, onClose }) {
           </div>
         )}
 
-        {result && <div className={`mt-4 rounded-xl border p-3 text-sm font-semibold ${result.failed ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>{result.sent} sent · {result.failed} failed · {result.eligible} eligible</div>}
-        <div className="mt-5 flex justify-end gap-2"><button type="button" onClick={onClose} disabled={sending} className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 dark:border-gray-700 dark:text-gray-300">Close</button><button type="button" onClick={sendInvitations} disabled={sending || Boolean(result)} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-60">{sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{sending ? 'Sending...' : result ? 'Invitations processed' : 'Send to all eligible students'}</button></div>
+        {result && <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{result.queued} queued · {result.eligible} eligible · Batch {result.batchId}</div>}
+        <div className="mt-5 flex justify-end gap-2"><button type="button" onClick={onClose} disabled={sending} className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 dark:border-gray-700 dark:text-gray-300">Close</button><button type="button" onClick={sendInvitations} disabled={sending || Boolean(result)} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-60">{sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{sending ? 'Queueing...' : result ? 'Invitations queued' : 'Queue all eligible students'}</button></div>
       </motion.div>
     </div>
   );
