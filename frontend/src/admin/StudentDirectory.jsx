@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../utils/api";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckSquare, ChevronLeft, ChevronRight, ClipboardCopy, Download, Edit2, Eye, FileDown, Filter, Loader2, MoreVertical, Save, Search, Trash2, UserX, Users, X } from "lucide-react";
+import { CheckSquare, ChevronLeft, ChevronRight, ClipboardCopy, Download, Edit2, Eye, FileDown, Filter, Loader2, Mail, MoreVertical, Save, Search, Trash2, UserX, Users, X } from "lucide-react";
 import ContributionCalendar from "../components/ContributionCalendar";
 import { useToast } from "../components/CustomToast";
 import {
@@ -58,6 +58,7 @@ export default function StudentDirectory() {
   const [activeRowMenuId, setActiveRowMenuId] = useState(null);
   const [showBulkMenu, setShowBulkMenu] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [sendingCredentialIds, setSendingCredentialIds] = useState(new Set());
   const loadRequestRef = useRef(0);
   const filterPanelRef = useRef(null);
   const rowActionMenuRef = useRef(null);
@@ -168,6 +169,11 @@ export default function StudentDirectory() {
     () => Array.from(selectedStudentIds).map((id) => selectedStudentMap[id]).filter(Boolean),
     [selectedStudentIds, selectedStudentMap],
   );
+  const selectedCredentialIds = useMemo(
+    () => selectedStudents.filter((student) => student.canResendCredentials).map((student) => String(student._id)),
+    [selectedStudents],
+  );
+  const isSendingCredentials = sendingCredentialIds.size > 0;
   const allPageSelected = pageStudentIds.length > 0 && pageStudentIds.every((id) => selectedStudentIds.has(id));
   const somePageSelected = pageStudentIds.some((id) => selectedStudentIds.has(id));
 
@@ -320,6 +326,34 @@ export default function StudentDirectory() {
       toast.success(`${label} copied.`);
     } catch {
       toast.error(`Failed to copy ${label.toLowerCase()}.`);
+    }
+  };
+
+  const handleSendCredentials = async (studentIds, event) => {
+    event?.stopPropagation();
+    setActiveRowMenuId(null);
+    setShowBulkMenu(false);
+    const ids = [...new Set(studentIds.map(String))];
+    if (!ids.length) {
+      toast.error('Select at least one eligible student.');
+      return;
+    }
+
+    setSendingCredentialIds((current) => new Set([...current, ...ids]));
+    try {
+      const result = await api.resendStudentCredentials(ids);
+      if (result.sent) toast.success(result.message);
+      if (result.failed) toast.error(`${result.failed} credential email${result.failed === 1 ? '' : 's'} failed.`);
+      if (result.skipped) toast.error(`${result.skipped} student${result.skipped === 1 ? ' is' : 's are'} no longer eligible.`);
+      await loadData();
+    } catch (err) {
+      toast.error(err.message || 'Failed to send credential email.');
+    } finally {
+      setSendingCredentialIds((current) => {
+        const next = new Set(current);
+        ids.forEach((id) => next.delete(id));
+        return next;
+      });
     }
   };
 
@@ -815,11 +849,11 @@ export default function StudentDirectory() {
                   <button
                     type="button"
                     onClick={() => setShowBulkMenu((open) => !open)}
-                    disabled={!selectedCount || isBulkDeleting}
+                    disabled={!selectedCount || isBulkDeleting || isSendingCredentials}
                     title="Bulk actions"
                     className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-700"
                   >
-                    {isBulkDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreVertical className="h-4 w-4" />}
+                    {isBulkDeleting || isSendingCredentials ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreVertical className="h-4 w-4" />}
                   </button>
 
                   {showBulkMenu && selectedCount > 0 && (
@@ -831,6 +865,16 @@ export default function StudentDirectory() {
                       >
                         <FileDown className="h-4 w-4 text-emerald-600" />
                         Export selected CSV
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(event) => handleSendCredentials(selectedCredentialIds, event)}
+                        disabled={!selectedCredentialIds.length}
+                        title={!selectedCredentialIds.length ? 'Only students who have never logged in and still use a temporary password are eligible' : undefined}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-sky-700 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-45 dark:text-sky-300 dark:hover:bg-sky-950/30"
+                      >
+                        <Mail className="h-4 w-4" />
+                        Send credential mail ({selectedCredentialIds.length})
                       </button>
                       <button
                         type="button"
@@ -997,6 +1041,19 @@ export default function StudentDirectory() {
                                     <FileDown className="h-4 w-4 text-emerald-600" />
                                     Download data
                                   </button>
+                                  {s.canResendCredentials && (
+                                    <button
+                                      type="button"
+                                      onClick={(event) => handleSendCredentials([studentId], event)}
+                                      disabled={sendingCredentialIds.has(studentId)}
+                                      className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-sky-700 transition hover:bg-sky-50 disabled:opacity-50 dark:text-sky-300 dark:hover:bg-sky-950/30"
+                                    >
+                                      {sendingCredentialIds.has(studentId)
+                                        ? <Loader2 className="h-4 w-4 animate-spin" />
+                                        : <Mail className="h-4 w-4" />}
+                                      Send credential mail
+                                    </button>
+                                  )}
                                   <div className="my-1 border-t border-slate-100 dark:border-gray-800" />
                                   <button
                                     type="button"

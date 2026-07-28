@@ -111,7 +111,7 @@ export async function listAllStudents(req, res) {
     const requestedLimit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 25));
     const paginated = page !== undefined || limit !== undefined;
     const studentQuery = User.find(query)
-      .select('name email studentId course branch college semester group teacherIds avatarUrl createdAt isSpecialStudent bio linkedinUrl githubUrl portfolioUrl')
+      .select('name email studentId course branch college semester group teacherIds avatarUrl createdAt isSpecialStudent bio linkedinUrl githubUrl portfolioUrl mustChangePassword activeSessionCreatedAt')
       .sort({ createdAt: sort, _id: sort });
     if (paginated) {
       studentQuery.skip((requestedPage - 1) * requestedLimit).limit(requestedLimit);
@@ -142,7 +142,10 @@ export async function listAllStudents(req, res) {
     // Map teacherIds to teacherId for backwards compatibility with frontend
     const studentsWithTeacherId = students.map(s => ({
       ...s,
-      teacherId: Array.isArray(s.teacherIds) ? s.teacherIds.join(', ') : (s.teacherIds || '')
+      teacherId: Array.isArray(s.teacherIds) ? s.teacherIds.join(', ') : (s.teacherIds || ''),
+      canResendCredentials: s.mustChangePassword === true && !s.activeSessionCreatedAt,
+      mustChangePassword: undefined,
+      activeSessionCreatedAt: undefined,
     }));
     
     const pages = paginated ? Math.max(1, Math.ceil(total / requestedLimit)) : 1;
@@ -174,6 +177,85 @@ export async function listAllStudents(req, res) {
     console.error('Error listing students:', err);
     res.status(500).json({ error: 'Failed to fetch students' });
   }
+}
+
+export async function resendStudentCredentials(req, res) {
+  const requestedIds = Array.isArray(req.body?.studentIds) ? req.body.studentIds : [];
+  const studentIds = [...new Set(requestedIds.map((id) => String(id || '').trim()).filter(Boolean))];
+
+  if (!studentIds.length) return res.status(400).json({ error: 'Select at least one student.' });
+  if (studentIds.length > 100) return res.status(400).json({ error: 'You can send credentials to at most 100 students at once.' });
+  try {
+    studentIds.forEach((id) => validateObjectId(id, 'student ID'));
+  } catch {
+    return res.status(400).json({ error: 'One or more student IDs are invalid.' });
+  }
+
+  const students = await User.find({
+    _id: { $in: studentIds },
+    role: 'student',
+    mustChangePassword: true,
+    activeSessionCreatedAt: { $exists: false },
+  }).select('_id name email studentId passwordHash mustChangePassword activeSessionCreatedAt');
+  const eligibleIds = new Set(students.map((student) => String(student._id)));
+  const results = [];
+
+  for (const student of students) {
+    if (!student.email || !student.studentId) {
+      results.push({ studentId: student._id, status: 'failed', error: 'Email or student ID is missing.' });
+      continue;
+    }
+
+    const temporaryPassword = generateRandomPassword();
+    const previousPasswordHash = student.passwordHash;
+    try {
+      student.passwordHash = await User.hashPassword(temporaryPassword);
+      student.mustChangePassword = true;
+      await student.save();
+      await sendOnboardingEmail({
+        to: student.email,
+        studentId: student.studentId,
+        password: temporaryPassword,
+      });
+      results.push({ studentId: student._id, status: 'sent' });
+    } catch (error) {
+      // Keep the previous temporary credential usable when email delivery fails.
+      if (student.passwordHash !== previousPasswordHash) {
+        try {
+          await User.updateOne(
+            { _id: student._id, mustChangePassword: true, activeSessionCreatedAt: { $exists: false } },
+            { $set: { passwordHash: previousPasswordHash } },
+          );
+        } catch (rollbackError) {
+          console.error('[resendStudentCredentials] Password rollback failed:', rollbackError.message);
+        }
+      }
+      results.push({ studentId: student._id, status: 'failed', error: error.message || 'Email delivery failed.' });
+    }
+  }
+
+  const skipped = studentIds.length - eligibleIds.size;
+  const sent = results.filter((result) => result.status === 'sent').length;
+  const failed = results.filter((result) => result.status === 'failed').length;
+
+  logActivity({
+    userEmail: req.user.email,
+    userRole: req.user.role,
+    actionType: 'UPDATE',
+    targetType: 'STUDENT',
+    description: `Sent login credentials to ${sent} student${sent === 1 ? '' : 's'}`,
+    metadata: { requested: studentIds.length, sent, failed, skipped },
+    req,
+  });
+
+  return res.json({
+    message: sent ? `Credential email sent to ${sent} student${sent === 1 ? '' : 's'}.` : 'No credential emails were sent.',
+    requested: studentIds.length,
+    sent,
+    failed,
+    skipped,
+    results,
+  });
 }
 
 function promotionStudentScope(user = {}) {
