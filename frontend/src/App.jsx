@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
-import { lazy, Suspense, useEffect, useCallback, useRef } from "react";
+import { lazy, Suspense, useEffect, useCallback, useLayoutEffect, useRef } from "react";
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './components/CustomToast';
@@ -156,6 +156,17 @@ function RoutePrefetcher() {
   return null;
 }
 
+function ScrollToTop() {
+  const { pathname } = useLocation();
+
+  useLayoutEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    document.querySelector("main")?.focus({ preventScroll: true });
+  }, [pathname]);
+
+  return null;
+}
+
 // Hide the HTML global-loader once React has mounted and rendered
 function useHideGlobalLoader() {
   useEffect(() => {
@@ -220,6 +231,7 @@ function AppContent() {
   return (
     <div className="min-h-screen w-full flex flex-col">
       <RoutePrefetcher />
+      <ScrollToTop />
       {/* Navbar: Renders independently with its own Suspense boundary.
           Shows NavbarSkeleton briefly instead of nothing, so the page structure
           streams in progressively (navbar skeleton â†’ navbar â†’ content skeleton â†’ content) */}
@@ -232,7 +244,7 @@ function AppContent() {
       {/* Main content: Each route section gets a role-appropriate skeleton.
           This is the "streaming rendering" pattern - the page structure appears 
           immediately as skeleton shapes, then real content swaps in when loaded */}
-      <main className={gradientBg + " dark:bg-gray-900 flex-grow"}>
+      <main tabIndex="-1" className={gradientBg + " dark:bg-gray-900 flex-grow outline-none"}>
         <Suspense fallback={
           isMain ? <LandingPageSkeleton /> :
           isAdmin ? <DashboardSkeleton /> :

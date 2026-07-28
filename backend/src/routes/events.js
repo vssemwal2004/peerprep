@@ -2,7 +2,7 @@
 
 import { Router } from 'express';
 import multer from 'multer';
-import { createEvent, listEvents, joinEvent, exportJoinedCsv, eventAnalytics, replaceEventTemplate, getTemplateUrl, deleteEventTemplate, getEvent, createSpecialEvent, checkSpecialEventCsv, checkInterviewParticipantCsv, updateEvent, updateEventStatus, listEventParticipants, addEventParticipants, removeEventParticipant, archiveEvent, sendEventInvitations } from '../controllers/eventController.js';
+import { createEvent, listEvents, joinEvent, exportJoinedCsv, eventAnalytics, replaceEventTemplate, getTemplateUrl, deleteEventTemplate, getEvent, createSpecialEvent, checkSpecialEventCsv, checkInterviewParticipantCsv, updateEvent, updateEventStatus, listEventParticipants, addEventParticipants, removeEventParticipant, deleteEvent, sendEventInvitations } from '../controllers/eventController.js';
 import { supabase } from '../utils/supabase.js';
 import { requireAuth, requireAdmin, requireCoordinatorPermission, requireStudent } from '../middleware/auth.js';
 
@@ -54,7 +54,7 @@ router.get('/:id/participants', requireAuth, requireCoordinatorPermission('coord
 router.post('/:id/participants', requireAuth, requireCoordinatorPermission('coordinator.interviews.participants'), addEventParticipants);
 router.post('/:id/invitations', requireAuth, requireCoordinatorPermission('coordinator.interviews.participants'), sendEventInvitations);
 router.delete('/:id/participants/:studentId', requireAuth, requireCoordinatorPermission('coordinator.interviews.participants'), removeEventParticipant);
-router.delete('/:id', requireAuth, requireCoordinatorPermission('coordinator.interviews.delete'), archiveEvent);
+router.delete('/:id', requireAuth, requireCoordinatorPermission('coordinator.interviews.delete'), deleteEvent);
 router.post('/:id/join', requireAuth, requireStudent, joinEvent);
 router.post('/:id/template', requireAuth, requireAdmin, upload.single('template'), replaceEventTemplate);
 router.get('/:id/participants.csv', requireAuth, requireCoordinatorPermission('coordinator.interviews.view'), exportJoinedCsv);

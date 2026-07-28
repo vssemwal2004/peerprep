@@ -11,6 +11,7 @@ export const EMAIL_TEMPLATE_TYPES = {
   SLOT_ACCEPTED: 'SLOT_ACCEPTED',
   SLOT_COUNTER: 'SLOT_COUNTER',
   INTERVIEW_SCHEDULED: 'INTERVIEW_SCHEDULED',
+  EVENT_CANCELLATION: 'EVENT_CANCELLATION',
 };
 
 const defaultTemplates = [
@@ -354,6 +355,37 @@ const defaultTemplates = [
         </div>
         <p style="margin-top:28px;color:#64748b;font-size:14px;">We look forward to a successful mock interview session!</p>
         <p style="margin-top:24px;">Best regards,<br/><strong>PeerPrep Team</strong></p>
+      </div>
+    `.trim(),
+  },
+  {
+    type: EMAIL_TEMPLATE_TYPES.EVENT_CANCELLATION,
+    name: 'Interview Cancelled',
+    subject: 'Interview Cancelled: {{title}}',
+    variables: ['studentName', 'title', 'date', 'details', 'cancelledBy', 'reason', 'dashboardUrl'],
+    htmlContent: `
+      <div style="margin:0;background:#f8fafc;padding:32px 12px;font-family:Arial,sans-serif;color:#0f172a;">
+        <div style="max-width:640px;margin:0 auto;overflow:hidden;border:1px solid #fecdd3;border-radius:16px;background:#ffffff;">
+          <div style="background:#be123c;padding:26px 30px;color:#ffffff;">
+            <div style="font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;opacity:.9;">PeerPrep Interview Update</div>
+            <h1 style="margin:10px 0 0;font-size:24px;line-height:1.3;">Interview Cancelled</h1>
+          </div>
+          <div style="padding:28px 30px;">
+            <p style="margin:0 0 16px;font-size:16px;">Hello <strong>{{studentName}}</strong>,</p>
+            <p style="margin:0 0 20px;color:#475569;line-height:1.7;">Due to some reason, the interview below has been cancelled by {{cancelledBy}}.</p>
+            <div style="border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;margin:20px 0;">
+              <table role="presentation" style="width:100%;border-collapse:collapse;font-size:14px;">
+                <tr><td style="padding:12px 16px;background:#f8fafc;color:#64748b;width:34%;">Interview</td><td style="padding:12px 16px;font-weight:700;">{{title}}</td></tr>
+                <tr><td style="padding:12px 16px;background:#f8fafc;color:#64748b;">Scheduled date</td><td style="padding:12px 16px;font-weight:700;">{{date}}</td></tr>
+                <tr><td style="padding:12px 16px;background:#f8fafc;color:#64748b;">Details</td><td style="padding:12px 16px;">{{details}}</td></tr>
+                <tr><td style="padding:12px 16px;background:#f8fafc;color:#64748b;">Reason</td><td style="padding:12px 16px;">{{reason}}</td></tr>
+              </table>
+            </div>
+            <p style="margin:0 0 24px;color:#64748b;line-height:1.6;">No action is required from your side. Please check your PeerPrep dashboard for other active interviews.</p>
+            <div style="text-align:center;margin:28px 0;"><a href="{{dashboardUrl}}" style="display:inline-block;border-radius:10px;background:#0284c7;padding:14px 28px;color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;">Open PeerPrep</a></div>
+            <p style="margin:24px 0 0;color:#64748b;font-size:13px;">Best regards,<br/><strong>PeerPrep Team</strong></p>
+          </div>
+        </div>
       </div>
     `.trim(),
   },

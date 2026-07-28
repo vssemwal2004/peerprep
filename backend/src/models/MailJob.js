@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 const mailJobSchema = new mongoose.Schema({
   type: {
     type: String,
-    enum: ['student_credentials', 'coordinator_onboarding', 'assessment_invitation', 'event_invitation'],
+    enum: ['student_credentials', 'coordinator_onboarding', 'assessment_invitation', 'event_invitation', 'event_cancellation'],
     required: true,
     index: true,
   },

@@ -69,7 +69,7 @@ export const coordinatorPermissionCategories = [
       {
         key: 'coordinator.interviews.manage',
         name: 'Manage Lifecycle',
-        description: 'Publish, start, complete, cancel, or archive interviews.',
+        description: 'Publish, start, complete, or cancel interviews.',
         accessType: 'Manage',
         usage: 'Enables interview lifecycle actions.',
         routes: ['/coordinator/event/:id'],
@@ -84,10 +84,10 @@ export const coordinatorPermissionCategories = [
       },
       {
         key: 'coordinator.interviews.delete',
-        name: 'Archive Interviews',
-        description: 'Archive owned interviews from active views.',
+        name: 'Delete Interviews',
+        description: 'Delete owned interviews from active views.',
         accessType: 'Delete',
-        usage: 'Enables the archive action without permanently deleting records.',
+        usage: 'Enables the delete action and cancellation email queue.',
         routes: ['/coordinator/event/:id'],
       },
     ],

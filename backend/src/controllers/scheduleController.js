@@ -986,31 +986,35 @@ export async function confirmSlot(req, res) {
   // If both reached max attempts and still not scheduled, auto-assign
   try { await checkAndAutoAssign(pair); } catch {}
   
-  // Send acceptance notification to the other party
-  // Always send slot acceptance emails (part of the 4-email flow)
-  if (confirmerIsInterviewee && pair.interviewer?.email) {
-    // Interviewee accepted interviewer's proposed slot
-    await sendSlotAcceptanceEmail({
-      to: pair.interviewer.email,
-      interviewee: pair.interviewee?.name || pair.interviewee?.email || 'The interviewee',
-      slot: formatDateTime(scheduled),
-      accepted: true,
-    });
-    console.log(`[Email] Slot acceptance sent to interviewer: ${pair.interviewer.email}`);
-  } else if (confirmerIsInterviewer && pair.interviewee?.email) {
-    // Interviewer confirmed interviewee's proposed slot
-    await sendSlotAcceptanceEmail({
-      to: pair.interviewee.email,
-      interviewee: pair.interviewer?.name || pair.interviewer?.email || 'Your interviewer',
-      slot: formatDateTime(scheduled),
-      accepted: true,
-    });
-    console.log(`[Email] Slot confirmation sent to interviewee: ${pair.interviewee.email}`);
-  }
-  
-  // notify both with interview scheduled email
-  await sendMailForPair(pair);
+  // The schedule is already committed. Return it immediately so a slow SMTP
+  // provider cannot make the browser report a false confirmation failure.
   res.json(pair);
+
+  setImmediate(async () => {
+    try {
+      if (confirmerIsInterviewee && pair.interviewer?.email) {
+        await sendSlotAcceptanceEmail({
+          to: pair.interviewer.email,
+          interviewee: pair.interviewee?.name || pair.interviewee?.email || 'The interviewee',
+          slot: formatDateTime(scheduled),
+          accepted: true,
+        });
+        console.log(`[Email] Slot acceptance sent to interviewer: ${pair.interviewer.email}`);
+      } else if (confirmerIsInterviewer && pair.interviewee?.email) {
+        await sendSlotAcceptanceEmail({
+          to: pair.interviewee.email,
+          interviewee: pair.interviewer?.name || pair.interviewer?.email || 'Your interviewer',
+          slot: formatDateTime(scheduled),
+          accepted: true,
+        });
+        console.log(`[Email] Slot confirmation sent to interviewee: ${pair.interviewee.email}`);
+      }
+      await sendMailForPair(pair);
+    } catch (mailError) {
+      // Email delivery is best-effort and must never roll back a saved schedule.
+      console.error('[ConfirmSlot] Background email failed:', mailError.message);
+    }
+  });
 }
 
 export async function rejectSlots(req, res) {

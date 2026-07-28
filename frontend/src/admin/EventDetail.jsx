@@ -17,12 +17,12 @@ import {
   FileText,
   BarChart3,
   Link2,
-  Archive,
   RefreshCw,
   UserCheck,
   MoreVertical,
   Send,
-  UserMinus
+  UserMinus,
+  Trash2
 } from 'lucide-react';
 
 // Event Card Component
@@ -335,16 +335,19 @@ export default function EventDetail() {
     }
   };
 
-  const handleArchive = async () => {
-    if (!activeEventId || !window.confirm('Archive this interview? Its audit history will be preserved.')) return;
+  const handleDelete = async () => {
+    if (!activeEventId || !window.confirm('Are you sure delete this interview? Cancellation mail will be sent to all eligible students.')) return;
     try {
       setActionBusy(true);
-      await api.archiveEvent(activeEventId);
-      setMsg('Interview archived successfully');
+      const result = await api.deleteEvent(
+        activeEventId,
+        `Due to some reason, this interview has been cancelled by ${event?.createdBy?.name || 'admin'}.`,
+      );
+      setMsg(result.message || 'Interview deleted successfully');
       setActiveEventId('');
       await load('');
     } catch (error) {
-      setMsg(error.message || 'Unable to archive interview');
+      setMsg(error.message || 'Unable to delete interview');
     } finally {
       setActionBusy(false);
     }
@@ -528,11 +531,11 @@ export default function EventDetail() {
                     <button
                       type="button"
                       disabled={actionBusy}
-                      onClick={handleArchive}
+                      onClick={handleDelete}
                       className="ml-auto flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900 dark:bg-gray-800 dark:text-rose-300"
                     >
-                      <Archive className="h-3.5 w-3.5" />
-                      Archive
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Delete
                     </button>
                   </div>
 
@@ -578,7 +581,7 @@ export default function EventDetail() {
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 p-3 dark:border-gray-700">
                       <div>
                         <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Assigned Students</h3>
-                        <p className="text-xs text-slate-500 dark:text-gray-400">Emails are manual. Send once, or resend when required.</p>
+                        <p className="text-xs text-slate-500 dark:text-gray-400">Invitation emails queue automatically. Resend when required.</p>
                       </div>
                       <div className="relative">
                         <button type="button" onClick={() => setGlobalParticipantMenuOpen((open) => !open)} className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50 dark:border-gray-600 dark:text-white dark:hover:bg-gray-700" aria-label="Participant bulk actions">

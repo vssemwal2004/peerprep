@@ -484,7 +484,8 @@ export const api = {
     getMailBatchStatus: (batchId) => request(`/mail-queue/batches/${batchId}`, { skipCache: true }),
     retryFailedMailBatch: (batchId) => request(`/mail-queue/batches/${batchId}/retry`, { method: 'POST' }),
     listTargetMailStatus: (targetType, targetId) => request(`/mail-queue/targets/${targetType}/${targetId}`, { skipCache: true }),
-    archiveEvent: (eventId) => request(`/events/${eventId}`, { method: 'DELETE' }),
+    deleteEvent: (eventId, reason = '') => request(`/events/${eventId}`, { method: 'DELETE', body: { reason } }),
+    archiveEvent: (eventId) => request(`/events/${eventId}`, { method: 'DELETE', body: { reason: 'Deleted by administrator.' } }),
   getEventAnalytics: (eventId) => request(`/events/${eventId}/analytics`),
   getEventTemplateUrl: (eventId) => request(`/events/${eventId}/template-url`),
 
@@ -584,7 +585,9 @@ export const api = {
 
   // Pairing
 
-  listPairs: (eventId) => request(`/pairing/${eventId}`),
+  // Pair status changes after schedule mutations, so this must never return a
+  // cached pre-confirmation response.
+  listPairs: (eventId) => request(`/pairing/${eventId}`, { skipCache: true }),
   getPairDetails: (pairId) => request(`/pairing/pair/${pairId}`),
   setPairMeetingLink: (pairId, meetingLink) => request(`/pairing/pair/${pairId}/link`, { method: 'POST', body: { meetingLink } }),
 

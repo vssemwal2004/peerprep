@@ -341,8 +341,7 @@ export default function EventManagement() {
         const redirectPath = userRole === 'coordinator' ? `/coordinator/event/${newId}` : `/admin/interviews/${newId}`;
         if (newId) navigate(redirectPath, { state: { eventCreated: true } });
         
-        // Show email notification
-        toast.info('Students assigned. Send invitation emails manually from interview details.');
+        toast.info('Invitation emails are queued automatically. You can resend from interview details.');
         
       } else {
         ev = await api.createEvent({
@@ -374,8 +373,7 @@ export default function EventManagement() {
         const redirectPath = userRole === 'coordinator' ? `/coordinator/event/${ev._id}` : `/admin/interviews/${ev._id}`;
         if (ev && ev._id) navigate(redirectPath, { state: { eventCreated: true } });
         
-        // Show email notification
-        toast.info('Students assigned. Send invitation emails manually from interview details.');
+        toast.info('Invitation emails are queued automatically. You can resend from interview details.');
       }
     } catch (err) {
       const errorMessage = err?.message || 'Failed to create interview';

@@ -724,6 +724,24 @@ export default function StudentInterview() {
         }));
       }
     } catch (err) {
+      // Reconcile from MongoDB before reporting failure: the save may have
+      // completed even if an older server instance timed out while emailing.
+      try {
+        const pairsData = await api.listPairs(selectedEvent._id);
+        const pairsWithEvent = pairsData.map((p) => ({ ...p, event: selectedEvent }));
+        setPairs((prevPairs) => [
+          ...prevPairs.filter((p) => p.event._id !== selectedEvent._id),
+          ...pairsWithEvent,
+        ]);
+        const confirmedPair = pairsWithEvent.find((p) => p._id === selectedPair._id);
+        if (confirmedPair?.status === 'scheduled') {
+          setSelectedPair(confirmedPair);
+          setMessage('Interview time confirmed successfully.');
+          return;
+        }
+      } catch {
+        // Preserve the original request error when reconciliation also fails.
+      }
       setMessage(err.message);
     } finally {
       setIsLoadingPairs(false);

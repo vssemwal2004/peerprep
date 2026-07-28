@@ -105,6 +105,9 @@ function SectionShell({ id, children, className = "" }) {
   return (
     <MotionSection
       id={id}
+      role="tabpanel"
+      aria-labelledby={`analysis-tab-${id}`}
+      tabIndex={-1}
       initial={{ opacity: 0, y: 18 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 12 }}
@@ -181,6 +184,19 @@ function StickySectionNav({ activeSection, onChange }) {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  const handleTabKeyDown = (event, currentIndex) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    let nextIndex = currentIndex;
+    if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % SECTIONS.length;
+    if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + SECTIONS.length) % SECTIONS.length;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = SECTIONS.length - 1;
+    const nextSection = SECTIONS[nextIndex];
+    onChange(nextSection.id);
+    requestAnimationFrame(() => document.getElementById(`analysis-tab-${nextSection.id}`)?.focus());
+  };
+
   return (
     <>
       <div className="fixed inset-x-0 top-[54px] z-40 pointer-events-none transition-all duration-300 ease-out sm:top-[60px] lg:top-[64px]">
@@ -198,19 +214,23 @@ function StickySectionNav({ activeSection, onChange }) {
                 : "max-w-7xl rounded-[24px] bg-white/96 py-2.5 dark:bg-slate-950/94",
             ].join(" ")}
           >
-            <div className="flex gap-1.5 overflow-x-auto py-0.5" role="tablist" aria-label="Analysis workspace">
-            {SECTIONS.map(({ id, label, eyebrow, Icon: SectionIcon }) => {
+            <div className="no-scrollbar flex gap-1.5 overflow-x-auto py-0.5" role="tablist" aria-label="Analysis workspace">
+            {SECTIONS.map(({ id, label, eyebrow, Icon: SectionIcon }, index) => {
               const active = activeSection === id;
               const NavIcon = SectionIcon;
               return (
                 <button
                   key={id}
+                  id={`analysis-tab-${id}`}
                   type="button"
                   role="tab"
                   aria-selected={active}
+                  aria-controls={id}
+                  tabIndex={active ? 0 : -1}
                   onClick={() => onChange(id)}
+                  onKeyDown={(event) => handleTabKeyDown(event, index)}
                   className={[
-                    "group relative flex min-w-fit items-center gap-2 rounded-xl border text-left transition-all duration-300",
+                    "group relative flex min-w-fit items-center gap-2 rounded-xl border text-left transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950",
                     isDocked ? "px-2.5 py-1.5" : "px-3 py-2",
                     active
                       ? "border-sky-600 bg-sky-600 text-white shadow-[0_14px_30px_-24px_rgba(14,165,233,0.9)]"
@@ -970,6 +990,20 @@ function valueText(value) {
 }
 
 function ReadinessModal({ open, onClose, readiness, analytics, comparison }) {
+  useEffect(() => {
+    if (!open) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose, open]);
+
   if (!open) return null;
 
   const gapAnalysis = readiness?.report?.gapAnalysis || [];
@@ -983,7 +1017,14 @@ function ReadinessModal({ open, onClose, readiness, analytics, comparison }) {
     : [];
 
   return (
-    <MotionDiv className="fixed inset-0 z-[100] overflow-y-auto bg-slate-950/78 p-4 backdrop-blur-xl" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+    <MotionDiv
+      className="fixed inset-0 z-[100] overflow-y-auto bg-slate-950/78 p-4 backdrop-blur-xl"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="readiness-modal-title"
+    >
       <MotionDiv
         initial={{ opacity: 0, y: 16, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -995,7 +1036,7 @@ function ReadinessModal({ open, onClose, readiness, analytics, comparison }) {
             <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-sky-700 dark:text-sky-300">
               Placement roadmap
             </div>
-            <h2 className="mt-1 text-xl font-bold text-slate-950 dark:text-white">
+            <h2 id="readiness-modal-title" className="mt-1 text-xl font-bold text-slate-950 dark:text-white">
               {readiness?.company?.companyName || "Company readiness"}
             </h2>
           </div>
@@ -1156,18 +1197,20 @@ export default function StudentAnalyticsPage() {
   const comparison = useMemo(() => makeComparison(readiness, "overall", analytics), [analytics, readiness]);
 
   const refresh = useCallback(() => reload({ forceRefresh: true }), [reload]);
+  const closeReadiness = useCallback(() => setReadinessOpen(false), []);
   const changeWorkspace = useCallback((id) => {
     setActiveSection(id);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
   }, []);
 
   if (loading) return <LoadingScreen />;
 
   return (
-    <div className="relative isolate min-h-screen overflow-hidden bg-slate-50 pb-12 pt-24 text-slate-950 transition-colors duration-500 dark:bg-slate-950 dark:text-white">
+    <div className="relative isolate min-h-screen overflow-hidden bg-slate-50 pb-12 pt-16 text-slate-950 transition-colors duration-500 dark:bg-slate-950 dark:text-white sm:pt-20">
       <PageBackground />
 
-      <main className="relative z-10 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="relative z-10 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
         <ErrorBanner error={error} onRetry={refresh} />
         <StickySectionNav activeSection={activeSection} onChange={changeWorkspace} />
 
@@ -1236,11 +1279,11 @@ export default function StudentAnalyticsPage() {
             onOpenReadiness={() => setReadinessOpen(true)}
           />
         ) : null}
-      </main>
+      </div>
 
       <ReadinessModal
         open={readinessOpen}
-        onClose={() => setReadinessOpen(false)}
+        onClose={closeReadiness}
         readiness={readiness}
         analytics={analytics}
         comparison={comparison}

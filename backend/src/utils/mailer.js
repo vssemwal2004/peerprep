@@ -195,6 +195,24 @@ export async function sendEventNotificationEmail({ to, event, interviewer, inter
   });
 }
 
+export async function sendEventCancellationEmail({ to, event, studentName, cancelledBy, reason }) {
+  const template = await getTemplateByType(EMAIL_TEMPLATE_TYPES.EVENT_CANCELLATION);
+  const vars = {
+    studentName: studentName || 'Student',
+    title: event.title,
+    date: event.date,
+    details: event.details,
+    cancelledBy: cancelledBy || 'admin',
+    reason: reason || 'Administrative reason',
+    dashboardUrl: getDashboardUrl(),
+  };
+  return sendMail({
+    to,
+    subject: renderTemplate(template.subject, vars),
+    html: renderTemplate(template.htmlContent, vars),
+  });
+}
+
 // Assessment notification email
 export async function sendAssessmentNotificationEmail({ to, assessment, student }) {
   const start = assessment.startTime ? new Date(assessment.startTime) : null;

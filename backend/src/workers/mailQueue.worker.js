@@ -5,6 +5,7 @@ import { decryptMailPayload } from '../services/mailQueueService.js';
 import {
   sendAssessmentInvitationEmail,
   sendCoordinatorOnboardingEmail,
+  sendEventCancellationEmail,
   sendEventNotificationEmail,
   sendOnboardingEmail,
 } from '../utils/mailer.js';
@@ -31,6 +32,9 @@ async function deliver(job) {
   }
   if (job.type === 'event_invitation') {
     return sendEventNotificationEmail(payload);
+  }
+  if (job.type === 'event_cancellation') {
+    return sendEventCancellationEmail(payload);
   }
   throw new Error(`Unsupported queued email type: ${job.type}`);
 }

@@ -46,8 +46,8 @@ export function Surface({ children, className = "", compact = false }) {
   return (
     <div
       className={[
-        "rounded-[20px] border border-slate-200 bg-white shadow-[0_18px_50px_-42px_rgba(15,23,42,0.28)] backdrop-blur-xl",
-        "dark:border-white/10 dark:bg-slate-950/90 dark:shadow-[0_20px_60px_-46px_rgba(0,0,0,0.75)]",
+        "rounded-[20px] border border-slate-200/90 bg-white/95 shadow-[0_18px_50px_-42px_rgba(15,23,42,0.28)] backdrop-blur-xl",
+        "dark:border-slate-700/70 dark:bg-slate-900/90 dark:shadow-[0_20px_60px_-46px_rgba(0,0,0,0.75)]",
         compact ? "p-3.5" : "p-4 sm:p-5",
         className,
       ].join(" ")}

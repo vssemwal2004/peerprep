@@ -366,8 +366,8 @@ export function StudentNavbar() {
                         onClick={() => setActive(path)}
                         className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
                           isActive
-                            ? "bg-sky-50 text-sky-600"
-                            : "text-gray-600 hover:text-sky-500 hover:bg-sky-50"
+                            ? "bg-sky-50 text-sky-600 dark:bg-sky-400/10 dark:text-sky-300"
+                            : "text-gray-600 hover:bg-sky-50 hover:text-sky-500 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-sky-300"
                         }`}
                       >
                         <Icon className="w-4 h-4" />

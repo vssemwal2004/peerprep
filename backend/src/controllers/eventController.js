@@ -138,6 +138,98 @@ async function uploadTemplate(file) {
   return { templateUrl, templateName, templateKey: key };
 }
 
+async function queueEventInvitationEmails({ event, students, requestedBy, requestedByEmail, reason = 'created' }) {
+  const validStudents = (students || []).filter((student) => student?.email);
+  if (!validStudents.length) return { queued: 0 };
+
+  const batchId = crypto.randomUUID();
+  const queued = await enqueueMailJobs(validStudents.map((student) => ({
+    type: 'event_invitation',
+    to: student.email,
+    recipientId: student._id,
+    targetType: 'EVENT',
+    targetId: event._id,
+    idempotencyKey: `event:${event._id}:${student._id}:${reason}`,
+    payload: {
+      to: student.email,
+      event: {
+        title: event.name,
+        date: event.startDate ? formatDateTime(event.startDate) : 'To be announced',
+        details: event.description,
+        templateUrl: event.templateUrl,
+      },
+      interviewer: student.name || student.email,
+      interviewee: '',
+    },
+  })), {
+    batchId,
+    requestedBy,
+    requestedByEmail,
+  });
+
+  await EventParticipant.updateMany(
+    { eventId: event._id, studentId: { $in: validStudents.map((student) => student._id) } },
+    { $set: { invitationStatus: 'pending' } },
+  );
+  return queued;
+}
+
+async function queueEventCancellationEmails({ event, students, requestedBy, requestedByEmail, reason }) {
+  const validStudents = (students || []).filter((student) => student?.email);
+  if (!validStudents.length) return { queued: 0 };
+
+  const batchId = crypto.randomUUID();
+  const queued = await enqueueMailJobs(validStudents.map((student) => ({
+    type: 'event_cancellation',
+    to: student.email,
+    recipientId: student._id,
+    targetType: 'EVENT',
+    targetId: event._id,
+    idempotencyKey: `event-cancelled:${event._id}:${student._id}:${batchId}`,
+    payload: {
+      to: student.email,
+      studentName: student.name || 'Student',
+      event: {
+        title: event.name,
+        date: event.startDate ? formatDateTime(event.startDate) : 'To be announced',
+        details: event.description || '',
+      },
+      cancelledBy: requestedByEmail || 'admin',
+      reason: reason || 'Due to some reason, this interview has been cancelled.',
+    },
+  })), {
+    batchId,
+    requestedBy,
+    requestedByEmail,
+  });
+
+  return queued;
+}
+
+async function resolveEventEligibleStudents(event, reqUser) {
+  let studentsQuery = { role: 'student', email: { $exists: true, $ne: null } };
+  if (event.coordinatorId) studentsQuery = { ...studentsQuery, teacherIds: event.coordinatorId };
+  if (reqUser?.role === 'coordinator') studentsQuery.teacherIds = reqUser.coordinatorId;
+  if (event.selectionMode === 'filters') {
+    const filters = event.participantFilters || {};
+    const semester = Number(filters.semester);
+    if (Number.isInteger(semester) && semester >= 1 && semester <= 8) studentsQuery.semester = semester;
+    ['branch', 'course', 'college', 'group'].forEach((field) => {
+      if (filters[field]) studentsQuery[field] = String(filters[field]).trim();
+    });
+  }
+  let students = await User.find(studentsQuery, '_id email name').lean();
+  if (Array.isArray(event.allowedParticipants) && event.allowedParticipants.length) {
+    const allowedSet = new Set(event.allowedParticipants.map((id) => String(id)));
+    students = students.filter((student) => allowedSet.has(String(student._id)));
+  }
+  if (Array.isArray(event.excludedParticipants) && event.excludedParticipants.length) {
+    const excludedSet = new Set(event.excludedParticipants.map((id) => String(id)));
+    students = students.filter((student) => !excludedSet.has(String(student._id)));
+  }
+  return students;
+}
+
 export async function createEvent(req, res) {
   const {
     name,
@@ -283,6 +375,14 @@ export async function createEvent(req, res) {
             upsert: true,
           },
         })));
+
+        await queueEventInvitationEmails({
+          event,
+          students,
+          requestedBy: req.user._id,
+          requestedByEmail: req.user.email,
+          reason: 'created',
+        });
       }
       // Assignment is stored separately; participants contains students who actually joined.
 
@@ -1040,6 +1140,14 @@ export async function createSpecialEvent(req, res) {
         upsert: true,
       },
     })));
+
+    await queueEventInvitationEmails({
+      event,
+      students: createdStudents,
+      requestedBy: req.user._id,
+      requestedByEmail: req.user.email,
+      reason: 'created',
+    });
   }
 
   // Real-time notifications: Event assigned
@@ -1205,13 +1313,12 @@ export async function updateEvent(req, res) {
 export async function updateEventStatus(req, res) {
   const event = await getManagedEvent(req);
   const status = String(req.body?.status || '').trim();
-  const allowed = ['draft', 'scheduled', 'published', 'live', 'completed', 'cancelled', 'archived'];
+  const allowed = ['draft', 'scheduled', 'published', 'live', 'completed', 'cancelled'];
   if (!allowed.includes(status)) throw new HttpError(400, 'Invalid interview status');
   event.status = status;
   event.updatedBy = req.user._id;
   if (status === 'published') event.publishedAt = new Date();
   if (status === 'cancelled') event.cancelledAt = new Date();
-  if (status === 'archived') event.archivedAt = new Date();
   await event.save();
   logActivity({
     userEmail: req.user.email,
@@ -1282,13 +1389,64 @@ export async function removeEventParticipant(req, res) {
   res.json({ removed: true });
 }
 
-export async function archiveEvent(req, res) {
+export async function deleteEvent(req, res) {
   const event = await getManagedEvent(req);
-  event.status = 'archived';
-  event.archivedAt = new Date();
-  event.updatedBy = req.user._id;
-  await event.save();
-  res.json({ archived: true, _id: event._id });
+  const reason = String(req.body?.reason || 'Due to some reason, this interview has been cancelled.').slice(0, 500);
+  const assignments = await EventParticipant.find({ eventId: event._id, assignmentStatus: 'assigned' })
+    .populate('studentId', 'name email')
+    .lean();
+  let assignedStudents = assignments
+    .map((assignment) => assignment.studentId)
+    .filter((student) => student?._id && student?.email);
+  if (!assignedStudents.length) {
+    assignedStudents = await resolveEventEligibleStudents(event, req.user);
+  }
+  const seenStudentIds = new Set();
+  assignedStudents = assignedStudents.filter((student) => {
+    const key = String(student._id);
+    if (seenStudentIds.has(key)) return false;
+    seenStudentIds.add(key);
+    return true;
+  });
+
+  const queued = await queueEventCancellationEmails({
+    event,
+    students: assignedStudents,
+    requestedBy: req.user._id,
+    requestedByEmail: req.user.email,
+    reason,
+  });
+
+  const pairIds = await Pair.find({ event: event._id }).distinct('_id');
+  await Promise.all([
+    SlotProposal.deleteMany({ $or: [{ event: event._id }, { pair: { $in: pairIds } }] }),
+    Pair.deleteMany({ event: event._id }),
+    Feedback.deleteMany({ event: event._id }),
+    EventParticipant.deleteMany({ eventId: event._id }),
+    Event.deleteOne({ _id: event._id }),
+  ]);
+
+  logActivity({
+    userEmail: req.user.email,
+    userRole: req.user.role,
+    actionType: 'DELETE',
+    targetType: 'EVENT',
+    targetId: event._id.toString(),
+    description: `Deleted interview: ${event.name}`,
+    metadata: {
+      cancellationEmailsQueued: queued.queued || 0,
+      assignedCount: assignedStudents.length,
+      reason,
+    },
+    req,
+  });
+
+  res.json({
+    deleted: true,
+    _id: event._id,
+    cancellationEmailsQueued: queued.queued || 0,
+    message: `Interview deleted. ${queued.queued || 0} cancellation email(s) queued.`,
+  });
 }
 
 export async function sendEventInvitations(req, res) {
@@ -1302,34 +1460,13 @@ export async function sendEventInvitations(req, res) {
   if (!assignments.length) throw new HttpError(400, 'No assigned students were found');
 
   const validAssignments = assignments.filter((assignment) => assignment.studentId?.email);
-  const batchId = crypto.randomUUID();
-  const queued = await enqueueMailJobs(validAssignments.map((assignment) => ({
-    type: 'event_invitation',
-    to: assignment.studentId.email,
-    recipientId: assignment.studentId._id,
-    targetType: 'EVENT',
-    targetId: event._id,
-    idempotencyKey: `event:${event._id}:${assignment.studentId._id}:${batchId}`,
-    payload: {
-      to: assignment.studentId.email,
-      event: {
-        title: event.name,
-        date: event.startDate ? formatDateTime(event.startDate) : 'To be announced',
-        details: event.description,
-        templateUrl: event.templateUrl,
-      },
-      interviewer: assignment.studentId.name || assignment.studentId.email,
-      interviewee: '',
-    },
-  })), {
-    batchId,
+  const queued = await queueEventInvitationEmails({
+    event,
+    students: validAssignments.map((assignment) => assignment.studentId),
     requestedBy: req.user._id,
     requestedByEmail: req.user.email,
+    reason: crypto.randomUUID(),
   });
-  await EventParticipant.updateMany(
-    { _id: { $in: validAssignments.map((assignment) => assignment._id) } },
-    { $set: { invitationStatus: 'pending' } },
-  );
   res.status(202).json({ ...queued, message: `${validAssignments.length} invitation email(s) queued.` });
 }
 
