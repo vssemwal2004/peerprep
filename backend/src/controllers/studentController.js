@@ -126,7 +126,7 @@ export async function listAllStudents(req, res) {
     const requestedLimit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 25));
     const paginated = page !== undefined || limit !== undefined;
     const studentQuery = User.find(query)
-      .select('name email studentId course branch college semester group teacherIds avatarUrl createdAt isSpecialStudent bio linkedinUrl githubUrl portfolioUrl mustChangePassword activeSessionCreatedAt credentialEmailStatus credentialEmailSentAt')
+      .select('name email studentId course branch college semester group teacherIds avatarUrl createdAt isSpecialStudent bio linkedinUrl githubUrl portfolioUrl mustChangePassword activeSessionCreatedAt credentialEmailStatus credentialEmailSentAt credentialEmailLastAttemptAt')
       .sort({ createdAt: sort, _id: sort });
     if (paginated) {
       studentQuery.skip((requestedPage - 1) * requestedLimit).limit(requestedLimit);
@@ -158,7 +158,13 @@ export async function listAllStudents(req, res) {
     const studentsWithTeacherId = students.map(s => ({
       ...s,
       teacherId: Array.isArray(s.teacherIds) ? s.teacherIds.join(', ') : (s.teacherIds || ''),
-      canResendCredentials: s.mustChangePassword === true && !s.activeSessionCreatedAt,
+      canResendCredentials: s.mustChangePassword === true
+        && !s.activeSessionCreatedAt
+        && (
+          s.credentialEmailStatus !== 'pending'
+          || !s.credentialEmailLastAttemptAt
+          || Date.now() - new Date(s.credentialEmailLastAttemptAt).getTime() > 5 * 60 * 1000
+        ),
       // Historical deliveries were not tracked. Never claim they were not sent.
       credentialEmailStatus: s.credentialEmailStatus || 'unconfirmed',
       mustChangePassword: undefined,
@@ -196,6 +202,80 @@ export async function listAllStudents(req, res) {
   }
 }
 
+async function processCredentialEmailBatch(students, batchId) {
+  const results = [];
+
+  for (const student of students) {
+    if (!student.email || !student.studentId) {
+      await User.updateOne(
+        { _id: student._id, credentialEmailBatchId: batchId },
+        {
+          $set: {
+            credentialEmailStatus: 'failed',
+            credentialEmailLastAttemptAt: new Date(),
+            credentialEmailLastError: 'Email or student ID is missing.',
+          },
+          $unset: { credentialEmailBatchId: 1 },
+        },
+      ).catch(() => {});
+      results.push({ studentId: student._id, status: 'failed' });
+      continue;
+    }
+
+    const temporaryPassword = generateRandomPassword();
+    const previousPasswordHash = student.passwordHash;
+    try {
+      const passwordHash = await User.hashPassword(temporaryPassword);
+      const passwordUpdate = await User.updateOne(
+        { _id: student._id, credentialEmailBatchId: batchId },
+        { $set: { passwordHash, mustChangePassword: true } },
+      );
+      if (passwordUpdate.matchedCount !== 1) {
+        throw new Error('Credential delivery was cancelled because the batch is no longer active.');
+      }
+      await sendOnboardingEmail({
+        to: student.email,
+        studentId: student.studentId,
+        password: temporaryPassword,
+      });
+      await User.updateOne(
+        { _id: student._id, credentialEmailBatchId: batchId },
+        {
+          $set: {
+            credentialEmailStatus: 'sent',
+            credentialEmailSentAt: new Date(),
+            credentialEmailLastAttemptAt: new Date(),
+          },
+          $unset: { credentialEmailLastError: 1, credentialEmailBatchId: 1 },
+        },
+      ).catch((statusError) => {
+        // The credential was delivered and must remain valid even if status persistence fails.
+        console.error('[processCredentialEmailBatch] Email sent but status update failed:', statusError.message);
+      });
+      results.push({ studentId: student._id, status: 'sent' });
+    } catch (error) {
+      // Restore the credential that was valid before this delivery attempt.
+      await User.updateOne(
+        { _id: student._id, credentialEmailBatchId: batchId },
+        {
+          $set: {
+            passwordHash: previousPasswordHash,
+            credentialEmailStatus: 'failed',
+            credentialEmailLastAttemptAt: new Date(),
+            credentialEmailLastError: String(error.message || 'Email delivery failed.').slice(0, 500),
+          },
+          $unset: { credentialEmailBatchId: 1 },
+        },
+      ).catch((rollbackError) => {
+        console.error('[processCredentialEmailBatch] Failed to record failure:', rollbackError.message);
+      });
+      results.push({ studentId: student._id, status: 'failed' });
+    }
+  }
+
+  return results;
+}
+
 export async function resendStudentCredentials(req, res) {
   const requestedIds = Array.isArray(req.body?.studentIds) ? req.body.studentIds : [];
   const studentIds = [...new Set(requestedIds.map((id) => String(id || '').trim()).filter(Boolean))];
@@ -208,90 +288,73 @@ export async function resendStudentCredentials(req, res) {
     return res.status(400).json({ error: 'One or more student IDs are invalid.' });
   }
 
-  const students = await User.find({
+  const candidates = await User.find({
     _id: { $in: studentIds },
     role: 'student',
     mustChangePassword: true,
     activeSessionCreatedAt: { $exists: false },
   }).select('_id name email studentId passwordHash mustChangePassword activeSessionCreatedAt');
-  const eligibleIds = new Set(students.map((student) => String(student._id)));
-  const results = [];
+  const batchId = `credential-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const students = [];
 
-  for (const student of students) {
-    if (!student.email || !student.studentId) {
-      results.push({ studentId: student._id, status: 'failed', error: 'Email or student ID is missing.' });
-      continue;
-    }
-
-    const temporaryPassword = generateRandomPassword();
-    const previousPasswordHash = student.passwordHash;
-    try {
-      student.passwordHash = await User.hashPassword(temporaryPassword);
-      student.mustChangePassword = true;
-      await student.save();
-      await sendOnboardingEmail({
-        to: student.email,
-        studentId: student.studentId,
-        password: temporaryPassword,
-      });
-      await User.updateOne({ _id: student._id }, {
+  // Atomically claim each student so double-clicks cannot queue duplicate passwords.
+  const stalePendingBefore = new Date(Date.now() - 5 * 60 * 1000);
+  for (const candidate of candidates) {
+    const claimed = await User.findOneAndUpdate(
+      {
+        _id: candidate._id,
+        role: 'student',
+        mustChangePassword: true,
+        activeSessionCreatedAt: { $exists: false },
+        $or: [
+          { credentialEmailStatus: { $ne: 'pending' } },
+          { credentialEmailLastAttemptAt: { $lt: stalePendingBefore } },
+          { credentialEmailLastAttemptAt: { $exists: false } },
+        ],
+      },
+      {
         $set: {
-          credentialEmailStatus: 'sent',
-          credentialEmailSentAt: new Date(),
+          credentialEmailStatus: 'pending',
           credentialEmailLastAttemptAt: new Date(),
+          credentialEmailBatchId: batchId,
         },
         $unset: { credentialEmailLastError: 1 },
-      }).catch((statusError) => {
-        console.error('[resendStudentCredentials] Email sent but status update failed:', statusError.message);
-      });
-      results.push({ studentId: student._id, status: 'sent' });
-    } catch (error) {
-      // Keep the previous temporary credential usable when email delivery fails.
-      if (student.passwordHash !== previousPasswordHash) {
-        try {
-          await User.updateOne(
-            { _id: student._id, mustChangePassword: true, activeSessionCreatedAt: { $exists: false } },
-            { $set: { passwordHash: previousPasswordHash } },
-          );
-        } catch (rollbackError) {
-          console.error('[resendStudentCredentials] Password rollback failed:', rollbackError.message);
-        }
-      }
-      await User.updateOne({ _id: student._id }, {
-        $set: {
-          credentialEmailStatus: 'failed',
-          credentialEmailLastAttemptAt: new Date(),
-          credentialEmailLastError: String(error.message || 'Email delivery failed.').slice(0, 500),
-        },
-      }).catch((statusError) => {
-        console.error('[resendStudentCredentials] Failed to record email status:', statusError.message);
-      });
-      results.push({ studentId: student._id, status: 'failed', error: error.message || 'Email delivery failed.' });
-    }
+      },
+      { new: false },
+    ).select('_id name email studentId passwordHash');
+    if (claimed) students.push(claimed);
   }
 
-  const skipped = studentIds.length - eligibleIds.size;
-  const sent = results.filter((result) => result.status === 'sent').length;
-  const failed = results.filter((result) => result.status === 'failed').length;
+  const skipped = studentIds.length - students.length;
 
   logActivity({
     userEmail: req.user.email,
     userRole: req.user.role,
     actionType: 'UPDATE',
     targetType: 'STUDENT',
-    description: `Sent login credentials to ${sent} student${sent === 1 ? '' : 's'}`,
-    metadata: { requested: studentIds.length, sent, failed, skipped },
+    description: `Queued login credentials for ${students.length} student${students.length === 1 ? '' : 's'}`,
+    metadata: { requested: studentIds.length, queued: students.length, skipped, batchId },
     req,
   });
 
-  return res.json({
-    message: sent ? `Credential email sent to ${sent} student${sent === 1 ? '' : 's'}.` : 'No credential emails were sent.',
+  res.status(202).json({
+    message: students.length
+      ? `${students.length} credential email${students.length === 1 ? '' : 's'} queued for background delivery.`
+      : 'No eligible credential emails were queued.',
     requested: studentIds.length,
-    sent,
-    failed,
+    queued: students.length,
     skipped,
-    results,
+    batchId,
   });
+
+  if (students.length > 0) {
+    setImmediate(async () => {
+      const results = await processCredentialEmailBatch(students, batchId);
+      const sent = results.filter((result) => result.status === 'sent').length;
+      const failed = results.length - sent;
+      console.log(`[Credential batch ${batchId}] Complete: ${sent} sent, ${failed} failed`);
+    });
+  }
 }
 
 function promotionStudentScope(user = {}) {

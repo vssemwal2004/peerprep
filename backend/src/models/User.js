@@ -19,6 +19,7 @@ const userSchema = new mongoose.Schema({
   credentialEmailSentAt: Date,
   credentialEmailLastAttemptAt: Date,
   credentialEmailLastError: String,
+  credentialEmailBatchId: String,
   course: String,
   branch: String,
   college: String,

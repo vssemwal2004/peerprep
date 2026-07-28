@@ -61,6 +61,7 @@ export default function StudentDirectory() {
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [sendingCredentialIds, setSendingCredentialIds] = useState(new Set());
   const loadRequestRef = useRef(0);
+  const credentialRefreshTimersRef = useRef([]);
   const filterPanelRef = useRef(null);
   const rowActionMenuRef = useRef(null);
   const bulkMenuRef = useRef(null);
@@ -166,6 +167,10 @@ export default function StudentDirectory() {
     // loadData uses a request revision guard to ignore stale search responses.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, sortOrder, filters, currentPage, itemsPerPage, debouncedSearch]);
+
+  useEffect(() => () => {
+    credentialRefreshTimersRef.current.forEach((timer) => clearTimeout(timer));
+  }, []);
 
   const totalPages = pagination.pages || 1;
   const startIndex = (currentPage - 1) * itemsPerPage;
@@ -353,10 +358,13 @@ export default function StudentDirectory() {
     setSendingCredentialIds((current) => new Set([...current, ...ids]));
     try {
       const result = await api.resendStudentCredentials(ids);
-      if (result.sent) toast.success(result.message);
-      if (result.failed) toast.error(`${result.failed} credential email${result.failed === 1 ? '' : 's'} failed.`);
+      if (result.queued) toast.success(result.message);
       if (result.skipped) toast.error(`${result.skipped} student${result.skipped === 1 ? ' is' : 's are'} no longer eligible.`);
       await loadData();
+      credentialRefreshTimersRef.current.forEach((timer) => clearTimeout(timer));
+      credentialRefreshTimersRef.current = [3000, 8000, 15000, 30000].map((delay) => (
+        setTimeout(() => loadData(), delay)
+      ));
     } catch (err) {
       toast.error(err.message || 'Failed to send credential email.');
     } finally {
