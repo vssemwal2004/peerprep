@@ -100,8 +100,18 @@ export default function CoordinatorOnboarding() {
       const result = await api.createCoordinator(payload);
       setForm(initialForm);
       setGrantDefaultAccess(false);
-      setMessage({ type: 'success', text: `Coordinator created with ${result.permissionCount ?? 0} assigned permissions.` });
-      toast.success('Coordinator created successfully.');
+      const emailMessage = result.credentialEmailQueued
+        ? ' Login credentials have been queued for email delivery.'
+        : ` Login credentials could not be queued${result.credentialEmailError ? `: ${result.credentialEmailError}` : '.'}`;
+      setMessage({
+        type: result.credentialEmailQueued ? 'success' : 'warning',
+        text: `Coordinator created with ${result.permissionCount ?? 0} assigned permissions.${emailMessage}`,
+      });
+      if (result.credentialEmailQueued) {
+        toast.success('Coordinator created and credential email queued.');
+      } else {
+        toast.warning('Coordinator created, but credential email was not queued.');
+      }
     } catch (err) {
       const text = err.message?.includes('exists')
         ? 'A coordinator with this email or Coordinator ID already exists.'

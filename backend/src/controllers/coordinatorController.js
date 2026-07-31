@@ -150,6 +150,44 @@ export async function createCoordinator(req, res) {
       credentialEmailStatus: 'not_sent',
     });
 
+    let credentialEmailQueued = false;
+    let credentialEmailError = '';
+    const batchId = crypto.randomUUID();
+    try {
+      await enqueueMailJobs([{
+        type: 'coordinator_onboarding',
+        to: user.email,
+        recipientId: user._id,
+        targetType: 'COORDINATOR',
+        targetId: user._id,
+        idempotencyKey: `coordinator-credentials:${user._id}:${batchId}`,
+        payload: {
+          to: user.email,
+          name: user.name,
+          coordinatorId: user.coordinatorId,
+          password: defaultPassword,
+          previousPasswordHash: user.passwordHash,
+        },
+      }], {
+        batchId,
+        requestedBy: req.user._id,
+        requestedByEmail: req.user.email,
+      });
+      user.credentialEmailStatus = 'pending';
+      user.credentialEmailLastAttemptAt = new Date();
+      user.credentialEmailBatchId = batchId;
+      await user.save();
+      credentialEmailQueued = true;
+      console.log(`[Coordinator] Credential email queued for ${user.email} | Batch: ${batchId}`);
+    } catch (mailError) {
+      credentialEmailError = String(mailError?.message || 'Failed to queue credential email');
+      user.credentialEmailStatus = 'failed';
+      user.credentialEmailLastAttemptAt = new Date();
+      user.credentialEmailLastError = credentialEmailError.slice(0, 500);
+      await user.save().catch(() => {});
+      console.error(`[Coordinator] Failed to queue credential email for ${user.email}: ${credentialEmailError}`);
+    }
+
     // Log activity
     logActivity({
       userEmail: req.user.email,
@@ -162,7 +200,17 @@ export async function createCoordinator(req, res) {
       req
     });
 
-    return res.status(201).json({ id: user._id, _id: user._id, email: user.email, coordinatorID: user.coordinatorId, status: 'created', permissionCount: user.coordinatorPermissions.length });
+    return res.status(201).json({
+      id: user._id,
+      _id: user._id,
+      email: user.email,
+      coordinatorID: user.coordinatorId,
+      status: 'created',
+      permissionCount: user.coordinatorPermissions.length,
+      credentialEmailQueued,
+      credentialEmailBatchId: credentialEmailQueued ? batchId : undefined,
+      credentialEmailError: credentialEmailError || undefined,
+    });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
