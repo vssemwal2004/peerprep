@@ -79,6 +79,45 @@ function buildStudentListQuery(user, params = {}) {
     });
   }
 
+  const platformActivity = String(params.platformActivity || '').trim();
+  if (platformActivity === 'active') {
+    filters.push({ activeSessionCreatedAt: { $exists: true } });
+  } else if (platformActivity === 'never_logged_in') {
+    filters.push({ activeSessionCreatedAt: { $exists: false } });
+  }
+
+  const accountStatus = String(params.accountStatus || '').trim();
+  if (accountStatus === 'active') {
+    filters.push({ isActive: { $ne: false } });
+  } else if (accountStatus === 'disabled') {
+    filters.push({ isActive: false });
+  }
+
+  const credentialEligibility = String(params.credentialEligibility || '').trim();
+  const stalePendingBefore = new Date(Date.now() - 5 * 60 * 1000);
+  if (credentialEligibility === 'eligible') {
+    filters.push(
+      { activeSessionCreatedAt: { $exists: false } },
+      {
+        $or: [
+          { credentialEmailStatus: { $ne: 'pending' } },
+          { credentialEmailLastAttemptAt: { $lt: stalePendingBefore } },
+          { credentialEmailLastAttemptAt: { $exists: false } },
+        ],
+      },
+    );
+  } else if (credentialEligibility === 'ineligible') {
+    filters.push({
+      $or: [
+        { activeSessionCreatedAt: { $exists: true } },
+        {
+          credentialEmailStatus: 'pending',
+          credentialEmailLastAttemptAt: { $gte: stalePendingBefore },
+        },
+      ],
+    });
+  }
+
   [
     ['branch', 'branch'],
     ['course', 'course'],
@@ -158,8 +197,10 @@ export async function listAllStudents(req, res) {
     const studentsWithTeacherId = students.map(s => ({
       ...s,
       teacherId: Array.isArray(s.teacherIds) ? s.teacherIds.join(', ') : (s.teacherIds || ''),
-      canResendCredentials: s.mustChangePassword === true
-        && !s.activeSessionCreatedAt
+      // Legacy/imported students may not have mustChangePassword populated.
+      // A missing login marker is the authoritative signal that resetting to a
+      // new temporary password is still safe.
+      canResendCredentials: !s.activeSessionCreatedAt
         && (
           s.credentialEmailStatus !== 'pending'
           || !s.credentialEmailLastAttemptAt
@@ -217,7 +258,6 @@ export async function resendStudentCredentials(req, res) {
   const candidates = await User.find({
     _id: { $in: studentIds },
     role: 'student',
-    mustChangePassword: true,
     activeSessionCreatedAt: { $exists: false },
   }).select('_id name email studentId passwordHash mustChangePassword activeSessionCreatedAt');
   const batchId = crypto.randomUUID();
@@ -230,7 +270,6 @@ export async function resendStudentCredentials(req, res) {
       {
         _id: candidate._id,
         role: 'student',
-        mustChangePassword: true,
         activeSessionCreatedAt: { $exists: false },
         $or: [
           { credentialEmailStatus: { $ne: 'pending' } },

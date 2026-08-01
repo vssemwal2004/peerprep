@@ -21,6 +21,9 @@ const EMPTY_FILTERS = {
   group: '',
   coordinator: '',
   credentialEmailStatus: '',
+  platformActivity: '',
+  credentialEligibility: '',
+  accountStatus: '',
 };
 
 export default function StudentDirectory() {
@@ -89,6 +92,33 @@ export default function StudentDirectory() {
   }), [facets, fallbackFacets]);
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
   const advancedFilterDefinitions = [
+    {
+      key: 'platformActivity',
+      label: 'Platform activity',
+      allLabel: 'All students',
+      options: [
+        { value: 'active', label: 'Active students (logged in)' },
+        { value: 'never_logged_in', label: 'Never logged in' },
+      ],
+    },
+    {
+      key: 'credentialEligibility',
+      label: 'Credential eligibility',
+      allLabel: 'All eligibility states',
+      options: [
+        { value: 'eligible', label: 'Can send credentials' },
+        { value: 'ineligible', label: 'Cannot send credentials' },
+      ],
+    },
+    {
+      key: 'accountStatus',
+      label: 'Account status',
+      allLabel: 'All account statuses',
+      options: [
+        { value: 'active', label: 'Enabled accounts' },
+        { value: 'disabled', label: 'Disabled accounts' },
+      ],
+    },
     {
       key: 'credentialEmailStatus',
       label: 'Credential mail',
@@ -917,7 +947,7 @@ export default function StudentDirectory() {
                         type="button"
                         onClick={(event) => handleSendCredentials(selectedCredentialIds, event)}
                         disabled={!selectedCredentialIds.length}
-                        title={!selectedCredentialIds.length ? 'Only students who have never logged in and still use a temporary password are eligible' : undefined}
+                        title={!selectedCredentialIds.length ? 'Only students who have never logged in and have no credential email currently pending are eligible' : undefined}
                         className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-sky-700 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-45 dark:text-sky-300 dark:hover:bg-sky-950/30"
                       >
                         <Mail className="h-4 w-4" />
