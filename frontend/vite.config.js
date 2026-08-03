@@ -22,6 +22,11 @@ export default defineConfig({
     chunkSizeWarningLimit: 500,
     minify: 'esbuild',
     sourcemap: false,
+    // Modern browsers need substantially less compatibility code. Native
+    // dynamic imports also keep route chunks truly on-demand.
+    target: 'es2022',
+    cssCodeSplit: true,
+    reportCompressedSize: false,
   },
   esbuild: {
     drop: ['console', 'debugger'],

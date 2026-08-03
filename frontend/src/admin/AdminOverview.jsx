@@ -242,7 +242,7 @@ export default function AdminOverview() {
     setError(null);
 
     const results = await Promise.allSettled([
-      api.listAllStudents(),
+      api.listAllStudents({ page: 1, limit: 8, sortOrder: 'desc' }),
       api.listEvents(),
       api.listAssessments(),
       api.getActivityStats(),

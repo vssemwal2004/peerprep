@@ -89,7 +89,7 @@ export default function CoordinatorDashboard() {
     setLoading(true);
     setWarning('');
     const sources = [
-      allowed('coordinator.students.view') && ['students', () => api.listAllStudents({ limit: 100, sortOrder: 'desc' })],
+      allowed('coordinator.students.view') && ['students', () => api.listAllStudents({ page: 1, limit: 8, sortOrder: 'desc' })],
       allowed('coordinator.interviews.view') && ['events', () => api.listEvents()],
       allowed('coordinator.assessment.view') && ['assessments', () => api.listAssessments()],
       allowed('coordinator.feedback.view') && ['feedback', () => api.listCoordinatorFeedback()],

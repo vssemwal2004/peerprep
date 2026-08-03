@@ -10,6 +10,11 @@ import { hasCoordinatorPermission } from '../services/coordinatorPermissions.js'
  */
 const userCache = new Map();
 const CACHE_TTL = 60 * 1000; // 60 seconds
+// Session state changes rarely, but requireAuth runs once for every dashboard
+// request. Keep a deliberately short cache so a burst of parallel requests
+// performs one MongoDB read instead of one read per request.
+const SESSION_CACHE_TTL = Number(process.env.AUTH_SESSION_CACHE_TTL_MS || 5000);
+const sessionCache = new Map();
 
 function getCachedUser(userId) {
   const cached = userCache.get(userId);
@@ -26,7 +31,9 @@ function setCachedUser(userId, user) {
 
 export function invalidateUserCache(userId) {
   if (!userId) return;
-  userCache.delete(String(userId));
+  const key = String(userId);
+  userCache.delete(key);
+  sessionCache.delete(key);
 }
 
 // Clean up expired cache entries every 5 minutes
@@ -37,7 +44,21 @@ setInterval(() => {
       userCache.delete(userId);
     }
   }
+  for (const [userId, cached] of sessionCache.entries()) {
+    if (now - cached.timestamp > SESSION_CACHE_TTL) sessionCache.delete(userId);
+  }
 }, 5 * 60 * 1000);
+
+async function getSessionState(userId) {
+  const key = String(userId);
+  const cached = sessionCache.get(key);
+  if (cached && Date.now() - cached.timestamp < SESSION_CACHE_TTL) return cached.value;
+  const value = await User.findById(userId)
+    .select('_id activeSessionToken passwordChangedAt isActive')
+    .lean();
+  if (value) sessionCache.set(key, { value, timestamp: Date.now() });
+  return value;
+}
 
 /**
  * SECURITY: JWT Authentication from HttpOnly Cookies
@@ -64,9 +85,7 @@ export async function requireAuth(req, res, next) {
 
   // Session-sensitive fields must be read fresh. If activeSessionToken is
   // cached, a just-created login token can be rejected against the old token.
-  const sessionState = await User.findById(payload.sub)
-    .select('_id activeSessionToken passwordChangedAt isActive')
-    .lean();
+  const sessionState = await getSessionState(payload.sub);
   if (!sessionState) throw new HttpError(401, 'User not found');
 
   // Try to get stable profile/authorization fields from cache first.

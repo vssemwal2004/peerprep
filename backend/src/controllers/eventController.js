@@ -1511,17 +1511,19 @@ export async function listEvents(req, res) {
       }).select('eventId').lean()).map((assignment) => assignment.eventId.toString()))
       : new Set();
   
-  // Populate coordinator names for events that have coordinatorId
-  const eventsWithCoordinator = await Promise.all(events.map(async (event) => {
-    if (event.coordinatorId) {
-      const coordinator = await User.findOne({ coordinatorId: event.coordinatorId }).lean();
-      return {
-        ...event,
-        coordinatorName: coordinator?.name || 'Unknown Coordinator'
-      };
-    }
-    return event;
-  }));
+  // Resolve all coordinator names in one query. The previous per-event lookup
+  // made this endpoint linearly slower as event history grew.
+  const coordinatorIds = [...new Set(events.map((event) => event.coordinatorId).filter(Boolean))];
+  const coordinators = coordinatorIds.length
+    ? await User.find({ role: 'coordinator', coordinatorId: { $in: coordinatorIds } })
+      .select('coordinatorId name')
+      .lean()
+    : [];
+  const coordinatorNames = new Map(coordinators.map((item) => [item.coordinatorId, item.name]));
+  const eventsWithCoordinator = events.map((event) => event.coordinatorId ? {
+    ...event,
+    coordinatorName: coordinatorNames.get(event.coordinatorId) || 'Unknown Coordinator',
+  } : event);
   
   console.log('[listEvents] Total events:', eventsWithCoordinator.length);
   console.log('[listEvents] Special events:', eventsWithCoordinator.filter(e => e.isSpecial).map(e => ({
