@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { Eye, FilePlus2, Plus, Save, Trash2, Upload, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Edit2, Eye, FilePlus2, Plus, Save, Trash2, Upload, X } from 'lucide-react';
 import { api } from '../../utils/api';
 import { useToast } from '../../components/CustomToast';
 import RichTextEditor from './RichTextEditor';
@@ -43,15 +43,68 @@ function TabButton({ active, label, onClick }) {
   );
 }
 
-function TestCaseEditorCard({ title, cases, onAdd, onRemove, onChange, includeExplanation = false }) {
+function TestCaseEditorCard({ title, cases, onAdd, onRemove, onChange, includeExplanation = false, staged = false }) {
+  const [savedIndexes, setSavedIndexes] = useState(() => new Set(
+    cases.map((testCase, index) => ((testCase.input || testCase.output) ? index : null)).filter((index) => index !== null),
+  ));
+  const [validationError, setValidationError] = useState('');
+
+  useEffect(() => {
+    if (!staged) return;
+    setSavedIndexes((current) => new Set([...current].filter((index) => index < cases.length)));
+  }, [cases.length, staged]);
+
+  const updateCase = (index, field, value) => {
+    onChange(index, field, value);
+    if (staged) {
+      setSavedIndexes((current) => {
+        const next = new Set(current);
+        next.delete(index);
+        return next;
+      });
+    }
+    setValidationError('');
+  };
+
+  const saveCase = (index) => {
+    const testCase = cases[index];
+    if (!String(testCase?.input || '').trim() || !String(testCase?.output || '').trim()) {
+      setValidationError('Add both input and expected output before saving this sample.');
+      return;
+    }
+    setSavedIndexes((current) => new Set([...current, index]));
+    setValidationError('');
+  };
+
+  const removeCase = (index) => {
+    onRemove(index);
+    setSavedIndexes((current) => new Set([...current].filter((item) => item !== index).map((item) => item > index ? item - 1 : item)));
+    setValidationError('');
+  };
+
+  const allCasesSaved = !staged || (cases.length > 0 && cases.every((_, index) => savedIndexes.has(index)));
+
   return (
     <div className="space-y-4">
-      {cases.map((testCase, index) => (
+      {cases.map((testCase, index) => savedIndexes.has(index) && staged ? (
+        <div key={`${title}-${index}`} className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-800 dark:bg-emerald-950/20">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h4 className="text-sm font-semibold text-slate-800 dark:text-gray-100">{title} {index + 1} saved</h4>
+              <p className="mt-1 truncate font-mono text-xs text-slate-500 dark:text-gray-400">Input: {testCase.input}</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <button type="button" onClick={() => setSavedIndexes((current) => { const next = new Set(current); next.delete(index); return next; })} className="inline-flex items-center gap-1 text-xs font-medium text-sky-700 dark:text-sky-300"><Edit2 className="h-3.5 w-3.5" />Edit</button>
+              {cases.length > 1 && <button type="button" onClick={() => removeCase(index)} className="inline-flex items-center gap-1 text-xs font-medium text-rose-600"><X className="h-3.5 w-3.5" />Remove</button>}
+            </div>
+          </div>
+        </div>
+      ) : (
         <div key={`${title}-${index}`} className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700">
           <div className="mb-3 flex items-center justify-between gap-3">
             <h4 className="text-sm font-semibold text-slate-800 dark:text-gray-100">{title} {index + 1}</h4>
             {cases.length > 1 && (
-              <button type="button" onClick={() => onRemove(index)} className="inline-flex items-center gap-1 text-xs font-medium text-rose-600">
+              <button type="button" onClick={() => removeCase(index)} className="inline-flex items-center gap-1 text-xs font-medium text-rose-600">
                 <X className="h-3.5 w-3.5" />
                 Remove
               </button>
@@ -60,14 +113,14 @@ function TestCaseEditorCard({ title, cases, onAdd, onRemove, onChange, includeEx
           <div className={`grid gap-4 ${includeExplanation ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
             <textarea
               value={testCase.input}
-              onChange={(event) => onChange(index, 'input', event.target.value)}
+              onChange={(event) => updateCase(index, 'input', event.target.value)}
               rows={5}
               placeholder="Input"
               className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-xs text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"
             />
             <textarea
               value={testCase.output}
-              onChange={(event) => onChange(index, 'output', event.target.value)}
+              onChange={(event) => updateCase(index, 'output', event.target.value)}
               rows={5}
               placeholder="Output"
               className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-xs text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"
@@ -75,24 +128,27 @@ function TestCaseEditorCard({ title, cases, onAdd, onRemove, onChange, includeEx
             {includeExplanation ? (
               <textarea
                 value={testCase.explanation}
-                onChange={(event) => onChange(index, 'explanation', event.target.value)}
+                onChange={(event) => updateCase(index, 'explanation', event.target.value)}
                 rows={5}
                 placeholder="Explanation"
                 className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"
               />
             ) : null}
           </div>
+          {staged && <div className="mt-4 flex justify-end"><button type="button" onClick={() => saveCase(index)} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-500"><Save className="h-4 w-4" />Save sample</button></div>}
         </div>
       ))}
 
-      <button
+      {validationError && <p className="text-sm font-medium text-rose-600 dark:text-rose-300">{validationError}</p>}
+
+      {allCasesSaved && <button
         type="button"
-        onClick={onAdd}
+        onClick={() => { onAdd(); setValidationError(''); }}
         className="inline-flex items-center gap-2 rounded-xl border border-dashed border-slate-300 px-4 py-3 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
       >
         <Plus className="h-4 w-4" />
-        Add {title}
-      </button>
+        {staged ? `Add another ${title.toLowerCase()} test` : `Add ${title}`}
+      </button>}
     </div>
   );
 }
@@ -503,14 +559,6 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
     }
   };
 
-  const handleOpenPreview = () => {
-    if (!currentProblemId) {
-      toast.error('Save the problem first before opening preview.');
-      return;
-    }
-    navigate(`${rolePrefix}/compiler/${currentProblemId}/preview`);
-  };
-
   const handleAddToAssessment = async () => {
     if (!canAddToAssessment && !canAddToAssessmentDynamic) {
       toast.error('Complete validation requirements before adding to the assessment.');
@@ -572,6 +620,14 @@ if (!isValidated || publishedProblem.status !== 'published') {
     companyTags: form.companyTags.split(',').map((item) => item.trim()).filter(Boolean),
     hiddenTestCaseCount: hiddenCount,
   };
+  const activeTabIndex = EDITOR_TABS.findIndex((tab) => tab.key === activeTab);
+  const isFinalTab = activeTabIndex === EDITOR_TABS.length - 1;
+  const goToTab = (index) => {
+    const nextTab = EDITOR_TABS[index];
+    if (!nextTab) return;
+    setActiveTab(nextTab.key);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
@@ -589,16 +645,6 @@ if (!isValidated || publishedProblem.status !== 'published') {
                 Preview validation: {previewValidated ? 'Completed' : 'Required before publish'}
               </p>
             </div>
-            {currentProblemId ? (
-              <button
-                type="button"
-                onClick={handleOpenPreview}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
-              >
-                <Eye className="h-4 w-4" />
-                Open Preview
-              </button>
-            ) : null}
           </div>
         </SectionCard>
 
@@ -641,7 +687,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
                 </div>
                 <div>
                   <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-gray-300">Constraints</label>
-                  <textarea value={form.constraints} onChange={(event) => updateField('constraints', event.target.value)} rows={5} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
+                  <RichTextEditor value={form.constraints} onChange={(value) => updateField('constraints', value)} rows={7} placeholder="Add one constraint per line, then format lines with headings, bold, lists, quotes, or code." />
                 </div>
               </div>
             </SectionCard>
@@ -690,6 +736,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
                 title="Sample"
                 cases={form.sampleTestCases}
                 includeExplanation
+                staged
                 onAdd={() => updateField('sampleTestCases', [...form.sampleTestCases, createEmptySampleTestCase()])}
                 onRemove={(index) => updateField('sampleTestCases', form.sampleTestCases.filter((_, itemIndex) => itemIndex !== index))}
                 onChange={updateSampleTestCase}
@@ -917,7 +964,17 @@ if (!isValidated || publishedProblem.status !== 'published') {
 
 
 
-        <SectionCard
+        <SectionCard title={`Step ${activeTabIndex + 1} of ${EDITOR_TABS.length}`} subtitle={isFinalTab ? 'Review the final templates, preview the problem, then use the publishing actions below.' : `Continue to ${EDITOR_TABS[activeTabIndex + 1]?.label || 'the next step'} when this section is complete.`}>
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <button type="button" onClick={() => goToTab(activeTabIndex - 1)} disabled={activeTabIndex === 0} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"><ChevronLeft className="h-4 w-4" />Previous</button>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <button type="button" onClick={openPreview} disabled={isSaving || isApprovingPreview} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"><Eye className="h-4 w-4" />{isApprovingPreview ? 'Opening...' : 'Save & Preview'}</button>
+              {!isFinalTab && <button type="button" onClick={() => goToTab(activeTabIndex + 1)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-500">Next: {EDITOR_TABS[activeTabIndex + 1]?.label}<ChevronRight className="h-4 w-4" /></button>}
+            </div>
+          </div>
+        </SectionCard>
+
+        {isFinalTab && <SectionCard
           title="Actions"
           subtitle={isAssessment ? 'Save drafts, validate, and add to the assessment.' : 'Save drafts, publish, or cleanly remove the problem from the judge workspace.'}
         >
@@ -975,7 +1032,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
             <p className="mt-3 text-xs text-amber-600 dark:text-amber-300">Preview validation and required testcases/templates must be completed before adding to the assessment.</p>
           ) : null}
           {!isAssessment && !previewValidated ? <p className="mt-3 text-xs text-amber-600 dark:text-amber-300">Publishing stays disabled until the preview IDE submits an Accepted solution and is approved.</p> : null}
-        </SectionCard>
+        </SectionCard>}
       </div>
 
       <div className="space-y-6 xl:sticky xl:top-24 xl:self-start">

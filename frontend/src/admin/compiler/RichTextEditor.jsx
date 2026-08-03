@@ -7,10 +7,11 @@ const TOOLBAR_ACTIONS = [
     Icon: Heading2,
     action: ({ value, start, end }) => {
       const selected = value.slice(start, end) || 'Section title';
+      const formatted = selected.split('\n').map((line) => line ? `## ${line}` : line).join('\n');
       return {
-        nextValue: `${value.slice(0, start)}## ${selected}${value.slice(end)}`,
-        selectionStart: start + 3,
-        selectionEnd: start + 3 + selected.length,
+        nextValue: `${value.slice(0, start)}${formatted}${value.slice(end)}`,
+        selectionStart: start,
+        selectionEnd: start + formatted.length,
       };
     },
   },
@@ -19,10 +20,11 @@ const TOOLBAR_ACTIONS = [
     Icon: Bold,
     action: ({ value, start, end }) => {
       const selected = value.slice(start, end) || 'bold text';
+      const formatted = selected.split('\n').map((line) => line ? `**${line}**` : line).join('\n');
       return {
-        nextValue: `${value.slice(0, start)}**${selected}**${value.slice(end)}`,
-        selectionStart: start + 2,
-        selectionEnd: start + 2 + selected.length,
+        nextValue: `${value.slice(0, start)}${formatted}${value.slice(end)}`,
+        selectionStart: start,
+        selectionEnd: start + formatted.length,
       };
     },
   },
@@ -31,10 +33,11 @@ const TOOLBAR_ACTIONS = [
     Icon: Italic,
     action: ({ value, start, end }) => {
       const selected = value.slice(start, end) || 'italic text';
+      const formatted = selected.split('\n').map((line) => line ? `_${line}_` : line).join('\n');
       return {
-        nextValue: `${value.slice(0, start)}_${selected}_${value.slice(end)}`,
-        selectionStart: start + 1,
-        selectionEnd: start + 1 + selected.length,
+        nextValue: `${value.slice(0, start)}${formatted}${value.slice(end)}`,
+        selectionStart: start,
+        selectionEnd: start + formatted.length,
       };
     },
   },
@@ -43,10 +46,11 @@ const TOOLBAR_ACTIONS = [
     Icon: List,
     action: ({ value, start, end }) => {
       const selected = value.slice(start, end) || 'First item';
+      const formatted = selected.split('\n').map((line) => line ? `- ${line}` : line).join('\n');
       return {
-        nextValue: `${value.slice(0, start)}- ${selected}${value.slice(end)}`,
-        selectionStart: start + 2,
-        selectionEnd: start + 2 + selected.length,
+        nextValue: `${value.slice(0, start)}${formatted}${value.slice(end)}`,
+        selectionStart: start,
+        selectionEnd: start + formatted.length,
       };
     },
   },
@@ -55,10 +59,11 @@ const TOOLBAR_ACTIONS = [
     Icon: MessageSquareQuote,
     action: ({ value, start, end }) => {
       const selected = value.slice(start, end) || 'Important note';
+      const formatted = selected.split('\n').map((line) => line ? `> ${line}` : line).join('\n');
       return {
-        nextValue: `${value.slice(0, start)}> ${selected}${value.slice(end)}`,
-        selectionStart: start + 2,
-        selectionEnd: start + 2 + selected.length,
+        nextValue: `${value.slice(0, start)}${formatted}${value.slice(end)}`,
+        selectionStart: start,
+        selectionEnd: start + formatted.length,
       };
     },
   },
@@ -67,10 +72,11 @@ const TOOLBAR_ACTIONS = [
     Icon: Code2,
     action: ({ value, start, end }) => {
       const selected = value.slice(start, end) || 'value';
+      const formatted = selected.split('\n').map((line) => line ? `\`${line}\`` : line).join('\n');
       return {
-        nextValue: `${value.slice(0, start)}\`${selected}\`${value.slice(end)}`,
-        selectionStart: start + 1,
-        selectionEnd: start + 1 + selected.length,
+        nextValue: `${value.slice(0, start)}${formatted}${value.slice(end)}`,
+        selectionStart: start,
+        selectionEnd: start + formatted.length,
       };
     },
   },
