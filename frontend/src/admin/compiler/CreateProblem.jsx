@@ -92,6 +92,7 @@ function TestCaseEditorCard({ title, cases, onAdd, onRemove, onChange, includeEx
             <div className="min-w-0">
               <h4 className="text-sm font-semibold text-slate-800 dark:text-gray-100">{title} {index + 1} saved</h4>
               <p className="mt-1 truncate font-mono text-xs text-slate-500 dark:text-gray-400">Input: {testCase.input}</p>
+              <p className="mt-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300">{Number(testCase.marks) || 1} mark(s)</p>
             </div>
             <div className="flex items-center gap-3">
               <button type="button" onClick={() => setSavedIndexes((current) => { const next = new Set(current); next.delete(index); return next; })} className="inline-flex items-center gap-1 text-xs font-medium text-sky-700 dark:text-sky-300"><Edit2 className="h-3.5 w-3.5" />Edit</button>
@@ -110,7 +111,7 @@ function TestCaseEditorCard({ title, cases, onAdd, onRemove, onChange, includeEx
               </button>
             )}
           </div>
-          <div className={`grid gap-4 ${includeExplanation ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
+          <div className={`grid gap-4 ${includeExplanation ? 'md:grid-cols-[1fr_1fr_1fr_120px]' : 'md:grid-cols-[1fr_1fr_120px]'}`}>
             <textarea
               value={testCase.input}
               onChange={(event) => updateCase(index, 'input', event.target.value)}
@@ -134,6 +135,10 @@ function TestCaseEditorCard({ title, cases, onAdd, onRemove, onChange, includeEx
                 className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"
               />
             ) : null}
+            <label>
+              <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-gray-400">Marks</span>
+              <input type="number" min="0.01" step="0.5" value={testCase.marks ?? 1} onChange={(event) => updateCase(index, 'marks', event.target.value)} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500" />
+            </label>
           </div>
           {staged && <div className="mt-4 flex justify-end"><button type="button" onClick={() => saveCase(index)} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-500"><Save className="h-4 w-4" />Save sample</button></div>}
         </div>
@@ -620,6 +625,33 @@ if (!isValidated || publishedProblem.status !== 'published') {
     companyTags: form.companyTags.split(',').map((item) => item.trim()).filter(Boolean),
     hiddenTestCaseCount: hiddenCount,
   };
+
+  const handleHiddenTestFiles = async (fileList) => {
+    const files = Array.from(fileList || []);
+    const parsed = deriveHiddenFilePairs(files);
+    if (parsed.issues.length > 0) {
+      updateField('hiddenTestFiles', files);
+      return;
+    }
+
+    try {
+      const fileByName = new Map(files.map((file) => [file.name, file]));
+      const loadedCases = await Promise.all(parsed.pairs.map(async (pair) => ({
+        input: await fileByName.get(pair.input).text(),
+        output: await fileByName.get(pair.output).text(),
+        marks: 1,
+      })));
+      setForm((previous) => ({
+        ...previous,
+        hiddenTestFiles: [],
+        hiddenTestCases: loadedCases,
+      }));
+      setIsDirty(true);
+      toast.success(`${loadedCases.length} hidden test case pair(s) loaded. Review inputs, outputs, and marks below.`);
+    } catch {
+      toast.error('Could not read one or more hidden test case files. Please upload them again.');
+    }
+  };
   const activeTabIndex = EDITOR_TABS.findIndex((tab) => tab.key === activeTab);
   const isFinalTab = activeTabIndex === EDITOR_TABS.length - 1;
   const goToTab = (index) => {
@@ -762,7 +794,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
                     <label className="flex cursor-pointer items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm font-medium text-slate-600 transition-colors hover:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-900">
                       <Upload className="mr-2 h-4 w-4" />
                       Upload hidden testcase files
-                      <input type="file" multiple accept=".txt" className="hidden" onChange={(event) => updateField('hiddenTestFiles', Array.from(event.target.files || []))} />
+                      <input type="file" multiple accept=".txt" className="hidden" onChange={(event) => handleHiddenTestFiles(event.target.files)} />
                     </label>
 
                     {hiddenPairs.pairs.length > 0 || hiddenPairs.issues.length > 0 ? (
@@ -784,7 +816,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
                   </div>
 
                   <div>
-                    <label className="mb-3 block text-sm font-medium text-slate-700 dark:text-gray-300">Manual add</label>
+                    <label className="mb-3 block text-sm font-medium text-slate-700 dark:text-gray-300">All hidden test cases</label>
                     <TestCaseEditorCard
                       title="Hidden"
                       cases={form.hiddenTestCases}
@@ -834,8 +866,9 @@ if (!isValidated || publishedProblem.status !== 'published') {
                     <div className="mt-3 space-y-3">
                       {form.sampleTestCases.filter((item) => item.input || item.output || item.explanation).map((testCase, index) => (
                         <div key={`preview-sample-${index}`} className="rounded-xl bg-slate-50 p-3 text-xs dark:bg-gray-800">
-                          <p className="font-semibold text-slate-700 dark:text-gray-200">Sample {index + 1}</p>
-                          <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-slate-600 dark:text-gray-300">{testCase.input || '(empty input)'}</pre>
+                          <div className="flex items-center justify-between gap-3"><p className="font-semibold text-slate-700 dark:text-gray-200">Sample {index + 1}</p><span className="font-semibold text-emerald-700 dark:text-emerald-300">{Number(testCase.marks) || 1} mark(s)</span></div>
+                          <p className="mt-2 font-semibold text-slate-500">Input</p><pre className="mt-1 overflow-x-auto whitespace-pre-wrap text-slate-600 dark:text-gray-300">{testCase.input || '(empty input)'}</pre>
+                          <p className="mt-2 font-semibold text-slate-500">Expected output</p><pre className="mt-1 overflow-x-auto whitespace-pre-wrap text-slate-600 dark:text-gray-300">{testCase.output || '(empty output)'}</pre>
                         </div>
                       ))}
                     </div>
@@ -863,8 +896,9 @@ if (!isValidated || publishedProblem.status !== 'published') {
                               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">Manual entries</p>
                               {form.hiddenTestCases.filter((item) => item.input || item.output).map((testCase, index) => (
                                 <div key={`preview-manual-hidden-${index}`} className="rounded-xl bg-slate-50 p-3 text-xs dark:bg-gray-800">
-                                  <p className="font-semibold text-slate-700 dark:text-gray-200">Hidden {index + 1}</p>
-                                  <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-slate-600 dark:text-gray-300">{testCase.input || '(empty input)'}</pre>
+                                  <div className="flex items-center justify-between gap-3"><p className="font-semibold text-slate-700 dark:text-gray-200">Input {index + 1} / Output {index + 1}</p><span className="font-semibold text-emerald-700 dark:text-emerald-300">{Number(testCase.marks) || 1} mark(s)</span></div>
+                                  <p className="mt-2 font-semibold text-slate-500">Input {index + 1}</p><pre className="mt-1 overflow-x-auto whitespace-pre-wrap text-slate-600 dark:text-gray-300">{testCase.input || '(empty input)'}</pre>
+                                  <p className="mt-2 font-semibold text-slate-500">Expected output {index + 1}</p><pre className="mt-1 overflow-x-auto whitespace-pre-wrap text-slate-600 dark:text-gray-300">{testCase.output || '(empty output)'}</pre>
                                 </div>
                               ))}
                             </div>

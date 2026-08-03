@@ -29,6 +29,11 @@ const testCaseSchema = new mongoose.Schema({
     type: String,
     default: '',
   },
+  marks: {
+    type: Number,
+    min: 0.01,
+    default: 1,
+  },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',

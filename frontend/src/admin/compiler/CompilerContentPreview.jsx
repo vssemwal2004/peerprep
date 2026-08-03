@@ -256,7 +256,7 @@ export function ProblemStatementPreview({ problem, showMeta = true }) {
                 <div key={`${index + 1}-${testCase.input}`} className="rounded-xl border border-slate-200 p-4 dark:border-gray-700">
                   <div className="flex items-center justify-between gap-3">
                     <h4 className="text-sm font-semibold text-slate-800 dark:text-gray-100">Sample {index + 1}</h4>
-                    <span className="text-xs text-slate-400 dark:text-gray-500">Preview</span>
+                    <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-300">{Number(testCase.marks) || 1} mark(s)</span>
                   </div>
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
                     <div>

@@ -64,6 +64,7 @@ export function createEmptySampleTestCase() {
     input: '',
     output: '',
     explanation: '',
+    marks: 1,
   };
 }
 
@@ -71,6 +72,7 @@ export function createEmptyHiddenTestCase() {
   return {
     input: '',
     output: '',
+    marks: 1,
   };
 }
 
@@ -142,12 +144,14 @@ export function createProblemFormFromProblem(problem) {
         input: testCase.input || '',
         output: testCase.output || '',
         explanation: testCase.explanation || '',
+        marks: Number(testCase.marks) > 0 ? Number(testCase.marks) : 1,
       }))
       : [createEmptySampleTestCase()],
     hiddenTestCases: problem?.hiddenTestCases?.length
       ? problem.hiddenTestCases.map((testCase) => ({
         input: testCase.input || '',
         output: testCase.output || '',
+        marks: Number(testCase.marks) > 0 ? Number(testCase.marks) : 1,
       }))
       : [createEmptyHiddenTestCase()],
     existingHiddenTestCaseCount: problem?.hiddenTestCaseCount || 0,

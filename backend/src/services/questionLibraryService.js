@@ -240,7 +240,7 @@ async function loadProblemLibraryContext(problemInput) {
   const [sampleTestCases, hiddenTestCaseCount] = await Promise.all([
     TestCase.find({ problem: problem._id, kind: 'sample' })
       .sort({ position: 1 })
-      .select('input output explanation')
+      .select('input output explanation marks')
       .lean(),
     TestCase.countDocuments({ problem: problem._id, kind: 'hidden' }),
   ]);
@@ -251,6 +251,7 @@ async function loadProblemLibraryContext(problemInput) {
       input: testCase.input || '',
       output: testCase.output || '',
       explanation: testCase.explanation || '',
+      marks: Number(testCase.marks) || 1,
     })),
     hiddenTestCaseCount: Math.max(
       Number(hiddenTestCaseCount || 0),

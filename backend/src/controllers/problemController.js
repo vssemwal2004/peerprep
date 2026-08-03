@@ -275,6 +275,7 @@ function normalizeSampleTestCases(value) {
       input: String(testCase?.input ?? ''),
       output: String(testCase?.output ?? ''),
       explanation: sanitizeString(testCase?.explanation ?? '', 4000),
+      marks: Math.max(0.01, Number(testCase?.marks) || 1),
     }))
     .filter((testCase) => testCase.input || testCase.output || testCase.explanation);
 }
@@ -290,6 +291,7 @@ function normalizeHiddenTestCases(value) {
       position: index + 1,
       input: String(testCase?.input ?? ''),
       output: String(testCase?.output ?? ''),
+      marks: Math.max(0.01, Number(testCase?.marks) || 1),
     }))
     .filter((testCase) => testCase.input || testCase.output);
 }
@@ -678,6 +680,7 @@ async function replaceTestCases(problemId, userId, { sampleTestCases, hiddenTest
         input: testCase.input,
         output: testCase.output,
         explanation: testCase.explanation,
+        marks: testCase.marks || 1,
         createdBy: userId,
       })));
     }
@@ -693,6 +696,7 @@ async function replaceTestCases(problemId, userId, { sampleTestCases, hiddenTest
         position: testCase.position,
         input: testCase.input,
         output: testCase.output,
+        marks: testCase.marks || 1,
         createdBy: userId,
       })));
     }
@@ -799,11 +803,13 @@ async function loadProblemShape(
         input: testCase.input,
         output: testCase.output,
         explanation: testCase.explanation || '',
+        marks: testCase.marks || 1,
       })),
       hiddenTestCaseCount: effectiveHiddenTestCaseCount,
       hiddenTestCases: hiddenTestCases.map((testCase) => ({
         input: testCase.input || '',
         output: testCase.output || '',
+        marks: testCase.marks || 1,
       })),
       includeHiddenTestCases,
       includeReferenceSolutions,
