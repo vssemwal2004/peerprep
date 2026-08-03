@@ -271,7 +271,7 @@ export default function AdminOverview() {
       announcements: asArray(announcementsRes, ['announcements', 'data']),
       compiler,
       activityStats,
-      studentCount: readCount(studentsRes, ['count', 'total', 'totalStudents', 'students']),
+      studentCount: readCount(studentsRes, ['total', 'totalStudents', 'count', 'students']),
       coordinatorCount: readCount(coordinatorsRes, ['count', 'total', 'totalCoordinators', 'coordinators']),
       eventCount: readCount(eventsRes, ['count', 'total', 'events']),
       assessmentCount: readCount(assessmentsRes, ['count', 'total', 'assessments']),
