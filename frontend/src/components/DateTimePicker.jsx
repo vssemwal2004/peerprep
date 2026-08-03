@@ -592,15 +592,6 @@ export default function DateTimePicker({
                   d.getDate() === maxDateTime.getDate()
                 );
               };
-              const isMinDateTimeToday = () => {
-                if (!minDateTime) return false;
-                const n = new Date();
-                return (
-                  minDateTime.getFullYear() === n.getFullYear() &&
-                  minDateTime.getMonth() === n.getMonth() &&
-                  minDateTime.getDate() === n.getDate()
-                );
-              };
               const updateDisabledStates = () => {
                 const today = isTodaySelected();
                 const nowInfo = getCurrent24h();
@@ -626,10 +617,6 @@ export default function DateTimePicker({
                 } else if (today) {
                   refHour24 = nowInfo.h24;
                   refMinute = nowInfo.minute;
-                } else if (!isEnd && minDateTime && isMinDateTimeToday()) {
-                  // For start picker with no date selected but minDate is today, use current time
-                  refHour24 = nowInfo.h24;
-                  refMinute = nowInfo.minute;
                 } else {
                   refHour24 = 0;
                   refMinute = 0;
@@ -650,9 +637,6 @@ export default function DateTimePicker({
                   // Relative to reference (now for start, min for end) when same day
                   if (today || minDay) {
                     if (hourVal < refHour24) hide = true;
-                  } else if (!isEnd && minDateTime && isMinDateTimeToday()) {
-                    // For start picker with no date selected but minDate is today, use current time
-                    if (hourVal < nowInfo.h24) hide = true;
                   }
                   // Upper bound when same as max day
                   if (!hide && maxDay && maxRefHour24 !== null) {
@@ -669,13 +653,6 @@ export default function DateTimePicker({
                     if (selHour < refHour24) {
                       hide = true;
                     } else if (selHour === refHour24 && i < refMinute) {
-                      hide = true;
-                    }
-                  } else if (!isEnd && minDateTime && isMinDateTimeToday()) {
-                    // For start picker with no date selected but minDate is today, use current time
-                    if (selHour < nowInfo.h24) {
-                      hide = true;
-                    } else if (selHour === nowInfo.h24 && i < nowInfo.minute) {
                       hide = true;
                     }
                   }
