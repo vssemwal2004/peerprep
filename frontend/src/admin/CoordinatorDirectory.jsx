@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowUpDown, Edit2, Eye, Loader2, Lock, Mail, MoreVertical, Search, ShieldCheck, ToggleLeft, ToggleRight, Trash2, UserPlus, Users, X } from 'lucide-react';
 import { api } from '../utils/api';
@@ -27,31 +28,67 @@ function StatusPill({ active }) {
 
 function CoordinatorActionMenu({ coordinator, onEdit, onToggle, onView, onAccess, onDelete, onMail }) {
   const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState({ top: 0, left: 0 });
+  const buttonRef = useRef(null);
+  const menuRef = useRef(null);
   const active = coordinator.isActive !== false;
   const action = (callback) => () => { setOpen(false); callback(coordinator); };
+
+  const toggleMenu = () => {
+    if (!open && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const menuHeight = 300;
+      const openAbove = window.innerHeight - rect.bottom < menuHeight && rect.top > menuHeight;
+      setPosition({
+        top: openAbove ? Math.max(8, rect.top - menuHeight - 6) : rect.bottom + 6,
+        left: Math.max(8, Math.min(window.innerWidth - 216, rect.right - 208)),
+      });
+    }
+    setOpen((value) => !value);
+  };
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const closeOutside = (event) => {
+      if (!buttonRef.current?.contains(event.target) && !menuRef.current?.contains(event.target)) setOpen(false);
+    };
+    const closeOnViewportChange = () => setOpen(false);
+    document.addEventListener('mousedown', closeOutside);
+    window.addEventListener('resize', closeOnViewportChange);
+    window.addEventListener('scroll', closeOnViewportChange, true);
+    return () => {
+      document.removeEventListener('mousedown', closeOutside);
+      window.removeEventListener('resize', closeOnViewportChange);
+      window.removeEventListener('scroll', closeOnViewportChange, true);
+    };
+  }, [open]);
+
   return (
     <div className="relative">
-      <button type="button" onClick={() => setOpen((value) => !value)} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/10" aria-label="Coordinator actions"><MoreVertical className="h-4 w-4" /></button>
-      {open ? (
-        <div className="absolute right-0 top-10 z-40 w-52 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl dark:border-white/10 dark:bg-gray-900">
-          <button onClick={action(onView)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-bold text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-white/10"><Eye className="h-4 w-4" />View details</button>
-          <button onClick={action(onEdit)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-bold text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-white/10"><Edit2 className="h-4 w-4" />Edit coordinator</button>
-          <button onClick={action(onAccess)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-bold text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-400/10"><ShieldCheck className="h-4 w-4" />Manage access</button>
-          <button onClick={action(onMail)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-bold text-indigo-700 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-400/10"><Mail className="h-4 w-4" />{coordinator.credentialEmailStatus === 'sent' ? 'Resend credentials' : 'Send credentials'}</button>
-          <button onClick={action(onToggle)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-bold text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-white/10">{active ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}{active ? 'Disable account' : 'Enable account'}</button>
+      <button ref={buttonRef} type="button" onClick={toggleMenu} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/10" aria-label={`Actions for ${coordinator.name || coordinator.email}`} aria-haspopup="menu" aria-expanded={open}><MoreVertical className="h-4 w-4" /></button>
+      {open && createPortal(
+        <div ref={menuRef} role="menu" style={{ top: position.top, left: position.left }} className="fixed z-[100] w-52 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-2xl dark:border-white/10 dark:bg-gray-900">
+          <button type="button" onClick={action(onView)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-bold text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-white/10"><Eye className="h-4 w-4" />View details</button>
+          <button type="button" onClick={action(onEdit)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-bold text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-white/10"><Edit2 className="h-4 w-4" />Edit coordinator</button>
+          <button type="button" onClick={action(onAccess)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-bold text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-400/10"><ShieldCheck className="h-4 w-4" />Manage access</button>
+          <button type="button" onClick={action(onMail)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-bold text-indigo-700 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-400/10"><Mail className="h-4 w-4" />{coordinator.credentialEmailStatus === 'sent' ? 'Resend credentials' : 'Send credentials'}</button>
+          <button type="button" onClick={action(onToggle)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-bold text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-white/10">{active ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}{active ? 'Deactivate account' : 'Activate account'}</button>
           <div className="my-1 border-t border-slate-100 dark:border-white/10" />
-          <button onClick={action(onDelete)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-bold text-rose-600 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-400/10"><Trash2 className="h-4 w-4" />Delete coordinator</button>
-        </div>
-      ) : null}
+          <button type="button" onClick={action(onDelete)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-bold text-rose-600 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-400/10"><Trash2 className="h-4 w-4" />Delete coordinator</button>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }
 
-function CoordinatorCard({ coordinator, onEdit, onToggle, onView, onAccess, onDelete, onMail }) {
+function CoordinatorCard({ coordinator, checked, onCheck, onEdit, onToggle, onView, onAccess, onDelete, onMail }) {
   const active = coordinator.isActive !== false;
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-gray-900 lg:hidden">
       <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <input type="checkbox" checked={checked} onChange={onCheck} aria-label={`Select ${coordinator.name || coordinator.email}`} className="h-4 w-4 rounded border-slate-300" />
         <button type="button" onClick={() => onView(coordinator)} className="flex min-w-0 items-center gap-3 text-left">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sm font-bold text-sky-700 dark:bg-sky-400/10 dark:text-sky-200">
             {(coordinator.name || coordinator.email || '?').charAt(0).toUpperCase()}
@@ -60,7 +97,7 @@ function CoordinatorCard({ coordinator, onEdit, onToggle, onView, onAccess, onDe
             <p className="truncate text-sm font-bold text-slate-950 dark:text-white">{coordinator.name || 'Unnamed coordinator'}</p>
             <p className="truncate text-xs font-semibold text-slate-500 dark:text-slate-400">{coordinator.email}</p>
           </div>
-        </button>
+        </button></div>
         <div className="flex items-center gap-2"><StatusPill active={active} /><CoordinatorActionMenu coordinator={coordinator} onView={onView} onEdit={onEdit} onAccess={onAccess} onToggle={onToggle} onDelete={onDelete} onMail={onMail} /></div>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
@@ -95,6 +132,7 @@ export default function CoordinatorDirectory() {
   const [saving, setSaving] = useState(false);
   const [selectedCoordinatorIds, setSelectedCoordinatorIds] = useState(new Set());
   const [bulkMenuOpen, setBulkMenuOpen] = useState(false);
+  const [bulkWorking, setBulkWorking] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -186,6 +224,37 @@ export default function CoordinatorDirectory() {
     }
   };
 
+  const updateSelectedStatus = async (isActive) => {
+    const selectedItems = coordinators.filter((item) => selectedCoordinatorIds.has(String(item._id)) && (item.isActive !== false) !== isActive);
+    if (!selectedItems.length) return toast.error(`No selected coordinators need to be ${isActive ? 'activated' : 'deactivated'}.`);
+    if (!confirm(`${isActive ? 'Activate' : 'Deactivate'} ${selectedItems.length} selected coordinator account(s)?`)) return;
+    setBulkWorking(true);
+    setBulkMenuOpen(false);
+    const results = await Promise.allSettled(selectedItems.map((item) => api.updateCoordinatorStatus(item._id, isActive)));
+    const succeeded = new Set(selectedItems.filter((_, index) => results[index].status === 'fulfilled').map((item) => String(item._id)));
+    setCoordinators((current) => current.map((item) => succeeded.has(String(item._id)) ? { ...item, isActive, status: isActive ? 'active' : 'disabled' } : item));
+    setBulkWorking(false);
+    const failed = results.length - succeeded.size;
+    if (succeeded.size) toast.success(`${succeeded.size} coordinator account(s) ${isActive ? 'activated' : 'deactivated'}.`);
+    if (failed) toast.error(`${failed} coordinator account(s) could not be updated.`);
+  };
+
+  const deleteSelectedCoordinators = async () => {
+    const selectedItems = coordinators.filter((item) => selectedCoordinatorIds.has(String(item._id)));
+    if (!selectedItems.length) return toast.error('Select at least one coordinator.');
+    if (!confirm(`Permanently delete ${selectedItems.length} selected coordinator(s)? Coordinators with assigned students or interviews will be kept.`)) return;
+    setBulkWorking(true);
+    setBulkMenuOpen(false);
+    const results = await Promise.allSettled(selectedItems.map((item) => api.deleteCoordinator(item._id)));
+    const deletedIds = new Set(selectedItems.filter((_, index) => results[index].status === 'fulfilled').map((item) => String(item._id)));
+    setCoordinators((current) => current.filter((item) => !deletedIds.has(String(item._id))));
+    setSelectedCoordinatorIds((current) => new Set([...current].filter((id) => !deletedIds.has(id))));
+    setBulkWorking(false);
+    const failed = results.length - deletedIds.size;
+    if (deletedIds.size) toast.success(`${deletedIds.size} coordinator(s) deleted.`);
+    if (failed) toast.error(`${failed} coordinator(s) could not be deleted because they still own assigned records.`);
+  };
+
   const startEdit = (coordinator) => {
     setEditing(coordinator);
     setEditForm({
@@ -266,13 +335,19 @@ export default function CoordinatorDirectory() {
         {error ? <div className="mb-5 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700 dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-200">{error}</div> : null}
 
         <div className="mb-4 flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-gray-900">
-          <span className="text-xs font-bold text-slate-500">{selectedCoordinatorIds.size} coordinator(s) selected</span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-bold text-slate-500">{selectedCoordinatorIds.size} coordinator(s) selected</span>
+            {selectedCoordinatorIds.size > 0 && <button type="button" onClick={() => setSelectedCoordinatorIds(new Set())} className="text-xs font-bold text-sky-700 hover:text-sky-900 dark:text-sky-300">Clear</button>}
+          </div>
           <div className="relative">
-            <button type="button" onClick={() => setBulkMenuOpen((open) => !open)} className="rounded-lg border border-slate-200 p-2 dark:border-white/10"><MoreVertical className="h-4 w-4" /></button>
-            {bulkMenuOpen && <div className="absolute right-0 top-10 z-40 w-56 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-white/10 dark:bg-gray-900">
-              <button type="button" onClick={() => setSelectedCoordinatorIds(new Set(filtered.map((item) => String(item._id))))} className="w-full rounded-lg px-3 py-2 text-left text-xs font-bold hover:bg-slate-50 dark:hover:bg-white/10">Select all filtered</button>
+            <button type="button" onClick={() => setBulkMenuOpen((open) => !open)} disabled={bulkWorking} aria-label="Coordinator bulk actions" aria-expanded={bulkMenuOpen} className="rounded-lg border border-slate-200 p-2 disabled:opacity-50 dark:border-white/10">{bulkWorking ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreVertical className="h-4 w-4" />}</button>
+            {bulkMenuOpen && <div className="absolute right-0 top-10 z-50 w-60 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-white/10 dark:bg-gray-900">
+              <button type="button" onClick={() => { setSelectedCoordinatorIds(new Set(filtered.map((item) => String(item._id)))); setBulkMenuOpen(false); }} className="w-full rounded-lg px-3 py-2 text-left text-xs font-bold hover:bg-slate-50 dark:hover:bg-white/10">Select all {filtered.length} filtered</button>
               <button type="button" onClick={sendSelectedCoordinatorMail} disabled={!selectedCoordinatorIds.size} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold text-indigo-700 hover:bg-indigo-50 disabled:opacity-40 dark:text-indigo-300"><Mail className="h-4 w-4" />Send/Resend selected</button>
-              <button type="button" onClick={() => setSelectedCoordinatorIds(new Set())} className="w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-slate-500 hover:bg-slate-50 dark:hover:bg-white/10">Clear selection</button>
+              <button type="button" onClick={() => updateSelectedStatus(false)} disabled={!selectedCoordinatorIds.size} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold text-amber-700 hover:bg-amber-50 disabled:opacity-40 dark:text-amber-300"><ToggleRight className="h-4 w-4" />Deactivate selected</button>
+              <button type="button" onClick={() => updateSelectedStatus(true)} disabled={!selectedCoordinatorIds.size} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold text-emerald-700 hover:bg-emerald-50 disabled:opacity-40 dark:text-emerald-300"><ToggleLeft className="h-4 w-4" />Activate selected</button>
+              <div className="my-1 border-t border-slate-100 dark:border-white/10" />
+              <button type="button" onClick={deleteSelectedCoordinators} disabled={!selectedCoordinatorIds.size} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-40 dark:text-rose-300"><Trash2 className="h-4 w-4" />Delete selected</button>
             </div>}
           </div>
         </div>
@@ -291,7 +366,7 @@ export default function CoordinatorDirectory() {
           <>
             <div className="space-y-3 lg:hidden">
               {pageItems.map((coordinator) => (
-                <CoordinatorCard key={coordinator._id} coordinator={coordinator} onView={setSelected} onEdit={startEdit} onToggle={toggleStatus} onDelete={deleteCoordinator} onMail={sendCoordinatorMail} onAccess={(item) => navigate(`/admin/coordinator-access/${item._id}`)} />
+                <CoordinatorCard key={coordinator._id} coordinator={coordinator} checked={selectedCoordinatorIds.has(String(coordinator._id))} onCheck={() => setSelectedCoordinatorIds((current) => { const next = new Set(current); const key = String(coordinator._id); if (next.has(key)) next.delete(key); else next.add(key); return next; })} onView={setSelected} onEdit={startEdit} onToggle={toggleStatus} onDelete={deleteCoordinator} onMail={sendCoordinatorMail} onAccess={(item) => navigate(`/admin/coordinator-access/${item._id}`)} />
               ))}
             </div>
 
@@ -299,7 +374,8 @@ export default function CoordinatorDirectory() {
               <table className="min-w-full divide-y divide-slate-100 dark:divide-white/10">
                 <thead className="bg-slate-50 dark:bg-white/[0.04]">
                   <tr>
-                    {['Select', 'Name', 'Email', 'Phone', 'Role', 'Status', 'Permissions', 'Last Active', 'Actions'].map((heading) => (
+                    <th className="px-4 py-3 text-left"><input type="checkbox" aria-label="Select all coordinators on this page" checked={pageItems.length > 0 && pageItems.every((item) => selectedCoordinatorIds.has(String(item._id)))} onChange={(event) => setSelectedCoordinatorIds((current) => { const next = new Set(current); pageItems.forEach((item) => { const key = String(item._id); if (event.target.checked) next.add(key); else next.delete(key); }); return next; })} className="h-4 w-4 rounded border-slate-300" /></th>
+                    {['Name', 'Email', 'Phone', 'Role', 'Status', 'Permissions', 'Last Active', 'Actions'].map((heading) => (
                       <th key={heading} className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{heading}</th>
                     ))}
                   </tr>
