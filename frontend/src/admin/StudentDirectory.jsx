@@ -223,6 +223,7 @@ export default function StudentDirectory() {
     () => selectedStudents.filter((student) => student.canResendCredentials).map((student) => String(student._id)),
     [selectedStudents],
   );
+  const selectedCredentialSkippedCount = Math.max(0, selectedCount - selectedCredentialIds.length);
   const isSendingCredentials = sendingCredentialIds.size > 0;
   const allPageSelected = pageStudentIds.length > 0 && pageStudentIds.every((id) => selectedStudentIds.has(id));
   const somePageSelected = pageStudentIds.some((id) => selectedStudentIds.has(id));
@@ -981,8 +982,18 @@ export default function StudentDirectory() {
                         className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-sky-700 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-45 dark:text-sky-300 dark:hover:bg-sky-950/30"
                       >
                         <Mail className="h-4 w-4" />
-                        Send credential mail ({selectedCredentialIds.length})
+                        <span className="min-w-0">
+                          <span className="block">Send credential mail</span>
+                          <span className="block text-[10px] font-normal opacity-75">
+                            {selectedCredentialIds.length} eligible of {selectedCount} selected
+                          </span>
+                        </span>
                       </button>
+                      {selectedCredentialSkippedCount > 0 && (
+                        <div className="mx-2 mb-1 rounded-md bg-amber-50 px-2 py-1.5 text-[10px] leading-4 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+                          {selectedCredentialSkippedCount} skipped: already logged in or credential email currently pending.
+                        </div>
+                      )}
                       <button
                         type="button"
                         onClick={handleBulkDeleteStudents}
@@ -1025,6 +1036,9 @@ export default function StudentDirectory() {
                     <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Group</th>
                     <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">College</th>
                     <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Coordinator</th>
+                    {activeTab === "students" && (
+                      <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Status</th>
+                    )}
                     <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Credential Mail</th>
                     {activeTab === "students" && (
                       <th scope="col" className="px-3 py-2 text-right text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Actions</th>
@@ -1084,6 +1098,19 @@ export default function StudentDirectory() {
                         <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300">{s.group || "-"}</td>
                         <td className="max-w-[180px] px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300"><span className="block truncate">{s.college || "-"}</span></td>
                         <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300">{s.teacherId || "-"}</td>
+                        {activeTab === "students" && (
+                          <td className="px-3 py-1.5 text-xs">
+                            {s.loginStatus === 'active' ? (
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Active
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                                <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />Awaiting login
+                              </span>
+                            )}
+                          </td>
+                        )}
                         <td className="px-3 py-1.5 text-xs">
                           {s.credentialEmailStatus === 'sent' ? (
                             <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">Sent</span>
@@ -1164,7 +1191,7 @@ export default function StudentDirectory() {
                                     <FileDown className="h-4 w-4 text-emerald-600" />
                                     Download data
                                   </button>
-                                  {s.canResendCredentials && (
+                                  {s.canResendCredentials && s.loginStatus !== 'active' && (
                                     <button
                                       type="button"
                                       onClick={(event) => handleSendCredentials([studentId], event)}

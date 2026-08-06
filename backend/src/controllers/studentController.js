@@ -217,6 +217,7 @@ export async function listAllStudents(req, res) {
           || !s.credentialEmailLastAttemptAt
           || Date.now() - new Date(s.credentialEmailLastAttemptAt).getTime() > 5 * 60 * 1000
         ),
+      loginStatus: s.activeSessionCreatedAt ? 'active' : 'awaiting_login',
       // Historical deliveries were not tracked. Never claim they were not sent.
       credentialEmailStatus: s.credentialEmailStatus || 'unconfirmed',
       mustChangePassword: undefined,
