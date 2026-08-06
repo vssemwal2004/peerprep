@@ -23,6 +23,7 @@ export const COORDINATOR_PERMISSION_CATEGORIES = [
     label: 'User Management',
     permissions: [
       'coordinator.students.view',
+      'coordinator.students.bulk-lists',
       'coordinator.students.profile',
       'coordinator.students.promote',
     ],

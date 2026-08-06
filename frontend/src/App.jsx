@@ -48,6 +48,7 @@ const AdminLearning = lazy(() => import("./admin/AdminLearning"));
 const AdminLearningDetail = lazy(() => import("./admin/AdminLearningDetail"));
 const StudentOnboarding = lazy(() => import("./admin/StudentOnboarding"));
 const StudentDirectory = lazy(() => import("./admin/StudentDirectory"));
+const StudentBulkLists = lazy(() => import("./admin/StudentBulkLists"));
 const AdminStudentProfile = lazy(() => import("./admin/AdminStudentProfile"));
 const EventManagement = lazy(() => import("./admin/EventManagement"));
 const EventDetail = lazy(() => import("./admin/EventDetail"));
@@ -288,6 +289,7 @@ function AppContent() {
         <Route path="/admin/dashboard" element={<AdminShell><AdminOverview /></AdminShell>} />
         <Route path="/admin/onboarding" element={<AdminShell><StudentOnboarding /></AdminShell>} />
         <Route path="/admin/students" element={<AdminShell><StudentDirectory /></AdminShell>} />
+        <Route path="/admin/students/bulk-lists" element={<AdminShell><StudentBulkLists /></AdminShell>} />
         <Route path="/admin/students/:studentId" element={<AdminShell><AdminStudentProfile /></AdminShell>} />
         <Route path="/admin/coordinator-directory" element={<AdminShell><CoordinatorDirectory /></AdminShell>} />
         <Route path="/admin/coordinators" element={<AdminShell><CoordinatorOnboarding /></AdminShell>} />
@@ -334,6 +336,7 @@ function AppContent() {
         <Route path="/coordinator/interviews" element={<CoordinatorShell permission="coordinator.interviews.view"><CoordinatorEventDetail /></CoordinatorShell>} />
         <Route path="/coordinator/event/:id" element={<CoordinatorShell permission="coordinator.interviews.view"><CoordinatorEventDetail /></CoordinatorShell>} />
         <Route path="/coordinator/students" element={<CoordinatorShell permission="coordinator.students.view"><CoordinatorStudents /></CoordinatorShell>} />
+        <Route path="/coordinator/students/bulk-lists" element={<CoordinatorShell permission="coordinator.students.bulk-lists"><StudentBulkLists /></CoordinatorShell>} />
         <Route path="/coordinator/students/:studentId" element={<CoordinatorShell permission="coordinator.students.profile"><AdminStudentProfile /></CoordinatorShell>} />
         <Route path="/coordinator/subjects" element={<CoordinatorShell permission="coordinator.learning.manage"><SemesterManagement /></CoordinatorShell>} />
         <Route path="/coordinator/database" element={<CoordinatorShell permission="coordinator.courses.view"><CoordinatorDatabase /></CoordinatorShell>} />

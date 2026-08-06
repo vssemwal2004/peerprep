@@ -1,18 +1,17 @@
 import { useMemo, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { CalendarDays, ClipboardList, GraduationCap, Users, UserPlus, LayoutDashboard, Code2, BookOpen, Megaphone, ChevronDown, Building2 } from 'lucide-react';
+import { CalendarDays, ClipboardList, GraduationCap, Users, UserPlus, LayoutDashboard, Code2, BookOpen, Megaphone, ChevronDown, Building2, ListChecks } from 'lucide-react';
 
 export default function AdminSidebar() {
   const location = useLocation();
   const [announcementsOpen, setAnnouncementsOpen] = useState(false);
+  const [studentsOpen, setStudentsOpen] = useState(location.pathname.startsWith('/admin/students') || location.pathname === '/admin/onboarding');
 
   const items = useMemo(() => ([
     { label: 'Overview', to: '/admin', Icon: LayoutDashboard },
     { label: 'Create Interview', to: '/admin/event', Icon: CalendarDays },
     { label: 'Scheduled Interviews', to: '/admin/interviews/scheduled', Icon: BookOpen },
     { label: 'Past Interview Details', to: '/admin/interviews/past', Icon: BookOpen },
-    { label: 'Add Users', to: '/admin/onboarding', Icon: UserPlus },
-    { label: 'Users', to: '/admin/students', Icon: Users },
     { label: 'Learning Modules', to: '/admin/learning', Icon: GraduationCap },
     { label: 'Assessment', to: '/admin/assessment', Icon: ClipboardList },
     { label: 'Compiler', to: '/admin/compiler', Icon: Code2 },
@@ -46,6 +45,26 @@ export default function AdminSidebar() {
             </span>
           </NavLink>
         ))}
+
+        <div className="mt-1">
+          <button onClick={() => setStudentsOpen((value) => !value)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-xs font-semibold transition-all duration-200 ${isActive('/admin/students') || location.pathname === '/admin/onboarding' ? 'bg-sky-50 text-sky-600 dark:bg-gray-800 dark:text-sky-400' : 'text-slate-600 hover:bg-slate-50 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
+            <Users className="h-4.5 w-4.5 shrink-0" />
+            <span className="flex-1 whitespace-nowrap opacity-0 transition-all group-hover:opacity-100">Students</span>
+            <ChevronDown className={`h-4 w-4 opacity-0 transition-all group-hover:opacity-100 ${studentsOpen ? 'rotate-180' : ''}`} />
+          </button>
+          <div className={`mt-1 flex flex-col gap-1 pl-8 ${studentsOpen ? 'block' : 'hidden'} group-hover:block`}>
+            {[
+              { label: 'View Students', to: '/admin/students', Icon: Users, exact: true },
+              { label: 'View Bulk Lists', to: '/admin/students/bulk-lists', Icon: ListChecks },
+              { label: 'Add Student', to: '/admin/onboarding', Icon: UserPlus },
+            ].map(({ label, to, Icon, exact }) => (
+              <NavLink key={label} to={to} className={() => {
+                const active = exact ? location.pathname === to : location.pathname.startsWith(to);
+                return `flex items-center gap-2 rounded-lg px-3 py-1.5 text-[11px] font-semibold transition ${active ? 'bg-sky-50 text-sky-600 dark:bg-gray-800 dark:text-sky-400' : 'text-slate-500 hover:bg-slate-50 dark:text-gray-400 dark:hover:bg-gray-800'}`;
+              }}><Icon className="h-3.5 w-3.5 shrink-0" /><span className="whitespace-nowrap">{label}</span></NavLink>
+            ))}
+          </div>
+        </div>
 
         <div className="mt-1">
           <button

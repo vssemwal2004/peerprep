@@ -25,6 +25,7 @@ const userSchema = new mongoose.Schema({
   college: String,
   semester: { type: Number, min: 1, max: 8 }, // Required for students: current semester (1-8)
   group: String, // Student group (e.g., G1, G2, A, B, etc.)
+  uploadBatchIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'StudentUploadBatch' }],
 
   // Special student support (for special events)
   isSpecialStudent: { type: Boolean, default: false },

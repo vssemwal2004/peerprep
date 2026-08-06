@@ -108,6 +108,14 @@ export const coordinatorPermissionCategories = [
         routes: ['/coordinator/students'],
       },
       {
+        key: 'coordinator.students.bulk-lists',
+        name: 'View Bulk Student Lists',
+        description: 'View uploaded bulk lists that contain students assigned to this coordinator.',
+        accessType: 'View',
+        usage: 'Shows Bulk Student Lists and allows opening its scoped student table.',
+        routes: ['/coordinator/students/bulk-lists'],
+      },
+      {
         key: 'coordinator.students.profile',
         name: 'Student Profiles',
         description: 'Open detailed student profile pages from coordinator views.',

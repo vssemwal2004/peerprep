@@ -24,6 +24,7 @@ import {
   Building2,
   UserCog,
   ShieldCheck,
+  ListChecks,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { hasPermission } from '../admin/coordinatorPermissions';
@@ -50,6 +51,7 @@ const buildNavItems = (role = 'admin') => {
         ],
       },
       { type: 'link', label: 'My Students', to: '/coordinator/students', icon: Users, permissionKey: 'coordinator.students.view' },
+      { type: 'link', label: 'Bulk Student Lists', to: '/coordinator/students/bulk-lists', icon: ListChecks, permissionKey: 'coordinator.students.bulk-lists' },
       { type: 'link', label: 'Learning Modules', to: '/coordinator/subjects', icon: BookOpen, permissionKey: 'coordinator.learning.manage' },
       { type: 'link', label: 'Registered Courses', to: '/coordinator/database', icon: Building2, permissionKey: 'coordinator.courses.view' },
       { type: 'link', label: 'Feedback', to: '/coordinator/feedback', icon: MessageSquare, permissionKey: 'coordinator.feedback.view' },
@@ -156,8 +158,9 @@ const buildNavItems = (role = 'admin') => {
       label: 'Student',
       icon: GraduationCap,
       items: [
+        { label: 'Student List', to: '/admin/students', icon: Users, match: (currentLocation) => currentLocation.pathname === '/admin/students' },
+        { label: 'View Bulk Lists', to: '/admin/students/bulk-lists', icon: ListChecks },
         { label: 'Add Student', to: '/admin/onboarding', icon: UserPlus },
-        { label: 'Student List', to: '/admin/students', icon: Users },
       ],
     },
     { type: 'link', label: 'Learning Modules', to: '/admin/learning', icon: BookOpen },

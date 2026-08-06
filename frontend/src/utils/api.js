@@ -359,7 +359,7 @@ export const api = {
     if (options.search) params.append('search', options.search);
     if (options.sortOrder) params.append('sortOrder', options.sortOrder);
     if (options.semester !== undefined && options.semester !== '') params.append('semester', options.semester);
-    ['branch', 'course', 'college', 'group', 'coordinator', 'credentialEmailStatus', 'platformActivity', 'credentialEligibility', 'accountStatus'].forEach((key) => {
+    ['branch', 'course', 'college', 'group', 'coordinator', 'credentialEmailStatus', 'platformActivity', 'credentialEligibility', 'accountStatus', 'uploadBatchId'].forEach((key) => {
       if (options[key] !== undefined && options[key] !== '') params.append(key, options[key]);
     });
     if (options.page) params.append('page', options.page);
@@ -390,6 +390,9 @@ export const api = {
     fd.append('file', file);
     return request('/students/upload', { method: 'POST', formData: fd });
   },
+  listStudentUploadBatches: (search = '') => request(`/students/upload-batches${search ? `?search=${encodeURIComponent(search)}` : ''}`, { skipCache: true }),
+  renameStudentUploadBatch: (batchId, name) => request(`/students/upload-batches/${batchId}`, { method: 'PATCH', body: { name } }),
+  deleteStudentUploadBatch: (batchId) => request(`/students/upload-batches/${batchId}`, { method: 'DELETE' }),
   createStudent: (body) => request('/students/create', { method: 'POST', body }),
   listPromotionSemesters: () => request('/students/promotion/semesters', { skipCache: true }),
   listPromotionStudents: (semester) => request(`/students/promotion/semesters/${semester}/students`, { skipCache: true }),
@@ -400,7 +403,7 @@ export const api = {
   resendStudentCredentials: (studentIds) => request('/students/resend-credentials', { method: 'POST', body: { studentIds } }),
   exportStudentsCsv: async (options = {}) => {
     const params = new URLSearchParams();
-    ['search', 'sortOrder', 'semester', 'branch', 'course', 'college', 'group', 'coordinator', 'credentialEmailStatus', 'platformActivity', 'credentialEligibility', 'accountStatus'].forEach((key) => {
+    ['search', 'sortOrder', 'semester', 'branch', 'course', 'college', 'group', 'coordinator', 'credentialEmailStatus', 'platformActivity', 'credentialEligibility', 'accountStatus', 'uploadBatchId'].forEach((key) => {
       if (options[key] !== undefined && options[key] !== '') params.append(key, options[key]);
     });
     const queryString = params.toString();

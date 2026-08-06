@@ -5,10 +5,12 @@ import { api } from "../utils/api";
 import { useActivityLogger } from "../hooks/useActivityLogger";
 import { useToast } from "../components/CustomToast";
 import { Upload, CheckCircle, AlertCircle, Plus, Loader2, FileText, Download, Users, BookOpen, Shield, ArrowRight, X } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 export default function StudentOnboarding() {
   const { logBulkCreate, logCreate, logUpload } = useActivityLogger();
   const toast = useToast();
+  const navigate = useNavigate();
   const [csvFile, setCsvFile] = useState(null);
   const [students, setStudents] = useState([]);
   const [error, setError] = useState("");
@@ -24,6 +26,9 @@ export default function StudentOnboarding() {
   const [dragActive, setDragActive] = useState(false);
   const [openTabs, setOpenTabs] = useState([]); // [{ key, label, data }]
   const [activeTab, setActiveTab] = useState(null); // key
+  const [namingBatch, setNamingBatch] = useState(null);
+  const [batchName, setBatchName] = useState('');
+  const [savingBatchName, setSavingBatchName] = useState(false);
 
   // Email validation regex
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -275,6 +280,10 @@ export default function StudentOnboarding() {
     try {
       const data = await api.uploadStudentsCsv(csvFile);
       setUploadResult(data);
+      if (data.batch) {
+        setNamingBatch(data.batch);
+        setBatchName(data.batch.name || csvFile.name.replace(/\.csv$/i, ''));
+      }
       
       // Check for existing/updated/duplicate users
       const updatedCount = data.results?.filter(r => r.status === 'updated').length || 0;
@@ -344,6 +353,21 @@ export default function StudentOnboarding() {
       setUploadSuccess(false);
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const saveBatchName = async () => {
+    if (!batchName.trim() || !namingBatch) return;
+    setSavingBatchName(true);
+    try {
+      const data = await api.renameStudentUploadBatch(namingBatch._id, batchName.trim());
+      setNamingBatch(data.batch);
+      toast.success('Bulk list name saved.');
+      navigate(`/admin/students/bulk-lists`);
+    } catch (error) {
+      toast.error(error.message || 'Failed to save list name.');
+    } finally {
+      setSavingBatchName(false);
     }
   };
 
@@ -954,6 +978,22 @@ export default function StudentOnboarding() {
           </motion.div>
         )}
       </motion.div>
+
+      <AnimatePresence>
+        {namingBatch && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm">
+            <motion.div initial={{ opacity: 0, scale: 0.96, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+              <div className="flex items-start gap-3">
+                <span className="rounded-xl bg-emerald-50 p-2.5 text-emerald-600 dark:bg-emerald-950/40"><CheckCircle className="h-5 w-5" /></span>
+                <div><h2 className="text-lg font-bold text-slate-950 dark:text-white">Save this bulk list</h2><p className="mt-1 text-sm text-slate-500 dark:text-gray-400">Upload completed. Give this student list a clear name so you can find and manage it later.</p></div>
+              </div>
+              <label className="mt-5 block"><span className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-gray-300">Bulk list name</span><input autoFocus maxLength="120" value={batchName} onChange={(event) => setBatchName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') saveBatchName(); }} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white" /></label>
+              <p className="mt-2 text-xs text-slate-400">Original file: {namingBatch.originalFileName}</p>
+              <div className="mt-6 flex justify-end gap-2"><button onClick={() => setNamingBatch(null)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Stay here</button><button onClick={saveBatchName} disabled={!batchName.trim() || savingBatchName} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50">{savingBatchName && <Loader2 className="h-4 w-4 animate-spin" />}Save & view bulk lists</button></div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

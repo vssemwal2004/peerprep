@@ -1,6 +1,6 @@
 /* eslint-disable no-unused-vars */
 import { useState, useEffect, useMemo, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../utils/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckSquare, ChevronLeft, ChevronRight, ClipboardCopy, Download, Edit2, Eye, FileDown, Filter, Loader2, Mail, MoreVertical, Save, Search, Trash2, UserX, Users, X } from "lucide-react";
@@ -28,6 +28,9 @@ const EMPTY_FILTERS = {
 
 export default function StudentDirectory() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const uploadBatchId = searchParams.get('uploadBatchId') || '';
+  const uploadBatchName = searchParams.get('batchName') || '';
   const toast = useToast();
   const [students, setStudents] = useState([]);
   const [specialStudents, setSpecialStudents] = useState([]);
@@ -196,7 +199,7 @@ export default function StudentDirectory() {
     loadData();
     // loadData uses a request revision guard to ignore stale search responses.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, sortOrder, filters, currentPage, itemsPerPage, debouncedSearch]);
+  }, [activeTab, sortOrder, filters, currentPage, itemsPerPage, debouncedSearch, uploadBatchId]);
 
   useEffect(() => () => {
     credentialRefreshTimersRef.current.forEach((timer) => clearTimeout(timer));
@@ -239,6 +242,7 @@ export default function StudentDirectory() {
           search: debouncedSearch,
           sortOrder,
           ...filters,
+          uploadBatchId,
           page: currentPage,
           limit: itemsPerPage,
         });
@@ -362,6 +366,7 @@ export default function StudentDirectory() {
         search: debouncedSearch,
         sortOrder,
         ...filters,
+        uploadBatchId,
       });
       const eligible = (data.students || []).filter((student) => student.canResendCredentials);
       setSelectedStudentIds(new Set(eligible.map((student) => String(student._id))));
@@ -693,6 +698,7 @@ export default function StudentDirectory() {
         search: searchQuery.trim(),
         sortOrder,
         ...filters,
+        uploadBatchId,
       });
       toast.success(`${result.count || pagination.total} matching student${(result.count || pagination.total) === 1 ? '' : 's'} exported.`);
     } catch (err) {
@@ -724,10 +730,10 @@ export default function StudentDirectory() {
               </div>
               <div>
                 <h1 className="text-base font-semibold text-slate-900 dark:text-white">
-                  {activeTab === "students" ? "Student Database" : "Special Event Students"}
+                  {activeTab === "students" ? (uploadBatchName || "Student Database") : "Special Event Students"}
                 </h1>
                 <p className="text-[11px] text-slate-500 dark:text-gray-400">
-                  {pagination.total.toLocaleString()} {debouncedSearch || activeFilterCount > 0 ? 'matching' : 'registered'} student{pagination.total === 1 ? '' : 's'}
+                  {pagination.total.toLocaleString()} {uploadBatchId ? 'students in this bulk list' : (debouncedSearch || activeFilterCount > 0 ? 'matching students' : 'registered students')}
                 </p>
               </div>
             </div>

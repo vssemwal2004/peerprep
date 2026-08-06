@@ -1,6 +1,6 @@
 /* eslint-disable no-unused-vars */
-import { useState, useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../utils/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, Users, Loader2, X, Download } from "lucide-react";
@@ -9,6 +9,9 @@ import ContributionCalendar from "../components/ContributionCalendar";
 
 export default function CoordinatorStudents() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const uploadBatchId = searchParams.get('uploadBatchId') || '';
+  const uploadBatchName = searchParams.get('batchName') || '';
   const [students, setStudents] = useState([]);
   const [filteredStudents, setFilteredStudents] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -60,10 +63,6 @@ export default function CoordinatorStudents() {
   }, [students]);
 
   useEffect(() => {
-    fetchStudents();
-  }, []);
-
-  useEffect(() => {
     if (!searchQuery.trim()) {
       setFilteredStudents(students);
     } else {
@@ -74,11 +73,11 @@ export default function CoordinatorStudents() {
     }
   }, [searchQuery, students, fuse]);
 
-  const fetchStudents = async () => {
+  const fetchStudents = useCallback(async () => {
     setIsLoading(true);
     setError("");
     try {
-      const data = await api.listAllStudents();
+      const data = await api.listAllStudents({ uploadBatchId });
       setStudents(data.students || []);
       setFilteredStudents(data.students || []);
     } catch (err) {
@@ -87,7 +86,7 @@ export default function CoordinatorStudents() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [uploadBatchId]);
 
   const handleSearch = async (e) => {
     e.preventDefault();
@@ -101,6 +100,10 @@ export default function CoordinatorStudents() {
   const openStudentProfile = async (student) => {
     navigate(`/coordinator/students/${student._id}`);
   };
+
+  useEffect(() => {
+    fetchStudents();
+  }, [fetchStudents]);
 
   const loadStudentActivity = async (studentId, year) => {
     setLoadingActivity(true);
@@ -255,10 +258,10 @@ export default function CoordinatorStudents() {
               </div>
               <div>
                 <h2 className="text-2xl font-semibold text-slate-800 dark:text-gray-100">
-                  My Students
+                  {uploadBatchName || 'My Students'}
                 </h2>
                 <p className="text-slate-600 dark:text-gray-400 text-sm">
-                  View and manage students assigned to you
+                  {uploadBatchId ? 'Students from this bulk list assigned to you' : 'View and manage students assigned to you'}
                 </p>
               </div>
             </div>

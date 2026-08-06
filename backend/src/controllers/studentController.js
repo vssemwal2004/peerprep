@@ -6,6 +6,7 @@ import { sanitizeCsvRow, sanitizeCsvField, validateObjectId, validateCsvImport, 
 import { createNotification, createNotifications } from '../services/notificationService.js';
 import { enqueueMailJobs } from '../services/mailQueueService.js';
 import crypto from 'crypto';
+import StudentUploadBatch from '../models/StudentUploadBatch.js';
 
 // Generate random password (7-8 characters)
 function generateRandomPassword() {
@@ -42,6 +43,16 @@ function buildStudentListQuery(user, params = {}) {
   const baseQuery = studentScope(user);
   const filters = [];
   const search = String(params.search || '').trim().slice(0, 120);
+
+  const uploadBatchId = String(params.uploadBatchId || '').trim();
+  if (uploadBatchId) {
+    try {
+      validateObjectId(uploadBatchId, 'upload batch ID');
+      filters.push({ uploadBatchIds: uploadBatchId });
+    } catch {
+      filters.push({ _id: null });
+    }
+  }
 
   if (search) {
     const searchRegex = new RegExp(escapeRegex(search), 'i');
@@ -905,6 +916,29 @@ export async function uploadStudentsCsv(req, res) {
     }
   }
 
+  const batchStudentIds = [...new Set(results
+    .filter((result) => ['created', 'updated', 'linked_from_special'].includes(result.status) && result.id)
+    .map((result) => String(result.id)))];
+  const createdCount = results.filter((result) => result.status === 'created').length;
+  const updatedCount = results.filter((result) => ['updated', 'linked_from_special'].includes(result.status)).length;
+  const batch = batchStudentIds.length > 0 ? await StudentUploadBatch.create({
+    name: (req.file?.originalname || 'Student upload').replace(/\.csv$/i, ''),
+    originalFileName: req.file?.originalname || 'students.csv',
+    uploadedBy: req.user._id,
+    uploadedByEmail: req.user.email,
+    studentIds: batchStudentIds,
+    totalRows: rows.length,
+    createdCount,
+    updatedCount,
+    failedCount: Math.max(0, rows.length - batchStudentIds.length),
+  }) : null;
+  if (batch) {
+    await User.updateMany(
+      { _id: { $in: batchStudentIds } },
+      { $addToSet: { uploadBatchIds: batch._id } },
+    );
+  }
+
   // Log activity for bulk student upload
   const successCount = results.filter(r => r.status === 'created' || r.status === 'linked_from_special' || r.status === 'updated').length;
   if (successCount > 0 && req.user) {
@@ -921,7 +955,7 @@ export async function uploadStudentsCsv(req, res) {
   }
 
   // Send response immediately
-  res.json({ count: results.length, results });
+  res.json({ count: results.length, results, batch });
 
   if (createdUserIds.length > 0) {
     setImmediate(async () => {
@@ -1234,6 +1268,47 @@ export async function deleteStudent(req, res) {
     console.error('Error deleting student:', err);
     res.status(500).json({ error: 'Failed to delete student' });
   }
+}
+
+export async function listStudentUploadBatches(req, res) {
+  try {
+    const search = String(req.query.search || '').trim().slice(0, 120);
+    const query = search ? { name: new RegExp(escapeRegex(search), 'i') } : {};
+    let scopedStudentIds = null;
+    if (req.user.role === 'coordinator') {
+      const assigned = await User.find({ role: 'student', teacherIds: req.user.coordinatorId }).select('_id').lean();
+      scopedStudentIds = new Set(assigned.map((student) => String(student._id)));
+      query.studentIds = { $in: [...scopedStudentIds] };
+    }
+    const batches = await StudentUploadBatch.find(query)
+      .sort({ createdAt: -1 })
+      .populate('uploadedBy', 'name email')
+      .lean();
+    const visibleBatches = scopedStudentIds
+      ? batches.map((batch) => ({
+        ...batch,
+        studentIds: (batch.studentIds || []).filter((id) => scopedStudentIds.has(String(id))),
+      }))
+      : batches;
+    res.json({ count: visibleBatches.length, batches: visibleBatches });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to load bulk student lists.' });
+  }
+}
+
+export async function renameStudentUploadBatch(req, res) {
+  const name = String(req.body?.name || '').trim();
+  if (!name || name.length > 120) return res.status(400).json({ error: 'Enter a list name up to 120 characters.' });
+  const batch = await StudentUploadBatch.findByIdAndUpdate(req.params.batchId, { name }, { new: true });
+  if (!batch) return res.status(404).json({ error: 'Bulk list not found.' });
+  res.json({ batch });
+}
+
+export async function deleteStudentUploadBatch(req, res) {
+  const batch = await StudentUploadBatch.findByIdAndDelete(req.params.batchId);
+  if (!batch) return res.status(404).json({ error: 'Bulk list not found.' });
+  await User.updateMany({ uploadBatchIds: batch._id }, { $pull: { uploadBatchIds: batch._id } });
+  res.json({ message: 'Bulk list removed. Student records were not deleted.' });
 }
 
 export async function bulkDeleteStudents(req, res) {

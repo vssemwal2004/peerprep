@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { uploadStudentsCsv, createStudent, checkStudentsCsv, listAllStudents, listAllSpecialStudents, listSpecialStudentsByEvent, deleteStudent, updateStudent, bulkDeleteStudents, resendStudentCredentials, exportStudentsCsv, getStudentById, listPromotionSemesters, listPromotionStudents, promoteStudents } from '../controllers/studentController.js';
+import { uploadStudentsCsv, createStudent, checkStudentsCsv, listAllStudents, listAllSpecialStudents, listSpecialStudentsByEvent, deleteStudent, updateStudent, bulkDeleteStudents, resendStudentCredentials, exportStudentsCsv, getStudentById, listPromotionSemesters, listPromotionStudents, promoteStudents, listStudentUploadBatches, renameStudentUploadBatch, deleteStudentUploadBatch } from '../controllers/studentController.js';
 import { getStudentActivityByAdmin, getStudentStats, getStudentVideosWatched, getStudentCoursesEnrolled } from '../controllers/activityController.js';
 import { requireAuth, requireAdmin, requireCoordinatorPermission } from '../middleware/auth.js';
 import { authorizeStudent } from '../middleware/authorization.js';
@@ -11,6 +11,9 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 router.get('/list', requireAuth, requireCoordinatorPermission('coordinator.students.view'), listAllStudents);
 router.get('/export', requireAuth, requireCoordinatorPermission('coordinator.students.view'), exportStudentsCsv);
+router.get('/upload-batches', requireAuth, requireCoordinatorPermission('coordinator.students.bulk-lists'), listStudentUploadBatches);
+router.patch('/upload-batches/:batchId', requireAuth, requireAdmin, renameStudentUploadBatch);
+router.delete('/upload-batches/:batchId', requireAuth, requireAdmin, deleteStudentUploadBatch);
 router.get('/special', requireAuth, requireAdmin, listAllSpecialStudents);
 router.get('/special/:eventId', requireAuth, requireAdmin, listSpecialStudentsByEvent);
 router.get('/promotion/semesters', requireAuth, requireCoordinatorPermission('coordinator.students.promote'), listPromotionSemesters);
