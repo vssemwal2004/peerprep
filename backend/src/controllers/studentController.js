@@ -1333,10 +1333,29 @@ export async function renameStudentUploadBatch(req, res) {
 }
 
 export async function deleteStudentUploadBatch(req, res) {
-  const batch = await StudentUploadBatch.findByIdAndDelete(req.params.batchId);
+  const batch = await StudentUploadBatch.findById(req.params.batchId);
   if (!batch) return res.status(404).json({ error: 'Bulk list not found.' });
-  await User.updateMany({ uploadBatchIds: batch._id }, { $pull: { uploadBatchIds: batch._id } });
-  res.json({ message: 'Bulk list removed. Student records were not deleted.' });
+  const studentIds = batch.studentIds || [];
+  const deleteResult = await User.deleteMany({ _id: { $in: studentIds }, role: 'student' });
+  await StudentUploadBatch.updateMany(
+    { _id: { $ne: batch._id }, studentIds: { $in: studentIds } },
+    { $pull: { studentIds: { $in: studentIds } } },
+  );
+  await batch.deleteOne();
+  logActivity({
+    userEmail: req.user.email,
+    userRole: req.user.role,
+    actionType: 'BULK_DELETE',
+    targetType: 'STUDENT',
+    targetId: String(batch._id),
+    description: `Deleted bulk list “${batch.name}” and ${deleteResult.deletedCount || 0} registered students`,
+    metadata: { batchName: batch.name, originalFileName: batch.originalFileName, deletedStudents: deleteResult.deletedCount || 0 },
+    req,
+  });
+  res.json({
+    message: `Bulk list and ${deleteResult.deletedCount || 0} registered student${deleteResult.deletedCount === 1 ? '' : 's'} deleted permanently.`,
+    deletedStudents: deleteResult.deletedCount || 0,
+  });
 }
 
 export async function bulkDeleteStudents(req, res) {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MoreVertical, Search, Plus, RefreshCw } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "../utils/api";
@@ -92,7 +92,7 @@ export default function AdminCompanyInsights() {
   const [deleting, setDeleting] = useState(false);
   const menuRef = useRef(null);
 
-  const loadCompanies = async () => {
+  const loadCompanies = useCallback(async () => {
     try {
       setLoading(true);
       const res = await api.listCompanyBenchmarks();
@@ -103,11 +103,11 @@ export default function AdminCompanyInsights() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
 
   useEffect(() => {
     loadCompanies();
-  }, []);
+  }, [loadCompanies]);
 
   useEffect(() => {
     const handleClick = (event) => {
@@ -285,13 +285,15 @@ export default function AdminCompanyInsights() {
                       <td className="px-6 py-4 text-right">
                         <div className="relative inline-block" ref={menuRef}>
                           <button
+                            data-platform-menu-trigger
+                            aria-expanded={menuOpenId === company.id}
                             onClick={() => setMenuOpenId(menuOpenId === company.id ? null : company.id)}
                             className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
                           >
                             <MoreVertical className="h-4 w-4" />
                           </button>
                           {menuOpenId === company.id && (
-                            <div className="absolute right-0 z-10 mt-2 w-32 rounded-xl border border-slate-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900">
+                            <div data-platform-action-menu className="absolute right-0 z-10 mt-2 w-32 rounded-xl border border-slate-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900">
                               <button
                                 onClick={() => {
                                   setMenuOpenId(null);

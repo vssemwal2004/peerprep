@@ -518,6 +518,8 @@ export default function QuestionLibrary() {
                 </button>
                 <div className="relative">
                   <button
+                    data-platform-menu-trigger
+                    aria-expanded={bulkMenuOpen}
                     type="button"
                     onClick={() => setBulkMenuOpen((open) => !open)}
                     className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
@@ -785,6 +787,8 @@ export default function QuestionLibrary() {
                 {!rowSelectionActive && (
                   <div className="relative flex justify-end">
                     <button
+                      data-platform-menu-trigger
+                      aria-expanded={actionMenuId === question._id}
                       type="button"
                       onClick={(event) => {
                         event.stopPropagation();
@@ -796,7 +800,7 @@ export default function QuestionLibrary() {
                       <MoreVertical className="h-4 w-4" />
                     </button>
                     {actionMenuId === question._id && (
-                      <div
+                      <div data-platform-action-menu
                         className="absolute right-0 top-10 z-30 w-48 overflow-hidden rounded-2xl border border-slate-200 bg-white py-1 text-xs font-semibold text-slate-600 shadow-xl dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
                         onClick={(event) => event.stopPropagation()}
                       >

@@ -132,3 +132,16 @@ a {
   @apply transition-colors duration-300;
 }
 
+/* Action menus must remain visible above cards and responsive table scrollers.
+   The trigger's expanded state temporarily releases ancestor clipping. */
+.overflow-hidden:has([data-platform-menu-trigger][aria-expanded="true"]),
+.overflow-x-auto:has([data-platform-menu-trigger][aria-expanded="true"]),
+.overflow-y-auto:has([data-platform-menu-trigger][aria-expanded="true"]),
+.overflow-auto:has([data-platform-menu-trigger][aria-expanded="true"]) {
+  overflow: visible !important;
+}
+
+[data-platform-action-menu] {
+  z-index: 120 !important;
+  isolation: isolate;
+}

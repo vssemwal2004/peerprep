@@ -886,6 +886,8 @@ export default function StudentDirectory() {
               <div className="mb-2 flex flex-col gap-2 rounded-md border border-slate-200 bg-slate-50/70 px-2.5 py-2 dark:border-gray-700 dark:bg-gray-800/70 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex flex-wrap items-center gap-2">
                   <button
+                    data-platform-menu-trigger
+                    aria-expanded={showBulkMenu}
                     type="button"
                     onClick={toggleSelectPage}
                     disabled={!pageStudentIds.length}
@@ -1080,6 +1082,8 @@ export default function StudentDirectory() {
                               className="relative flex items-center justify-end"
                             >
                               <button
+                                data-platform-menu-trigger
+                                aria-expanded={activeRowMenuId === studentId}
                                 type="button"
                                 onClick={(event) => {
                                   event.stopPropagation();
@@ -1093,7 +1097,7 @@ export default function StudentDirectory() {
                               </button>
 
                               {activeRowMenuId === studentId && (
-                                <div className="absolute right-0 top-8 z-40 w-52 overflow-hidden rounded-md border border-slate-200 bg-white py-1 text-left shadow-xl dark:border-gray-700 dark:bg-gray-900">
+                                <div data-platform-action-menu className="absolute right-0 top-8 z-40 w-52 overflow-hidden rounded-md border border-slate-200 bg-white py-1 text-left shadow-xl dark:border-gray-700 dark:bg-gray-900">
                                   <button
                                     type="button"
                                     onClick={(event) => {
