@@ -65,6 +65,7 @@ export default function StudentDirectory() {
   const [activeRowMenuId, setActiveRowMenuId] = useState(null);
   const [showBulkMenu, setShowBulkMenu] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [isSelectingAllFiltered, setIsSelectingAllFiltered] = useState(false);
   const [sendingCredentialIds, setSendingCredentialIds] = useState(new Set());
   const loadRequestRef = useRef(0);
   const credentialRefreshTimersRef = useRef([]);
@@ -282,22 +283,26 @@ export default function StudentDirectory() {
 
   const handleSearch = async (e) => {
     e.preventDefault();
+    clearSelection();
     setDebouncedSearch(searchQuery.trim());
     setCurrentPage(1);
   };
 
   const clearSearch = () => {
+    clearSelection();
     setSearchQuery("");
     setDebouncedSearch('');
     setCurrentPage(1);
   };
 
   const updateFilter = (key, value) => {
+    clearSelection();
     setFilters((current) => ({ ...current, [key]: value }));
     setCurrentPage(1);
   };
 
   const clearFilters = () => {
+    clearSelection();
     setFilters(EMPTY_FILTERS);
     setCurrentPage(1);
     setShowFilters(false);
@@ -361,22 +366,22 @@ export default function StudentDirectory() {
 
   const selectAllFilteredStudents = async () => {
     try {
-      setIsLoading(true);
+      setIsSelectingAllFiltered(true);
       const data = await api.listAllStudents({
         search: debouncedSearch,
         sortOrder,
         ...filters,
         uploadBatchId,
       });
-      const eligible = (data.students || []).filter((student) => student.canResendCredentials);
-      setSelectedStudentIds(new Set(eligible.map((student) => String(student._id))));
-      setSelectedStudentMap(Object.fromEntries(eligible.map((student) => [String(student._id), student])));
+      const matchingStudents = data.students || [];
+      setSelectedStudentIds(new Set(matchingStudents.map((student) => String(student._id))));
+      setSelectedStudentMap(Object.fromEntries(matchingStudents.map((student) => [String(student._id), student])));
       setShowBulkMenu(false);
-      toast.success(`${eligible.length} eligible student${eligible.length === 1 ? '' : 's'} selected across all filtered results.`);
+      toast.success(`All ${matchingStudents.length} matching student${matchingStudents.length === 1 ? '' : 's'} selected.`);
     } catch (error) {
       toast.error(error.message || 'Failed to select filtered students.');
     } finally {
-      setIsLoading(false);
+      setIsSelectingAllFiltered(false);
     }
   };
 
@@ -746,7 +751,7 @@ export default function StudentDirectory() {
                     type="text"
                     placeholder="Search name, ID, email, branch, course..."
                     value={searchQuery}
-                    onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                    onChange={(e) => { clearSelection(); setSearchQuery(e.target.value); setCurrentPage(1); }}
                     className="h-9 w-full rounded-md border border-slate-200 bg-white pl-9 pr-9 text-xs text-slate-700 shadow-sm outline-none placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:ring-sky-900/40"
                   />
                   {searchQuery && (
@@ -832,7 +837,7 @@ export default function StudentDirectory() {
 
               <select
                 value={sortOrder}
-                onChange={(e) => { setSortOrder(e.target.value); setCurrentPage(1); }}
+                onChange={(e) => { clearSelection(); setSortOrder(e.target.value); setCurrentPage(1); }}
                 className="h-9 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:ring-sky-900/40"
                 aria-label="Sort students"
               >
@@ -911,6 +916,22 @@ export default function StudentDirectory() {
                       ? `${selectedCount} selected`
                       : `${pageStudentIds.length} visible on this page`}
                   </span>
+                  {selectedCount > 0 && selectedCount < pagination.total && (
+                    <button
+                      type="button"
+                      onClick={selectAllFilteredStudents}
+                      disabled={isSelectingAllFiltered}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-50 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-950/60"
+                    >
+                      {isSelectingAllFiltered && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                      Select all {pagination.total.toLocaleString()} matching
+                    </button>
+                  )}
+                  {selectedCount > 0 && selectedCount === pagination.total && (
+                    <span className="rounded-md bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+                      All {pagination.total.toLocaleString()} matching selected
+                    </span>
+                  )}
                   {selectedCount > 0 && (
                     <button
                       type="button"
@@ -938,10 +959,11 @@ export default function StudentDirectory() {
                       <button
                         type="button"
                         onClick={selectAllFilteredStudents}
+                        disabled={isSelectingAllFiltered || pagination.total === 0}
                         className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-indigo-700 transition hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/30"
                       >
-                        <CheckSquare className="h-4 w-4" />
-                        Select all filtered students
+                        {isSelectingAllFiltered ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckSquare className="h-4 w-4" />}
+                        Select all {pagination.total.toLocaleString()} matching
                       </button>
                       <button
                         type="button"
@@ -983,7 +1005,7 @@ export default function StudentDirectory() {
               </div>
 
               <div className="overflow-x-auto overflow-y-visible rounded-lg border border-slate-200 dark:border-gray-700">
-              <table className="min-w-full divide-y divide-slate-200">
+              <table className="min-w-full divide-y divide-slate-200" style={{ '--serial-start': startIndex }}>
                 <thead className="bg-slate-50 dark:bg-gray-700">
                   <tr>
                     <th scope="col" className="w-10 px-3 py-2 text-left">

@@ -145,3 +145,50 @@ a {
   z-index: 120 !important;
   isolation: isolate;
 }
+
+/* Platform-wide serial-number column for every rendered data table.
+   Individual paginated tables can provide --serial-start on the table. */
+table:not([data-no-serial]) > tbody {
+  counter-reset: platform-table-row var(--serial-start, 0);
+}
+
+table:not([data-no-serial]) > tbody > tr {
+  counter-increment: platform-table-row;
+}
+
+table:not([data-no-serial]) > thead > tr::before,
+table:not([data-no-serial]) > tbody > tr::before {
+  display: table-cell;
+  box-sizing: border-box;
+  width: 3.75rem;
+  min-width: 3.75rem;
+  padding: 0.75rem 0.75rem;
+  text-align: center;
+  vertical-align: middle;
+  white-space: nowrap;
+  border-color: inherit;
+}
+
+table:not([data-no-serial]) > thead > tr::before {
+  content: "S.No.";
+  color: rgb(100 116 139);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: inherit;
+}
+
+table:not([data-no-serial]) > tbody > tr::before {
+  content: counter(platform-table-row);
+  color: rgb(100 116 139);
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: inherit;
+}
+
+.dark table:not([data-no-serial]) > thead > tr::before,
+.dark table:not([data-no-serial]) > tbody > tr::before {
+  color: rgb(148 163 184);
+}
