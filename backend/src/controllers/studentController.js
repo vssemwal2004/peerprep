@@ -1296,6 +1296,34 @@ export async function listStudentUploadBatches(req, res) {
   }
 }
 
+export async function createStudentUploadBatch(req, res) {
+  try {
+    const name = String(req.body?.name || '').trim();
+    const originalFileName = String(req.body?.originalFileName || 'students.csv').trim();
+    const requestedIds = Array.isArray(req.body?.studentIds) ? req.body.studentIds : [];
+    if (!name || name.length > 120) return res.status(400).json({ error: 'Enter a list name up to 120 characters.' });
+    const validIds = requestedIds.filter((id) => {
+      try { validateObjectId(id, 'student ID'); return true; } catch { return false; }
+    });
+    const students = await User.find({ _id: { $in: validIds }, role: 'student' }).select('_id').lean();
+    if (!students.length) return res.status(400).json({ error: 'No uploaded students were available to save in this list.' });
+    const studentIds = students.map((student) => student._id);
+    const batch = await StudentUploadBatch.create({
+      name,
+      originalFileName: originalFileName.slice(0, 255),
+      uploadedBy: req.user._id,
+      uploadedByEmail: req.user.email,
+      studentIds,
+      totalRows: studentIds.length,
+      createdCount: studentIds.length,
+    });
+    await User.updateMany({ _id: { $in: studentIds } }, { $addToSet: { uploadBatchIds: batch._id } });
+    res.status(201).json({ batch });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to save the bulk student list.' });
+  }
+}
+
 export async function renameStudentUploadBatch(req, res) {
   const name = String(req.body?.name || '').trim();
   if (!name || name.length > 120) return res.status(400).json({ error: 'Enter a list name up to 120 characters.' });

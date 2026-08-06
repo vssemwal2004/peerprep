@@ -391,6 +391,7 @@ export const api = {
     return request('/students/upload', { method: 'POST', formData: fd });
   },
   listStudentUploadBatches: (search = '') => request(`/students/upload-batches${search ? `?search=${encodeURIComponent(search)}` : ''}`, { skipCache: true }),
+  createStudentUploadBatch: (body) => request('/students/upload-batches', { method: 'POST', body }),
   renameStudentUploadBatch: (batchId, name) => request(`/students/upload-batches/${batchId}`, { method: 'PATCH', body: { name } }),
   deleteStudentUploadBatch: (batchId) => request(`/students/upload-batches/${batchId}`, { method: 'DELETE' }),
   createStudent: (body) => request('/students/create', { method: 'POST', body }),

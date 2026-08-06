@@ -280,9 +280,17 @@ export default function StudentOnboarding() {
     try {
       const data = await api.uploadStudentsCsv(csvFile);
       setUploadResult(data);
-      if (data.batch) {
-        setNamingBatch(data.batch);
-        setBatchName(data.batch.name || csvFile.name.replace(/\.csv$/i, ''));
+      const uploadedStudentIds = [...new Set((data.results || [])
+        .filter((result) => ['created', 'updated', 'linked_from_special'].includes(result.status) && result.id)
+        .map((result) => String(result.id)))];
+      if (data.batch || uploadedStudentIds.length > 0) {
+        const defaultName = data.batch?.name || csvFile.name.replace(/\.csv$/i, '');
+        setNamingBatch(data.batch || {
+          _id: null,
+          originalFileName: csvFile.name,
+          studentIds: uploadedStudentIds,
+        });
+        setBatchName(defaultName);
       }
       
       // Check for existing/updated/duplicate users
@@ -360,7 +368,13 @@ export default function StudentOnboarding() {
     if (!batchName.trim() || !namingBatch) return;
     setSavingBatchName(true);
     try {
-      const data = await api.renameStudentUploadBatch(namingBatch._id, batchName.trim());
+      const data = namingBatch._id
+        ? await api.renameStudentUploadBatch(namingBatch._id, batchName.trim())
+        : await api.createStudentUploadBatch({
+          name: batchName.trim(),
+          originalFileName: namingBatch.originalFileName,
+          studentIds: namingBatch.studentIds,
+        });
       setNamingBatch(data.batch);
       toast.success('Bulk list name saved.');
       navigate(`/admin/students/bulk-lists`);
