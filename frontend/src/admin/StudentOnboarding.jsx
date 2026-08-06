@@ -262,7 +262,7 @@ export default function StudentOnboarding() {
     });
   };
 
-  const handleUpload = async () => {
+  const handleUpload = () => {
     if (!csvFile) {
       setError("Please select a CSV file first");
       return;
@@ -276,22 +276,18 @@ export default function StudentOnboarding() {
       toast.error(msg);
       return;
     }
+    setBatchName(csvFile.name.replace(/\.csv$/i, ''));
+    setNamingBatch({ preUpload: true, originalFileName: csvFile.name });
+  };
+
+  const performUpload = async () => {
+    if (!csvFile || !batchName.trim()) return;
     setIsUploading(true);
+    setSavingBatchName(true);
     try {
-      const data = await api.uploadStudentsCsv(csvFile);
+      const data = await api.uploadStudentsCsv(csvFile, batchName.trim());
       setUploadResult(data);
-      const uploadedStudentIds = [...new Set((data.results || [])
-        .filter((result) => ['created', 'updated', 'linked_from_special'].includes(result.status) && result.id)
-        .map((result) => String(result.id)))];
-      if (data.batch || uploadedStudentIds.length > 0) {
-        const defaultName = data.batch?.name || csvFile.name.replace(/\.csv$/i, '');
-        setNamingBatch(data.batch || {
-          _id: null,
-          originalFileName: csvFile.name,
-          studentIds: uploadedStudentIds,
-        });
-        setBatchName(defaultName);
-      }
+      setNamingBatch(null);
       
       // Check for existing/updated/duplicate users
       const updatedCount = data.results?.filter(r => r.status === 'updated').length || 0;
@@ -361,11 +357,16 @@ export default function StudentOnboarding() {
       setUploadSuccess(false);
     } finally {
       setIsUploading(false);
+      setSavingBatchName(false);
     }
   };
 
   const saveBatchName = async () => {
     if (!batchName.trim() || !namingBatch) return;
+    if (namingBatch.preUpload) {
+      await performUpload();
+      return;
+    }
     setSavingBatchName(true);
     try {
       const data = namingBatch._id
@@ -999,11 +1000,11 @@ export default function StudentOnboarding() {
             <motion.div initial={{ opacity: 0, scale: 0.96, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
               <div className="flex items-start gap-3">
                 <span className="rounded-xl bg-emerald-50 p-2.5 text-emerald-600 dark:bg-emerald-950/40"><CheckCircle className="h-5 w-5" /></span>
-                <div><h2 className="text-lg font-bold text-slate-950 dark:text-white">Save this bulk list</h2><p className="mt-1 text-sm text-slate-500 dark:text-gray-400">Upload completed. Give this student list a clear name so you can find and manage it later.</p></div>
+                <div><h2 className="text-lg font-bold text-slate-950 dark:text-white">{namingBatch.preUpload ? 'Name this bulk upload' : 'Save this bulk list'}</h2><p className="mt-1 text-sm text-slate-500 dark:text-gray-400">{namingBatch.preUpload ? 'Choose a clear list name before uploading students to the server.' : 'Give this student list a clear name so you can find and manage it later.'}</p></div>
               </div>
               <label className="mt-5 block"><span className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-gray-300">Bulk list name</span><input autoFocus maxLength="120" value={batchName} onChange={(event) => setBatchName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') saveBatchName(); }} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white" /></label>
               <p className="mt-2 text-xs text-slate-400">Original file: {namingBatch.originalFileName}</p>
-              <div className="mt-6 flex justify-end gap-2"><button onClick={() => setNamingBatch(null)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Stay here</button><button onClick={saveBatchName} disabled={!batchName.trim() || savingBatchName} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50">{savingBatchName && <Loader2 className="h-4 w-4 animate-spin" />}Save & view bulk lists</button></div>
+              <div className="mt-6 flex justify-end gap-2"><button disabled={savingBatchName} onClick={() => setNamingBatch(null)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Cancel</button><button onClick={saveBatchName} disabled={!batchName.trim() || savingBatchName} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50">{savingBatchName && <Loader2 className="h-4 w-4 animate-spin" />}{namingBatch.preUpload ? (savingBatchName ? 'Uploading students...' : 'Confirm & upload') : 'Save & view bulk lists'}</button></div>
             </motion.div>
           </motion.div>
         )}

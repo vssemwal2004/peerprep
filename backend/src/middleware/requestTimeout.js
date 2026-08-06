@@ -1,6 +1,7 @@
 const DEFAULT_API_REQUEST_TIMEOUT_MS = Number(process.env.API_REQUEST_TIMEOUT_MS || 20 * 1000);
 const LONG_API_REQUEST_TIMEOUT_MS = Number(process.env.LONG_API_REQUEST_TIMEOUT_MS || 120 * 1000);
 const HEALTH_REQUEST_TIMEOUT_MS = Number(process.env.HEALTH_REQUEST_TIMEOUT_MS || 5 * 1000);
+const STUDENT_UPLOAD_TIMEOUT_MS = Number(process.env.STUDENT_UPLOAD_TIMEOUT_MS || 12 * 1000);
 
 const LONG_REQUEST_PATTERNS = [
   /^\/api\/admin\/assessment\/reports\/export/,
@@ -16,6 +17,7 @@ const LONG_REQUEST_PATTERNS = [
 function resolveRequestTimeoutMs(req) {
   const requestPath = req.originalUrl?.split('?')[0] || req.path;
   if (requestPath === '/api/health') return HEALTH_REQUEST_TIMEOUT_MS;
+  if (requestPath === '/api/students/upload') return STUDENT_UPLOAD_TIMEOUT_MS;
   if (LONG_REQUEST_PATTERNS.some((pattern) => pattern.test(requestPath))) {
     return LONG_API_REQUEST_TIMEOUT_MS;
   }

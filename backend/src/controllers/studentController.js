@@ -798,12 +798,23 @@ export async function uploadStudentsCsv(req, res) {
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const createdUserIds = [];
+  // New accounts cannot be used until credentials are explicitly issued.
+  // Hash one cryptographically random, discarded placeholder per upload instead
+  // of running CPU-heavy bcrypt once for every CSV row.
+  let onboardingPlaceholderHashPromise = null;
+  const getOnboardingPlaceholderHash = () => {
+    if (!onboardingPlaceholderHashPromise) {
+      const unclaimableSecret = crypto.randomBytes(48).toString('base64url');
+      onboardingPlaceholderHashPromise = User.hashPassword(unclaimableSecret);
+    }
+    return onboardingPlaceholderHashPromise;
+  };
 
-  for (const row of normalizedRows) {
+  await Promise.all(normalizedRows.map(async (row) => {
     const { course, name, email, studentid, branch, college, teacherid } = row;
 
     // Skip completely empty rows
-    if (!email && !studentid && !name) continue;
+    if (!email && !studentid && !name) return;
 
     // Check required fields - all must be present and non-empty
     const missing = requiredFields.filter((f) => {
@@ -812,20 +823,20 @@ export async function uploadStudentsCsv(req, res) {
     });
     if (missing.length > 0) {
       results.push({ row: row.__row, email, studentid, status: 'missing_fields', missing });
-      continue;
+      return;
     }
 
     // Validate email format
     if (!emailRegex.test(email)) {
       results.push({ row: row.__row, email, studentid, status: 'invalid_email' });
-      continue;
+      return;
     }
 
     // Check duplicates inside the CSV file
     const lowerEmail = email.toLowerCase();
     if (seenEmails.has(lowerEmail) || seenStudentIds.has(studentid)) {
       results.push({ row: row.__row, email, studentid, status: 'duplicate_in_file' });
-      continue;
+      return;
     }
     seenEmails.add(lowerEmail);
     seenStudentIds.add(studentid);
@@ -839,7 +850,7 @@ export async function uploadStudentsCsv(req, res) {
         const semesterNum = parseInt(row.semester);
         if (isNaN(semesterNum) || semesterNum < 1 || semesterNum > 8) {
           results.push({ row: row.__row, email, studentid, status: 'error', message: 'Semester must be between 1 and 8' });
-          continue;
+          return;
         }
         
         // Check if the new studentId is different and already belongs to another user
@@ -853,7 +864,7 @@ export async function uploadStudentsCsv(req, res) {
               status: 'error', 
               message: `Student ID ${studentid} is already assigned to another user (${studentIdConflict.email})`
             });
-            continue;
+            return;
           }
         }
         
@@ -884,22 +895,20 @@ export async function uploadStudentsCsv(req, res) {
           status: 'updated',
           message: 'Student information updated with new CSV data'
         });
-        continue;
+        return;
       } catch (err) {
         results.push({ row: row.__row, email, studentid, status: 'error', message: err.message });
-        continue;
+        return;
       }
     }
 
     // Create user
     try {
-      // Generate random password (7-8 characters)
-      const generatedPassword = generateRandomPassword();
-      const passwordHash = await User.hashPassword(generatedPassword);
+      const passwordHash = await getOnboardingPlaceholderHash();
       const semesterNum = parseInt(row.semester);
       if (isNaN(semesterNum) || semesterNum < 1 || semesterNum > 8) {
         results.push({ row: row.__row, email, studentid, status: 'error', message: 'Semester must be between 1 and 8' });
-        continue;
+        return;
       }
       const user = await User.create({
         role: 'student', course, name, email, studentId: studentid, passwordHash, branch, college,
@@ -914,15 +923,17 @@ export async function uploadStudentsCsv(req, res) {
     } catch (err) {
       results.push({ row: row.__row, email, studentid, status: 'error', message: err.message });
     }
-  }
+  }));
+  results.sort((a, b) => Number(a.row || 0) - Number(b.row || 0));
 
   const batchStudentIds = [...new Set(results
     .filter((result) => ['created', 'updated', 'linked_from_special'].includes(result.status) && result.id)
     .map((result) => String(result.id)))];
   const createdCount = results.filter((result) => result.status === 'created').length;
   const updatedCount = results.filter((result) => ['updated', 'linked_from_special'].includes(result.status)).length;
+  const requestedBatchName = String(req.body?.batchName || '').trim().slice(0, 120);
   const batch = batchStudentIds.length > 0 ? await StudentUploadBatch.create({
-    name: (req.file?.originalname || 'Student upload').replace(/\.csv$/i, ''),
+    name: requestedBatchName || (req.file?.originalname || 'Student upload').replace(/\.csv$/i, ''),
     originalFileName: req.file?.originalname || 'students.csv',
     uploadedBy: req.user._id,
     uploadedByEmail: req.user.email,

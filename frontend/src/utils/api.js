@@ -385,10 +385,11 @@ export const api = {
     fd.append('file', file);
     return request('/students/check', { method: 'POST', formData: fd });
   },
-  uploadStudentsCsv: (file) => {
+  uploadStudentsCsv: (file, batchName = '') => {
     const fd = new FormData();
     fd.append('file', file);
-    return request('/students/upload', { method: 'POST', formData: fd });
+    if (batchName) fd.append('batchName', batchName);
+    return request('/students/upload', { method: 'POST', formData: fd, timeoutMs: 12 * 1000 });
   },
   listStudentUploadBatches: (search = '') => request(`/students/upload-batches${search ? `?search=${encodeURIComponent(search)}` : ''}`, { skipCache: true }),
   createStudentUploadBatch: (body) => request('/students/upload-batches', { method: 'POST', body }),
