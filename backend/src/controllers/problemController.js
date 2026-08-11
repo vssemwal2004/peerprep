@@ -508,7 +508,7 @@ function buildProblemPayload(
   const hiddenTestCasesProvided = hiddenTestCasesFromFiles !== null || req.body.hiddenTestCases !== undefined;
   const hiddenBulkProvided = hiddenBulkCases !== null;
   if (hiddenBulkProvided && hiddenTestCasesProvided) {
-    throw new HttpError(400, 'Use either bulk hidden files (S3 mode) or per-case hidden files/JSON (DB mode), not both.');
+    throw new HttpError(400, 'Use either bulk hidden files or per-case hidden files/JSON, not both.');
   }
   const sampleTestCases = sampleTestCasesProvided ? normalizeSampleTestCases(req.body.sampleTestCases) : null;
   const hiddenTestCases = hiddenTestCasesFromFiles
@@ -559,6 +559,23 @@ function buildProblemPayload(
     hiddenBulkDelimiter,
     hiddenBulkCases,
   };
+}
+
+function prepareHiddenTestCasePersistence(payload) {
+  if (!payload.hiddenBulkProvided || isTestcaseStorageEnabled()) {
+    return payload;
+  }
+
+  payload.hiddenTestCases = (payload.hiddenBulkCases || []).map((testCase, index) => ({
+    position: testCase.position || index + 1,
+    input: testCase.input,
+    output: testCase.output,
+    marks: testCase.marks || 1,
+  }));
+  payload.hiddenTestCasesProvided = true;
+  payload.hiddenBulkProvided = false;
+  payload.hiddenBulkCases = null;
+  return payload;
 }
 
 function statusLabel(status) {
@@ -1137,7 +1154,7 @@ export async function getProblemDetail(req, res) {
 }
 
 export async function createProblem(req, res) {
-  const payload = buildProblemPayload(req);
+  const payload = prepareHiddenTestCasePersistence(buildProblemPayload(req));
   await ensureUniqueProblemTitle(payload.problem.title);
 
   if (payload.problem.status === 'published') {
@@ -1205,10 +1222,10 @@ export async function updateProblem(req, res) {
     kind: 'hidden',
   });
 
-  const payload = buildProblemPayload(req, {
+  const payload = prepareHiddenTestCasePersistence(buildProblemPayload(req, {
     existingHiddenTestCaseCount,
     existingHiddenBulkCaseCount: Number(existingProblem.hiddenTestSource?.caseCount || 0),
-  });
+  }));
   await ensureUniqueProblemTitle(payload.problem.title, existingProblem._id);
   const canRetainPreviewStatus = payload.problem.status === 'published' && (existingProblem.previewValidated ?? existingProblem.previewTested);
   const {

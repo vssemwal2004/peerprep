@@ -16,6 +16,7 @@ import {
   createProblemFormFromProblem,
   deriveHiddenFilePairs,
   getLanguageLabel,
+  parseBulkCasePair,
 } from './compilerUtils';
 import { EmptyState, LoadingPanel, SectionCard } from './CompilerUi';
 import { loadCodingDraft, saveCodingDraft } from '../assessment/assessmentCodingStore';
@@ -26,6 +27,41 @@ const EDITOR_TABS = [
   { key: 'tests', label: 'Test Cases' },
   { key: 'templates', label: 'Code Templates' },
 ];
+
+const PAIR_TEMPLATE_FILES = [
+  { name: 'input_1.txt', content: '2 3\n' },
+  { name: 'output_1.txt', content: '5\n' },
+  { name: 'input_2.txt', content: '10 20\n' },
+  { name: 'output_2.txt', content: '30\n' },
+];
+
+const BULK_INPUT_TEMPLATE = '2 3\n###CASE###\n10 20\n###CASE###\n7 8\n';
+const BULK_OUTPUT_TEMPLATE = '5\n###CASE###\n30\n###CASE###\n15\n';
+
+function downloadTextFile(filename, content) {
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function TemplateButton({ children, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+    >
+      <FilePlus2 className="h-3.5 w-3.5" />
+      {children}
+    </button>
+  );
+}
 
 function TabButton({ active, label, onClick }) {
   return (
@@ -358,8 +394,9 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
   const hiddenPairs = useMemo(() => deriveHiddenFilePairs(form.hiddenTestFiles), [form.hiddenTestFiles]);
   const visibleSampleCount = form.sampleTestCases.filter((testCase) => testCase.input || testCase.output || testCase.explanation).length;
   const manualHiddenCount = form.hiddenTestCases.filter((testCase) => testCase.input || testCase.output).length;
+  const bulkHiddenCount = Number(form.hiddenBulkCaseCount || 0);
   const hiddenCount = form.hiddenTestUploadMode === 'bulk'
-    ? Math.max(form.hiddenBulkInputFile && form.hiddenBulkOutputFile ? 1 : 0, form.existingHiddenTestCaseCount || 0)
+    ? Math.max(bulkHiddenCount, form.existingHiddenTestCaseCount || 0)
     : Math.max(hiddenPairs.pairs.filter((pair) => pair.complete).length, manualHiddenCount, form.existingHiddenTestCaseCount || 0);
   const activeTemplate = form.codeTemplates[activeLanguage] || '';
   const hasTemplate = form.supportedLanguages.some((language) => String(form.codeTemplates?.[language] || '').trim());
@@ -379,6 +416,7 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
       hiddenTestFiles: mode === 'pairs' ? previous.hiddenTestFiles : [],
       hiddenBulkInputFile: mode === 'bulk' ? previous.hiddenBulkInputFile : null,
       hiddenBulkOutputFile: mode === 'bulk' ? previous.hiddenBulkOutputFile : null,
+      hiddenBulkCaseCount: mode === 'bulk' ? previous.hiddenBulkCaseCount : 0,
     }));
     setIsDirty(true);
   };
@@ -467,6 +505,7 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
         hiddenTestFiles: [],
         hiddenBulkInputFile: null,
         hiddenBulkOutputFile: null,
+        hiddenBulkCaseCount: 0,
         previewValidated: Boolean(response.previewValidated ?? response.previewTested),
       };
 
@@ -665,6 +704,58 @@ if (!isValidated || publishedProblem.status !== 'published') {
       toast.error('Could not read one or more hidden test case files. Please upload them again.');
     }
   };
+
+  const updateHiddenBulkFile = async (field, file) => {
+    let inputFile = null;
+    let outputFile = null;
+
+    setForm((previous) => {
+      inputFile = field === 'hiddenBulkInputFile' ? file : previous.hiddenBulkInputFile;
+      outputFile = field === 'hiddenBulkOutputFile' ? file : previous.hiddenBulkOutputFile;
+      return {
+        ...previous,
+        [field]: file,
+        hiddenTestUploadMode: 'bulk',
+        hiddenTestFiles: [],
+        hiddenBulkCaseCount: inputFile && outputFile ? previous.hiddenBulkCaseCount : 0,
+      };
+    });
+    setIsDirty(true);
+
+    if (!inputFile || !outputFile) return;
+
+    try {
+      const [inputsContent, outputsContent] = await Promise.all([inputFile.text(), outputFile.text()]);
+      const parsedCases = parseBulkCasePair(inputsContent, outputsContent, form.hiddenBulkDelimiter || '###CASE###');
+      setForm((previous) => ({
+        ...previous,
+        hiddenBulkCaseCount: parsedCases.length,
+      }));
+      toast.success(`${parsedCases.length} bulk hidden test case(s) detected.`);
+    } catch (error) {
+      setForm((previous) => ({
+        ...previous,
+        hiddenBulkCaseCount: 0,
+      }));
+      toast.error(error.message || 'Bulk input/output files could not be matched.');
+    }
+  };
+
+  const updateHiddenBulkDelimiter = async (delimiter) => {
+    updateField('hiddenBulkDelimiter', delimiter);
+    if (!form.hiddenBulkInputFile || !form.hiddenBulkOutputFile) return;
+
+    try {
+      const [inputsContent, outputsContent] = await Promise.all([
+        form.hiddenBulkInputFile.text(),
+        form.hiddenBulkOutputFile.text(),
+      ]);
+      const parsedCases = parseBulkCasePair(inputsContent, outputsContent, delimiter || '###CASE###');
+      setForm((previous) => ({ ...previous, hiddenBulkCaseCount: parsedCases.length }));
+    } catch {
+      setForm((previous) => ({ ...previous, hiddenBulkCaseCount: 0 }));
+    }
+  };
   const activeTabIndex = EDITOR_TABS.findIndex((tab) => tab.key === activeTab);
   const isFinalTab = activeTabIndex === EDITOR_TABS.length - 1;
   const goToTab = (index) => {
@@ -803,7 +894,19 @@ if (!isValidated || publishedProblem.status !== 'published') {
               {form.hiddenTestUploadMode === 'pairs' ? (
                 <div className="space-y-6">
                   <div>
-                    <label className="mb-3 block text-sm font-medium text-slate-700 dark:text-gray-300">Pair file upload</label>
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-gray-300">Pair file upload</label>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Upload matching files named input_1.txt, output_1.txt, input_2.txt, output_2.txt, and so on.</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {PAIR_TEMPLATE_FILES.map((file) => (
+                          <TemplateButton key={file.name} onClick={() => downloadTextFile(file.name, file.content)}>
+                            {file.name}
+                          </TemplateButton>
+                        ))}
+                      </div>
+                    </div>
                     <label className="flex cursor-pointer items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm font-medium text-slate-600 transition-colors hover:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-900">
                       <Upload className="mr-2 h-4 w-4" />
                       Upload input_1.txt / output_1.txt files
@@ -850,6 +953,16 @@ if (!isValidated || publishedProblem.status !== 'published') {
                 </div>
               ) : (
                 <div className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/60">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800 dark:text-gray-100">Bulk template</p>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Use one inputs.txt and one outputs.txt file. Separate each case with the delimiter below in both files.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <TemplateButton onClick={() => downloadTextFile('inputs.txt', BULK_INPUT_TEMPLATE)}>inputs.txt</TemplateButton>
+                      <TemplateButton onClick={() => downloadTextFile('outputs.txt', BULK_OUTPUT_TEMPLATE)}>outputs.txt</TemplateButton>
+                    </div>
+                  </div>
                   <div className="grid gap-3 md:grid-cols-2">
                     <label className="flex cursor-pointer items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm font-medium text-slate-600 transition-colors hover:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-900">
                       <Upload className="mr-2 h-4 w-4" />
@@ -859,7 +972,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
                         accept=".txt,text/plain"
                         className="hidden"
                         onChange={(event) => {
-                          updateField('hiddenBulkInputFile', event.target.files?.[0] || null);
+                          updateHiddenBulkFile('hiddenBulkInputFile', event.target.files?.[0] || null);
                           event.target.value = '';
                         }}
                       />
@@ -872,7 +985,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
                         accept=".txt,text/plain"
                         className="hidden"
                         onChange={(event) => {
-                          updateField('hiddenBulkOutputFile', event.target.files?.[0] || null);
+                          updateHiddenBulkFile('hiddenBulkOutputFile', event.target.files?.[0] || null);
                           event.target.value = '';
                         }}
                       />
@@ -880,7 +993,12 @@ if (!isValidated || publishedProblem.status !== 'published') {
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-gray-300">Bulk Delimiter</label>
-                    <input value={form.hiddenBulkDelimiter || '###CASE###'} onChange={(event) => updateField('hiddenBulkDelimiter', event.target.value)} placeholder="###CASE###" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
+                    <input value={form.hiddenBulkDelimiter || '###CASE###'} onChange={(event) => updateHiddenBulkDelimiter(event.target.value)} placeholder="###CASE###" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
+                    {form.hiddenBulkInputFile && form.hiddenBulkOutputFile ? (
+                      <p className={`mt-2 text-xs font-semibold ${bulkHiddenCount > 0 ? 'text-emerald-600 dark:text-emerald-300' : 'text-rose-600 dark:text-rose-300'}`}>
+                        {bulkHiddenCount > 0 ? `${bulkHiddenCount} hidden test case(s) detected from bulk files.` : 'No matching bulk cases detected. Check delimiter and input/output counts.'}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               )}
@@ -954,7 +1072,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
                             </div>
                           )}
                         </>
-                      ) : <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600 dark:bg-gray-800 dark:text-gray-300">Bulk files will be parsed server-side using delimiter <code>{form.hiddenBulkDelimiter || '###CASE###'}</code>.</div>}
+                      ) : <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600 dark:bg-gray-800 dark:text-gray-300">Bulk files will be parsed using delimiter <code>{form.hiddenBulkDelimiter || '###CASE###'}</code>. Current detected count: <strong>{bulkHiddenCount}</strong>.</div>}
                     </div>
                   </div>
                 </div>

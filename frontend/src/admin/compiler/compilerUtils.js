@@ -108,6 +108,7 @@ export function createDefaultProblemForm() {
     hiddenBulkInputFile: null,
     hiddenBulkOutputFile: null,
     hiddenBulkDelimiter: '###CASE###',
+    hiddenBulkCaseCount: 0,
     visibility: 'public',
     previewValidated: false,
     previewTested: false,
@@ -160,10 +161,42 @@ export function createProblemFormFromProblem(problem) {
     hiddenBulkInputFile: null,
     hiddenBulkOutputFile: null,
     hiddenBulkDelimiter: problem?.hiddenTestSource?.delimiter || '###CASE###',
+    hiddenBulkCaseCount: problem?.hiddenTestCaseCount || 0,
     visibility: problem?.visibility || 'public',
     previewValidated: Boolean(problem?.previewValidated ?? problem?.previewTested),
     previewTested: Boolean(problem?.previewTested),
   };
+}
+
+export function parseBulkCases(content, delimiter = '###CASE###') {
+  const normalizedContent = String(content ?? '').replace(/\r\n/g, '\n');
+  const normalizedDelimiter = String(delimiter || '').trim();
+
+  if (!normalizedDelimiter) {
+    return [normalizedContent];
+  }
+
+  const chunks = normalizedContent
+    .split(normalizedDelimiter)
+    .map((chunk) => chunk.replace(/^\n+|\n+$/g, ''))
+    .filter((chunk) => chunk.length > 0);
+
+  return chunks.length > 0 ? chunks : [normalizedContent];
+}
+
+export function parseBulkCasePair(inputsContent, outputsContent, delimiter = '###CASE###') {
+  const inputs = parseBulkCases(inputsContent, delimiter);
+  const outputs = parseBulkCases(outputsContent, delimiter);
+
+  if (inputs.length !== outputs.length) {
+    throw new Error(`Input/output testcase count mismatch (${inputs.length} inputs vs ${outputs.length} outputs).`);
+  }
+
+  return inputs.map((input, index) => ({
+    position: index + 1,
+    input,
+    output: outputs[index],
+  }));
 }
 
 export function buildProblemFormData(problemForm, status) {
