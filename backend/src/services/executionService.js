@@ -15,6 +15,8 @@ const MAX_SOURCE_CODE_SIZE_BYTES = 50 * 1024;
 const MAX_STDIN_SIZE_BYTES = 64 * 1024;
 const MAX_TESTCASE_TEXT_BYTES = 64 * 1024;
 const JUDGE0_REQUEST_TIMEOUT_MS = Number(process.env.JUDGE0_REQUEST_TIMEOUT_MS || 15000);
+const JUDGE0_POLL_INTERVAL_MS = Number(process.env.JUDGE0_POLL_INTERVAL_MS || 700);
+const JUDGE0_MAX_POLL_ATTEMPTS = Number(process.env.JUDGE0_MAX_POLL_ATTEMPTS || 10);
 const DEFAULT_TIME_LIMIT_SECONDS = 2;
 const DEFAULT_MEMORY_LIMIT_KB = 256 * 1024;
 const JUDGE0_MAX_CPU_TIME_LIMIT_SECONDS = Number(process.env.JUDGE0_MAX_CPU_TIME_LIMIT_SECONDS || 15);
@@ -87,6 +89,10 @@ export function secondsToMilliseconds(value) {
 
 function buildJudge0Error(message, statusCode = 502) {
   return new HttpError(statusCode, message);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function buildJudge0Headers() {
@@ -254,7 +260,7 @@ export async function runJudge0(sourceCodeInput, languageId, stdin = '', options
     DEFAULT_MEMORY_LIMIT_KB,
   ));
 
-  const result = await judge0Request('/submissions?base64_encoded=false&wait=true', {
+  let result = await judge0Request('/submissions?base64_encoded=false&wait=true', {
     method: 'POST',
     body: {
       source_code: sourceCode,
@@ -267,8 +273,17 @@ export async function runJudge0(sourceCodeInput, languageId, stdin = '', options
       max_file_size: 1024,
     },
   });
+
+  let attempts = 0;
+  while (result?.token && (!result?.status || Number(result.status.id || 0) <= 2) && attempts < JUDGE0_MAX_POLL_ATTEMPTS) {
+    attempts += 1;
+    await sleep(JUDGE0_POLL_INTERVAL_MS);
+    result = await judge0Request(`/submissions/${encodeURIComponent(result.token)}?base64_encoded=false`);
+  }
+
   if (!result?.status || Number(result.status.id || 0) <= 2) {
-    throw buildJudge0Error('Judge0 did not return a completed execution result.', 504);
+    const state = result?.status?.description || 'processing';
+    throw buildJudge0Error(`Compiler service did not finish execution in time. Current state: ${state}.`, 504);
   }
   return result;
 }
