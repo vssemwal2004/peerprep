@@ -95,6 +95,30 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function encodeBase64(value) {
+  return Buffer.from(String(value ?? ''), 'utf8').toString('base64');
+}
+
+function decodeBase64(value) {
+  if (value === null || value === undefined || value === '') return '';
+  try {
+    return Buffer.from(String(value), 'base64').toString('utf8');
+  } catch {
+    return String(value);
+  }
+}
+
+function decodeJudge0Submission(result) {
+  if (!result || typeof result !== 'object') return result;
+  return {
+    ...result,
+    stdout: decodeBase64(result.stdout),
+    stderr: decodeBase64(result.stderr),
+    compile_output: decodeBase64(result.compile_output),
+    message: decodeBase64(result.message),
+  };
+}
+
 function buildJudge0Headers() {
   const headers = {
     'Content-Type': 'application/json',
@@ -260,12 +284,12 @@ export async function runJudge0(sourceCodeInput, languageId, stdin = '', options
     DEFAULT_MEMORY_LIMIT_KB,
   ));
 
-  let result = await judge0Request('/submissions?base64_encoded=false&wait=true', {
+  let result = await judge0Request('/submissions?base64_encoded=true&wait=true', {
     method: 'POST',
     body: {
-      source_code: sourceCode,
+      source_code: encodeBase64(sourceCode),
       language_id: numericLanguageId,
-      stdin: standardInput,
+      stdin: encodeBase64(standardInput),
       cpu_time_limit: roundNumber(cpuTimeLimit, 2),
       wall_time_limit: roundNumber(wallTimeLimit, 2),
       memory_limit: memoryLimitKb,
@@ -278,14 +302,14 @@ export async function runJudge0(sourceCodeInput, languageId, stdin = '', options
   while (result?.token && (!result?.status || Number(result.status.id || 0) <= 2) && attempts < JUDGE0_MAX_POLL_ATTEMPTS) {
     attempts += 1;
     await sleep(JUDGE0_POLL_INTERVAL_MS);
-    result = await judge0Request(`/submissions/${encodeURIComponent(result.token)}?base64_encoded=false`);
+    result = await judge0Request(`/submissions/${encodeURIComponent(result.token)}?base64_encoded=true`);
   }
 
   if (!result?.status || Number(result.status.id || 0) <= 2) {
     const state = result?.status?.description || 'processing';
     throw buildJudge0Error(`Compiler service did not finish execution in time. Current state: ${state}.`, 504);
   }
-  return result;
+  return decodeJudge0Submission(result);
 }
 
 export function mapRunStatusCode(result) {
