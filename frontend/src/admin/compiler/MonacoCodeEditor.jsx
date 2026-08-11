@@ -91,12 +91,22 @@ function ensureEditorWritable(editor) {
   if (options.readOnly || options.domReadOnly) {
     editor.updateOptions({ readOnly: false, domReadOnly: false });
   }
-  const input = editor.getDomNode()?.querySelector('textarea.inputarea');
-  if (!input || (!input.readOnly && !input.disabled && !input.hasAttribute('readonly'))) return;
+  const editorNode = editor.getDomNode();
+  editorNode?.removeAttribute('aria-hidden');
+  editorNode?.querySelectorAll('[aria-hidden="true"]').forEach((node) => {
+    if (node.matches?.('textarea.inputarea, .inputarea, .view-lines, .monaco-mouse-cursor-text')) {
+      node.removeAttribute('aria-hidden');
+    }
+  });
+  const input = editorNode?.querySelector('textarea.inputarea');
+  if (!input) return;
   input.readOnly = false;
   input.disabled = false;
   input.removeAttribute('readonly');
+  input.removeAttribute('disabled');
   input.setAttribute('aria-readonly', 'false');
+  input.style.pointerEvents = 'auto';
+  input.style.userSelect = 'text';
 }
 
 function getModelKey(contentKey) {
@@ -247,6 +257,7 @@ export default function MonacoCodeEditor({
     let editor;
     let changeSubscription;
     let focusSubscription;
+    let widgetFocusSubscription;
     let readOnlyAttemptSubscription;
     let mutationObserver;
     let resizeObserver;
@@ -346,6 +357,9 @@ export default function MonacoCodeEditor({
       focusSubscription = editor.onDidFocusEditorText(() => {
         if (!latestReadOnlyRef.current) ensureEditorWritable(editor);
       });
+      widgetFocusSubscription = editor.onDidFocusEditorWidget(() => {
+        if (!latestReadOnlyRef.current) ensureEditorWritable(editor);
+      });
       readOnlyAttemptSubscription = editor.onDidAttemptReadOnlyEdit(() => {
         if (!latestReadOnlyRef.current) {
           ensureEditorWritable(editor);
@@ -383,6 +397,7 @@ export default function MonacoCodeEditor({
       if (layoutFrame) cancelAnimationFrame(layoutFrame);
       changeSubscription?.dispose();
       focusSubscription?.dispose();
+      widgetFocusSubscription?.dispose();
       readOnlyAttemptSubscription?.dispose();
       editor?.setModel(null);
       editor?.dispose();
@@ -413,8 +428,17 @@ export default function MonacoCodeEditor({
 
   useEffect(() => {
     const focusEditor = () => editorRef.current?.focus();
+    const repairEditor = () => {
+      if (!latestReadOnlyRef.current) ensureEditorWritable(editorRef.current);
+    };
     window.addEventListener('peerprep:focus-code-editor', focusEditor);
-    return () => window.removeEventListener('peerprep:focus-code-editor', focusEditor);
+    window.addEventListener('pageshow', repairEditor);
+    document.addEventListener('visibilitychange', repairEditor);
+    return () => {
+      window.removeEventListener('peerprep:focus-code-editor', focusEditor);
+      window.removeEventListener('pageshow', repairEditor);
+      document.removeEventListener('visibilitychange', repairEditor);
+    };
   }, []);
 
   const handleEditorChange = (nextValue) => {
@@ -555,6 +579,7 @@ export default function MonacoCodeEditor({
       {...captureProps}
       onPointerDownCapture={enforceWritableState}
       onFocusCapture={enforceWritableState}
+      onClickCapture={enforceWritableState}
       className="relative h-full min-h-0 overflow-hidden rounded-lg bg-white dark:bg-gray-900"
       style={{ height: resolvedHeight }}
     >

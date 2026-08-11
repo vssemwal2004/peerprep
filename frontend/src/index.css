@@ -25,11 +25,16 @@
     overflow-x: hidden;
   }
 
-  /* Monaco draws its own scrollbar DOM; hide it for a LeetCode-like look */
-  .monaco-editor .scrollbar,
+  /* Keep Monaco's input and layout layers interactive across Chromium, Edge, and Firefox. */
+  .monaco-editor textarea.inputarea,
+  .monaco-editor .inputarea {
+    pointer-events: auto !important;
+    user-select: text !important;
+  }
+
   .monaco-editor .minimap-shadow,
   .monaco-editor .scroll-decoration {
-    display: none !important;
+    opacity: 0 !important;
   }
 }
 

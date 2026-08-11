@@ -372,6 +372,17 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
     setIsDirty(true);
   };
 
+  const updateHiddenUploadMode = (mode) => {
+    setForm((previous) => ({
+      ...previous,
+      hiddenTestUploadMode: mode,
+      hiddenTestFiles: mode === 'pairs' ? previous.hiddenTestFiles : [],
+      hiddenBulkInputFile: mode === 'bulk' ? previous.hiddenBulkInputFile : null,
+      hiddenBulkOutputFile: mode === 'bulk' ? previous.hiddenBulkOutputFile : null,
+    }));
+    setIsDirty(true);
+  };
+
   const toggleLanguage = (languageId) => {
     setForm((previous) => {
       const hasLanguage = previous.supportedLanguages.includes(languageId);
@@ -628,6 +639,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
 
   const handleHiddenTestFiles = async (fileList) => {
     const files = Array.from(fileList || []);
+    if (files.length === 0) return;
     const parsed = deriveHiddenFilePairs(files);
     if (parsed.issues.length > 0) {
       updateField('hiddenTestFiles', files);
@@ -643,7 +655,8 @@ if (!isValidated || publishedProblem.status !== 'published') {
       })));
       setForm((previous) => ({
         ...previous,
-        hiddenTestFiles: [],
+        hiddenTestUploadMode: 'pairs',
+        hiddenTestFiles: files,
         hiddenTestCases: loadedCases,
       }));
       setIsDirty(true);
@@ -778,11 +791,11 @@ if (!isValidated || publishedProblem.status !== 'published') {
             <SectionCard title="Hidden Test Cases" subtitle="Bulk upload input_1.txt/output_1.txt pairs or add private cases manually.">
               <div className="mb-4 grid gap-3 sm:grid-cols-2">
                 <label className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 transition-colors ${form.hiddenTestUploadMode === 'pairs' ? 'border-sky-300 bg-sky-50 dark:border-sky-700 dark:bg-sky-900/10' : 'border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900'}`}>
-                  <input type="radio" name="hidden-upload-mode" checked={form.hiddenTestUploadMode === 'pairs'} onChange={() => updateField('hiddenTestUploadMode', 'pairs')} className="h-4 w-4 border-slate-300 text-sky-600 focus:ring-sky-500" />
+                  <input type="radio" name="hidden-upload-mode" checked={form.hiddenTestUploadMode === 'pairs'} onChange={() => updateHiddenUploadMode('pairs')} className="h-4 w-4 border-slate-300 text-sky-600 focus:ring-sky-500" />
                   <span className="text-sm font-medium text-slate-700 dark:text-gray-200">Pair / Manual mode</span>
                 </label>
                 <label className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 transition-colors ${form.hiddenTestUploadMode === 'bulk' ? 'border-sky-300 bg-sky-50 dark:border-sky-700 dark:bg-sky-900/10' : 'border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900'}`}>
-                  <input type="radio" name="hidden-upload-mode" checked={form.hiddenTestUploadMode === 'bulk'} onChange={() => updateField('hiddenTestUploadMode', 'bulk')} className="h-4 w-4 border-slate-300 text-sky-600 focus:ring-sky-500" />
+                  <input type="radio" name="hidden-upload-mode" checked={form.hiddenTestUploadMode === 'bulk'} onChange={() => updateHiddenUploadMode('bulk')} className="h-4 w-4 border-slate-300 text-sky-600 focus:ring-sky-500" />
                   <span className="text-sm font-medium text-slate-700 dark:text-gray-200">Bulk upload mode</span>
                 </label>
               </div>
@@ -790,11 +803,20 @@ if (!isValidated || publishedProblem.status !== 'published') {
               {form.hiddenTestUploadMode === 'pairs' ? (
                 <div className="space-y-6">
                   <div>
-                    <label className="mb-3 block text-sm font-medium text-slate-700 dark:text-gray-300">Bulk file upload</label>
+                    <label className="mb-3 block text-sm font-medium text-slate-700 dark:text-gray-300">Pair file upload</label>
                     <label className="flex cursor-pointer items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm font-medium text-slate-600 transition-colors hover:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-900">
                       <Upload className="mr-2 h-4 w-4" />
-                      Upload hidden testcase files
-                      <input type="file" multiple accept=".txt" className="hidden" onChange={(event) => handleHiddenTestFiles(event.target.files)} />
+                      Upload input_1.txt / output_1.txt files
+                      <input
+                        type="file"
+                        multiple
+                        accept=".txt,text/plain"
+                        className="hidden"
+                        onChange={(event) => {
+                          handleHiddenTestFiles(event.target.files);
+                          event.target.value = '';
+                        }}
+                      />
                     </label>
 
                     {hiddenPairs.pairs.length > 0 || hiddenPairs.issues.length > 0 ? (
@@ -832,12 +854,28 @@ if (!isValidated || publishedProblem.status !== 'published') {
                     <label className="flex cursor-pointer items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm font-medium text-slate-600 transition-colors hover:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-900">
                       <Upload className="mr-2 h-4 w-4" />
                       {form.hiddenBulkInputFile ? form.hiddenBulkInputFile.name : 'Upload inputs.txt'}
-                      <input type="file" accept=".txt" className="hidden" onChange={(event) => updateField('hiddenBulkInputFile', event.target.files?.[0] || null)} />
+                      <input
+                        type="file"
+                        accept=".txt,text/plain"
+                        className="hidden"
+                        onChange={(event) => {
+                          updateField('hiddenBulkInputFile', event.target.files?.[0] || null);
+                          event.target.value = '';
+                        }}
+                      />
                     </label>
                     <label className="flex cursor-pointer items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm font-medium text-slate-600 transition-colors hover:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-900">
                       <Upload className="mr-2 h-4 w-4" />
                       {form.hiddenBulkOutputFile ? form.hiddenBulkOutputFile.name : 'Upload outputs.txt'}
-                      <input type="file" accept=".txt" className="hidden" onChange={(event) => updateField('hiddenBulkOutputFile', event.target.files?.[0] || null)} />
+                      <input
+                        type="file"
+                        accept=".txt,text/plain"
+                        className="hidden"
+                        onChange={(event) => {
+                          updateField('hiddenBulkOutputFile', event.target.files?.[0] || null);
+                          event.target.value = '';
+                        }}
+                      />
                     </label>
                   </div>
                   <div>
