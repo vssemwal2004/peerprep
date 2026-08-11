@@ -433,6 +433,12 @@ function CodeEditor({
     return runCaseResults.find((entry, index) => String(entry.id || index) === String(activeResultCaseId))
       || runCaseResults[0];
   })();
+  const allRunCasesCompilationError = runCaseResults.length > 0
+    && runCaseResults.every((entry) => normalizeRunCaseStatus(entry.status) === 'Compilation Error');
+  const runCompileOutput = getCompileOutput(result)
+    || runCaseResults.find((entry) => getCompileOutput(entry))?.compileOutput
+    || runCaseResults.find((entry) => getCompileOutput(entry))?.compile_output
+    || '';
 
   useEffect(() => {
     if (!result) return;
@@ -520,6 +526,9 @@ function CodeEditor({
   const verdictLabel = (() => {
     if (!result) return '';
     if (isRunResult) {
+      if (allRunCasesCompilationError || runCompileOutput) {
+        return 'Compilation Error';
+      }
       if (runCaseResults.length > 0) {
         return runCaseResults.every((entry) => isPassedStatus(entry.status)) ? 'Passed' : 'Failed';
       }
@@ -552,7 +561,7 @@ function CodeEditor({
 
   const effectiveSummary = (() => {
     if (!result) return summary;
-    const compileOutput = getCompileOutput(result);
+    const compileOutput = runCompileOutput;
     const errorOutput = getErrorOutput(result);
     if (!isRunResult || compileOutput || errorOutput) return summary;
 
@@ -768,7 +777,7 @@ function CodeEditor({
                 {result?.memory !== undefined && result?.memory !== null && (
                   <div className="text-sm text-slate-500 dark:text-gray-400">Memory: {Number(result.memory || 0)} KB</div>
                 )}
-                {result?.total !== undefined && (
+                {result?.total !== undefined && !allRunCasesCompilationError && !runCompileOutput && (
                   <div className="text-sm text-slate-500 dark:text-gray-400">Cases: {result.passed || 0}/{result.total}</div>
                 )}
               </div>
@@ -783,7 +792,13 @@ function CodeEditor({
                 </div>
               )}
 
-              {result && isRunResult && runCaseResults.length >= 1 && (
+              {result && isRunResult && (allRunCasesCompilationError || runCompileOutput) && (
+                <LcBlock label="Compile Output">
+                  <TerminalOutput value={runCompileOutput || 'Compilation failed.'} />
+                </LcBlock>
+              )}
+
+              {result && isRunResult && runCaseResults.length >= 1 && !allRunCasesCompilationError && !runCompileOutput && (
                 <div className="space-y-3">
                   <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                     {runCaseResults.map((entry, index) => {
