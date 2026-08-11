@@ -318,10 +318,15 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState('');
+  const formRef = useRef(form);
   const autoSaveRef = useRef(null);
   const assessmentKey = finalAssessmentContext?.assessmentKey || 'new';
   const rolePrefix = window.location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
   const assessmentReturnTo = finalAssessmentContext?.returnTo || `${rolePrefix}/assessment`;
+
+  useEffect(() => {
+    formRef.current = form;
+  }, [form]);
 
   useEffect(() => {
     if (isAssessment) {
@@ -706,27 +711,24 @@ if (!isValidated || publishedProblem.status !== 'published') {
   };
 
   const updateHiddenBulkFile = async (field, file) => {
-    let inputFile = null;
-    let outputFile = null;
+    const currentForm = formRef.current;
+    const inputFile = field === 'hiddenBulkInputFile' ? file : currentForm.hiddenBulkInputFile;
+    const outputFile = field === 'hiddenBulkOutputFile' ? file : currentForm.hiddenBulkOutputFile;
 
-    setForm((previous) => {
-      inputFile = field === 'hiddenBulkInputFile' ? file : previous.hiddenBulkInputFile;
-      outputFile = field === 'hiddenBulkOutputFile' ? file : previous.hiddenBulkOutputFile;
-      return {
-        ...previous,
-        [field]: file,
-        hiddenTestUploadMode: 'bulk',
-        hiddenTestFiles: [],
-        hiddenBulkCaseCount: inputFile && outputFile ? previous.hiddenBulkCaseCount : 0,
-      };
-    });
+    setForm((previous) => ({
+      ...previous,
+      [field]: file,
+      hiddenTestUploadMode: 'bulk',
+      hiddenTestFiles: [],
+      hiddenBulkCaseCount: inputFile && outputFile ? previous.hiddenBulkCaseCount : 0,
+    }));
     setIsDirty(true);
 
     if (!inputFile || !outputFile) return;
 
     try {
       const [inputsContent, outputsContent] = await Promise.all([inputFile.text(), outputFile.text()]);
-      const parsedCases = parseBulkCasePair(inputsContent, outputsContent, form.hiddenBulkDelimiter || '###CASE###');
+      const parsedCases = parseBulkCasePair(inputsContent, outputsContent, currentForm.hiddenBulkDelimiter || '###CASE###');
       setForm((previous) => ({
         ...previous,
         hiddenBulkCaseCount: parsedCases.length,
