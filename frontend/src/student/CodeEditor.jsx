@@ -25,6 +25,38 @@ function ResultValue({ value }) {
   );
 }
 
+function sanitizeTerminalText(value) {
+  return String(value ?? '')
+    .replace(/judge\s*0/gi, 'compiler service')
+    .replace(/judge0/gi, 'compiler service');
+}
+
+function TerminalOutput({ value }) {
+  const normalized = sanitizeTerminalText(value).replace(/\r\n/g, '\n').trimEnd();
+  const lines = normalized ? normalized.split('\n') : ['No terminal output.'];
+  const gutterWidth = String(lines.length).length;
+
+  return (
+    <div className="overflow-x-auto rounded-md bg-slate-950 px-3 py-3 text-slate-100 ring-1 ring-slate-800">
+      <pre className="whitespace-pre font-mono text-xs leading-relaxed">
+        {lines.map((line, index) => (
+          <div key={`${index}-${line}`} className="flex min-w-max">
+            <span
+              className="select-none pr-4 text-slate-500"
+              style={{ minWidth: `${gutterWidth + 1}ch` }}
+            >
+              {index + 1}
+            </span>
+            <span className={line.toLowerCase().includes('error') ? 'text-rose-300' : 'text-slate-100'}>
+              {line || ' '}
+            </span>
+          </div>
+        ))}
+      </pre>
+    </div>
+  );
+}
+
 function normalizeComparableText(value) {
   return String(value ?? '')
     .replace(/\r\n/g, '\n')
@@ -48,6 +80,16 @@ function getCompileOutput(entry) {
 
 function getErrorOutput(entry) {
   return entry?.error ?? entry?.stderr ?? '';
+}
+
+function getTerminalOutput(entry) {
+  return entry?.terminalOutput
+    || entry?.compileOutput
+    || entry?.compile_output
+    || entry?.stderr
+    || entry?.error
+    || entry?.message
+    || '';
 }
 
 function normalizeRunCaseStatus(status) {
@@ -380,6 +422,7 @@ function CodeEditor({
   };
 
   const isRunResult = isRunExecutionResult(result);
+  const isTerminalResult = Boolean(result?.mode === 'system' || result?.terminal);
   const summary = summarizeExecutionResult(result);
   const runCaseResults = useMemo(
     () => (Array.isArray(result?.caseResults) ? result.caseResults : []),
@@ -460,6 +503,7 @@ function CodeEditor({
     if (result?.mode === 'run' && typeof result.status === 'string') {
       return result.status;
     }
+    if (result?.mode === 'system' || result?.terminal) return result.status || 'System Error';
     if (compileOutput) return 'Compilation Error';
     if (result.status?.id === 5) return 'Time Limit Exceeded';
     if (errorOutput) return 'Runtime Error';
@@ -831,15 +875,22 @@ function CodeEditor({
                       <ResultValue value={(result.output ?? result.stdout) || ''} />
                     </LcBlock>
 
-                    {hasValue(singleRunExpectedOutput) && !(getCompileOutput(result) || getErrorOutput(result)) && (
+                    {hasValue(singleRunExpectedOutput) && !isTerminalResult && !(getCompileOutput(result) || getErrorOutput(result)) && (
                       <LcBlock label="Expected">
                         <ResultValue value={singleRunExpectedOutput || ''} />
                       </LcBlock>
                     )}
-                    {(getCompileOutput(result) || getErrorOutput(result)) && (
+                    {!isTerminalResult && (getCompileOutput(result) || getErrorOutput(result)) && (
                       <div className="lg:col-span-2">
                         <LcBlock label={getCompileOutput(result) || result.status === 'Compilation Error' ? 'Compile Output' : 'Errors'}>
-                          <ResultValue value={getCompileOutput(result) || getErrorOutput(result) || ''} />
+                          <TerminalOutput value={getCompileOutput(result) || getErrorOutput(result) || ''} />
+                        </LcBlock>
+                      </div>
+                    )}
+                    {isTerminalResult && (
+                      <div className="lg:col-span-2">
+                        <LcBlock label="Terminal">
+                          <TerminalOutput value={getTerminalOutput(result)} />
                         </LcBlock>
                       </div>
                     )}
@@ -849,17 +900,17 @@ function CodeEditor({
 
               {result && !isRunResult && (
                 <>
-                  {result.status === 'Accepted' && (
+                  {(result.status === 'Accepted' || result.status === 'AC') && (
                     <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-900/10 dark:text-emerald-300">
                       All test cases passed.
                     </div>
                   )}
 
-                  {result.status === 'Wrong Answer' && result.failedTestCase && (
+                  {(result.status === 'Wrong Answer' || result.status === 'WA') && (result.failedTestCase || result.failedCase) && (
                     <div className="space-y-4">
                       <div className="flex flex-wrap items-center gap-3">
                         <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
-                          Case {result.failedTestCase.index}
+                          Case {(result.failedTestCase || result.failedCase).index}
                         </span>
                       </div>
                       <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/10 dark:text-rose-300">
@@ -868,19 +919,19 @@ function CodeEditor({
                     </div>
                   )}
 
-                  {result.status === 'Compilation Error' && (
+                  {(result.status === 'Compilation Error' || result.status === 'CE' || getCompileOutput(result)) && (
                     <LcBlock label="Compile Output">
-                      <ResultValue value={result.error || ''} />
+                      <TerminalOutput value={result.error || result.compileOutput || ''} />
                     </LcBlock>
                   )}
 
-                  {result.status === 'Runtime Error' && (
+                  {(result.status === 'Runtime Error' || result.status === 'RE' || (getErrorOutput(result) && !getCompileOutput(result))) && (
                     <LcBlock label="Errors">
-                      <ResultValue value={result.error || ''} />
+                      <TerminalOutput value={result.error || result.stderr || ''} />
                     </LcBlock>
                   )}
 
-                  {result.status === 'Time Limit Exceeded' && (
+                  {(result.status === 'Time Limit Exceeded' || result.status === 'TLE') && (
                     <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-900/10 dark:text-rose-300">
                       The submission exceeded the configured execution limit.
                     </div>

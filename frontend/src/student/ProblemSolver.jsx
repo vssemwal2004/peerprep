@@ -110,6 +110,47 @@ function formatMemoryMb(memoryUsedKb) {
   return `${(numeric / 1024).toFixed(2)} MB`;
 }
 
+function sanitizeExecutionMessage(value) {
+  return String(value ?? '')
+    .replace(/judge\s*0/gi, 'compiler service')
+    .replace(/judge0/gi, 'compiler service');
+}
+
+function createTerminalExecutionResult(error, {
+  mode = 'run',
+  language = '',
+  input = '',
+  sourceCode = '',
+  fallbackMessage = 'Execution could not be completed.',
+} = {}) {
+  const message = sanitizeExecutionMessage(error?.message || fallbackMessage);
+  const responseData = error?.response?.data || {};
+  const terminalOutput = sanitizeExecutionMessage(responseData.stderr
+    || responseData.compileOutput
+    || responseData.compile_output
+    || responseData.error
+    || responseData.message
+    || message);
+
+  return {
+    mode: 'system',
+    action: mode,
+    terminal: true,
+    status: 'System Error',
+    message: 'Execution could not be completed. Review the terminal output below.',
+    input,
+    output: '',
+    stdout: '',
+    stderr: terminalOutput,
+    error: terminalOutput,
+    terminalOutput,
+    language,
+    sourceCode,
+    time: 0,
+    memory: 0,
+  };
+}
+
 function CodeWithLineNumbers({ code }) {
   const normalized = String(code ?? '').replace(/\r\n/g, '\n');
   if (!normalized.trim()) return null;
@@ -1334,7 +1375,14 @@ export default function ProblemSolver() {
       }
 
     } catch (error) {
-      toast.error(error.message || 'Failed to run code.');
+      setResult(createTerminalExecutionResult(error, {
+        mode: 'run',
+        language,
+        input: runInput,
+        sourceCode: activeCode,
+        fallbackMessage: 'Failed to run code.',
+      }));
+      setActiveConsoleTab('result');
     } finally {
       setIsRunning(false);
     }
@@ -1393,7 +1441,13 @@ export default function ProblemSolver() {
       if (isMountedRef.current) {
         stopSubmissionPolling();
         setIsSubmitting(false);
-        toast.error(error.message || 'Failed to submit code.');
+        setResult(createTerminalExecutionResult(error, {
+          mode: 'submit',
+          language,
+          sourceCode: activeCode,
+          fallbackMessage: 'Failed to submit code.',
+        }));
+        setActiveConsoleTab('result');
       }
     });
   };

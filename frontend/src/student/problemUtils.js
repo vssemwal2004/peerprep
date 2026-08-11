@@ -150,7 +150,12 @@ export function buildTagsParam(tags) {
 }
 
 export function isRunExecutionResult(result) {
-  return Boolean(result?.mode === 'run' || (result?.status && typeof result.status === 'object' && 'id' in result.status));
+  return Boolean(
+    result?.mode === 'run'
+    || result?.mode === 'system'
+    || result?.terminal
+    || (result?.status && typeof result.status === 'object' && 'id' in result.status),
+  );
 }
 
 export function verdictBadgeClass(status) {
@@ -174,6 +179,10 @@ export function summarizeExecutionResult(result) {
   }
 
   if (isRunExecutionResult(result)) {
+    if (result?.mode === 'system' || result?.terminal) {
+      return result.message || 'Execution could not be completed. Review the terminal output below.';
+    }
+
     if (Array.isArray(result?.caseResults) && result.caseResults.length > 0) {
       const passed = Number(result?.passed || 0);
       const total = Number(result?.total || result.caseResults.length || 0);
@@ -244,7 +253,7 @@ export function summarizeExecutionResult(result) {
     case 'Compilation Error':
       return 'Compilation failed before execution could start.';
     case 'Runtime Error':
-      return 'The program crashed while Judge0 was executing it.';
+      return 'The program crashed while the compiler service was executing it.';
     case 'Time Limit Exceeded':
       return 'The program exceeded the allowed execution time.';
     default:

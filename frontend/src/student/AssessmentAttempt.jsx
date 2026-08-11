@@ -46,6 +46,47 @@ const formatTime = (ms) => {
 
 const FULLSCREEN_RECOVERY_SECONDS = 15;
 
+function sanitizeExecutionMessage(value) {
+  return String(value ?? '')
+    .replace(/judge\s*0/gi, 'compiler service')
+    .replace(/judge0/gi, 'compiler service');
+}
+
+function createTerminalExecutionResult(error, {
+  mode = 'run',
+  language = '',
+  input = '',
+  sourceCode = '',
+  fallbackMessage = 'Execution could not be completed.',
+} = {}) {
+  const message = sanitizeExecutionMessage(error?.message || fallbackMessage);
+  const responseData = error?.response?.data || {};
+  const terminalOutput = sanitizeExecutionMessage(responseData.stderr
+    || responseData.compileOutput
+    || responseData.compile_output
+    || responseData.error
+    || responseData.message
+    || message);
+
+  return {
+    mode: 'system',
+    action: mode,
+    terminal: true,
+    status: 'System Error',
+    message: 'Execution could not be completed. Review the terminal output below.',
+    input,
+    output: '',
+    stdout: '',
+    stderr: terminalOutput,
+    error: terminalOutput,
+    terminalOutput,
+    language,
+    sourceCode,
+    time: 0,
+    memory: 0,
+  };
+}
+
 const buildSampleTestCases = (codingData = {}) => {
   const list = Array.isArray(codingData.sampleTestCases) && codingData.sampleTestCases.length
     ? codingData.sampleTestCases
@@ -2684,7 +2725,17 @@ export default function AssessmentAttempt() {
         });
       }
     }).catch((error) => {
-      toast.error(error.message || 'Failed to run code.');
+      setCodeResultMap((prev) => ({
+        ...prev,
+        [key]: createTerminalExecutionResult(error, {
+          mode: 'run',
+          language,
+          input: runInput,
+          sourceCode,
+          fallbackMessage: 'Failed to run code.',
+        }),
+      }));
+      setActiveConsoleTab('result');
     }).finally(() => {
       setIsRunningMap((prev) => ({ ...prev, [key]: false }));
     });
@@ -2738,7 +2789,16 @@ export default function AssessmentAttempt() {
       setActiveConsoleTab('result');
       toast.success(`Submission finished with verdict ${response.status || 'Completed'}`);
     }).catch((error) => {
-      toast.error(error.message || 'Failed to submit code.');
+      setCodeResultMap((prev) => ({
+        ...prev,
+        [key]: createTerminalExecutionResult(error, {
+          mode: 'submit',
+          language,
+          sourceCode,
+          fallbackMessage: 'Failed to submit code.',
+        }),
+      }));
+      setActiveConsoleTab('result');
     }).finally(() => {
       setIsSubmittingMap((prev) => ({ ...prev, [key]: false }));
     });
