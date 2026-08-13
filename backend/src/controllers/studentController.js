@@ -7,6 +7,7 @@ import { createNotification, createNotifications } from '../services/notificatio
 import { enqueueMailJobs } from '../services/mailQueueService.js';
 import crypto from 'crypto';
 import StudentUploadBatch from '../models/StudentUploadBatch.js';
+import StudentActivity from '../models/StudentActivity.js';
 
 // Generate random password (7-8 characters)
 function generateRandomPassword() {
@@ -203,26 +204,42 @@ export async function listAllStudents(req, res) {
         },
       ]),
     ]);
+
+    const studentIds = students.map((student) => student._id);
+    const latestActivityRows = studentIds.length
+      ? await StudentActivity.aggregate([
+        { $match: { studentId: { $in: studentIds } } },
+        { $group: { _id: '$studentId', lastActive: { $max: '$date' } } },
+      ])
+      : [];
+    const latestActivityByStudent = new Map(
+      latestActivityRows.map((entry) => [String(entry._id), entry.lastActive]),
+    );
     
     // Map teacherIds to teacherId for backwards compatibility with frontend
-    const studentsWithTeacherId = students.map(s => ({
-      ...s,
-      teacherId: Array.isArray(s.teacherIds) ? s.teacherIds.join(', ') : (s.teacherIds || ''),
-      // Legacy/imported students may not have mustChangePassword populated.
-      // A missing login marker is the authoritative signal that resetting to a
-      // new temporary password is still safe.
-      canResendCredentials: !s.activeSessionCreatedAt
-        && (
-          s.credentialEmailStatus !== 'pending'
-          || !s.credentialEmailLastAttemptAt
-          || Date.now() - new Date(s.credentialEmailLastAttemptAt).getTime() > 5 * 60 * 1000
-        ),
-      loginStatus: s.activeSessionCreatedAt ? 'active' : 'awaiting_login',
-      // Historical deliveries were not tracked. Never claim they were not sent.
-      credentialEmailStatus: s.credentialEmailStatus || 'unconfirmed',
-      mustChangePassword: undefined,
-      activeSessionCreatedAt: undefined,
-    }));
+    const studentsWithTeacherId = students.map((s) => {
+      const latestActivity = latestActivityByStudent.get(String(s._id));
+      const lastActive = latestActivity || s.activeSessionCreatedAt || null;
+      return {
+        ...s,
+        teacherId: Array.isArray(s.teacherIds) ? s.teacherIds.join(', ') : (s.teacherIds || ''),
+        // Legacy/imported students may not have mustChangePassword populated.
+        // A missing login marker is the authoritative signal that resetting to a
+        // new temporary password is still safe.
+        canResendCredentials: !lastActive
+          && (
+            s.credentialEmailStatus !== 'pending'
+            || !s.credentialEmailLastAttemptAt
+            || Date.now() - new Date(s.credentialEmailLastAttemptAt).getTime() > 5 * 60 * 1000
+          ),
+        loginStatus: lastActive ? 'active' : 'awaiting_login',
+        lastActive,
+        // Historical deliveries were not tracked. Never claim they were not sent.
+        credentialEmailStatus: s.credentialEmailStatus || 'unconfirmed',
+        mustChangePassword: undefined,
+        activeSessionCreatedAt: undefined,
+      };
+    });
     
     const pages = paginated ? Math.max(1, Math.ceil(total / requestedLimit)) : 1;
     const facets = facetResults[0] || {};
