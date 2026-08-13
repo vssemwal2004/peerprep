@@ -382,7 +382,8 @@ export default function AssessmentAttempt() {
   const [securityRecheckRemainingSec, setSecurityRecheckRemainingSec] = useState(0);
   const [violationMessage, setViolationMessage] = useState('');
   const [activeConsoleTab, setActiveConsoleTab] = useState('result');
-  const [codeResultMap, setCodeResultMap] = useState({});
+  const [runResultMap, setRunResultMap] = useState({});
+  const [submitResultMap, setSubmitResultMap] = useState({});
   const [isRunningMap, setIsRunningMap] = useState({});
   const [isSubmittingMap, setIsSubmittingMap] = useState({});
   const [runInputUsedMap, setRunInputUsedMap] = useState({});
@@ -2699,7 +2700,7 @@ export default function AssessmentAttempt() {
       }
 
       const response = completedRun?.result?.response || completedRun;
-      setCodeResultMap((prev) => ({ ...prev, [key]: response }));
+      setRunResultMap((prev) => ({ ...prev, [key]: { ...response, mode: response?.mode || 'run' } }));
       setActiveConsoleTab('result');
       toast.success(`Run finished with status ${response.status || 'Completed'}`);
 
@@ -2725,7 +2726,7 @@ export default function AssessmentAttempt() {
         });
       }
     }).catch((error) => {
-      setCodeResultMap((prev) => ({
+      setRunResultMap((prev) => ({
         ...prev,
         [key]: createTerminalExecutionResult(error, {
           mode: 'run',
@@ -2785,18 +2786,24 @@ export default function AssessmentAttempt() {
       }
 
       const response = completedSubmission?.result?.response || completedSubmission;
-      setCodeResultMap((prev) => ({ ...prev, [key]: response }));
+      setSubmitResultMap((prev) => ({ ...prev, [key]: { ...response, mode: response?.mode || 'submit' } }));
+      setRunResultMap((prev) => ({ ...prev, [key]: { ...response, mode: response?.mode || 'submit' } }));
       setActiveConsoleTab('result');
       toast.success(`Submission finished with verdict ${response.status || 'Completed'}`);
     }).catch((error) => {
-      setCodeResultMap((prev) => ({
+      const terminalResult = createTerminalExecutionResult(error, {
+        mode: 'submit',
+        language,
+        sourceCode,
+        fallbackMessage: 'Failed to submit code.',
+      });
+      setSubmitResultMap((prev) => ({
         ...prev,
-        [key]: createTerminalExecutionResult(error, {
-          mode: 'submit',
-          language,
-          sourceCode,
-          fallbackMessage: 'Failed to submit code.',
-        }),
+        [key]: terminalResult,
+      }));
+      setRunResultMap((prev) => ({
+        ...prev,
+        [key]: terminalResult,
       }));
       setActiveConsoleTab('result');
     }).finally(() => {
@@ -2816,7 +2823,13 @@ export default function AssessmentAttempt() {
     liveCodingLanguageRef.current[key] = language;
     liveCodingCodeRef.current[key] = starterCode;
     setCodeValueVersion((current) => current + 1);
-    setCodeResultMap((prev) => {
+    setRunResultMap((prev) => {
+      if (!Object.prototype.hasOwnProperty.call(prev, key)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    setSubmitResultMap((prev) => {
       if (!Object.prototype.hasOwnProperty.call(prev, key)) return prev;
       const next = { ...prev };
       delete next[key];
@@ -2992,7 +3005,7 @@ export default function AssessmentAttempt() {
     ? (answersMap[answerKey(activeSection, activeQuestion)]?.language || codingLanguages[0])
     : '';
   const activeAnswerKey = answerKey(activeSection, activeQuestion);
-  const codeResult = codeResultMap[activeAnswerKey] || null;
+  const codeResult = runResultMap[activeAnswerKey] || submitResultMap[activeAnswerKey] || null;
   const isRunning = Boolean(isRunningMap[activeAnswerKey]);
   const isSubmitting = Boolean(isSubmittingMap[activeAnswerKey]);
   const runInputUsed = runInputUsedMap[activeAnswerKey] ?? null;
