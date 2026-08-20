@@ -74,11 +74,11 @@ export default function LearningAnalyticsPage({ analytics, activitySeries }) {
 
       <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
         <Panel className="p-5">
-          <PanelHeader eyebrow="7-day context" title="Overall platform activity" description="All tracked PeerPrep events; module-specific learning history is not yet available." />
+          <PanelHeader eyebrow="7-day context" title="Overall preparation activity" description="Tracked coding, assessment, interview-feedback, and learning events; module-specific learning history is not yet available." />
           <div className="mt-4">
             <TrendAreaChart data={totalActivity > 0 ? activitySeries : []} suffix="" minHeight={260} color={CHART_COLORS.sky} />
           </div>
-          {totalActivity > 0 ? <div className="mt-3 text-[11px] text-slate-500 dark:text-slate-400">{totalActivity} tracked events recorded across the platform.</div> : null}
+          {totalActivity > 0 ? <div className="mt-3 text-[11px] text-slate-500 dark:text-slate-400">{totalActivity} preparation events recorded across the platform.</div> : null}
         </Panel>
         <EvidencePanel items={explanations.learning} title="Learning score evidence" />
       </div>

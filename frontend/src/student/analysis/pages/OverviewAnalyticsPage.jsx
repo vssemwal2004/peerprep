@@ -1,4 +1,4 @@
-import { Activity, BarChart3, CalendarDays, Flame, Target, TrendingUp } from "lucide-react";
+import { Activity, CalendarDays, Flame, ShieldCheck, Target, TrendingUp } from "lucide-react";
 import { HorizontalMetricChart, TrendAreaChart } from "../AnalyticsCharts";
 import {
   ActionCard,
@@ -21,7 +21,7 @@ function resolveFocusSection(focus = "") {
   return "coding";
 }
 
-export default function OverviewAnalyticsPage({ analytics, readinessScore, overallStatus, moduleScores, activitySeries, onNavigate }) {
+export default function OverviewAnalyticsPage({ analytics, readinessScore, overallStatus, moduleScores, activitySeries, readinessHistory = [], onNavigate }) {
   const { overview, consistency, derived, explanations } = analytics;
   const hasEvidence = moduleScores.some((item) => item.available);
   const activeModules = moduleScores.filter((item) => item.available).length;
@@ -32,6 +32,8 @@ export default function OverviewAnalyticsPage({ analytics, readinessScore, overa
   const strongest = [...availableModules].sort((a, b) => b.value - a.value)[0];
   const weakest = [...availableModules].sort((a, b) => a.value - b.value)[0];
   const statusMeta = STATUS_STYLES[overallStatus] || STATUS_STYLES.Improving;
+  const evidenceConfidence = analytics.evidence?.confidence;
+  const hasReadinessHistory = readinessHistory.length >= 2;
 
   return (
     <div className="space-y-4">
@@ -52,11 +54,22 @@ export default function OverviewAnalyticsPage({ analytics, readinessScore, overa
         />
       </div>
 
-      <MetricGrid>
+      <MetricGrid columns={evidenceConfidence ? 5 : 4}>
         <MetricTile label="Performance" value={Math.round(derived.performanceScore || 0)} suffix="%" helper="Across scored modules" Icon={TrendingUp} tone={getScoreTone(derived.performanceScore)} available={hasEvidence} />
         <MetricTile label="Consistency" value={Math.round(derived.consistencyScore || 0)} suffix="%" helper={`${consistency.activeDays || 0} active days`} Icon={CalendarDays} tone={getScoreTone(derived.consistencyScore)} available={totalActivity > 0} />
         <MetricTile label="Current streak" value={consistency.currentStreak || 0} helper="Consecutive active days" Icon={Flame} tone={(consistency.currentStreak || 0) >= 5 ? "emerald" : "amber"} available={totalActivity > 0} />
-        <MetricTile label="Tracked activity" value={totalActivity} helper="Platform events in the last 7 days" Icon={Activity} tone="sky" available={totalActivity > 0} />
+        <MetricTile label="Tracked activity" value={totalActivity} helper="Preparation events in the last 7 days" Icon={Activity} tone="sky" available={totalActivity > 0} />
+        {evidenceConfidence ? (
+          <MetricTile
+            label="Evidence confidence"
+            value={Math.round(evidenceConfidence.score || 0)}
+            suffix="%"
+            helper={`${Math.round(analytics.evidence.coverageScore || 0)}% source coverage · ${evidenceConfidence.level}`}
+            Icon={ShieldCheck}
+            tone={getScoreTone(evidenceConfidence.score)}
+            available={hasEvidence}
+          />
+        ) : null}
       </MetricGrid>
 
       <div className="grid gap-4 xl:grid-cols-[1.12fr_0.88fr]">
@@ -79,9 +92,20 @@ export default function OverviewAnalyticsPage({ analytics, readinessScore, overa
         </Panel>
 
         <Panel className="p-5">
-          <PanelHeader eyebrow="7-day pattern" title="Activity trend" description="Tracked platform events across PeerPrep." />
+          <PanelHeader
+            eyebrow={hasReadinessHistory ? "Daily snapshots" : "7-day pattern"}
+            title={hasReadinessHistory ? "Readiness history" : "Activity trend"}
+            description={hasReadinessHistory
+              ? "Only snapshots from the current scoring contract are connected."
+              : "Tracked preparation events across PeerPrep; readiness history begins after daily snapshots accumulate."}
+          />
           <div className="mt-4">
-            <TrendAreaChart data={totalActivity > 0 ? activitySeries : []} suffix="" minHeight={250} color={CHART_COLORS.sky} />
+            <TrendAreaChart
+              data={hasReadinessHistory ? readinessHistory : (totalActivity > 0 ? activitySeries : [])}
+              suffix={hasReadinessHistory ? "%" : ""}
+              minHeight={250}
+              color={CHART_COLORS.sky}
+            />
           </div>
         </Panel>
       </div>

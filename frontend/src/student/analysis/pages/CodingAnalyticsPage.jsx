@@ -13,8 +13,8 @@ import {
 } from "../AnalyticsShared";
 import { formatPercent, getScoreTone } from "../analyticsUtils";
 
-function TopicRow({ topic, isFocus = false }) {
-  const enoughEvidence = Number(topic.attempts || 0) >= 4;
+function TopicRow({ topic, minimumAttempts, isFocus = false }) {
+  const enoughEvidence = Number(topic.attempts || 0) >= minimumAttempts;
   return (
     <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 dark:border-white/10 dark:bg-white/[0.03]">
       <div className="flex items-start justify-between gap-3">
@@ -35,12 +35,13 @@ function TopicRow({ topic, isFocus = false }) {
 
 export default function CodingAnalyticsPage({ analytics, topicAnalytics }) {
   const { problems, explanations } = analytics;
+  const minimumTopicAttempts = Number(analytics.scoreModel?.topicMinimumAttempts || 4);
   const hasAttempts = Number(problems.attempts || 0) > 0;
-  const verifiedTopics = topicAnalytics.active.filter((topic) => Number(topic.attempts || 0) >= 4);
+  const verifiedTopics = topicAnalytics.active.filter((topic) => Number(topic.attempts || 0) >= minimumTopicAttempts);
   const verifiedWeak = verifiedTopics.filter((topic) => topic.level === "weak" || topic.accuracy < 55);
   const verifiedStrong = verifiedTopics.filter((topic) => topic.level === "strong" || topic.accuracy >= 75);
   const weakestVerified = [...verifiedWeak].sort((a, b) => a.accuracy - b.accuracy)[0] || null;
-  const earlySignals = topicAnalytics.active.filter((topic) => Number(topic.attempts || 0) < 4);
+  const earlySignals = topicAnalytics.active.filter((topic) => Number(topic.attempts || 0) < minimumTopicAttempts);
   const focusTopics = (verifiedWeak.length ? verifiedWeak : earlySignals).slice(0, 5);
   const actionInsight = explanations.coding?.[0];
   const coverage = topicAnalytics.active.length;
@@ -52,7 +53,7 @@ export default function CodingAnalyticsPage({ analytics, topicAnalytics }) {
         reason={
           weakestVerified
             ? `${weakestVerified.attempts} attempts at ${formatPercent(weakestVerified.accuracy)} accuracy.`
-            : "At least four tagged attempts are required before a topic is treated as a verified priority."
+            : `At least ${minimumTopicAttempts} tagged attempts are required before a topic is treated as a verified priority.`
         }
         action={weakestVerified ? actionInsight?.action : "Add tagged attempts across active topics before treating accuracy as a stable signal."}
         tone={weakestVerified ? "amber" : "sky"}
@@ -60,7 +61,7 @@ export default function CodingAnalyticsPage({ analytics, topicAnalytics }) {
 
       <MetricGrid>
         <MetricTile label="Submissions" value={problems.attempts || 0} helper="Tracked coding attempts" Icon={Code2} tone="sky" available={hasAttempts} />
-        <MetricTile label="Accepted" value={problems.solved || 0} helper="Accepted submissions" Icon={CheckCircle2} tone="emerald" available={hasAttempts} />
+        <MetricTile label="Unique solved" value={problems.solved || 0} helper={`${problems.acceptedSubmissions ?? problems.solved ?? 0} accepted submissions`} Icon={CheckCircle2} tone="emerald" available={hasAttempts} />
         <MetricTile label="Accuracy" value={Math.round(problems.accuracy || 0)} suffix="%" helper="Accepted submission rate" Icon={TrendingUp} tone={getScoreTone(problems.accuracy)} available={hasAttempts} />
         <MetricTile label="Topic coverage" value={coverage} helper="Topics with at least one attempt" Icon={Layers3} tone="sky" available={coverage > 0} />
       </MetricGrid>
@@ -81,7 +82,7 @@ export default function CodingAnalyticsPage({ analytics, topicAnalytics }) {
         <Panel className="p-5">
           <PanelHeader eyebrow="Practice queue" title="What to work on next" description="Verified low accuracy is prioritized; sparse topics remain early signals." />
           <div className="mt-4 space-y-3">
-            {focusTopics.length ? focusTopics.map((topic) => <TopicRow key={topic.topic} topic={topic} isFocus />) : (
+            {focusTopics.length ? focusTopics.map((topic) => <TopicRow key={topic.topic} topic={topic} minimumAttempts={minimumTopicAttempts} isFocus />) : (
               <EmptyPanel title="No verified topic gap" text="Solve tagged problems to create a reliable practice queue." />
             )}
           </div>
@@ -96,7 +97,7 @@ export default function CodingAnalyticsPage({ analytics, topicAnalytics }) {
               label="Overall accuracy"
               value={problems.accuracy || 0}
               available={hasAttempts}
-              helper={hasAttempts ? `${problems.solved || 0} accepted from ${problems.attempts || 0} submissions` : "No coding submissions yet"}
+              helper={hasAttempts ? `${problems.acceptedSubmissions ?? problems.solved ?? 0} accepted from ${problems.attempts || 0} submissions` : "No coding submissions yet"}
             />
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-xl bg-emerald-50 p-3.5 dark:bg-emerald-400/10">

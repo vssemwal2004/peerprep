@@ -259,9 +259,9 @@ export function AssessmentScoreChart({ data = [], minHeight = 320 }) {
       minHeight={minHeight}
       empty={!visible.length}
       emptyTitle="No score history yet"
-      emptyText="Submitted assessments will appear here with raw and adjusted scores."
+      emptyText="Valid submitted assessments will appear here with normalized and adjusted scores."
     >
-      <div role="img" aria-label="Assessment raw and adjusted score history">
+      <div role="img" aria-label="Assessment normalized and adjusted score history">
       <ResponsiveContainer width="100%" height={minHeight}>
         <LineChart data={visible} margin={{ top: 12, right: 16, left: 2, bottom: 8 }}>
           <CartesianGrid stroke={chartTheme.grid} strokeDasharray="4 8" vertical={false} />
@@ -288,7 +288,7 @@ export function AssessmentScoreChart({ data = [], minHeight = 320 }) {
           <Line
             type="monotone"
             dataKey="rawScore"
-            name="Raw score"
+            name="Normalized score"
             stroke={CHART_COLORS.skySoft}
             strokeWidth={2}
             strokeDasharray="5 4"
@@ -311,7 +311,7 @@ export function AssessmentScoreChart({ data = [], minHeight = 320 }) {
         </LineChart>
       </ResponsiveContainer>
       </div>
-      <AccessibleDataTable caption="Assessment score history" data={visible} columns={[{ key: "label", label: "Attempt" }, { key: "rawScore", label: "Raw score", format: (value) => `${Math.round(Number(value || 0))}%` }, { key: "adjustedScore", label: "Adjusted score", format: (value) => `${Math.round(Number(value || 0))}%` }, { key: "integrityScore", label: "Reliability", format: (value) => `${Math.round(Number(value || 0))}%` }]} />
+      <AccessibleDataTable caption="Assessment score history" data={visible} columns={[{ key: "label", label: "Attempt" }, { key: "rawScore", label: "Normalized score", format: (value) => `${Math.round(Number(value || 0))}%` }, { key: "adjustedScore", label: "Adjusted score", format: (value) => `${Math.round(Number(value || 0))}%` }, { key: "integrityScore", label: "Reliability", format: (value) => `${Math.round(Number(value || 0))}%` }]} />
     </ChartFrame>
   );
 }

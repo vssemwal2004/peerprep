@@ -10,6 +10,7 @@ export function useStudentAnalyticsData() {
   const { user } = useAuth();
   const [analysis, setAnalysis] = useState(null);
   const [meta, setMeta] = useState(null);
+  const [history, setHistory] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [readiness, setReadiness] = useState(null);
   const [selectedCompany, setSelectedCompany] = useState("");
@@ -51,6 +52,13 @@ export function useStudentAnalyticsData() {
       setAnalysis(analysisRes?.analysis || null);
       setMeta(analysisRes?.meta || null);
       lastLoadedAtRef.current = Date.now();
+
+      const historyResult = await Promise.allSettled([
+        api.getStudentAnalysisHistory(90, forceRefresh),
+      ]);
+      if (historyResult[0].status === "fulfilled" && Array.isArray(historyResult[0].value?.history)) {
+        setHistory(historyResult[0].value.history);
+      }
       if (shouldLoadCompanies) {
         if (companiesResult.status === "fulfilled" && Array.isArray(companiesResult.value?.companies)) {
           companiesLoadedRef.current = true;
@@ -68,7 +76,7 @@ export function useStudentAnalyticsData() {
       const companyId = selectedCompanyRef.current;
       if (companyId) {
         const requestId = ++readinessRequestIdRef.current;
-        const readinessRes = await api.getCompanyReadiness(companyId, forceRefresh);
+        const readinessRes = await api.getCompanyReadiness(companyId, false);
         if (requestId === readinessRequestIdRef.current && selectedCompanyRef.current === companyId) {
           setReadiness(readinessRes || null);
         }
@@ -165,6 +173,7 @@ export function useStudentAnalyticsData() {
   return {
     analysis,
     meta,
+    history,
     companies,
     readiness,
     selectedCompany,

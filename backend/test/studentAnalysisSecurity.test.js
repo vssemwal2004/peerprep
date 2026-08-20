@@ -54,3 +54,19 @@ test('student analysis sensitive-key allowlist covers known hidden fields', () =
     assert.equal(SENSITIVE_ANALYTICS_KEYS.has(key), true, `${key} should be redacted`);
   });
 });
+
+test('student analysis redaction preserves dates and removes internal identifiers', () => {
+  const generatedAt = new Date('2026-08-20T10:00:00.000Z');
+  const clean = redactSensitiveAnalytics({
+    _id: 'internal',
+    studentId: 'internal-student',
+    generatedAt,
+    evidence: { latestEvidenceAt: generatedAt },
+  });
+
+  assert.equal(clean._id, undefined);
+  assert.equal(clean.studentId, undefined);
+  assert.equal(clean.generatedAt, generatedAt);
+  assert.equal(clean.evidence.latestEvidenceAt, generatedAt);
+  assert.equal(JSON.stringify(clean).includes('2026-08-20T10:00:00.000Z'), true);
+});

@@ -74,6 +74,7 @@ const studentAnalyticsSchema = new mongoose.Schema({
   scoreModel: {
     version: { type: String, default: '2026.08.evidence-readiness-v2' },
     studentVisibleSecurityAggregatesOnly: { type: Boolean, default: true },
+    topicMinimumAttempts: { type: Number, default: 4 },
   },
   evidence: { type: evidenceSchema, required: true },
   overview: {
@@ -121,6 +122,7 @@ const studentAnalyticsSchema = new mongoose.Schema({
     accuracy: { type: Number, default: 0 },
     topics: [topicMetricSchema],
     solved: { type: Number, default: 0 },
+    acceptedSubmissions: { type: Number, default: 0 },
   },
   interviews: {
     avgScore: { type: Number, default: 0 },

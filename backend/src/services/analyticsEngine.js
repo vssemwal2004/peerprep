@@ -51,6 +51,7 @@ export const ANALYTICS_SCORE_MODEL = Object.freeze({
   thresholds: {
     topicStrong: 75,
     topicMedium: 55,
+    topicMinimumAttempts: 4,
     riskHighIntegrityBelow: 55,
     riskHighViolationRateAtLeast: 45,
     riskMediumIntegrityBelow: 78,
@@ -70,6 +71,7 @@ const round = (value) => Number((value || 0).toFixed(2));
 const roundNullable = (value) => (value === null || value === undefined ? null : round(Number(value)));
 const clamp = (value, min = 0, max = 100) => Math.min(max, Math.max(min, value));
 const ASSESSMENT_FINAL_STATUSES = ['submitted', 'violation'];
+const PREPARATION_ACTIVITY_TYPES = ['VIDEO_WATCH', 'TOPIC_COMPLETED'];
 
 const toDateKey = (date) => {
   if (!date) return '';
@@ -239,7 +241,7 @@ function computeGrowthScore(progress = []) {
 
 function buildWeeklySeries(countMap, asOf = new Date()) {
   const today = new Date(asOf);
-  today.setHours(0, 0, 0, 0);
+  today.setUTCHours(0, 0, 0, 0);
   const items = [];
   for (let i = 6; i >= 0; i -= 1) {
     const date = new Date(today.getTime() - i * DAY_MS);
@@ -252,7 +254,7 @@ function buildWeeklySeries(countMap, asOf = new Date()) {
 function computeStreak(activeDates, asOf = new Date()) {
   if (!activeDates.size) return 0;
   const today = new Date(asOf);
-  today.setHours(0, 0, 0, 0);
+  today.setUTCHours(0, 0, 0, 0);
   let streak = 0;
   for (let i = 0; i < 365; i += 1) {
     const date = new Date(today.getTime() - i * DAY_MS);
@@ -268,10 +270,10 @@ function computeStreak(activeDates, asOf = new Date()) {
 
 async function buildActivityCounts(studentId, days = 30, asOf = new Date()) {
   const start = new Date(asOf);
-  start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() - (days - 1));
+  start.setUTCHours(0, 0, 0, 0);
+  start.setUTCDate(start.getUTCDate() - (days - 1));
 
-  const [submissionAgg, activityAgg] = await Promise.all([
+  const [submissionAgg, assessmentAgg, feedbackAgg, activityAgg] = await Promise.all([
     Submission.aggregate([
       { $match: { user: studentId, mode: 'submit', createdAt: { $gte: start } } },
       {
@@ -281,8 +283,26 @@ async function buildActivityCounts(studentId, days = 30, asOf = new Date()) {
         },
       },
     ]),
+    AssessmentSubmission.aggregate([
+      { $match: { studentId, status: { $in: ASSESSMENT_FINAL_STATUSES }, submittedAt: { $gte: start } } },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$submittedAt', timezone: 'UTC' } },
+          count: { $sum: 1 },
+        },
+      },
+    ]),
+    Feedback.aggregate([
+      { $match: { to: studentId, createdAt: { $gte: start } } },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'UTC' } },
+          count: { $sum: 1 },
+        },
+      },
+    ]),
     StudentActivity.aggregate([
-      { $match: { studentId, date: { $gte: start } } },
+      { $match: { studentId, activityType: { $in: PREPARATION_ACTIVITY_TYPES }, date: { $gte: start } } },
       {
         $group: {
           _id: { $dateToString: { format: '%Y-%m-%d', date: '$date', timezone: 'UTC' } },
@@ -296,8 +316,10 @@ async function buildActivityCounts(studentId, days = 30, asOf = new Date()) {
   submissionAgg.forEach((entry) => {
     countMap.set(entry._id, (countMap.get(entry._id) || 0) + entry.count);
   });
-  activityAgg.forEach((entry) => {
-    countMap.set(entry._id, (countMap.get(entry._id) || 0) + entry.count);
+  [assessmentAgg, feedbackAgg, activityAgg].forEach((entries) => {
+    entries.forEach((entry) => {
+      countMap.set(entry._id, (countMap.get(entry._id) || 0) + entry.count);
+    });
   });
 
   const activeDates = new Set(
@@ -318,6 +340,9 @@ async function buildProblemMetrics(studentId) {
           _id: null,
           attempts: { $sum: 1 },
           accepted: { $sum: { $cond: [{ $in: ['$status', ACCEPTED_STATUSES] }, 1, 0] } },
+          acceptedProblems: {
+            $addToSet: { $cond: [{ $in: ['$status', ACCEPTED_STATUSES] }, '$problem', null] },
+          },
           latestEvidenceAt: { $max: '$createdAt' },
         },
       },
@@ -350,7 +375,7 @@ async function buildProblemMetrics(studentId) {
     ]),
   ]);
 
-  const totals = totalAgg[0] || { attempts: 0, accepted: 0 };
+  const totals = totalAgg[0] || { attempts: 0, accepted: 0, acceptedProblems: [] };
   const accuracy = totals.attempts ? (totals.accepted / totals.attempts) * 100 : 0;
 
   const topics = topicAgg.map((entry) => {
@@ -359,7 +384,7 @@ async function buildProblemMetrics(studentId) {
       topic: entry._id || 'General',
       accuracy: round(acc),
       attempts: entry.attempts || 0,
-      level: computeTopicLevel(acc),
+      level: entry.attempts >= ANALYTICS_SCORE_MODEL.thresholds.topicMinimumAttempts ? computeTopicLevel(acc) : 'insufficient',
     };
   });
 
@@ -367,7 +392,8 @@ async function buildProblemMetrics(studentId) {
     attempts: totals.attempts || 0,
     accuracy: round(accuracy),
     topics,
-    solved: totals.accepted || 0,
+    solved: (totals.acceptedProblems || []).filter(Boolean).length,
+    acceptedSubmissions: totals.accepted || 0,
     latestEvidenceAt: totals.latestEvidenceAt || null,
   };
 }
@@ -827,7 +853,7 @@ function buildAnalyticsExplanations({
       score: problemMetrics.accuracy,
       summary: `${round(problemMetrics.accuracy)}% accepted quality across ${problemMetrics.attempts || 0} attempts.`,
       evidence: [
-        `${problemMetrics.solved || 0} accepted submissions`,
+        `${problemMetrics.solved || 0} unique problems solved`,
         strongestTopic ? `Strongest: ${strongestTopic.topic} (${round(strongestTopic.accuracy)}%)` : '',
         weakestTopic ? `Weakest: ${weakestTopic.topic} (${round(weakestTopic.accuracy)}%)` : '',
       ],
@@ -1012,6 +1038,7 @@ export async function computeStudentAnalytics(studentId, { asOf = new Date() } =
     scoreModel: {
       version: ANALYTICS_CONTRACT_VERSION,
       studentVisibleSecurityAggregatesOnly: ANALYTICS_SCORE_MODEL.safety.studentVisibleSecurityAggregatesOnly,
+      topicMinimumAttempts: ANALYTICS_SCORE_MODEL.thresholds.topicMinimumAttempts,
     },
     evidence,
     overview: {
@@ -1036,7 +1063,7 @@ export async function computeStudentAnalytics(studentId, { asOf = new Date() } =
     interviews: interviewMetrics,
     learning: {
       ...learningMetrics,
-      practiceSolved: problemMetrics.solved || 0,
+      practiceSolved: problemMetrics.acceptedSubmissions || 0,
     },
     consistency: {
       currentStreak: streak,
@@ -1339,6 +1366,7 @@ export const __analyticsTestHooks = {
   freshnessScoreFor,
   toUtcDay,
   buildSnapshotPayload,
+  PREPARATION_ACTIVITY_TYPES,
 };
 
 

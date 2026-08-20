@@ -107,7 +107,7 @@ export default function PlacementAnalyticsPage({ analytics, companies, selectedC
             <ScoreSummary
               score={report.readinessScore ?? 0}
               status={report.badge || (hasPreparationScore ? "Improving" : "Building signal")}
-              label="Current preparation score"
+              label="Benchmark attainment"
               detail={hasPreparationScore
                 ? `Use the comparison and verified gaps below for ${company.companyName}. This is guidance, not a hiring probability.`
                 : "Complete tracked preparation activity before comparing this benchmark."}

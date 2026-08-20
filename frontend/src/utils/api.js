@@ -343,6 +343,8 @@ export const api = {
   // Student Analysis
   getStudentAnalysis: (forceRefresh = false) =>
     request(`/student/analysis${forceRefresh ? '?refresh=1' : ''}`, { skipCache: forceRefresh, cacheTtlMs: 2 * 60 * 1000 }),
+  getStudentAnalysisHistory: (days = 90, forceRefresh = false) =>
+    request(`/student/analysis/history?days=${encodeURIComponent(days)}`, { skipCache: forceRefresh, cacheTtlMs: 5 * 60 * 1000 }),
   listStudentCompanies: () => request('/student/analysis/companies', { cacheTtlMs: 10 * 60 * 1000 }),
   getCompanyReadiness: (companyId, forceRefresh = false) =>
     request(

@@ -81,6 +81,20 @@ function buildActivitySeries(points = []) {
   });
 }
 
+function buildReadinessHistory(points = [], contractVersion) {
+  return points
+    .filter((item) => (!contractVersion || item.contractVersion === contractVersion) && Number.isFinite(item.scores?.readiness))
+    .map((item) => {
+      const date = item.date ? new Date(item.date) : null;
+      return {
+        label: date && !Number.isNaN(date.getTime())
+          ? date.toLocaleDateString(undefined, { month: "short", day: "numeric" })
+          : "",
+        value: Number(item.scores.readiness),
+      };
+    });
+}
+
 function useEdgeSwipe(activeSection, onSectionChange) {
   const startRef = useRef(null);
 
@@ -122,6 +136,7 @@ export default function StudentAnalyticsPage() {
   const {
     analysis: rawAnalysis,
     meta,
+    history,
     companies,
     readiness,
     selectedCompany,
@@ -139,11 +154,15 @@ export default function StudentAnalyticsPage() {
   const assessmentMovement = useMemo(() => buildAssessmentMovement(analytics.assessments.progress || []), [analytics.assessments.progress]);
   const categoryData = useMemo(() => toInterviewCategoryData(analytics.interviews.categoryScores || {}), [analytics.interviews.categoryScores]);
   const activitySeries = useMemo(() => buildActivitySeries(analytics.consistency.weeklyActivity || []), [analytics.consistency.weeklyActivity]);
+  const readinessHistory = useMemo(
+    () => buildReadinessHistory(history, analytics.contractVersion),
+    [analytics.contractVersion, history]
+  );
   const moduleScores = useMemo(() => {
     const scores = buildModuleScores(analytics);
     const availability = {
       problems: Number(analytics.problems.attempts || 0) > 0,
-      assessments: Number(analytics.assessments.attempts || 0) > 0,
+      assessments: Number(analytics.assessments.validScoreAttempts ?? analytics.assessments.attempts ?? 0) > 0,
       interviews: Number(analytics.interviews.total || 0) > 0,
       learning: Number(analytics.learning.totalTopics || 0) > 0,
     };
@@ -178,6 +197,7 @@ export default function StudentAnalyticsPage() {
     assessmentMovement,
     categoryData,
     activitySeries,
+    readinessHistory,
     companies,
     readiness,
     selectedCompany,
