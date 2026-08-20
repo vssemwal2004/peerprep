@@ -1,5 +1,6 @@
 import CompanyBenchmark from '../models/CompanyBenchmark.js';
 import StudentAnalytics from '../models/StudentAnalytics.js';
+import StudentAnalyticsSnapshot from '../models/StudentAnalyticsSnapshot.js';
 import Submission from '../models/Submission.js';
 import AssessmentSubmission from '../models/AssessmentSubmission.js';
 import Feedback from '../models/Feedback.js';
@@ -9,7 +10,11 @@ import Pair from '../models/Pair.js';
 import { HttpError } from '../utils/errors.js';
 import { validateObjectId } from '../utils/validators.js';
 import { logSecurityEvent } from '../utils/logger.js';
-import { upsertStudentAnalytics, buildReadinessReport } from '../services/analyticsEngine.js';
+import {
+  ANALYTICS_CONTRACT_VERSION,
+  upsertStudentAnalytics,
+  buildReadinessReport,
+} from '../services/analyticsEngine.js';
 
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 const REVALIDATE_AFTER_MS = 5 * 60 * 1000;
@@ -25,16 +30,24 @@ const SENSITIVE_ANALYTICS_KEYS = new Set([
   'rawCamera',
   'snapshot',
   'snapshots',
+  '_id',
+  'studentId',
+  '__v',
+  'createdAt',
+  'updatedAt',
 ]);
 
 function redactSensitiveAnalytics(value) {
   if (Array.isArray(value)) {
-    return value.map((item) => redactSensitiveAnalytics(item));
+    return value.map((item) => redactSensitiveAnalytics(item)).filter((item) => item !== undefined);
   }
 
   if (!value || typeof value !== 'object') {
     return value;
   }
+
+  if (value instanceof Date) return value;
+  if (typeof value.toHexString === 'function') return value.toHexString();
 
   const clean = {};
   Object.entries(value).forEach(([key, nestedValue]) => {
@@ -133,6 +146,11 @@ async function getOrBuildAnalytics(studentId, { forceRefresh = false } = {}) {
     return withCacheMeta(analysis, { status: 'rebuilt', reason: 'missing-cache' });
   }
 
+  if (existing.contractVersion !== ANALYTICS_CONTRACT_VERSION) {
+    const analysis = await buildAnalyticsOnce(studentId);
+    return withCacheMeta(analysis, { status: 'rebuilt', reason: 'contract-upgrade' });
+  }
+
   if (forceRefresh) {
     const analysis = await buildAnalyticsOnce(studentId);
     return withCacheMeta(analysis, { status: 'rebuilt', reason: 'forced-refresh' });
@@ -170,6 +188,44 @@ export async function getStudentAnalysis(req, res) {
   res.json({ analysis: redactSensitiveAnalytics(analysis), meta });
 }
 
+export async function getStudentAnalysisHistory(req, res) {
+  const studentId = req.user?._id;
+  const requestedDays = Number.parseInt(req.query?.days, 10);
+  const days = Math.min(365, Math.max(7, Number.isFinite(requestedDays) ? requestedDays : 90));
+  const to = new Date();
+  const from = new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate()));
+  from.setUTCDate(from.getUTCDate() - (days - 1));
+
+  const snapshots = await StudentAnalyticsSnapshot.find({
+    studentId,
+    snapshotDate: { $gte: from },
+  })
+    .sort({ snapshotDate: 1 })
+    .limit(366)
+    .select('snapshotDate generatedAt contractVersion evidenceVersion scores evidence')
+    .lean();
+
+  const history = snapshots.map((snapshot) => ({
+    date: snapshot.snapshotDate,
+    generatedAt: snapshot.generatedAt,
+    contractVersion: snapshot.contractVersion,
+    evidenceVersion: snapshot.evidenceVersion,
+    scores: snapshot.scores || {},
+    evidence: snapshot.evidence || {},
+  }));
+
+  res.set('Cache-Control', 'private, max-age=60');
+  res.json({
+    history,
+    meta: {
+      days,
+      count: history.length,
+      from,
+      to,
+    },
+  });
+}
+
 export async function getCompanyReadiness(req, res) {
   const studentId = req.user?._id;
   const companyId = req.query.companyId || req.body?.companyId;
@@ -189,7 +245,9 @@ export async function getCompanyReadiness(req, res) {
   if (!benchmark) throw new HttpError(404, 'Company benchmark not found');
 
   const report = buildReadinessReport(analysisResult.analysis, benchmark);
-  if (report?.breakdown?.integrity < 80 || report?.breakdown?.assessment < 40) {
+  const integrity = report?.breakdown?.integrity;
+  const assessment = report?.breakdown?.assessment;
+  if ((Number.isFinite(integrity) && integrity < 80) || (Number.isFinite(assessment) && assessment < 40)) {
     auditAnalyticsAccess(req, 'company-readiness-risk-view', {
       companyId,
       readinessScore: report.readinessScore,

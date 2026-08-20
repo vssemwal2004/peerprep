@@ -279,7 +279,9 @@ function AppContent() {
         <Route path="/assessment-history" element={<StudentProtectedRoute><AssessmentHistoryPage /></StudentProtectedRoute>} />
         <Route path="/student/assessment/:id" element={<StudentProtectedRoute><AssessmentAttempt /></StudentProtectedRoute>} />
         <Route path="/student/analytics" element={<StudentProtectedRoute><StudentAnalytics /></StudentProtectedRoute>} />
+        <Route path="/student/analytics/:section" element={<StudentProtectedRoute><StudentAnalytics /></StudentProtectedRoute>} />
         <Route path="/student/analysis" element={<StudentProtectedRoute><StudentAnalytics /></StudentProtectedRoute>} />
+        <Route path="/student/analysis/:section" element={<StudentProtectedRoute><StudentAnalytics /></StudentProtectedRoute>} />
         <Route path="/problems" element={<StudentProtectedRoute><ProblemsPage /></StudentProtectedRoute>} />
         <Route path="/problems/:id" element={<StudentProtectedRoute><ProblemSolver /></StudentProtectedRoute>} />
         

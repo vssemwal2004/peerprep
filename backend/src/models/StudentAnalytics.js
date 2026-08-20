@@ -7,6 +7,7 @@ const metricSchema = new mongoose.Schema({
   adjustedScore: Number,
   integrityScore: Number,
   violationCount: Number,
+  invalidScore: Boolean,
 }, { _id: false });
 
 const topicMetricSchema = new mongoose.Schema({
@@ -32,6 +33,28 @@ const explanationSchema = new mongoose.Schema({
   action: String,
 }, { _id: false });
 
+const evidenceSchema = new mongoose.Schema({
+  version: { type: String, required: true },
+  hasEvidence: { type: Boolean, default: false },
+  observedSources: [String],
+  totalSources: { type: Number, default: 4 },
+  sourceCounts: {
+    coding: { type: Number, default: 0 },
+    assessments: { type: Number, default: 0 },
+    interviews: { type: Number, default: 0 },
+    learning: { type: Number, default: 0 },
+  },
+  signalCount: { type: Number, default: 0 },
+  invalidAssessmentAttempts: { type: Number, default: 0 },
+  coverageScore: { type: Number, default: 0 },
+  freshnessScore: { type: Number, default: 0 },
+  latestEvidenceAt: { type: Date, default: null },
+  confidence: {
+    score: { type: Number, default: 0 },
+    level: { type: String, enum: ['low', 'moderate', 'high'], default: 'low' },
+  },
+}, { _id: false });
+
 const studentAnalyticsSchema = new mongoose.Schema({
   studentId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -46,12 +69,13 @@ const studentAnalyticsSchema = new mongoose.Schema({
   },
   contractVersion: {
     type: String,
-    default: '2026.05.startup-readiness-v1',
+    default: '2026.08.evidence-readiness-v2',
   },
   scoreModel: {
-    version: { type: String, default: '2026.05.startup-readiness-v1' },
+    version: { type: String, default: '2026.08.evidence-readiness-v2' },
     studentVisibleSecurityAggregatesOnly: { type: Boolean, default: true },
   },
+  evidence: { type: evidenceSchema, required: true },
   overview: {
     totalAttempts: { type: Number, default: 0 },
     problemAttempts: { type: Number, default: 0 },
@@ -59,22 +83,24 @@ const studentAnalyticsSchema = new mongoose.Schema({
     avgScore: { type: Number, default: 0 },
     interviewScore: { type: Number, default: 0 },
     streak: { type: Number, default: 0 },
-    readinessScore: { type: Number, default: 0 },
-    healthScore: { type: Number, default: 0 },
+    readinessScore: { type: Number, default: null },
+    healthScore: { type: Number, default: null },
     currentFocus: { type: String, default: '' },
   },
   assessments: {
     attempts: { type: Number, default: 0 },
+    validScoreAttempts: { type: Number, default: 0 },
+    invalidScoreAttempts: { type: Number, default: 0 },
     submittedAttempts: { type: Number, default: 0 },
     violationAttempts: { type: Number, default: 0 },
-    avgScore: { type: Number, default: 0 },
-    adjustedAvgScore: { type: Number, default: 0 },
+    avgScore: { type: Number, default: null },
+    adjustedAvgScore: { type: Number, default: null },
     avgAccuracy: { type: Number, default: 0 },
-    highestScore: { type: Number, default: 0 },
-    latestScore: { type: Number, default: 0 },
-    latestAdjustedScore: { type: Number, default: 0 },
-    stabilityScore: { type: Number, default: 0 },
-    integrityScore: { type: Number, default: 100 },
+    highestScore: { type: Number, default: null },
+    latestScore: { type: Number, default: null },
+    latestAdjustedScore: { type: Number, default: null },
+    stabilityScore: { type: Number, default: null },
+    integrityScore: { type: Number, default: null },
     violationRate: { type: Number, default: 0 },
     violationCount: { type: Number, default: 0 },
     avgTimeTakenSec: { type: Number, default: 0 },
@@ -125,15 +151,15 @@ const studentAnalyticsSchema = new mongoose.Schema({
     lastActiveAt: Date,
   },
   derived: {
-    contractVersion: { type: String, default: '2026.05.startup-readiness-v1' },
+    contractVersion: { type: String, default: '2026.08.evidence-readiness-v2' },
     consistencyScore: { type: Number, default: 0 },
     effortScore: { type: Number, default: 0 },
-    assessmentIntegrityScore: { type: Number, default: 100 },
+    assessmentIntegrityScore: { type: Number, default: null },
     performanceScore: { type: Number, default: 0 },
-    readinessScore: { type: Number, default: 0 },
-    placementSignal: { type: Number, default: 0 },
+    readinessScore: { type: Number, default: null },
+    placementSignal: { type: Number, default: null },
     growthScore: { type: Number, default: 0 },
-    riskLevel: { type: String, default: 'low' },
+    riskLevel: { type: String, default: 'unknown' },
   },
   explanations: {
     overview: [explanationSchema],

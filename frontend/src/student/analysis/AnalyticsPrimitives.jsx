@@ -260,16 +260,16 @@ export function LoadingScreen() {
     <div className="min-h-screen bg-slate-50 pt-24 dark:bg-slate-950">
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="grid gap-4 lg:grid-cols-[1.3fr_0.7fr]">
-          <div className="h-[360px] animate-pulse rounded-[32px] bg-white dark:bg-white/5" />
-          <div className="h-[360px] animate-pulse rounded-[32px] bg-white dark:bg-white/5" />
+          <div className="h-[360px] animate-pulse rounded-[32px] bg-white motion-reduce:animate-none dark:bg-white/5" />
+          <div className="h-[360px] animate-pulse rounded-[32px] bg-white motion-reduce:animate-none dark:bg-white/5" />
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {Array.from({ length: 4 }).map((_, index) => (
-            <div key={index} className="h-28 animate-pulse rounded-[22px] bg-white dark:bg-white/5" />
+            <div key={index} className="h-28 animate-pulse rounded-[22px] bg-white motion-reduce:animate-none dark:bg-white/5" />
           ))}
         </div>
         <div className="mt-6 flex items-center justify-center gap-2 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          <Loader2 className="h-4 w-4 animate-spin" />
+          <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
           Building your analytics workspace
         </div>
       </div>

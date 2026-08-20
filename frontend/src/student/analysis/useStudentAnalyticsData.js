@@ -9,6 +9,7 @@ const EVENT_REFRESH_DEBOUNCE_MS = 2500;
 export function useStudentAnalyticsData() {
   const { user } = useAuth();
   const [analysis, setAnalysis] = useState(null);
+  const [meta, setMeta] = useState(null);
   const [companies, setCompanies] = useState([]);
   const [readiness, setReadiness] = useState(null);
   const [selectedCompany, setSelectedCompany] = useState("");
@@ -16,11 +17,13 @@ export function useStudentAnalyticsData() {
   const [refreshing, setRefreshing] = useState(false);
   const [loadingReadiness, setLoadingReadiness] = useState(false);
   const [error, setError] = useState(null);
+  const [companiesError, setCompaniesError] = useState(null);
   const inFlightRef = useRef(false);
   const selectedCompanyRef = useRef("");
   const companiesLoadedRef = useRef(false);
   const lastLoadedAtRef = useRef(0);
   const eventRefreshTimerRef = useRef(null);
+  const readinessRequestIdRef = useRef(0);
 
   useEffect(() => {
     selectedCompanyRef.current = selectedCompany;
@@ -37,21 +40,38 @@ export function useStudentAnalyticsData() {
       else setRefreshing(true);
 
       const shouldLoadCompanies = !companiesLoadedRef.current;
-      const [analysisRes, companiesRes] = await Promise.all([
+      const [analysisResult, companiesResult] = await Promise.allSettled([
         api.getStudentAnalysis(forceRefresh),
         shouldLoadCompanies ? api.listStudentCompanies() : Promise.resolve(null),
       ]);
 
+      if (analysisResult.status === "rejected") throw analysisResult.reason;
+      const analysisRes = analysisResult.value;
+
       setAnalysis(analysisRes?.analysis || null);
+      setMeta(analysisRes?.meta || null);
       lastLoadedAtRef.current = Date.now();
-      if (companiesRes?.companies) {
-        companiesLoadedRef.current = true;
-        setCompanies(companiesRes.companies);
+      if (shouldLoadCompanies) {
+        if (companiesResult.status === "fulfilled" && Array.isArray(companiesResult.value?.companies)) {
+          companiesLoadedRef.current = true;
+          setCompanies(companiesResult.value.companies);
+          setCompaniesError(null);
+        } else {
+          setCompaniesError(
+            companiesResult.status === "rejected"
+              ? companiesResult.reason
+              : new Error("Company benchmarks returned an invalid response.")
+          );
+        }
       }
 
-      if (selectedCompanyRef.current) {
-        const readinessRes = await api.getCompanyReadiness(selectedCompanyRef.current, forceRefresh);
-        setReadiness(readinessRes || null);
+      const companyId = selectedCompanyRef.current;
+      if (companyId) {
+        const requestId = ++readinessRequestIdRef.current;
+        const readinessRes = await api.getCompanyReadiness(companyId, forceRefresh);
+        if (requestId === readinessRequestIdRef.current && selectedCompanyRef.current === companyId) {
+          setReadiness(readinessRes || null);
+        }
       }
     } catch (err) {
       setError(err);
@@ -63,23 +83,27 @@ export function useStudentAnalyticsData() {
   }, []);
 
   const changeCompany = useCallback(async (companyId) => {
+    const requestId = ++readinessRequestIdRef.current;
     setSelectedCompany(companyId);
     selectedCompanyRef.current = companyId;
+    setError(null);
+    setReadiness(null);
 
     if (!companyId) {
-      setReadiness(null);
+      setLoadingReadiness(false);
       return;
     }
 
     try {
       setLoadingReadiness(true);
-      setError(null);
       const result = await api.getCompanyReadiness(companyId, false);
-      setReadiness(result || null);
+      if (requestId === readinessRequestIdRef.current && selectedCompanyRef.current === companyId) {
+        setReadiness(result || null);
+      }
     } catch (err) {
-      setError(err);
+      if (requestId === readinessRequestIdRef.current) setError(err);
     } finally {
-      setLoadingReadiness(false);
+      if (requestId === readinessRequestIdRef.current) setLoadingReadiness(false);
     }
   }, []);
 
@@ -140,6 +164,7 @@ export function useStudentAnalyticsData() {
 
   return {
     analysis,
+    meta,
     companies,
     readiness,
     selectedCompany,
@@ -147,6 +172,7 @@ export function useStudentAnalyticsData() {
     refreshing,
     loadingReadiness,
     error,
+    companiesError,
     reload: loadAnalytics,
     changeCompany,
   };

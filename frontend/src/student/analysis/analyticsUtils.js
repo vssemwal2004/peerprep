@@ -21,38 +21,7 @@ export const STATUS_STYLES = {
   },
 };
 
-export const MODULES = [
-  {
-    id: "overview",
-    label: "Overview",
-    eyebrow: "Command center",
-  },
-  {
-    id: "problems",
-    label: "DSA",
-    eyebrow: "Problem solving",
-  },
-  {
-    id: "assessments",
-    label: "Assessments",
-    eyebrow: "Exam intelligence",
-  },
-  {
-    id: "interviews",
-    label: "Interviews",
-    eyebrow: "Mock readiness",
-  },
-  {
-    id: "learning",
-    label: "Learning",
-    eyebrow: "Study momentum",
-  },
-  {
-    id: "readiness",
-    label: "Company Fit",
-    eyebrow: "Placement intelligence",
-  },
-];
+export const ANALYTICS_SECTION_IDS = ["overview", "coding", "assessments", "interviews", "learning", "placement"];
 
 export const CHART_COLORS = {
   sky: "#0ea5e9",
@@ -104,7 +73,7 @@ export function statusLabel(score = 0) {
 
 export function averageValues(items = []) {
   if (!items.length) return 0;
-  return items.reduce((sum, item) => sum + Number(item.value || item.score || 0), 0) / items.length;
+  return items.reduce((sum, item) => sum + Number(item.value ?? item.score ?? 0), 0) / items.length;
 }
 
 export function normalizeTopicLabel(value) {
@@ -176,22 +145,6 @@ export function getToneClasses(tone = "sky") {
   return tones[tone] || tones.sky;
 }
 
-export function buildReadinessScore({ overview, derived, problems, assessments, interviews, learning }) {
-  if (typeof derived?.readinessScore === "number" && derived.readinessScore > 0) return Math.round(derived.readinessScore);
-  if (typeof overview?.readinessScore === "number" && overview.readinessScore > 0) return Math.round(overview.readinessScore);
-
-  const values = [
-    problems?.accuracy,
-    assessments?.adjustedAvgScore || assessments?.avgScore,
-    assessments?.integrityScore,
-    interviews?.avgScore,
-    learning?.completionPercent,
-  ].filter((value) => typeof value === "number" && value > 0);
-
-  if (!values.length) return 0;
-  return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
-}
-
 export function buildModuleScores({ problems, assessments, interviews, learning }) {
   return [
     {
@@ -204,9 +157,9 @@ export function buildModuleScores({ problems, assessments, interviews, learning 
     {
       id: "assessments",
       label: "Assessments",
-      value: Math.round(assessments?.adjustedAvgScore || assessments?.avgScore || 0),
+      value: Math.round(assessments?.adjustedAvgScore ?? assessments?.avgScore ?? 0),
       helper: assessments?.integrityScore < 85 ? "Adjusted for integrity" : "Adjusted average",
-      tone: getScoreTone(assessments?.adjustedAvgScore || assessments?.avgScore),
+      tone: getScoreTone(assessments?.adjustedAvgScore ?? assessments?.avgScore),
     },
     {
       id: "interviews",
@@ -270,129 +223,4 @@ export function toInterviewCategoryData(categoryScores = {}) {
     label: titleize(key),
     value: Math.round((Number(value) || 0) * 20),
   }));
-}
-
-export function toLearningTimeline(points = []) {
-  return points.map((item) => ({
-    ...item,
-    value: Number(item.count || 0),
-    label: item.date ? new Date(item.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "",
-  }));
-}
-
-export function buildLearningMix(learning = {}) {
-  return [
-    { name: "Videos", value: learning.videosWatched || 0, tone: "sky" },
-    { name: "Topics", value: learning.completedTopics || 0, tone: "sky" },
-    { name: "Practice", value: learning.practiceSolved || 0, tone: "amber" },
-  ].filter((item) => item.value > 0);
-}
-
-export function buildHealthScore({ readinessScore, consistencyScore, activeModules, weeklyActivity }) {
-  const activitySignal = Math.min(100, (Number(weeklyActivity) || 0) * 8);
-  const moduleSignal = Math.min(100, (Number(activeModules) || 0) * 25);
-  return Math.round(
-    clamp(readinessScore) * 0.42 +
-      clamp(consistencyScore) * 0.26 +
-      activitySignal * 0.17 +
-      moduleSignal * 0.15
-  );
-}
-
-export function buildInsightText({ topicAnalytics, assessmentMovement, interviews, learning, consistency }) {
-  const strongest = topicAnalytics.strongest?.topic;
-  const weakest = topicAnalytics.weakest?.topic;
-  const movement = assessmentMovement.movement;
-  const quietDays = (consistency.weeklyActivity || []).filter((item) => Number(item.count || 0) === 0).length;
-  const practiceConversion = learning.videosWatched
-    ? Math.round(((learning.practiceSolved || 0) / learning.videosWatched) * 100)
-    : 0;
-  const interviewScore = Math.round(interviews.avgScore || 0);
-
-  return [
-    {
-      title: "Priority Focus",
-      tone: weakest ? "amber" : "emerald",
-      text: weakest
-        ? `${weakest} is the clearest practice gap right now. Start with short, repeated problem sets before adding new topics.`
-        : "No major weak topic stands out yet. Add more tracked attempts to improve the signal.",
-    },
-    {
-      title: "Strongest Skill",
-      tone: strongest ? "emerald" : "sky",
-      text: strongest
-        ? `${strongest} is currently your strongest DSA signal. Keep it warm while improving weaker areas.`
-        : "Your strongest topic will appear after more solved, tagged problems.",
-    },
-    {
-      title: "Assessment Trend",
-      tone: movement === null ? "sky" : movement >= 0 ? "emerald" : "rose",
-      text:
-        movement === null
-          ? "Submit more assessments to unlock reliable trend analysis."
-          : `Your recent assessment block is ${movement >= 0 ? "up" : "down"} ${Math.abs(movement)}% versus the previous block.`,
-    },
-    {
-      title: "Interview Signal",
-      tone: interviewScore >= 75 ? "emerald" : interviewScore >= 50 ? "amber" : "rose",
-      text:
-        interviewScore > 0
-          ? `Mock interview feedback averages ${interviewScore}. Improve the lowest feedback category for a visible readiness jump.`
-          : "Interview readiness will become clearer after your first reviewed mock session.",
-    },
-    {
-      title: "Study Behavior",
-      tone: quietDays <= 2 ? "emerald" : "amber",
-      text:
-        quietDays <= 2
-          ? "Your weekly rhythm is healthy. Keep the same cadence and increase difficulty slowly."
-          : `There are ${quietDays} quiet days in the weekly activity view. Protect small daily actions first.`,
-    },
-    {
-      title: "Practice Conversion",
-      tone: practiceConversion >= 70 ? "emerald" : "amber",
-      text:
-        learning.videosWatched > 0
-          ? `${practiceConversion}% of watched-learning volume is converting into practice. Aim for learning followed by immediate solving.`
-          : "Watch or complete learning topics to unlock practice conversion insights.",
-    },
-  ];
-}
-
-export function makeComparison(readiness, selectedCategory, analytics) {
-  if (!readiness) return null;
-
-  if (selectedCategory === "dsa") {
-    return {
-      label: "DSA Accuracy",
-      current: analytics.problems.accuracy || 0,
-      target: readiness.company?.dsaAccuracyRequired || 0,
-      helper: "Compared with the company DSA accuracy benchmark.",
-    };
-  }
-
-  if (selectedCategory === "interview") {
-    return {
-      label: "Interview Readiness",
-      current: analytics.interviews.avgScore || 0,
-      target: readiness.company?.interviewScore || 0,
-      helper: "Compared with the company interview benchmark.",
-    };
-  }
-
-  if (selectedCategory === "assessment") {
-    return {
-      label: "Assessment Strength",
-      current: analytics.assessments.avgScore || 0,
-      target: readiness.company?.dsaAccuracyRequired || 0,
-      helper: "Uses company DSA accuracy as the closest assessment target.",
-    };
-  }
-
-  return {
-    label: "Overall Readiness",
-    current: readiness.report?.readinessScore || 0,
-    target: 85,
-    helper: "85 and above is treated as ready in the student coach model.",
-  };
 }
