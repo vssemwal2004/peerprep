@@ -21,6 +21,7 @@ import studentAnalysisRoutes from './studentAnalysis.js';
 import resultsRoutes from './results.js';
 import executeRoutes from './execute.js';
 import mailQueueRoutes from './mailQueue.js';
+import resumeRoutes from './resume.js';
 
 const router = Router();
 router.use('/auth', authRoutes);
@@ -45,5 +46,6 @@ router.use('/student/analysis', studentAnalysisRoutes);
 router.use('/results', resultsRoutes);
 router.use('/execute', executeRoutes);
 router.use('/mail-queue', mailQueueRoutes);
+router.use('/resume', resumeRoutes);
 
 export default router;

@@ -288,6 +288,10 @@ export const api = {
   // Auth (unified)
   me: (forceRefresh = false) => request('/auth/me', { skipCache: forceRefresh }),
   updateMyProfile: (body) => request('/auth/me', { method: 'PUT', body }),
+  getMyResume: () => request('/resume/me', { skipCache: true }),
+  saveMyResume: (body) => request('/resume/me', { method: 'PUT', body, skipQueue: true }),
+  restorePreviousResume: () => request('/resume/me/restore', { method: 'POST', skipQueue: true }),
+  getStudentResume: (studentId) => request(`/resume/student/${studentId}`, { skipCache: true }),
   updateMyAvatar: (file) => {
     const fd = new FormData();
     fd.append('avatar', file);

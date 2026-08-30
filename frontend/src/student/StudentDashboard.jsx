@@ -12,7 +12,8 @@ import {
   BarChart3,
   CheckCircle2,
   Megaphone,
-  Sparkles
+  Sparkles,
+  FileText,
 } from "lucide-react";
 import { api } from "../utils/api";
 import socketService from "../utils/socket";
@@ -846,6 +847,14 @@ export default function StudentDashboard() {
       icon: BarChart3,
       path: "/student/analysis",
       tone: "sky",
+    },
+    {
+      title: "Professional Resume",
+      description: "Build a professional placement resume with live preview and PDF download.",
+      cta: "Build resume",
+      icon: FileText,
+      path: "/student/resume",
+      tone: "indigo",
     },
   ];
 

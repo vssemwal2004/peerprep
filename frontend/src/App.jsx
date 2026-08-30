@@ -40,6 +40,7 @@ const AssessmentReportsPage = lazy(() => import("./student/AssessmentReportsPage
 const AssessmentHistoryPage = lazy(() => import("./student/AssessmentHistoryPage"));
 const AssessmentAttempt = lazy(() => import("./student/AssessmentAttempt"));
 const StudentAnalytics = lazy(() => import("./student/StudentAnalytics"));
+const StudentResume = lazy(() => import("./student/StudentResume"));
 
 // Admin Pages
 const AdminProtectedRoute = lazy(() => import("./admin/AdminProtectedRoute"));
@@ -74,6 +75,7 @@ const AnnouncementManage = lazy(() => import("./admin/AnnouncementManage"));
 const CoordinatorOverview = lazy(() => import("./admin/CoordinatorOverview"));
 const CoordinatorAccess = lazy(() => import("./admin/CoordinatorAccess"));
 const CoordinatorAccessDetails = lazy(() => import("./admin/CoordinatorAccessDetails"));
+const StudentResumeView = lazy(() => import("./admin/StudentResumeView"));
 
 // Coordinator Pages
 const CoordinatorProtectedRoute = lazy(() => import("./coordinator/CoordinatorProtectedRoute"));
@@ -200,6 +202,7 @@ function AppContent() {
   const isStudentDashboard = (location.pathname.startsWith("/student/") || isStudentProblems || isAssessmentModuleAlias) && !isStudentLogin && !isFeedbackForm && !isChangePassword;
   const isAdmin = location.pathname === '/admin' || location.pathname.startsWith('/admin/');
   const isAssessmentPreview = location.pathname.startsWith("/admin/assessment/preview/");
+  const isResumePage = location.pathname === "/student/resume" || /\/(admin|coordinator)\/students\/[^/]+\/resume$/.test(location.pathname);
   const isCoordinator = location.pathname.startsWith("/coordinator");
   const isLoginPage = isMain || isStudentLogin || isResetPassword;
   const AdminShell = ({ children, layout = true }) => (
@@ -264,6 +267,7 @@ function AppContent() {
         {/* Student Routes - Protected */}
         <Route path="/student/change-password" element={<StudentProtectedRoute><ChangePassword /></StudentProtectedRoute>} />
         <Route path="/student/profile" element={<StudentProtectedRoute><StudentProfile /></StudentProtectedRoute>} />
+        <Route path="/student/resume" element={<StudentProtectedRoute><StudentResume /></StudentProtectedRoute>} />
         <Route path="/student/dashboard" element={<StudentProtectedRoute><StudentDashboard /></StudentProtectedRoute>} />
         <Route path="/student/interview" element={<StudentProtectedRoute><StudentInterview /></StudentProtectedRoute>} />
         <Route path="/student/session" element={<StudentProtectedRoute><SessionAndFeedback /></StudentProtectedRoute>} />
@@ -293,6 +297,7 @@ function AppContent() {
         <Route path="/admin/students" element={<AdminShell><StudentDirectory /></AdminShell>} />
         <Route path="/admin/students/bulk-lists" element={<AdminShell><StudentBulkLists /></AdminShell>} />
         <Route path="/admin/students/:studentId" element={<AdminShell><AdminStudentProfile /></AdminShell>} />
+        <Route path="/admin/students/:studentId/resume" element={<AdminShell><StudentResumeView /></AdminShell>} />
         <Route path="/admin/coordinator-directory" element={<AdminShell><CoordinatorDirectory /></AdminShell>} />
         <Route path="/admin/coordinators" element={<AdminShell><CoordinatorOnboarding /></AdminShell>} />
         <Route path="/admin/coordinator-overview" element={<AdminShell><CoordinatorOverview /></AdminShell>} />
@@ -340,6 +345,7 @@ function AppContent() {
         <Route path="/coordinator/students" element={<CoordinatorShell permission="coordinator.students.view"><CoordinatorStudents /></CoordinatorShell>} />
         <Route path="/coordinator/students/bulk-lists" element={<CoordinatorShell permission="coordinator.students.bulk-lists"><StudentBulkLists /></CoordinatorShell>} />
         <Route path="/coordinator/students/:studentId" element={<CoordinatorShell permission="coordinator.students.profile"><AdminStudentProfile /></CoordinatorShell>} />
+        <Route path="/coordinator/students/:studentId/resume" element={<CoordinatorShell permission="coordinator.students.profile"><StudentResumeView /></CoordinatorShell>} />
         <Route path="/coordinator/subjects" element={<CoordinatorShell permission="coordinator.learning.manage"><SemesterManagement /></CoordinatorShell>} />
         <Route path="/coordinator/database" element={<CoordinatorShell permission="coordinator.courses.view"><CoordinatorDatabase /></CoordinatorShell>} />
         <Route path="/coordinator/feedback" element={<CoordinatorShell permission="coordinator.feedback.view"><CoordinatorFeedback /></CoordinatorShell>} />
@@ -372,7 +378,7 @@ function AppContent() {
         </Suspense>
       </main>
       
-      {!isAdmin && !isLoginPage && !isFeedbackForm && !isPublicPage && !isProblemSolver && !isAssessmentPreview && !isAssessmentAttempt && (
+      {!isAdmin && !isLoginPage && !isFeedbackForm && !isPublicPage && !isProblemSolver && !isAssessmentPreview && !isAssessmentAttempt && !isResumePage && (
         <Suspense fallback={null}><Footer /></Suspense>
       )}
     </div>

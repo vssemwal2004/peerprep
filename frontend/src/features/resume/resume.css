@@ -1,0 +1,60 @@
+@font-face { font-family:"TeX Gyre Termes"; src:url("../../assets/fonts/tex-gyre-termes/texgyretermes-regular.otf") format("opentype"); font-style:normal; font-weight:400; font-display:swap; }
+@font-face { font-family:"TeX Gyre Termes"; src:url("../../assets/fonts/tex-gyre-termes/texgyretermes-bold.otf") format("opentype"); font-style:normal; font-weight:700; font-display:swap; }
+@font-face { font-family:"TeX Gyre Termes"; src:url("../../assets/fonts/tex-gyre-termes/texgyretermes-italic.otf") format("opentype"); font-style:italic; font-weight:400; font-display:swap; }
+@font-face { font-family:"TeX Gyre Termes"; src:url("../../assets/fonts/tex-gyre-termes/texgyretermes-bolditalic.otf") format("opentype"); font-style:italic; font-weight:700; font-display:swap; }
+
+.resume-preview-shell { position:relative; height:calc(100vh - 132px); min-height:620px; overflow:hidden; background:#ededed; }
+.resume-preview-viewport { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; overflow:hidden; background:#ededed; }
+.resume-preview-page-frame { position:relative; flex:none; overflow:hidden; border:1px solid #d4d4d4; background:#fff; box-shadow:0 10px 26px -16px rgba(0,0,0,.38); }
+.resume-preview-scaler { width:794px; height:1123px; transform-origin:top left; transition:transform .18s ease; }
+.resume-preview-expand { position:absolute; right:10px; top:10px; display:flex; height:34px; width:34px; align-items:center; justify-content:center; border:1px solid rgb(226 232 240); border-radius:9px; background:rgba(255,255,255,.94); color:rgb(71 85 105); box-shadow:0 8px 20px -14px rgba(15,23,42,.5); }
+.resume-preview-expand:hover { color:rgb(2 132 199); }
+.resume-preview-expand svg { height:15px; width:15px; }
+.resume-preview-pagination { position:absolute; bottom:10px; left:50%; display:flex; transform:translateX(-50%); align-items:center; gap:6px; border:1px solid rgb(226 232 240); border-radius:10px; background:rgba(255,255,255,.96); padding:4px; font-size:10px; font-weight:700; color:rgb(71 85 105); box-shadow:0 8px 20px -14px rgba(15,23,42,.5); }
+.resume-preview-pagination button { display:flex; align-items:center; justify-content:center; border-radius:7px; padding:5px; }
+.resume-preview-pagination button:hover:not(:disabled) { background:rgb(224 242 254); color:rgb(2 132 199); }
+.resume-preview-pagination button:disabled { opacity:.35; }
+.resume-preview-pagination svg { height:13px; width:13px; }
+.resume-a4-page { box-sizing:border-box; width:794px; min-height:1123px; overflow:hidden; background:#fff; padding:42px; color:#000; box-shadow:none; font-family:"TeX Gyre Termes",serif; font-size:13.333px; line-height:1.152; font-synthesis:none; }
+.resume-document-header { margin-bottom:8px; }
+.resume-document-header h1 { margin:0 0 1px; font-family:"TeX Gyre Termes",serif; font-size:19.2px; line-height:1.05; font-weight:700; text-transform:uppercase; }
+.resume-contact-line { min-height:15.36px; overflow-wrap:anywhere; }
+.resume-contact-line a,.resume-detail-entry a { color:#000; text-decoration:none; }
+.resume-document-section { margin-top:12px; background:transparent; }
+.resume-section-title { margin-bottom:2px; background:#dedede; padding:2.5px 5px; color:#000; font-size:10.667px; line-height:1.14; font-weight:700; }
+.resume-education-table { border-bottom:1px solid #333; }
+.resume-education-row { display:grid; grid-template-columns:14% 34% 34% 18%; gap:4px; padding:.4px 5px; background:#fff; line-height:1; }
+.resume-education-head { border-bottom:1px solid #333; }
+.resume-education-head strong:last-child { white-space:nowrap; }
+.resume-detail-entry { margin:0 0 6px; break-inside:avoid; }
+.resume-entry-heading,.resume-entry-subheading { display:flex; justify-content:space-between; gap:14px; }
+.resume-entry-heading strong { font-weight:700; }
+.resume-entry-heading em { flex:none; font-weight:600; }
+.resume-entry-subheading span { margin-left:auto; }
+.resume-technologies { margin-top:1px; }
+.resume-custom-paragraph { margin-top:2px; }
+.resume-detail-entry ul { margin:3px 0 0; padding-left:18px; list-style-type:circle; }
+.resume-detail-entry li { margin:0 0 2px; padding-left:1px; }
+.resume-skills-list > div { margin:0 0 2px; }
+.resume-skill-bullet { display:inline-block; width:11px; font-weight:700; }
+.resume-certification-list { margin:0; padding-left:14px; list-style-type:disc; }
+.resume-certification-list li { margin:0 0 2px; padding-left:1px; }
+.resume-workspace { display:block; }
+.resume-workspace-divider { display:none; }
+@media (prefers-reduced-motion:reduce) { .resume-preview-scaler { transition:none; } }
+@media (max-width:1279px) { .resume-preview-shell { height:calc(100vh - 126px); } }
+@media (max-width:1023px) { .resume-preview-shell { height:720px; } }
+@media (min-width:1024px) {
+  .resume-workspace { display:grid; grid-template-columns:minmax(360px,var(--resume-editor-width)) 18px minmax(420px,1fr); align-items:start; column-gap:0; }
+  .resume-workspace.resume-workspace-collapsed { grid-template-columns:0 38px minmax(420px,1fr); }
+  .resume-workspace-divider { position:sticky; top:116px; display:flex; height:calc(100vh - 132px); align-items:center; justify-content:center; }
+  .resume-workspace-divider button { position:absolute; z-index:2; display:flex; height:28px; width:28px; align-items:center; justify-content:center; border:1px solid rgb(203 213 225); border-radius:8px; background:rgb(255 255 255); color:rgb(71 85 105); box-shadow:0 8px 18px -14px rgba(15,23,42,.5); }
+  .resume-workspace-divider button:hover { border-color:rgb(125 211 252); color:rgb(2 132 199); }
+  .resume-workspace-divider button svg { height:14px; width:14px; }
+  .resume-workspace-resize { display:flex; height:100%; width:100%; cursor:col-resize; align-items:center; justify-content:center; outline:none; }
+  .resume-workspace-resize span { height:100%; width:1px; background:rgb(226 232 240); transition:background .18s ease; }
+  .resume-workspace-resize:hover span,.resume-workspace-resize:focus span { width:2px; background:rgb(56 189 248); }
+  .dark .resume-workspace-divider button { border-color:rgb(51 65 85); background:rgb(15 23 42); color:rgb(148 163 184); }
+  .dark .resume-workspace-resize span { background:rgb(30 41 59); }
+}
+@media print { .resume-preview-pagination,.resume-preview-expand { display:none; } .resume-preview-viewport { position:static; } .resume-preview-page-frame { width:794px!important; height:1123px!important; border:0; box-shadow:none; } .resume-preview-scaler { transform:none!important; } .resume-a4-page { box-shadow:none; page-break-after:always; } }

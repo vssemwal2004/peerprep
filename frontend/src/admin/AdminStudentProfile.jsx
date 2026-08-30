@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   Trophy,
   UserRound,
+  FileText,
 } from 'lucide-react';
 import ContributionCalendar from '../components/ContributionCalendar';
 import { api } from '../utils/api';
@@ -544,6 +545,15 @@ export default function AdminStudentProfile() {
                     <SocialButton key={item.label} {...item} />
                   ))}
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => navigate(`${rolePrefix}/students/${studentId}/resume`)}
+                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 px-4 py-3 text-sm font-bold text-white shadow-[0_16px_34px_-20px_rgba(2,132,199,.8)] transition hover:-translate-y-0.5"
+                >
+                  <FileText className="h-4 w-4" />
+                  View Resume
+                </button>
 
                 <div className="mt-5 grid gap-3">
                   <MiniProfileRow icon={<GraduationCap className="h-4 w-4" />} label="College" value={student.college} />

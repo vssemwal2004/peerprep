@@ -14,7 +14,8 @@ import {
   ChevronDown,
   Code2,
   ClipboardList,
-  BarChart3
+  BarChart3,
+  FileText,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import DarkModeToggle from "./DarkModeToggle";
@@ -271,6 +272,19 @@ export function StudentNavbar() {
                           <div className="text-xs text-slate-500 dark:text-gray-300">Update your account password</div>
                         </div>
                       </Link>
+                      <Link
+                        to="/student/resume"
+                        onClick={() => setIsProfileOpen(false)}
+                        className="flex items-center gap-3 px-4 py-2.5 text-gray-700 dark:text-white hover:bg-sky-50 dark:hover:bg-slate-800 transition-colors group"
+                      >
+                        <div className="w-8 h-8 rounded-lg bg-sky-50 dark:bg-slate-800 flex items-center justify-center group-hover:bg-sky-100 dark:group-hover:bg-slate-700 transition-colors">
+                          <FileText className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                        </div>
+                        <div className="flex-1">
+                          <div className="text-sm font-medium dark:text-white">Build Resume</div>
+                          <div className="text-xs text-slate-500 dark:text-gray-300">Create and download your resume</div>
+                        </div>
+                      </Link>
 
                       <button
                         onClick={() => {
@@ -398,6 +412,14 @@ export function StudentNavbar() {
                   >
                     <Lock className="w-4 h-4 text-sky-600 dark:text-sky-400" />
                     <span className="font-medium text-sm">Change Password</span>
+                  </Link>
+                  <Link
+                    to="/student/resume"
+                    onClick={() => setIsMenuOpen(false)}
+                    className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-700 dark:text-white hover:bg-sky-50 dark:hover:bg-slate-800 transition-colors group"
+                  >
+                    <FileText className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                    <span className="font-medium text-sm">Build Resume</span>
                   </Link>
                   
                   <button
