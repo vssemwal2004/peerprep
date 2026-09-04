@@ -11,6 +11,7 @@ const submissionCaseResultSchema = new mongoose.Schema({
   actualOutput: String,
   executionTimeMs: Number,
   memoryUsedKb: Number,
+  marks: Number,
   stderr: String,
   compileOutput: String,
 }, { _id: false });
@@ -107,6 +108,14 @@ const submissionSchema = new mongoose.Schema({
     default: 0,
   },
   passedTestCases: {
+    type: Number,
+    default: 0,
+  },
+  totalTestCaseMarks: {
+    type: Number,
+    default: 0,
+  },
+  passedTestCaseMarks: {
     type: Number,
     default: 0,
   },

@@ -16,6 +16,7 @@ const answerSchema = new mongoose.Schema({
     enum: ['PENDING', 'AC', 'WA', 'TLE', 'RE', 'CE', 'FAILED'],
   },
   executionResult: { type: mongoose.Schema.Types.Mixed },
+  submissionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Submission' },
   lastEvaluatedAt: { type: Date },
 }, { _id: false });
 

@@ -38,6 +38,10 @@ import {
   sanitizeExecutionText,
   secondsToMilliseconds,
 } from './executionService.js';
+import {
+  getCodingQuestionScore,
+  scoreAssessmentWithTestCases,
+} from './assessmentScoringService.js';
 
 const SUBMIT_CASE_DELAY_MS = Math.max(0, Number(process.env.SUBMIT_CASE_DELAY_MS || 0));
 const DEFAULT_LANGUAGE = 'python';
@@ -261,6 +265,8 @@ async function finalizeTrackedSubmission(submissionId, payload) {
         testCaseResults: payload.testCaseResults || [],
         totalTestCases: payload.totalTestCases || 0,
         passedTestCases: payload.passedTestCases || 0,
+        totalTestCaseMarks: payload.totalTestCaseMarks || 0,
+        passedTestCaseMarks: payload.passedTestCaseMarks || 0,
         completedAt: new Date(),
       },
     },
@@ -314,12 +320,18 @@ async function loadSubmissionTestCases(problem) {
 }
 
 function buildSubmitApiResponse(executionResult) {
+  const testCaseMarks = {
+    passedTestCaseMarks: Number(executionResult.passedTestCaseMarks || 0),
+    totalTestCaseMarks: Number(executionResult.totalTestCaseMarks || 0),
+  };
+
   if (executionResult.status === 'AC') {
     return {
       mode: 'submit',
       status: 'Accepted',
       passed: executionResult.totalTestCases,
       total: executionResult.totalTestCases,
+      ...testCaseMarks,
       time: roundNumber(executionResult.executionTimeMs / 1000, 3),
       memory: executionResult.memoryUsedKb,
     };
@@ -331,6 +343,7 @@ function buildSubmitApiResponse(executionResult) {
       status: 'Wrong Answer',
       passed: executionResult.passedTestCases || 0,
       total: executionResult.totalTestCases || 0,
+      ...testCaseMarks,
       time: roundNumber(executionResult.executionTimeMs / 1000, 3),
       memory: executionResult.memoryUsedKb || 0,
       failedTestCase: executionResult.failedCase
@@ -348,6 +361,7 @@ function buildSubmitApiResponse(executionResult) {
     return {
       mode: 'submit',
       status: 'Compilation Error',
+      ...testCaseMarks,
       error: executionResult.compileOutput || 'Compilation failed.',
       time: roundNumber(executionResult.executionTimeMs / 1000, 3),
       memory: executionResult.memoryUsedKb || 0,
@@ -360,6 +374,7 @@ function buildSubmitApiResponse(executionResult) {
       status: 'Time Limit Exceeded',
       passed: executionResult.passedTestCases || 0,
       total: executionResult.totalTestCases || 0,
+      ...testCaseMarks,
       time: roundNumber(executionResult.executionTimeMs / 1000, 3),
       memory: executionResult.memoryUsedKb || 0,
     };
@@ -371,6 +386,7 @@ function buildSubmitApiResponse(executionResult) {
     error: executionResult.stderr || 'Execution failed.',
     passed: executionResult.passedTestCases || 0,
     total: executionResult.totalTestCases || 0,
+    ...testCaseMarks,
     time: roundNumber(executionResult.executionTimeMs / 1000, 3),
     memory: executionResult.memoryUsedKb || 0,
   };
@@ -527,6 +543,7 @@ function buildPersistedRunCase(entry, index) {
     actualOutput: entry.output || '',
     executionTimeMs: secondsToMilliseconds(entry.time),
     memoryUsedKb: Math.trunc(Number(entry.memory || 0)),
+    marks: Math.max(0.01, Number(entry.marks) || 1),
     stderr: entry.stderr || '',
     compileOutput: entry.compileOutput || '',
   };
@@ -702,9 +719,16 @@ async function executeSubmitPayload({ sourceCode, languageId, problem }) {
   let totalTimeSeconds = 0;
   let peakMemoryKb = 0;
   let passed = 0;
+  let passedTestCaseMarks = 0;
+  const totalTestCaseMarks = allTestCases.reduce(
+    (sum, testCase) => sum + Math.max(0.01, Number(testCase?.marks) || 1),
+    0,
+  );
+  let firstFailure = null;
 
   for (let index = 0; index < allTestCases.length; index += 1) {
     const testCase = allTestCases[index];
+    const testCaseMarks = Math.max(0.01, Number(testCase?.marks) || 1);
     const judgeResult = await runJudge0(sourceCode, languageId, testCase.input || '', judge0Options);
     const evaluation = evaluateSubmissionResult(judgeResult, testCase.output || '');
     const executionTimeMs = secondsToMilliseconds(judgeResult.time);
@@ -721,34 +745,26 @@ async function executeSubmitPayload({ sourceCode, languageId, problem }) {
       actualOutput: judgeResult.stdout || '',
       executionTimeMs,
       memoryUsedKb,
+      marks: testCaseMarks,
       stderr: evaluation.internalStatus === 'RE' || evaluation.internalStatus === 'TLE' ? (evaluation.error || '') : '',
       compileOutput: evaluation.internalStatus === 'CE' ? (evaluation.error || '') : '',
     });
 
     if (evaluation.internalStatus !== 'AC') {
-      return {
-        persisted: {
+      if (!firstFailure) {
+        firstFailure = {
+          index: index + 1,
+          input: testCase.input || '',
+          expectedOutput: testCase.output || '',
+          actualOutput: evaluation.actualOutput || judgeResult.stdout || '',
           status: evaluation.internalStatus,
-          output: evaluation.actualOutput || judgeResult.stdout || '',
-          stderr: evaluation.internalStatus === 'RE' ? (evaluation.error || '') : '',
-          compileOutput: evaluation.internalStatus === 'CE' ? (evaluation.error || '') : '',
-          executionTimeMs: secondsToMilliseconds(totalTimeSeconds),
-          memoryUsedKb: peakMemoryKb,
-          totalTestCases: allTestCases.length,
-          passedTestCases: passed,
-          failedCase: {
-            index: index + 1,
-            input: testCase.input || '',
-            expectedOutput: testCase.output || '',
-            actualOutput: evaluation.actualOutput || judgeResult.stdout || '',
-          },
-          testCaseResults,
-          provider: 'judge0-ce',
-        },
-      };
+          error: evaluation.error || '',
+        };
+      }
+    } else {
+      passed += 1;
+      passedTestCaseMarks += testCaseMarks;
     }
-
-    passed += 1;
 
     if (index < allTestCases.length - 1) {
       await sleep(SUBMIT_CASE_DELAY_MS);
@@ -757,14 +773,24 @@ async function executeSubmitPayload({ sourceCode, languageId, problem }) {
 
   return {
     persisted: {
-      status: 'AC',
+      status: firstFailure?.status || 'AC',
       output: '',
-      stderr: '',
-      compileOutput: '',
+      stderr: firstFailure?.status === 'RE' ? firstFailure.error : '',
+      compileOutput: firstFailure?.status === 'CE' ? firstFailure.error : '',
       executionTimeMs: secondsToMilliseconds(totalTimeSeconds),
       memoryUsedKb: peakMemoryKb,
       totalTestCases: allTestCases.length,
-      passedTestCases: allTestCases.length,
+      passedTestCases: passed,
+      totalTestCaseMarks,
+      passedTestCaseMarks,
+      failedCase: firstFailure
+        ? {
+          index: firstFailure.index,
+          input: firstFailure.input,
+          expectedOutput: firstFailure.expectedOutput,
+          actualOutput: firstFailure.actualOutput,
+        }
+        : undefined,
       testCaseResults,
       provider: 'judge0-ce',
     },
@@ -912,6 +938,17 @@ export async function enqueueCompilerSubmitJob({ user, body }) {
   submission.jobId = submission._id.toString();
   await submission.save();
 
+  if (assessmentId) {
+    const assessment = await Assessment.findById(assessmentId).lean();
+    if (assessment) {
+      await persistAssessmentCodingDraft({
+        assessment,
+        userId: user._id,
+        trackedSubmission: submission,
+      });
+    }
+  }
+
   const queue = assessmentId ? assessmentQueue : submissionQueue;
   const jobName = assessmentId ? 'assessment-code-submit' : 'submit';
 
@@ -936,74 +973,157 @@ function extractStoredAnswer(answers = [], sectionIndex, questionIndex) {
   ));
 }
 
-function getCodingAnswerVerdict(answer = {}) {
-  const resultStatus = String(answer?.executionResult?.status || '').trim();
-  const verdict = String(answer?.executionVerdict || resultStatus || '').trim().toUpperCase();
-  if (verdict === 'AC' || verdict === 'ACCEPTED' || resultStatus === 'Accepted') return 'AC';
-  if (['WA', 'WRONG ANSWER'].includes(verdict)) return 'WA';
-  if (['TLE', 'TIME LIMIT EXCEEDED'].includes(verdict)) return 'TLE';
-  if (['RE', 'RUNTIME ERROR'].includes(verdict)) return 'RE';
-  if (['CE', 'COMPILATION ERROR'].includes(verdict)) return 'CE';
-  if (verdict === 'FAILED') return 'FAILED';
-  return verdict || 'PENDING';
-}
-
-function scoreAssessmentWithCoding(assessment, answers = []) {
-  const answerMap = new Map();
-  (answers || []).forEach((answer) => {
-    answerMap.set(`${answer.sectionIndex}-${answer.questionIndex}`, answer);
-  });
-
-  let score = 0;
-  let maxMarks = 0;
-
-  (assessment.sections || []).forEach((section, sectionIndex) => {
-    (section.questions || []).forEach((question, questionIndex) => {
-      const questionType = question.type || section.type;
-      const points = Number(question.points || question.marks || 0);
-      const negativePoints = Math.max(0, Number(question.negativePoints ?? question.negativeMarks ?? section.negativeMarksPerQuestion ?? 0) || 0);
-      maxMarks += points;
-
-      const answer = answerMap.get(`${sectionIndex}-${questionIndex}`);
-      if (!answer) return;
-
-      if (questionType === 'mcq') {
-        if (Number(answer.answer) === Number(question.correctOptionIndex)) {
-          score += points;
-        } else {
-          score -= negativePoints;
-        }
-        return;
-      }
-
-      if (questionType === 'short' || questionType === 'one_line') {
-        const expected = (question.expectedAnswer || '').trim().toLowerCase();
-        const actual = (answer.answer || '').toString().trim().toLowerCase();
-        if (!expected) return;
-        if (actual === expected) {
-          score += points;
-        } else if (Array.isArray(question.keywords) && question.keywords.length > 0) {
-          const matched = question.keywords.every((keyword) => actual.includes(String(keyword).toLowerCase()));
-          if (matched) score += points;
-          else score -= negativePoints;
-        } else if (actual) {
-          score -= negativePoints;
-        }
-        return;
-      }
-
-      if (questionType === 'coding') {
-        if (getCodingAnswerVerdict(answer) === 'AC') {
-          score += points;
-        } else if (String(answer.code || '').trim()) {
-          score -= negativePoints;
-        }
+function findAssessmentCodingQuestions(assessment, problemId) {
+  const targetId = String(problemId);
+  const matches = [];
+  (assessment?.sections || []).forEach((section, sectionIndex) => {
+    (section?.questions || []).forEach((question, questionIndex) => {
+      const questionType = question?.type || section?.type;
+      const resolvedProblemId = question?.problemId
+        || question?.coding?.problemId
+        || question?.problemDataSnapshot?._id
+        || question?.coding?.problemData?._id
+        || question?.problemData?._id;
+      if (questionType === 'coding' && resolvedProblemId && String(resolvedProblemId) === targetId) {
+        matches.push({ sectionIndex, questionIndex, question, section });
       }
     });
   });
+  return matches;
+}
 
-  const accuracy = maxMarks > 0 ? Math.round((score / maxMarks) * 10000) / 100 : 0;
-  return { score, maxMarks, accuracy };
+async function isNewerTrackedSubmission(currentSubmissionId, trackedSubmission) {
+  if (!currentSubmissionId || String(currentSubmissionId) === String(trackedSubmission?._id)) return false;
+  const current = await Submission.findById(currentSubmissionId).select('createdAt').lean();
+  return Boolean(
+    current?.createdAt
+    && trackedSubmission?.createdAt
+    && new Date(current.createdAt).getTime() > new Date(trackedSubmission.createdAt).getTime(),
+  );
+}
+
+async function persistAssessmentCodingDraft({ assessment, userId, trackedSubmission }) {
+  if (!assessment?._id || !trackedSubmission?.problem || !userId) return null;
+
+  const assessmentSubmission = await AssessmentSubmission.findOne({
+    assessmentId: assessment._id,
+    studentId: userId,
+  });
+  if (!assessmentSubmission) return null;
+
+  const matches = findAssessmentCodingQuestions(assessment, trackedSubmission.problem);
+  if (!matches.length) return null;
+
+  const answers = (assessmentSubmission.answers || []).map((answer) => (
+    typeof answer.toObject === 'function' ? answer.toObject() : { ...answer }
+  ));
+
+  for (const match of matches) {
+    const answerIndex = answers.findIndex((answer) => (
+      Number(answer.sectionIndex) === match.sectionIndex
+      && Number(answer.questionIndex) === match.questionIndex
+    ));
+    const previous = answerIndex >= 0 ? answers[answerIndex] : {};
+    if (await isNewerTrackedSubmission(previous.submissionId, trackedSubmission)) continue;
+
+    const nextAnswer = {
+      ...previous,
+      sectionIndex: match.sectionIndex,
+      questionIndex: match.questionIndex,
+      language: trackedSubmission.language,
+      code: trackedSubmission.sourceCode,
+      jobId: String(trackedSubmission._id),
+      submissionId: trackedSubmission._id,
+      executionStatus: 'queued',
+      executionVerdict: 'PENDING',
+      executionResult: null,
+      lastEvaluatedAt: undefined,
+    };
+    if (answerIndex >= 0) answers[answerIndex] = nextAnswer;
+    else answers.push(nextAnswer);
+  }
+
+  assessmentSubmission.answers = answers;
+  assessmentSubmission.evaluationStatus = 'processing';
+  const scoring = scoreAssessmentWithTestCases(assessment, answers);
+  assessmentSubmission.score = scoring.score;
+  assessmentSubmission.maxMarks = scoring.maxMarks;
+  assessmentSubmission.accuracy = scoring.accuracy;
+  await assessmentSubmission.save();
+  return assessmentSubmission;
+}
+
+async function syncAssessmentAnswerFromTrackedSubmission(trackedSubmission) {
+  if (!trackedSubmission?.assessmentId || !trackedSubmission?.problem) return null;
+
+  const [assessment, assessmentSubmission] = await Promise.all([
+    Assessment.findById(trackedSubmission.assessmentId).lean(),
+    AssessmentSubmission.findOne({
+      assessmentId: trackedSubmission.assessmentId,
+      studentId: trackedSubmission.user,
+    }),
+  ]);
+  if (!assessment || !assessmentSubmission) return null;
+
+  const matches = findAssessmentCodingQuestions(assessment, trackedSubmission.problem);
+  if (!matches.length) return null;
+
+  const answers = (assessmentSubmission.answers || []).map((answer) => (
+    typeof answer.toObject === 'function' ? answer.toObject() : { ...answer }
+  ));
+  const executionResult = buildSubmitApiResponse(trackedSubmission);
+  let firstScore = null;
+
+  for (const match of matches) {
+    const answerIndex = answers.findIndex((answer) => (
+      Number(answer.sectionIndex) === match.sectionIndex
+      && Number(answer.questionIndex) === match.questionIndex
+    ));
+    if (answerIndex < 0) continue;
+
+    const current = answers[answerIndex];
+    if (current.submissionId && String(current.submissionId) !== String(trackedSubmission._id)) continue;
+    if (!current.submissionId && current.jobId && String(current.jobId) !== String(trackedSubmission._id)) continue;
+
+    answers[answerIndex] = {
+      ...current,
+      language: trackedSubmission.language,
+      code: trackedSubmission.sourceCode,
+      jobId: String(trackedSubmission._id),
+      submissionId: trackedSubmission._id,
+      executionStatus: ['RE'].includes(trackedSubmission.status) ? 'failed' : 'completed',
+      executionVerdict: trackedSubmission.status,
+      executionResult,
+      lastEvaluatedAt: trackedSubmission.completedAt || new Date(),
+    };
+
+    if (!firstScore) {
+      firstScore = getCodingQuestionScore(match.question, answers[answerIndex], match.section);
+    }
+  }
+
+  if (!firstScore) return null;
+
+  assessmentSubmission.answers = answers;
+  const scoring = scoreAssessmentWithTestCases(assessment, answers);
+  assessmentSubmission.score = scoring.score;
+  assessmentSubmission.maxMarks = scoring.maxMarks;
+  assessmentSubmission.accuracy = scoring.accuracy;
+  assessmentSubmission.evaluationStatus = 'completed';
+  await assessmentSubmission.save();
+
+  return {
+    earnedMarks: firstScore.earnedMarks,
+    maxMarks: firstScore.maxMarks,
+    passed: firstScore.passed,
+    total: firstScore.total,
+    passedTestCaseMarks: firstScore.passedMarks,
+    totalTestCaseMarks: firstScore.totalMarks,
+  };
+}
+
+function scoreAssessmentWithCoding(assessment, answers = []) {
+  return scoreAssessmentWithTestCases(assessment, answers);
 }
 
 export async function enqueueAssessmentCodingEvaluationJobs({
@@ -1052,6 +1172,7 @@ export async function enqueueAssessmentCodingEvaluationJobs({
         updatedAnswers[answerIndex] = {
           ...updatedAnswers[answerIndex],
           jobId,
+          submissionId: undefined,
           executionStatus: 'queued',
           executionVerdict: 'PENDING',
           executionResult: null,
@@ -1112,6 +1233,8 @@ function buildJobResultPayload({ kind, submissionId = null, response, persisted 
       status: persisted.status,
       passedTestCases: persisted.passedTestCases || 0,
       totalTestCases: persisted.totalTestCases || 0,
+      passedTestCaseMarks: persisted.passedTestCaseMarks || 0,
+      totalTestCaseMarks: persisted.totalTestCaseMarks || 0,
     },
   };
 }
@@ -1188,8 +1311,9 @@ export async function processCompilerExecutionJob(job) {
       problem,
     });
 
+    let finalizedSubmission = null;
     if (submissionId) {
-      await finalizeTrackedSubmission(submissionId, submitResult.persisted);
+      finalizedSubmission = await finalizeTrackedSubmission(submissionId, submitResult.persisted);
       if (problem?._id) await refreshProblemStats(problem._id);
     }
 
@@ -1209,6 +1333,10 @@ export async function processCompilerExecutionJob(job) {
     }
 
     const responsePayload = buildSubmitApiResponse(submitResult.persisted);
+    if (job.name === 'assessment-code-submit' && finalizedSubmission) {
+      const assessmentMarks = await syncAssessmentAnswerFromTrackedSubmission(finalizedSubmission);
+      if (assessmentMarks) responsePayload.assessmentMarks = assessmentMarks;
+    }
     const resultPayload = buildJobResultPayload({
       kind: 'submit',
       submissionId,
@@ -1219,7 +1347,7 @@ export async function processCompilerExecutionJob(job) {
     return resultPayload;
   } catch (error) {
     if (isFinalAttempt && submissionId) {
-      await finalizeTrackedSubmission(submissionId, {
+      const finalizedSubmission = await finalizeTrackedSubmission(submissionId, {
         status: 'RE',
         output: '',
         stderr: error.message || 'Execution failed unexpectedly.',
@@ -1230,6 +1358,10 @@ export async function processCompilerExecutionJob(job) {
         passedTestCases: 0,
         provider: 'judge0-ce',
       });
+
+      if (job.name === 'assessment-code-submit' && finalizedSubmission) {
+        await syncAssessmentAnswerFromTrackedSubmission(finalizedSubmission);
+      }
 
       if (problemId) {
         await refreshProblemStats(problemId);

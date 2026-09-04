@@ -915,6 +915,11 @@ function CodeEditor({
 
               {result && !isRunResult && (
                 <>
+                  {result.assessmentMarks && (
+                    <div className="rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-700 dark:border-sky-900/50 dark:bg-sky-900/10 dark:text-sky-300">
+                      Assessment marks: {Number(result.assessmentMarks.earnedMarks || 0)} / {Number(result.assessmentMarks.maxMarks || 0)}
+                    </div>
+                  )}
                   {(result.status === 'Accepted' || result.status === 'AC') && (
                     <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-900/10 dark:text-emerald-300">
                       All test cases passed.

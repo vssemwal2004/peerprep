@@ -10,6 +10,10 @@ import { enqueueAssessmentCodingEvaluationJobs } from '../services/compilerExecu
 import { removeAssessmentQuestionsFromLibrary, syncAssessmentQuestionsToLibrary } from '../services/questionLibraryService.js';
 import { logActivity } from './adminActivityController.js';
 import { enqueueMailJobs } from '../services/mailQueueService.js';
+import {
+  getCodingQuestionScore,
+  scoreAssessmentWithTestCases,
+} from '../services/assessmentScoringService.js';
 import crypto from 'crypto';
 import {
   AI_PROCTORING_VIOLATION_TYPES,
@@ -516,7 +520,9 @@ function evaluateQuestionResponse(question = {}, section = {}, answer = null) {
 
     const verdict = getCodingAnswerVerdict(answer);
     const status = String(answer?.executionStatus || '').trim().toLowerCase();
-    if (verdict === 'AC') return 'correct';
+    const codingScore = getCodingQuestionScore(question, answer, section);
+    if (codingScore.fullyCorrect) return 'correct';
+    if (codingScore.hasEvaluation && codingScore.earnedMarks > 0) return 'partial';
     if (['WA', 'TLE', 'RE', 'CE', 'FAILED'].includes(verdict)) return 'wrong';
     if (status === 'completed' || status === 'failed') return 'wrong';
     return 'pending';
@@ -536,6 +542,7 @@ function buildAssessmentAttemptAnalytics(assessment = {}, submission = {}) {
     totalQuestions: 0,
     correctAnswers: 0,
     wrongAnswers: 0,
+    partialAnswers: 0,
     skippedQuestions: 0,
     pendingEvaluationQuestions: 0,
     sectionBreakdown: [],
@@ -548,6 +555,7 @@ function buildAssessmentAttemptAnalytics(assessment = {}, submission = {}) {
       totalQuestions: 0,
       correctAnswers: 0,
       wrongAnswers: 0,
+      partialAnswers: 0,
       skippedQuestions: 0,
       pendingEvaluationQuestions: 0,
     };
@@ -568,6 +576,9 @@ function buildAssessmentAttemptAnalytics(assessment = {}, submission = {}) {
       } else if (result === 'wrong') {
         sectionStats.wrongAnswers += 1;
         summary.wrongAnswers += 1;
+      } else if (result === 'partial') {
+        sectionStats.partialAnswers += 1;
+        summary.partialAnswers += 1;
       } else if (result === 'pending') {
         sectionStats.pendingEvaluationQuestions += 1;
         summary.pendingEvaluationQuestions += 1;
@@ -595,6 +606,7 @@ function buildSectionBreakdownWithScores(assessment = {}, submission = {}) {
     let totalMarks = 0;
     let correctAnswers = 0;
     let wrongAnswers = 0;
+    let partialAnswers = 0;
     let skippedQuestions = 0;
     let pendingEvaluationQuestions = 0;
 
@@ -605,6 +617,10 @@ function buildSectionBreakdownWithScores(assessment = {}, submission = {}) {
       if (result === 'correct') {
         score += marks;
         correctAnswers += 1;
+      } else if (result === 'partial') {
+        const codingScore = getCodingQuestionScore(question, answerMap.get(`${sectionIndex}-${questionIndex}`), section);
+        score += codingScore.earnedMarks;
+        partialAnswers += 1;
       } else if (result === 'wrong') {
         wrongAnswers += 1;
       } else if (result === 'pending') {
@@ -623,6 +639,7 @@ function buildSectionBreakdownWithScores(assessment = {}, submission = {}) {
       score,
       correctAnswers,
       wrongAnswers,
+      partialAnswers,
       skippedQuestions,
       pendingEvaluationQuestions,
     };
@@ -665,7 +682,7 @@ async function reconcileAssessmentCodingAnswers(assessment = {}, submission = {}
     problem: { $in: codingQuestions.map((item) => item.problemId) },
     mode: 'submit',
     status: { $in: ['AC', 'WA', 'TLE', 'RE', 'CE'] },
-  }).sort({ completedAt: -1, createdAt: -1 }).lean();
+  }).sort({ createdAt: -1, completedAt: -1 }).lean();
 
   const latestByProblem = new Map();
   verifiedSubmissions.forEach((entry) => {
@@ -686,6 +703,8 @@ async function reconcileAssessmentCodingAnswers(assessment = {}, submission = {}
     if (answerIndex < 0) return;
 
     const answer = answers[answerIndex];
+    if (answer?.submissionId && String(answer.submissionId) !== String(verified._id)) return;
+    if (!answer?.submissionId && answer?.jobId && String(answer.jobId) !== String(verified.jobId || '')) return;
     const currentVerdict = getCodingAnswerVerdict(answer);
     const verifiedAt = new Date(verified.completedAt || verified.updatedAt || verified.createdAt || 0).getTime();
     const evaluatedAt = new Date(answer.lastEvaluatedAt || 0).getTime();
@@ -702,11 +721,14 @@ async function reconcileAssessmentCodingAnswers(assessment = {}, submission = {}
         status: verified.status === 'AC' ? 'Accepted' : verified.status,
         passed: Number(verified.passedTestCases || 0),
         total: Number(verified.totalTestCases || 0),
+        passedTestCaseMarks: Number(verified.passedTestCaseMarks || 0),
+        totalTestCaseMarks: Number(verified.totalTestCaseMarks || 0),
         time: Number(((verified.executionTimeMs || 0) / 1000).toFixed(3)),
         memory: Number(verified.memoryUsedKb || 0),
         error: verified.compileOutput || verified.stderr || '',
         failedTestCase: verified.failedCase || undefined,
       },
+      submissionId: verified._id,
       lastEvaluatedAt: verified.completedAt || verified.updatedAt || verified.createdAt,
     };
     changed = true;
@@ -778,6 +800,9 @@ function buildQuestionWiseReport(assessment = {}, submission = {}, permissions =
       const result = evaluateQuestionResponse(question, section, answer);
       const marks = Number(question?.points ?? question?.marks ?? section.marksPerQuestion ?? 1);
       const negativeMarks = Number(question?.negativePoints ?? section?.negativeMarksPerQuestion ?? 0);
+      const codingScore = (question?.type || section?.type) === 'coding'
+        ? getCodingQuestionScore(question, answer, section)
+        : null;
       const selectedIndex = answer?.answer !== undefined && answer?.answer !== null ? Number(answer.answer) : null;
       const correctIndex = question?.correctOptionIndex !== undefined && question?.correctOptionIndex !== null
         ? Number(question.correctOptionIndex)
@@ -793,7 +818,11 @@ function buildQuestionWiseReport(assessment = {}, submission = {}, permissions =
         status: result === 'wrong' ? 'incorrect' : result,
         isCorrect: permissions.canViewScore ? result === 'correct' : null,
         isSkipped: result === 'skipped',
-        marksObtained: permissions.canViewScore ? (result === 'correct' ? marks : result === 'wrong' ? -negativeMarks : 0) : null,
+        marksObtained: permissions.canViewScore
+          ? (codingScore
+            ? (codingScore.earnedMarks || (result === 'wrong' && codingScore.hasEvaluation ? -negativeMarks : 0))
+            : (result === 'correct' ? marks : result === 'wrong' ? -negativeMarks : 0))
+          : null,
         maxMarks: permissions.canViewScore ? marks : null,
         negativeMarks: permissions.canViewScore && negativeMarks > 0 ? negativeMarks : null,
         options: Array.isArray(question?.options) ? question.options : [],
@@ -811,6 +840,10 @@ function buildQuestionWiseReport(assessment = {}, submission = {}, permissions =
           row.testSummary = {
             passed: Number(executionResult.passed ?? executionResult.passedTestCases ?? 0),
             total: Number(executionResult.total ?? executionResult.totalTestCases ?? 0),
+            passedMarks: Number(executionResult.passedTestCaseMarks ?? 0),
+            totalMarks: Number(executionResult.totalTestCaseMarks ?? 0),
+            marksObtained: permissions.canViewScore ? Number(codingScore?.earnedMarks || 0) : null,
+            questionMarks: permissions.canViewScore ? marks : null,
             time: Number(executionResult.time ?? 0),
             memory: Number(executionResult.memory ?? executionResult.memoryUsedKb ?? 0),
             error: executionResult.error || executionResult.compileOutput || executionResult.stderr || '',
@@ -1019,6 +1052,7 @@ function buildStudentReportRow(assessment = {}, submission = {}, { rankInfo = nu
     totalQuestions: analytics.totalQuestions,
     correctAnswers: permissions.canViewScore ? analytics.correctAnswers : null,
     wrongAnswers: permissions.canViewScore ? analytics.wrongAnswers : null,
+    partialAnswers: permissions.canViewScore ? analytics.partialAnswers : null,
     skippedQuestions: permissions.canViewScore ? analytics.skippedQuestions : null,
     pendingEvaluationQuestions: permissions.canViewScore ? analytics.pendingEvaluationQuestions : null,
     accuracy: permissions.canViewPercentage ? accuracy : null,
@@ -1222,52 +1256,42 @@ function applyMarksAndTotals(sections = []) {
 }
 
 function scoreAssessment(assessment, answers = []) {
-  const answerMap = new Map();
-  (answers || []).forEach((ans) => {
-    answerMap.set(`${ans.sectionIndex}-${ans.questionIndex}`, ans);
-  });
+  return scoreAssessmentWithTestCases(assessment, answers);
+}
 
-  let score = 0;
-  let maxMarks = 0;
-  (assessment.sections || []).forEach((section, sIdx) => {
-    const questions = section.questions || [];
-    questions.forEach((question, qIdx) => {
-      const questionType = question.type || section.type;
-      const points = Number(question.points || question.marks || 0);
-      const negativePoints = Math.max(0, Number(question.negativePoints ?? question.negativeMarks ?? section.negativeMarksPerQuestion ?? 0) || 0);
-      maxMarks += points;
-      const answer = answerMap.get(`${sIdx}-${qIdx}`);
-      if (!answer) return;
-      if (questionType === 'mcq') {
-        if (Number(answer.answer) === Number(question.correctOptionIndex)) {
-          score += points;
-        } else {
-          score -= negativePoints;
-        }
-      } else if (questionType === 'short' || questionType === 'one_line') {
-        const expected = (question.expectedAnswer || '').trim().toLowerCase();
-        const actual = (answer.answer || '').toString().trim().toLowerCase();
-        if (!expected) return;
-        if (actual === expected) {
-          score += points;
-        } else if (Array.isArray(question.keywords) && question.keywords.length > 0) {
-          const matched = question.keywords.every((k) => actual.includes(String(k).toLowerCase()));
-          if (matched) score += points;
-          else score -= negativePoints;
-        } else if (actual) {
-          score -= negativePoints;
-        }
-      } else if (questionType === 'coding') {
-        if (getCodingAnswerVerdict(answer) === 'AC') {
-          score += points;
-        } else if (String(answer.code || '').trim()) {
-          score -= negativePoints;
-        }
-      }
-    });
+function mergeAssessmentAnswers(existingAnswers = [], incomingAnswers = []) {
+  if (!Array.isArray(incomingAnswers)) return existingAnswers;
+
+  const previousByKey = new Map((existingAnswers || []).map((answer) => [
+    `${answer.sectionIndex}-${answer.questionIndex}`,
+    typeof answer.toObject === 'function' ? answer.toObject() : answer,
+  ]));
+
+  return incomingAnswers.map((incoming) => {
+    const key = `${incoming?.sectionIndex}-${incoming?.questionIndex}`;
+    const previous = previousByKey.get(key);
+    const incomingCode = String(incoming?.code ?? '');
+    const previousCode = String(previous?.code ?? '');
+    const sameCodingSubmission = Boolean(
+      previous
+      && (Object.prototype.hasOwnProperty.call(incoming || {}, 'code')
+        || Object.prototype.hasOwnProperty.call(previous, 'code'))
+      && incomingCode === previousCode
+      && String(incoming?.language || '') === String(previous?.language || ''),
+    );
+
+    if (!sameCodingSubmission) return { ...incoming };
+
+    return {
+      ...incoming,
+      jobId: previous.jobId,
+      executionStatus: previous.executionStatus,
+      executionVerdict: previous.executionVerdict,
+      executionResult: previous.executionResult,
+      submissionId: previous.submissionId,
+      lastEvaluatedAt: previous.lastEvaluatedAt,
+    };
   });
-  const accuracy = maxMarks > 0 ? Math.round((score / maxMarks) * 10000) / 100 : 0;
-  return { score, maxMarks, accuracy };
 }
 
 function collectCodingProblemIds(sections = []) {
@@ -3028,7 +3052,7 @@ export async function submitAssessment(req, res) {
       finalStatus = 'violation';
     }
 
-    submission.answers = Array.isArray(answers) ? answers : submission.answers;
+    submission.answers = mergeAssessmentAnswers(submission.answers, answers);
     submission.status = finalStatus;
     submission.lastSavedAt = now;
     submission.tabSwitches = typeof tabSwitches === 'number' ? tabSwitches : submission.tabSwitches;
@@ -3049,6 +3073,11 @@ export async function submitAssessment(req, res) {
     }
     submission.lastIp = req.ip;
     submission.lastUserAgent = req.headers['user-agent'];
+
+    const currentScoring = scoreAssessment(assessment, submission.answers);
+    submission.score = currentScoring.score;
+    submission.maxMarks = currentScoring.maxMarks;
+    submission.accuracy = currentScoring.accuracy;
 
     if (finalStatus === 'submitted' && !submission.submittedAt) {
       submission.submittedAt = now;
@@ -4069,7 +4098,7 @@ export async function getAssessmentReportsExportData(req, res) {
           : 0;
         const userAgentDetails = parseUserAgentDetails(row.lastUserAgent);
         const sectionScoresText = sectionBreakdown.map((section) => `${section.sectionName}: ${section.score}/${section.totalMarks}`).join(' | ');
-        const sectionPerformanceText = sectionBreakdown.map((section) => `${section.sectionName} (${section.correctAnswers}C/${section.wrongAnswers}W/${section.skippedQuestions}S/${section.pendingEvaluationQuestions}P)`).join(' | ');
+        const sectionPerformanceText = sectionBreakdown.map((section) => `${section.sectionName} (${section.correctAnswers}C/${section.partialAnswers || 0}P/${section.wrongAnswers}W/${section.skippedQuestions}S/${section.pendingEvaluationQuestions}E)`).join(' | ');
         const locationText = stringifyLocation(row.securitySetup?.location || null);
         const securityHeartbeatText = stringifySecurityHeartbeat(row.securityHeartbeat || {});
         const proctoringFlagsText = buildProctoringFlags(row);
@@ -4109,10 +4138,11 @@ export async function getAssessmentReportsExportData(req, res) {
           totalQuestions: analytics.totalQuestions,
           correctAnswers: analytics.correctAnswers,
           wrongAnswers: analytics.wrongAnswers,
+          partialAnswers: analytics.partialAnswers,
           skippedQuestions: analytics.skippedQuestions,
           pendingEvaluationQuestions: analytics.pendingEvaluationQuestions,
           completionRate: analytics.totalQuestions > 0
-            ? Number((((analytics.correctAnswers + analytics.wrongAnswers + analytics.pendingEvaluationQuestions) / analytics.totalQuestions) * 100).toFixed(2))
+            ? Number((((analytics.correctAnswers + analytics.partialAnswers + analytics.wrongAnswers + analytics.pendingEvaluationQuestions) / analytics.totalQuestions) * 100).toFixed(2))
             : 0,
           timeSpentSec: timeTakenSec,
           violationCount,

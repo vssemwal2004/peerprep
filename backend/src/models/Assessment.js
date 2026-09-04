@@ -10,6 +10,7 @@ const testCaseSchema = new mongoose.Schema({
   output: { type: String },
   explanation: { type: String },
   hidden: { type: Boolean, default: false },
+  marks: { type: Number, min: 0.01, default: 1 },
 }, { _id: false });
 
 const codingSchema = new mongoose.Schema({

@@ -2769,6 +2769,19 @@ export default function AssessmentAttempt() {
       return;
     }
 
+    setAnswersMap((prev) => ({
+      ...prev,
+      [key]: {
+        ...(prev[key] || {}),
+        language,
+        code: sourceCode,
+        codeByLanguage: {
+          ...(prev[key]?.codeByLanguage || {}),
+          [language]: sourceCode,
+        },
+      },
+    }));
+
     setIsSubmittingMap((prev) => ({ ...prev, [key]: true }));
 
     api.submitStudentProblem(problemId, {
