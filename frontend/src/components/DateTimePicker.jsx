@@ -46,8 +46,10 @@ export default function DateTimePicker({
 
     const options = {
       enableTime,
-      dateFormat: enableTime ? "Y-m-d H:i" : "Y-m-d",
-      time_24hr: true,
+      dateFormat: enableTime ? "Y-m-d h:i K" : "Y-m-d",
+      // Keep the visible picker unambiguous. The value sent to the parent
+      // remains a local ISO minute string with a 24-hour hour component.
+      time_24hr: false,
       closeOnSelect: false,
       minuteIncrement: 1,
       defaultDate: value || null,
@@ -201,6 +203,13 @@ export default function DateTimePicker({
           const isoString = enableTime
             ? `${year}-${month}-${day}T${hours}:${minutes}`
             : `${year}-${month}-${day}`;
+
+          if (instance.__meridiemSelect) {
+            instance.__meridiemSelect.value = date.getHours() >= 12 ? "PM" : "AM";
+          }
+          if (instance.__ampmInput) {
+            instance.__ampmInput.value = date.getHours() >= 12 ? "PM" : "AM";
+          }
 
           // Avoid redundant parent updates when value hasn't changed
           if (!value || value !== isoString) {
@@ -368,6 +377,7 @@ export default function DateTimePicker({
             const hourInput = timeContainer.querySelector(".flatpickr-hour");
             const minuteInput =
               timeContainer.querySelector(".flatpickr-minute");
+            const ampmInput = timeContainer.querySelector(".flatpickr-am-pm");
             const separator = timeContainer.querySelector(
               ".flatpickr-time-separator"
             );
@@ -424,8 +434,9 @@ export default function DateTimePicker({
               hourScroller.style.cssText =
                 "width: 50px; height: 216px; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; border: 1px solid #e2e8f0; border-radius: 8px; background: #fafafa; position: relative;";
 
-              // Generate hours 00-23
-              for (let i = 0; i <= 23; i++) {
+              // Generate hours 01-12. The selected AM/PM value determines the
+              // internal 24-hour value used by Date and by the API payload.
+              for (let i = 1; i <= 12; i++) {
                 const hourOption = document.createElement("div");
                 hourOption.textContent = i.toString().padStart(2, "0");
                 hourOption.className = "time-option";
@@ -444,8 +455,9 @@ export default function DateTimePicker({
                   // Sync hidden input and apply via Flatpickr API
                   hourInput.value = i;
                   const minute = parseInt(minuteInput.value || "0", 10);
+                  const meridiem = meridiemSelect?.value || "AM";
                   if (typeof applyTime === "function")
-                    applyTime(i, minute);
+                    applyTime(to24Hour(i, meridiem), minute);
                 });
                 hourScroller.appendChild(hourOption);
               }
@@ -488,9 +500,10 @@ export default function DateTimePicker({
                   minuteOption.style.fontWeight = "600";
                   // Sync hidden input and apply via Flatpickr API
                   minuteInput.value = i;
-                  const h24 = parseInt(hourInput.value || "0", 10);
+                  const displayHour = parseInt(hourInput.value || "12", 10);
+                  const meridiem = meridiemSelect?.value || "AM";
                   if (typeof applyTime === "function")
-                    applyTime(h24, i);
+                    applyTime(to24Hour(displayHour, meridiem), i);
                 });
                 minuteScroller.appendChild(minuteOption);
               }
@@ -498,11 +511,39 @@ export default function DateTimePicker({
               minuteColumn.appendChild(minuteScroller);
               columnsContainer.appendChild(minuteColumn);
 
+              // Add an explicit AM/PM selector so 12 AM and 12 PM cannot be
+              // confused by the person scheduling the assessment.
+              const meridiemColumn = document.createElement("div");
+              meridiemColumn.style.cssText =
+                "display: flex; flex-direction: column; align-items: center;";
+              const meridiemSelect = document.createElement("select");
+              meridiemSelect.className = "time-meridiem-select";
+              meridiemSelect.setAttribute("aria-label", "AM or PM");
+              meridiemSelect.style.cssText =
+                "height: 36px; width: 64px; margin-top: 10px; padding: 0 6px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fafafa; color: #475569; font-size: 15px; font-weight: 600; cursor: pointer;";
+              ["AM", "PM"].forEach((period) => {
+                const option = document.createElement("option");
+                option.value = period;
+                option.textContent = period;
+                meridiemSelect.appendChild(option);
+              });
+              meridiemColumn.appendChild(meridiemSelect);
+              columnsContainer.appendChild(meridiemColumn);
+
               timeContainer.appendChild(columnsContainer);
 
               // Hide original inputs
               hourInput.style.display = "none";
               minuteInput.style.display = "none";
+              if (ampmInput) ampmInput.style.display = "none";
+
+              instance.__meridiemSelect = meridiemSelect;
+              instance.__ampmInput = ampmInput;
+
+              const to24Hour = (displayHour, meridiem) => {
+                const normalizedHour = Number(displayHour) % 12;
+                return meridiem === "PM" ? normalizedHour + 12 : normalizedHour;
+              };
 
               // Helpers: selected/disabled styling
               const setActive = (el, active) => {
@@ -553,6 +594,9 @@ export default function DateTimePicker({
                 const base = getBaseDate();
                 if (!base) return; // No prior date to apply time to
                 base.setHours(h24, m || 0, 0, 0);
+                const selectedMeridiem = h24 >= 12 ? "PM" : "AM";
+                meridiemSelect.value = selectedMeridiem;
+                if (ampmInput) ampmInput.value = selectedMeridiem;
                 instance.setDate(base, true);
               };
 
@@ -630,9 +674,12 @@ export default function DateTimePicker({
                   maxRefMinute = maxDateTime.getMinutes();
                 }
 
-                // Hours - 24h format (0-23)
+                const selectedMeridiem = meridiemSelect.value || "AM";
+
+                // Hours - 12h display mapped to internal 24h values.
                 hourOptions.forEach((opt, i) => {
-                  const hourVal = i; // 0..23
+                  const displayHour = i + 1;
+                  const hourVal = to24Hour(displayHour, selectedMeridiem);
                   let hide = false;
                   // Relative to reference (now for start, min for end) when same day
                   if (today || minDay) {
@@ -672,16 +719,32 @@ export default function DateTimePicker({
               instance.updateTimeDisabledStates = updateDisabledStates;
 
               // Initialize highlight from current selection or inputs
-              const initHour = parseInt(hourInput.value || "0", 10);
+              const selectedDate = instance.selectedDates && instance.selectedDates[0];
+              const selectedHour24 = selectedDate
+                ? selectedDate.getHours()
+                : parseInt(hourInput.value || "0", 10);
+              const initHour = selectedHour24 % 12 || 12;
               const initMinute = parseInt(minuteInput.value || "0", 10);
-              if (hourOptions[initHour]) {
-                setActive(hourOptions[initHour], true);
+              meridiemSelect.value = selectedHour24 >= 12 ? "PM" : "AM";
+              if (ampmInput) ampmInput.value = meridiemSelect.value;
+              hourInput.value = String(initHour).padStart(2, "0");
+              if (hourOptions[initHour - 1]) {
+                setActive(hourOptions[initHour - 1], true);
               }
               if (minuteOptions[initMinute]) {
                 setActive(minuteOptions[initMinute], true);
               }
 
               updateDisabledStates();
+
+              meridiemSelect.addEventListener("change", () => {
+                const displayHour = parseInt(hourInput.value || "12", 10);
+                const minute = parseInt(minuteInput.value || "0", 10);
+                if (typeof applyTime === "function") {
+                  applyTime(to24Hour(displayHour, meridiemSelect.value), minute);
+                }
+                updateDisabledStates();
+              });
             }
           }
         }
@@ -732,6 +795,19 @@ export default function DateTimePicker({
       // Sync external value without triggering onChange to avoid loops
       try {
         flatpickrRef.current.setDate(value, false);
+        const selectedDate = flatpickrRef.current.selectedDates?.[0];
+        if (selectedDate) {
+          const meridiem = selectedDate.getHours() >= 12 ? "PM" : "AM";
+          if (flatpickrRef.current.__meridiemSelect) {
+            flatpickrRef.current.__meridiemSelect.value = meridiem;
+          }
+          if (flatpickrRef.current.__ampmInput) {
+            flatpickrRef.current.__ampmInput.value = meridiem;
+          }
+          if (flatpickrRef.current.updateTimeDisabledStates) {
+            flatpickrRef.current.updateTimeDisabledStates();
+          }
+        }
       } catch { /* Flatpickr rejects incomplete external values */ }
     }
   }, [value]);
