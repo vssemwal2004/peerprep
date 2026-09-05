@@ -3109,7 +3109,7 @@ export default function AssessmentAttempt() {
 
   return (
     <div className="relative min-h-screen bg-[linear-gradient(180deg,#f8fbff_0%,#f8fafc_36%,#eef2ff_100%)] text-slate-900 dark:bg-none dark:bg-gray-950 dark:text-gray-100 lg:h-screen lg:overflow-hidden">
-      {showAssessmentWorkspace && watermarkConfig.enabled && (
+      {showAssessmentWorkspace && watermarkConfig.enabled && !isCoding && (
         <div className="pointer-events-none fixed inset-0 z-[1] overflow-hidden" aria-hidden="true">
           {watermarkColumns.map((item) => (
             <div
@@ -3238,8 +3238,28 @@ export default function AssessmentAttempt() {
                 <section
                   ref={problemPaneRef}
                   style={{ '--assessment-problem-width': `${leftWidth}px` }}
-                  className={`min-h-[520px] w-full min-w-0 shrink-0 overflow-hidden rounded-[28px] lg:h-full lg:min-h-0 lg:w-[var(--assessment-problem-width)] lg:min-w-[320px] lg:basis-[var(--assessment-problem-width)] ${cameraStatusLine && !cameraStatusLine.ok ? 'border border-rose-300' : 'border border-slate-200/80 dark:border-gray-700'}`}
+                  className={`relative min-h-[520px] w-full min-w-0 shrink-0 overflow-hidden rounded-[28px] lg:h-full lg:min-h-0 lg:w-[var(--assessment-problem-width)] lg:min-w-[320px] lg:basis-[var(--assessment-problem-width)] ${cameraStatusLine && !cameraStatusLine.ok ? 'border border-rose-300' : 'border border-slate-200/80 dark:border-gray-700'}`}
                 >
+                  {showAssessmentWorkspace && watermarkConfig.enabled && (
+                    <div className="pointer-events-none absolute inset-0 z-[1] overflow-hidden" aria-hidden="true">
+                      {watermarkColumns.map((item) => (
+                        <div
+                          key={item.id}
+                          className="absolute select-none whitespace-nowrap font-black uppercase tracking-[0.22em]"
+                          style={{
+                            left: item.left,
+                            top: item.top,
+                            transform: `rotate(${watermarkConfig.angle}deg)`,
+                            color: watermarkConfig.color,
+                            opacity: watermarkConfig.opacity,
+                            fontSize: `${watermarkConfig.fontSize}px`,
+                          }}
+                        >
+                          {item.text}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <AssessmentCodingProblemPanel
                     question={question}
                     codingData={codingData || {}}

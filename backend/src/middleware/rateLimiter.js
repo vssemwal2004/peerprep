@@ -1,6 +1,7 @@
 ﻿import rateLimit from 'express-rate-limit';
 import { RedisStore } from 'rate-limit-redis';
 import { getValkeyClient, isValkeyEnabled } from '../utils/valkey.js';
+import { verifyToken } from '../utils/jwt.js';
 
 /**
  * SECURITY: Rate Limiting Middleware
@@ -31,6 +32,49 @@ const emailResetAttempts = new Map(); // Map<email, { count: number, resetTime: 
 const EMAIL_RESET_WINDOW_MS = 2 * 60 * 60 * 1000;  // 2 hour window
 const EMAIL_RESET_MAX_ATTEMPTS = 1; // Max 1 reset email per 2 hours per email address
 const MAX_TRACKED_EMAILS = 10000; // Maximum emails to track (prevents memory exhaustion)
+
+/**
+ * Resolve a stable identity for rate limiting. The platform-wide API limiter
+ * runs before requireAuth, so it cannot rely only on req.user. When possible,
+ * derive the user id from the signed JWT and always include the client IP so
+ * each student's traffic is isolated from other students.
+ */
+function getRateLimitUserId(req) {
+  if (req.user?._id) return String(req.user._id);
+
+  const cookieToken = req.cookies?.accessToken;
+  const authorization = req.headers?.authorization || '';
+  const bearerToken = authorization.startsWith('Bearer ')
+    ? authorization.slice(7)
+    : '';
+  const token = cookieToken || bearerToken;
+  if (!token) return '';
+
+  try {
+    const payload = verifyToken(token);
+    return payload?.sub ? String(payload.sub) : '';
+  } catch {
+    return '';
+  }
+}
+
+function getClientIp(req) {
+  return String(req.ip || req.socket?.remoteAddress || 'unknown').trim() || 'unknown';
+}
+
+export function getRateLimitKey(req) {
+  const userId = getRateLimitUserId(req);
+  const clientIp = getClientIp(req);
+  return userId ? `user:${userId}:ip:${clientIp}` : `ip:${clientIp}`;
+}
+
+function getAuthenticationRateLimitKey(req) {
+  const identifier = String(
+    req.body?.email || req.body?.identifier || req.body?.username || '',
+  ).trim().toLowerCase();
+  const baseKey = getRateLimitKey(req);
+  return identifier ? `${baseKey}:login:${identifier}` : baseKey;
+}
 
 /**
  * Clean up expired entries periodically to prevent memory leaks
@@ -142,6 +186,7 @@ export const authLimiter = rateLimit({
   message: 'Too many login attempts, please try again later',
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: getAuthenticationRateLimitKey,
   // Skip successful requests from count
   skipSuccessfulRequests: true,
   store: buildRateLimitStore('rl:auth:'),
@@ -185,6 +230,7 @@ export const uploadLimiter = rateLimit({
   message: 'Too many upload requests',
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: getRateLimitKey,
   store: buildRateLimitStore('rl:upload:'),
   handler: (req, res) => {
     console.warn(`[SECURITY] Upload limit exceeded for ${req.ip}`);
@@ -201,6 +247,7 @@ export const bulkOperationLimiter = rateLimit({
   message: 'Too many bulk operation requests',
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: getRateLimitKey,
   store: buildRateLimitStore('rl:bulk:'),
   handler: (req, res) => {
     console.warn(`[SECURITY] Bulk operation limit exceeded for ${req.ip}`);
@@ -218,6 +265,7 @@ export const apiLimiter = rateLimit({
   message: 'Too many requests',
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: getRateLimitKey,
   // Skip static health checks
   skip: (req) => req.path === '/health' || req.path === '/api/health',
   store: buildRateLimitStore('rl:api:'),
@@ -236,6 +284,7 @@ export const feedbackLimiter = rateLimit({
   message: 'Too many feedback submissions',
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: getRateLimitKey,
   store: buildRateLimitStore('rl:feedback:'),
   handler: (req, res) => {
     console.warn(`[SECURITY] Feedback limit exceeded for user ${req.user?._id || req.ip}`);
@@ -248,17 +297,13 @@ export const feedbackLimiter = rateLimit({
 const ANALYTICS_WINDOW_MS = Number(process.env.ANALYTICS_REFRESH_WINDOW_MS || 15 * 60 * 1000);
 const ANALYTICS_MAX = Number(process.env.ANALYTICS_REFRESH_MAX || 30);
 
-function getUserScopedKey(req) {
-  return req.user?._id?.toString() || req.ip;
-}
-
 export const analyticsRefreshLimiter = rateLimit({
   windowMs: ANALYTICS_WINDOW_MS,
   max: ANALYTICS_MAX,
   message: 'Too many analytics refresh requests',
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: getUserScopedKey,
+  keyGenerator: getRateLimitKey,
   skip: (req) => String(req.query?.refresh || '').toLowerCase() !== '1',
   store: buildRateLimitStore('rl:analytics:refresh:'),
   handler: (req, res) => {
@@ -280,9 +325,7 @@ const SUBMIT_COOLDOWN_MS = Number(process.env.COMPILER_SUBMIT_COOLDOWN_MS || 10 
 const runCooldownTracker = new Map(); // Map<key, nextAllowedTimestampMs>
 const submitCooldownTracker = new Map(); // Map<key, nextAllowedTimestampMs>
 
-function getCompilerKey(req) {
-  return req.user?._id?.toString() || req.ip;
-}
+const getCompilerKey = getRateLimitKey;
 
 function createCooldownMiddleware({ tracker, cooldownMs, label, redisPrefix }) {
   return async (req, res, next) => {
