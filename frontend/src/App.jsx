@@ -39,6 +39,7 @@ const StudentAssessmentList = lazy(() => import("./student/StudentAssessmentList
 const AssessmentReportsPage = lazy(() => import("./student/AssessmentReportsPage"));
 const AssessmentHistoryPage = lazy(() => import("./student/AssessmentHistoryPage"));
 const AssessmentAttempt = lazy(() => import("./student/AssessmentAttempt"));
+const AssessmentFeedbackPage = lazy(() => import("./student/AssessmentFeedbackPage"));
 const StudentAnalytics = lazy(() => import("./student/StudentAnalytics"));
 const StudentResume = lazy(() => import("./student/StudentResume"));
 
@@ -64,6 +65,7 @@ const AdminCompanyBenchmarkAdd = lazy(() => import("./admin/AdminCompanyBenchmar
 const AssessmentDashboard = lazy(() => import("./admin/AssessmentDashboard"));
 const CreateAssessment = lazy(() => import("./admin/CreateAssessment"));
 const AssessmentReports = lazy(() => import("./admin/AssessmentReports"));
+const AssessmentFeedback = lazy(() => import("./admin/AssessmentFeedback"));
 const QuestionLibrary = lazy(() => import("./admin/QuestionLibrary"));
 const AddQuestionToLibrary = lazy(() => import("./admin/AddQuestionToLibrary"));
 const SelectProblemFromLibrary = lazy(() => import("./admin/assessment/SelectProblemFromLibrary"));
@@ -278,6 +280,7 @@ function AppContent() {
         <Route path="/student/assessments" element={<StudentProtectedRoute><StudentAssessmentList /></StudentProtectedRoute>} />
         <Route path="/student/assessment-reports" element={<StudentProtectedRoute><AssessmentReportsPage /></StudentProtectedRoute>} />
         <Route path="/student/assessment-history" element={<StudentProtectedRoute><AssessmentHistoryPage /></StudentProtectedRoute>} />
+        <Route path="/student/assessment/:id/feedback" element={<StudentProtectedRoute><AssessmentFeedbackPage /></StudentProtectedRoute>} />
         <Route path="/assessments" element={<StudentProtectedRoute><StudentAssessmentList /></StudentProtectedRoute>} />
         <Route path="/assessment-reports" element={<StudentProtectedRoute><AssessmentReportsPage /></StudentProtectedRoute>} />
         <Route path="/assessment-history" element={<StudentProtectedRoute><AssessmentHistoryPage /></StudentProtectedRoute>} />
@@ -320,6 +323,7 @@ function AppContent() {
         <Route path="/admin/assessment/create" element={<AdminShell><CreateAssessment /></AdminShell>} />
         <Route path="/admin/assessment/:id/edit" element={<AdminShell><CreateAssessment /></AdminShell>} />
         <Route path="/admin/assessment/reports" element={<AdminShell><AssessmentReports /></AdminShell>} />
+        <Route path="/admin/assessment-feedback" element={<AdminShell><AssessmentFeedback /></AdminShell>} />
         <Route path="/admin/library" element={<AdminShell><QuestionLibrary /></AdminShell>} />
         <Route path="/admin/library/add-question" element={<AdminShell><AddQuestionToLibrary /></AdminShell>} />
         <Route path="/admin/assessment/select-problem" element={<AdminShell><SelectProblemFromLibrary /></AdminShell>} />

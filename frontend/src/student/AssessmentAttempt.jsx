@@ -913,7 +913,7 @@ export default function AssessmentAttempt() {
       });
       stopAiProctoring();
       toast.success(auto ? (autoMessage || 'Time is up. Assessment auto-submitted.') : 'Assessment submitted successfully');
-      navigate('/student/assessments');
+      navigate(`/student/assessment/${assessment._id}/feedback`);
       return true;
     } catch (err) {
       if (err?.response?.status === 409 && err?.response?.data?.code === 'ACTIVE_ASSESSMENT_SESSION') {

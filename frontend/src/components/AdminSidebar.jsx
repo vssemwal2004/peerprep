@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { CalendarDays, ClipboardList, GraduationCap, Users, UserPlus, LayoutDashboard, Code2, BookOpen, Megaphone, ChevronDown, Building2, ListChecks } from 'lucide-react';
+import { CalendarDays, ClipboardList, GraduationCap, Users, UserPlus, LayoutDashboard, Code2, BookOpen, Megaphone, ChevronDown, Building2, ListChecks, MessageSquareText } from 'lucide-react';
 
 export default function AdminSidebar() {
   const location = useLocation();
@@ -14,6 +14,7 @@ export default function AdminSidebar() {
     { label: 'Past Interview Details', to: '/admin/interviews/past', Icon: BookOpen },
     { label: 'Learning Modules', to: '/admin/learning', Icon: GraduationCap },
     { label: 'Assessment', to: '/admin/assessment', Icon: ClipboardList },
+    { label: 'Assessment Feedback', to: '/admin/assessment-feedback', Icon: MessageSquareText },
     { label: 'Compiler', to: '/admin/compiler', Icon: Code2 },
     { label: 'Company Insights', to: '/admin/company-insights', Icon: Building2 },
   ]), []);

@@ -11,6 +11,7 @@ import {
   GraduationCap,
   BookOpen,
   MessageSquare,
+  MessageSquareText,
   ClipboardList,
   Library,
   TerminalSquare,
@@ -173,6 +174,7 @@ const buildNavItems = (role = 'admin') => {
         { label: 'Overview', to: '/admin/assessment', icon: ClipboardList },
         { label: 'Add Assessment', to: '/admin/assessment/create', icon: ClipboardList },
         { label: 'Reports', to: '/admin/assessment/reports', icon: ClipboardList },
+        { label: 'Assessment Feedback', to: '/admin/assessment-feedback', icon: MessageSquareText },
       ],
     },
     {
@@ -260,6 +262,20 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
   };
 
   const isGroupActive = (group) => group.items.some((child) => isRouteActive(child));
+  const activeGroupKey = useMemo(() => navItems.find((item) => (
+    item.type === 'group' && item.items.some((child) => (
+      child.match
+        ? child.match(location)
+        : location.pathname === child.to || location.pathname.startsWith(`${child.to}/`)
+    ))
+  ))?.key || null, [navItems, location]);
+
+  // Keep the group for the current route open whenever the sidebar expands.
+  // This makes nested destinations discoverable after navigation or refresh.
+  useEffect(() => {
+    if (!isExpanded) return;
+    if (activeGroupKey) setOpenGroup(activeGroupKey);
+  }, [activeGroupKey, isExpanded]);
 
   const handleGroupToggle = (key) => {
     setOpenGroup((prev) => (prev === key ? null : key));

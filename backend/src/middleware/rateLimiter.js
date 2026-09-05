@@ -68,12 +68,25 @@ export function getRateLimitKey(req) {
   return userId ? `user:${userId}:ip:${clientIp}` : `ip:${clientIp}`;
 }
 
-function getAuthenticationRateLimitKey(req) {
-  const identifier = String(
+function getRequestIdentifier(req) {
+  return String(
     req.body?.email || req.body?.identifier || req.body?.username || '',
   ).trim().toLowerCase();
+}
+
+function getAuthenticationRateLimitKey(req) {
+  const identifier = getRequestIdentifier(req);
   const baseKey = getRateLimitKey(req);
   return identifier ? `${baseKey}:login:${identifier}` : baseKey;
+}
+
+// The platform-wide limiter runs before authentication. Use the signed user
+// id when a token is present; for login/password-reset requests use the
+// submitted identity as well as the IP so shared networks stay isolated.
+export function getPlatformRateLimitKey(req) {
+  const baseKey = getRateLimitKey(req);
+  const identifier = getRequestIdentifier(req);
+  return identifier ? `${baseKey}:identity:${identifier}` : baseKey;
 }
 
 /**
@@ -198,21 +211,16 @@ export const authLimiter = rateLimit({
   }
 });
 
-// Password reset limiter - prevent mass email bombing
-// Rate limits by email address instead of IP to allow different users
-// to reset passwords independently, while preventing abuse of a single email
+// Password reset limiter - prevent mass email bombing while keeping each
+// account/IP bucket independent from other students on the same network.
 export const passwordResetLimiter = rateLimit({
   windowMs: 2 * 60 * 60 * 1000, // 2 hours
   max: 3, // 3 password reset requests per 2 hours per email
   message: 'Too many password reset requests',
   standardHeaders: true,
   legacyHeaders: false,
-  // Use email as the key instead of IP address
-  keyGenerator: (req) => {
-    // Extract email from request body and normalize it
-    const email = req.body?.email || req.body?.identifier || '';
-    return email.trim().toLowerCase() || req.ip; // Fallback to IP if no email provided
-  },
+  // Keep reset requests isolated by the requesting IP and account identity.
+  keyGenerator: getPlatformRateLimitKey,
   store: buildRateLimitStore('rl:password-reset:'),
   handler: (req, res) => {
     const email = req.body?.email || req.body?.identifier || '';
@@ -265,7 +273,7 @@ export const apiLimiter = rateLimit({
   message: 'Too many requests',
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: getRateLimitKey,
+  keyGenerator: getPlatformRateLimitKey,
   // Skip static health checks
   skip: (req) => req.path === '/health' || req.path === '/api/health',
   store: buildRateLimitStore('rl:api:'),

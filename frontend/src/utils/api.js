@@ -594,6 +594,12 @@ export const api = {
   submitStudentAssessment: (body) => request('/student/assessment/submit', { method: 'POST', body }),
   getSubmissionViolations: (submissionId) => request(`/admin/assessment/submissions/${submissionId}/violations`, { skipCache: true }),
 
+  // Assessment feedback
+  getStudentAssessmentFeedback: (assessmentId) => request(`/assessment-feedback/student/${assessmentId}`, { skipCache: true }),
+  submitStudentAssessmentFeedback: (assessmentId, body) => request(`/assessment-feedback/student/${assessmentId}`, { method: 'POST', body }),
+  listAssessmentFeedbackAssessments: (qs = '') => request(`/assessment-feedback/admin/assessments${qs ? `?${qs}` : ''}`, { skipCache: true }),
+  listAssessmentFeedback: (assessmentId, qs = '') => request(`/assessment-feedback/admin/assessments/${assessmentId}${qs ? `?${qs}` : ''}`, { skipCache: true }),
+
   // Pairing
 
   // Pair status changes after schedule mutations, so this must never return a
