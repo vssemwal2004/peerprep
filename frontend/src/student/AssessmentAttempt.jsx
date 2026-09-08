@@ -129,6 +129,8 @@ const CSE_STATUS_DEFAULTS = {
   duplicateTab: false,
 };
 
+const COMPLETED_ASSESSMENT_STATUSES = new Set(['submitted', 'expired', 'violation', 'incomplete']);
+
 const CAMERA_VIOLATION_TYPES = new Set([
   'camera_loss',
   'camera_no_face',
@@ -895,6 +897,7 @@ export default function AssessmentAttempt() {
     if (!assessment || submissionInFlightRef.current) return false;
     submissionInFlightRef.current = true;
     setSaving(true);
+    let submissionCompleted = false;
     try {
       await api.submitStudentAssessment({
         assessmentId: assessment._id,
@@ -911,10 +914,7 @@ export default function AssessmentAttempt() {
         violations,
         sessionId: assessmentSessionIdRef.current,
       });
-      stopAiProctoring();
-      toast.success(auto ? (autoMessage || 'Time is up. Assessment auto-submitted.') : 'Assessment submitted successfully');
-      navigate(`/student/assessment/${assessment._id}/feedback`);
-      return true;
+      submissionCompleted = true;
     } catch (err) {
       if (err?.response?.status === 409 && err?.response?.data?.code === 'ACTIVE_ASSESSMENT_SESSION') {
         setActiveSessionConflict(true);
@@ -926,6 +926,19 @@ export default function AssessmentAttempt() {
       submissionInFlightRef.current = false;
       setSaving(false);
     }
+
+    if (!submissionCompleted) return false;
+
+    // Cleanup/proctoring must never prevent the mandatory feedback redirect
+    // after the server has already accepted the assessment submission.
+    try {
+      stopAiProctoring();
+    } catch (cleanupError) {
+      console.warn('Assessment cleanup after submit failed:', cleanupError);
+    }
+    toast.success(auto ? (autoMessage || 'Time is up. Assessment auto-submitted.') : 'Assessment submitted successfully');
+    navigate(`/student/assessment/${assessment._id}/feedback`, { replace: true });
+    return true;
   }, [assessment, buildAnswersPayload, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violationScore, pauseCount, lastPauseAt, securityHeartbeat, violations, stopAiProctoring, toast, navigate]);
 
   const triggerForcePause = useCallback((type, message, serverState = {}) => {
@@ -1289,6 +1302,14 @@ export default function AssessmentAttempt() {
   useEffect(() => {
     loadAssessment();
   }, [loadAssessment]);
+
+  // If a completed assessment URL is reopened or refreshed, keep the student
+  // in the mandatory feedback flow instead of showing the locked attempt UI.
+  useEffect(() => {
+    if (!assessment?._id || !submission?.submittedAt) return;
+    if (!COMPLETED_ASSESSMENT_STATUSES.has(String(submission.status || '').toLowerCase())) return;
+    navigate(`/student/assessment/${assessment._id}/feedback`, { replace: true });
+  }, [assessment?._id, submission?.status, submission?.submittedAt, navigate]);
 
   useEffect(() => {
     const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;

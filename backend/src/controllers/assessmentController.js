@@ -2688,11 +2688,6 @@ export async function getStudentAssessment(req, res) {
       return res.status(403).json({ error: 'Assessment has been marked complete by the administrator.', serverTime: now });
     }
 
-    const attemptLimit = assessment.attemptLimit || 1;
-    if (submission?.status === 'submitted' && submission.attemptCount >= attemptLimit) {
-      return res.status(403).json({ error: 'No attempts remaining for this assessment.' });
-    }
-
     if (!submission) {
       submission = await AssessmentSubmission.create({
         assessmentId: assessment._id,

@@ -63,6 +63,21 @@ export default function StudentAssessmentList() {
             )}
           </Section>
 
+          {dashboard.completedAssessments?.length ? (
+            <Section title="Completed Assessments">
+              <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+                {dashboard.completedAssessments.map((assessment) => (
+                  <AssessmentCard
+                    key={assessment._id}
+                    assessment={assessment}
+                    onLaunch={setLaunchAssessment}
+                    onFeedback={(completedAssessment) => navigate(`/student/assessment/${completedAssessment._id}/feedback`)}
+                  />
+                ))}
+              </div>
+            </Section>
+          ) : null}
+
         </div>
       )}
 

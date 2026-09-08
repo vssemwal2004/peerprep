@@ -2,7 +2,7 @@ import { CalendarDays, ArrowUpRight, CheckCircle2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { formatDateTime } from './assessmentDashboardUtils';
 
-export default function AssessmentCard({ assessment, onLaunch }) {
+export default function AssessmentCard({ assessment, onLaunch, onFeedback }) {
   const isLive = assessment.status === 'Live';
   const isCompleted = Boolean(
     assessment.hasSubmitted
@@ -11,6 +11,7 @@ export default function AssessmentCard({ assessment, onLaunch }) {
     || assessment.actionLabel === 'Completed'
     || assessment.status === 'Completed',
   );
+  const canGiveFeedback = isCompleted && Boolean(assessment.hasSubmitted || assessment.submittedAt);
   const canLaunch = isLive && !isCompleted;
   const statusTone = isCompleted
     ? 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:ring-emerald-800'
@@ -64,17 +65,20 @@ export default function AssessmentCard({ assessment, onLaunch }) {
         <button
           type="button"
           onClick={() => {
-            if (canLaunch) onLaunch(assessment);
+            if (canGiveFeedback) onFeedback?.(assessment);
+            else if (canLaunch) onLaunch(assessment);
           }}
-          disabled={!canLaunch}
+          disabled={!canLaunch && !canGiveFeedback}
           className={`inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors sm:w-auto ${
-            isCompleted
-              ? 'cursor-default bg-emerald-600 text-white shadow-sm shadow-emerald-900/10'
+            canGiveFeedback
+              ? 'bg-sky-600 text-white shadow-sm shadow-sky-900/10 hover:bg-sky-700 dark:bg-sky-600 dark:hover:bg-sky-500'
+              : isCompleted
+                ? 'cursor-default bg-emerald-600 text-white shadow-sm shadow-emerald-900/10'
               : 'bg-slate-900 text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 dark:bg-sky-600 dark:hover:bg-sky-500 dark:disabled:bg-gray-800 dark:disabled:text-gray-500'
           }`}
         >
-          {isCompleted ? 'Completed' : assessment.hasSubmissionInProgress ? 'Continue' : 'Start'}
-          {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : <ArrowUpRight className="h-4 w-4" />}
+          {canGiveFeedback ? 'Give feedback' : isCompleted ? 'Completed' : assessment.hasSubmissionInProgress ? 'Continue' : 'Start'}
+          {canGiveFeedback ? <ArrowUpRight className="h-4 w-4" /> : isCompleted ? <CheckCircle2 className="h-4 w-4" /> : <ArrowUpRight className="h-4 w-4" />}
         </button>
       </div>
     </motion.div>
