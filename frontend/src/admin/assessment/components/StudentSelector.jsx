@@ -188,9 +188,10 @@ export default function StudentSelector({ selected = [], onChange }) {
         sortOrder: 'asc',
       });
       const matchingStudents = Array.isArray(data.students) ? data.students : [];
-      const merged = new Map(selected.map((student) => [String(student._id), student]));
-      matchingStudents.forEach((student) => merged.set(String(student._id), student));
-      onChange([...merged.values()]);
+      // "Select all matching" represents the current filtered audience exactly.
+      // Replacing the selection prevents students from an older filter remaining
+      // silently included in the assessment.
+      onChange(matchingStudents);
     } catch (selectionError) {
       setError(selectionError.message || 'Failed to select matching students');
     } finally {
@@ -210,6 +211,11 @@ export default function StudentSelector({ selected = [], onChange }) {
 
   const visibleSelected = students.filter((student) => selectedIds.has(String(student._id))).length;
   const allVisibleSelected = students.length > 0 && visibleSelected === students.length;
+  const hasActiveCriteria = Boolean(debouncedQuery || activeFilterCount > 0 || uploadBatchId);
+  const allMatchingSelected = hasActiveCriteria
+    && pagination.total > 0
+    && selected.length === pagination.total
+    && allVisibleSelected;
   const firstResult = pagination.total === 0 ? 0 : ((pagination.page - 1) * PAGE_SIZE) + 1;
   const lastResult = Math.min(pagination.page * PAGE_SIZE, pagination.total);
 
@@ -319,23 +325,27 @@ export default function StudentSelector({ selected = [], onChange }) {
 
         <button
           type="button"
-          onClick={(activeFilterCount > 0 || uploadBatchId) ? selectAllMatching : selectVisible}
-          disabled={loading || bulkSelecting || students.length === 0 || (!(activeFilterCount > 0 || uploadBatchId) && allVisibleSelected)}
-          title={(activeFilterCount > 0 || uploadBatchId) ? 'Add every student matching the current filters' : 'Select students on this page'}
-          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-700"
+          onClick={hasActiveCriteria ? selectAllMatching : selectVisible}
+          disabled={loading || bulkSelecting || students.length === 0 || (hasActiveCriteria ? allMatchingSelected : allVisibleSelected)}
+          title={hasActiveCriteria ? 'Select every student matching the current search and filters' : 'Select students on this page'}
+          className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-md border px-3 text-xs font-semibold transition-colors disabled:cursor-not-allowed ${allMatchingSelected ? 'border-emerald-300 bg-emerald-50 text-emerald-700 disabled:opacity-100 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-700'}`}
         >
           {bulkSelecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
           {bulkSelecting
             ? 'Selecting...'
-            : (activeFilterCount > 0 || uploadBatchId)
-              ? `Select all matching (${pagination.total})`
+            : hasActiveCriteria
+              ? allMatchingSelected
+                ? `All filtered selected (${pagination.total})`
+                : `Select all filtered (${pagination.total})`
               : allVisibleSelected ? 'Page selected' : 'Select page'}
         </button>
       </div>
 
       <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2 text-[11px] text-slate-500 dark:border-gray-800 dark:text-gray-400">
         <span>{pagination.total.toLocaleString()} matching students</span>
-        <span className="font-semibold text-sky-700 dark:text-sky-300">{selected.length} selected</span>
+        <span className={`font-semibold ${allMatchingSelected ? 'text-emerald-700 dark:text-emerald-300' : 'text-sky-700 dark:text-sky-300'}`}>
+          {allMatchingSelected ? `All ${pagination.total.toLocaleString()} filtered students selected` : `${selected.length} selected`}
+        </span>
       </div>
 
       {error ? (
