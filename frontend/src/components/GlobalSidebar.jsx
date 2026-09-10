@@ -164,6 +164,7 @@ const buildNavItems = (role = 'admin') => {
         { label: 'Add Student', to: '/admin/onboarding', icon: UserPlus },
       ],
     },
+    { type: 'link', label: 'Email Queue', to: '/admin/email-queue', icon: Mail },
     { type: 'link', label: 'Learning Modules', to: '/admin/learning', icon: BookOpen },
     {
       type: 'group',

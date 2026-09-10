@@ -71,6 +71,7 @@ const AddQuestionToLibrary = lazy(() => import("./admin/AddQuestionToLibrary"));
 const SelectProblemFromLibrary = lazy(() => import("./admin/assessment/SelectProblemFromLibrary"));
 const AdminAssessmentPreview = lazy(() => import("./admin/assessment/AdminAssessmentPreview"));
 const AdminEmailTemplates = lazy(() => import("./admin/EmailTemplates"));
+const AdminEmailQueue = lazy(() => import("./admin/AdminEmailQueue"));
 const StudentPromotion = lazy(() => import("./admin/StudentPromotion"));
 const AnnouncementCreate = lazy(() => import("./admin/AnnouncementCreate"));
 const AnnouncementManage = lazy(() => import("./admin/AnnouncementManage"));
@@ -337,6 +338,7 @@ function AppContent() {
         <Route path="/admin/company-insights" element={<AdminShell><AdminCompanyInsights /></AdminShell>} />
         <Route path="/admin/company-insights/add" element={<AdminShell><AdminCompanyBenchmarkAdd /></AdminShell>} />
         <Route path="/admin/settings/email-templates" element={<AdminShell><AdminEmailTemplates /></AdminShell>} />
+        <Route path="/admin/email-queue" element={<AdminShell><AdminEmailQueue /></AdminShell>} />
         <Route path="/admin/settings/promote-students" element={<AdminShell><StudentPromotion /></AdminShell>} />
         <Route path="/admin/announcements/add" element={<AdminShell><AnnouncementCreate /></AdminShell>} />
         <Route path="/admin/announcements/manage" element={<AdminShell><AnnouncementManage /></AdminShell>} />

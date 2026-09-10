@@ -48,6 +48,7 @@ export async function enqueueMailJobs(jobs, context = {}) {
           targetType: job.targetType,
           targetId: job.targetId,
           recipientId: job.recipientId,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         },
       },
       upsert: true,
@@ -58,6 +59,20 @@ export async function enqueueMailJobs(jobs, context = {}) {
     batchId,
     queued: jobs.length,
   };
+}
+
+export async function ensureMailQueueRetention() {
+  const retentionMs = 7 * 24 * 60 * 60 * 1000;
+  const expiredBefore = new Date(Date.now() - retentionMs);
+  await MailJob.deleteMany({ createdAt: { $lt: expiredBefore } });
+  await MailJob.updateMany(
+    { expiresAt: { $exists: false } },
+    [{ $set: { expiresAt: { $add: ['$createdAt', retentionMs] } } }],
+  );
+  await MailJob.collection.createIndex(
+    { expiresAt: 1 },
+    { expireAfterSeconds: 0, name: 'mail_job_retention_7d' },
+  );
 }
 
 export async function getMailBatchStatus(batchId) {

@@ -30,8 +30,13 @@ const mailJobSchema = new mongoose.Schema({
   targetType: String,
   targetId: { type: mongoose.Schema.Types.ObjectId },
   recipientId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
+  expiresAt: {
+    type: Date,
+    default: () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+  },
 }, { timestamps: true });
 
 mailJobSchema.index({ status: 1, nextAttemptAt: 1, createdAt: 1 });
+mailJobSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0, name: 'mail_job_retention_7d' });
 
 export default mongoose.model('MailJob', mailJobSchema);

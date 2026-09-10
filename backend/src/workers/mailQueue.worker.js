@@ -1,7 +1,7 @@
 import MailJob from '../models/MailJob.js';
 import User from '../models/User.js';
 import EventParticipant from '../models/EventParticipant.js';
-import { decryptMailPayload } from '../services/mailQueueService.js';
+import { decryptMailPayload, ensureMailQueueRetention } from '../services/mailQueueService.js';
 import {
   sendAssessmentInvitationEmail,
   sendCoordinatorOnboardingEmail,
@@ -143,6 +143,7 @@ export async function drainMailQueue() {
 
 export function startMailQueueWorker() {
   if (timer) return;
+  ensureMailQueueRetention().catch((error) => console.error('[MailQueue] Retention setup failed:', error.message));
   const intervalMs = Math.max(2000, Number(process.env.MAIL_QUEUE_POLL_MS || 5000));
   timer = setInterval(() => drainMailQueue().catch((error) => console.error('[MailQueue]', error.message)), intervalMs);
   timer.unref?.();

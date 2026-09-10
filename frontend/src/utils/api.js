@@ -702,6 +702,13 @@ export const api = {
   createEmailTemplate: (body) => request('/email-templates', { method: 'POST', body }),
   updateEmailTemplate: (id, body) => request(`/email-templates/${id}`, { method: 'PUT', body }),
   deleteEmailTemplate: (id) => request(`/email-templates/${id}`, { method: 'DELETE' }),
+  listMailQueue: (options = {}) => {
+    const params = new URLSearchParams();
+    ['search', 'type', 'status', 'dateFrom', 'dateTo', 'page', 'limit'].forEach((key) => {
+      if (options[key] !== undefined && options[key] !== '') params.append(key, options[key]);
+    });
+    return request(`/mail-queue/jobs?${params.toString()}`, { skipCache: true });
+  },
 
   // Join Requests
   submitJoinRequest: (data) => request('/join/submit', { method: 'POST', body: data }),

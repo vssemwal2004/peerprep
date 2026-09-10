@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../utils/api";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckSquare, ChevronLeft, ChevronRight, ClipboardCopy, Download, Edit2, Eye, FileDown, Filter, Loader2, Mail, MoreVertical, Save, Search, Trash2, UserX, Users, X } from "lucide-react";
+import { CheckSquare, ChevronLeft, ChevronRight, ClipboardCopy, Columns3, Download, Edit2, Eye, FileDown, FileSpreadsheet, Filter, Loader2, Mail, MoreVertical, Save, Search, Trash2, UserX, Users, X } from "lucide-react";
 import ContributionCalendar from "../components/ContributionCalendar";
 import { useToast } from "../components/CustomToast";
 import {
@@ -26,11 +26,27 @@ const EMPTY_FILTERS = {
   accountStatus: '',
 };
 
+const STUDENT_COLUMNS = [
+  { key: 'student', label: 'Student' },
+  { key: 'email', label: 'Email' },
+  { key: 'branch', label: 'Branch' },
+  { key: 'course', label: 'Course' },
+  { key: 'semester', label: 'Semester' },
+  { key: 'group', label: 'Group' },
+  { key: 'college', label: 'College' },
+  { key: 'coordinator', label: 'Coordinator' },
+  { key: 'status', label: 'Account status' },
+  { key: 'credentialMail', label: 'Credential mail' },
+  { key: 'actions', label: 'Actions' },
+];
+
+const DEFAULT_STUDENT_COLUMNS = STUDENT_COLUMNS.map((column) => column.key);
+
 export default function StudentDirectory() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const uploadBatchId = searchParams.get('uploadBatchId') || '';
-  const uploadBatchName = searchParams.get('batchName') || '';
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [uploadBatchId, setUploadBatchId] = useState(searchParams.get('uploadBatchId') || '');
+  const routeBatchName = searchParams.get('batchName') || '';
   const toast = useToast();
   const [students, setStudents] = useState([]);
   const [specialStudents, setSpecialStudents] = useState([]);
@@ -57,6 +73,16 @@ export default function StudentDirectory() {
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [showFilters, setShowFilters] = useState(false);
   const [managedSemesters, setManagedSemesters] = useState([]);
+  const [uploadBatches, setUploadBatches] = useState([]);
+  const [showColumns, setShowColumns] = useState(false);
+  const [visibleColumns, setVisibleColumns] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('peerprep.studentColumns') || 'null');
+      return Array.isArray(saved) && saved.length ? new Set(saved) : new Set(DEFAULT_STUDENT_COLUMNS);
+    } catch {
+      return new Set(DEFAULT_STUDENT_COLUMNS);
+    }
+  });
   const [facets, setFacets] = useState({});
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0, limit: 25 });
@@ -72,6 +98,7 @@ export default function StudentDirectory() {
   const filterPanelRef = useRef(null);
   const rowActionMenuRef = useRef(null);
   const bulkMenuRef = useRef(null);
+  const columnsMenuRef = useRef(null);
   
   // State for detailed videos/courses modals
   const [showVideosModal, setShowVideosModal] = useState(false);
@@ -95,6 +122,8 @@ export default function StudentDirectory() {
     coordinators: mergeFilterOptions(facets.coordinators, fallbackFacets.coordinators),
   }), [facets, fallbackFacets]);
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
+  const uploadBatchName = uploadBatches.find((batch) => batch._id === uploadBatchId)?.name || routeBatchName;
+  const isColumnVisible = (key) => visibleColumns.has(key);
   const advancedFilterDefinitions = [
     {
       key: 'platformActivity',
@@ -156,6 +185,27 @@ export default function StudentDirectory() {
       });
     return () => { mounted = false; };
   }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    api.listStudentUploadBatches()
+      .then((data) => { if (mounted) setUploadBatches(data.batches || []); })
+      .catch(() => { if (mounted) setUploadBatches([]); });
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('peerprep.studentColumns', JSON.stringify([...visibleColumns]));
+  }, [visibleColumns]);
+
+  useEffect(() => {
+    if (!showColumns) return undefined;
+    const handleOutsideClick = (event) => {
+      if (!columnsMenuRef.current?.contains(event.target)) setShowColumns(false);
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [showColumns]);
 
   useEffect(() => {
     if (!showFilters) return undefined;
@@ -300,6 +350,34 @@ export default function StudentDirectory() {
     clearSelection();
     setFilters((current) => ({ ...current, [key]: value }));
     setCurrentPage(1);
+  };
+
+  const updateUploadBatch = (value) => {
+    clearSelection();
+    setUploadBatchId(value);
+    setCurrentPage(1);
+    const next = new URLSearchParams(searchParams);
+    if (value) {
+      const batch = uploadBatches.find((item) => item._id === value);
+      next.set('uploadBatchId', value);
+      next.set('batchName', batch?.name || 'Upload list');
+    } else {
+      next.delete('uploadBatchId');
+      next.delete('batchName');
+    }
+    setSearchParams(next, { replace: true });
+  };
+
+  const toggleColumn = (key) => {
+    setVisibleColumns((current) => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        if (next.size > 1) next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
   };
 
   const clearFilters = () => {
@@ -767,6 +845,21 @@ export default function StudentDirectory() {
                 </div>
               </form>
 
+              <div className="relative min-w-[190px]">
+                <FileSpreadsheet className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <select
+                  value={uploadBatchId}
+                  onChange={(event) => updateUploadBatch(event.target.value)}
+                  className="h-9 w-full appearance-none rounded-md border border-slate-200 bg-white pl-8 pr-7 text-xs font-semibold text-slate-700 shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                  aria-label="Filter by uploaded file"
+                >
+                  <option value="">All uploaded files</option>
+                  {uploadBatches.map((batch) => (
+                    <option key={batch._id} value={batch._id}>{batch.name}{batch.originalFileName && batch.originalFileName !== batch.name ? ` — ${batch.originalFileName}` : ''}</option>
+                  ))}
+                </select>
+              </div>
+
               <div className="relative min-w-[160px]">
                 <Filter className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                 <select
@@ -831,6 +924,29 @@ export default function StudentDirectory() {
                           </select>
                         </label>
                       ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div ref={columnsMenuRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowColumns((open) => !open)}
+                  className={`inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs font-semibold shadow-sm transition ${showColumns ? 'border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-700 dark:bg-sky-950/30 dark:text-sky-300' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}
+                  aria-expanded={showColumns}
+                >
+                  <Columns3 className="h-3.5 w-3.5" /> Columns
+                  <span className="rounded bg-slate-100 px-1 text-[9px] dark:bg-gray-700">{visibleColumns.size}</span>
+                </button>
+                {showColumns && (
+                  <div className="absolute right-0 top-11 z-40 w-64 rounded-lg border border-slate-200 bg-white p-3 shadow-xl dark:border-gray-700 dark:bg-gray-900">
+                    <div className="mb-2 flex items-center justify-between"><div><p className="text-xs font-semibold text-slate-900 dark:text-white">Visible columns</p><p className="text-[10px] text-slate-500">Choose what appears in the table</p></div><button type="button" onClick={() => setVisibleColumns(new Set(DEFAULT_STUDENT_COLUMNS))} className="text-[10px] font-semibold text-sky-600">Show all</button></div>
+                    <div className="max-h-72 space-y-1 overflow-y-auto">
+                      {STUDENT_COLUMNS.map((column) => {
+                        const checked = isColumnVisible(column.key);
+                        return <label key={column.key} className="flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-gray-800"><span className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-gray-200"><input type="checkbox" checked={checked} onChange={() => toggleColumn(column.key)} className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />{column.label}</span><span className={`text-[9px] font-semibold ${checked ? 'text-emerald-600' : 'text-slate-400'}`}>{checked ? 'Shown' : 'Hidden'}</span></label>;
+                      })}
                     </div>
                   </div>
                 )}
@@ -1028,19 +1144,19 @@ export default function StudentDirectory() {
                         className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500 dark:border-gray-600 dark:bg-gray-800"
                       />
                     </th>
-                    <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Student</th>
-                    <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Email</th>
-                    <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Branch</th>
-                    <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Course</th>
-                    <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Semester</th>
-                    <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Group</th>
-                    <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">College</th>
-                    <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Coordinator</th>
-                    {activeTab === "students" && (
+                    {isColumnVisible('student') && <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Student</th>}
+                    {isColumnVisible('email') && <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Email</th>}
+                    {isColumnVisible('branch') && <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Branch</th>}
+                    {isColumnVisible('course') && <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Course</th>}
+                    {isColumnVisible('semester') && <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Semester</th>}
+                    {isColumnVisible('group') && <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Group</th>}
+                    {isColumnVisible('college') && <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">College</th>}
+                    {isColumnVisible('coordinator') && <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Coordinator</th>}
+                    {activeTab === "students" && isColumnVisible('status') && (
                       <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Status</th>
                     )}
-                    <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Credential Mail</th>
-                    {activeTab === "students" && (
+                    {isColumnVisible('credentialMail') && <th scope="col" className="px-3 py-2 text-left text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Credential Mail</th>}
+                    {activeTab === "students" && isColumnVisible('actions') && (
                       <th scope="col" className="px-3 py-2 text-right text-[10px] font-semibold uppercase text-slate-500 dark:text-gray-300">Actions</th>
                     )}
                     {activeTab === "special" && (
@@ -1065,7 +1181,7 @@ export default function StudentDirectory() {
                             className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500 dark:border-gray-600 dark:bg-gray-800"
                           />
                         </td>
-                        <td className="px-3 py-1.5">
+                        {isColumnVisible('student') && <td className="px-3 py-1.5">
                           <div className="flex items-center gap-2 min-w-[190px]">
                             {s.avatarUrl ? (
                               <img 
@@ -1090,15 +1206,15 @@ export default function StudentDirectory() {
                               <div className="truncate text-[10px] text-slate-500 dark:text-gray-400">{s.studentId || "N/A"}</div>
                             </div>
                           </div>
-                        </td>
-                        <td className="max-w-[230px] px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300"><span className="block truncate">{s.email || "-"}</span></td>
-                        <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300">{s.branch || "-"}</td>
-                        <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300">{s.course || "-"}</td>
-                        <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300">{s.semester ? `Sem ${s.semester}` : "-"}</td>
-                        <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300">{s.group || "-"}</td>
-                        <td className="max-w-[180px] px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300"><span className="block truncate">{s.college || "-"}</span></td>
-                        <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300">{s.teacherId || "-"}</td>
-                        {activeTab === "students" && (
+                        </td>}
+                        {isColumnVisible('email') && <td className="max-w-[230px] px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300"><span className="block truncate">{s.email || "-"}</span></td>}
+                        {isColumnVisible('branch') && <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300">{s.branch || "-"}</td>}
+                        {isColumnVisible('course') && <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300">{s.course || "-"}</td>}
+                        {isColumnVisible('semester') && <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300">{s.semester ? `Sem ${s.semester}` : "-"}</td>}
+                        {isColumnVisible('group') && <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300">{s.group || "-"}</td>}
+                        {isColumnVisible('college') && <td className="max-w-[180px] px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300"><span className="block truncate">{s.college || "-"}</span></td>}
+                        {isColumnVisible('coordinator') && <td className="px-3 py-1.5 text-xs text-slate-600 dark:text-gray-300">{s.teacherId || "-"}</td>}
+                        {activeTab === "students" && isColumnVisible('status') && (
                           <td className="px-3 py-1.5 text-xs">
                             {s.loginStatus === 'active' ? (
                               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
@@ -1111,7 +1227,7 @@ export default function StudentDirectory() {
                             )}
                           </td>
                         )}
-                        <td className="px-3 py-1.5 text-xs">
+                        {isColumnVisible('credentialMail') && <td className="px-3 py-1.5 text-xs">
                           {s.credentialEmailStatus === 'sent' ? (
                             <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">Sent</span>
                           ) : s.credentialEmailStatus === 'pending' ? (
@@ -1123,8 +1239,8 @@ export default function StudentDirectory() {
                           ) : (
                             <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600 dark:bg-gray-700 dark:text-gray-300">Not sent</span>
                           )}
-                        </td>
-                        {activeTab === "students" && (
+                        </td>}
+                        {activeTab === "students" && isColumnVisible('actions') && (
                           <td className="px-3 py-1.5">
                             <div
                               ref={activeRowMenuId === studentId ? rowActionMenuRef : null}

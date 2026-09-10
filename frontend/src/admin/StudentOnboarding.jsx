@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { api } from "../utils/api";
 import { useActivityLogger } from "../hooks/useActivityLogger";
 import { useToast } from "../components/CustomToast";
-import { Upload, CheckCircle, AlertCircle, Plus, Loader2, FileText, Download, Users, BookOpen, Shield, ArrowRight, X } from "lucide-react";
+import { Upload, CheckCircle, AlertCircle, Plus, Loader2, FileText, Download, Users, BookOpen, Shield, ArrowRight, Mail, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 export default function StudentOnboarding() {
@@ -29,6 +29,8 @@ export default function StudentOnboarding() {
   const [namingBatch, setNamingBatch] = useState(null);
   const [batchName, setBatchName] = useState('');
   const [savingBatchName, setSavingBatchName] = useState(false);
+  const [sendCredentialsAfterUpload, setSendCredentialsAfterUpload] = useState(false);
+  const [showSingleConfirmation, setShowSingleConfirmation] = useState(false);
 
   // Email validation regex
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -293,34 +295,41 @@ export default function StudentOnboarding() {
       const updatedCount = data.results?.filter(r => r.status === 'updated').length || 0;
       const createdCount = data.results?.filter(r => r.status === 'created').length || 0;
       const existingCount = updatedCount; // existing students are the ones we updated
+      const uploadedIds = [...new Set((data.results || [])
+        .filter((result) => ['created', 'updated', 'linked_from_special'].includes(result.status) && result.id)
+        .map((result) => String(result.id)))];
+      let queuedCredentials = 0;
+      let credentialQueueFailed = false;
+      if (sendCredentialsAfterUpload && uploadedIds.length) {
+        try {
+          const mailResult = await api.resendStudentCredentials(uploadedIds);
+          queuedCredentials = mailResult.queued || 0;
+        } catch (mailError) {
+          credentialQueueFailed = true;
+          toast.error(mailError.message || 'Students were uploaded, but credential emails could not be queued.');
+        }
+      }
+      const mailSummary = !sendCredentialsAfterUpload
+        ? ''
+        : credentialQueueFailed
+          ? ' Credential emails could not be queued; students were still saved.'
+          : ` ${queuedCredentials} credential email(s) queued.`;
       
       if (updatedCount > 0 && createdCount === 0) {
-        const msg = `Updated ${updatedCount} existing student(s) with new CSV data. No new students were added.`;
+        const msg = `Updated ${updatedCount} existing student(s) with new CSV data. No new students were added.${mailSummary}`;
         setSuccess(msg);
         toast.success(msg);
         setUploadSuccess(true);
       } else if (updatedCount > 0 && createdCount > 0) {
-        const msg = `Successfully added ${createdCount} new student(s) and updated ${updatedCount} existing student(s). Credential emails can be sent manually from Student Data.`;
+        const msg = `Successfully added ${createdCount} new student(s) and updated ${updatedCount} existing student(s).${mailSummary}`;
         setSuccess(msg);
         toast.success(msg);
         setUploadSuccess(true);
-        // Change message after emails are sent
-        setTimeout(() => {
-          const followup = `Mails sent successfully - You can create events now`;
-          setSuccess(followup);
-          toast.success(followup);
-        }, 3000);
       } else {
-        const msg = `Successfully added ${createdCount} student(s) to the system. Credential emails can be sent manually from Student Data.`;
+        const msg = `Successfully added ${createdCount} student(s) to the system.${sendCredentialsAfterUpload ? mailSummary : ' Credential emails were not requested.'}`;
         setSuccess(msg);
         toast.success(msg);
         setUploadSuccess(true);
-        // Change message after emails are sent
-        setTimeout(() => {
-          const followup = `Mails sent successfully - You can create events now`;
-          setSuccess(followup);
-          toast.success(followup);
-        }, 3000);
       }
       
       // Log activity
@@ -388,26 +397,39 @@ export default function StudentOnboarding() {
 
   const handleSingleChange = (k, v) => setSingleForm((s) => ({ ...s, [k]: v }));
 
-  const submitSingle = async () => {
+  const submitSingle = () => {
     setSingleMsg('');
-    setSingleLoading(true);
     const { name, email, studentid, branch, teacherid, semester, course, college } = singleForm;
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!name || !email || !studentid || !branch || !teacherid || !semester || !course || !college) {
       setSingleMsg('Please fill in all required fields: Name, Email, Student ID, Branch, Course, College, Teacher ID, and Semester');
-      setSingleLoading(false);
       return;
     }
     if (!emailRegex.test(email)) {
       setSingleMsg('Please enter a valid email address');
-      setSingleLoading(false);
       return;
     }
+    setShowSingleConfirmation(true);
+  };
+
+  const performSingleCreate = async () => {
+    setShowSingleConfirmation(false);
+    setSingleLoading(true);
     try {
       // Password is auto-generated on backend
       const data = await api.createStudent(singleForm);
-      setSingleMsg(`Student ${data.name || data.email} has been successfully added to the server!`);
-      toast.success(`Student ${data.name || data.email} added successfully!`);
+      let mailMessage = 'Credential email was not requested.';
+      if (sendCredentialsAfterUpload && data.id) {
+        try {
+          const mailResult = await api.resendStudentCredentials([data.id]);
+          mailMessage = `${mailResult.queued || 0} credential email queued.`;
+        } catch (mailError) {
+          mailMessage = 'Student was saved, but the credential email could not be queued.';
+          toast.error(mailError.message || mailMessage);
+        }
+      }
+      setSingleMsg(`Student ${data.name || data.email} has been added. ${mailMessage}`);
+      toast.success(`Student ${data.name || data.email} added successfully. ${mailMessage}`);
       setTimeout(() => setSingleMsg(''), 4000);
       
       // Don't add to local students array since it's already uploaded to server
@@ -415,10 +437,10 @@ export default function StudentOnboarding() {
       setSingleForm({ name: '', email: '', studentid: '', branch: '', course: '', college: '', teacherid: '', semester: '', group: '' });
       
       // Log activity
-      logCreate('STUDENT', data._id, `Created student: ${data.name} (${data.email})`, {
+      logCreate('STUDENT', data.id, `Created student: ${singleForm.name} (${data.email})`, {
         studentId: data.studentid,
-        branch: data.branch,
-        semester: data.semester
+        branch: singleForm.branch,
+        semester: singleForm.semester
       });
     } catch (err) {
       const errorMessage = err.message || 'Failed to create student';
@@ -1000,11 +1022,24 @@ export default function StudentOnboarding() {
             <motion.div initial={{ opacity: 0, scale: 0.96, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
               <div className="flex items-start gap-3">
                 <span className="rounded-xl bg-emerald-50 p-2.5 text-emerald-600 dark:bg-emerald-950/40"><CheckCircle className="h-5 w-5" /></span>
-                <div><h2 className="text-lg font-bold text-slate-950 dark:text-white">{namingBatch.preUpload ? 'Name this bulk upload' : 'Save this bulk list'}</h2><p className="mt-1 text-sm text-slate-500 dark:text-gray-400">{namingBatch.preUpload ? 'Choose a clear list name before uploading students to the server.' : 'Give this student list a clear name so you can find and manage it later.'}</p></div>
+                <div><h2 className="text-lg font-bold text-slate-950 dark:text-white">{namingBatch.preUpload ? 'Confirm student upload' : 'Save this bulk list'}</h2><p className="mt-1 text-sm text-slate-500 dark:text-gray-400">{namingBatch.preUpload ? `Are you sure you want to upload these ${students.length} student records?` : 'Give this student list a clear name so you can find and manage it later.'}</p></div>
               </div>
               <label className="mt-5 block"><span className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-gray-300">Bulk list name</span><input autoFocus maxLength="120" value={batchName} onChange={(event) => setBatchName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') saveBatchName(); }} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white" /></label>
               <p className="mt-2 text-xs text-slate-400">Original file: {namingBatch.originalFileName}</p>
+              {namingBatch.preUpload && <label className="mt-4 flex cursor-pointer items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-800"><span className="flex items-center gap-3"><span className="rounded-lg bg-sky-100 p-2 text-sky-600 dark:bg-sky-950/50"><Mail className="h-4 w-4" /></span><span><span className="block text-sm font-semibold text-slate-800 dark:text-white">Send login credentials</span><span className="block text-xs text-slate-500 dark:text-gray-400">Queue one email for each eligible student</span></span></span><button type="button" role="switch" aria-checked={sendCredentialsAfterUpload} onClick={() => setSendCredentialsAfterUpload((value) => !value)} className={`relative h-6 w-11 rounded-full transition ${sendCredentialsAfterUpload ? 'bg-sky-600' : 'bg-slate-300 dark:bg-gray-600'}`}><span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${sendCredentialsAfterUpload ? 'left-5.5' : 'left-0.5'}`} /></button></label>}
               <div className="mt-6 flex justify-end gap-2"><button disabled={savingBatchName} onClick={() => setNamingBatch(null)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Cancel</button><button onClick={saveBatchName} disabled={!batchName.trim() || savingBatchName} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50">{savingBatchName && <Loader2 className="h-4 w-4 animate-spin" />}{namingBatch.preUpload ? (savingBatchName ? 'Uploading students...' : 'Confirm & upload') : 'Save & view bulk lists'}</button></div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showSingleConfirmation && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm">
+            <motion.div initial={{ opacity: 0, scale: 0.96, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+              <div className="flex items-start gap-3"><span className="rounded-xl bg-emerald-50 p-2.5 text-emerald-600 dark:bg-emerald-950/40"><CheckCircle className="h-5 w-5" /></span><div><h2 className="text-lg font-bold text-slate-950 dark:text-white">Confirm student creation</h2><p className="mt-1 text-sm text-slate-500 dark:text-gray-400">Are you sure you want to add <strong>{singleForm.name}</strong> ({singleForm.email})?</p></div></div>
+              <label className="mt-5 flex cursor-pointer items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-800"><span className="flex items-center gap-3"><Mail className="h-5 w-5 text-sky-600" /><span><span className="block text-sm font-semibold text-slate-800 dark:text-white">Send login credentials</span><span className="block text-xs text-slate-500 dark:text-gray-400">Queue the credential email after creation</span></span></span><button type="button" role="switch" aria-checked={sendCredentialsAfterUpload} onClick={() => setSendCredentialsAfterUpload((value) => !value)} className={`relative h-6 w-11 rounded-full transition ${sendCredentialsAfterUpload ? 'bg-sky-600' : 'bg-slate-300 dark:bg-gray-600'}`}><span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${sendCredentialsAfterUpload ? 'left-5.5' : 'left-0.5'}`} /></button></label>
+              <div className="mt-6 flex justify-end gap-2"><button type="button" onClick={() => setShowSingleConfirmation(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 dark:border-gray-700 dark:text-gray-300">Cancel</button><button type="button" onClick={performSingleCreate} className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700">Confirm & add</button></div>
             </motion.div>
           </motion.div>
         )}
