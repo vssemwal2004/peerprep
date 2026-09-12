@@ -9,8 +9,8 @@ import {
   CircleDot,
   Code2,
   FileCode2,
+  FilePenLine,
   HelpCircle,
-  LayoutDashboard,
   Library,
   ListChecks,
   Plus,
@@ -23,7 +23,6 @@ import { hasPermission } from '../coordinatorPermissions';
 import { api } from '../../utils/api';
 
 const AddQuestionToLibrary = lazy(() => import('../AddQuestionToLibrary'));
-const CompilerOverview = lazy(() => import('../compiler/CompilerOverview'));
 const CreateProblem = lazy(() => import('../compiler/CreateProblem'));
 const ProblemManagement = lazy(() => import('../compiler/ProblemManagement'));
 const CompilerAnalytics = lazy(() => import('../compiler/CompilerAnalytics'));
@@ -114,7 +113,7 @@ function CreateTypeDrawer({ onClose, onSelect, canCreateGeneral, canCreateCoding
 
           <div className="mt-6 flex gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs leading-5 text-slate-600 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-300">
             <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
-            Every published question is saved here and can be reused across assessments.
+            Published questions are ready to reuse. Unfinished work stays safely available under Drafts.
           </div>
         </div>
       </aside>
@@ -130,20 +129,22 @@ export default function LibraryWorkspace({ view = 'questions' }) {
   const codingProblemId = routeItemId;
   const [searchParams] = useSearchParams();
   const [typeDrawerOpen, setTypeDrawerOpen] = useState(false);
-  const [questionCounts, setQuestionCounts] = useState({ all: 0, coding: 0, mcq: 0, short: 0, one_line: 0 });
+  const [questionCounts, setQuestionCounts] = useState({ all: 0, draft: 0, coding: 0, mcq: 0, short: 0, one_line: 0 });
   const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
   const libraryRoot = `${rolePrefix}/library`;
   const selectedType = searchParams.get('type') || 'all';
+  const selectedStatus = searchParams.get('status') || '';
   const mode = searchParams.get('mode') || 'library';
   const canViewQuestions = hasPermission(user, 'coordinator.library.view');
   const canCreateGeneral = hasPermission(user, 'coordinator.library.create');
-  const canViewCoding = hasPermission(user, 'coordinator.compiler.view');
   const canCreateCoding = hasPermission(user, 'coordinator.compiler.create');
   const canManageCoding = hasPermission(user, 'coordinator.compiler.manage');
   const canViewCodingAnalytics = hasPermission(user, 'coordinator.compiler.analytics');
 
-  const updateQuestionCounts = useCallback((entries = []) => {
-    const next = { all: 0, coding: 0, mcq: 0, short: 0, one_line: 0 };
+  const updateQuestionCounts = useCallback((payload = []) => {
+    const entries = Array.isArray(payload) ? payload : (payload.categories || []);
+    const statuses = Array.isArray(payload) ? [] : (payload.statuses || []);
+    const next = { all: 0, draft: 0, coding: 0, mcq: 0, short: 0, one_line: 0 };
     let explicitAllCount = null;
     let calculatedAllCount = 0;
     entries.forEach((entry) => {
@@ -156,6 +157,7 @@ export default function LibraryWorkspace({ view = 'questions' }) {
       }
     });
     next.all = explicitAllCount ?? calculatedAllCount;
+    next.draft = Number(statuses.find((entry) => entry.status === 'draft')?.count) || 0;
     setQuestionCounts(next);
   }, []);
 
@@ -164,7 +166,10 @@ export default function LibraryWorkspace({ view = 'questions' }) {
     let active = true;
     api.listLibraryQuestions({ page: 1, limit: 1, skipCache: true })
       .then((data) => {
-        if (active) updateQuestionCounts(data.filters?.categories || []);
+        if (active) updateQuestionCounts({
+          categories: data.filters?.categories || [],
+          statuses: data.filters?.statuses || [],
+        });
       })
       .catch(() => {});
     return () => { active = false; };
@@ -182,7 +187,6 @@ export default function LibraryWorkspace({ view = 'questions' }) {
   }, [mode, searchParams]);
 
   const codingItems = [
-    canViewCoding && { id: 'coding-overview', label: 'Coding overview', Icon: LayoutDashboard, to: `${libraryRoot}/coding/overview` },
     canManageCoding && { id: 'coding-problems', label: 'Problem management', Icon: FileCode2, to: `${libraryRoot}/coding/problems` },
     canViewCodingAnalytics && { id: 'coding-analytics', label: 'Coding analytics', Icon: BarChart3, to: `${libraryRoot}/coding/analytics` },
   ].filter(Boolean);
@@ -214,13 +218,13 @@ export default function LibraryWorkspace({ view = 'questions' }) {
     return () => { document.body.style.overflow = previousOverflow; };
   }, [isDrawerView, typeDrawerOpen]);
 
-  const title = view === 'coding-overview'
-    ? 'Coding overview'
-    : view === 'coding-problems'
+  const title = view === 'coding-problems'
       ? 'Problem management'
       : view === 'coding-analytics'
         ? 'Coding analytics'
-        : 'Question library';
+        : view === 'questions' && selectedStatus === 'draft'
+          ? 'Draft questions'
+          : 'Question library';
   const selectedQuestionLabel = questionTypes.find((item) => item.type === selectedType)?.label || 'Question';
   const drawerTitle = view === 'create-question'
     ? `Create ${selectedQuestionLabel.toLowerCase()} question`
@@ -233,7 +237,6 @@ export default function LibraryWorkspace({ view = 'questions' }) {
         : 'Create coding problem';
 
   const renderMainContent = () => {
-    if (view === 'coding-overview') return <CompilerOverview />;
     if (view === 'coding-problems') return <ProblemManagement />;
     if (view === 'coding-analytics') return <CompilerAnalytics />;
     return <QuestionLibrary embedded onCategoryCountsChange={updateQuestionCounts} />;
@@ -267,7 +270,7 @@ export default function LibraryWorkspace({ view = 'questions' }) {
               <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Question bank</p>
               <nav className="space-y-1">
                 {questionTypes.map(({ type, label, Icon }) => {
-                  const active = view === 'questions' && selectedType === type;
+                  const active = view === 'questions' && !selectedStatus && selectedType === type;
                   const to = type === 'all' ? libraryRoot : `${libraryRoot}?type=${type}`;
                   return (
                     <Link key={type} to={to} className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${active ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300' : 'text-slate-600 hover:bg-white hover:text-slate-950 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'}`}>
@@ -277,6 +280,11 @@ export default function LibraryWorkspace({ view = 'questions' }) {
                     </Link>
                   );
                 })}
+                <Link to={`${libraryRoot}?status=draft`} className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${view === 'questions' && selectedStatus === 'draft' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' : 'text-slate-600 hover:bg-white hover:text-slate-950 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'}`}>
+                  <FilePenLine className="h-4 w-4" />
+                  <span className="min-w-0 flex-1 truncate">Drafts</span>
+                  <span className={`shrink-0 text-[11px] tabular-nums ${view === 'questions' && selectedStatus === 'draft' ? 'text-amber-700 dark:text-amber-300' : 'text-slate-400 dark:text-gray-500'}`}>({questionCounts.draft.toLocaleString()})</span>
+                </Link>
               </nav>
             </div>}
 
@@ -300,9 +308,9 @@ export default function LibraryWorkspace({ view = 'questions' }) {
         </aside>
 
         <main className="min-w-0">
-          <nav className="flex gap-2 overflow-x-auto border-b border-slate-200 bg-slate-50 px-4 py-3 md:hidden dark:border-gray-800 dark:bg-gray-950/40" aria-label="Library sections">
+          {view !== 'coding-analytics' && <nav className="flex gap-2 overflow-x-auto border-b border-slate-200 bg-slate-50 px-4 py-3 md:hidden dark:border-gray-800 dark:bg-gray-950/40" aria-label="Library sections">
             {canViewQuestions && questionTypes.map(({ type, label, Icon }) => {
-              const active = view === 'questions' && selectedType === type;
+              const active = view === 'questions' && !selectedStatus && selectedType === type;
               const to = type === 'all' ? libraryRoot : `${libraryRoot}?type=${type}`;
               return (
                 <Link key={type} to={to} className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${active ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300' : 'bg-white text-slate-600 dark:bg-gray-900 dark:text-gray-300'}`}>
@@ -310,13 +318,16 @@ export default function LibraryWorkspace({ view = 'questions' }) {
                 </Link>
               );
             })}
+            {canViewQuestions && <Link to={`${libraryRoot}?status=draft`} className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${view === 'questions' && selectedStatus === 'draft' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' : 'bg-white text-slate-600 dark:bg-gray-900 dark:text-gray-300'}`}>
+              <FilePenLine className="h-4 w-4" /><span>Drafts</span><span className="text-[11px] tabular-nums text-slate-400">({questionCounts.draft.toLocaleString()})</span>
+            </Link>}
             {codingItems.map(({ id, label, Icon, to }) => (
               <Link key={id} to={to} className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${view === id ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300' : 'bg-white text-slate-600 dark:bg-gray-900 dark:text-gray-300'}`}>
                 <Icon className="h-4 w-4" />{label}
               </Link>
             ))}
-          </nav>
-          <header className="sticky top-[var(--app-navbar-height,5rem)] z-20 border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur sm:px-6 lg:px-8 dark:border-gray-800 dark:bg-gray-900/95">
+          </nav>}
+          {view !== 'coding-analytics' && <header className="sticky top-[var(--app-navbar-height,5rem)] z-20 border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur sm:px-6 lg:px-8 dark:border-gray-800 dark:bg-gray-900/95">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <div className="flex items-center gap-2 text-xs font-medium text-slate-400"><BookOpenCheck className="h-3.5 w-3.5" /> Library <ChevronRight className="h-3 w-3" /> <span className="text-slate-600 dark:text-gray-300">{title}</span></div>
@@ -326,9 +337,9 @@ export default function LibraryWorkspace({ view = 'questions' }) {
                 <Plus className="h-4 w-4" /> Create question
               </button>}
             </div>
-          </header>
+          </header>}
 
-          <div className="px-4 py-5 sm:px-6 lg:px-8">
+          <div className={view === 'coding-analytics' ? 'px-4 py-4 sm:px-6 lg:px-7' : 'px-4 py-5 sm:px-6 lg:px-8'}>
             <Suspense fallback={<LoadingPanel />}>
               {isDrawerView ? <LibraryBackdrop /> : renderMainContent()}
             </Suspense>

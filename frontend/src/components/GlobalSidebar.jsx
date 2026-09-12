@@ -25,6 +25,7 @@ import {
   UserCog,
   ShieldCheck,
   ListChecks,
+  Database,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { hasPermission } from '../admin/coordinatorPermissions';
@@ -207,6 +208,7 @@ const buildNavItems = (role = 'admin') => {
       label: 'Settings',
       icon: Settings,
       items: [
+        { label: 'Master Data', to: '/admin/settings/master-data', icon: Database },
         { label: 'Email Templates', to: '/admin/settings/email-templates', icon: Mail },
         { label: 'Promote Students', to: '/admin/settings/promote-students', icon: GraduationCap },
       ],

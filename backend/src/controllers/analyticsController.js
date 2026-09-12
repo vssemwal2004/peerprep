@@ -1,7 +1,10 @@
+import mongoose from 'mongoose';
 import Problem from '../models/Problem.js';
 import Submission from '../models/Submission.js';
 import User from '../models/User.js';
 import Assessment from '../models/Assessment.js';
+import StudentUploadBatch from '../models/StudentUploadBatch.js';
+import MasterData from '../models/MasterData.js';
 import { HttpError } from '../utils/errors.js';
 import { sanitizeSearchQuery, validateObjectId } from '../utils/validators.js';
 
@@ -57,17 +60,17 @@ function buildSubmissionMatch({ studentId = '', problemId = '', assessmentId = '
 
   if (studentId) {
     ensureObjectId(studentId, 'Student ID');
-    match.user = studentId;
+    match.user = new mongoose.Types.ObjectId(studentId);
   }
 
   if (problemId) {
     ensureObjectId(problemId, 'Problem ID');
-    match.problem = problemId;
+    match.problem = new mongoose.Types.ObjectId(problemId);
   }
 
   if (assessmentId) {
     ensureObjectId(assessmentId, 'Assessment ID');
-    match.assessmentId = assessmentId;
+    match.assessmentId = new mongoose.Types.ObjectId(assessmentId);
   }
 
   if (dateFrom || dateTo) {
@@ -77,6 +80,31 @@ function buildSubmissionMatch({ studentId = '', problemId = '', assessmentId = '
   }
 
   return match;
+}
+
+function parseMultiFilter(value) {
+  const values = Array.isArray(value) ? value : [value];
+  return [...new Set(values
+    .flatMap((item) => String(item || '').split(','))
+    .map((item) => item.trim())
+    .filter(Boolean))];
+}
+
+function parseObjectIdFilter(value, fieldName) {
+  return parseMultiFilter(value).map((id) => {
+    ensureObjectId(id, fieldName);
+    return new mongoose.Types.ObjectId(id);
+  });
+}
+
+function uniqueTextValues(values) {
+  const unique = new Map();
+  values.forEach((value) => {
+    const display = String(value || '').trim();
+    const key = display.toLowerCase();
+    if (display && !unique.has(key)) unique.set(key, display);
+  });
+  return [...unique.values()].sort((left, right) => left.localeCompare(right));
 }
 
 function buildDateSeries(days, aggregation) {
@@ -110,7 +138,7 @@ function buildDateSeriesFromRange(startDate, endDate, aggregation) {
 
 async function getControlledStudents() {
   return User.find({ role: 'student' })
-    .select('_id name email studentId semester group course branch college createdAt')
+    .select('_id name email studentId semester group course branch college uploadBatchIds createdAt')
     .sort({ name: 1 })
     .lean();
 }
@@ -520,20 +548,146 @@ export async function getAdminCompilerOverview(req, res) {
 
 export async function getAdminCompilerAnalytics(req, res) {
   const { dateFrom, dateTo } = parseDateRange(req.query);
-  const studentId = String(req.query.studentId || '').trim();
-  const problemId = String(req.query.problemId || '').trim();
-  const submissionMatch = buildSubmissionMatch({ studentId, problemId, dateFrom, dateTo });
-  const controlledStudents = await getControlledStudents();
-  const controlledStudentIds = controlledStudents.map((student) => student._id);
-
-  const problems = await getControlledProblems(req);
-  if (req?.user?.role === 'coordinator') {
-    submissionMatch.problem = { $in: problems.map((p) => p._id) };
+  const selectedStudentIds = parseMultiFilter(req.query.studentId);
+  const selectedProblemIds = parseMultiFilter(req.query.problemId);
+  const selectedAssessmentIds = parseMultiFilter(req.query.assessmentId);
+  const selectedSemesters = parseMultiFilter(req.query.semester).map(Number);
+  const selectedGroups = parseMultiFilter(req.query.group).map((item) => item.toLowerCase());
+  const selectedBranches = parseMultiFilter(req.query.branch).map((item) => item.toLowerCase());
+  const selectedCourses = parseMultiFilter(req.query.course).map((item) => item.toLowerCase());
+  const selectedColleges = parseMultiFilter(req.query.college).map((item) => item.toLowerCase());
+  const selectedUploadBatchIds = parseMultiFilter(req.query.uploadBatchId);
+  const selectedTopics = parseMultiFilter(req.query.topic).map((item) => item.toLowerCase());
+  const selectedDifficulties = parseMultiFilter(req.query.difficulty).map((item) => item.toLowerCase());
+  const selectedProblemStatuses = parseMultiFilter(req.query.problemStatus).map((item) => item.toLowerCase());
+  const selectedLanguages = parseMultiFilter(req.query.language).map((item) => item.toLowerCase());
+  if (selectedSemesters.some((item) => !Number.isInteger(item) || item < 1 || item > 8)) {
+    throw new HttpError(400, 'Every semester must be between 1 and 8.');
   }
 
-  const [studentPerformanceRows, studentLastActivity, problemAnalysisAgg, submissionTimelineAgg, difficultyAgg, statusAgg] = await Promise.all([
+  const baseSubmissionMatch = buildSubmissionMatch({ dateFrom, dateTo });
+  if (selectedAssessmentIds.length) {
+    baseSubmissionMatch.assessmentId = { $in: parseObjectIdFilter(selectedAssessmentIds, 'Assessment ID') };
+  }
+  if (selectedLanguages.length) baseSubmissionMatch.language = { $in: selectedLanguages };
+  const [allControlledStudents, allControlledProblems, assessments, uploadBatches, masterData] = await Promise.all([
+    getControlledStudents(),
+    getControlledProblems(req),
+    Assessment.find(req?.user?.role === 'coordinator' ? { createdBy: req.user._id, 'sections.type': 'coding' } : { 'sections.type': 'coding' })
+      .select('_id title lifecycleStatus startTime createdAt targetType assignedStudents draftTargetMode draftAssignedStudents sections.questions.problemId sections.questions.coding.problemId sections.questions.problemDataSnapshot._id sections.questions.coding.problemData._id')
+      .sort({ createdAt: -1 })
+      .lean(),
+    StudentUploadBatch.find(req?.user?.role === 'coordinator' ? { uploadedBy: req.user._id } : {})
+      .select('_id name originalFileName createdAt studentIds')
+      .sort({ createdAt: -1 })
+      .lean(),
+    MasterData.find({ isActive: true })
+      .select('_id category name code order')
+      .sort({ category: 1, order: 1, name: 1 })
+      .lean(),
+  ]);
+
+  const masterValues = (category) => masterData
+    .filter((entry) => entry.category === category)
+    .map((entry) => entry.name);
+  const availableSemesters = masterValues('semester').map(Number).filter(Number.isInteger).sort((a, b) => a - b);
+  const availableGroups = uniqueTextValues(allControlledStudents.map((student) => student.group));
+  const availableBranches = masterValues('branch');
+  const availableCourses = masterValues('course');
+  const availableColleges = masterValues('campus');
+  const availableDifficulties = [...new Set(allControlledProblems.map((problem) => String(problem.difficulty || '').trim()).filter(Boolean))];
+  const availableProblemStatuses = [...new Set(allControlledProblems.map((problem) => String(problem.status || '').trim()).filter(Boolean))];
+  const availableTopics = [...new Set(allControlledProblems.flatMap((problem) => (
+    (problem.tags || []).map((tag) => String(tag || '').trim()).filter(Boolean)
+  )))].sort((a, b) => a.localeCompare(b));
+
+  const studentIdentityMap = new Map();
+  allControlledStudents.forEach((student) => {
+    studentIdentityMap.set(String(student._id), String(student._id));
+    if (student.email) studentIdentityMap.set(String(student.email).trim().toLowerCase(), String(student._id));
+    if (student.studentId) studentIdentityMap.set(String(student.studentId).trim().toLowerCase(), String(student._id));
+  });
+  const resolveDraftStudentId = (student) => {
+    const identities = typeof student === 'object' && student !== null
+      ? [student._id, student.id, student.studentId, student.email]
+      : [student];
+    for (const identity of identities) {
+      const normalized = String(identity || '').trim().toLowerCase();
+      if (normalized && studentIdentityMap.has(normalized)) return studentIdentityMap.get(normalized);
+    }
+    return null;
+  };
+  const assessmentStudentIds = (assessment) => {
+    if (assessment.lifecycleStatus === 'draft') {
+      if (assessment.draftTargetMode === 'all' || assessment.targetType === 'all') return null;
+      return [...new Set((assessment.draftAssignedStudents || [])
+        .map(resolveDraftStudentId)
+        .filter(Boolean))];
+    }
+    if (assessment.targetType !== 'selected') return null;
+    return (assessment.assignedStudents || []).map(String);
+  };
+  const selectedAssessments = selectedAssessmentIds.length
+    ? assessments.filter((assessment) => selectedAssessmentIds.includes(String(assessment._id)))
+    : [];
+  let assessmentStudentScope = selectedAssessmentIds.length ? new Set() : null;
+  if (selectedAssessments.length) {
+    const scopedIds = new Set();
+    let includesAllStudents = false;
+    selectedAssessments.forEach((assessment) => {
+      const ids = assessmentStudentIds(assessment);
+      if (ids === null) includesAllStudents = true;
+      else ids.forEach((id) => scopedIds.add(id));
+    });
+    if (!includesAllStudents) assessmentStudentScope = scopedIds;
+  }
+  const assessmentProblemIds = (assessment) => [...new Set(
+    (assessment.sections || []).flatMap((section) => (section.questions || []).map((question) => (
+      question?.problemId
+      || question?.coding?.problemId
+      || question?.problemDataSnapshot?._id
+      || question?.coding?.problemData?._id
+    )))
+      .filter((problemId) => mongoose.isValidObjectId(problemId))
+      .map(String),
+  )];
+  const assessmentProblemScope = selectedAssessmentIds.length ? new Set() : null;
+  selectedAssessments.forEach((assessment) => {
+    assessmentProblemIds(assessment).forEach((problemId) => assessmentProblemScope.add(problemId));
+  });
+
+  const cohortStudents = allControlledStudents.filter((student) => (
+    (!assessmentStudentScope || assessmentStudentScope.has(String(student._id)))
+    && (!selectedStudentIds.length || selectedStudentIds.includes(String(student._id)))
+    && (!selectedSemesters.length || selectedSemesters.includes(Number(student.semester)))
+    && (!selectedGroups.length || selectedGroups.includes(String(student.group || '').trim().toLowerCase()))
+    && (!selectedBranches.length || selectedBranches.includes(String(student.branch || '').trim().toLowerCase()))
+    && (!selectedCourses.length || selectedCourses.includes(String(student.course || '').trim().toLowerCase()))
+    && (!selectedColleges.length || selectedColleges.includes(String(student.college || '').trim().toLowerCase()))
+    && (!selectedUploadBatchIds.length || (student.uploadBatchIds || []).some((id) => selectedUploadBatchIds.includes(String(id))))
+  ));
+  const reportingStudents = cohortStudents;
+  const reportingStudentIds = reportingStudents.map((student) => student._id);
+
+  const topicProblems = allControlledProblems.filter((problem) => (
+    (!assessmentProblemScope || assessmentProblemScope.has(String(problem._id)))
+    && (!selectedTopics.length || (problem.tags || []).some((tag) => selectedTopics.includes(String(tag || '').trim().toLowerCase())))
+    && (!selectedDifficulties.length || selectedDifficulties.includes(String(problem.difficulty || '').trim().toLowerCase()))
+    && (!selectedProblemStatuses.length || selectedProblemStatuses.includes(String(problem.status || '').trim().toLowerCase()))
+  ));
+  const problems = selectedProblemIds.length
+    ? topicProblems.filter((problem) => selectedProblemIds.includes(String(problem._id)))
+    : topicProblems;
+  const problemIds = problems.map((problem) => problem._id);
+  const submissionMatch = {
+    ...baseSubmissionMatch,
+    user: { $in: reportingStudentIds },
+    problem: { $in: problemIds },
+  };
+
+  const [studentPerformanceRows, studentLastActivity, problemAnalysisAgg, submissionTimelineAgg, difficultyAgg, statusAgg, topicStudentProblemAgg, languageAgg, assessmentAgg] = await Promise.all([
     Submission.aggregate([
-      { $match: { ...submissionMatch, user: studentId ? submissionMatch.user : { $in: controlledStudentIds } } },
+      { $match: submissionMatch },
       {
         $group: {
           _id: '$user',
@@ -567,7 +721,7 @@ export async function getAdminCompilerAnalytics(req, res) {
       { $sort: { totalAttempts: -1, lastActive: -1, name: 1 } },
     ]),
     Submission.aggregate([
-      { $match: { ...submissionMatch, user: studentId ? submissionMatch.user : { $in: controlledStudentIds } } },
+      { $match: submissionMatch },
       {
         $group: {
           _id: '$user',
@@ -576,7 +730,7 @@ export async function getAdminCompilerAnalytics(req, res) {
       },
     ]),
     Submission.aggregate([
-      { $match: { ...submissionMatch, user: studentId ? submissionMatch.user : { $in: controlledStudentIds } } },
+      { $match: submissionMatch },
       {
         $group: {
           _id: '$problem',
@@ -608,7 +762,7 @@ export async function getAdminCompilerAnalytics(req, res) {
       { $sort: { totalAttempts: -1, title: 1 } },
     ]),
     Submission.aggregate([
-      { $match: { ...submissionMatch, user: studentId ? submissionMatch.user : { $in: controlledStudentIds } } },
+      { $match: submissionMatch },
       {
         $group: {
           _id: {
@@ -623,7 +777,7 @@ export async function getAdminCompilerAnalytics(req, res) {
       { $sort: { _id: 1 } },
     ]),
     Submission.aggregate([
-      { $match: { ...submissionMatch, user: studentId ? submissionMatch.user : { $in: controlledStudentIds } } },
+      { $match: submissionMatch },
       {
         $group: {
           _id: '$problem',
@@ -645,7 +799,7 @@ export async function getAdminCompilerAnalytics(req, res) {
       },
     ]),
     Submission.aggregate([
-      { $match: { ...submissionMatch, user: studentId ? submissionMatch.user : { $in: controlledStudentIds } } },
+      { $match: submissionMatch },
       {
         $group: {
           _id: {
@@ -662,18 +816,57 @@ export async function getAdminCompilerAnalytics(req, res) {
       },
       { $sort: { count: -1 } },
     ]),
+    Submission.aggregate([
+      { $match: submissionMatch },
+      {
+        $group: {
+          _id: { user: '$user', problem: '$problem' },
+          attempts: { $sum: 1 },
+          accepted: { $max: { $cond: [{ $eq: ['$status', 'AC'] }, 1, 0] } },
+        },
+      },
+    ]),
+    Submission.aggregate([
+      { $match: submissionMatch },
+      {
+        $group: {
+          _id: '$language',
+          attempts: { $sum: 1 },
+          accepted: { $sum: { $cond: [{ $eq: ['$status', 'AC'] }, 1, 0] } },
+        },
+      },
+      { $sort: { attempts: -1, _id: 1 } },
+    ]),
+    Submission.aggregate([
+      { $match: submissionMatch },
+      {
+        $group: {
+          _id: '$assessmentId',
+          attempts: { $sum: 1 },
+          accepted: { $sum: { $cond: [{ $eq: ['$status', 'AC'] }, 1, 0] } },
+          students: { $addToSet: '$user' },
+        },
+      },
+      { $sort: { attempts: -1 } },
+    ]),
   ]);
 
   const lastActivityMap = new Map(studentLastActivity.map((entry) => [String(entry._id), entry.lastActive]));
   const studentPerformanceMap = new Map(studentPerformanceRows.map((row) => [String(row._id), row]));
 
-  const studentPerformance = controlledStudents
-    .filter((student) => !studentId || String(student._id) === studentId)
+  const studentPerformance = reportingStudents
     .map((student) => {
       const row = studentPerformanceMap.get(String(student._id));
       return {
         studentId: student._id,
         name: student.name || 'Student',
+        email: student.email || '',
+        studentCode: student.studentId || '',
+        semester: student.semester || null,
+        group: student.group || '',
+        branch: student.branch || '',
+        course: student.course || '',
+        college: student.college || '',
         totalAttempts: row?.totalAttempts || 0,
         problemsSolved: row?.problemsSolved || 0,
         acceptanceRate: round(row?.acceptanceRate || 0),
@@ -684,19 +877,81 @@ export async function getAdminCompilerAnalytics(req, res) {
 
   const problemAggMap = new Map(problemAnalysisAgg.map((entry) => [String(entry._id), entry]));
   const problemAnalysis = problems
-    .filter((problem) => !problemId || String(problem._id) === problemId)
     .map((problem) => {
       const row = problemAggMap.get(String(problem._id));
       return {
         problemId: problem._id,
         title: problem.title,
         difficulty: problem.difficulty,
+        topics: problem.tags || [],
         totalAttempts: row?.totalAttempts || 0,
         studentsSolved: row?.studentsSolved || 0,
         failureRate: round(row?.failureRate || 0),
       };
     })
     .sort((left, right) => right.totalAttempts - left.totalAttempts || String(left.title).localeCompare(String(right.title)));
+
+  const problemById = new Map(problems.map((problem) => [String(problem._id), problem]));
+  const topicStats = new Map();
+  const getIncludedTopics = (problem) => {
+    const tags = (problem.tags || []).map((tag) => String(tag || '').trim()).filter(Boolean);
+    if (selectedTopics.length) {
+      return tags.filter((tag) => selectedTopics.includes(tag.toLowerCase()));
+    }
+    return tags.length ? tags : ['Uncategorized'];
+  };
+  const ensureTopic = (topicName) => {
+    if (!topicStats.has(topicName)) {
+      topicStats.set(topicName, {
+        topic: topicName,
+        problemIds: new Set(),
+        attemptedStudents: new Set(),
+        solvedStudents: new Set(),
+        attemptedPairs: 0,
+        solvedPairs: 0,
+        attempts: 0,
+      });
+    }
+    return topicStats.get(topicName);
+  };
+
+  problems.forEach((problem) => {
+    getIncludedTopics(problem).forEach((tag) => ensureTopic(tag).problemIds.add(String(problem._id)));
+  });
+
+  topicStudentProblemAgg.forEach((entry) => {
+    const problem = problemById.get(String(entry._id?.problem || ''));
+    if (!problem) return;
+    getIncludedTopics(problem).forEach((tag) => {
+      const stats = ensureTopic(tag);
+      const userKey = String(entry._id?.user || '');
+      stats.attemptedStudents.add(userKey);
+      stats.attemptedPairs += 1;
+      stats.attempts += Number(entry.attempts || 0);
+      if (entry.accepted) {
+        stats.solvedStudents.add(userKey);
+        stats.solvedPairs += 1;
+      }
+    });
+  });
+
+  const cohortSize = reportingStudents.length;
+  const topicMastery = [...topicStats.values()]
+    .map((stats) => {
+      const possibleStudentProblemPairs = cohortSize * stats.problemIds.size;
+      return {
+        topic: stats.topic,
+        problemCount: stats.problemIds.size,
+        attempts: stats.attempts,
+        attemptedStudents: stats.attemptedStudents.size,
+        solvedStudents: stats.solvedStudents.size,
+        knowledgeRate: cohortSize > 0 ? round((stats.solvedStudents.size / cohortSize) * 100) : 0,
+        masteryRate: possibleStudentProblemPairs > 0 ? round((stats.solvedPairs / possibleStudentProblemPairs) * 100) : 0,
+        participationRate: cohortSize > 0 ? round((stats.attemptedStudents.size / cohortSize) * 100) : 0,
+        successRate: stats.attemptedPairs > 0 ? round((stats.solvedPairs / stats.attemptedPairs) * 100) : 0,
+      };
+    })
+    .sort((left, right) => right.knowledgeRate - left.knowledgeRate || right.attempts - left.attempts || left.topic.localeCompare(right.topic));
 
   const difficultyChart = ['Easy', 'Medium', 'Hard'].map((difficulty) => {
     const row = difficultyAgg.find((entry) => entry._id === difficulty);
@@ -721,29 +976,117 @@ export async function getAdminCompilerAnalytics(req, res) {
     ? buildDateSeriesFromRange(dateFrom, new Date(Math.min(dateTo.getTime(), dateFrom.getTime() + (89 * 24 * 60 * 60 * 1000))), submissionTimelineAgg)
     : buildDateSeries(30, submissionTimelineAgg);
 
+  const assessmentTitleMap = new Map(assessments.map((assessment) => [String(assessment._id), assessment.title || 'Untitled assessment']));
+  const assessmentPerformance = assessmentAgg.map((entry) => ({
+    assessmentId: entry._id || '',
+    title: entry._id ? (assessmentTitleMap.get(String(entry._id)) || 'Deleted assessment') : 'Practice / Library',
+    attempts: entry.attempts || 0,
+    activeStudents: Array.isArray(entry.students) ? entry.students.length : 0,
+    successRate: entry.attempts > 0 ? round((entry.accepted / entry.attempts) * 100) : 0,
+  }));
+  const acceptedAttempts = statusAgg.find((entry) => entry._id === 'Accepted')?.count || 0;
+  const totalAttempts = statusAgg.reduce((sum, entry) => sum + Number(entry.count || 0), 0);
+  const averageMastery = topicMastery.length
+    ? round(topicMastery.reduce((sum, entry) => sum + entry.masteryRate, 0) / topicMastery.length)
+    : 0;
+
   res.json({
+    summary: {
+      cohortSize,
+      activeStudents: studentPerformance.filter((student) => student.totalAttempts > 0).length,
+      totalAttempts,
+      acceptedAttempts,
+      acceptanceRate: totalAttempts > 0 ? round((acceptedAttempts / totalAttempts) * 100) : 0,
+      problemsCovered: problems.length,
+      topicsCovered: topicMastery.length,
+      averageMastery,
+    },
     filters: {
-      students: controlledStudents.map((student) => ({
+      students: allControlledStudents.map((student) => ({
         _id: student._id,
         name: student.name || 'Student',
+        email: student.email || '',
+        studentId: student.studentId || '',
+        semester: student.semester || null,
+        group: student.group || '',
+        branch: student.branch || '',
+        course: student.course || '',
+        college: student.college || '',
+        uploadBatchIds: (student.uploadBatchIds || []).map(String),
       })),
-      problems: problems.map((problem) => ({
+      problems: allControlledProblems.map((problem) => ({
         _id: problem._id,
         title: problem.title,
+        tags: problem.tags || [],
+        difficulty: problem.difficulty || 'Easy',
+        status: problem.status || 'draft',
+      })),
+      assessments: assessments.map((assessment) => {
+        const studentIds = assessmentStudentIds(assessment);
+        return {
+          _id: assessment._id,
+          title: assessment.title || 'Untitled assessment',
+          status: assessment.lifecycleStatus || 'published',
+          targetType: assessment.targetType || 'all',
+          studentIds,
+          studentCount: studentIds === null ? allControlledStudents.length : studentIds.length,
+          problemIds: assessmentProblemIds(assessment),
+        };
+      }),
+      semesters: availableSemesters,
+      groups: availableGroups,
+      branches: availableBranches,
+      courses: availableCourses,
+      colleges: availableColleges,
+      topics: availableTopics,
+      difficulties: availableDifficulties,
+      problemStatuses: availableProblemStatuses,
+      languages: ['c', 'cpp', 'java', 'javascript', 'python'],
+      masterData: masterData.map((entry) => ({
+        _id: entry._id,
+        category: entry.category,
+        name: entry.name,
+        code: entry.code || '',
+        order: entry.order || 0,
+      })),
+      uploadBatches: uploadBatches.map((batch) => ({
+        _id: batch._id,
+        name: batch.name,
+        originalFileName: batch.originalFileName,
+        createdAt: batch.createdAt,
+        studentCount: Array.isArray(batch.studentIds) ? batch.studentIds.length : 0,
       })),
       applied: {
-        studentId: studentId || '',
-        problemId: problemId || '',
+        studentIds: selectedStudentIds,
+        problemIds: selectedProblemIds,
+        assessmentIds: selectedAssessmentIds,
+        semesters: selectedSemesters,
+        groups: parseMultiFilter(req.query.group),
+        branches: parseMultiFilter(req.query.branch),
+        courses: parseMultiFilter(req.query.course),
+        colleges: parseMultiFilter(req.query.college),
+        uploadBatchIds: selectedUploadBatchIds,
+        topics: parseMultiFilter(req.query.topic),
+        difficulties: parseMultiFilter(req.query.difficulty),
+        problemStatuses: parseMultiFilter(req.query.problemStatus),
+        languages: selectedLanguages,
         dateFrom: dateFrom ? dateFrom.toISOString().slice(0, 10) : '',
         dateTo: dateTo ? dateTo.toISOString().slice(0, 10) : '',
       },
     },
     studentPerformance,
     problemAnalysis,
+    topicMastery,
+    assessmentPerformance,
     charts: {
       submissionsOverTime: lineChart,
       difficultyVsSuccessRate: difficultyChart,
       verdictDistribution: pieChart,
+      languageDistribution: languageAgg.map((entry) => ({
+        language: entry._id || 'unknown',
+        attempts: entry.attempts || 0,
+        successRate: entry.attempts > 0 ? round((entry.accepted / entry.attempts) * 100) : 0,
+      })),
     },
   });
 }

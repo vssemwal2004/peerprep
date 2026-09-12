@@ -8,6 +8,11 @@ import { enqueueMailJobs } from '../services/mailQueueService.js';
 import crypto from 'crypto';
 import StudentUploadBatch from '../models/StudentUploadBatch.js';
 import StudentActivity from '../models/StudentActivity.js';
+import {
+  canonicalizeStudentMasterFields,
+  loadStudentMasterMaps,
+  resolveStudentMasterFields,
+} from '../services/masterDataService.js';
 
 // Generate random password (7-8 characters)
 function generateRandomPassword() {
@@ -583,6 +588,7 @@ export async function checkStudentsCsv(req, res) {
     ...sanitizeCsvRow(normalizeRow(r)), 
     __row: idx + 2 
   })); // header is line 1
+  const masterMaps = await loadStudentMasterMaps();
   const emails = normalizedRows.map((r) => r.email).filter(Boolean);
   const studentIds = normalizedRows.map((r) => r.studentid).filter(Boolean);
 
@@ -610,7 +616,7 @@ export async function checkStudentsCsv(req, res) {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   for (const row of normalizedRows) {
-    const { course, name, email, studentid, password, branch, college, teacherid } = row;
+    const { name, email, studentid } = row;
 
     // Skip completely empty rows
     if (!email && !studentid && !name) continue;
@@ -624,6 +630,26 @@ export async function checkStudentsCsv(req, res) {
       results.push({ row: row.__row, email, studentid, status: 'missing_fields', missing });
       continue;
     }
+
+    try {
+      Object.assign(row, canonicalizeStudentMasterFields({
+        branch: row.branch,
+        course: row.course,
+        college: row.college,
+        semester: row.semester,
+      }, masterMaps));
+    } catch (error) {
+      results.push({
+        row: row.__row,
+        email,
+        studentid,
+        status: 'invalid_master_data',
+        message: error.message,
+      });
+      continue;
+    }
+
+    const { course, branch, college, teacherid } = row;
 
     // Validate email format
     if (!emailRegex.test(email)) {
@@ -764,6 +790,7 @@ export async function uploadStudentsCsv(req, res) {
     ...sanitizeCsvRow(normalizeRow(r)), 
     __row: idx + 2 
   })); // header is line 1
+  const masterMaps = await loadStudentMasterMaps();
   const emails = normalizedRows.map((r) => r.email).filter(Boolean);
   const studentIds = normalizedRows.map((r) => r.studentid).filter(Boolean);
 
@@ -829,7 +856,7 @@ export async function uploadStudentsCsv(req, res) {
   };
 
   await Promise.all(normalizedRows.map(async (row) => {
-    const { course, name, email, studentid, branch, college, teacherid } = row;
+    const { name, email, studentid } = row;
 
     // Skip completely empty rows
     if (!email && !studentid && !name) return;
@@ -843,6 +870,26 @@ export async function uploadStudentsCsv(req, res) {
       results.push({ row: row.__row, email, studentid, status: 'missing_fields', missing });
       return;
     }
+
+    try {
+      Object.assign(row, canonicalizeStudentMasterFields({
+        branch: row.branch,
+        course: row.course,
+        college: row.college,
+        semester: row.semester,
+      }, masterMaps));
+    } catch (error) {
+      results.push({
+        row: row.__row,
+        email,
+        studentid,
+        status: 'invalid_master_data',
+        message: error.message,
+      });
+      return;
+    }
+
+    const { course, branch, college, teacherid } = row;
 
     // Validate email format
     if (!emailRegex.test(email)) {
@@ -1022,6 +1069,7 @@ export async function createStudent(req, res) {
     }
     
     if (!emailRegex.test(email)) return res.status(400).json({ error: 'Invalid email format' });
+    const canonicalMasterFields = await resolveStudentMasterFields({ branch, course, college, semester: semesterNum });
 
     // Parse and validate multiple coordinator IDs
     const teacherIdList = parseTeacherIds(teacherid);
@@ -1044,8 +1092,11 @@ export async function createStudent(req, res) {
     const generatedPassword = generateRandomPassword();
     const passwordHash = await User.hashPassword(generatedPassword);
     const userData = {
-      role: 'student', name, email, studentId: studentid, passwordHash, branch, course, college,
-      teacherIds: teacherIdList, semester: semesterNum, mustChangePassword: true,
+      role: 'student', name, email, studentId: studentid, passwordHash,
+      branch: canonicalMasterFields.branch,
+      course: canonicalMasterFields.course,
+      college: canonicalMasterFields.college,
+      teacherIds: teacherIdList, semester: canonicalMasterFields.semester, mustChangePassword: true,
       credentialEmailStatus: 'not_sent',
     };
     
@@ -1086,7 +1137,7 @@ export async function createStudent(req, res) {
 
     return;
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(err.status || 500).json({ error: err.message });
   }
 }
 
@@ -1472,15 +1523,19 @@ export async function updateStudent(req, res) {
     if (!student) {
       return res.status(404).json({ error: 'Student not found' });
     }
+    const canonicalMasterFields = await resolveStudentMasterFields(
+      { course, branch, college, semester },
+      { partial: true },
+    );
     
     // Update fields
     if (name) student.name = name;
     if (email) student.email = email;
     if (sid) student.studentId = sid;
-    if (course) student.course = course;
-    if (branch) student.branch = branch;
-    if (college) student.college = college;
-    if (semester) student.semester = semester;
+    if (canonicalMasterFields.course) student.course = canonicalMasterFields.course;
+    if (canonicalMasterFields.branch) student.branch = canonicalMasterFields.branch;
+    if (canonicalMasterFields.college) student.college = canonicalMasterFields.college;
+    if (canonicalMasterFields.semester) student.semester = canonicalMasterFields.semester;
     if (group !== undefined) student.group = group;
     if (bio !== undefined) student.bio = typeof bio === 'string' ? bio.trim() : '';
     if (linkedinUrl !== undefined) student.linkedinUrl = typeof linkedinUrl === 'string' ? linkedinUrl.trim() : '';
@@ -1527,7 +1582,7 @@ export async function updateStudent(req, res) {
     });
   } catch (err) {
     console.error('Error updating student:', err);
-    res.status(500).json({ error: 'Failed to update student' });
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'Failed to update student' });
   }
 }
 

@@ -73,6 +73,7 @@ export default function StudentDirectory() {
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [showFilters, setShowFilters] = useState(false);
   const [managedSemesters, setManagedSemesters] = useState([]);
+  const [masterData, setMasterData] = useState([]);
   const [uploadBatches, setUploadBatches] = useState([]);
   const [showColumns, setShowColumns] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState(() => {
@@ -121,6 +122,12 @@ export default function StudentDirectory() {
     groups: mergeFilterOptions(facets.groups, fallbackFacets.groups),
     coordinators: mergeFilterOptions(facets.coordinators, fallbackFacets.coordinators),
   }), [facets, fallbackFacets]);
+  const masterOptions = useMemo(() => ({
+    course: masterData.filter((entry) => entry.category === 'course'),
+    branch: masterData.filter((entry) => entry.category === 'branch'),
+    college: masterData.filter((entry) => entry.category === 'campus'),
+    semester: masterData.filter((entry) => entry.category === 'semester'),
+  }), [masterData]);
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
   const uploadBatchName = uploadBatches.find((batch) => batch._id === uploadBatchId)?.name || routeBatchName;
   const isColumnVisible = (key) => visibleColumns.has(key);
@@ -176,13 +183,18 @@ export default function StudentDirectory() {
 
   useEffect(() => {
     let mounted = true;
-    api.getAllSemestersForStudent()
-      .then((data) => {
-        if (mounted) setManagedSemesters(Array.isArray(data) ? data : []);
-      })
-      .catch(() => {
-        if (mounted) setManagedSemesters([]);
-      });
+    Promise.all([
+      api.getAllSemestersForStudent(),
+      api.listMasterData({ activeOnly: true }),
+    ]).then(([semesterData, masterDataResponse]) => {
+      if (!mounted) return;
+      setManagedSemesters(Array.isArray(semesterData) ? semesterData : []);
+      setMasterData(masterDataResponse.entries || []);
+    }).catch(() => {
+      if (!mounted) return;
+      setManagedSemesters([]);
+      setMasterData([]);
+    });
     return () => { mounted = false; };
   }, []);
 
@@ -1628,30 +1640,36 @@ export default function StudentDirectory() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 dark:text-gray-300 mb-1">Course</label>
-                      <input
-                        type="text"
+                      <select
                         value={editForm.course}
                         onChange={(e) => setEditForm({ ...editForm, course: e.target.value })}
                         className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-slate-900 dark:text-gray-100 focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-400 focus:border-transparent"
-                      />
+                      >
+                        <option value="">Select course</option>
+                        {masterOptions.course.map((entry) => <option key={entry._id} value={entry.name}>{entry.name}</option>)}
+                      </select>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 dark:text-gray-300 mb-1">Branch</label>
-                      <input
-                        type="text"
+                      <select
                         value={editForm.branch}
                         onChange={(e) => setEditForm({ ...editForm, branch: e.target.value })}
                         className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-slate-900 dark:text-gray-100 focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-400 focus:border-transparent"
-                      />
+                      >
+                        <option value="">Select branch</option>
+                        {masterOptions.branch.map((entry) => <option key={entry._id} value={entry.name}>{entry.name}</option>)}
+                      </select>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 dark:text-gray-300 mb-1">College</label>
-                      <input
-                        type="text"
+                      <select
                         value={editForm.college}
                         onChange={(e) => setEditForm({ ...editForm, college: e.target.value })}
                         className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-slate-900 dark:text-gray-100 focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-400 focus:border-transparent"
-                      />
+                      >
+                        <option value="">Select campus / college</option>
+                        {masterOptions.college.map((entry) => <option key={entry._id} value={entry.name}>{entry.name}</option>)}
+                      </select>
                     </div>
                     <div className="md:col-span-2">
                       <label className="block text-sm font-medium text-slate-700 dark:text-gray-300 mb-1">Bio</label>
@@ -1692,14 +1710,14 @@ export default function StudentDirectory() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 dark:text-gray-300 mb-1">Semester</label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="8"
+                      <select
                         value={editForm.semester}
                         onChange={(e) => setEditForm({ ...editForm, semester: e.target.value })}
                         className="w-full px-3 py-2 border border-slate-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-slate-900 dark:text-gray-100 focus:ring-2 focus:ring-sky-500 dark:focus:ring-sky-400 focus:border-transparent"
-                      />
+                      >
+                        <option value="">Select semester</option>
+                        {masterOptions.semester.map((entry) => <option key={entry._id} value={entry.name}>Semester {entry.name}</option>)}
+                      </select>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 dark:text-gray-300 mb-1">Group</label>

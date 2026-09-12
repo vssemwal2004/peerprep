@@ -23,6 +23,7 @@ import executeRoutes from './execute.js';
 import mailQueueRoutes from './mailQueue.js';
 import resumeRoutes from './resume.js';
 import assessmentFeedbackRoutes from './assessmentFeedback.js';
+import masterDataRoutes from './masterData.js';
 
 const router = Router();
 router.use('/auth', authRoutes);
@@ -49,5 +50,6 @@ router.use('/execute', executeRoutes);
 router.use('/mail-queue', mailQueueRoutes);
 router.use('/resume', resumeRoutes);
 router.use('/assessment-feedback', assessmentFeedbackRoutes);
+router.use('/master-data', masterDataRoutes);
 
 export default router;

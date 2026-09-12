@@ -31,6 +31,27 @@ export default function StudentOnboarding() {
   const [savingBatchName, setSavingBatchName] = useState(false);
   const [sendCredentialsAfterUpload, setSendCredentialsAfterUpload] = useState(false);
   const [showSingleConfirmation, setShowSingleConfirmation] = useState(false);
+  const [masterData, setMasterData] = useState([]);
+
+  useEffect(() => {
+    let active = true;
+    api
+      .listMasterData({ activeOnly: true })
+      .then((response) => {
+        if (active) setMasterData(response.entries || []);
+      })
+      .catch(() => {
+        if (active) setMasterData([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const masterOptions = (category) =>
+    masterData
+      .filter((entry) => entry.category === category && entry.isActive !== false)
+      .sort((left, right) => left.order - right.order || left.name.localeCompare(right.name));
 
   // Email validation regex
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -549,21 +570,36 @@ export default function StudentOnboarding() {
                 { key: 'name', label: 'Full Name *', placeholder: 'John Doe' },
                 { key: 'email', label: 'Email Address *', placeholder: 'john@university.edu' },
                 { key: 'studentid', label: 'Student ID *', placeholder: 'STU2024001' },
-                { key: 'branch', label: 'Branch *', placeholder: 'Computer Science' },
+                { key: 'branch', label: 'Branch *', masterCategory: 'branch' },
                 { key: 'teacherid', label: 'Teacher ID(s) *', placeholder: 'COO1 or COO1,COO2', hint: 'Comma-separated for multiple' },
-                { key: 'semester', label: 'Semester *', placeholder: '1-8', type: 'number' },
-                { key: 'course', label: 'Course', placeholder: 'B.Tech' },
-                { key: 'college', label: 'College', placeholder: 'University Name' },
-              ].map(({ key, label, placeholder, type, hint }) => (
+                { key: 'semester', label: 'Semester *', masterCategory: 'semester' },
+                { key: 'course', label: 'Course *', masterCategory: 'course' },
+                { key: 'college', label: 'Campus / College *', masterCategory: 'campus' },
+              ].map(({ key, label, placeholder, type, hint, masterCategory }) => (
                 <div key={key} className="flex flex-col">
                   <label className="text-xs font-medium text-slate-700 dark:text-gray-300 mb-1">{label}</label>
-                  <input
-                    type={type || 'text'}
-                    value={singleForm[key]}
-                    onChange={(e) => handleSingleChange(key, e.target.value)}
-                    placeholder={placeholder}
-                    className="p-2 text-sm border border-slate-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-1 focus:ring-sky-500 dark:focus:ring-sky-600 focus:border-transparent transition-all duration-200 bg-white dark:bg-gray-800 text-slate-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500"
-                  />
+                  {masterCategory ? (
+                    <select
+                      value={singleForm[key]}
+                      onChange={(e) => handleSingleChange(key, e.target.value)}
+                      className="p-2 text-sm border border-slate-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-1 focus:ring-sky-500 dark:focus:ring-sky-600 focus:border-transparent transition-all duration-200 bg-white dark:bg-gray-800 text-slate-900 dark:text-gray-100"
+                    >
+                      <option value="">Select {label.replace(' *', '')}</option>
+                      {masterOptions(masterCategory).map((entry) => (
+                        <option key={entry._id} value={entry.name}>
+                          {masterCategory === 'semester' ? `Semester ${entry.name}` : entry.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type={type || 'text'}
+                      value={singleForm[key]}
+                      onChange={(e) => handleSingleChange(key, e.target.value)}
+                      placeholder={placeholder}
+                      className="p-2 text-sm border border-slate-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-1 focus:ring-sky-500 dark:focus:ring-sky-600 focus:border-transparent transition-all duration-200 bg-white dark:bg-gray-800 text-slate-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                    />
+                  )}
                   {hint && <span className="text-xs text-slate-500 dark:text-gray-400 mt-0.5">{hint}</span>}
                 </div>
               ))}

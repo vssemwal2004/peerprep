@@ -618,15 +618,19 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
     }
   };
 
-  const handleSaveAll = async () => {
+  const handleSaveAll = async (requestedStatus = '') => {
+    const targetStatus = typeof requestedStatus === 'string' && requestedStatus
+      ? requestedStatus
+      : libraryMeta.status;
+    const isPublishing = targetStatus === 'published';
     const validQuestions = questions.filter(q => q.questionText?.trim());
     if (!validQuestions.length) {
-      toast.error('Please enter at least one valid question.');
+      toast.error(targetStatus === 'draft' ? 'Add a question statement before saving the draft.' : 'Please enter at least one valid question.');
       return;
     }
 
-    // Validate
-    for (const q of validQuestions) {
+    // Publishing requires a complete, candidate-ready question. Drafts may remain incomplete.
+    for (const q of isPublishing ? validQuestions : []) {
       if (q.type === 'mcq' && (q.options || []).filter((option, index) => option?.trim() || q.optionImages?.[index]?.url).length < 2) {
         toast.error('Every MCQ needs at least two text or image options.');
         return;
@@ -653,7 +657,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
       }
     }
 
-    const incompletePassage = type === 'mcq' && validQuestions.find((question) => (
+    const incompletePassage = isPublishing && type === 'mcq' && validQuestions.find((question) => (
       getQuestionPassageId(question) && !question.passage?.text?.trim()
     ));
     if (incompletePassage) {
@@ -663,7 +667,11 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
 
     try {
       setIsSubmitting(true);
-      const payload = buildLibraryItems(validQuestions);
+      const payload = buildLibraryItems(validQuestions).map((item) => ({
+        ...item,
+        status: targetStatus,
+        visibility: libraryMeta.visibility,
+      }));
 
       const rolePrefix = window.location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
       if (editQuestionId) {
@@ -675,9 +683,9 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
           keywords: question.keywords || [],
           difficulty: question.difficulty || '',
           visibility: libraryMeta.visibility,
-          status: libraryMeta.status,
+          status: targetStatus,
         });
-        toast.success('Question updated successfully.');
+        toast.success(targetStatus === 'draft' ? 'Draft updated successfully.' : 'Question updated successfully.');
         const requestedReturn = location.state?.returnTo;
         const returnTo = typeof requestedReturn === 'string' && requestedReturn.startsWith(`${rolePrefix}/library`)
           ? requestedReturn
@@ -688,8 +696,12 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
 
       await api.createLibraryQuestionsBulk(payload);
       const passageSetCount = payload.filter((item) => item.libraryItemKind === 'passage_set').length;
-      toast.success(`Saved ${validQuestions.length} questions as ${payload.length} library item${payload.length === 1 ? '' : 's'}${passageSetCount ? `, including ${passageSetCount} passage set${passageSetCount === 1 ? '' : 's'}` : ''}.`);
-      navigate(`${rolePrefix}/library`);
+      toast.success(targetStatus === 'draft'
+        ? `Saved ${payload.length} library draft${payload.length === 1 ? '' : 's'}.`
+        : `Published ${validQuestions.length} questions as ${payload.length} library item${payload.length === 1 ? '' : 's'}${passageSetCount ? `, including ${passageSetCount} passage set${passageSetCount === 1 ? '' : 's'}` : ''}.`);
+      navigate(targetStatus === 'draft'
+        ? `${rolePrefix}/library?status=draft`
+        : `${rolePrefix}/library?type=${type}`);
     } catch (err) {
       toast.error(err.message || 'Failed to add questions to library.');
     } finally {
@@ -791,13 +803,22 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
           
           <div className="flex items-center gap-3">
           <span className="hidden text-xs font-semibold text-slate-500 sm:inline">{completedQuestions}/{questions.length} ready</span>
+          {!editQuestionId && <button
+            type="button"
+            onClick={() => handleSaveAll('draft')}
+            disabled={isSubmitting || !questions.length}
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-sky-300 hover:bg-sky-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+          >
+            <Save className="h-4 w-4" /> Save draft
+          </button>}
           <button
-            onClick={handleSaveAll}
+            type="button"
+            onClick={() => handleSaveAll(libraryMeta.status)}
             disabled={isSubmitting || !questions.length}
             className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-500 disabled:opacity-50"
           >
             <Save className="h-4 w-4" />
-            {isSubmitting ? 'Saving...' : editQuestionId ? 'Save changes' : `Save ${questions.length} question${questions.length > 1 ? 's' : ''}`}
+            {isSubmitting ? 'Saving...' : editQuestionId ? 'Save changes' : libraryMeta.status === 'draft' ? 'Save as draft' : `Publish ${questions.length} question${questions.length > 1 ? 's' : ''}`}
           </button>
           </div>
         </div>
@@ -950,11 +971,11 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
             </main>
           </div>
 
-          {editQuestionId && (
+          {(
             <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-gray-700 dark:bg-gray-800/50">
               <div className="mb-4">
                 <h2 className="text-sm font-bold text-slate-900 dark:text-white">Library settings</h2>
-                <p className="mt-0.5 text-xs text-slate-500 dark:text-gray-400">Control who can find this question and whether it is ready to use.</p>
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-gray-400">Choose who can find this item and whether it is ready for assessments.</p>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="block text-xs font-semibold text-slate-700 dark:text-gray-200">
@@ -984,8 +1005,9 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
             <span className="text-xs font-semibold text-slate-500 dark:text-gray-400">Step {activeStageIndex + 1} of {AUTHORING_STEPS.length}</span>
             <div className="flex items-center gap-2">
               <button type="button" onClick={() => setPreviewOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"><Eye className="h-4 w-4" /><span className="hidden sm:inline">Preview</span></button>
+              {!editQuestionId && <button type="button" onClick={() => handleSaveAll('draft')} disabled={isSubmitting || !questions.length} className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:border-sky-300 hover:bg-sky-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"><Save className="h-4 w-4" /><span className="hidden sm:inline">Save draft</span></button>}
               {isFinalStage ? (
-                <button type="button" onClick={handleSaveAll} disabled={isSubmitting || !questions.length} className="inline-flex h-10 items-center gap-2 rounded-xl bg-sky-600 px-4 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-50"><Save className="h-4 w-4" />{isSubmitting ? 'Saving...' : editQuestionId ? 'Save changes' : 'Save'}</button>
+                <button type="button" onClick={() => handleSaveAll(libraryMeta.status)} disabled={isSubmitting || !questions.length} className="inline-flex h-10 items-center gap-2 rounded-xl bg-sky-600 px-4 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-50"><Save className="h-4 w-4" />{isSubmitting ? 'Saving...' : editQuestionId ? 'Save changes' : libraryMeta.status === 'draft' ? 'Save draft' : 'Publish'}</button>
               ) : (
                 <button type="button" onClick={() => moveStage(1)} className="inline-flex h-10 items-center gap-2 rounded-xl bg-sky-600 px-4 text-sm font-semibold text-white hover:bg-sky-500">Next<ChevronRight className="h-4 w-4" /></button>
               )}

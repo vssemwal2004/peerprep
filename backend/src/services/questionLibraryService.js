@@ -164,7 +164,7 @@ function buildAssessmentLibraryPayload({ assessment, section, question, sectionI
     tags,
     keywords,
     difficulty,
-    status: 'published',
+    status: String(assessment.lifecycleStatus || '').trim().toLowerCase() === 'draft' ? 'draft' : 'published',
     visibility: 'public',
     searchPrefixes: buildSearchPrefixes([
       assessment?.title,
@@ -429,13 +429,13 @@ export async function cleanupDuplicateLibraryEntries() {
 }
 
 export async function cleanupDraftQuestionsFromLibrary() {
-  // Only synchronized assessment/compiler drafts are disposable. Manual
-  // questions belong to users and must never be removed by a background sync.
+  // Drafts are first-class Library items. Only remove malformed synchronized
+  // records that have no lifecycle status at all.
   const result = await QuestionLibrary.deleteMany({
     sourceType: { $in: ['assessment', 'compiler'] },
-    status: { $in: ['draft', '', null] },
+    status: { $in: ['', null] },
   });
-  console.log(`[Library Cleanup] Removed ${result.deletedCount} draft/invalid questions`);
+  console.log(`[Library Cleanup] Removed ${result.deletedCount} invalid questions`);
 }
 
 export function buildLibrarySearchMatch(search = '') {

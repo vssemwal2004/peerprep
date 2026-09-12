@@ -9,6 +9,7 @@
     "start": "node --env-file=.env src/server.js",
     "worker:compiler": "node --env-file=.env src/workers/compiler.worker.js",
     "worker:assessment": "node --env-file=.env src/workers/assessment.worker.js",
+    "migrate:master-data": "node src/migrations/seed-and-normalize-master-data.js",
     "lint": "echo 'No linter configured'",
     "test": "node --test \"test/**/*.test.js\""
   },

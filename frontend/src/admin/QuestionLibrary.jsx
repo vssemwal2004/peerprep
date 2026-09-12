@@ -133,6 +133,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
   const returnTo = params.get('return') || `${rolePrefix}/assessment/create`;
   const initialType = params.get('type') || 'all';
+  const initialStatus = params.get('status') || '';
   const lockType = params.get('lockType') || '';
 
   const [filters, setFilters] = useState({
@@ -140,7 +141,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
     search: '',
     tag: '',
     difficulty: '',
-    status: '',
+    status: initialStatus,
     visibility: '',
     sourceType: '',
     sortBy: 'updatedAt',
@@ -149,6 +150,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   const [searchInput, setSearchInput] = useState('');
   const [questions, setQuestions] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [statusCounts, setStatusCounts] = useState([]);
   const [availableTags, setAvailableTags] = useState([]);
   const [availableDifficulties, setAvailableDifficulties] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -199,6 +201,11 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   }, [initialType, lockType]);
 
   useEffect(() => {
+    setFilters((prev) => ({ ...prev, status: initialStatus }));
+    setPage(1);
+  }, [initialStatus]);
+
+  useEffect(() => {
     window.localStorage.setItem('peerprep-library-columns', JSON.stringify(visibleColumns));
   }, [visibleColumns]);
 
@@ -224,6 +231,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
         if (!mounted) return;
         setQuestions(data.questions || []);
         setCategories(data.filters?.categories || []);
+        setStatusCounts(data.filters?.statuses || []);
         setAvailableTags(data.filters?.tags || []);
         setAvailableDifficulties(data.filters?.difficulties || []);
         setPages(data.pagination?.pages || 1);
@@ -257,9 +265,8 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
 
   useEffect(() => {
     if (!onCategoryCountsChange) return;
-    const hasScopedFilters = [filters.search, filters.tag, filters.difficulty, filters.status, filters.visibility, filters.sourceType].some(Boolean);
-    if (!hasScopedFilters) onCategoryCountsChange(categoryTabs);
-  }, [categoryTabs, filters.difficulty, filters.search, filters.sourceType, filters.status, filters.tag, filters.visibility, onCategoryCountsChange]);
+    onCategoryCountsChange({ categories: categoryTabs, statuses: statusCounts });
+  }, [categoryTabs, onCategoryCountsChange, statusCounts]);
 
   const selectionSummary = useMemo(() => {
     return Object.values(selectedMeta).reduce((acc, item) => {
@@ -417,7 +424,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
       const problemId = question.sourceProblemId;
       if (problemId) {
         navigate(`${rolePrefix}/library/coding/${problemId}/edit`, {
-          state: { returnTo: `${rolePrefix}/library?type=coding` },
+          state: { returnTo: `${location.pathname}${location.search}` },
         });
         return;
       }
@@ -427,7 +434,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
     }
 
     navigate(`${rolePrefix}/library/question/${question._id}/edit?type=${question.questionType}`, {
-      state: { returnTo: `${rolePrefix}/library?type=${question.questionType}` },
+      state: { returnTo: `${location.pathname}${location.search}` },
     });
   };
 
@@ -529,6 +536,24 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
           refreshLibrary();
         } catch (error) {
           toast.error(error.message || 'Failed to update question status.');
+        }
+      },
+    });
+  };
+
+  const publishDraft = async (question) => {
+    setActionMenuId('');
+    openConfirmDialog({
+      title: 'Publish Question?',
+      message: 'Publish this draft so it becomes available for normal library and assessment use?',
+      confirmLabel: 'Publish Question',
+      onConfirm: async () => {
+        try {
+          await updateQuestionBySource(question, { status: 'published' });
+          toast.success('Question published.');
+          refreshLibrary();
+        } catch (error) {
+          toast.error(error.message || 'Failed to publish question.');
         }
       },
     });
@@ -809,6 +834,19 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
           })}
         </div>}
 
+        {embedded && filters.status === 'draft' && !selectionMode && (
+          <section className="mb-5 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50/70 px-5 py-4 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/60 dark:bg-amber-950/20">
+            <div className="flex min-w-0 items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"><Edit3 className="h-4 w-4" /></span>
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white">Draft questions</h2>
+                <p className="mt-0.5 text-xs leading-5 text-slate-600 dark:text-gray-300">{total} saved draft{total === 1 ? '' : 's'}. Preview, continue editing, publish, or delete them here.</p>
+              </div>
+            </div>
+            <span className="shrink-0 rounded-full border border-amber-200 bg-white px-3 py-1.5 text-xs font-bold tabular-nums text-amber-700 dark:border-amber-800 dark:bg-gray-900 dark:text-amber-300">{total} draft{total === 1 ? '' : 's'}</span>
+          </section>
+        )}
+
         <div className={`${embedded ? '' : 'mt-5'} flex flex-col gap-3 border-b border-slate-200 pb-5 dark:border-gray-800 xl:flex-row xl:items-center`}>
           <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 shadow-sm focus-within:border-sky-400 focus-within:ring-2 focus-within:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:focus-within:ring-sky-900/30">
             <Search className="h-4 w-4 shrink-0 text-slate-400" />
@@ -919,7 +957,10 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
           {loading ? (
             <div className="p-8 text-center text-sm text-slate-500 dark:text-gray-400">Loading library questions...</div>
           ) : questions.length === 0 ? (
-            <div className="p-8 text-center text-sm text-slate-500 dark:text-gray-400">No questions matched the current filters.</div>
+            <div className="p-10 text-center">
+              <p className="text-sm font-semibold text-slate-800 dark:text-gray-100">{filters.status === 'draft' ? 'No draft questions yet' : 'No questions found'}</p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">{filters.status === 'draft' ? 'Choose Save draft while creating or editing a question and it will appear here.' : 'No questions matched the current filters.'}</p>
+            </div>
           ) : (
             questions.map((question) => (
               <div
@@ -973,9 +1014,9 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                     }`}>
                       {question.visibility === 'private' ? 'Private' : 'Public'}
                     </span>
-                    {question.status === 'hidden' && (
-                      <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 font-semibold text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
-                        Hidden
+                    {question.status && question.status !== 'published' && (
+                      <span className={`rounded-full border px-2 py-0.5 font-semibold ${question.status === 'draft' ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300' : 'border-slate-200 bg-slate-100 text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}>
+                        {question.status.charAt(0).toUpperCase() + question.status.slice(1)}
                       </span>
                     )}
                   </div>
@@ -1047,6 +1088,11 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                         <button type="button" onClick={() => startEditQuestion(question)} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-gray-800">
                           <Edit3 className="h-3.5 w-3.5" /> Edit
                         </button>
+                        {question.status === 'draft' && (
+                          <button type="button" onClick={() => publishDraft(question)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-900/20">
+                            <CheckSquare className="h-3.5 w-3.5" /> Publish
+                          </button>
+                        )}
                         <button type="button" onClick={() => toggleVisibility(question)} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-gray-800">
                           {question.visibility === 'private' ? <Globe2 className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
                           {question.visibility === 'private' ? 'Make Public' : 'Make Private'}

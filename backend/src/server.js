@@ -17,12 +17,14 @@ import { verifyMailTransport } from './utils/mailer.js';
 import User from './models/User.js';
 import { hasCoordinatorPermission } from './services/coordinatorPermissions.js';
 import { startMailQueueWorker } from './workers/mailQueue.worker.js';
+import { seedDefaultMasterData } from './services/masterDataService.js';
 //fufgv
 const PORT = process.env.PORT || 4000;
 //new file check
 await connectDb();
 await seedAdminIfNeeded();
 await seedEmailTemplates();
+await seedDefaultMasterData();
 
 const httpServer = createServer(app);
 

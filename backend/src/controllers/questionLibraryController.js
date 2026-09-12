@@ -17,6 +17,15 @@ function normalizeTag(tag = '') {
   return String(tag || '').trim();
 }
 
+function normalizeLibraryStatus(status = 'published') {
+  const normalized = String(status || '').trim().toLowerCase();
+  return ['published', 'draft', 'hidden', 'archived'].includes(normalized) ? normalized : 'published';
+}
+
+function normalizeLibraryVisibility(visibility = 'public') {
+  return String(visibility || '').trim().toLowerCase() === 'private' ? 'private' : 'public';
+}
+
 function getQuestionSearchValues(question = {}) {
   const childQuestions = question.libraryItemKind === 'passage_set' && Array.isArray(question.questions)
     ? question.questions
@@ -188,6 +197,17 @@ function buildCategoryCounts(questions = []) {
     .sort((a, b) => String(a.type).localeCompare(String(b.type)));
 }
 
+function buildStatusCounts(questions = []) {
+  const counts = new Map();
+  questions.forEach((question) => {
+    const status = normalizeLibraryStatus(question.status);
+    counts.set(status, (counts.get(status) || 0) + 1);
+  });
+  return Array.from(counts.entries())
+    .map(([status, count]) => ({ status, count }))
+    .sort((a, b) => String(a.status).localeCompare(String(b.status)));
+}
+
 export async function listLibraryQuestions(req, res) {
   try {
     await ensureQuestionLibrarySynchronized();
@@ -234,16 +254,24 @@ export async function listLibraryQuestions(req, res) {
       baseMatch.createdBy = req.user._id;
     }
 
-    const [baseQuestions, tags, difficulties] = await Promise.all([
+    const scopeMatch = req.user?.role === 'coordinator'
+      ? { createdBy: req.user._id }
+      : {};
+    const [baseQuestions, scopeQuestions, tags, difficulties] = await Promise.all([
       QuestionLibrary.find(baseMatch)
         .sort({ updatedAt: -1, createdAt: -1 })
+        .lean(),
+      QuestionLibrary.find(scopeMatch)
+        .select('questionType status sourceType sourceId sourceProblemId createdAt updatedAt')
         .lean(),
       QuestionLibrary.distinct('tags', baseMatch),
       QuestionLibrary.distinct('difficulty', { ...baseMatch, difficulty: { $ne: '' } }),
     ]);
 
     const uniqueBaseQuestions = uniqueLibraryQuestions(baseQuestions);
-    const categories = buildCategoryCounts(uniqueBaseQuestions);
+    const uniqueScopeQuestions = uniqueLibraryQuestions(scopeQuestions);
+    const categories = buildCategoryCounts(uniqueScopeQuestions);
+    const statuses = buildStatusCounts(uniqueScopeQuestions);
     const selectedType = normalizeType(type);
     const filteredQuestions = selectedType && selectedType !== 'all'
       ? uniqueBaseQuestions.filter((question) => question.questionType === selectedType)
@@ -278,6 +306,7 @@ export async function listLibraryQuestions(req, res) {
       },
       filters: {
         categories,
+        statuses,
         tags: tags.filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
         difficulties: difficulties.filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
       },
@@ -509,8 +538,8 @@ export async function createLibraryQuestion(req, res) {
       tags,
       keywords,
       difficulty: String(question.difficulty || '').trim(),
-      status: 'published',
-      visibility: 'public',
+      status: normalizeLibraryStatus(question.status),
+      visibility: normalizeLibraryVisibility(question.visibility),
       searchPrefixes,
       questionData: {
         ...question,
@@ -566,8 +595,8 @@ export async function createLibraryQuestionsBulk(req, res) {
         tags,
         keywords,
         difficulty: String(question.difficulty || '').trim(),
-        status: 'published',
-        visibility: 'public',
+        status: normalizeLibraryStatus(question.status),
+        visibility: normalizeLibraryVisibility(question.visibility),
         searchPrefixes,
         questionData: {
           ...question,

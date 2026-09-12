@@ -1,8 +1,7 @@
 import { lazy, Suspense, useMemo } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
-import { BarChart3, FileCode2, LayoutDashboard, PlusSquare, TerminalSquare } from 'lucide-react';
+import { BarChart3, FileCode2, PlusSquare, TerminalSquare } from 'lucide-react';
 
-const CompilerOverview = lazy(() => import('./CompilerOverview'));
 const CreateProblem = lazy(() => import('./CreateProblem'));
 const ProblemManagement = lazy(() => import('./ProblemManagement'));
 const CompilerAnalytics = lazy(() => import('./CompilerAnalytics'));
@@ -35,7 +34,6 @@ export default function AdminCompilerDashboard() {
   }, [mode, searchParams]);
 
   const sections = useMemo(() => ([
-    { key: 'overview', label: 'Overview', caption: 'Health and recent activity', to: `${rolePrefix}/compiler`, Icon: LayoutDashboard },
     { key: 'create', label: 'Create Problem', caption: 'Author and publish', to: `${rolePrefix}/compiler/create`, Icon: PlusSquare },
     { key: 'management', label: 'Problem Management', caption: 'Edit, test, and publish', to: `${rolePrefix}/compiler/problems`, Icon: FileCode2 },
     { key: 'preview', label: 'Preview', caption: 'Student-like validation', to: `${rolePrefix}/compiler/problems`, Icon: TerminalSquare },
@@ -50,7 +48,7 @@ export default function AdminCompilerDashboard() {
         ? 'preview'
         : pathname.includes('/edit') || pathname.includes('/compiler/problems')
           ? 'management'
-          : 'overview';
+          : 'management';
 
   const sectionMeta = sections.find((section) => section.key === activeSection);
 
@@ -61,7 +59,7 @@ export default function AdminCompilerDashboard() {
     if (pathname.includes('/preview')) return <AdminTestCompiler />;
     if (pathname.includes('/compiler/problems')) return <ProblemManagement />;
     if (pathname.includes('/compiler/analytics')) return <CompilerAnalytics />;
-    return <CompilerOverview />;
+    return <ProblemManagement />;
   };
 
   return (
