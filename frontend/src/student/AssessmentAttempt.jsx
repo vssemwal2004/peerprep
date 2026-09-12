@@ -275,7 +275,8 @@ const seededShuffle = (items = [], random) => {
 const transformAssessmentForAttempt = (assessment, submissionId = '') => {
   if (!assessment) return null;
   const settings = assessment.settings || {};
-  if (!settings.randomShuffle && !settings.shuffleOptions) return assessment;
+  const hasQuestionShuffle = (assessment.sections || []).some((section) => (section.questions || []).some((question) => question.shuffleOptions));
+  if (!settings.randomShuffle && !settings.shuffleOptions && !hasQuestionShuffle) return assessment;
 
   const random = createSeededRandom(`${assessment._id || 'assessment'}:${submissionId || 'attempt'}`);
   const sections = (assessment.sections || []).map((section, sectionIndex) => {
@@ -290,15 +291,24 @@ const transformAssessmentForAttempt = (assessment, submissionId = '') => {
     }
 
     questions = questions.map((question) => {
-      if (settings.shuffleOptions && section.type === 'mcq' && Array.isArray(question.options) && question.options.length > 1) {
+      if ((settings.shuffleOptions || question.shuffleOptions) && (question.type || section.type) === 'mcq' && Array.isArray(question.options) && question.options.length > 1) {
         const shuffledOptions = seededShuffle(
-          question.options.map((option, optionIndex) => ({ option, optionIndex })),
+          question.options.map((option, optionIndex) => ({ option, image: question.optionImages?.[optionIndex] || null, optionIndex })),
           random,
         );
+        const originalCorrectIndexes = question.allowMultipleAnswers
+          ? (question.correctOptionIndexes || [])
+          : [question.correctOptionIndex];
+        const correctOptionIndexes = originalCorrectIndexes
+          .map((correctIndex) => shuffledOptions.findIndex((entry) => entry.optionIndex === Number(correctIndex)))
+          .filter((index) => index >= 0)
+          .sort((a, b) => a - b);
         return {
           ...question,
           options: shuffledOptions.map((entry) => entry.option),
-          correctOptionIndex: shuffledOptions.findIndex((entry) => entry.optionIndex === Number(question.correctOptionIndex)),
+          optionImages: shuffledOptions.map((entry) => entry.image),
+          correctOptionIndex: correctOptionIndexes[0] ?? null,
+          correctOptionIndexes,
           __optionOrder: shuffledOptions.map((entry) => entry.optionIndex),
         };
       }
@@ -332,6 +342,60 @@ const getCodingLanguagesFromData = (codingData = {}) => {
 const getCodingStarterCode = (question, language) => (
   getStarterCodeForLanguage(getCodingDataFromQuestion(question), language)
 );
+
+const getPassageKey = (question) => question?.passage?.passageId
+  || (question?.passage?.text ? `${question.passage.title || ''}::${question.passage.text}` : '');
+
+function AssessmentMcqOptions({ question, answer, onChange, disabled = false }) {
+  const isMultiple = Boolean(question?.allowMultipleAnswers);
+  const selectedIndexes = isMultiple
+    ? (Array.isArray(answer) ? answer : [])
+    : (Number.isInteger(answer) ? [answer] : []);
+
+  return (
+    <div className="mt-3 space-y-2">
+      <p className="pb-1 text-xs font-medium text-slate-500 dark:text-gray-400">
+        {isMultiple ? 'Select all answers that apply.' : 'Select one answer.'}
+      </p>
+      {(question?.options || []).map((option, index) => {
+        const selected = selectedIndexes.includes(index);
+        const optionLabel = String.fromCharCode(65 + index);
+        return (
+          <button
+            type="button"
+            key={`opt-${index}`}
+            onClick={() => {
+              if (!isMultiple) {
+                onChange(index);
+                return;
+              }
+              const nextAnswer = selected
+                ? selectedIndexes.filter((value) => value !== index)
+                : [...selectedIndexes, index].sort((a, b) => a - b);
+              onChange(nextAnswer);
+            }}
+            disabled={disabled}
+            className={`flex w-full items-start gap-3 rounded-lg border px-3.5 py-3 text-left transition-all duration-150 ${
+              selected
+                ? 'border-cyan-400 bg-cyan-50 shadow-sm dark:border-sky-500 dark:bg-sky-900/20'
+                : 'border-slate-200 bg-white hover:border-cyan-200 hover:bg-cyan-50/40 dark:border-gray-700 dark:bg-gray-900'
+            }`}
+          >
+            <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center text-xs font-extrabold transition-all ${isMultiple ? 'rounded-md' : 'rounded-full'} ${
+              selected ? 'bg-cyan-600 text-white' : 'border border-slate-300 text-slate-500 dark:border-gray-600'
+            }`}>
+              {selected ? <CheckCircle2 className="h-4 w-4" /> : optionLabel}
+            </span>
+            <span className="min-w-0 flex-1">
+              {question?.optionImages?.[index]?.url && <img src={question.optionImages[index].url} alt={question.optionImages[index].alt || ''} className="mb-2 max-h-48 max-w-full rounded-lg bg-white object-contain dark:bg-gray-800" />}
+              <span className={`block text-[0.94rem] font-medium leading-relaxed ${selected ? 'text-sky-900 dark:text-sky-100' : 'text-slate-700 dark:text-gray-200'}`}>{option || (question?.optionImages?.[index]?.url ? 'Image option' : `Option ${optionLabel}`)}</span>
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export default function AssessmentAttempt() {
   const { id } = useParams();
@@ -680,6 +744,8 @@ export default function AssessmentAttempt() {
       }
       if (typeof value?.answer === 'number' && Array.isArray(displayQuestion?.__optionOrder)) {
         payload.answer = displayQuestion.__optionOrder[value.answer] ?? value.answer;
+      } else if (Array.isArray(value?.answer) && Array.isArray(displayQuestion?.__optionOrder)) {
+        payload.answer = value.answer.map((index) => displayQuestion.__optionOrder[index] ?? index).sort((a, b) => a - b);
       }
       return { sectionIndex: originSectionIndex, questionIndex: originQuestionIndex, ...payload };
     })
@@ -795,8 +861,16 @@ export default function AssessmentAttempt() {
   const currentQuestionKind = currentQuestionItem?.kind || 'mcq';
   const currentTypeQuestionTotal = questionTypeTotals[currentQuestionKind] || 0;
   const currentQuestionTypeLabel = currentQuestionKind === 'coding' ? 'Coding' : 'MCQ / Short';
-  const hasPrevQuestion = currentFlatIndex > 0;
-  const hasNextQuestion = currentFlatIndex >= 0 && currentFlatIndex < totalQuestions - 1;
+  const currentPassageKey = getPassageKey(currentQuestionItem?.question);
+  const currentPassageFlatIndexes = currentPassageKey
+    ? flatQuestions.map((item, index) => (
+      item.sectionIndex === currentQuestionItem?.sectionIndex && getPassageKey(item.question) === currentPassageKey ? index : -1
+    )).filter((index) => index >= 0)
+    : [];
+  const currentNavigationStartIndex = currentPassageFlatIndexes.length ? Math.min(...currentPassageFlatIndexes) : currentFlatIndex;
+  const currentNavigationEndIndex = currentPassageFlatIndexes.length ? Math.max(...currentPassageFlatIndexes) : currentFlatIndex;
+  const hasPrevQuestion = currentNavigationStartIndex > 0;
+  const hasNextQuestion = currentNavigationEndIndex >= 0 && currentNavigationEndIndex < totalQuestions - 1;
 
   const questionStatus = useCallback((secIdx, qIdx) => {
     const key = `${secIdx}-${qIdx}`;
@@ -805,7 +879,9 @@ export default function AssessmentAttempt() {
     const section = assessment?.sections?.[secIdx];
     if (!section) return 'unanswered';
     if (section.type === 'mcq') {
-      return value.answer !== undefined && value.answer !== null ? 'answered' : 'unanswered';
+      return Array.isArray(value.answer)
+        ? (value.answer.length > 0 ? 'answered' : 'unanswered')
+        : (value.answer !== undefined && value.answer !== null ? 'answered' : 'unanswered');
     }
     if (section.type === 'coding') {
       const question = section.questions?.[qIdx];
@@ -1222,6 +1298,11 @@ export default function AssessmentAttempt() {
         const displayAnswer = { answer: ans.answer, language: ans.language, code: ans.code };
         if (typeof ans.answer === 'number' && Array.isArray(mapped.questionItem?.__optionOrder)) {
           displayAnswer.answer = mapped.questionItem.__optionOrder.findIndex((optionIndex) => optionIndex === ans.answer);
+        } else if (Array.isArray(ans.answer) && Array.isArray(mapped.questionItem?.__optionOrder)) {
+          displayAnswer.answer = ans.answer
+            .map((originalIndex) => mapped.questionItem.__optionOrder.findIndex((optionIndex) => optionIndex === originalIndex))
+            .filter((index) => index >= 0)
+            .sort((a, b) => a - b);
         }
         initialAnswers[answerKey(mapped.displaySectionIndex, mapped.displayQuestionIndex)] = {
           ...displayAnswer,
@@ -2924,31 +3005,13 @@ export default function AssessmentAttempt() {
   };
 
   const goToNextQuestion = () => {
-    const sections = assessment?.sections || [];
-    const currentSection = sections[activeSection];
-    const totalInSection = currentSection?.questions?.length || 0;
-    if (activeQuestion < totalInSection - 1) {
-      setActiveQuestion((prev) => prev + 1);
-      return;
-    }
-    if (activeSection < sections.length - 1) {
-      setActiveSection((prev) => prev + 1);
-      setActiveQuestion(0);
-    }
+    const target = flatQuestions[currentNavigationEndIndex + 1];
+    if (target) navigateToQuestion(target.sectionIndex, target.questionIndex);
   };
 
   const goToPrevQuestion = () => {
-    const sections = assessment?.sections || [];
-    if (activeQuestion > 0) {
-      navigateToQuestion(activeSection, activeQuestion - 1);
-      return;
-    }
-    if (activeSection > 0) {
-      const prevSectionIndex = activeSection - 1;
-      const prevSection = sections[prevSectionIndex];
-      const prevCount = prevSection?.questions?.length || 1;
-      navigateToQuestion(prevSectionIndex, Math.max(prevCount - 1, 0));
-    }
+    const target = flatQuestions[currentNavigationStartIndex - 1];
+    if (target) navigateToQuestion(target.sectionIndex, target.questionIndex);
   };
 
   const clearResponse = () => {
@@ -3030,8 +3093,17 @@ export default function AssessmentAttempt() {
 
   const section = assessment.sections?.[activeSection];
   const question = section?.questions?.[activeQuestion];
+  const passageQuestionEntries = currentPassageKey
+    ? (section?.questions || []).map((item, questionIndex) => ({ question: item, questionIndex })).filter(({ question: item }) => {
+      return getPassageKey(item) === currentPassageKey;
+    })
+    : [];
+  const isPassageSet = section?.type === 'mcq' && passageQuestionEntries.length > 0;
   const isMarked = markedMap[answerKey(activeSection, activeQuestion)];
-  const questionMarks = question?.marks ?? section?.marksPerQuestion ?? 0;
+  const questionMarks = question?.marks ?? question?.points ?? section?.marksPerQuestion ?? 0;
+  const passageSetMarks = isPassageSet
+    ? passageQuestionEntries.reduce((total, entry) => total + Number(entry.question?.marks ?? entry.question?.points ?? section?.marksPerQuestion ?? 0), 0)
+    : questionMarks;
   const isCoding = section?.type === 'coding';
   const codingData = isCoding ? getCodingDataFromQuestion(question) : null;
   const codingLanguages = isCoding ? getCodingLanguagesFromData(codingData) : [];
@@ -3392,42 +3464,45 @@ export default function AssessmentAttempt() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-600">
-                      <span className="rounded-md bg-cyan-600 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-white">{currentQuestionTypeLabel} {currentTypeQuestionNumber}/{currentTypeQuestionTotal || 1}</span><span className="rounded-md border border-cyan-100 bg-cyan-50 px-2.5 py-1 text-cyan-700 dark:border-cyan-900 dark:bg-cyan-900/20 dark:text-cyan-300">Marks: {questionMarks}</span><span className="rounded-md border border-slate-200 bg-white px-2.5 py-1 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">{section?.type === 'mcq' ? 'MCQ' : 'Short Answer'}</span>
-                    </div>
-                    <div className="text-lg font-bold leading-snug text-slate-900 dark:text-white md:text-[1.15rem]">
-                      {question?.questionText || 'Question'}
+                      <span className="rounded-md bg-cyan-600 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-white">{isPassageSet ? `Passage set · ${passageQuestionEntries.length} questions` : `${currentQuestionTypeLabel} ${currentTypeQuestionNumber}/${currentTypeQuestionTotal || 1}`}</span><span className="rounded-md border border-cyan-100 bg-cyan-50 px-2.5 py-1 text-cyan-700 dark:border-cyan-900 dark:bg-cyan-900/20 dark:text-cyan-300">Marks: {passageSetMarks}</span><span className="rounded-md border border-slate-200 bg-white px-2.5 py-1 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">{section?.type === 'mcq' ? 'MCQ' : 'Short Answer'}</span>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {section?.type === 'mcq' && (
-                <div className="mt-3 space-y-2 px-5 pb-5 md:px-6">
-                  {question.options?.map((opt, idx) => {
-                    const selected = answersMap[answerKey(activeSection, activeQuestion)]?.answer === idx;
-                    const optionLabel = String.fromCharCode(65 + idx);
+              {question?.passage?.text && (
+                <div className="mx-5 mt-4 rounded-xl border border-cyan-100 bg-cyan-50/50 p-4 dark:border-cyan-900/40 dark:bg-cyan-950/20 md:mx-6">
+                  <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-cyan-700 dark:text-cyan-300">{question.passage.title || 'Reading passage'}</p>
+                  {question.passage.image?.url && <img src={question.passage.image.url} alt={question.passage.image.alt || ''} className="mt-3 max-h-64 w-full rounded-lg bg-white object-contain p-2 dark:bg-gray-800" />}
+                  <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-gray-200">{question.passage.text}</p>
+                </div>
+              )}
+
+              {isPassageSet ? (
+                <div className="space-y-4 px-5 py-5 md:px-6">
+                  {passageQuestionEntries.map(({ question: passageQuestion, questionIndex }, setIndex) => {
+                    const response = answersMap[answerKey(activeSection, questionIndex)]?.answer;
+                    const status = questionStatus(activeSection, questionIndex);
                     return (
-                      <button
-                        type="button"
-                        key={`opt-${idx}`}
-                        onClick={() => updateAnswer(activeSection, activeQuestion, { answer: idx })}
-                        disabled={isSubmitted}
-                        className={`flex w-full items-start gap-3 rounded-md border px-3.5 py-3 text-left transition-all duration-150 ${
-                          selected
-                            ? 'border-cyan-400 bg-cyan-50 shadow-sm dark:bg-sky-900/20 dark:border-sky-500'
-                            : 'border-slate-200 bg-white hover:border-cyan-200 hover:bg-cyan-50/40 dark:border-gray-700 dark:bg-gray-900'
-                        }`}
-                      >
-                        <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-extrabold transition-all ${
-                          selected ? 'bg-cyan-600 text-white' : 'border border-slate-300 text-slate-500 dark:border-gray-600'
-                        }`}>
-                          {optionLabel}
-                        </span>
-                        <span className={`text-[0.94rem] leading-relaxed font-medium ${selected ? 'text-sky-900 dark:text-sky-100' : 'text-slate-700 dark:text-gray-200'}`}>{opt}</span>
-                      </button>
+                      <section key={passageQuestion.questionId || questionIndex} className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 dark:border-gray-700 dark:bg-gray-800/40">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0"><p className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-cyan-700 dark:text-cyan-300">Question {setIndex + 1} of {passageQuestionEntries.length}</p><h2 className="mt-2 text-base font-bold leading-snug text-slate-900 dark:text-white">{passageQuestion.questionText || 'Question'}</h2></div>
+                          <div className="flex shrink-0 items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${status === 'answered' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-white text-slate-500 dark:bg-gray-900 dark:text-gray-400'}`}>{status === 'answered' ? 'Answered' : 'Not answered'}</span><span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-slate-600 dark:bg-gray-900 dark:text-gray-300">{passageQuestion.marks ?? passageQuestion.points ?? section?.marksPerQuestion ?? 0} marks</span></div>
+                        </div>
+                        {passageQuestion.questionImage?.url && <img src={passageQuestion.questionImage.url} alt={passageQuestion.questionImage.alt || ''} className="mt-4 max-h-72 w-full rounded-xl border border-slate-200 bg-white object-contain p-2 dark:border-gray-700 dark:bg-gray-800" />}
+                        <AssessmentMcqOptions question={passageQuestion} answer={response} onChange={(answer) => updateAnswer(activeSection, questionIndex, { answer })} disabled={isSubmitted} />
+                      </section>
                     );
                   })}
                 </div>
+              ) : (
+                <>
+                  <div className="px-5 pt-4 md:px-6">
+                    <div className="text-lg font-bold leading-snug text-slate-900 dark:text-white md:text-[1.15rem]">{question?.questionText || 'Question'}</div>
+                    {question?.questionImage?.url && <img src={question.questionImage.url} alt={question.questionImage.alt || ''} className="mt-4 max-h-72 w-full rounded-xl border border-slate-200 bg-white object-contain p-2 dark:border-gray-700 dark:bg-gray-800" />}
+                  </div>
+                  {section?.type === 'mcq' && <div className="px-5 pb-5 md:px-6"><AssessmentMcqOptions question={question} answer={answersMap[answerKey(activeSection, activeQuestion)]?.answer} onChange={(answer) => updateAnswer(activeSection, activeQuestion, { answer })} disabled={isSubmitted} /></div>}
+                </>
               )}
 
               {(section?.type === 'short' || section?.type === 'one_line') && (

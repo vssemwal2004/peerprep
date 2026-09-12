@@ -14,7 +14,6 @@ import {
   MessageSquareText,
   ClipboardList,
   Library,
-  TerminalSquare,
   PlusSquare,
   FileCode2,
   BarChart3,
@@ -73,8 +72,11 @@ const buildNavItems = (role = 'admin') => {
         label: 'Library',
         icon: Library,
         items: [
-          { label: 'View Library', to: '/coordinator/library', icon: Library, permissionKey: 'coordinator.library.view' },
-          { label: 'Add Question', to: '/coordinator/library/add-question', icon: Library, permissionKey: 'coordinator.library.create' },
+          { label: 'View Library', to: '/coordinator/library', icon: Library, permissionKey: 'coordinator.library.view', match: (loc) => loc.pathname === '/coordinator/library' },
+          { label: 'Create Question', to: '/coordinator/library/create', icon: PlusSquare, permissionKey: 'coordinator.library.create' },
+          { label: 'Coding Overview', to: '/coordinator/library/coding/overview', icon: LayoutDashboard, permissionKey: 'coordinator.compiler.view' },
+          { label: 'Coding Problems', to: '/coordinator/library/coding/problems', icon: FileCode2, permissionKey: 'coordinator.compiler.manage' },
+          { label: 'Coding Analytics', to: '/coordinator/library/coding/analytics', icon: BarChart3, permissionKey: 'coordinator.compiler.analytics' },
         ],
       },
       {
@@ -85,18 +87,6 @@ const buildNavItems = (role = 'admin') => {
         items: [
           { label: 'Add Announcement', to: '/coordinator/announcements/add', icon: Megaphone, permissionKey: 'coordinator.announcements.create' },
           { label: 'Manage Announcements', to: '/coordinator/announcements/manage', icon: Megaphone, permissionKey: 'coordinator.announcements.manage' },
-        ],
-      },
-      {
-        type: 'group',
-        key: 'compiler',
-        label: 'Compiler',
-        icon: TerminalSquare,
-        items: [
-          { label: 'Overview', to: '/coordinator/compiler', icon: LayoutDashboard, permissionKey: 'coordinator.compiler.view' },
-          { label: 'Create Problem', to: '/coordinator/compiler/create', icon: PlusSquare, permissionKey: 'coordinator.compiler.create' },
-          { label: 'Problem Management', to: '/coordinator/compiler/problems', icon: FileCode2, permissionKey: 'coordinator.compiler.manage' },
-          { label: 'Analytics', to: '/coordinator/compiler/analytics', icon: BarChart3, permissionKey: 'coordinator.compiler.analytics' },
         ],
       },
       {
@@ -184,8 +174,11 @@ const buildNavItems = (role = 'admin') => {
       label: 'Library',
       icon: Library,
       items: [
-        { label: 'View Library', to: '/admin/library', icon: Library },
-        { label: 'Add Question', to: '/admin/library/add-question', icon: Library },
+        { label: 'View Library', to: '/admin/library', icon: Library, match: (loc) => loc.pathname === '/admin/library' },
+        { label: 'Create Question', to: '/admin/library/create', icon: PlusSquare },
+        { label: 'Coding Overview', to: '/admin/library/coding/overview', icon: LayoutDashboard },
+        { label: 'Coding Problems', to: '/admin/library/coding/problems', icon: FileCode2 },
+        { label: 'Coding Analytics', to: '/admin/library/coding/analytics', icon: BarChart3 },
       ],
     },
     {
@@ -196,18 +189,6 @@ const buildNavItems = (role = 'admin') => {
       items: [
         { label: 'Add Announcement', to: '/admin/announcements/add', icon: Megaphone },
         { label: 'Manage Announcements', to: '/admin/announcements/manage', icon: Megaphone },
-      ],
-    },
-    {
-      type: 'group',
-      key: 'compiler',
-      label: 'Compiler',
-      icon: TerminalSquare,
-      items: [
-        { label: 'Overview', to: '/admin/compiler', icon: LayoutDashboard },
-        { label: 'Create Problem', to: '/admin/compiler/create', icon: PlusSquare },
-        { label: 'Problem Management', to: '/admin/compiler/problems', icon: FileCode2 },
-        { label: 'Analytics', to: '/admin/compiler/analytics', icon: BarChart3 },
       ],
     },
     {

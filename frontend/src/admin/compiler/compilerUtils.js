@@ -96,6 +96,7 @@ export function createDefaultProblemForm() {
     inputFormat: '',
     outputFormat: '',
     constraints: '',
+    editorial: '',
     hints: [],
     faqs: [],
     timeLimitSeconds: 2,
@@ -103,7 +104,7 @@ export function createDefaultProblemForm() {
     sampleTestCases: [createEmptySampleTestCase()],
     hiddenTestCases: [createEmptyHiddenTestCase()],
     existingHiddenTestCaseCount: 0,
-    hiddenTestUploadMode: 'pairs',
+    hiddenTestUploadMode: 'manual',
     hiddenTestFiles: [],
     hiddenBulkInputFile: null,
     hiddenBulkOutputFile: null,
@@ -131,6 +132,7 @@ export function createProblemFormFromProblem(problem) {
     inputFormat: problem?.inputFormat || '',
     outputFormat: problem?.outputFormat || '',
     constraints: problem?.constraints || '',
+    editorial: problem?.editorial || '',
     hints: Array.isArray(problem?.hints) ? problem.hints.map((hint) => String(hint || '')) : [],
     faqs: Array.isArray(problem?.faqs)
       ? problem.faqs.map((faq) => ({
@@ -156,7 +158,7 @@ export function createProblemFormFromProblem(problem) {
       }))
       : [createEmptyHiddenTestCase()],
     existingHiddenTestCaseCount: problem?.hiddenTestCaseCount || 0,
-    hiddenTestUploadMode: problem?.hiddenTestSource?.provider === 's3' ? 'bulk' : 'pairs',
+    hiddenTestUploadMode: problem?.hiddenTestSource?.provider === 's3' ? 'bulk' : 'manual',
     hiddenTestFiles: [],
     hiddenBulkInputFile: null,
     hiddenBulkOutputFile: null,
@@ -213,6 +215,7 @@ export function buildProblemFormData(problemForm, status) {
   formData.append('inputFormat', problemForm.inputFormat || '');
   formData.append('outputFormat', problemForm.outputFormat || '');
   formData.append('constraints', problemForm.constraints || '');
+  formData.append('editorial', problemForm.editorial || '');
   formData.append('hints', JSON.stringify(problemForm.hints || []));
   formData.append('faqs', JSON.stringify(problemForm.faqs || []));
   formData.append('timeLimitSeconds', String(problemForm.timeLimitSeconds || 2));
@@ -220,7 +223,7 @@ export function buildProblemFormData(problemForm, status) {
   formData.append('sampleTestCases', JSON.stringify(problemForm.sampleTestCases || []));
   formData.append('status', status);
 
-  const uploadMode = problemForm.hiddenTestUploadMode || 'pairs';
+  const uploadMode = problemForm.hiddenTestUploadMode || 'manual';
   formData.append('hiddenTestUploadMode', uploadMode);
 
   if (uploadMode === 'bulk') {

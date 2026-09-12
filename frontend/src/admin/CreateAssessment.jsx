@@ -374,17 +374,29 @@ export default function CreateAssessment() {
     (libraryQuestions || []).forEach((libraryQuestion) => {
       const baseQuestion = libraryQuestion.questionData || libraryQuestion;
       const type = baseQuestion.type || libraryQuestion.questionType || 'mcq';
-      const clonedQuestion = ensureQuestionMeta({
-        ...baseQuestion,
+      const isPassageSet = type === 'mcq'
+        && baseQuestion.libraryItemKind === 'passage_set'
+        && Array.isArray(baseQuestion.questions);
+      const sharedPassage = isPassageSet
+        ? { ...(baseQuestion.passage || {}), passageId: createQuestionId() }
+        : null;
+      const sourceQuestions = isPassageSet ? baseQuestion.questions : [baseQuestion];
+      const clonedQuestions = sourceQuestions.map((sourceQuestion, index) => ensureQuestionMeta({
+        ...sourceQuestion,
         questionId: createQuestionId(),
         type,
-      }, type);
+        ...(isPassageSet ? {
+          passage: sharedPassage,
+          passageQuestionIndex: index,
+          passageQuestionCount: sourceQuestions.length,
+        } : {}),
+      }, type));
 
       const existingSectionIndex = nextSections.findIndex((section) => section.type === type);
       if (existingSectionIndex >= 0) {
         nextSections[existingSectionIndex].questions = [
           ...(nextSections[existingSectionIndex].questions || []),
-          clonedQuestion,
+          ...clonedQuestions,
         ];
         return;
       }
@@ -392,9 +404,9 @@ export default function CreateAssessment() {
       nextSections.push({
         sectionName: LIBRARY_SECTION_LABELS[type] || `${String(type).replace(/_/g, ' ')} Questions`,
         type,
-        marksPerQuestion: Number(clonedQuestion.points || clonedQuestion.marks || 1) || 1,
-        negativeMarksPerQuestion: Number(clonedQuestion.negativePoints ?? clonedQuestion.negativeMarks ?? 0) || 0,
-        questions: [clonedQuestion],
+        marksPerQuestion: Number(clonedQuestions[0]?.points || clonedQuestions[0]?.marks || 1) || 1,
+        negativeMarksPerQuestion: Number(clonedQuestions[0]?.negativePoints ?? clonedQuestions[0]?.negativeMarks ?? 0) || 0,
+        questions: clonedQuestions,
       });
     });
 
@@ -460,7 +472,7 @@ export default function CreateAssessment() {
       question: String(questionIndex),
       return: returnTo,
     });
-    navigate(`${rolePrefix}/compiler/create?${query.toString()}`);
+    navigate(`${rolePrefix}/library/coding/create?${query.toString()}`);
   };
 
   const handleOpenProblemLibrary = async (sectionType = '') => {

@@ -121,8 +121,28 @@ export function scoreAssessmentWithTestCases(assessment = {}, answers = []) {
       if (!answer) return;
 
       if (questionType === 'mcq') {
-        if (Number(answer.answer) === Number(question.correctOptionIndex)) score += points;
-        else score -= negativePoints;
+        const expected = [...new Set(
+          (question.allowMultipleAnswers ? question.correctOptionIndexes : [question.correctOptionIndex])
+            .filter((value) => value !== null && value !== undefined)
+            .map(Number)
+            .filter(Number.isInteger),
+        )].sort((a, b) => a - b);
+        const actual = [...new Set(
+          (Array.isArray(answer.answer) ? answer.answer : [answer.answer])
+            .filter((value) => value !== null && value !== undefined && value !== '')
+            .map(Number)
+            .filter(Number.isInteger),
+        )].sort((a, b) => a - b);
+        const exactMatch = expected.length > 0 && expected.length === actual.length && expected.every((value, index) => value === actual[index]);
+        if (exactMatch) {
+          score += points;
+        } else if (question.allowMultipleAnswers && question.partialScoring && actual.length > 0 && expected.length > 0) {
+          const hits = actual.filter((value) => expected.includes(value)).length;
+          const misses = actual.filter((value) => !expected.includes(value)).length;
+          score += Math.max(0, ((hits - misses) / expected.length) * points);
+        } else if (actual.length > 0) {
+          score -= negativePoints;
+        }
         return;
       }
 
@@ -155,4 +175,3 @@ export function scoreAssessmentWithTestCases(assessment = {}, answers = []) {
   const accuracy = maxMarks > 0 ? Math.round((score / maxMarks) * 10000) / 100 : 0;
   return { score, maxMarks, accuracy };
 }
-

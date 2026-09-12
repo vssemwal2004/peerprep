@@ -1,5 +1,7 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { requireAuth, requireCoordinatorPermission } from '../middleware/auth.js';
+import { uploadLimiter } from '../middleware/rateLimiter.js';
 import {
   createAssessment,
   listAssessments,
@@ -28,9 +30,14 @@ import {
   createLibraryQuestionsBulk,
   updateLibraryQuestion,
   deleteLibraryQuestion,
+  uploadLibraryAsset,
 } from '../controllers/questionLibraryController.js';
 
 const router = Router();
+const questionAssetUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+});
 
 router.post('/assessment/create', requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), createAssessment);
 router.get('/assessment/list', requireAuth, requireCoordinatorPermission('coordinator.assessment.view'), listAssessments);
@@ -42,6 +49,7 @@ router.get('/assessment/submissions/:submissionId/violations', requireAuth, requ
 router.get('/library/questions', requireAuth, requireCoordinatorPermission('coordinator.library.view'), listLibraryQuestions);
 router.post('/library/questions', requireAuth, requireCoordinatorPermission('coordinator.library.create'), createLibraryQuestion);
 router.post('/library/questions/bulk', requireAuth, requireCoordinatorPermission('coordinator.library.create'), createLibraryQuestionsBulk);
+router.post('/library/assets', requireAuth, requireCoordinatorPermission('coordinator.library.create'), uploadLimiter, questionAssetUpload.single('image'), uploadLibraryAsset);
 router.post('/library/questions/resolve', requireAuth, requireCoordinatorPermission('coordinator.library.create'), resolveLibraryQuestions);
 router.get('/library/questions/:id', requireAuth, requireCoordinatorPermission('coordinator.library.view'), getLibraryQuestion);
 router.patch('/library/questions/:id', requireAuth, requireCoordinatorPermission('coordinator.library.create'), updateLibraryQuestion);

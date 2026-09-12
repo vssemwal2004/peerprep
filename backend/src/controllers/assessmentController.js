@@ -496,7 +496,21 @@ function evaluateQuestionResponse(question = {}, section = {}, answer = null) {
 
   if (type === 'mcq') {
     if (!hasMeaningfulValue(answer?.answer)) return 'skipped';
-    return Number(answer.answer) === Number(question.correctOptionIndex) ? 'correct' : 'wrong';
+    const expected = [...new Set(
+      (question.allowMultipleAnswers ? question.correctOptionIndexes : [question.correctOptionIndex])
+        .filter((value) => value !== null && value !== undefined)
+        .map(Number)
+        .filter(Number.isInteger),
+    )].sort((a, b) => a - b);
+    const actual = [...new Set(
+      (Array.isArray(answer.answer) ? answer.answer : [answer.answer])
+        .filter((value) => value !== null && value !== undefined && value !== '')
+        .map(Number)
+        .filter(Number.isInteger),
+    )].sort((a, b) => a - b);
+    if (expected.length === actual.length && expected.every((value, index) => value === actual[index])) return 'correct';
+    if (question.allowMultipleAnswers && question.partialScoring && actual.some((value) => expected.includes(value))) return 'partial';
+    return 'wrong';
   }
 
   if (type === 'short' || type === 'one_line') {

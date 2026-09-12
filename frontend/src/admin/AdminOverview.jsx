@@ -359,9 +359,9 @@ export default function AdminOverview() {
       tone: 'emerald',
     },
     {
-      label: model.totalProblems ? 'Inspect compiler analytics' : 'Add coding problem',
+      label: model.totalProblems ? 'Inspect coding analytics' : 'Add coding problem',
       detail: model.totalProblems ? `${model.totalProblems} problems in the coding catalog` : 'Start the controlled coding workspace',
-      to: model.totalProblems ? '/admin/compiler/analytics' : '/admin/compiler/create',
+      to: model.totalProblems ? '/admin/library/coding/analytics' : '/admin/library/coding/create',
       Icon: FileCode2,
       tone: 'rose',
     },
@@ -459,10 +459,10 @@ export default function AdminOverview() {
                 ]}
               />
               <ModuleLane
-                title="Compiler Workspace"
+                title="Coding Library"
                 Icon={Code2}
                 tone="rose"
-                to="/admin/compiler"
+                to="/admin/library/coding/overview"
                 metrics={[
                   { label: 'problems', value: formatNumber(model.totalProblems) },
                   { label: 'acceptance', value: `${Math.round(model.acceptanceRate)}%` },

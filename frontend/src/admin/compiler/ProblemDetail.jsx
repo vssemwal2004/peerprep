@@ -53,11 +53,11 @@ export default function ProblemDetail() {
     <div className="space-y-6">
       <SectionCard
         title={problem.title}
-        subtitle="Review the authored statement and run admin-only validation flows from the embedded compiler."
+        subtitle="Review the authored statement and run admin-only judge validation from the coding library."
         action={(
           <button
             type="button"
-            onClick={() => navigate(`${rolePrefix}/compiler/problems`)}
+            onClick={() => navigate(`${rolePrefix}/library/coding/problems`)}
             className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
           >
             <ArrowLeft className="h-4 w-4" />

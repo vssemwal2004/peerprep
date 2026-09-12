@@ -61,3 +61,20 @@ test('legacy passed/total coding results still receive equal partial marks', () 
 
   assert.equal(result.earnedMarks, 2.5);
 });
+
+test('multiple-answer MCQ requires the complete correct set', () => {
+  const assessment = { sections: [{ type: 'mcq', questions: [{ type: 'mcq', points: 4, allowMultipleAnswers: true, correctOptionIndexes: [0, 2] }] }] };
+  const result = scoreAssessmentWithTestCases(assessment, [{ sectionIndex: 0, questionIndex: 0, answer: [2, 0] }]);
+
+  assert.equal(result.score, 4);
+  assert.equal(result.maxMarks, 4);
+});
+
+test('multiple-answer MCQ supports bounded partial scoring', () => {
+  const assessment = { sections: [{ type: 'mcq', questions: [{ type: 'mcq', points: 4, allowMultipleAnswers: true, partialScoring: true, correctOptionIndexes: [0, 2] }] }] };
+  const partial = scoreAssessmentWithTestCases(assessment, [{ sectionIndex: 0, questionIndex: 0, answer: [0] }]);
+  const penalized = scoreAssessmentWithTestCases(assessment, [{ sectionIndex: 0, questionIndex: 0, answer: [0, 1] }]);
+
+  assert.equal(partial.score, 2);
+  assert.equal(penalized.score, 0);
+});

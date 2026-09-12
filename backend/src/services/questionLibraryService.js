@@ -449,6 +449,8 @@ export function formatLibraryQuestionSummary(question = {}) {
     || question.sourceAssessmentTitle
     || question.questionText
     || '';
+  const questionData = question.questionData || {};
+  const isPassageSet = questionData.libraryItemKind === 'passage_set' && Array.isArray(questionData.questions);
 
   return {
     _id: question._id,
@@ -461,6 +463,9 @@ export function formatLibraryQuestionSummary(question = {}) {
     sourceQuestionId: question.sourceQuestionId || '',
     sectionName: question.sectionName || '',
     questionType: question.questionType || 'other',
+    libraryItemKind: isPassageSet ? 'passage_set' : 'question',
+    questionCount: isPassageSet ? questionData.questions.length : 1,
+    passageTitle: isPassageSet ? (questionData.passage?.title || '') : '',
     questionText: question.questionText || '',
     tags: Array.isArray(question.tags) ? question.tags : [],
     keywords: Array.isArray(question.keywords) ? question.keywords : [],

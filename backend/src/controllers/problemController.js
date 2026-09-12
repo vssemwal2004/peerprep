@@ -541,6 +541,7 @@ function buildProblemPayload(
     inputFormat: String(req.body.inputFormat ?? ''),
     outputFormat: String(req.body.outputFormat ?? ''),
     constraints: String(req.body.constraints ?? ''),
+    editorial: String(req.body.editorial ?? ''),
     hints: normalizeHints(req.body.hints),
     faqs: normalizeFaqs(req.body.faqs),
     timeLimitSeconds: parseNumber(req.body.timeLimitSeconds ?? req.body.timeLimit, 2, { min: 1, max: 15, integer: false }),

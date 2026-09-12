@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, MoreVertical, Search, Trash2 } from 'lucide-react';
+import { AlertTriangle, ArrowRight, MoreVertical, Search, Trash2 } from 'lucide-react';
 import { api } from '../../utils/api';
 import { useToast } from '../../components/CustomToast';
 import { formatDate, formatPercent } from './compilerUtils';
@@ -23,6 +23,7 @@ export default function ProblemManagement() {
   const menuRef = useRef(null);
   const [openMenu, setOpenMenu] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, problem: null, nextVisibility: null });
+  const [deleteDialog, setDeleteDialog] = useState({ isOpen: false, problem: null, deleting: false });
 
   const closeMenu = () => setOpenMenu(null);
   const closeConfirmDialog = () => setConfirmDialog({ isOpen: false, problem: null, nextVisibility: null });
@@ -93,8 +94,7 @@ export default function ProblemManagement() {
   }, [deferredSearch, difficulty, sortBy, sortOrder, status, visibility]);
 
   const handleDelete = async (problemId) => {
-    const confirmed = window.confirm('Delete this problem and its related submissions?');
-    if (!confirmed) return;
+    setDeleteDialog((previous) => ({ ...previous, deleting: true }));
     try {
       await api.deleteCompilerProblem(problemId);
       toast.success('Problem deleted successfully.');
@@ -102,6 +102,8 @@ export default function ProblemManagement() {
       setResponse(refreshed);
     } catch (error) {
       toast.error(error.message || 'Failed to delete problem.');
+    } finally {
+      setDeleteDialog({ isOpen: false, problem: null, deleting: false });
     }
   };
 
@@ -168,7 +170,7 @@ export default function ProblemManagement() {
       title="Problem Management"
       subtitle="Professional management table for authored problems, publishing controls, and preview access."
       action={(
-        <button type="button" onClick={() => navigate(`${rolePrefix}/compiler/create`)} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-sky-500">
+        <button type="button" onClick={() => navigate(`${rolePrefix}/library/coding/create`)} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-sky-500">
           Create Problem
           <ArrowRight className="h-4 w-4" />
         </button>
@@ -268,7 +270,7 @@ export default function ProblemManagement() {
                                 role="menuitem"
                                 onClick={() => {
                                   closeMenu();
-                                  navigate(`${rolePrefix}/compiler/${problem._id}/edit`);
+                                  navigate(`${rolePrefix}/library/coding/${problem._id}/edit`);
                                 }}
                                 className={`${menuItemClassName} text-slate-700 hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800`}
                               >
@@ -279,7 +281,7 @@ export default function ProblemManagement() {
                                 role="menuitem"
                                 onClick={() => {
                                   closeMenu();
-                                  navigate(`${rolePrefix}/compiler/${problem._id}/preview`);
+                                  navigate(`${rolePrefix}/library/coding/${problem._id}/preview`);
                                 }}
                                 className={`${menuItemClassName} text-slate-700 hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800`}
                               >
@@ -302,7 +304,7 @@ export default function ProblemManagement() {
                                 role="menuitem"
                                 onClick={() => {
                                   closeMenu();
-                                  handleDelete(problem._id);
+                                  setDeleteDialog({ isOpen: true, problem, deleting: false });
                                 }}
                                 className={`${menuItemClassName} text-rose-600 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-900/20`}
                               >
@@ -358,6 +360,22 @@ export default function ProblemManagement() {
               >
                 Yes
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteDialog.isOpen && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[1px]">
+          <div role="alertdialog" aria-modal="true" aria-labelledby="delete-problem-title" className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-300"><AlertTriangle className="h-5 w-5" /></div>
+            <h3 id="delete-problem-title" className="mt-4 text-lg font-bold text-slate-950 dark:text-white">Delete coding problem?</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-gray-300">
+              <strong>{deleteDialog.problem?.title || 'This problem'}</strong> and its related submissions will be permanently removed. This action cannot be undone.
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button type="button" disabled={deleteDialog.deleting} onClick={() => setDeleteDialog({ isOpen: false, problem: null, deleting: false })} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Cancel</button>
+              <button type="button" disabled={deleteDialog.deleting} onClick={() => handleDelete(deleteDialog.problem?._id)} className="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-rose-500 disabled:opacity-60"><Trash2 className="h-4 w-4" />{deleteDialog.deleting ? 'Deleting...' : 'Delete permanently'}</button>
             </div>
           </div>
         </div>

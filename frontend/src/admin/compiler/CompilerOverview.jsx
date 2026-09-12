@@ -261,7 +261,7 @@ export default function CompilerOverview() {
         const response = await api.getCompilerOverview();
         if (isMounted) setOverview(response);
       } catch (error) {
-        toast.error(error.message || 'Failed to load compiler overview.');
+        toast.error(error.message || 'Failed to load coding overview.');
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -274,7 +274,7 @@ export default function CompilerOverview() {
 
   const topSolvers = useMemo(() => overview?.charts?.topSolversByWindow?.[solverWindow] || [], [overview, solverWindow]);
 
-  if (loading) return <LoadingPanel label="Loading compiler overview..." />;
+  if (loading) return <LoadingPanel label="Loading coding overview..." />;
 
   const summary = overview?.summary || {};
   const topPerformers = overview?.topPerformers || {};

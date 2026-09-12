@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Edit2, Eye, FilePlus2, Plus, Save, Trash2, Upload, X } from 'lucide-react';
+import { AlertTriangle, BookOpenText, ChevronLeft, ChevronRight, Code2, Copy, Edit2, Eye, EyeOff, FilePlus2, FileText, FlaskConical, Plus, Save, Trash2, Upload, X } from 'lucide-react';
 import { api } from '../../utils/api';
 import { useToast } from '../../components/CustomToast';
 import RichTextEditor from './RichTextEditor';
 import MonacoCodeEditor from './MonacoCodeEditor';
-import { ProblemStatementPreview } from './CompilerContentPreview';
 import {
   COMPILER_LANGUAGES,
   buildProblemFormData,
@@ -20,12 +19,13 @@ import {
 } from './compilerUtils';
 import { EmptyState, LoadingPanel, SectionCard } from './CompilerUi';
 import { loadCodingDraft, saveCodingDraft } from '../assessment/assessmentCodingStore';
+import AuthoringStepper from '../library/AuthoringStepper';
 
 const EDITOR_TABS = [
-  { key: 'details', label: 'Question Details' },
-  { key: 'guidance', label: 'Hints & FAQ' },
-  { key: 'tests', label: 'Test Cases' },
-  { key: 'templates', label: 'Code Templates' },
+  { key: 'details', label: 'Description', shortLabel: 'Details', Icon: FileText },
+  { key: 'tests', label: 'Solution & test cases', shortLabel: 'Tests', Icon: FlaskConical },
+  { key: 'templates', label: 'Languages', shortLabel: 'Code', Icon: Code2 },
+  { key: 'editorial', label: 'Editorial', shortLabel: 'Review', Icon: BookOpenText },
 ];
 
 const PAIR_TEMPLATE_FILES = [
@@ -63,31 +63,21 @@ function TemplateButton({ children, onClick }) {
   );
 }
 
-function TabButton({ active, label, onClick }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-        active
-          ? 'bg-sky-600 text-white'
-          : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
-      }`}
-    >
-      {label}
-    </button>
-  );
+function RequiredFieldLabel({ children, optional = false }) {
+  return <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-gray-300">{children}{optional ? <span className="ml-1 text-xs font-normal text-slate-400">(optional)</span> : <span className="ml-1 font-bold text-rose-500" aria-label="required">*</span>}</label>;
 }
 
-function TestCaseEditorCard({ title, cases, onAdd, onRemove, onChange, includeExplanation = false, staged = false }) {
+function TestCaseEditorCard({ title, cases, onAdd, onRemove, onDuplicate, onChange, includeExplanation = false, staged = false }) {
   const [savedIndexes, setSavedIndexes] = useState(() => new Set(
     cases.map((testCase, index) => ((testCase.input || testCase.output) ? index : null)).filter((index) => index !== null),
   ));
+  const [expandedIndexes, setExpandedIndexes] = useState(() => new Set());
   const [validationError, setValidationError] = useState('');
 
   useEffect(() => {
     if (!staged) return;
     setSavedIndexes((current) => new Set([...current].filter((index) => index < cases.length)));
+    setExpandedIndexes((current) => new Set([...current].filter((index) => index < cases.length)));
   }, [cases.length, staged]);
 
   const updateCase = (index, field, value) => {
@@ -105,7 +95,7 @@ function TestCaseEditorCard({ title, cases, onAdd, onRemove, onChange, includeEx
   const saveCase = (index) => {
     const testCase = cases[index];
     if (!String(testCase?.input || '').trim() || !String(testCase?.output || '').trim()) {
-      setValidationError('Add both input and expected output before saving this sample.');
+      setValidationError(`Add both input and expected output before saving this ${title.toLowerCase()} case.`);
       return;
     }
     setSavedIndexes((current) => new Set([...current, index]));
@@ -115,37 +105,51 @@ function TestCaseEditorCard({ title, cases, onAdd, onRemove, onChange, includeEx
   const removeCase = (index) => {
     onRemove(index);
     setSavedIndexes((current) => new Set([...current].filter((item) => item !== index).map((item) => item > index ? item - 1 : item)));
+    setExpandedIndexes((current) => new Set([...current].filter((item) => item !== index).map((item) => item > index ? item - 1 : item)));
     setValidationError('');
   };
 
-  const allCasesSaved = !staged || (cases.length > 0 && cases.every((_, index) => savedIndexes.has(index)));
+  const togglePreview = (index) => {
+    setExpandedIndexes((current) => {
+      const next = new Set(current);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
+  const allCasesSaved = !staged || cases.length === 0 || cases.every((_, index) => savedIndexes.has(index));
 
   return (
     <div className="space-y-4">
       {cases.map((testCase, index) => savedIndexes.has(index) && staged ? (
-        <div key={`${title}-${index}`} className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-800 dark:bg-emerald-950/20">
+        <div key={`${title}-${index}`} className="overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50/60 dark:border-emerald-800 dark:bg-emerald-950/20">
+          <div className="p-4">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <h4 className="text-sm font-semibold text-slate-800 dark:text-gray-100">{title} {index + 1} saved</h4>
               <p className="mt-1 truncate font-mono text-xs text-slate-500 dark:text-gray-400">Input: {testCase.input}</p>
               <p className="mt-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300">{Number(testCase.marks) || 1} mark(s)</p>
             </div>
-            <div className="flex items-center gap-3">
-              <button type="button" onClick={() => setSavedIndexes((current) => { const next = new Set(current); next.delete(index); return next; })} className="inline-flex items-center gap-1 text-xs font-medium text-sky-700 dark:text-sky-300"><Edit2 className="h-3.5 w-3.5" />Edit</button>
-              {cases.length > 1 && <button type="button" onClick={() => removeCase(index)} className="inline-flex items-center gap-1 text-xs font-medium text-rose-600"><X className="h-3.5 w-3.5" />Remove</button>}
+            <div className="flex flex-wrap items-center justify-end gap-1">
+              <button type="button" onClick={() => togglePreview(index)} title={expandedIndexes.has(index) ? 'Hide case details' : 'View case details'} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-slate-600 hover:bg-white/80 dark:text-gray-300 dark:hover:bg-gray-900/60">{expandedIndexes.has(index) ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}{expandedIndexes.has(index) ? 'Hide' : 'View'}</button>
+              <button type="button" onClick={() => setSavedIndexes((current) => { const next = new Set(current); next.delete(index); return next; })} title="Edit case" className="inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-sky-700 hover:bg-white/80 dark:text-sky-300 dark:hover:bg-gray-900/60"><Edit2 className="h-3.5 w-3.5" />Edit</button>
+              {onDuplicate && <button type="button" onClick={() => onDuplicate(index)} title="Duplicate case" className="inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-slate-600 hover:bg-white/80 dark:text-gray-300 dark:hover:bg-gray-900/60"><Copy className="h-3.5 w-3.5" />Duplicate</button>}
+              <button type="button" onClick={() => removeCase(index)} title="Delete case" className="inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"><Trash2 className="h-3.5 w-3.5" />Delete</button>
             </div>
           </div>
+          </div>
+          {expandedIndexes.has(index) && <div className={`grid gap-3 border-t border-emerald-200 bg-white/80 p-4 text-xs dark:border-emerald-800 dark:bg-gray-900/50 ${includeExplanation ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
+            <div><p className="font-bold uppercase tracking-wide text-slate-400">Input</p><pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-100 p-3 font-mono text-slate-700 dark:bg-gray-800 dark:text-gray-200">{testCase.input || '(empty)'}</pre></div>
+            <div><p className="font-bold uppercase tracking-wide text-slate-400">Expected output</p><pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-100 p-3 font-mono text-slate-700 dark:bg-gray-800 dark:text-gray-200">{testCase.output || '(empty)'}</pre></div>
+            {includeExplanation && <div><p className="font-bold uppercase tracking-wide text-slate-400">Explanation</p><p className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-100 p-3 leading-5 text-slate-700 dark:bg-gray-800 dark:text-gray-200">{testCase.explanation || 'No explanation added.'}</p></div>}
+          </div>}
         </div>
       ) : (
         <div key={`${title}-${index}`} className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700">
           <div className="mb-3 flex items-center justify-between gap-3">
             <h4 className="text-sm font-semibold text-slate-800 dark:text-gray-100">{title} {index + 1}</h4>
-            {cases.length > 1 && (
-              <button type="button" onClick={() => removeCase(index)} className="inline-flex items-center gap-1 text-xs font-medium text-rose-600">
-                <X className="h-3.5 w-3.5" />
-                Remove
-              </button>
-            )}
+            <button type="button" onClick={() => removeCase(index)} className="inline-flex items-center gap-1 text-xs font-medium text-rose-600"><Trash2 className="h-3.5 w-3.5" />Delete</button>
           </div>
           <div className={`grid gap-4 ${includeExplanation ? 'md:grid-cols-[1fr_1fr_1fr_120px]' : 'md:grid-cols-[1fr_1fr_120px]'}`}>
             <textarea
@@ -176,9 +180,11 @@ function TestCaseEditorCard({ title, cases, onAdd, onRemove, onChange, includeEx
               <input type="number" min="0.01" step="0.5" value={testCase.marks ?? 1} onChange={(event) => updateCase(index, 'marks', event.target.value)} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500" />
             </label>
           </div>
-          {staged && <div className="mt-4 flex justify-end"><button type="button" onClick={() => saveCase(index)} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-500"><Save className="h-4 w-4" />Save sample</button></div>}
+          {staged && <div className="mt-4 flex justify-end"><button type="button" onClick={() => saveCase(index)} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-500"><Save className="h-4 w-4" />Save {title.toLowerCase()} case</button></div>}
         </div>
       ))}
+
+      {cases.length === 0 && <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center dark:border-gray-700 dark:bg-gray-800/50"><p className="text-sm font-semibold text-slate-700 dark:text-gray-200">No {title.toLowerCase()} test cases</p><p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Add a case and enter its input, expected output and marks.</p></div>}
 
       {validationError && <p className="text-sm font-medium text-rose-600 dark:text-rose-300">{validationError}</p>}
 
@@ -316,10 +322,12 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
   const [isSaving, setIsSaving] = useState(false);
   const [isApprovingPreview, setIsApprovingPreview] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState('');
   const formRef = useRef(form);
   const autoSaveRef = useRef(null);
+  const editorTopRef = useRef(null);
   const assessmentKey = finalAssessmentContext?.assessmentKey || 'new';
   const rolePrefix = window.location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
   const assessmentReturnTo = finalAssessmentContext?.returnTo || `${rolePrefix}/assessment`;
@@ -552,9 +560,9 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
       }
 
       if (redirectToPreview) {
-        navigate(`${rolePrefix}/compiler/${response._id}/preview`);
+        navigate(`${rolePrefix}/library/coding/${response._id}/preview${isAssessment ? location.search : ''}`);
       } else if (!currentProblemId && !isAssessment) {
-        navigate(`${rolePrefix}/compiler/${response._id}/edit`, { replace: true });
+        navigate(`${rolePrefix}/library/coding/${response._id}/edit`, { replace: true });
       }
 
       if (silent) setAutoSaveStatus('Draft auto-saved');
@@ -594,14 +602,12 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
   }, [isAssessment, isDirty]);
   const handleDelete = async () => {
     if (!currentProblemId) return;
-    const confirmed = window.confirm('Delete this problem and all related submissions? This cannot be undone.');
-    if (!confirmed) return;
-
     setIsDeleting(true);
     try {
       await api.deleteCompilerProblem(currentProblemId);
       toast.success('Problem deleted successfully.');
-      navigate(`${rolePrefix}/compiler/problems`);
+      setDeleteConfirmOpen(false);
+      navigate(`${rolePrefix}/library/coding/problems`);
     } catch (error) {
       toast.error(error.message || 'Failed to delete problem.');
     } finally {
@@ -672,14 +678,6 @@ if (!isValidated || publishedProblem.status !== 'published') {
   if (loading) {
     return <LoadingPanel label={isEditMode ? 'Loading problem editor...' : 'Loading editor...'} />;
   }
-
-  const previewProblem = {
-    ...form,
-    status: currentStatus,
-    tags: form.tags.split(',').map((item) => item.trim()).filter(Boolean),
-    companyTags: form.companyTags.split(',').map((item) => item.trim()).filter(Boolean),
-    hiddenTestCaseCount: hiddenCount,
-  };
 
   const handleHiddenTestFiles = async (fileList) => {
     const files = Array.from(fileList || []);
@@ -760,54 +758,70 @@ if (!isValidated || publishedProblem.status !== 'published') {
   };
   const activeTabIndex = EDITOR_TABS.findIndex((tab) => tab.key === activeTab);
   const isFinalTab = activeTabIndex === EDITOR_TABS.length - 1;
+  const tabCompletion = {
+    details: Boolean(form.title?.trim() && form.description?.trim() && form.inputFormat?.trim() && form.outputFormat?.trim() && form.constraints?.trim()),
+    tests: visibleSampleCount > 0 && hiddenCount > 0,
+    templates: form.supportedLanguages.length > 0 && hasTemplate,
+    editorial: Boolean(form.editorial?.trim() || form.hints?.length || form.faqs?.length),
+  };
   const goToTab = (index) => {
     const nextTab = EDITOR_TABS[index];
     if (!nextTab) return;
     setActiveTab(nextTab.key);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    requestAnimationFrame(() => editorTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  };
+  const selectTab = (key) => {
+    setActiveTab(key);
+    requestAnimationFrame(() => editorTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   };
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
-      <div className="space-y-6">
-        <SectionCard
-          title={isAssessment ? 'Assessment Coding Question' : (isEditMode ? 'Edit Problem' : 'Create Problem')}
-          subtitle={isAssessment ? 'Full compiler-grade authoring flow for assessment coding questions.' : 'Professional authoring workflow for question details, judge testcases, and multi-language starter code.'}
-          action={<div className="flex flex-wrap gap-2">{EDITOR_TABS.map((tab) => <TabButton key={tab.key} label={tab.label} active={activeTab === tab.key} onClick={() => setActiveTab(tab.key)} />)}</div>}
-        >
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/60">
-            <div>
-              <p className="text-sm font-semibold text-slate-800 dark:text-gray-100">{currentStatus === 'published' ? 'Published problem' : 'Draft workspace'}</p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Sample cases: {visibleSampleCount} | Hidden cases: {hiddenCount} | Languages: {form.supportedLanguages.length}</p>
-              <p className="mt-2 text-xs text-slate-500 dark:text-gray-400">
-                Preview validation: {previewValidated ? 'Completed' : 'Required before publish'}
-              </p>
+    <div ref={editorTopRef} className="mx-auto max-w-[1180px] pb-20">
+      <div className="space-y-5">
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900 sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white"><Code2 className="h-5 w-5" /></span>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold text-slate-950 dark:text-white">{isAssessment ? 'Assessment coding question' : (isEditMode ? 'Edit coding problem' : 'Create coding problem')}</p>
+                <p className="text-xs text-slate-500 dark:text-gray-400">{currentStatus === 'published' ? 'Published' : 'Draft'} · {visibleSampleCount} sample · {hiddenCount} hidden · {form.supportedLanguages.length} languages</p>
+              </div>
             </div>
+            <button type="button" onClick={openPreview} disabled={isSaving || isApprovingPreview} title="Open solving preview" className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"><Eye className="h-4 w-4" />{isApprovingPreview ? 'Opening...' : 'Solve preview'}</button>
           </div>
-        </SectionCard>
+          <div className="mx-auto mt-4 w-full max-w-4xl border-y border-slate-100 py-1 dark:border-gray-800">
+            <AuthoringStepper steps={EDITOR_TABS} activeKey={activeTab} completed={tabCompletion} onChange={selectTab} />
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold">
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600 dark:bg-gray-800 dark:text-gray-300">{visibleSampleCount} sample</span>
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600 dark:bg-gray-800 dark:text-gray-300">{hiddenCount} hidden</span>
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600 dark:bg-gray-800 dark:text-gray-300">{form.supportedLanguages.length} languages</span>
+            <span className={`rounded-full px-2.5 py-1 ${previewValidated ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300'}`}>{previewValidated ? 'Preview validated' : 'Validation pending'}</span>
+          </div>
+        </section>
 
         {activeTab === 'details' ? (
           <>
             <SectionCard title="Question Details" subtitle="Core metadata and public-facing problem statement.">
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="md:col-span-2">
-                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-gray-300">Title</label>
+                  <RequiredFieldLabel>Problem name</RequiredFieldLabel>
                   <input value={form.title} onChange={(event) => updateField('title', event.target.value)} placeholder="Example: Longest Increasing Subsequence" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
                 </div>
                 <div className="md:col-span-2">
-                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-gray-300">Description</label>
+                  <RequiredFieldLabel>Problem statement</RequiredFieldLabel>
                   <RichTextEditor value={form.description} onChange={(value) => updateField('description', value)} rows={14} placeholder="Explain the problem clearly using headings, examples, and inline code." />
                 </div>
                 <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-gray-300">Difficulty</label>
+                  <RequiredFieldLabel>Difficulty</RequiredFieldLabel>
                   <select value={form.difficulty} onChange={(event) => updateField('difficulty', event.target.value)} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"><option>Easy</option><option>Medium</option><option>Hard</option></select>
                 </div>
                 <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-gray-300">Tags</label>
+                  <RequiredFieldLabel optional>Tags</RequiredFieldLabel>
                   <input value={form.tags} onChange={(event) => updateField('tags', event.target.value)} placeholder="arrays, dp, greedy" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
                 </div>
                 <div className="md:col-span-2">
-                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-gray-300">Company Tags</label>
+                  <RequiredFieldLabel optional>Company tags</RequiredFieldLabel>
                   <input value={form.companyTags} onChange={(event) => updateField('companyTags', event.target.value)} placeholder="Amazon, Google, Microsoft" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
                 </div>
               </div>
@@ -816,15 +830,15 @@ if (!isValidated || publishedProblem.status !== 'published') {
             <SectionCard title="Input / Output Specification" subtitle="Public contract shown to problem solvers.">
               <div className="grid gap-4 md:grid-cols-3">
                 <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-gray-300">Input Format</label>
+                  <RequiredFieldLabel>Input format</RequiredFieldLabel>
                   <textarea value={form.inputFormat} onChange={(event) => updateField('inputFormat', event.target.value)} rows={5} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
                 </div>
                 <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-gray-300">Output Format</label>
+                  <RequiredFieldLabel>Output format</RequiredFieldLabel>
                   <textarea value={form.outputFormat} onChange={(event) => updateField('outputFormat', event.target.value)} rows={5} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
                 </div>
                 <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-gray-300">Constraints</label>
+                  <RequiredFieldLabel>Constraints</RequiredFieldLabel>
                   <RichTextEditor value={form.constraints} onChange={(value) => updateField('constraints', value)} rows={7} placeholder="Add one constraint per line, then format lines with headings, bold, lists, quotes, or code." />
                 </div>
               </div>
@@ -833,11 +847,11 @@ if (!isValidated || publishedProblem.status !== 'published') {
             <SectionCard title="Execution Limits" subtitle="Judge limits for submissions.">
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-gray-300">Time Limit</label>
+                  <RequiredFieldLabel>Time limit (seconds)</RequiredFieldLabel>
                   <input type="number" min="1" step="0.5" value={form.timeLimitSeconds} onChange={(event) => updateField('timeLimitSeconds', event.target.value)} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
                 </div>
                 <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-gray-300">Memory Limit</label>
+                  <RequiredFieldLabel>Memory limit (MB)</RequiredFieldLabel>
                   <input type="number" min="64" step="64" value={form.memoryLimitMb} onChange={(event) => updateField('memoryLimitMb', event.target.value)} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
                 </div>
               </div>
@@ -845,8 +859,12 @@ if (!isValidated || publishedProblem.status !== 'published') {
           </>
         ) : null}
 
-        {activeTab === 'guidance' ? (
+        {activeTab === 'editorial' ? (
           <>
+            <SectionCard title="Editorial" subtitle="Optional internal solution guide for reviewers and maintainers.">
+              <RequiredFieldLabel optional>Editorial solution</RequiredFieldLabel>
+              <RichTextEditor value={form.editorial || ''} onChange={(value) => updateField('editorial', value)} rows={12} placeholder="Explain the intended approach, complexity, edge cases and reference reasoning." />
+            </SectionCard>
             <SectionCard title="Hints" subtitle="Optional progressive guidance that students can reveal while solving.">
               <HintEditor
                 hints={form.hints || []}
@@ -870,6 +888,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
         {activeTab === 'tests' ? (
           <>
             <SectionCard title="Sample Test Cases" subtitle="Visible examples for the statement and admin run flow.">
+              <RequiredFieldLabel>At least one complete sample</RequiredFieldLabel>
               <TestCaseEditorCard
                 title="Sample"
                 cases={form.sampleTestCases}
@@ -877,29 +896,48 @@ if (!isValidated || publishedProblem.status !== 'published') {
                 staged
                 onAdd={() => updateField('sampleTestCases', [...form.sampleTestCases, createEmptySampleTestCase()])}
                 onRemove={(index) => updateField('sampleTestCases', form.sampleTestCases.filter((_, itemIndex) => itemIndex !== index))}
+                onDuplicate={(index) => updateField('sampleTestCases', [...form.sampleTestCases, { ...form.sampleTestCases[index] }])}
                 onChange={updateSampleTestCase}
               />
             </SectionCard>
 
-            <SectionCard title="Hidden Test Cases" subtitle="Bulk upload input_1.txt/output_1.txt pairs or add private cases manually.">
-              <div className="mb-4 grid gap-3 sm:grid-cols-2">
-                <label className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 transition-colors ${form.hiddenTestUploadMode === 'pairs' ? 'border-sky-300 bg-sky-50 dark:border-sky-700 dark:bg-sky-900/10' : 'border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900'}`}>
-                  <input type="radio" name="hidden-upload-mode" checked={form.hiddenTestUploadMode === 'pairs'} onChange={() => updateHiddenUploadMode('pairs')} className="h-4 w-4 border-slate-300 text-sky-600 focus:ring-sky-500" />
-                  <span className="text-sm font-medium text-slate-700 dark:text-gray-200">Pair / Manual mode</span>
+            <SectionCard title="Hidden Test Cases" subtitle="Add private judge cases manually or import files when you have many cases.">
+              <RequiredFieldLabel>At least one hidden judge case</RequiredFieldLabel>
+              <div className="mb-5 grid gap-3 md:grid-cols-3">
+                <label className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3 transition-colors ${form.hiddenTestUploadMode === 'manual' ? 'border-sky-300 bg-sky-50 ring-2 ring-sky-100 dark:border-sky-700 dark:bg-sky-900/10 dark:ring-sky-900/30' : 'border-slate-200 bg-white hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800'}`}>
+                  <input type="radio" name="hidden-upload-mode" checked={form.hiddenTestUploadMode === 'manual'} onChange={() => updateHiddenUploadMode('manual')} className="mt-0.5 h-4 w-4 border-slate-300 text-sky-600 focus:ring-sky-500" />
+                  <span><span className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-gray-100"><Edit2 className="h-4 w-4" />Manual entry</span><span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-gray-400">Type one or multiple cases directly. No files required.</span></span>
                 </label>
-                <label className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 transition-colors ${form.hiddenTestUploadMode === 'bulk' ? 'border-sky-300 bg-sky-50 dark:border-sky-700 dark:bg-sky-900/10' : 'border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900'}`}>
-                  <input type="radio" name="hidden-upload-mode" checked={form.hiddenTestUploadMode === 'bulk'} onChange={() => updateHiddenUploadMode('bulk')} className="h-4 w-4 border-slate-300 text-sky-600 focus:ring-sky-500" />
-                  <span className="text-sm font-medium text-slate-700 dark:text-gray-200">Bulk upload mode</span>
+                <label className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3 transition-colors ${form.hiddenTestUploadMode === 'pairs' ? 'border-sky-300 bg-sky-50 ring-2 ring-sky-100 dark:border-sky-700 dark:bg-sky-900/10 dark:ring-sky-900/30' : 'border-slate-200 bg-white hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800'}`}>
+                  <input type="radio" name="hidden-upload-mode" checked={form.hiddenTestUploadMode === 'pairs'} onChange={() => updateHiddenUploadMode('pairs')} className="mt-0.5 h-4 w-4 border-slate-300 text-sky-600 focus:ring-sky-500" />
+                  <span><span className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-gray-100"><FileText className="h-4 w-4" />File pairs</span><span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-gray-400">Upload one or many input_N.txt/output_N.txt pairs.</span></span>
+                </label>
+                <label className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3 transition-colors ${form.hiddenTestUploadMode === 'bulk' ? 'border-sky-300 bg-sky-50 ring-2 ring-sky-100 dark:border-sky-700 dark:bg-sky-900/10 dark:ring-sky-900/30' : 'border-slate-200 bg-white hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800'}`}>
+                  <input type="radio" name="hidden-upload-mode" checked={form.hiddenTestUploadMode === 'bulk'} onChange={() => updateHiddenUploadMode('bulk')} className="mt-0.5 h-4 w-4 border-slate-300 text-sky-600 focus:ring-sky-500" />
+                  <span><span className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-gray-100"><Upload className="h-4 w-4" />Bulk files</span><span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-gray-400">Use one inputs file and one outputs file for a large set.</span></span>
                 </label>
               </div>
 
-              {form.hiddenTestUploadMode === 'pairs' ? (
+              {form.hiddenTestUploadMode === 'manual' ? (
+                <div>
+                  <div className="mb-3 flex items-center justify-between gap-3"><div><p className="text-sm font-semibold text-slate-800 dark:text-gray-100">Manual hidden cases</p><p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Enter input and expected output here. Add as many independent cases as needed.</p></div><span className="rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:bg-sky-950/30 dark:text-sky-300">{manualHiddenCount} added</span></div>
+                  <TestCaseEditorCard
+                    title="Hidden"
+                    cases={form.hiddenTestCases}
+                    staged
+                    onAdd={() => updateField('hiddenTestCases', [...form.hiddenTestCases, createEmptyHiddenTestCase()])}
+                    onRemove={(index) => updateField('hiddenTestCases', form.hiddenTestCases.filter((_, itemIndex) => itemIndex !== index))}
+                    onDuplicate={(index) => updateField('hiddenTestCases', [...form.hiddenTestCases, { ...form.hiddenTestCases[index] }])}
+                    onChange={updateHiddenTestCase}
+                  />
+                </div>
+              ) : form.hiddenTestUploadMode === 'pairs' ? (
                 <div className="space-y-6">
                   <div>
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-gray-300">Pair file upload</label>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Upload matching files named input_1.txt, output_1.txt, input_2.txt, output_2.txt, and so on.</p>
+                        <label className="block text-sm font-semibold text-slate-800 dark:text-gray-100">Upload paired files</label>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Select a single pair or multiple pairs together. File numbers must match.</p>
                       </div>
                       <div className="flex flex-wrap gap-2">
                         {PAIR_TEMPLATE_FILES.map((file) => (
@@ -911,7 +949,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
                     </div>
                     <label className="flex cursor-pointer items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm font-medium text-slate-600 transition-colors hover:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-900">
                       <Upload className="mr-2 h-4 w-4" />
-                      Upload input_1.txt / output_1.txt files
+                      Choose input/output file pair(s)
                       <input
                         type="file"
                         multiple
@@ -942,16 +980,18 @@ if (!isValidated || publishedProblem.status !== 'published') {
                     ) : null}
                   </div>
 
-                  <div>
-                    <label className="mb-3 block text-sm font-medium text-slate-700 dark:text-gray-300">All hidden test cases</label>
+                  {(hiddenPairs.pairs.length > 0 || manualHiddenCount > 0) && <div>
+                    <label className="mb-3 block text-sm font-semibold text-slate-800 dark:text-gray-100">Review imported cases</label>
                     <TestCaseEditorCard
                       title="Hidden"
                       cases={form.hiddenTestCases}
+                      staged
                       onAdd={() => updateField('hiddenTestCases', [...form.hiddenTestCases, createEmptyHiddenTestCase()])}
                       onRemove={(index) => updateField('hiddenTestCases', form.hiddenTestCases.filter((_, itemIndex) => itemIndex !== index))}
+                      onDuplicate={(index) => updateField('hiddenTestCases', [...form.hiddenTestCases, { ...form.hiddenTestCases[index] }])}
                       onChange={updateHiddenTestCase}
                     />
-                  </div>
+                  </div>}
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -1010,7 +1050,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
               <div className="grid gap-4 md:grid-cols-3">
                 <div className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">Samples</p><p className="mt-2 text-2xl font-bold text-slate-900 dark:text-gray-100">{visibleSampleCount}</p></div>
                 <div className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">Hidden</p><p className="mt-2 text-2xl font-bold text-slate-900 dark:text-gray-100">{hiddenCount}</p></div>
-                <div className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">Upload Mode</p><p className="mt-2 text-lg font-semibold text-slate-900 dark:text-gray-100">{form.hiddenTestUploadMode === 'bulk' ? 'Bulk upload' : 'Pair / Manual'}</p></div>
+                <div className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">Entry Mode</p><p className="mt-2 text-lg font-semibold text-slate-900 dark:text-gray-100">{form.hiddenTestUploadMode === 'bulk' ? 'Bulk files' : form.hiddenTestUploadMode === 'pairs' ? 'File pairs' : 'Manual entry'}</p></div>
               </div>
 
               {visibleSampleCount === 0 && hiddenCount === 0 ? (
@@ -1034,7 +1074,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
                   <div className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700">
                     <p className="text-sm font-semibold text-slate-800 dark:text-gray-100">Parsed hidden tests</p>
                     <div className="mt-3 space-y-3">
-                      {form.hiddenTestUploadMode === 'pairs' ? (
+                      {form.hiddenTestUploadMode !== 'bulk' ? (
                         <>
                           {/* Show uploaded file pairs when available */}
                           {hiddenPairs.pairs.length > 0 && (
@@ -1086,6 +1126,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
         {activeTab === 'templates' ? (
           <>
             <SectionCard title="Supported Languages" subtitle="Choose runtimes for admin testing and submissions.">
+              <RequiredFieldLabel>Allowed languages</RequiredFieldLabel>
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {COMPILER_LANGUAGES.map((language) => {
                   const checked = form.supportedLanguages.includes(language.id);
@@ -1100,6 +1141,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
             </SectionCard>
 
             <SectionCard title="Code Templates" subtitle="Provide starter code for each language. Students can fully replace it with any valid program entrypoint.">
+              <RequiredFieldLabel>Starter code</RequiredFieldLabel>
               <div className="mb-4 flex flex-wrap gap-2">
                 <div className="flex flex-wrap gap-2">{form.supportedLanguages.map((languageId) => <button key={languageId} type="button" onClick={() => setActiveLanguage(languageId)} className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${activeLanguage === languageId ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}>{getLanguageLabel(languageId)}</button>)}</div>
               </div>
@@ -1156,16 +1198,6 @@ if (!isValidated || publishedProblem.status !== 'published') {
 
 
 
-        <SectionCard title={`Step ${activeTabIndex + 1} of ${EDITOR_TABS.length}`} subtitle={isFinalTab ? 'Review the final templates, preview the problem, then use the publishing actions below.' : `Continue to ${EDITOR_TABS[activeTabIndex + 1]?.label || 'the next step'} when this section is complete.`}>
-          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <button type="button" onClick={() => goToTab(activeTabIndex - 1)} disabled={activeTabIndex === 0} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"><ChevronLeft className="h-4 w-4" />Previous</button>
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <button type="button" onClick={openPreview} disabled={isSaving || isApprovingPreview} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"><Eye className="h-4 w-4" />{isApprovingPreview ? 'Opening...' : 'Save & Preview'}</button>
-              {!isFinalTab && <button type="button" onClick={() => goToTab(activeTabIndex + 1)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-500">Next: {EDITOR_TABS[activeTabIndex + 1]?.label}<ChevronRight className="h-4 w-4" /></button>}
-            </div>
-          </div>
-        </SectionCard>
-
         {isFinalTab && <SectionCard
           title="Actions"
           subtitle={isAssessment ? 'Save drafts, validate, and add to the assessment.' : 'Save drafts, publish, or cleanly remove the problem from the judge workspace.'}
@@ -1216,7 +1248,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
                 {canAddToAssessmentDynamic && (
                   <button type="button" onClick={handleAddToAssessment} disabled={isSaving} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"><FilePlus2 className="h-4 w-4" />Add to Assessment</button>
                 )}
-                {currentProblemId ? <button type="button" onClick={handleDelete} disabled={isDeleting || isSaving} className="inline-flex items-center gap-2 rounded-xl border border-rose-200 px-4 py-2.5 text-sm font-semibold text-rose-600 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-900/20"><Trash2 className="h-4 w-4" />{isDeleting ? 'Deleting...' : 'Delete Problem'}</button> : null}
+                {currentProblemId ? <button type="button" onClick={() => setDeleteConfirmOpen(true)} disabled={isDeleting || isSaving} className="inline-flex items-center gap-2 rounded-xl border border-rose-200 px-4 py-2.5 text-sm font-semibold text-rose-600 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-900/20"><Trash2 className="h-4 w-4" />{isDeleting ? 'Deleting...' : 'Delete Problem'}</button> : null}
               </>
             )}
           </div>
@@ -1225,11 +1257,30 @@ if (!isValidated || publishedProblem.status !== 'published') {
           ) : null}
           {!isAssessment && !previewValidated ? <p className="mt-3 text-xs text-amber-600 dark:text-amber-300">Publishing stays disabled until the preview IDE submits an Accepted solution and is approved.</p> : null}
         </SectionCard>}
+
+        <div className="sticky bottom-0 z-20 flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.06)] backdrop-blur dark:border-gray-700 dark:bg-gray-900/95">
+          <button type="button" onClick={() => goToTab(activeTabIndex - 1)} disabled={activeTabIndex === 0} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"><ChevronLeft className="h-4 w-4" /><span className="hidden sm:inline">Previous</span></button>
+          <span className="text-xs font-semibold text-slate-500 dark:text-gray-400">Step {activeTabIndex + 1} of {EDITOR_TABS.length}</span>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={openPreview} disabled={isSaving || isApprovingPreview} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"><Eye className="h-4 w-4" /><span className="hidden sm:inline">{isApprovingPreview ? 'Opening...' : 'Solve preview'}</span></button>
+            {!isFinalTab && <button type="button" onClick={() => goToTab(activeTabIndex + 1)} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 text-sm font-semibold text-white transition hover:bg-sky-500">Next<span className="hidden sm:inline">: {EDITOR_TABS[activeTabIndex + 1]?.label}</span><ChevronRight className="h-4 w-4" /></button>}
+          </div>
+        </div>
       </div>
 
-      <div className="space-y-6 xl:sticky xl:top-24 xl:self-start">
-        <ProblemStatementPreview problem={previewProblem} />
-      </div>
+      {deleteConfirmOpen && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[1px]">
+          <div role="alertdialog" aria-modal="true" aria-labelledby="delete-editor-problem-title" className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-300"><AlertTriangle className="h-5 w-5" /></div>
+            <h3 id="delete-editor-problem-title" className="mt-4 text-lg font-bold text-slate-950 dark:text-white">Delete coding problem?</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-gray-300">The problem and all related submissions will be permanently removed. This action cannot be undone.</p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button type="button" disabled={isDeleting} onClick={() => setDeleteConfirmOpen(false)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Cancel</button>
+              <button type="button" disabled={isDeleting} onClick={handleDelete} className="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-rose-500 disabled:opacity-60"><Trash2 className="h-4 w-4" />{isDeleting ? 'Deleting...' : 'Delete permanently'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import Problem from '../models/Problem.js';
 import Submission from '../models/Submission.js';
 import User from '../models/User.js';
+import Assessment from '../models/Assessment.js';
 import { HttpError } from '../utils/errors.js';
 import { sanitizeSearchQuery, validateObjectId } from '../utils/validators.js';
 
@@ -49,7 +50,7 @@ function parseDateRange(query) {
   return { dateFrom, dateTo };
 }
 
-function buildSubmissionMatch({ studentId = '', problemId = '', dateFrom = null, dateTo = null }) {
+function buildSubmissionMatch({ studentId = '', problemId = '', assessmentId = '', dateFrom = null, dateTo = null }) {
   const match = {
     mode: 'submit',
   };
@@ -62,6 +63,11 @@ function buildSubmissionMatch({ studentId = '', problemId = '', dateFrom = null,
   if (problemId) {
     ensureObjectId(problemId, 'Problem ID');
     match.problem = problemId;
+  }
+
+  if (assessmentId) {
+    ensureObjectId(assessmentId, 'Assessment ID');
+    match.assessmentId = assessmentId;
   }
 
   if (dateFrom || dateTo) {
@@ -104,7 +110,7 @@ function buildDateSeriesFromRange(startDate, endDate, aggregation) {
 
 async function getControlledStudents() {
   return User.find({ role: 'student' })
-    .select('_id name email studentId createdAt')
+    .select('_id name email studentId semester group course branch college createdAt')
     .sort({ name: 1 })
     .lean();
 }
@@ -112,7 +118,7 @@ async function getControlledStudents() {
 async function getControlledProblems(req) {
   const query = req?.user?.role === 'coordinator' ? { createdBy: req.user._id } : {};
   return Problem.find(query)
-    .select('_id title difficulty status createdAt')
+    .select('_id title difficulty tags companyTags status createdAt')
     .sort({ createdAt: -1 })
     .lean();
 }

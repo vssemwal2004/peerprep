@@ -89,7 +89,7 @@ export default function CompilerAnalytics() {
           setAnalytics(response);
         }
       } catch (error) {
-        toast.error(error.message || 'Failed to load compiler analytics.');
+        toast.error(error.message || 'Failed to load coding analytics.');
       } finally {
         if (isMounted) {
           setLoading(false);
@@ -109,7 +109,7 @@ export default function CompilerAnalytics() {
   );
 
   if (loading) {
-    return <LoadingPanel label="Loading compiler analytics..." />;
+    return <LoadingPanel label="Loading coding analytics..." />;
   }
 
   const availableStudents = analytics?.filters?.students || [];

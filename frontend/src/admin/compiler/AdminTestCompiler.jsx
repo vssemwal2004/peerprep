@@ -666,14 +666,14 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
                 <div className="flex shrink-0 items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => navigate(backTo || `${rolePrefix}/compiler/problems`)}
+                    onClick={() => navigate(backTo || `${rolePrefix}/library/coding/problems`)}
                     className="rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
                   >
                     {backLabel}
                   </button>
                   <button
                     type="button"
-                    onClick={() => navigate(editTo || `${rolePrefix}/compiler/${problem._id}/edit`)}
+                    onClick={() => navigate(editTo || `${rolePrefix}/library/coding/${problem._id}/edit`)}
                     className="rounded-xl bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.03)] transition-colors hover:bg-slate-50 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
                   >
                     {editLabel}
@@ -751,14 +751,14 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => navigate(backTo || `${rolePrefix}/compiler/problems`)}
+                  onClick={() => navigate(backTo || `${rolePrefix}/library/coding/problems`)}
                   className="rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
                 >
                   {backLabel}
                 </button>
                 <button
                   type="button"
-                  onClick={() => navigate(editTo || `${rolePrefix}/compiler/${problem._id}/edit`)}
+                  onClick={() => navigate(editTo || `${rolePrefix}/library/coding/${problem._id}/edit`)}
                   className="rounded-xl bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.03)] transition-colors hover:bg-slate-50 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
                 >
                   {editLabel}

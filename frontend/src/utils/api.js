@@ -576,6 +576,11 @@ export const api = {
   },
   createLibraryQuestion: (question) => request('/admin/library/questions', { method: 'POST', body: { question } }),
   createLibraryQuestionsBulk: (questions) => request('/admin/library/questions/bulk', { method: 'POST', body: { questions } }),
+  uploadLibraryQuestionAsset: (file) => {
+    const fd = new FormData();
+    fd.append('image', file);
+    return request('/admin/library/assets', { method: 'POST', formData: fd, timeoutMs: 30 * 1000 });
+  },
   getLibraryQuestion: (id) => request(`/admin/library/questions/${id}`, { skipCache: true }),
   updateLibraryQuestion: (id, body) => request(`/admin/library/questions/${id}`, { method: 'PATCH', body }),
   deleteLibraryQuestion: (id) => request(`/admin/library/questions/${id}`, { method: 'DELETE' }),

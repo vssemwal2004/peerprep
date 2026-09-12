@@ -129,7 +129,7 @@ export default function AdminCodeEditor({ problem }) {
               Admin Playground
             </p>
             <h3 className="mt-1 text-lg font-semibold text-slate-900 dark:text-gray-100">
-              Embedded Compiler
+              Code Runner
             </h3>
           </div>
 

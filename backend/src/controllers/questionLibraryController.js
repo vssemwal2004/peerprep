@@ -1,5 +1,7 @@
 import mongoose from 'mongoose';
+import { randomUUID } from 'node:crypto';
 import QuestionLibrary from '../models/QuestionLibrary.js';
+import { supabase } from '../utils/supabase.js';
 import {
   buildLibrarySearchMatch,
   ensureQuestionLibrarySynchronized,
@@ -13,6 +15,89 @@ function normalizeType(type = '') {
 
 function normalizeTag(tag = '') {
   return String(tag || '').trim();
+}
+
+function getQuestionSearchValues(question = {}) {
+  const childQuestions = question.libraryItemKind === 'passage_set' && Array.isArray(question.questions)
+    ? question.questions
+    : [];
+  return [
+    question.questionText,
+    question.passage?.title,
+    question.passage?.text,
+    ...(question.options || []),
+    question.expectedAnswer,
+    ...(question.tags || []),
+    ...(question.keywords || []),
+    ...childQuestions.flatMap((child) => [
+      child.questionText,
+      ...(child.options || []),
+      child.expectedAnswer,
+      ...(child.tags || []),
+      ...(child.keywords || []),
+    ]),
+  ];
+}
+
+const QUESTION_ASSET_MIME_TYPES = new Map([
+  ['image/jpeg', 'jpg'],
+  ['image/png', 'png'],
+  ['image/webp', 'webp'],
+  ['image/gif', 'gif'],
+]);
+
+export async function uploadLibraryAsset(req, res) {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Select an image to upload.' });
+    if (!QUESTION_ASSET_MIME_TYPES.has(req.file.mimetype)) {
+      return res.status(400).json({ error: 'Only JPG, PNG, WebP, and GIF images are supported.' });
+    }
+    if (!supabase) return res.status(503).json({ error: 'Question image storage is not configured.' });
+
+    const bucket = String(process.env.SUPABASE_QUESTION_ASSET_BUCKET || 'question-assets').trim();
+    const ownerId = String(req.user?._id || req.admin?._id || 'admin');
+    const extension = QUESTION_ASSET_MIME_TYPES.get(req.file.mimetype);
+    const datePrefix = new Date().toISOString().slice(0, 10);
+    const objectPath = `${ownerId}/${datePrefix}/${randomUUID()}.${extension}`;
+
+    let uploadResult = await supabase.storage.from(bucket).upload(objectPath, req.file.buffer, {
+      contentType: req.file.mimetype,
+      cacheControl: '31536000',
+      upsert: false,
+    });
+
+    if (uploadResult.error && /bucket.*not found/i.test(uploadResult.error.message || '')) {
+      const created = await supabase.storage.createBucket(bucket, {
+        public: true,
+        fileSizeLimit: 5 * 1024 * 1024,
+        allowedMimeTypes: Array.from(QUESTION_ASSET_MIME_TYPES.keys()),
+      });
+      if (created.error && !/already exists/i.test(created.error.message || '')) throw created.error;
+      uploadResult = await supabase.storage.from(bucket).upload(objectPath, req.file.buffer, {
+        contentType: req.file.mimetype,
+        cacheControl: '31536000',
+        upsert: false,
+      });
+    }
+
+    if (uploadResult.error) throw uploadResult.error;
+    const { data } = supabase.storage.from(bucket).getPublicUrl(objectPath);
+    if (!data?.publicUrl) throw new Error('Unable to create a public image URL.');
+
+    return res.status(201).json({
+      asset: {
+        url: data.publicUrl,
+        path: objectPath,
+        bucket,
+        mimeType: req.file.mimetype,
+        originalName: req.file.originalname,
+        size: req.file.size,
+      },
+    });
+  } catch (err) {
+    console.error('Error uploading question library asset:', err);
+    return res.status(500).json({ error: err.message || 'Failed to upload question image.' });
+  }
 }
 
 function normalizeIdentityText(value = '') {
@@ -112,8 +197,14 @@ export async function listLibraryQuestions(req, res) {
       search = '',
       tag = '',
       difficulty = '',
+      status = '',
+      visibility = '',
+      sourceType = '',
+      sortBy = 'updatedAt',
+      sortOrder = 'desc',
       page = 1,
       limit = 25,
+      selectAll = 'false',
     } = req.query || {};
 
     const pageNum = Math.max(1, Number(page) || 1);
@@ -129,6 +220,15 @@ export async function listLibraryQuestions(req, res) {
     }
     if (difficulty) {
       baseMatch.difficulty = String(difficulty).trim();
+    }
+    if (status) {
+      baseMatch.status = String(status).trim().toLowerCase();
+    }
+    if (visibility) {
+      baseMatch.visibility = String(visibility).trim().toLowerCase();
+    }
+    if (sourceType) {
+      baseMatch.sourceType = String(sourceType).trim().toLowerCase();
     }
     if (req.user?.role === 'coordinator') {
       baseMatch.createdBy = req.user._id;
@@ -148,14 +248,31 @@ export async function listLibraryQuestions(req, res) {
     const filteredQuestions = selectedType && selectedType !== 'all'
       ? uniqueBaseQuestions.filter((question) => question.questionType === selectedType)
       : uniqueBaseQuestions;
-    const total = filteredQuestions.length;
-    const questions = filteredQuestions.slice(skip, skip + limitNum);
+    const allowedSortFields = new Set(['updatedAt', 'createdAt', 'questionText', 'difficulty']);
+    const selectedSort = allowedSortFields.has(sortBy) ? sortBy : 'updatedAt';
+    const direction = String(sortOrder).toLowerCase() === 'asc' ? 1 : -1;
+    const difficultyRank = { easy: 1, medium: 2, hard: 3 };
+    const sortedQuestions = [...filteredQuestions].sort((a, b) => {
+      if (selectedSort === 'difficulty') {
+        return ((difficultyRank[String(a.difficulty || '').toLowerCase()] || 99)
+          - (difficultyRank[String(b.difficulty || '').toLowerCase()] || 99)) * direction;
+      }
+      if (selectedSort === 'questionText') {
+        return String(a.questionText || '').localeCompare(String(b.questionText || '')) * direction;
+      }
+      const aTime = new Date(a[selectedSort] || 0).getTime();
+      const bTime = new Date(b[selectedSort] || 0).getTime();
+      return (aTime - bTime) * direction;
+    });
+    const total = sortedQuestions.length;
+    const includeAllMatches = String(selectAll).trim().toLowerCase() === 'true';
+    const questions = includeAllMatches ? sortedQuestions : sortedQuestions.slice(skip, skip + limitNum);
 
     res.json({
       questions: questions.map(formatLibraryQuestionSummary),
       pagination: {
-        page: pageNum,
-        limit: limitNum,
+        page: includeAllMatches ? 1 : pageNum,
+        limit: includeAllMatches ? total : limitNum,
         total,
         pages: Math.max(1, Math.ceil(total / limitNum)),
       },
@@ -232,6 +349,13 @@ export async function updateLibraryQuestion(req, res) {
     const updates = {};
     const dataUpdates = { ...(question.questionData || {}) };
 
+    if (req.body.questionData && typeof req.body.questionData === 'object' && !Array.isArray(req.body.questionData)) {
+      const preservedQuestionId = dataUpdates.questionId || question.sourceQuestionId || question.sourceKey;
+      Object.assign(dataUpdates, req.body.questionData);
+      dataUpdates.questionId = preservedQuestionId;
+      dataUpdates.type = normalizeType(dataUpdates.type || question.questionType);
+    }
+
     if (Object.prototype.hasOwnProperty.call(req.body, 'questionText')) {
       const questionText = String(req.body.questionText || '').trim();
       if (!questionText) return res.status(400).json({ error: 'Question text is required' });
@@ -245,8 +369,15 @@ export async function updateLibraryQuestion(req, res) {
       dataUpdates.tags = tags;
     }
 
+    if (Object.prototype.hasOwnProperty.call(req.body, 'keywords')) {
+      const keywords = normalizeStringArray(req.body.keywords);
+      updates.keywords = keywords;
+      dataUpdates.keywords = keywords;
+    }
+
     if (Object.prototype.hasOwnProperty.call(req.body, 'difficulty')) {
       updates.difficulty = String(req.body.difficulty || '').trim();
+      dataUpdates.difficulty = updates.difficulty;
       if (dataUpdates.problemDataSnapshot) {
         dataUpdates.problemDataSnapshot = {
           ...dataUpdates.problemDataSnapshot,
@@ -280,9 +411,10 @@ export async function updateLibraryQuestion(req, res) {
     const searchValues = [
       updates.questionText ?? question.questionText,
       ...(updates.tags ?? question.tags ?? []),
-      ...((question.keywords || [])),
+      ...(updates.keywords ?? question.keywords ?? []),
       dataUpdates.expectedAnswer,
       ...((dataUpdates.options || [])),
+      ...getQuestionSearchValues(dataUpdates),
     ];
 
     question.set({
@@ -362,15 +494,10 @@ export async function createLibraryQuestion(req, res) {
     const tags = Array.isArray(question.tags) ? question.tags : [];
     const keywords = Array.isArray(question.keywords) ? question.keywords : [];
     const questionText = String(question.questionText || '').trim();
+    if (!questionText) return res.status(400).json({ error: 'Question text is required' });
     const sourceKey = `direct_${new mongoose.Types.ObjectId()}`;
 
-    const searchPrefixes = buildSearchPrefixes([
-      questionText,
-      ...(question.options || []),
-      question.expectedAnswer,
-      ...tags,
-      ...keywords,
-    ]);
+    const searchPrefixes = buildSearchPrefixes(getQuestionSearchValues({ ...question, questionText, tags, keywords }));
 
     const newQuestion = new QuestionLibrary({
       sourceKey,
@@ -381,6 +508,7 @@ export async function createLibraryQuestion(req, res) {
       questionText,
       tags,
       keywords,
+      difficulty: String(question.difficulty || '').trim(),
       status: 'published',
       visibility: 'public',
       searchPrefixes,
@@ -410,24 +538,23 @@ export async function createLibraryQuestionsBulk(req, res) {
   try {
     const { questions } = req.body;
     if (!Array.isArray(questions) || !questions.length) {
-      return res.status(400).json({ error: 'Invalid questions datary array' });
+      return res.status(400).json({ error: 'Questions must be a non-empty array' });
     }
 
     const createdBy = req.user?._id || req.admin?._id;
-    const itemsToInsert = questions.map(question => {
+    const itemsToInsert = questions.map((question, index) => {
       const type = normalizeType(question.type);
       const tags = Array.isArray(question.tags) ? question.tags : [];
       const keywords = Array.isArray(question.keywords) ? question.keywords : [];
       const questionText = String(question.questionText || '').trim();
+      if (!questionText) {
+        const validationError = new Error(`Question ${index + 1} needs question text`);
+        validationError.statusCode = 400;
+        throw validationError;
+      }
       const sourceKey = `direct_${new mongoose.Types.ObjectId()}`;
 
-      const searchPrefixes = buildSearchPrefixes([
-        questionText,
-        ...(question.options || []),
-        question.expectedAnswer,
-        ...tags,
-        ...keywords,
-      ]);
+      const searchPrefixes = buildSearchPrefixes(getQuestionSearchValues({ ...question, questionText, tags, keywords }));
 
       return {
         sourceKey,
@@ -438,6 +565,7 @@ export async function createLibraryQuestionsBulk(req, res) {
         questionText,
         tags,
         keywords,
+        difficulty: String(question.difficulty || '').trim(),
         status: 'published',
         visibility: 'public',
         searchPrefixes,
@@ -462,6 +590,6 @@ export async function createLibraryQuestionsBulk(req, res) {
     });
   } catch (err) {
     console.error('Error bulk creating library questions:', err);
-    res.status(500).json({ error: 'Failed to bulk create library questions' });
+    res.status(err.statusCode || 500).json({ error: err.statusCode ? err.message : 'Failed to bulk create library questions' });
   }
 }

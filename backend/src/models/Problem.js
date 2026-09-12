@@ -55,6 +55,10 @@ const problemSchema = new mongoose.Schema({
     type: String,
     default: '',
   },
+  editorial: {
+    type: String,
+    default: '',
+  },
   hints: [{
     type: String,
     trim: true,
