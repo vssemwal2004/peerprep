@@ -12,6 +12,7 @@ function AssessmentQuestionPalette({
   canNavigate,
   onNavigate,
   onSubmit,
+  submitLabel = 'Submit Assessment',
   isSubmitted = false,
   saving = false,
   dockable = false,
@@ -214,7 +215,7 @@ function AssessmentQuestionPalette({
 
         <div className="mt-auto border-t border-slate-200/70 p-3 dark:border-gray-800">
           <button type="button" onClick={onSubmit} disabled={isSubmitted} className="w-full rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50">
-            {isSubmitted ? 'Submitted' : 'Submit Assessment'}
+            {isSubmitted ? 'Submitted' : submitLabel}
           </button>
         </div>
       </aside>
@@ -230,6 +231,7 @@ function palettePropsEqual(previous, next) {
     && previous.questionStatus === next.questionStatus
     && previous.isSubmitted === next.isSubmitted
     && previous.saving === next.saving
+    && previous.submitLabel === next.submitLabel
     && previous.dockable === next.dockable
     && previous.navigationRevision === next.navigationRevision;
 }

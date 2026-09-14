@@ -130,6 +130,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   const params = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const selectionMode = params.get('mode') === 'select';
   const assessmentKey = params.get('assessment') || 'new';
+  const assessmentTitle = params.get('assessmentTitle') || 'this assessment';
   const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
   const returnTo = params.get('return') || `${rolePrefix}/assessment/create`;
   const initialType = params.get('type') || 'all';
@@ -779,11 +780,12 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
         </div>}
 
         {selectionMode && (
-          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
-            <div className="font-semibold text-slate-800 dark:text-white">
-              {lockType ? `${labelForType(lockType)} selection only.` : 'Mixed selection is enabled.'}
+          <div className="mt-1 rounded-2xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-xs text-slate-600 dark:border-sky-900/60 dark:bg-sky-900/15 dark:text-gray-300">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div><span className="font-bold text-sky-800 dark:text-sky-200">Adding questions to:</span> <span className="font-semibold text-slate-900 dark:text-white">{assessmentTitle}</span></div>
+              <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-sky-700 shadow-sm dark:bg-gray-900 dark:text-sky-300">Selection mode</span>
             </div>
-            <div className="mt-1">
+            <div className="mt-1.5 leading-5">
               {lockType ? `Only ${labelForType(lockType).toLowerCase()} are available in this flow. Other question types are hidden to keep section mapping clean.` : (Object.keys(selectionSummary).length
                 ? Object.entries(selectionSummary).map(([type, count]) => `${count} ${labelForType(type)}`).join(' • ')
                 : 'Choose questions across any category. They will be grouped by type automatically when added to the assessment.')}

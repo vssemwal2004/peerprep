@@ -1,13 +1,13 @@
 import { difficultyBadgeClass, problemStatusClass, submissionStatusClass } from './compilerUtils';
 
-export function SectionCard({ title, subtitle, action, children, className = '' }) {
+export function SectionCard({ title, subtitle, action, children, className = '', compact = false }) {
   return (
-    <div className={`rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900 ${className}`}>
+    <div className={`${compact ? 'rounded-xl border border-slate-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900' : 'rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900'} ${className}`}>
       {(title || subtitle || action) && (
-        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div className={`${compact ? 'mb-3' : 'mb-4'} flex flex-wrap items-start justify-between gap-3`}>
           <div>
-            {title && <h3 className="text-base font-semibold text-slate-900 dark:text-gray-100">{title}</h3>}
-            {subtitle && <p className="mt-1 text-sm text-slate-500 dark:text-gray-400">{subtitle}</p>}
+            {title && <h3 className={`${compact ? 'text-sm' : 'text-base'} font-semibold text-slate-900 dark:text-gray-100`}>{title}</h3>}
+            {subtitle && <p className={`${compact ? 'mt-0.5 text-xs' : 'mt-1 text-sm'} text-slate-500 dark:text-gray-400`}>{subtitle}</p>}
           </div>
           {action}
         </div>

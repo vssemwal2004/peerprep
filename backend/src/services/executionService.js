@@ -38,6 +38,7 @@ export const LANGUAGE_ID_TO_KEY = {
   73: 'rust',
   74: 'typescript',
   78: 'kotlin',
+  80: 'r',
   83: 'swift',
 };
 
@@ -55,6 +56,7 @@ export const KEY_TO_LANGUAGE_ID = {
   rust: 73,
   typescript: 74,
   kotlin: 78,
+  r: 80,
   swift: 83,
 };
 

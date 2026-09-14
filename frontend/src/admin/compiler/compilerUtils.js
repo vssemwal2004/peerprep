@@ -11,6 +11,7 @@ export const COMPILER_LANGUAGES = [
   { id: 'rust', label: 'Rust', monacoLanguage: 'rust', judge0LanguageId: 73 },
   { id: 'kotlin', label: 'Kotlin', monacoLanguage: 'kotlin', judge0LanguageId: 78 },
   { id: 'ruby', label: 'Ruby', monacoLanguage: 'ruby', judge0LanguageId: 72 },
+  { id: 'r', label: 'R', monacoLanguage: 'r', judge0LanguageId: 80 },
   { id: 'swift', label: 'Swift', monacoLanguage: 'swift', judge0LanguageId: 83 },
 ];
 

@@ -6,13 +6,12 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import {
-  Calendar, ClipboardList, Filter, Plus, Search, Trash2, Eye, EyeOff,
+  ClipboardList, Filter, Plus, Search, Trash2, Eye, EyeOff,
   Pencil, Copy, X, MoreVertical, Lock, Unlock, Globe, ShieldOff,
   RotateCcw, CheckCircle2, AlertTriangle, FileCheck2, Mail, Send, Loader2,
   Users, UserMinus, UserPlus, ChevronLeft, ChevronRight,
 } from 'lucide-react';
-import AssessmentCard from './assessment/components/AssessmentCard';
-import { SectionCard } from './compiler/CompilerUi';
+import AssessmentLifecycleSidebar from './assessment/components/AssessmentLifecycleSidebar';
 import { deriveStudentFacets, filterStudentsLocally, mergeSemesterOptions } from '../utils/semesterOptions';
 
 const statusStyles = {
@@ -22,20 +21,18 @@ const statusStyles = {
   Completed: 'bg-slate-200 text-slate-700 border-slate-300',
 };
 
-const tabs = [
-  { id: 'all', label: 'All Assessments' },
-  { id: 'drafts', label: 'Drafts' },
-  { id: 'upcoming', label: 'Upcoming' },
-  { id: 'active', label: 'Active' },
-  { id: 'completed', label: 'Completed' },
-];
-
 const formatDateTime = (value) => (value ? new Date(value).toLocaleString() : '-');
 const formatShortDate = (value) => (
   value
     ? new Date(value).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })
     : '-'
 );
+
+const displayStatus = (status) => {
+  if (status === 'Active') return 'Live';
+  if (status === 'Upcoming') return 'Scheduled';
+  return status || 'Draft';
+};
 
 const getStudentAddedBadgeClass = (createdAt) => {
   const createdTime = createdAt ? new Date(createdAt).getTime() : 0;
@@ -46,7 +43,7 @@ const getStudentAddedBadgeClass = (createdAt) => {
   return 'border-slate-200 bg-slate-50 text-slate-500';
 };
 
-function ThreeDotsMenu({ assessment, onEdit, onDuplicate, onDelete, onToggleVisibility, onEditPassword, onSendInvitations, onEligibleStudents, onAddStudents, onResetSubmissions, onMarkComplete, onReleaseAnswers }) {
+function ThreeDotsMenu({ assessment, onOpen, onPreview, onEdit, onDuplicate, onDelete, onToggleVisibility, onEditPassword, onSendInvitations, onEligibleStudents, onAddStudents, onResetSubmissions, onMarkComplete, onReleaseAnswers }) {
   const [open, setOpen] = useState(false);
   const [menuStyle, setMenuStyle] = useState(null);
   const ref = useRef(null);
@@ -127,6 +124,10 @@ function ThreeDotsMenu({ assessment, onEdit, onDuplicate, onDelete, onToggleVisi
           style={menuStyle}
           className="fixed z-[90] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl ring-1 ring-slate-950/5 dark:border-gray-700 dark:bg-gray-900"
         >
+          {item(<ClipboardList className="h-3.5 w-3.5" />, assessment.lifecycleStatus === 'draft' ? 'Continue Assessment' : 'Open Assessment', onOpen)}
+          {item(<Eye className="h-3.5 w-3.5" />, 'Preview Assessment', onPreview)}
+          {item(<Copy className="h-3.5 w-3.5" />, 'Copy Assessment', onDuplicate)}
+          <div className="my-1 h-px bg-slate-100 dark:bg-gray-700" />
           {item(<Pencil className="h-3.5 w-3.5" />, 'Edit Assessment', onEdit)}
           {item(<Lock className="h-3.5 w-3.5" />, 'Edit Password', onEditPassword)}
           {assessment.lifecycleStatus !== 'draft' && item(<Users className="h-3.5 w-3.5" />, 'Eligible Students', onEligibleStudents)}
@@ -137,7 +138,6 @@ function ThreeDotsMenu({ assessment, onEdit, onDuplicate, onDelete, onToggleVisi
             isVisible ? 'Hide Test' : 'Show Test',
             onToggleVisibility,
           )}
-          {item(<Copy className="h-3.5 w-3.5" />, 'Duplicate', onDuplicate)}
           <div className="my-1 h-px bg-slate-100 dark:bg-gray-700" />
           {item(<RotateCcw className="h-3.5 w-3.5" />, 'Reset Test Submissions', onResetSubmissions)}
           {item(<CheckCircle2 className="h-3.5 w-3.5" />, 'Mark as Complete', onMarkComplete)}
@@ -956,7 +956,14 @@ export default function AssessmentDashboard() {
   const [eligibleTarget, setEligibleTarget] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
   const [activeTab, setActiveTab] = useState('all');
-  const [filters, setFilters] = useState({ status: 'All', search: '', startDate: '', endDate: '' });
+  const [filters, setFilters] = useState({
+    search: '',
+    creationWindow: 'any',
+    startDate: '',
+    endDate: '',
+    testType: 'all',
+    sort: 'updated',
+  });
 
   const loadAssessments = async () => {
     setLoading(true);
@@ -975,30 +982,72 @@ export default function AssessmentDashboard() {
 
   const summary = useMemo(() => {
     const total = assessments.length;
+    const drafts = assessments.filter((a) => a.lifecycleStatus === 'draft').length;
     const active = assessments.filter((a) => a.status === 'Active').length;
     const upcoming = assessments.filter((a) => a.status === 'Upcoming').length;
     const completed = assessments.filter((a) => a.status === 'Completed').length;
-    return { total, active, upcoming, completed };
+    return { total, drafts, active, upcoming, completed };
   }, [assessments]);
 
-  const filtered = useMemo(() => assessments.filter((a) => {
-    // Filter by active tab
-    let matchesTab = true;
-    if (activeTab === 'drafts') {
-      matchesTab = a.lifecycleStatus === 'draft';
-    } else if (activeTab !== 'all') {
-      matchesTab = String(a.status || '').toLowerCase() === activeTab;
-    }
+  const testTypes = useMemo(() => (
+    [...new Set(assessments.map((assessment) => assessment.testType || assessment.assessmentType).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b))
+  ), [assessments]);
 
-    const matchesStatus = filters.status === 'All' || a.status === filters.status;
-    const matchesSearch = !filters.search || a.title?.toLowerCase().includes(filters.search.toLowerCase());
-    const startTime = a.startTime ? new Date(a.startTime).getTime() : null;
-    const endTime = a.endTime ? new Date(a.endTime).getTime() : null;
-    const startFilter = filters.startDate ? new Date(filters.startDate).getTime() : null;
-    const endFilter = filters.endDate ? new Date(filters.endDate).getTime() : null;
-    const matchesDate = (!startFilter || (startTime && startTime >= startFilter)) && (!endFilter || (endTime && endTime <= endFilter));
-    return matchesTab && matchesStatus && matchesSearch && matchesDate;
-  }), [assessments, filters, activeTab]);
+  const filtered = useMemo(() => {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const searchTerm = filters.search.trim().toLowerCase();
+
+    const results = assessments.filter((assessment) => {
+      const rawBucket = String(assessment.lifecycleBucket || '').toLowerCase();
+      const bucket = assessment.lifecycleStatus === 'draft'
+        ? 'drafts'
+        : rawBucket === 'current'
+          ? 'active'
+          : rawBucket === 'scheduled'
+            ? 'upcoming'
+            : (rawBucket || String(assessment.status || '').toLowerCase());
+      const matchesTab = activeTab === 'all' || bucket === activeTab;
+
+      const searchable = [assessment.title, assessment.testType, assessment.assessmentType, assessment.assessmentId]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      const matchesSearch = !searchTerm || searchable.includes(searchTerm);
+      const matchesType = filters.testType === 'all'
+        || (assessment.testType || assessment.assessmentType) === filters.testType;
+
+      const createdTime = new Date(assessment.createdAt || assessment.updatedAt || 0).getTime();
+      let matchesCreationDate = true;
+      if (filters.creationWindow === 'today') {
+        matchesCreationDate = createdTime >= todayStart;
+      } else if (filters.creationWindow === '7d') {
+        matchesCreationDate = createdTime >= now.getTime() - (7 * 24 * 60 * 60 * 1000);
+      } else if (filters.creationWindow === '30d') {
+        matchesCreationDate = createdTime >= now.getTime() - (30 * 24 * 60 * 60 * 1000);
+      } else if (filters.creationWindow === 'custom') {
+        const from = filters.startDate ? new Date(`${filters.startDate}T00:00:00`).getTime() : null;
+        const until = filters.endDate ? new Date(`${filters.endDate}T23:59:59`).getTime() : null;
+        matchesCreationDate = (!from || createdTime >= from) && (!until || createdTime <= until);
+      }
+
+      return matchesTab && matchesSearch && matchesType && matchesCreationDate;
+    });
+
+    return results.sort((left, right) => {
+      if (filters.sort === 'oldest') {
+        return new Date(left.createdAt || 0).getTime() - new Date(right.createdAt || 0).getTime();
+      }
+      if (filters.sort === 'start') {
+        return new Date(left.startTime || '9999-12-31').getTime() - new Date(right.startTime || '9999-12-31').getTime();
+      }
+      if (filters.sort === 'title') {
+        return String(left.title || '').localeCompare(String(right.title || ''));
+      }
+      return new Date(right.updatedAt || right.createdAt || 0).getTime() - new Date(left.updatedAt || left.createdAt || 0).getTime();
+    });
+  }, [assessments, filters, activeTab]);
 
   const handleDelete = async (id) => {
     if (!confirm('Delete this assessment and all submissions?')) return;
@@ -1086,111 +1135,132 @@ export default function AssessmentDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 pt-20">
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="mx-auto max-w-7xl px-4 py-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-600 text-white">
-              <ClipboardList className="h-6 w-6" />
-            </div>
+    <div className="min-h-screen bg-slate-50 pt-20 dark:bg-gray-950">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
+        <header className="border-b border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-950">
+          <div className="mx-auto flex min-h-16 max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
             <div>
-              <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">Assessment Dashboard</h1>
-              <p className="text-sm text-slate-500 dark:text-gray-400">Manage assessment lifecycle and performance.</p>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Assessments</p>
+              <h1 className="mt-0.5 text-xl font-bold tracking-tight text-slate-950 dark:text-white">All Assessments</h1>
             </div>
+            <button type="button" onClick={() => navigate(`${rolePrefix}/assessment/create`)} className="inline-flex h-9 items-center gap-2 rounded-lg bg-sky-600 px-3.5 text-xs font-semibold text-white hover:bg-sky-500">
+              <Plus className="h-4 w-4" /> Create Assessment
+            </button>
           </div>
-          <button type="button" onClick={() => navigate(`${rolePrefix}/assessment/create`)} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-500">
-            <Plus className="h-4 w-4" /> Create Assessment
-          </button>
-        </div>
+        </header>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <AssessmentCard label="Total Assessments" value={summary.total} helper="All drafts and published" Icon={ClipboardList} />
-          <AssessmentCard label="Active" value={summary.active} helper="Currently running" Icon={Calendar} />
-          <AssessmentCard label="Upcoming" value={summary.upcoming} helper="Scheduled next" Icon={Calendar} />
-          <AssessmentCard label="Completed" value={summary.completed} helper="Closed" Icon={Calendar} />
-        </div>
-
-        <SectionCard title="Assessment Registry" subtitle="Filter and review assessments by status, timing, and target audience." action={<div className="flex items-center gap-2 text-xs text-slate-500 dark:text-gray-400"><Filter className="h-3.5 w-3.5" /> Filters</div>}>
-          <div className="mb-4 flex flex-wrap gap-2 border-b border-slate-200 pb-3 dark:border-gray-700">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-                  activeTab === tab.id
-                    ? 'bg-sky-600 text-white'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-          <div className="grid gap-3 md:grid-cols-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input value={filters.search} onChange={(e) => setFilters((p) => ({ ...p, search: e.target.value }))} placeholder="Search by title" className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" />
+        <div className="mx-auto grid max-w-[1600px] lg:grid-cols-[228px_minmax(0,1fr)]">
+          <AssessmentLifecycleSidebar
+            active={activeTab}
+            counts={summary}
+            onChange={setActiveTab}
+            creationWindow={filters.creationWindow}
+            onCreationWindowChange={(value) => setFilters((current) => ({ ...current, creationWindow: value }))}
+            startDate={filters.startDate}
+            endDate={filters.endDate}
+            onStartDateChange={(value) => setFilters((current) => ({ ...current, startDate: value }))}
+            onEndDateChange={(value) => setFilters((current) => ({ ...current, endDate: value }))}
+            testType={filters.testType}
+            testTypes={testTypes}
+            onTestTypeChange={(value) => setFilters((current) => ({ ...current, testType: value }))}
+          />
+          <main className="min-w-0 px-4 py-5 sm:px-6">
+            <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 dark:border-gray-800 xl:flex-row xl:items-center xl:justify-between">
+              <div className="relative w-full xl:max-w-2xl">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={filters.search}
+                  onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))}
+                  placeholder="Search by assessment name, ID or type"
+                  className="h-10 w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-700 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:focus:ring-sky-900/30"
+                />
+              </div>
+              <div className="flex items-center justify-between gap-2 xl:justify-end">
+                <span className="mr-auto whitespace-nowrap text-xs text-slate-500 dark:text-gray-400 xl:mr-2">{filtered.length} assessment{filtered.length === 1 ? '' : 's'}</span>
+                <select value={filters.sort} onChange={(event) => setFilters((current) => ({ ...current, sort: event.target.value }))} className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-600 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+                  <option value="updated">Recently updated</option>
+                  <option value="oldest">Oldest created</option>
+                  <option value="start">Start time</option>
+                  <option value="title">Name A-Z</option>
+                </select>
+                <button type="button" onClick={loadAssessments} disabled={loading} title="Refresh assessments" className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800">
+                  <RotateCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
             </div>
-            <select value={filters.status} onChange={(e) => setFilters((p) => ({ ...p, status: e.target.value }))} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
-              {['All', 'Draft', 'Upcoming', 'Active', 'Completed'].map((s) => <option key={s}>{s}</option>)}
-            </select>
-            <input type="date" value={filters.startDate} onChange={(e) => setFilters((p) => ({ ...p, startDate: e.target.value }))} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" />
-            <input type="date" value={filters.endDate} onChange={(e) => setFilters((p) => ({ ...p, endDate: e.target.value }))} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" />
-          </div>
 
-          <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200 dark:border-gray-700">
+          <section className="pt-4" aria-label="Assessment list">
             {loading ? (
-              <div className="p-6 text-center text-sm text-slate-500 dark:text-gray-400">Loading assessments...</div>
+              <div className="flex min-h-56 items-center justify-center rounded-lg border border-slate-200 bg-white text-sm text-slate-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading assessments...</div>
             ) : error ? (
-              <div className="p-6 text-center text-sm text-rose-600">{error}</div>
+              <div className="rounded-lg border border-rose-200 bg-rose-50 p-5 text-center text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/20 dark:text-rose-300">{error}</div>
+            ) : filtered.length === 0 ? (
+              <div className="flex min-h-64 flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white px-6 py-10 text-center dark:border-gray-700 dark:bg-gray-900">
+                <ClipboardList className="h-7 w-7 text-slate-300" />
+                <h3 className="mt-3 text-sm font-semibold text-slate-900 dark:text-white">No assessments found</h3>
+                <p className="mt-1 max-w-sm text-xs text-slate-500 dark:text-gray-400">Try another status, date, type, or search term.</p>
+                <button type="button" onClick={() => { setActiveTab('all'); setFilters({ search: '', creationWindow: 'any', startDate: '', endDate: '', testType: 'all', sort: 'updated' }); }} className="mt-4 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Clear filters</button>
+              </div>
             ) : (
-              <table className="min-w-full text-sm">
-                <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500 dark:bg-gray-800 dark:text-gray-400">
+              <table className="block min-w-0 text-sm">
+                <thead className="sr-only">
                   <tr>
-                    <th className="px-4 py-3">Title</th>
-                    <th className="px-4 py-3">Type</th>
-                    <th className="px-4 py-3">Start Time</th>
-                    <th className="px-4 py-3">End Time</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Access</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
+                    <th className="px-5 py-3.5">Assessment</th>
+                    <th className="px-4 py-3.5">Schedule</th>
+                    <th className="px-4 py-3.5">Content</th>
+                    <th className="px-4 py-3.5">Status</th>
+                    <th className="px-4 py-3.5">Candidates</th>
+                    <th className="px-5 py-3.5 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-gray-700">
+                <tbody className="block space-y-3">
                   {filtered.map((assessment) => (
-                    <tr key={assessment._id} className="hover:bg-slate-50 dark:hover:bg-gray-800/60">
-                      <td className="px-4 py-3">
-                        <div className="font-semibold text-slate-800 dark:text-gray-100">{assessment.title || 'Untitled'}</div>
-                        <div className="text-xs text-slate-400 dark:text-gray-500">ID: {assessment.assessmentId || '—'}</div>
+                    <tr
+                      key={assessment._id}
+                      role="link"
+                      tabIndex={0}
+                      onClick={(event) => {
+                        if (event.target.closest('button, a, input, select, textarea')) return;
+                        navigate(`${rolePrefix}/assessment/${assessment._id}/edit`);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          navigate(`${rolePrefix}/assessment/${assessment._id}/edit`);
+                        }
+                      }}
+                      className="group relative grid cursor-pointer items-center gap-x-4 gap-y-3 rounded-xl border border-slate-200 bg-white py-3.5 pl-4 pr-14 shadow-sm transition-colors hover:border-sky-300 hover:bg-sky-50/20 focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-sky-800 dark:hover:bg-sky-950/10 sm:grid-cols-2 xl:grid-cols-[minmax(220px,2fr)_minmax(130px,1fr)_110px_90px_160px]"
+                    >
+                      <td className="min-w-0 sm:col-span-2 xl:col-span-1">
+                        <div className="max-w-xs font-bold text-slate-900 group-hover:text-sky-700 dark:text-white dark:group-hover:text-sky-300">{assessment.title || 'Untitled assessment'}</div>
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-400 dark:text-gray-500"><span>{assessment.testType || 'General'}</span><span aria-hidden="true">•</span><span>ID {assessment.assessmentId || '—'}</span></div>
                       </td>
-                      <td className="px-4 py-3 text-slate-600 dark:text-gray-300">{assessment.testType || '—'}</td>
-                      <td className="px-4 py-3 text-slate-600 dark:text-gray-300">{formatDateTime(assessment.startTime)}</td>
-                      <td className="px-4 py-3 text-slate-600 dark:text-gray-300">{formatDateTime(assessment.endTime)}</td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${statusStyles[assessment.status] || statusStyles.Upcoming}`}>
-                          {assessment.status}
+                      <td className="whitespace-nowrap text-xs text-slate-600 dark:text-gray-300"><div className="font-semibold text-slate-700 dark:text-gray-200">{assessment.startTime ? formatShortDate(assessment.startTime) : 'Not scheduled'}</div><div className="mt-1 text-[11px] text-slate-400">{assessment.duration ? `${assessment.duration} min` : 'No duration'}</div></td>
+                      <td className="text-xs text-slate-600 dark:text-gray-300"><div className="font-semibold text-slate-700 dark:text-gray-200">{assessment.totalQuestions || 0} questions</div><div className="mt-1 text-[11px] text-slate-400">{assessment.totalMarks || 0} marks</div></td>
+                      <td>
+                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusStyles[assessment.lifecycleStatus === 'draft' ? 'Draft' : assessment.status] || statusStyles.Upcoming}`}>
+                          {assessment.status === 'Active' && <span className="mr-1 h-1.5 w-1.5 rounded-full bg-emerald-500" />}{displayStatus(assessment.lifecycleStatus === 'draft' ? 'Draft' : assessment.status)}
                         </span>
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-1">
-                          <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${assessment.isVisible !== false ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}>
+                      <td>
+                        <div className="text-xs font-semibold text-slate-700 dark:text-gray-200">{assessment.completedCount || 0}/{assessment.assignedCount || 0} completed</div>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          <span className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${assessment.isVisible !== false ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}>
                             {assessment.isVisible !== false ? <Globe className="h-3 w-3" /> : <ShieldOff className="h-3 w-3" />}
                             {assessment.isVisible !== false ? 'Visible' : 'Hidden'}
                           </span>
-                          <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${assessment.passwordEnabled ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-slate-100 text-slate-400'}`}>
+                          <span className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${assessment.passwordEnabled ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-slate-100 text-slate-400'}`}>
                             {assessment.passwordEnabled ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
                             {assessment.passwordEnabled ? 'Protected' : 'Open'}
                           </span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <button type="button" onClick={() => setSelected(assessment)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
-                            <Eye className="h-3.5 w-3.5" /> View
-                          </button>
+                      <td className="absolute right-3 top-3">
+                        <div className="flex items-center justify-end">
                           <ThreeDotsMenu
                             assessment={assessment}
+                            onOpen={() => navigate(`${rolePrefix}/assessment/${assessment._id}/edit`)}
+                            onPreview={() => navigate(`${rolePrefix}/assessment/preview/${assessment._id}`)}
                             onEdit={() => navigate(`${rolePrefix}/assessment/${assessment._id}/edit`)}
                             onDuplicate={() => handleDuplicate(assessment._id)}
                             onDelete={() => handleDelete(assessment._id)}
@@ -1210,8 +1280,9 @@ export default function AssessmentDashboard() {
                 </tbody>
               </table>
             )}
-          </div>
-        </SectionCard>
+          </section>
+          </main>
+        </div>
       </motion.div>
 
       {/* Detail Drawer */}

@@ -19,6 +19,7 @@ import {
 } from './compilerUtils';
 import { EmptyState, LoadingPanel, SectionCard } from './CompilerUi';
 import { loadCodingDraft, saveCodingDraft } from '../assessment/assessmentCodingStore';
+import { queueProblemSelection } from '../assessment/assessmentProblemSelectionStore';
 import AuthoringStepper from '../library/AuthoringStepper';
 
 const EDITOR_TABS = [
@@ -298,9 +299,10 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
   const urlParams = new URLSearchParams(location.search);
   const urlMode = urlParams.get('mode');
   const isAssessmentFromUrl = urlMode === 'assessment';
-  const isAssessment = mode === 'assessment' || isAssessmentFromUrl;
+  const isAssessmentCreate = mode === 'assessment-create' || urlMode === 'assessment-create';
+  const isAssessment = mode === 'assessment' || isAssessmentFromUrl || isAssessmentCreate;
   
-  const assessmentContextFromUrl = isAssessmentFromUrl ? {
+  const assessmentContextFromUrl = (isAssessmentFromUrl || isAssessmentCreate) ? {
     tempId: tempId || urlParams.get('tempId'),
     assessmentKey: urlParams.get('assessment'),
     sectionIndex: urlParams.get('section') ? parseInt(urlParams.get('section')) : 0,
@@ -537,8 +539,8 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
       if (isAssessment && editorId) {
         saveCodingDraft(editorId, {
           assessmentKey,
-          sectionIndex: assessmentContext?.sectionIndex,
-          questionIndex: assessmentContext?.questionIndex,
+          sectionIndex: finalAssessmentContext?.sectionIndex,
+          questionIndex: finalAssessmentContext?.questionIndex,
           problemId: response._id,
           form: nextForm,
           problemData: response,
@@ -655,11 +657,19 @@ if (!isValidated || publishedProblem.status !== 'published') {
     }
 
     // If in assessment mode, use the existing assessment context
-    if (isAssessment && assessmentContext) {
+    if (isAssessmentCreate) {
+      queueProblemSelection(assessmentKey, {
+        sectionIndex: 0,
+        problems: [publishedProblem],
+        createdForAssessment: true,
+      });
+      toast.success('Coding question published and added to the assessment.');
+      navigate(assessmentReturnTo);
+    } else if (isAssessment && finalAssessmentContext) {
       saveCodingDraft(editorId, {
         assessmentKey,
-        sectionIndex: assessmentContext?.sectionIndex,
-        questionIndex: assessmentContext?.questionIndex,
+        sectionIndex: finalAssessmentContext?.sectionIndex,
+        questionIndex: finalAssessmentContext?.questionIndex,
         problemId: publishedProblem._id,
         form: createProblemFormFromProblem(publishedProblem),
         problemData: publishedProblem,
@@ -787,7 +797,10 @@ if (!isValidated || publishedProblem.status !== 'published') {
                 <p className="text-xs text-slate-500 dark:text-gray-400">{currentStatus === 'published' ? 'Published' : 'Draft'} · {visibleSampleCount} sample · {hiddenCount} hidden · {form.supportedLanguages.length} languages</p>
               </div>
             </div>
-            <button type="button" onClick={openPreview} disabled={isSaving || isApprovingPreview} title="Open solving preview" className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"><Eye className="h-4 w-4" />{isApprovingPreview ? 'Opening...' : 'Solve preview'}</button>
+            <div className="flex items-center gap-2">
+              {isAssessmentCreate && <button type="button" onClick={handleAddToAssessment} disabled={isSaving || !canAddToAssessment} title={!canAddToAssessment ? 'Complete validation checks before adding.' : ''} className="inline-flex h-9 items-center gap-2 rounded-xl bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"><FilePlus2 className="h-4 w-4" />Add to assessment</button>}
+              <button type="button" onClick={openPreview} disabled={isSaving || isApprovingPreview} title="Open solving preview" className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"><Eye className="h-4 w-4" />{isApprovingPreview ? 'Opening...' : 'Solve preview'}</button>
+            </div>
           </div>
           <div className="mx-auto mt-4 w-full max-w-4xl border-y border-slate-100 py-1 dark:border-gray-800">
             <AuthoringStepper steps={EDITOR_TABS} activeKey={activeTab} completed={tabCompletion} onChange={selectTab} />

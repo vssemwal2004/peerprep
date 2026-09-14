@@ -5,7 +5,7 @@ import { useLocation } from 'react-router-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
-import { ArrowLeft, ClipboardList, Save, Send, AlertCircle, Plus, Eye, EyeOff, Hash, Lock, Shield, Globe, Copy, Camera, Volume2, Monitor, Shuffle, Droplet, Navigation, Layers, Timer, RotateCcw, CheckSquare, Clock, Unlock } from 'lucide-react';
+import { ArrowLeft, ClipboardList, Save, Send, Plus, Eye, EyeOff, Hash, Lock, Shield, Globe, Copy, Camera, Volume2, Monitor, Shuffle, Droplet, Navigation, Layers, Timer, RotateCcw, CheckSquare, Clock } from 'lucide-react';
 import { SectionCard } from './compiler/CompilerUi';
 import RichTextEditor from './compiler/RichTextEditor';
 import { createDefaultProblemForm, createProblemFormFromProblem } from './compiler/compilerUtils';
@@ -76,13 +76,17 @@ function generateUniqueAssessmentId() {
 }
 
 const steps = [
-  { id: 'basic', label: 'Basic Info', description: 'Title, description, instructions.' },
-  { id: 'schedule', label: 'Schedule', description: 'Timing, duration, limits.' },
-  { id: 'sections', label: 'Sections & Questions', description: 'Build assessment sections.' },
-  { id: 'target', label: 'Target Students', description: 'Choose audience and upload or select.' },
-  { id: 'settings', label: 'Settings', description: 'Security, visibility, access control.' },
-  { id: 'preview', label: 'Preview & Publish', description: 'Review and finalize.' },
+  { id: 'basic', label: 'Details', description: 'Name the assessment and set candidate-facing information.' },
+  { id: 'sections', label: 'Questions', description: 'Choose reusable questions or build new assessment content.' },
+  { id: 'target', label: 'Audience & Schedule', description: 'Choose candidates and define the assessment window.' },
+  { id: 'settings', label: 'Settings', description: 'Configure access, proctoring, navigation and results.' },
+  { id: 'preview', label: 'Review & Publish', description: 'Preview the candidate experience and complete validation.' },
 ];
+
+const normalizeBuilderStep = (step) => {
+  if (step === 'schedule') return 'target';
+  return steps.some((item) => item.id === step) ? step : 'basic';
+};
 
 const emptyCsvState = {
   file: null,
@@ -193,21 +197,21 @@ function Row({
   const hasToggle = Boolean(toggleKey || onToggle);
   const enabled = enabledOverride ?? Boolean(settings?.[toggleKey]);
   return (
-    <div className={`rounded-xl border px-4 py-3.5 transition-colors ${enabled || !hasToggle ? 'border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900' : 'border-slate-100 bg-slate-50/60 dark:border-gray-800 dark:bg-gray-800/40'}`}>
+    <div className={`rounded-lg border px-3 py-2.5 transition-colors ${enabled || !hasToggle ? 'border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900' : 'border-slate-100 bg-slate-50/60 dark:border-gray-800 dark:bg-gray-800/40'}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3">
-          <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${iconBg}`}>{icon}</div>
+          <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${iconBg}`}>{icon}</div>
           <div>
             <div className="flex items-center gap-2">
               <p className="text-sm font-semibold text-slate-800 dark:text-gray-100">{title}</p>
               {badge && <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${badge === 'recommended' ? 'bg-emerald-100 text-emerald-700' : badge === 'strict' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>{badge}</span>}
             </div>
-            <p className="mt-0.5 text-xs text-slate-500 dark:text-gray-400">{desc}</p>
+            <p className="mt-0.5 text-[11px] leading-4 text-slate-500 dark:text-gray-400">{desc}</p>
           </div>
         </div>
         {hasToggle && <Toggle value={enabled} onChange={(v) => (onToggle ? onToggle(v) : onSettingChange?.(toggleKey, v))} />}
       </div>
-      {(enabled || !hasToggle) && children && <div className="mt-3 border-t border-slate-100 pt-3 dark:border-gray-700">{children}</div>}
+      {(enabled || !hasToggle) && children && <div className="mt-2 border-t border-slate-100 pt-2 dark:border-gray-700">{children}</div>}
     </div>
   );
 }
@@ -343,9 +347,30 @@ export default function CreateAssessment() {
   };
 
   const addProblemsToSection = (prevSections, sectionIndex, problems = []) => {
-    if (!Array.isArray(prevSections) || prevSections.length === 0) return prevSections;
-    const nextSections = prevSections.map((section, idx) => {
-      if (idx !== sectionIndex) return section;
+    if (!problems.length) return prevSections;
+    const sourceSections = Array.isArray(prevSections) ? prevSections : [];
+    const requestedSection = sourceSections[sectionIndex];
+    const existingCodingIndex = requestedSection?.type === 'coding'
+      ? sectionIndex
+      : sourceSections.findIndex((section) => section.type === 'coding');
+    if (existingCodingIndex < 0) {
+      const incomingQuestions = problems.map((problem) => ensureQuestionMeta({
+        type: 'coding',
+        questionText: problem.title || '',
+        problemId: problem._id,
+        problemDataSnapshot: problem,
+        points: 1,
+      }, 'coding'));
+      return [...sourceSections, {
+        sectionName: LIBRARY_SECTION_LABELS.coding,
+        type: 'coding',
+        marksPerQuestion: 1,
+        negativeMarksPerQuestion: 0,
+        questions: incomingQuestions,
+      }];
+    }
+    const nextSections = sourceSections.map((section, idx) => {
+      if (idx !== existingCodingIndex) return section;
       const baseQuestions = Array.isArray(section.questions) ? section.questions : [];
       const isSingleEmpty = baseQuestions.length === 1
         && section.type === 'coding'
@@ -477,19 +502,32 @@ export default function CreateAssessment() {
 
   const handleOpenProblemLibrary = async (sectionType = '') => {
     // Save current draft before navigating to library so data is preserved when returning
-    if (dirty) {
-      await saveAssessmentDraft(assessmentKey, { form, sections, selectedStudents, csvState, version, activeStep });
-    }
+    await saveAssessmentDraft(assessmentKey, { form, sections, selectedStudents, csvState, version, activeStep });
     const returnTo = currentId ? `${rolePrefix}/assessment/${currentId}/edit` : `${rolePrefix}/assessment/create`;
     const query = new URLSearchParams({
       mode: 'select',
       assessment: assessmentKey,
+      assessmentTitle: form.title || 'Untitled assessment',
       return: returnTo,
     });
     if (sectionType) {
       query.set('type', sectionType);
       query.set('lockType', sectionType);
     }
+    navigate(`${rolePrefix}/library?${query.toString()}`);
+  };
+
+  const handleCreateQuestion = async () => {
+    await saveAssessmentDraft(assessmentKey, { form, sections, selectedStudents, csvState, version, activeStep });
+    const returnTo = currentId ? `${rolePrefix}/assessment/${currentId}/edit` : `${rolePrefix}/assessment/create`;
+    const query = new URLSearchParams({
+      mode: 'assessment-create',
+      assessment: assessmentKey,
+      assessmentTitle: form.title || 'Untitled assessment',
+      return: returnTo,
+      openCreate: '1',
+      tempId: createEditorId(),
+    });
     navigate(`${rolePrefix}/library?${query.toString()}`);
   };
 
@@ -520,9 +558,7 @@ export default function CreateAssessment() {
         if (draft.version) {
           setVersion(draft.version);
         }
-        if (draft.activeStep && steps.some((s) => s.id === draft.activeStep)) {
-          setActiveStep(draft.activeStep);
-        }
+        if (draft.activeStep) setActiveStep(normalizeBuilderStep(draft.activeStep));
       }
       return;
     }
@@ -595,9 +631,7 @@ export default function CreateAssessment() {
           setCsvState(draftCsvState ? { ...emptyCsvState, ...draftCsvState } : emptyCsvState);
         }
 
-        if (draftStep && steps.some((step) => step.id === draftStep)) {
-          setActiveStep(draftStep);
-        }
+        if (draftStep) setActiveStep(normalizeBuilderStep(draftStep));
 
         const mappedSections = (assessment.sections || []).map((section, sectionIndex) => {
           const questions = (section.questions || []).map((question, questionIndex) => {
@@ -916,8 +950,6 @@ export default function CreateAssessment() {
   };
 
   const stepIndex = steps.findIndex((step) => step.id === activeStep);
-  const stepMeta = steps[stepIndex] || steps[0];
-
   const allTestTypes = [...PREDEFINED_TEST_TYPES.filter((t) => t !== 'Other'), ...customTestTypes, 'Other'];
 
   const handleTestTypeChange = (value) => {
@@ -956,40 +988,16 @@ export default function CreateAssessment() {
 
   const stepContent = {
     basic: (
-      <div className="space-y-6">
+      <div className="space-y-4">
         {/* Assessment ID + Visibility Row */}
-        <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-sky-100 bg-sky-50/60 px-5 py-4 dark:border-sky-900/40 dark:bg-sky-900/10">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-600 text-white shadow-sm">
-              <Hash className="h-4 w-4" />
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-sky-600 dark:text-sky-400">Assessment ID</p>
-              <p className="text-lg font-bold text-slate-800 dark:text-white">{form.assessmentId}</p>
-            </div>
-          </div>
-          <div className="ml-auto flex items-center gap-3">
-            <span className="text-xs font-semibold text-slate-600 dark:text-gray-300">Visibility</span>
-            <button
-              type="button"
-              onClick={() => updateForm({ isVisible: !form.isVisible })}
-              className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors focus:outline-none ${form.isVisible ? 'bg-sky-600' : 'bg-slate-300 dark:bg-gray-600'
-                }`}
-            >
-              <span
-                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${form.isVisible ? 'translate-x-8' : 'translate-x-1'
-                  }`}
-              />
-            </button>
-            <span className={`flex items-center gap-1 text-xs font-semibold ${form.isVisible ? 'text-sky-600 dark:text-sky-400' : 'text-slate-400 dark:text-gray-500'
-              }`}>
-              {form.isVisible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-              {form.isVisible ? 'Visible' : 'Hidden'}
-            </span>
-          </div>
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
+          <Hash className="h-3.5 w-3.5 text-sky-600" />
+          <span>Assessment ID</span>
+          <span className="font-mono font-semibold text-slate-800 dark:text-white">{form.assessmentId}</span>
+          <span className="ml-auto font-semibold text-slate-600 dark:text-gray-300">{form.lifecycleStatus === 'published' ? 'Published' : 'Draft'}</span>
         </div>
 
-        <SectionCard title="Basic Information" subtitle="Define core details for the assessment.">
+        <SectionCard compact title="Basic Information" subtitle="Define core details for the assessment.">
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="text-xs font-medium text-slate-500 dark:text-gray-400">Test Name</label>
@@ -1044,13 +1052,16 @@ export default function CreateAssessment() {
         </SectionCard>
 
         {/* Instructions Section */}
-        <SectionCard title="Instructions" subtitle="Default instructions are always shown. Add custom ones below.">
+        <SectionCard compact title="Instructions" subtitle="Default instructions are always shown. Add custom ones below.">
           <div className="space-y-4">
-            <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-5 py-4 dark:border-gray-700 dark:bg-gray-800/60">
-              <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.15em] text-slate-400 dark:text-gray-500">Default Instructions</p>
-              <ol className="space-y-2">
+            <details className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50/80 dark:border-gray-700 dark:bg-gray-800/60">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-xs font-semibold text-slate-700 dark:text-gray-200">
+                <span>Default instructions</span>
+                <span className="text-[11px] font-normal text-slate-400">{DEFAULT_INSTRUCTIONS.length} included</span>
+              </summary>
+              <ol className="space-y-1.5 border-t border-slate-200 px-4 py-3 dark:border-gray-700">
                 {DEFAULT_INSTRUCTIONS.map((instruction, i) => (
-                  <li key={i} className="flex items-start gap-3 text-sm text-slate-700 dark:text-gray-300">
+                  <li key={i} className="flex items-start gap-2 text-xs leading-5 text-slate-700 dark:text-gray-300">
                     <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-sky-100 text-[10px] font-bold text-sky-600 dark:bg-sky-900/40 dark:text-sky-400">
                       {i + 1}
                     </span>
@@ -1058,7 +1069,7 @@ export default function CreateAssessment() {
                   </li>
                 ))}
               </ol>
-            </div>
+            </details>
 
             {/* Custom Instructions */}
             {(form.customInstructions || []).length > 0 && (
@@ -1108,7 +1119,7 @@ export default function CreateAssessment() {
       </div>
     ),
     target: (
-      <SectionCard title="Target Students" subtitle="Choose how you want to assign this assessment.">
+      <SectionCard compact title="Target Students" subtitle="Choose how you want to assign this assessment.">
         <div className="space-y-4">
           <div className="flex flex-wrap gap-4">
             {[
@@ -1147,7 +1158,7 @@ export default function CreateAssessment() {
       </SectionCard>
     ),
     schedule: (
-      <SectionCard title="Schedule & Limits" subtitle="Define timing and duration.">
+      <SectionCard compact title="Schedule & Limits" subtitle="Define timing and duration.">
         <div className="grid gap-4 md:grid-cols-2">
           <div>
             <label className="text-xs text-slate-500 dark:text-gray-400">Start Date & Time</label>
@@ -1211,54 +1222,24 @@ export default function CreateAssessment() {
     ),
     sections: (
       <div className="space-y-5">
-        {/* 3-Box Action Bar */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {/* Box 1: Add Section */}
-          <button
-            type="button"
-            onClick={() => {
-              const addSectionEvent = new CustomEvent('sectionbuilder:addsection');
-              document.dispatchEvent(addSectionEvent);
-            }}
-            className="group flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-sky-300 bg-sky-50/60 px-5 py-6 text-center transition-all hover:border-sky-500 hover:bg-sky-100/70 dark:border-sky-700 dark:bg-sky-900/10 dark:hover:bg-sky-900/20"
-          >
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-600 text-white shadow-sm transition-transform group-hover:scale-110">
-              <Plus className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-sky-700 dark:text-sky-300">Add Section</p>
-              <p className="mt-0.5 text-[11px] text-sky-500 dark:text-sky-400">Create a new question section</p>
-            </div>
-          </button>
-
-          {/* Box 2: Add Questions from Library */}
-          <button
-            type="button"
-            onClick={() => handleOpenProblemLibrary()}
-            className="group flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/60 px-5 py-6 text-center transition-all hover:border-sky-400 hover:bg-sky-50/70 dark:border-gray-600 dark:bg-gray-800/40 dark:hover:border-sky-600 dark:hover:bg-sky-900/10"
-          >
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-sky-200 bg-white text-sky-600 shadow-sm transition-transform group-hover:scale-110 dark:border-sky-800 dark:bg-gray-900">
-              <ClipboardList className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-slate-700 dark:text-gray-200">Question Library</p>
-              <p className="mt-0.5 text-[11px] text-slate-500 dark:text-gray-400">Pick from saved questions</p>
-            </div>
-          </button>
-
-          {/* Box 3: Quick Stats */}
-          <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-6 text-center shadow-sm dark:border-gray-700 dark:bg-gray-900">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-gray-800 dark:text-gray-300">
-              <AlertCircle className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-lg font-bold text-slate-800 dark:text-white">
-                {sections.reduce((t, s) => t + (s.questions?.length || 0), 0)}
-              </p>
-              <p className="text-[11px] text-slate-500 dark:text-gray-400">
-                {sections.length} section{sections.length !== 1 ? 's' : ''} &middot; Questions total
-              </p>
-            </div>
+        <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Questions</h2>
+            <p className="mt-0.5 text-[11px] text-slate-500 dark:text-gray-400">
+              {sections.length} section{sections.length !== 1 ? 's' : ''} &middot; {sections.reduce((total, section) => total + (section.questions?.length || 0), 0)} questions
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => handleOpenProblemLibrary()} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:border-sky-200 hover:text-sky-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+              <ClipboardList className="h-3.5 w-3.5" /> Add questions from library
+            </button>
+            <button
+              type="button"
+              onClick={handleCreateQuestion}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500"
+            >
+              <Plus className="h-3.5 w-3.5" /> Create question
+            </button>
           </div>
         </div>
 
@@ -1266,7 +1247,6 @@ export default function CreateAssessment() {
           sections={sections}
           onChange={updateSections}
           onOpenCodingEditor={handleOpenCodingEditor}
-          onOpenProblemLibrary={handleOpenProblemLibrary}
           onNotify={{
             success: (message) => toast.success(message),
             error: (message) => toast.error(message),
@@ -1281,54 +1261,50 @@ export default function CreateAssessment() {
       const rowProps = { settings: s, onSettingChange: upd };
 
       return (
-        <div className="space-y-6">
-          {/* Quick Summary Bar */}
-          <div className="flex flex-wrap gap-2 rounded-2xl border border-sky-100 bg-sky-50/60 px-5 py-3 dark:border-sky-900/30 dark:bg-sky-900/10">
+        <div className="grid items-start gap-4 lg:grid-cols-[180px_minmax(0,1fr)]">
+          <aside className="rounded-xl border border-slate-200 bg-white p-2 dark:border-gray-800 dark:bg-gray-900 lg:sticky lg:top-24">
+            <p className="px-2 pb-2 pt-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Settings</p>
             {[
-              { label: 'Password', active: form.passwordEnabled, icon: <Lock className="h-3 w-3" /> },
-              { label: 'Fullscreen', active: s.enableFullscreen, icon: <Monitor className="h-3 w-3" /> },
-              { label: 'Tab Guard', active: s.tabSwitchDetection, icon: <Shield className="h-3 w-3" /> },
-              { label: 'Camera', active: s.cameraMonitoring, icon: <Camera className="h-3 w-3" /> },
-              { label: 'Copy Block', active: s.disableCopyPaste, icon: <Copy className="h-3 w-3" /> },
-              { label: 'Shot Guard', active: s.blockScreenshots, icon: <Monitor className="h-3 w-3" /> },
-              { label: 'AI Proctoring', active: s.aiProctoring?.enabled, icon: <Shield className="h-3 w-3" /> },
-              { label: 'Shuffle', active: s.randomShuffle, icon: <Shuffle className="h-3 w-3" /> },
-              { label: 'Auto-Submit', active: s.autoSubmitOnEnd, icon: <Timer className="h-3 w-3" /> },
-            ].map(({ label, active, icon }) => (
-              <span key={label} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${active ? 'border-sky-300 bg-sky-100 text-sky-700 dark:border-sky-700 dark:bg-sky-900/30 dark:text-sky-300' : 'border-slate-200 bg-white text-slate-400 dark:border-gray-700 dark:bg-gray-900'}`}>
-                {icon}{label}
-              </span>
+              ['assessment-settings-access', 'Access control'],
+              ['assessment-settings-proctoring', 'Proctoring'],
+              ['assessment-settings-behavior', 'Candidate behavior'],
+              ['assessment-settings-results', 'Scoring & results'],
+            ].map(([href, label]) => (
+              <a key={href} href={`#${href}`} className="block rounded-md px-2 py-2 text-xs font-medium text-slate-600 hover:bg-sky-50 hover:text-sky-700 dark:text-gray-300 dark:hover:bg-sky-900/20 dark:hover:text-sky-300">{label}</a>
             ))}
-            <span className="ml-auto text-[11px] text-sky-600 dark:text-sky-400">
-              {[form.passwordEnabled, s.enableFullscreen, s.tabSwitchDetection, s.cameraMonitoring, s.disableCopyPaste, s.blockScreenshots, s.aiProctoring?.enabled, s.randomShuffle, s.autoSubmitOnEnd].filter(Boolean).length} / 9 active
+          </aside>
+          <div className="min-w-0 space-y-4">
+          {/* Quick Summary Bar */}
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-sky-100 bg-sky-50/60 px-3 py-2.5 dark:border-sky-900/30 dark:bg-sky-900/10">
+            <div>
+              <p className="text-xs font-semibold text-slate-800 dark:text-white">Assessment controls</p>
+              <p className="mt-0.5 text-[11px] text-slate-500 dark:text-gray-400">Access, proctoring, candidate behavior and results.</p>
+            </div>
+            <span className="whitespace-nowrap rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-sky-700 shadow-sm dark:bg-gray-900 dark:text-sky-300">
+              {[form.passwordEnabled, s.enableFullscreen, s.tabSwitchDetection, s.cameraMonitoring, s.disableCopyPaste, s.blockScreenshots, s.aiProctoring?.enabled, s.randomShuffle, s.autoSubmitOnEnd].filter(Boolean).length} enabled
             </span>
           </div>
 
           {/* ── PASSWORD PROTECTION ── */}
-          <div>
-            <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-gray-500">
+          <div id="assessment-settings-access" className="scroll-mt-24">
+            <h3 className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-gray-500">
               <Lock className="h-3.5 w-3.5" /> Access Control
             </h3>
-            <div className="space-y-3">
-              <Row {...rowProps} icon={<Lock className="h-4 w-4" />} iconBg="bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400"
-                title="Password Protection" desc="Candidates must enter a password to begin the test." badge="recommended"
-              >
-                {null}
-              </Row>
+            <div className="space-y-2">
               {/* Password outside Row since it binds to form not settings */}
-              <div className="rounded-xl border border-slate-200 bg-white px-4 py-3.5 dark:border-gray-700 dark:bg-gray-900">
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 dark:border-gray-700 dark:bg-gray-900">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3">
-                    <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400"><Lock className="h-4 w-4" /></div>
+                    <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400"><Lock className="h-4 w-4" /></div>
                     <div>
                       <p className="text-sm font-semibold text-slate-800 dark:text-gray-100">Enable Password</p>
-                      <p className="mt-0.5 text-xs text-slate-500 dark:text-gray-400">{form.passwordEnabled ? 'Candidates must enter password before starting.' : 'Test is open — no password required.'}</p>
+                      <p className="mt-0.5 text-[11px] leading-4 text-slate-500 dark:text-gray-400">{form.passwordEnabled ? 'Candidates must enter password before starting.' : 'Test is open — no password required.'}</p>
                     </div>
                   </div>
                   <Toggle value={Boolean(form.passwordEnabled)} onChange={(v) => updateForm({ passwordEnabled: v })} />
                 </div>
                 {form.passwordEnabled && (
-                  <div className="mt-3 space-y-2 border-t border-slate-100 pt-3 dark:border-gray-700">
+                  <div className="mt-2 space-y-2 border-t border-slate-100 pt-2 dark:border-gray-700">
                     <FieldRow label="Password">
                       <input type="text" value={form.passwordValue || ''} onChange={(e) => updateForm({ passwordValue: e.target.value })}
                         placeholder="e.g. Secure@2024"
@@ -1350,11 +1326,11 @@ export default function CreateAssessment() {
           </div>
 
           {/* ── PROCTORING ── */}
-          <div>
-            <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-gray-500">
+          <div id="assessment-settings-proctoring" className="scroll-mt-24">
+            <h3 className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-gray-500">
               <Shield className="h-3.5 w-3.5" /> Proctoring & Anti-Cheating
             </h3>
-            <div className="space-y-3">
+            <div className="space-y-2">
               <Row {...rowProps} icon={<Monitor className="h-4 w-4" />} title="Fullscreen Mode" desc="Forces browser into fullscreen. Exiting fullscreen triggers a warning." badge="recommended" toggleKey="enableFullscreen">
                 <FieldRow label="Auto-exit if fullscreen abandoned for (seconds)">
                   <NumInput value={s.fullscreenTimeoutSec} onChange={(v) => upd('fullscreenTimeoutSec', v)} min={5} max={60} placeholder="30" unit="sec" />
@@ -1490,11 +1466,11 @@ export default function CreateAssessment() {
           </div>
 
           {/* ── CANDIDATE BEHAVIOR ── */}
-          <div>
-            <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-gray-500">
+          <div id="assessment-settings-behavior" className="scroll-mt-24">
+            <h3 className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-gray-500">
               <Navigation className="h-3.5 w-3.5" /> Candidate Behavior
             </h3>
-            <div className="space-y-3">
+            <div className="space-y-2">
               <Row {...rowProps} icon={<Timer className="h-4 w-4" />} iconBg="bg-orange-50 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400"
                 title="Auto-Submit on Timer End" desc="Automatically submits the test when the timer reaches zero." badge="recommended" toggleKey="autoSubmitOnEnd">
                 <FieldRow label="Warn candidate before auto-submit (minutes)">
@@ -1544,11 +1520,11 @@ export default function CreateAssessment() {
           </div>
 
           {/* ── SCORING & RESULTS ── */}
-          <div>
-            <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-gray-500">
+          <div id="assessment-settings-results" className="scroll-mt-24">
+            <h3 className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-gray-500">
               <CheckSquare className="h-3.5 w-3.5" /> Scoring & Results
             </h3>
-            <div className="space-y-3">
+            <div className="space-y-2">
               <Row {...rowProps} icon={<CheckSquare className="h-4 w-4" />} iconBg="bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400"
                 title="Show Score After Submission" desc="Candidates see their total score immediately after submitting." toggleKey="showResultsAfterSubmit">
                 {s.showResultsAfterSubmit && (
@@ -1583,6 +1559,7 @@ export default function CreateAssessment() {
 
             </div>
           </div>
+          </div>
         </div>
       );
     })(),
@@ -1606,7 +1583,7 @@ export default function CreateAssessment() {
             value={assignedSummary.count}
             helper={assignedSummary.accountSummary}
           />
-          <SectionCard title="Notification Settings" subtitle="Review email notification settings.">
+          <SectionCard compact title="Notification Settings" subtitle="Review email notification settings.">
             <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-gray-200">
               <input
                 type="checkbox"
@@ -1620,7 +1597,7 @@ export default function CreateAssessment() {
               Email preview will include assessment title, time window, and instructions.
             </div>
           </SectionCard>
-          <SectionCard title="Version Control" subtitle="Track changes for auditability.">
+          <SectionCard compact title="Version Control" subtitle="Track changes for auditability.">
             <div className="text-sm font-semibold text-slate-800 dark:text-gray-100">Version {version}</div>
             <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Every publish/update increments the version counter.</p>
           </SectionCard>
@@ -1638,14 +1615,14 @@ export default function CreateAssessment() {
   };
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 pt-20">
+    <div className="min-h-screen bg-slate-50/70 pt-20 dark:bg-gray-950">
       <motion.div
-        initial={{ opacity: 0, y: 12 }}
+        initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="mx-auto max-w-7xl px-4 py-6"
+        transition={{ duration: 0.24 }}
+        className="mx-auto max-w-[1600px] px-4 py-4 sm:px-6"
       >
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <header className="flex flex-col gap-3 border-b border-slate-200 pb-3 dark:border-gray-800 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -1654,20 +1631,28 @@ export default function CreateAssessment() {
             >
               <ArrowLeft className="h-4 w-4" />
             </button>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-600 text-white">
-              <ClipboardList className="h-5 w-5" />
-            </div>
             <div>
-              <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Assessment Builder</h1>
-              <p className="text-xs text-slate-500 dark:text-gray-400">Professional workflow for scalable assessments.</p>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Assessments / {isEditMode ? 'Edit' : 'Create'}</p>
+              <h1 className="mt-0.5 text-lg font-bold text-slate-950 dark:text-white">{isEditMode ? 'Edit Assessment' : 'Create Assessment'}</h1>
+              <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500 dark:text-gray-400">
+                <span className={`h-1.5 w-1.5 rounded-full ${dirty ? 'bg-amber-400' : 'bg-emerald-500'}`} />
+                {autoSaveStatus || (dirty ? 'Unsaved changes' : 'All changes saved')}
+                <span aria-hidden="true">&middot;</span>
+                {form.lifecycleStatus === 'published' ? 'Published' : 'Draft'}
+              </p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {currentId && (
+              <button type="button" onClick={() => navigate(`${rolePrefix}/assessment/preview/${currentId}`)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
+                <Eye className="h-3.5 w-3.5" /> Preview
+              </button>
+            )}
             <button
               type="button"
               onClick={() => saveDraft(false)}
               disabled={loading}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
             >
               <Save className="h-3.5 w-3.5" />
               Save Draft
@@ -1676,45 +1661,41 @@ export default function CreateAssessment() {
               type="button"
               onClick={() => setShowPublishModal(true)}
               disabled={loading}
-              className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-60"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-sky-600 px-3.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-60"
             >
               <Send className="h-3.5 w-3.5" />
               Publish Assessment
             </button>
           </div>
+        </header>
+
+        <nav className="mt-3 overflow-x-auto border-b border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-950" aria-label="Assessment creation progress">
+          <ol className="grid min-w-[720px] grid-cols-5">
+            {steps.map((step, index) => {
+              const isActive = activeStep === step.id;
+              const isComplete = index < stepIndex;
+              return (
+                <li key={step.id}>
+                  <button type="button" onClick={() => setActiveStep(step.id)} className={`flex h-11 w-full items-center justify-center gap-2 border-b-2 px-3 text-center text-xs font-semibold transition-colors ${isActive ? 'border-sky-600 bg-sky-50/60 text-sky-700 dark:bg-sky-900/10 dark:text-sky-300' : 'border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-900 dark:text-gray-400 dark:hover:bg-gray-900 dark:hover:text-white'}`}>
+                    <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${isActive ? 'bg-sky-600 text-white' : isComplete ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300' : 'bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-gray-400'}`}>{index + 1}</span>
+                    <span>{step.label}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
+
+        <div className="mt-4">
+          {activeStep === 'target' ? (
+            <div className="grid items-start gap-4 xl:grid-cols-2">
+              {stepContent.schedule}
+              {stepContent.target}
+            </div>
+          ) : stepContent[activeStep]}
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="h-4 w-4 text-slate-400" />
-            {autoSaveStatus || (dirty ? 'Unsaved changes' : 'All changes saved')}
-          </div>
-          <div className="text-xs font-semibold">Status: {form.lifecycleStatus === 'published' ? 'Published' : 'Draft'}</div>
-        </div>
-
-        <div className="mt-6 flex flex-wrap gap-2">
-          {steps.map((step) => (
-            <button
-              key={step.id}
-              type="button"
-              onClick={() => setActiveStep(step.id)}
-              className={`rounded-xl px-4 py-2 text-xs font-semibold transition-colors ${activeStep === step.id
-                  ? 'bg-sky-600 text-white'
-                  : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'
-                }`}
-            >
-              {step.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="mt-2 text-xs text-slate-500 dark:text-gray-400">{stepMeta.description}</div>
-
-        <div className="mt-6">
-          {stepContent[activeStep]}
-        </div>
-
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="sticky bottom-0 z-30 -mx-4 mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white/95 px-4 py-2.5 shadow-[0_-6px_18px_rgba(15,23,42,0.05)] backdrop-blur sm:-mx-6 sm:px-6 dark:border-gray-800 dark:bg-gray-900/95">
           <button
             type="button"
             onClick={goPrev}
@@ -1723,14 +1704,7 @@ export default function CreateAssessment() {
           >
             Previous
           </button>
-          <button
-            type="button"
-            onClick={goNext}
-            disabled={stepIndex === steps.length - 1}
-            className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
-          >
-            Next
-          </button>
+          {stepIndex < steps.length - 1 ? <button type="button" onClick={goNext} className="rounded-xl bg-sky-600 px-5 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-sky-500">Continue to {steps[stepIndex + 1].label}</button> : <button type="button" onClick={() => setShowPublishModal(true)} disabled={loading} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-5 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:opacity-60"><Send className="h-3.5 w-3.5" /> Publish Assessment</button>}
         </div>
 
         {showPublishModal && (

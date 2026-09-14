@@ -40,6 +40,7 @@ const KEY_TO_LANGUAGE_ID = {
   rust: 73,
   typescript: 74,
   kotlin: 78,
+  r: 80,
   swift: 83,
 };
 

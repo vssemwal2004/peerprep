@@ -135,6 +135,13 @@ export default function LibraryWorkspace({ view = 'questions' }) {
   const selectedType = searchParams.get('type') || 'all';
   const selectedStatus = searchParams.get('status') || '';
   const mode = searchParams.get('mode') || 'library';
+  const assessmentSelectionMode = mode === 'select';
+  const assessmentCreationMode = mode === 'assessment-create';
+  const assessmentTitle = searchParams.get('assessmentTitle') || 'Assessment';
+  const lockedQuestionType = searchParams.get('lockType') || '';
+  const navigableQuestionTypes = assessmentSelectionMode && lockedQuestionType
+    ? questionTypes.filter((item) => item.type === lockedQuestionType)
+    : questionTypes;
   const canViewQuestions = hasPermission(user, 'coordinator.library.view');
   const canCreateGeneral = hasPermission(user, 'coordinator.library.create');
   const canCreateCoding = hasPermission(user, 'coordinator.compiler.create');
@@ -176,7 +183,7 @@ export default function LibraryWorkspace({ view = 'questions' }) {
   }, [canViewQuestions, updateQuestionCounts, view]);
 
   const assessmentContext = useMemo(() => {
-    if (mode !== 'assessment') return undefined;
+    if (mode !== 'assessment' && mode !== 'assessment-create') return undefined;
     return {
       tempId: searchParams.get('tempId'),
       assessmentKey: searchParams.get('assessment'),
@@ -196,18 +203,35 @@ export default function LibraryWorkspace({ view = 'questions' }) {
   const requestedReturnTo = typeof location.state?.returnTo === 'string' && location.state.returnTo.startsWith(rolePrefix)
     ? location.state.returnTo
     : '';
-  const closeTarget = mode === 'assessment' && assessmentContext?.returnTo
+  const closeTarget = (mode === 'assessment' || mode === 'assessment-create') && assessmentContext?.returnTo
     ? assessmentContext.returnTo
     : (requestedReturnTo || libraryRoot);
 
+  const questionBankUrl = (type = 'all', status = '') => {
+    const next = new URLSearchParams(searchParams);
+    if (type === 'all') next.delete('type');
+    else next.set('type', type);
+    if (status) next.set('status', status);
+    else next.delete('status');
+    return `${libraryRoot}${next.toString() ? `?${next.toString()}` : ''}`;
+  };
+
   const handleCreateType = (type) => {
     setTypeDrawerOpen(false);
+    const next = new URLSearchParams(assessmentCreationMode ? searchParams : undefined);
+    next.set('type', type);
     if (type === 'coding') {
-      navigate(`${libraryRoot}/coding/create`);
+      navigate(`${libraryRoot}/coding/create${next.toString() ? `?${next.toString()}` : ''}`);
       return;
     }
-    navigate(`${libraryRoot}/create?type=${type}`);
+    navigate(`${libraryRoot}/create?${next.toString()}`);
   };
+
+  useEffect(() => {
+    if (view === 'questions' && assessmentCreationMode && searchParams.get('openCreate') === '1') {
+      setTypeDrawerOpen(true);
+    }
+  }, [assessmentCreationMode, searchParams, view]);
 
   const isDrawerView = ['create-question', 'edit-question', 'create-coding', 'edit-coding', 'preview-coding'].includes(view);
 
@@ -218,7 +242,11 @@ export default function LibraryWorkspace({ view = 'questions' }) {
     return () => { document.body.style.overflow = previousOverflow; };
   }, [isDrawerView, typeDrawerOpen]);
 
-  const title = view === 'coding-problems'
+  const title = assessmentSelectionMode
+    ? 'Add questions to assessment'
+    : assessmentCreationMode
+      ? 'Create question for assessment'
+    : view === 'coding-problems'
       ? 'Problem management'
       : view === 'coding-analytics'
         ? 'Coding analytics'
@@ -262,16 +290,16 @@ export default function LibraryWorkspace({ view = 'questions' }) {
           <div className="sticky top-[var(--app-navbar-height,5rem)] flex h-[calc(100vh-var(--app-navbar-height,5rem))] flex-col overflow-y-auto px-3 py-5">
             <div className="px-3 pb-4">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-600 text-white"><Library className="h-5 w-5" /></div>
-              <h2 className="mt-3 text-sm font-bold text-slate-950 dark:text-white">Question Library</h2>
-              <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-gray-400">Create, organize and reuse assessment content.</p>
+              <h2 className="mt-3 text-sm font-bold text-slate-950 dark:text-white">{assessmentSelectionMode ? 'Choose questions' : assessmentCreationMode ? 'Create for assessment' : 'Question Library'}</h2>
+              <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-gray-400">{assessmentSelectionMode ? `Select content for ${assessmentTitle}.` : assessmentCreationMode ? `Create and attach content to ${assessmentTitle}.` : 'Create, organize and reuse assessment content.'}</p>
             </div>
 
             {canViewQuestions && <div className="border-t border-slate-200 pt-3 dark:border-gray-800">
               <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Question bank</p>
               <nav className="space-y-1">
-                {questionTypes.map(({ type, label, Icon }) => {
+                {navigableQuestionTypes.map(({ type, label, Icon }) => {
                   const active = view === 'questions' && !selectedStatus && selectedType === type;
-                  const to = type === 'all' ? libraryRoot : `${libraryRoot}?type=${type}`;
+                  const to = questionBankUrl(type);
                   return (
                     <Link key={type} to={to} className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${active ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300' : 'text-slate-600 hover:bg-white hover:text-slate-950 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'}`}>
                       <Icon className="h-4 w-4" />
@@ -280,11 +308,11 @@ export default function LibraryWorkspace({ view = 'questions' }) {
                     </Link>
                   );
                 })}
-                <Link to={`${libraryRoot}?status=draft`} className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${view === 'questions' && selectedStatus === 'draft' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' : 'text-slate-600 hover:bg-white hover:text-slate-950 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'}`}>
+                {!assessmentSelectionMode && <Link to={questionBankUrl('all', 'draft')} className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${view === 'questions' && selectedStatus === 'draft' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' : 'text-slate-600 hover:bg-white hover:text-slate-950 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'}`}>
                   <FilePenLine className="h-4 w-4" />
                   <span className="min-w-0 flex-1 truncate">Drafts</span>
                   <span className={`shrink-0 text-[11px] tabular-nums ${view === 'questions' && selectedStatus === 'draft' ? 'text-amber-700 dark:text-amber-300' : 'text-slate-400 dark:text-gray-500'}`}>({questionCounts.draft.toLocaleString()})</span>
-                </Link>
+                </Link>}
               </nav>
             </div>}
 
@@ -309,16 +337,16 @@ export default function LibraryWorkspace({ view = 'questions' }) {
 
         <main className="min-w-0">
           {view !== 'coding-analytics' && <nav className="flex gap-2 overflow-x-auto border-b border-slate-200 bg-slate-50 px-4 py-3 md:hidden dark:border-gray-800 dark:bg-gray-950/40" aria-label="Library sections">
-            {canViewQuestions && questionTypes.map(({ type, label, Icon }) => {
+            {canViewQuestions && navigableQuestionTypes.map(({ type, label, Icon }) => {
               const active = view === 'questions' && !selectedStatus && selectedType === type;
-              const to = type === 'all' ? libraryRoot : `${libraryRoot}?type=${type}`;
+              const to = questionBankUrl(type);
               return (
                 <Link key={type} to={to} className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${active ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300' : 'bg-white text-slate-600 dark:bg-gray-900 dark:text-gray-300'}`}>
                   <Icon className="h-4 w-4" /><span>{label}</span><span className="text-[11px] tabular-nums text-slate-400">({questionCounts[type].toLocaleString()})</span>
                 </Link>
               );
             })}
-            {canViewQuestions && <Link to={`${libraryRoot}?status=draft`} className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${view === 'questions' && selectedStatus === 'draft' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' : 'bg-white text-slate-600 dark:bg-gray-900 dark:text-gray-300'}`}>
+            {canViewQuestions && !assessmentSelectionMode && <Link to={questionBankUrl('all', 'draft')} className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${view === 'questions' && selectedStatus === 'draft' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' : 'bg-white text-slate-600 dark:bg-gray-900 dark:text-gray-300'}`}>
               <FilePenLine className="h-4 w-4" /><span>Drafts</span><span className="text-[11px] tabular-nums text-slate-400">({questionCounts.draft.toLocaleString()})</span>
             </Link>}
             {codingItems.map(({ id, label, Icon, to }) => (
@@ -333,7 +361,7 @@ export default function LibraryWorkspace({ view = 'questions' }) {
                 <div className="flex items-center gap-2 text-xs font-medium text-slate-400"><BookOpenCheck className="h-3.5 w-3.5" /> Library <ChevronRight className="h-3 w-3" /> <span className="text-slate-600 dark:text-gray-300">{title}</span></div>
                 <h1 className="mt-1 text-xl font-bold text-slate-950 dark:text-white">{title}</h1>
               </div>
-              {(canCreateGeneral || canCreateCoding) && <button type="button" onClick={() => setTypeDrawerOpen(true)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-500">
+              {!assessmentSelectionMode && (canCreateGeneral || canCreateCoding) && <button type="button" onClick={() => setTypeDrawerOpen(true)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-500">
                 <Plus className="h-4 w-4" /> Create question
               </button>}
             </div>
@@ -347,7 +375,7 @@ export default function LibraryWorkspace({ view = 'questions' }) {
         </main>
       </div>
 
-      {typeDrawerOpen && <CreateTypeDrawer onClose={() => setTypeDrawerOpen(false)} onSelect={handleCreateType} canCreateGeneral={canCreateGeneral} canCreateCoding={canCreateCoding} />}
+      {typeDrawerOpen && <CreateTypeDrawer onClose={() => assessmentCreationMode ? navigate(closeTarget) : setTypeDrawerOpen(false)} onSelect={handleCreateType} canCreateGeneral={canCreateGeneral} canCreateCoding={canCreateCoding} />}
 
       {isDrawerView && (
         <>

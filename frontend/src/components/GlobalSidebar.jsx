@@ -14,8 +14,6 @@ import {
   MessageSquareText,
   ClipboardList,
   Library,
-  PlusSquare,
-  FileCode2,
   BarChart3,
   ChevronDown,
   Settings,
@@ -59,11 +57,11 @@ const buildNavItems = (role = 'admin') => {
       {
         type: 'group',
         key: 'assessment',
-        label: 'Assessment',
+        label: 'Assessments',
         icon: ClipboardList,
         items: [
-          { label: 'Overview', to: '/coordinator/assessment', icon: ClipboardList, permissionKey: 'coordinator.assessment.view' },
-          { label: 'Add Assessment', to: '/coordinator/assessment/create', icon: ClipboardList, permissionKey: 'coordinator.assessment.create' },
+          { label: 'All Assessments', to: '/coordinator/assessment', icon: ClipboardList, permissionKey: 'coordinator.assessment.view' },
+          { label: 'Create Assessment', to: '/coordinator/assessment/create', icon: CalendarPlus, permissionKey: 'coordinator.assessment.create' },
           { label: 'Reports', to: '/coordinator/assessment/reports', icon: ClipboardList, permissionKey: 'coordinator.assessment.reports' },
         ],
       },
@@ -74,9 +72,6 @@ const buildNavItems = (role = 'admin') => {
         icon: Library,
         items: [
           { label: 'View Library', to: '/coordinator/library', icon: Library, permissionKey: 'coordinator.library.view', match: (loc) => loc.pathname === '/coordinator/library' },
-          { label: 'Create Question', to: '/coordinator/library/create', icon: PlusSquare, permissionKey: 'coordinator.library.create' },
-          { label: 'Coding Overview', to: '/coordinator/library/coding/overview', icon: LayoutDashboard, permissionKey: 'coordinator.compiler.view' },
-          { label: 'Coding Problems', to: '/coordinator/library/coding/problems', icon: FileCode2, permissionKey: 'coordinator.compiler.manage' },
           { label: 'Coding Analytics', to: '/coordinator/library/coding/analytics', icon: BarChart3, permissionKey: 'coordinator.compiler.analytics' },
         ],
       },
@@ -160,13 +155,13 @@ const buildNavItems = (role = 'admin') => {
     {
       type: 'group',
       key: 'assessment',
-      label: 'Assessment',
+      label: 'Assessments',
       icon: ClipboardList,
       items: [
-        { label: 'Overview', to: '/admin/assessment', icon: ClipboardList },
-        { label: 'Add Assessment', to: '/admin/assessment/create', icon: ClipboardList },
+        { label: 'All Assessments', to: '/admin/assessment', icon: ClipboardList },
+        { label: 'Create Assessment', to: '/admin/assessment/create', icon: CalendarPlus },
         { label: 'Reports', to: '/admin/assessment/reports', icon: ClipboardList },
-        { label: 'Assessment Feedback', to: '/admin/assessment-feedback', icon: MessageSquareText },
+        { label: 'Feedback', to: '/admin/assessment-feedback', icon: MessageSquareText },
       ],
     },
     {
@@ -176,9 +171,6 @@ const buildNavItems = (role = 'admin') => {
       icon: Library,
       items: [
         { label: 'View Library', to: '/admin/library', icon: Library, match: (loc) => loc.pathname === '/admin/library' },
-        { label: 'Create Question', to: '/admin/library/create', icon: PlusSquare },
-        { label: 'Coding Overview', to: '/admin/library/coding/overview', icon: LayoutDashboard },
-        { label: 'Coding Problems', to: '/admin/library/coding/problems', icon: FileCode2 },
         { label: 'Coding Analytics', to: '/admin/library/coding/analytics', icon: BarChart3 },
       ],
     },

@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 export const SUPPORTED_LANGUAGES = [
   'python', 'javascript', 'java', 'cpp', 'c', 'typescript', 'csharp',
   'php', 'go', 'rust', 'kotlin', 'ruby', 'swift',
+  'r',
 ];
 
 const problemSchema = new mongoose.Schema({

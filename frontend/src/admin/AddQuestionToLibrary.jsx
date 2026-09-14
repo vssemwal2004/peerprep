@@ -5,6 +5,7 @@ import QuestionBuilder, { QuestionImageUploader, RequiredLabel } from './assessm
 import { useToast } from '../components/CustomToast';
 import { api } from '../utils/api';
 import AuthoringStepper from './library/AuthoringStepper';
+import { queueQuestionSelection } from './assessment/assessmentProblemSelectionStore';
 
 const QUESTION_TYPES = [
   { value: 'mcq', label: 'MCQ', description: 'Single, multiple or passage based', Icon: ListChecks },
@@ -214,6 +215,9 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
   const toast = useToast();
   const fileInputRef = useRef(null);
   const activeQuestionItemRef = useRef(null);
+  const assessmentCreateMode = searchParams.get('mode') === 'assessment-create';
+  const assessmentKey = searchParams.get('assessment') || 'new';
+  const assessmentReturnTo = searchParams.get('return') || (location.pathname.startsWith('/coordinator') ? '/coordinator/assessment/create' : '/admin/assessment/create');
 
   const initialType = ['mcq', 'short', 'one_line'].includes(searchParams.get('type')) ? searchParams.get('type') : 'mcq';
   const type = initialType;
@@ -618,7 +622,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
     }
   };
 
-  const handleSaveAll = async (requestedStatus = '') => {
+  const handleSaveAll = async (requestedStatus = '', { addToAssessment = false } = {}) => {
     const targetStatus = typeof requestedStatus === 'string' && requestedStatus
       ? requestedStatus
       : libraryMeta.status;
@@ -694,8 +698,14 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
         return;
       }
 
-      await api.createLibraryQuestionsBulk(payload);
+      const response = await api.createLibraryQuestionsBulk(payload);
       const passageSetCount = payload.filter((item) => item.libraryItemKind === 'passage_set').length;
+      if (assessmentCreateMode && addToAssessment) {
+        queueQuestionSelection(assessmentKey, { questions: response.questions || [], createdForAssessment: true });
+        toast.success(`${validQuestions.length} question${validQuestions.length === 1 ? '' : 's'} published and added to the assessment.`);
+        navigate(assessmentReturnTo);
+        return;
+      }
       toast.success(targetStatus === 'draft'
         ? `Saved ${payload.length} library draft${payload.length === 1 ? '' : 's'}.`
         : `Published ${validQuestions.length} questions as ${payload.length} library item${payload.length === 1 ? '' : 's'}${passageSetCount ? `, including ${passageSetCount} passage set${passageSetCount === 1 ? '' : 's'}` : ''}.`);
@@ -835,6 +845,9 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
               </div>
             </div>
             <div className="flex items-center gap-2">
+              {assessmentCreateMode && !editQuestionId && <button type="button" onClick={() => handleSaveAll('published', { addToAssessment: true })} disabled={isSubmitting || !questions.length} className="inline-flex h-9 items-center gap-2 rounded-xl bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-50">
+                <Plus className="h-4 w-4" />{isSubmitting ? 'Adding...' : 'Add to assessment'}
+              </button>}
               {!editQuestionId && <button type="button" onClick={() => setImportOpen((open) => !open)} title="Bulk import questions" className={`inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-semibold transition ${importOpen ? 'border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300' : 'border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
                 <FileSpreadsheet className="h-4 w-4" /><span className="hidden sm:inline">Import</span>
               </button>}
@@ -1007,7 +1020,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
               <button type="button" onClick={() => setPreviewOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"><Eye className="h-4 w-4" /><span className="hidden sm:inline">Preview</span></button>
               {!editQuestionId && <button type="button" onClick={() => handleSaveAll('draft')} disabled={isSubmitting || !questions.length} className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:border-sky-300 hover:bg-sky-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"><Save className="h-4 w-4" /><span className="hidden sm:inline">Save draft</span></button>}
               {isFinalStage ? (
-                <button type="button" onClick={() => handleSaveAll(libraryMeta.status)} disabled={isSubmitting || !questions.length} className="inline-flex h-10 items-center gap-2 rounded-xl bg-sky-600 px-4 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-50"><Save className="h-4 w-4" />{isSubmitting ? 'Saving...' : editQuestionId ? 'Save changes' : libraryMeta.status === 'draft' ? 'Save draft' : 'Publish'}</button>
+                <button type="button" onClick={() => assessmentCreateMode ? handleSaveAll('published', { addToAssessment: true }) : handleSaveAll(libraryMeta.status)} disabled={isSubmitting || !questions.length} className="inline-flex h-10 items-center gap-2 rounded-xl bg-sky-600 px-4 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-50">{assessmentCreateMode ? <Plus className="h-4 w-4" /> : <Save className="h-4 w-4" />}{isSubmitting ? (assessmentCreateMode ? 'Adding...' : 'Saving...') : assessmentCreateMode ? 'Add to assessment' : editQuestionId ? 'Save changes' : libraryMeta.status === 'draft' ? 'Save draft' : 'Publish'}</button>
               ) : (
                 <button type="button" onClick={() => moveStage(1)} className="inline-flex h-10 items-center gap-2 rounded-xl bg-sky-600 px-4 text-sm font-semibold text-white hover:bg-sky-500">Next<ChevronRight className="h-4 w-4" /></button>
               )}

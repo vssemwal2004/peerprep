@@ -1,5 +1,5 @@
-import React, { useEffect, useCallback, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, Code2, Download, FileSpreadsheet, Plus, Trash2, Upload } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, ChevronUp, Code2, Download, FileSpreadsheet, Trash2, Upload } from 'lucide-react';
 import QuestionBuilder from './QuestionBuilder';
 import { getLanguageLabel, getProblemSupportedLanguages } from '../../compiler/compilerUtils';
 
@@ -53,14 +53,6 @@ const emptyQuestion = (type, marksPerQuestion = 1, negativeMarksPerQuestion = 0)
   };
 };
 
-const emptySection = () => ({
-  sectionName: '',
-  type: 'mcq',
-  marksPerQuestion: 1,
-  negativeMarksPerQuestion: 0,
-  questions: [emptyQuestion('mcq', 1, 0)],
-});
-
 const truncate = (value, max = 88) => {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
   if (!text) return '';
@@ -91,7 +83,7 @@ const getQuestionPreview = (sectionType, question = {}) => {
   return 'Answer details pending';
 };
 
-export default function SectionBuilder({ sections, onChange, onOpenCodingEditor, onOpenProblemLibrary, onNotify }) {
+export default function SectionBuilder({ sections, onChange, onOpenCodingEditor, onNotify }) {
   const [collapsedSections, setCollapsedSections] = useState({});
   const [collapsedQuestions, setCollapsedQuestions] = useState({});
   const fileInputRefs = useRef({});
@@ -155,16 +147,6 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
       return changed ? next : prev;
     });
   }, [sectionsWithIds]);
-
-  const addSection = useCallback(() => {
-    onChange([...(sectionsWithIds || []), emptySection()]);
-  }, [onChange, sectionsWithIds]);
-
-  useEffect(() => {
-    const handler = () => addSection();
-    document.addEventListener('sectionbuilder:addsection', handler);
-    return () => document.removeEventListener('sectionbuilder:addsection', handler);
-  }, [addSection]);
 
   const updateSection = (index, updates) => {
     const next = sectionsWithIds.map((section, idx) => (idx === index ? { ...section, ...updates } : section));
@@ -421,23 +403,6 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
     onChange(sectionsWithIds.filter((_, idx) => idx !== index));
   };
 
-  const addQuestion = (sectionIndex) => {
-    const section = sectionsWithIds[sectionIndex];
-    const marks = Number(section.marksPerQuestion || 1) || 1;
-    const negativeMarks = Number(section.negativeMarksPerQuestion || 0) || 0;
-    const newQuestion = emptyQuestion(section.type, marks, negativeMarks);
-    const nextQuestions = [...(section.questions || []), newQuestion];
-    updateSection(sectionIndex, { questions: nextQuestions });
-    setCollapsedSections((prev) => ({ ...prev, [section.__key]: false }));
-    setCollapsedQuestions((prev) => ({
-      ...prev,
-      [section.__key]: {
-        ...(prev[section.__key] || {}),
-        [newQuestion.questionId]: false,
-      },
-    }));
-  };
-
   const updateQuestion = (sectionIndex, questionIndex, updates) => {
     const section = sectionsWithIds[sectionIndex];
     const nextQuestions = (section.questions || []).map((question, idx) => (
@@ -449,10 +414,12 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
   const removeQuestion = (sectionIndex, questionIndex) => {
     const section = sectionsWithIds[sectionIndex];
     const filtered = (section.questions || []).filter((_, idx) => idx !== questionIndex);
+    if (!filtered.length) {
+      removeSection(sectionIndex);
+      return;
+    }
     updateSection(sectionIndex, {
-      questions: filtered.length
-        ? filtered
-        : [emptyQuestion(section.type, Number(section.marksPerQuestion || 1) || 1, Number(section.negativeMarksPerQuestion || 0) || 0)],
+      questions: filtered,
     });
   };
 
@@ -522,7 +489,7 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
       : (previewValidated ? 'Validated' : 'Draft');
 
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
+      <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-gray-400">
@@ -561,13 +528,13 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-800">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-800">
             <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Problem Statement</div>
             <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-gray-200">
               {problemData.statement || problemData.description || question.questionText || 'Problem statement not configured yet.'}
             </div>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-800">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-800">
             <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Constraints</div>
             <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-gray-200">
               {problemData.constraints || 'Constraints not added yet.'}
@@ -576,7 +543,7 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
         </div>
 
         <div className="mt-3 grid gap-3 md:grid-cols-2">
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-800">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-800">
             <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Examples</div>
             <div className="mt-2 space-y-2">
               {(problemData.sampleTestCases || []).length ? (
@@ -591,7 +558,7 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
               )}
             </div>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-800">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-800">
             <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Test Cases</div>
             <div className="mt-2 text-sm text-slate-700 dark:text-gray-200">
               Visible: {sampleCount} • Hidden: {hiddenCount}
@@ -662,6 +629,12 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
 
   return (
     <div className="space-y-4">
+      {sectionsWithIds.length === 0 && (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center dark:border-gray-700 dark:bg-gray-800/40">
+          <p className="text-sm font-semibold text-slate-700 dark:text-gray-200">No questions added yet</p>
+          <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Use one of the two actions above to select a library question or create a new one.</p>
+        </div>
+      )}
       {sectionsWithIds.map((section, index) => {
         const isCollapsed = collapsedSections[section.__key];
         const isCodingSection = section.type === 'coding';
@@ -675,16 +648,16 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
             ref={(el) => {
               if (el) sectionRefs.current[section.__key] = el;
             }}
-            className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_18px_48px_-36px_rgba(15,23,42,0.32)] dark:border-gray-700 dark:bg-gray-900"
+            className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900"
           >
-            <div className="border-b border-slate-200 bg-gradient-to-r from-slate-50 via-white to-sky-50/60 px-4 py-4 dark:border-gray-700 dark:from-gray-900 dark:via-gray-900 dark:to-sky-950/20">
+            <div className="border-b border-slate-200 bg-slate-50/70 px-3 py-3 dark:border-gray-700 dark:bg-gray-900">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <button
                   type="button"
                   onClick={() => toggleSection(section.__key)}
                   className="flex min-w-0 flex-1 items-start gap-3 text-left"
                 >
-                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+                  <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
                     {isCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
                   </span>
                   <div className="min-w-0 flex-1">
@@ -699,8 +672,8 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
                         {totalMarks} marks
                       </span>
                     </div>
-                    <div className="mt-2 text-base font-semibold text-slate-900 dark:text-white">{sectionTitle}</div>
-                    <div className="mt-1 text-sm text-slate-500 dark:text-gray-400">
+                    <div className="mt-1.5 text-sm font-semibold text-slate-900 dark:text-white">{sectionTitle}</div>
+                    <div className="mt-1 text-xs text-slate-500 dark:text-gray-400">
                       {isCodingSection
                         ? truncate(section.questions?.[0]?.problemDataSnapshot?.title || section.questions?.[0]?.questionText || 'Coding section ready for curated problem selection', 120)
                         : `${typeLabelMap[section.type] || section.type} section with ${questionCount} question${questionCount !== 1 ? 's' : ''}, +${Number(section.marksPerQuestion || 1) || 1} per question, and -${Number(section.negativeMarksPerQuestion || 0) || 0} negative marking.`}
@@ -711,16 +684,8 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => onOpenProblemLibrary?.(section.type)}
-                    className="inline-flex items-center gap-2 rounded-xl border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 transition-colors hover:bg-sky-100 dark:border-sky-700 dark:bg-sky-900/20 dark:text-sky-300 dark:hover:bg-sky-900/40"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Add More
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => removeSection(index)}
-                    className="inline-flex items-center gap-1 rounded-xl border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                    className="inline-flex h-8 items-center gap-1 rounded-lg border border-rose-200 px-2.5 text-xs font-semibold text-rose-600 hover:bg-rose-50"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                     Remove
@@ -730,8 +695,8 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
             </div>
 
             {!isCollapsed && (
-              <div className="space-y-4 p-4">
-                <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 md:grid-cols-4 dark:border-gray-700 dark:bg-gray-800/60">
+              <div className="space-y-3 p-3">
+                <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3 md:grid-cols-4 dark:border-gray-700 dark:bg-gray-800/60">
                   <div>
                     <label className="text-xs text-slate-500 dark:text-gray-400">Section Name</label>
                     <input
@@ -781,7 +746,7 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
                 </div>
 
                 {['mcq', 'short', 'one_line'].includes(section.type) && (
-                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-gray-700 dark:bg-gray-800">
                     <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-gray-200">
                       <FileSpreadsheet className="h-4 w-4 text-slate-500" />
                       Bulk Import
@@ -829,7 +794,7 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
                         : 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200';
 
                   return (
-                    <div className={`rounded-2xl border px-4 py-3 text-xs ${tone}`}>
+                    <div className={`rounded-xl border px-3 py-2.5 text-xs ${tone}`}>
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="font-semibold">{state.status === 'importing' ? 'Importing...' : state.message}</div>
                         {state.status === 'importing' && (
@@ -864,7 +829,7 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
                     ) || `${typeLabelMap[section.type] || 'Question'} ${qIndex + 1}`;
 
                     return (
-                      <div key={questionKey} className="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+                      <div key={questionKey} className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900">
                         <button
                           type="button"
                           onClick={() => toggleQuestion(section.__key, questionKey)}
@@ -914,40 +879,12 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
                   })}
                 </div>
 
-                <div className="flex flex-wrap items-center gap-3 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => addQuestion(index)}
-                    className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-sky-500 hover:shadow-md"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Add Question
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onOpenProblemLibrary?.(section.type)}
-                    className="inline-flex items-center gap-2 rounded-xl border border-sky-300 bg-sky-50 px-4 py-2 text-xs font-semibold text-sky-700 transition-all hover:bg-sky-100 dark:border-sky-700 dark:bg-sky-900/20 dark:text-sky-300 dark:hover:bg-sky-900/40"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Add Questions from Library
-                  </button>
-                </div>
               </div>
             )}
           </div>
         );
       })}
 
-      {sectionsWithIds.length > 0 && (
-        <button
-          type="button"
-          onClick={addSection}
-          className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-sky-500 hover:shadow-md"
-        >
-          <Plus className="h-4 w-4" />
-          Add Section
-        </button>
-      )}
     </div>
   );
 }

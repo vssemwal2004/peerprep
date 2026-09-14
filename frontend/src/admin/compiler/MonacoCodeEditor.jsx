@@ -14,6 +14,7 @@ import 'monaco-editor/esm/vs/basic-languages/javascript/javascript.contribution'
 import 'monaco-editor/esm/vs/basic-languages/kotlin/kotlin.contribution';
 import 'monaco-editor/esm/vs/basic-languages/php/php.contribution';
 import 'monaco-editor/esm/vs/basic-languages/python/python.contribution';
+import 'monaco-editor/esm/vs/basic-languages/r/r.contribution';
 import 'monaco-editor/esm/vs/basic-languages/ruby/ruby.contribution';
 import 'monaco-editor/esm/vs/basic-languages/rust/rust.contribution';
 import 'monaco-editor/esm/vs/basic-languages/swift/swift.contribution';
