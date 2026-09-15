@@ -121,7 +121,7 @@ export default function AdminLearning() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white dark:bg-gray-900 pt-20 px-4">
+      <div className="min-h-screen bg-white dark:bg-gray-900 px-4 pt-5">
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center justify-center py-20">
             <div className="animate-spin rounded-full h-10 w-10 border-2 border-slate-200 border-t-sky-500"></div>
@@ -132,7 +132,7 @@ export default function AdminLearning() {
   }
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 pt-20 px-3 sm:px-4 pb-8">
+    <div className="min-h-screen bg-white dark:bg-gray-900 px-3 pb-8 pt-5 sm:px-4">
       <div className="max-w-7xl mx-auto">
         {/* Header with Edit Toggle */}
         <motion.div

@@ -11,7 +11,7 @@ export default function CompilerSidebar({
     <aside
       onMouseEnter={onExpand}
       onMouseLeave={onCollapse}
-      className={`activity-sidebar fixed top-20 z-30 hidden h-[calc(100vh-5rem)] overflow-hidden border-r border-slate-200 bg-white/95 shadow-sm backdrop-blur transition-all duration-300 md:block dark:border-gray-700 dark:bg-gray-900/95 ${isExpanded ? 'w-[272px]' : 'w-20'}`}
+      className={`activity-sidebar fixed top-0 z-30 hidden h-screen overflow-hidden border-r border-slate-200 bg-white/95 shadow-sm backdrop-blur transition-all duration-300 md:block dark:border-gray-700 dark:bg-gray-900/95 ${isExpanded ? 'w-[272px]' : 'w-20'}`}
       style={{ left: 'var(--admin-sidebar-width, 4rem)' }}
     >
       <div className="h-full overflow-y-auto px-3 py-4">

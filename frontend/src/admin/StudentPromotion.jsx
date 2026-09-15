@@ -101,7 +101,7 @@ export default function StudentPromotion() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 pt-20 dark:bg-gray-950">
+    <div className="min-h-screen bg-slate-50 dark:bg-gray-950">
       <div className="mx-auto max-w-7xl px-4 py-6">
         <div className="mb-6"><div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-bold uppercase tracking-[0.12em] text-sky-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-200"><GraduationCap className="h-3.5 w-3.5" />Academic progression</div><h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-950 dark:text-white">Promote Students</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-400">Open a semester, review its complete student roster, then promote individuals, selected students, or the whole semester by one level.</p></div>
 

@@ -48,7 +48,7 @@ export default function CoordinatorProfile() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-white dark:bg-gray-900 flex flex-col pt-16">
+      <div className="min-h-screen bg-white dark:bg-gray-900 flex flex-col">
         <div className="w-full max-w-3xl mx-auto px-4 py-12">
           <p className="text-slate-600 dark:text-gray-400">Loading profile...</p>
         </div>
@@ -57,7 +57,7 @@ export default function CoordinatorProfile() {
   }
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 flex flex-col pt-16">
+    <div className="min-h-screen bg-white dark:bg-gray-900 flex flex-col">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="w-full px-6 py-8">
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-slate-200 dark:border-gray-700 p-6">
           {/* Avatar Section */}

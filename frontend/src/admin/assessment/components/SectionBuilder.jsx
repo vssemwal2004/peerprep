@@ -12,6 +12,22 @@ const questionTypes = [
 
 const typeLabelMap = Object.fromEntries(questionTypes.map((item) => [item.value, item.label]));
 
+const getCodingTestCaseMarks = (problemData = {}) => {
+  const hiddenCases = Array.isArray(problemData.hiddenTestCases) ? problemData.hiddenTestCases : [];
+  const hiddenMarks = hiddenCases.reduce(
+    (total, testCase) => total + (Number(testCase?.marks) > 0 ? Number(testCase.marks) : 1),
+    0,
+  );
+  return Math.max(0.01, Number(
+    problemData.totalMarks
+    || problemData.hiddenTestCaseTotalMarks
+    || hiddenMarks
+    || problemData.hiddenTestCaseCount
+    || problemData.hiddenTestSource?.caseCount
+    || 1,
+  ) || 1);
+};
+
 const createQuestionId = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
@@ -483,6 +499,7 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
     const languageLabels = supportedLanguages.map(getLanguageLabel);
     const sampleCount = problemData.sampleTestCases?.length || 0;
     const hiddenCount = problemData.hiddenTestCaseCount || problemData.hiddenTestCases?.length || 0;
+    const testCaseMarks = getCodingTestCaseMarks(problemData);
     const hasTemplates = Object.values(problemData.codeTemplates || {}).some((value) => String(value || '').trim());
     const status = previewValidated && sampleCount > 0 && hiddenCount > 0 && hasTemplates
       ? 'Ready'
@@ -572,15 +589,16 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <div className="grid gap-3 md:grid-cols-[150px_150px_minmax(0,1fr)]">
             <div>
-              <label className="text-[11px] text-slate-500 dark:text-gray-400">Positive Marks</label>
+              <div className="flex items-center justify-between gap-2"><label className="text-[11px] text-slate-500 dark:text-gray-400">Question Marks</label><span className={`text-[9px] font-bold uppercase tracking-wide ${question.marksMode === 'custom' ? 'text-amber-600' : 'text-emerald-600'}`}>{question.marksMode === 'custom' ? 'Custom' : 'From tests'}</span></div>
               <input
                 type="number"
-                min="0"
+                min="0.01"
                 step="0.01"
                 value={question.points ?? section.marksPerQuestion ?? 1}
-                onChange={(e) => updateQuestion(sectionIndex, questionIndex, { points: e.target.value === '' ? '' : Number(e.target.value) })}
+                onChange={(e) => updateQuestion(sectionIndex, questionIndex, { points: e.target.value === '' ? '' : Number(e.target.value), marksMode: 'custom' })}
                 className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
               />
+              {question.marksMode === 'custom' ? <button type="button" onClick={() => updateQuestion(sectionIndex, questionIndex, { points: testCaseMarks, marksMode: 'test_cases' })} className="mt-1 text-[10px] font-semibold text-sky-700 hover:text-sky-600 dark:text-sky-300">Use {testCaseMarks} from hidden tests</button> : <p className="mt-1 text-[10px] text-slate-400">Automatically calculated</p>}
             </div>
             <div>
               <label className="text-[11px] text-slate-500 dark:text-gray-400">Negative Marks</label>
@@ -717,19 +735,27 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <label className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">+ Marks per Question</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={section.marksPerQuestion ?? ''}
-                      onChange={(e) => handleMarksChange(index, e.target.value)}
-                      onBlur={() => handleMarksBlur(index)}
-                      placeholder="1"
-                      className="mt-1 w-full rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-emerald-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-                    />
-                  </div>
+                  {isCodingSection ? (
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2 dark:border-emerald-900/50 dark:bg-emerald-950/20">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Coding marks</p>
+                      <p className="mt-1 text-xs font-semibold text-slate-700 dark:text-gray-200">Calculated per problem</p>
+                      <p className="mt-0.5 text-[10px] text-slate-500 dark:text-gray-400">From hidden tests, with an optional override.</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">+ Marks per Question</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={section.marksPerQuestion ?? ''}
+                        onChange={(e) => handleMarksChange(index, e.target.value)}
+                        onBlur={() => handleMarksBlur(index)}
+                        placeholder="1"
+                        className="mt-1 w-full rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-emerald-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                      />
+                    </div>
+                  )}
                   <div>
                     <label className="inline-flex items-center rounded-full bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-700 dark:bg-rose-900/20 dark:text-rose-300">- Negative Marks per Question</label>
                     <input

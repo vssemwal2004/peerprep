@@ -23,6 +23,8 @@ const answerSchema = new mongoose.Schema({
 const assessmentSubmissionSchema = new mongoose.Schema({
   assessmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Assessment', required: true },
   studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  deliverySections: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  deliveryPreparedAt: { type: Date },
   answers: { type: [answerSchema], default: [] },
   score: { type: Number },
   maxMarks: { type: Number },

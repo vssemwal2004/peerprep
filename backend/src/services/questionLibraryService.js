@@ -49,7 +49,7 @@ function mapCodeMap(value) {
   return {};
 }
 
-function buildProblemSnapshot(problem = {}, { sampleTestCases = [], hiddenTestCaseCount = 0 } = {}) {
+function buildProblemSnapshot(problem = {}, { sampleTestCases = [], hiddenTestCaseCount = 0, hiddenTestCaseTotalMarks = 0 } = {}) {
   const normalizedStatus = String(problem.status || '').trim().toLowerCase();
   const referenceSolutions = mapCodeMap(problem.referenceSolutions);
   const referenceSolutionCount = Object.keys(referenceSolutions).length;
@@ -69,6 +69,8 @@ function buildProblemSnapshot(problem = {}, { sampleTestCases = [], hiddenTestCa
     constraints: problem.constraints || '',
     timeLimitSeconds: problem.timeLimitSeconds,
     memoryLimitMb: problem.memoryLimitMb,
+    totalMarks: Number(problem.totalMarks || hiddenTestCaseTotalMarks || hiddenTestCaseCount || 1),
+    hiddenTestCaseTotalMarks: Number(hiddenTestCaseTotalMarks || problem.totalMarks || hiddenTestCaseCount || 1),
     status: normalizedStatus === 'active' ? 'published' : (normalizedStatus || 'draft'),
     visibility: problem.visibility || 'public',
     previewValidated: Boolean(problem.previewValidated ?? problem.previewTested),
@@ -122,6 +124,17 @@ function buildSourceQuestionId(question = {}, sectionIndex = 0, questionIndex = 
   return String(question.questionId || `section-${sectionIndex}-question-${questionIndex}`);
 }
 
+function getLinkedProblemId(question = {}) {
+  return question.sourceProblemId
+    || question.problemId
+    || question.coding?.problemId
+    || question.problemDataSnapshot?._id
+    || question.problemDataSnapshot?.id
+    || question.coding?.problemData?._id
+    || question.coding?.problemData?.id
+    || null;
+}
+
 function buildAssessmentLibraryPayload({ assessment, section, question, sectionIndex, questionIndex }) {
   const questionType = normalizeType(question?.type || section?.type);
   const questionText = extractQuestionText(question, questionType);
@@ -155,7 +168,7 @@ function buildAssessmentLibraryPayload({ assessment, section, question, sectionI
     sourceType: 'assessment',
     sourceAssessmentId: assessment._id,
     sourceAssessmentTitle: String(assessment.title || '').trim(),
-    sourceProblemId: undefined,
+    sourceProblemId: questionType === 'coding' ? getLinkedProblemId(question) : undefined,
     sourceProblemTitle: '',
     sourceQuestionId,
     sectionName: String(section?.sectionName || '').trim(),
@@ -184,8 +197,8 @@ function buildAssessmentLibraryPayload({ assessment, section, question, sectionI
   };
 }
 
-function buildProblemLibraryPayload(problem = {}, { sampleTestCases = [], hiddenTestCaseCount = 0 } = {}) {
-  const snapshot = buildProblemSnapshot(problem, { sampleTestCases, hiddenTestCaseCount });
+function buildProblemLibraryPayload(problem = {}, { sampleTestCases = [], hiddenTestCaseCount = 0, hiddenTestCaseTotalMarks = 0 } = {}) {
+  const snapshot = buildProblemSnapshot(problem, { sampleTestCases, hiddenTestCaseCount, hiddenTestCaseTotalMarks });
   const tags = normalizeTags(problem.tags || []);
   const keywords = normalizeTags(problem.companyTags || []);
 
@@ -237,13 +250,18 @@ async function loadProblemLibraryContext(problemInput) {
     ? problemInput.toObject()
     : problemInput;
 
-  const [sampleTestCases, hiddenTestCaseCount] = await Promise.all([
+  const [sampleTestCases, hiddenTestCases] = await Promise.all([
     TestCase.find({ problem: problem._id, kind: 'sample' })
       .sort({ position: 1 })
       .select('input output explanation marks')
       .lean(),
-    TestCase.countDocuments({ problem: problem._id, kind: 'hidden' }),
+    TestCase.find({ problem: problem._id, kind: 'hidden' }).select('marks').lean(),
   ]);
+
+  const hiddenTestCaseCount = hiddenTestCases.length;
+  const hiddenTestCaseTotalMarks = hiddenTestCases.length
+    ? hiddenTestCases.reduce((total, testCase) => total + Math.max(0.01, Number(testCase.marks) || 1), 0)
+    : Number(problem.totalMarks || problem.hiddenTestSource?.caseCount || 1);
 
   return {
     problem,
@@ -257,6 +275,7 @@ async function loadProblemLibraryContext(problemInput) {
       Number(hiddenTestCaseCount || 0),
       Number(problem.hiddenTestSource?.caseCount || 0),
     ),
+    hiddenTestCaseTotalMarks,
   };
 }
 
@@ -307,6 +326,7 @@ export async function syncProblemToLibrary(problemInput) {
   const payload = buildProblemLibraryPayload(context.problem, {
     sampleTestCases: context.sampleTestCases,
     hiddenTestCaseCount: context.hiddenTestCaseCount,
+    hiddenTestCaseTotalMarks: context.hiddenTestCaseTotalMarks,
   });
 
   await QuestionLibrary.findOneAndUpdate(
@@ -450,6 +470,9 @@ export function formatLibraryQuestionSummary(question = {}) {
     || question.questionText
     || '';
   const questionData = question.questionData || {};
+  const linkedProblemId = question.questionType === 'coding'
+    ? getLinkedProblemId({ ...questionData, sourceProblemId: question.sourceProblemId })
+    : null;
   const isPassageSet = questionData.libraryItemKind === 'passage_set' && Array.isArray(questionData.questions);
 
   return {
@@ -458,7 +481,7 @@ export function formatLibraryQuestionSummary(question = {}) {
     sourceTitle,
     sourceAssessmentId: question.sourceAssessmentId,
     sourceAssessmentTitle: question.sourceAssessmentTitle || sourceTitle,
-    sourceProblemId: question.sourceProblemId || null,
+    sourceProblemId: linkedProblemId,
     sourceProblemTitle: question.sourceProblemTitle || '',
     sourceQuestionId: question.sourceQuestionId || '',
     sectionName: question.sectionName || '',

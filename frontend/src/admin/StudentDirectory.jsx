@@ -805,7 +805,7 @@ export default function StudentDirectory() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/60 pt-20 dark:bg-gray-950 flex flex-col">
+    <div className="min-h-screen bg-slate-50/60 dark:bg-gray-950 flex flex-col">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}

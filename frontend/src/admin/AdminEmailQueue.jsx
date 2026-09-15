@@ -79,7 +79,7 @@ export default function AdminEmailQueue() {
   ], [summary]);
 
   return (
-    <div className="min-h-screen bg-slate-50/70 px-3 pb-12 pt-24 dark:bg-gray-950 sm:px-5">
+    <div className="min-h-screen bg-slate-50/70 px-3 pb-12 pt-5 dark:bg-gray-950 sm:px-5">
       <div className="mx-auto max-w-[1500px]">
         <section className="mb-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
           <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">

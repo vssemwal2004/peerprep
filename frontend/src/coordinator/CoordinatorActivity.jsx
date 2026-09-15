@@ -213,7 +213,7 @@ export default function CoordinatorActivity() {
   };
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 pt-20">
+    <div className="min-h-screen bg-white dark:bg-gray-900">
       <div className="px-4 py-5 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mb-6 rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">

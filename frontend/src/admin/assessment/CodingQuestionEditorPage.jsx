@@ -13,7 +13,7 @@ export default function CodingQuestionEditorPage() {
   const returnTo = params.get('return') || '/admin/assessment';
 
   return (
-    <div className="min-h-screen bg-white pt-20 dark:bg-gray-900">
+    <div className="min-h-screen bg-white dark:bg-gray-900">
       <div className="mx-auto max-w-7xl px-4 py-6">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">
           <div className="flex items-center gap-3">

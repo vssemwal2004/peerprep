@@ -242,7 +242,7 @@ export default function CoordinatorStudents() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-gray-900 flex flex-col pt-16">
+    <div className="min-h-screen bg-slate-50 dark:bg-gray-900 flex flex-col">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}

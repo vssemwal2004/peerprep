@@ -164,7 +164,7 @@ export default function CoordinatorDashboard() {
   ].filter(Boolean);
 
   return (
-    <div className="min-h-screen bg-slate-50 pt-20 dark:bg-gray-950">
+    <div className="min-h-screen bg-slate-50 dark:bg-gray-950">
       <main className="mx-auto max-w-7xl px-4 py-6">
         <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>

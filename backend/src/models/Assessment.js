@@ -36,6 +36,9 @@ const codingSchema = new mongoose.Schema({
 
 const questionSchema = new mongoose.Schema({
   questionId: { type: String },
+  librarySourceId: { type: String, default: '' },
+  librarySourceQuestionId: { type: String, default: '' },
+  librarySourceChildId: { type: String, default: '' },
   type: { type: String, enum: ['mcq', 'short', 'one_line', 'coding'] },
   questionText: { type: String },
   options: { type: [String], default: [] },
@@ -57,6 +60,7 @@ const questionSchema = new mongoose.Schema({
   problemDataSnapshot: { type: mongoose.Schema.Types.Mixed },
   coding: { type: codingSchema },
   points: { type: Number, default: 1 },
+  marksMode: { type: String, enum: ['test_cases', 'custom'], default: 'custom' },
   negativePoints: { type: Number, default: 0 },
   marks: { type: Number },
   weight: { type: Number },

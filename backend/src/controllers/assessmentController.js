@@ -189,6 +189,83 @@ function isStudentAssignedToAssessment(assessment = {}, student = {}) {
   });
 }
 
+function stableDeliveryHash(value = '') {
+  let hash = 2166136261;
+  for (const character of String(value)) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function selectDeliveryQuestions(pool = [], count = 0, seed = '') {
+  if (count <= 0) return [];
+  if (count >= pool.length) return [...pool];
+  return [...pool]
+    .map((item, index) => ({
+      item,
+      rank: stableDeliveryHash(`${seed}:${item.question?.questionId || item.question?.problemId || index}:${item.sectionIndex}:${item.questionIndex}`),
+    }))
+    .sort((left, right) => left.rank - right.rank
+      || left.item.sectionIndex - right.item.sectionIndex
+      || left.item.questionIndex - right.item.questionIndex)
+    .slice(0, count)
+    .map(({ item }) => item);
+}
+
+function buildDeliverySections(assessment = {}, studentId = '') {
+  const source = typeof assessment.toObject === 'function' ? assessment.toObject() : assessment;
+  const settings = source.settings || {};
+  const requirements = (settings.questionSelectionEnabled ? settings.questionRequirements : {}) || {};
+  const fallbackDistributionMode = ['random_per_student', 'same_for_all'].includes(settings.questionDistributionMode)
+    ? settings.questionDistributionMode
+    : 'random_per_student';
+  const selectedByType = new Map();
+  Object.keys(requirements).forEach((type) => {
+    const pool = [];
+    (source.sections || []).forEach((section, sectionIndex) => {
+      if (section.type !== type) return;
+      (section.questions || []).forEach((question, questionIndex) => pool.push({ sectionIndex, questionIndex, question }));
+    });
+    const required = Math.min(pool.length, Math.max(0, Number(requirements[type]) || 0));
+    const distributionMode = ['random_per_student', 'same_for_all'].includes(settings.questionDistributionModes?.[type])
+      ? settings.questionDistributionModes[type]
+      : fallbackDistributionMode;
+    const distributionKey = distributionMode === 'same_for_all'
+      ? 'all-candidates'
+      : `student:${studentId || 'anonymous'}`;
+    const selected = selectDeliveryQuestions(pool, required, `${source._id || source.assessmentId || 'assessment'}:${distributionKey}:${type}`);
+    selectedByType.set(type, new Set(selected.map((item) => `${item.sectionIndex}:${item.questionIndex}`)));
+  });
+  const sections = (source.sections || []).map((section, sectionIndex) => ({
+    ...section,
+    questions: (section.questions || []).filter((_, questionIndex) => (
+      !selectedByType.has(section.type) || selectedByType.get(section.type).has(`${sectionIndex}:${questionIndex}`)
+    )),
+  })).filter((section) => section.questions.length > 0);
+  return { sections };
+}
+
+function assessmentForSubmission(assessment = {}, submission = {}) {
+  const source = typeof assessment.toObject === 'function' ? assessment.toObject() : assessment;
+  const stored = submission.deliveryPreparedAt && Array.isArray(submission.deliverySections)
+    ? submission.deliverySections
+    : buildDeliverySections(assessment, submission.studentId).sections;
+  const delivery = applyMarksAndTotals(stored);
+  return {
+    ...source,
+    sections: delivery.sections,
+    totalMarks: delivery.totalMarks,
+    assessmentType: delivery.assessmentType,
+    settings: {
+      ...(source.settings || {}),
+      questionAttemptRequirements: source.settings?.questionSelectionEnabled
+        ? source.settings?.questionAttemptRequirements || {}
+        : {},
+    },
+  };
+}
+
 function canManageAssessmentForRequest(assessment = {}, user = {}) {
   if (!assessment || !user) return false;
   if (user.role === 'admin') return true;
@@ -268,6 +345,7 @@ function sanitizeAssessmentForResponse(assessment) {
   if (!assessment) return assessment;
   const source = typeof assessment.toObject === 'function' ? assessment.toObject() : { ...assessment };
   delete source.passwordHash;
+  delete source.shifts;
   source.settings = normalizeAssessmentSettings(source.settings || {});
   return source;
 }
@@ -429,6 +507,26 @@ function normalizeAssessmentSettings(settings = {}) {
     resultDelayHours: clampSettingNumber(source.resultDelayHours, 24, { min: 0, max: 24 * 30 }),
     allowRetake: Boolean(source.allowRetake),
     retakeGapHours: clampSettingNumber(source.retakeGapHours, 0, { min: 0, max: 24 * 30 }),
+    questionSelectionEnabled: Boolean(source.questionSelectionEnabled),
+    questionRequirements: Object.fromEntries(['mcq', 'one_line', 'short', 'coding']
+      .filter((type) => Object.prototype.hasOwnProperty.call(source.questionRequirements || {}, type))
+      .map((type) => [type, Math.max(0, Number(source.questionRequirements[type]) || 0)])),
+    questionAttemptRequirements: Object.fromEntries(['mcq', 'one_line', 'short', 'coding']
+      .filter((type) => Object.prototype.hasOwnProperty.call(source.questionAttemptRequirements || {}, type))
+      .map((type) => [type, Math.max(0, Number(source.questionAttemptRequirements[type]) || 0)])),
+    questionDistributionMode: ['random_per_student', 'same_for_all'].includes(source.questionDistributionMode)
+      ? source.questionDistributionMode
+      : 'random_per_student',
+    questionDistributionModes: Object.fromEntries(['mcq', 'one_line', 'short', 'coding']
+      .filter((type) => Object.prototype.hasOwnProperty.call(source.questionDistributionModes || {}, type))
+      .map((type) => [
+        type,
+        ['random_per_student', 'same_for_all'].includes(source.questionDistributionModes[type])
+          ? source.questionDistributionModes[type]
+          : 'random_per_student',
+      ])),
+    perMcqTimingEnabled: Boolean(source.perMcqTimingEnabled),
+    perMcqTimeSec: clampSettingNumber(source.perMcqTimeSec, 60, { min: 10, max: 3600 }),
     locationTracking: source.locationTracking !== false,
     autoSubmitOnViolation: Boolean(source.autoSubmitOnViolation),
     maxWarnings: clampSettingNumber(source.maxWarnings, 0, { min: 0, max: 100 }),
@@ -1308,6 +1406,49 @@ function mergeAssessmentAnswers(existingAnswers = [], incomingAnswers = []) {
   });
 }
 
+function isAssessmentAnswerAttempted(answer = {}, question = {}, type = '') {
+  if (!answer || typeof answer !== 'object') return false;
+  if (type === 'mcq') {
+    return Array.isArray(answer.answer)
+      ? answer.answer.length > 0
+      : answer.answer !== undefined && answer.answer !== null && answer.answer !== '';
+  }
+  if (type === 'coding') {
+    const sourceCode = String(answer.code || '').trim();
+    if (!sourceCode) return false;
+    if (answer.submissionId || answer.jobId || answer.lastEvaluatedAt || answer.executionVerdict) return true;
+    const codingData = question.coding || question.problemDataSnapshot || {};
+    const starterEntries = Array.isArray(codingData.starterCode) ? codingData.starterCode : [];
+    const starter = starterEntries.find((entry) => entry?.language === answer.language)?.code
+      ?? starterEntries[0]?.code
+      ?? '';
+    return sourceCode !== String(starter || '').trim();
+  }
+  return String(answer.answer ?? '').trim().length > 0;
+}
+
+function validateQuestionAttemptCounts(assessment = {}, answers = [], requireConfiguredCount = false) {
+  const limits = assessment.settings?.questionAttemptRequirements || {};
+  const attemptedByType = { mcq: 0, one_line: 0, short: 0, coding: 0 };
+  (answers || []).forEach((answer) => {
+    const section = assessment.sections?.[Number(answer?.sectionIndex)];
+    const question = section?.questions?.[Number(answer?.questionIndex)];
+    const type = question?.type || section?.type;
+    if (!type || !Object.prototype.hasOwnProperty.call(attemptedByType, type)) return;
+    if (isAssessmentAnswerAttempted(answer, question, type)) attemptedByType[type] += 1;
+  });
+  for (const [type, rawLimit] of Object.entries(limits)) {
+    const limit = Math.max(0, Number(rawLimit) || 0);
+    if (limit > 0 && attemptedByType[type] > limit) {
+      return `You can attempt a maximum of ${limit} ${type.replace('_', ' ')} question${limit === 1 ? '' : 's'}.`;
+    }
+    if (requireConfiguredCount && limit > 0 && attemptedByType[type] < limit) {
+      return `You must attempt ${limit} ${type.replace('_', ' ')} question${limit === 1 ? '' : 's'} before submitting.`;
+    }
+  }
+  return '';
+}
+
 function collectCodingProblemIds(sections = []) {
   const ids = new Set();
   (sections || []).forEach((section) => {
@@ -1325,6 +1466,58 @@ function collectCodingProblemIds(sections = []) {
 
 function countQuestions(sections = []) {
   return (sections || []).reduce((total, section) => total + (section?.questions?.length || 0), 0);
+}
+
+function validateUniqueAssessmentQuestions(sections = []) {
+  const seen = new Set();
+  for (const section of sections || []) {
+    for (const question of section?.questions || []) {
+      const type = question?.type || section?.type || 'other';
+      const problemId = question?.problemId
+        || question?.coding?.problemId
+        || question?.problemDataSnapshot?._id
+        || question?.coding?.problemData?._id;
+      const questionText = String(
+        question?.questionText
+        || question?.problemDataSnapshot?.title
+        || question?.coding?.title
+        || question?.coding?.problemData?.title
+        || '',
+      ).trim().toLowerCase().replace(/\s+/g, ' ');
+      const identities = [
+        question?.librarySourceId && `library:${question.librarySourceId}:${question.librarySourceChildId || question.questionId || ''}`,
+        problemId && `problem:${problemId}`,
+        question?.librarySourceQuestionId && !question?.librarySourceId && `source-question:${question.librarySourceQuestionId}`,
+        questionText && `content:${type}:${questionText}`,
+      ].filter(Boolean);
+      if (identities.some((identity) => seen.has(identity))) {
+        return 'The same question cannot be added to an assessment more than once.';
+      }
+      identities.forEach((identity) => seen.add(identity));
+    }
+  }
+  return '';
+}
+
+function validateQuestionDeliverySettings(assessment = {}) {
+  const settings = assessment.settings || {};
+  if (!settings.questionSelectionEnabled) return '';
+  const typeCounts = (assessment.sections || []).reduce((counts, section) => {
+    const type = section?.type;
+    if (type) counts[type] = (counts[type] || 0) + (section?.questions?.length || 0);
+    return counts;
+  }, {});
+  for (const [type, available] of Object.entries(typeCounts)) {
+    const delivered = Number(settings.questionRequirements?.[type] ?? available);
+    const attempted = Number(settings.questionAttemptRequirements?.[type] ?? delivered);
+    if (!Number.isInteger(delivered) || delivered < 1 || delivered > available) {
+      return `Delivered ${type.replace('_', ' ')} questions must be between 1 and ${available}.`;
+    }
+    if (!Number.isInteger(attempted) || attempted < 1 || attempted > delivered) {
+      return `Required ${type.replace('_', ' ')} attempts must be between 1 and ${delivered}.`;
+    }
+  }
+  return '';
 }
 
 function computeTotalMarksFromSections(sections = []) {
@@ -1529,6 +1722,8 @@ export async function createAssessment(req, res) {
     } = req.body || {};
 
     const normalizedSections = normalizeAssessmentSections(sections);
+    const duplicateQuestionError = validateUniqueAssessmentQuestions(normalizedSections);
+    if (duplicateQuestionError) return res.status(400).json({ error: duplicateQuestionError });
     const marksPayload = applyMarksAndTotals(normalizedSections);
     const normalizedLifecycle = lifecycleStatus === 'draft' ? 'draft' : 'published';
     const isDraft = normalizedLifecycle === 'draft';
@@ -1624,6 +1819,10 @@ export async function createAssessment(req, res) {
     await applyAssessmentPassword(assessment, { passwordEnabled, password });
     if (!isDraft && assessment.passwordEnabled && !assessment.passwordHash) {
       return res.status(400).json({ error: 'Password is required when password protection is enabled.' });
+    }
+    if (!isDraft) {
+      const deliveryError = validateQuestionDeliverySettings(assessment);
+      if (deliveryError) return res.status(400).json({ error: deliveryError });
     }
 
     await assessment.save();
@@ -1893,6 +2092,8 @@ export async function updateAssessment(req, res) {
       assessment.totalMarks = marksPayload.totalMarks;
       assessment.assessmentType = marksPayload.assessmentType;
     }
+    const duplicateQuestionError = validateUniqueAssessmentQuestions(assessment.sections || []);
+    if (duplicateQuestionError) return res.status(400).json({ error: duplicateQuestionError });
 
     if (targetType) {
       const normalizedTarget = targetType === 'selected' ? 'selected' : 'all';
@@ -1925,6 +2126,11 @@ export async function updateAssessment(req, res) {
       if (assignedStudents !== undefined && assessment.draftTargetMode !== 'all') {
         assessment.draftAssignedStudents = Array.isArray(assignedStudents) ? assignedStudents : assessment.draftAssignedStudents;
       }
+    }
+
+    if (!isDraft) {
+      const deliveryError = validateQuestionDeliverySettings(assessment);
+      if (deliveryError) return res.status(400).json({ error: deliveryError });
     }
 
     assessment.version = (assessment.version || 1) + 1;
@@ -2695,22 +2901,33 @@ export async function getStudentAssessment(req, res) {
       return res.status(passwordCheck.status).json({ error: passwordCheck.error });
     }
 
-    if (isAssessmentClosedForStudents(assessment, now) && !submission) {
-      return res.status(403).json({ error: 'Assessment window has closed.', serverTime: now, endTime: assessment.endTime });
+    if (now > assessment.endTime && !submission) {
+      return res.status(403).json({ error: 'Assessment has closed.', serverTime: now, endTime: assessment.endTime });
     }
     if (assessment.manuallyCompletedAt && submission?.status !== 'submitted') {
       return res.status(403).json({ error: 'Assessment has been marked complete by the administrator.', serverTime: now });
     }
 
     if (!submission) {
+      const delivery = buildDeliverySections(assessment, studentId);
       submission = await AssessmentSubmission.create({
         assessmentId: assessment._id,
         studentId,
+        deliverySections: delivery.sections,
+        deliveryPreparedAt: now,
         status: 'not_started',
         attemptCount: 0,
       });
     }
 
+    if (!submission.deliveryPreparedAt) {
+      const delivery = buildDeliverySections(assessment, studentId);
+      submission.deliverySections = delivery.sections;
+      submission.deliveryPreparedAt = now;
+      await submission.save();
+    }
+
+    const deliveryAssessment = assessmentForSubmission(assessment, submission);
     const settings = normalizeAssessmentSettings(assessment.settings || {});
     let repairedSubmissionState = false;
     if (submission.pauseStartedAt && submission.securityPauseReason !== 'tab_switch') {
@@ -2728,14 +2945,14 @@ export async function getStudentAssessment(req, res) {
       await submission.save();
     }
     const securityPauseOk = isSecurityPauseWithinLimit(submission, settings, now);
-    const allowedEnd = computeAllowedEnd(assessment, submission.startedAt || now, submission.pausedDurationMs);
+    const allowedEnd = computeAllowedEnd(deliveryAssessment, submission.startedAt || now, submission.pausedDurationMs);
     if ((now > allowedEnd || hasSecurityPauseExpired(submission, settings, now)) && !securityPauseOk && submission.status !== 'submitted') {
       submission.status = 'submitted';
       submission.submittedAt = now;
       submission.attemptCount = Math.max(submission.attemptCount || 0, 1);
       submission.isLate = assessment.allowLateSubmission ? false : true;
       if (submission.pauseStartedAt) finishSubmissionSecurityPause(submission, now);
-      const scoring = scoreAssessment(assessment, submission.answers);
+      const scoring = scoreAssessment(deliveryAssessment, submission.answers);
       submission.score = scoring.score;
       submission.maxMarks = scoring.maxMarks;
       submission.accuracy = scoring.accuracy;
@@ -2743,7 +2960,7 @@ export async function getStudentAssessment(req, res) {
       await submission.save();
     }
 
-    const attemptAssessment = await hydrateAssessmentCodingRuntime(assessment);
+    const attemptAssessment = await hydrateAssessmentCodingRuntime(deliveryAssessment);
     res.json({
       assessment: sanitizeAssessmentForResponse(attemptAssessment),
       submission,
@@ -2784,8 +3001,8 @@ export async function startStudentAssessment(req, res) {
     if (now < assessment.startTime) {
       return res.status(403).json({ error: 'Assessment has not started yet.', serverTime: now, startTime: assessment.startTime });
     }
-    if (isAssessmentClosedForStudents(assessment, now)) {
-      return res.status(403).json({ error: 'Assessment window has closed.', serverTime: now, endTime: assessment.endTime });
+    if (now > assessment.endTime) {
+      return res.status(403).json({ error: 'Assessment has closed.', serverTime: now, endTime: assessment.endTime });
     }
 
     let submission = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId });
@@ -2800,9 +3017,12 @@ export async function startStudentAssessment(req, res) {
     }
 
     if (!submission) {
+      const delivery = buildDeliverySections(assessment, studentId);
       submission = await AssessmentSubmission.create({
         assessmentId: assessment._id,
         studentId,
+        deliverySections: delivery.sections,
+        deliveryPreparedAt: now,
         passwordVerifiedAt: assessment.passwordEnabled ? now : undefined,
         securitySetup: {},
         status: 'not_started',
@@ -2811,20 +3031,26 @@ export async function startStudentAssessment(req, res) {
     } else if (assessment.passwordEnabled && !submission.passwordVerifiedAt) {
       submission.passwordVerifiedAt = now;
     }
+    if (!submission.deliveryPreparedAt) {
+      const delivery = buildDeliverySections(assessment, studentId);
+      submission.deliverySections = delivery.sections;
+      submission.deliveryPreparedAt = now;
+    }
     if (!(submission.status === 'in_progress' && submission.startedAt && submission.securityCompletedAt)) {
       submission.securitySetup = {};
       submission.securityCompletedAt = undefined;
     }
     await submission.save();
 
-    const attemptAssessment = await hydrateAssessmentCodingRuntime(assessment);
+    const deliveryAssessment = assessmentForSubmission(assessment, submission);
+    const attemptAssessment = await hydrateAssessmentCodingRuntime(deliveryAssessment);
     res.json({
       message: 'Assessment unlocked',
       assessment: sanitizeAssessmentForResponse(attemptAssessment),
       submission,
       candidate: buildCandidateIdentity(student),
       serverTime: now,
-      allowedEnd: computeAllowedEnd(assessment, submission.startedAt || now, submission.pausedDurationMs),
+      allowedEnd: computeAllowedEnd(deliveryAssessment, submission.startedAt || now, submission.pausedDurationMs),
       securityRecheckTimeoutSec: getSecurityRecheckTimeoutSec(assessment.settings || {}),
     });
   } catch (err) {
@@ -2885,8 +3111,8 @@ export async function beginStudentAssessment(req, res) {
     }
     const settings = normalizeAssessmentSettings(assessment.settings || {});
     const allowPausedRecheck = isSecurityPauseWithinLimit(submission, settings, now);
-    if (isAssessmentClosedForStudents(assessment, now) && !allowPausedRecheck) {
-      return res.status(403).json({ error: 'Assessment window has closed.', serverTime: now, endTime: assessment.endTime });
+    if (now > assessment.endTime && !allowPausedRecheck) {
+      return res.status(403).json({ error: 'Assessment has closed.', serverTime: now, endTime: assessment.endTime });
     }
     if (hasSecurityPauseExpired(submission, settings, now)) {
       submission.status = 'submitted';
@@ -2894,7 +3120,7 @@ export async function beginStudentAssessment(req, res) {
       submission.attemptCount = Math.max(submission.attemptCount || 0, 1);
       submission.isLate = false;
       if (submission.pauseStartedAt) finishSubmissionSecurityPause(submission, now);
-      const scoring = scoreAssessment(assessment, submission.answers);
+      const scoring = scoreAssessment(assessmentForSubmission(assessment, submission), submission.answers);
       submission.score = scoring.score;
       submission.maxMarks = scoring.maxMarks;
       submission.accuracy = scoring.accuracy;
@@ -2914,9 +3140,12 @@ export async function beginStudentAssessment(req, res) {
     }
 
     if (!submission) {
+      const delivery = buildDeliverySections(assessment, studentId);
       submission = await AssessmentSubmission.create({
         assessmentId: assessment._id,
         studentId,
+        deliverySections: delivery.sections,
+        deliveryPreparedAt: now,
         startedAt: now,
         securityCompletedAt: now,
         status: 'in_progress',
@@ -2943,7 +3172,7 @@ export async function beginStudentAssessment(req, res) {
     submission.lastUserAgent = req.headers['user-agent'];
     await submission.save();
 
-    const allowedEnd = computeAllowedEnd(assessment, submission.startedAt || now, submission.pausedDurationMs);
+    const allowedEnd = computeAllowedEnd(assessmentForSubmission(assessment, submission), submission.startedAt || now, submission.pausedDurationMs);
     return res.json({
       message: 'Assessment started',
       submission,
@@ -3014,8 +3243,8 @@ export async function submitAssessment(req, res) {
       return res.status(passwordCheck.status).json({ error: passwordCheck.error });
     }
 
-    if (isAssessmentClosedForStudents(assessment, now) && !submission) {
-      return res.status(403).json({ error: 'Assessment window has closed.' });
+    if (now > assessment.endTime && !submission) {
+      return res.status(403).json({ error: 'Assessment has closed.' });
     }
 
     const attemptLimit = assessment.attemptLimit || 1;
@@ -3024,9 +3253,12 @@ export async function submitAssessment(req, res) {
     }
 
     if (!submission) {
+      const delivery = buildDeliverySections(assessment, studentId);
       submission = await AssessmentSubmission.create({
         assessmentId,
         studentId,
+        deliverySections: delivery.sections,
+        deliveryPreparedAt: now,
         startedAt: now,
         status: 'in_progress',
         attemptCount: 0,
@@ -3035,7 +3267,8 @@ export async function submitAssessment(req, res) {
 
     const settings = normalizeAssessmentSettings(assessment.settings || {});
     const securityPauseOk = isSecurityPauseWithinLimit(submission, settings, now);
-    const allowedEnd = computeAllowedEnd(assessment, submission.startedAt || now, submission.pausedDurationMs);
+    const deliveredAssessment = assessmentForSubmission(assessment, submission);
+    const allowedEnd = computeAllowedEnd(deliveredAssessment, submission.startedAt || now, submission.pausedDurationMs);
 
     const isExpired = (now > allowedEnd && !securityPauseOk) || hasSecurityPauseExpired(submission, settings, now);
     if (isExpired && !assessment.allowLateSubmission && status !== 'submitted') {
@@ -3044,7 +3277,7 @@ export async function submitAssessment(req, res) {
       submission.attemptCount = Math.max(submission.attemptCount || 0, 1);
       submission.isLate = false;
       if (submission.pauseStartedAt) finishSubmissionSecurityPause(submission, now);
-      const scoring = scoreAssessment(assessment, submission.answers);
+      const scoring = scoreAssessment(deliveredAssessment, submission.answers);
       submission.score = scoring.score;
       submission.maxMarks = scoring.maxMarks;
       submission.accuracy = scoring.accuracy;
@@ -3061,7 +3294,16 @@ export async function submitAssessment(req, res) {
       finalStatus = 'violation';
     }
 
-    submission.answers = mergeAssessmentAnswers(submission.answers, answers);
+    const mergedAnswers = mergeAssessmentAnswers(submission.answers, answers);
+    const attemptCountError = validateQuestionAttemptCounts(
+      deliveredAssessment,
+      mergedAnswers,
+      status === 'submitted' && !isExpired,
+    );
+    if (attemptCountError) {
+      return res.status(400).json({ error: attemptCountError, code: 'QUESTION_ATTEMPT_LIMIT' });
+    }
+    submission.answers = mergedAnswers;
     submission.status = finalStatus;
     submission.lastSavedAt = now;
     submission.tabSwitches = typeof tabSwitches === 'number' ? tabSwitches : submission.tabSwitches;
@@ -3083,7 +3325,7 @@ export async function submitAssessment(req, res) {
     submission.lastIp = req.ip;
     submission.lastUserAgent = req.headers['user-agent'];
 
-    const currentScoring = scoreAssessment(assessment, submission.answers);
+    const currentScoring = scoreAssessment(deliveredAssessment, submission.answers);
     submission.score = currentScoring.score;
     submission.maxMarks = currentScoring.maxMarks;
     submission.accuracy = currentScoring.accuracy;
@@ -3100,7 +3342,7 @@ export async function submitAssessment(req, res) {
       if (submission.pauseStartedAt) {
         finishSubmissionSecurityPause(submission, now);
       }
-      const scoring = scoreAssessment(assessment, submission.answers);
+      const scoring = scoreAssessment(deliveredAssessment, submission.answers);
       submission.score = scoring.score;
       submission.maxMarks = scoring.maxMarks;
       submission.accuracy = scoring.accuracy;
@@ -3113,7 +3355,7 @@ export async function submitAssessment(req, res) {
     let queuedCodingJobIds = [];
     if (finalStatus === 'submitted') {
       queuedCodingJobIds = await enqueueAssessmentCodingEvaluationJobs({
-        assessment,
+        assessment: deliveredAssessment,
         submission,
         studentId,
       });
@@ -3890,7 +4132,7 @@ export async function getStudentAssessmentReport(req, res) {
       return res.status(403).json({ error: 'Not authorized to view this report.' });
     }
 
-    submission = await reconcileAssessmentCodingAnswers(assessment, submission);
+    submission = await reconcileAssessmentCodingAnswers(assessmentForSubmission(assessment, submission), submission);
 
     const analytics = buildAssessmentAttemptAnalytics(assessment, submission);
     const sectionBreakdown = buildSectionBreakdownWithScores(assessment, submission);
@@ -4623,7 +4865,7 @@ export async function logStudentHeartbeat(req, res) {
     // allowed to create a security recheck pause.
 
     await submission.save();
-    const allowedEnd = computeAllowedEnd(assessment, submission.startedAt || now, submission.pausedDurationMs);
+    const allowedEnd = computeAllowedEnd(assessmentForSubmission(assessment, submission), submission.startedAt || now, submission.pausedDurationMs);
     return res.json({
       ok: true,
       action,
@@ -4669,7 +4911,8 @@ export async function markStudentAssessmentSetupStep(req, res) {
     const submission = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId });
     if (!submission) return res.status(404).json({ error: 'Submission not found. Unlock assessment first.' });
     const settings = normalizeAssessmentSettings(assessment.settings || {});
-    if (now < assessment.startTime || (isAssessmentClosedForStudents(assessment, now) && !isSecurityPauseWithinLimit(submission, settings, now))) {
+    const deliveryAssessment = assessmentForSubmission(assessment, submission);
+    if (now < new Date(deliveryAssessment.startTime) || (isAssessmentClosedForStudents(deliveryAssessment, now) && !isSecurityPauseWithinLimit(submission, settings, now))) {
       return res.status(403).json({ error: 'Assessment is outside the active time window.' });
     }
     if (hasSecurityPauseExpired(submission, settings, now)) {
@@ -4678,7 +4921,7 @@ export async function markStudentAssessmentSetupStep(req, res) {
       submission.attemptCount = Math.max(submission.attemptCount || 0, 1);
       submission.isLate = false;
       if (submission.pauseStartedAt) finishSubmissionSecurityPause(submission, now);
-      const scoring = scoreAssessment(assessment, submission.answers);
+      const scoring = scoreAssessment(deliveryAssessment, submission.answers);
       submission.score = scoring.score;
       submission.maxMarks = scoring.maxMarks;
       submission.accuracy = scoring.accuracy;

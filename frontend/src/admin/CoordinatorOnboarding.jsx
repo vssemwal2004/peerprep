@@ -205,7 +205,7 @@ export default function CoordinatorOnboarding() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 pt-20 dark:bg-gray-950">
+    <div className="min-h-screen bg-slate-50 dark:bg-gray-950">
       <div className="mx-auto max-w-7xl px-4 py-6">
         <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>

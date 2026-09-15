@@ -1,5 +1,5 @@
 import { BrowserRouter, Navigate, Routes, Route, useLocation } from "react-router-dom";
-import { lazy, Suspense, useEffect, useCallback, useLayoutEffect, useRef } from "react";
+import { lazy as reactLazy, Suspense, useEffect, useCallback, useLayoutEffect, useRef } from "react";
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './components/CustomToast';
@@ -7,6 +7,7 @@ import AdminLayout from './admin/AdminLayout';
 import { LandingPageSkeleton, NavbarSkeleton, PageSkeleton, DashboardSkeleton } from './components/Skeletons';
 import { useAuth } from './context/AuthContext';
 import { hasPermission } from './admin/coordinatorPermissions';
+import PopupDismissManager from './components/PopupDismissManager';
 
 // Lazy-load navbars to keep them out of the main bundle
 const StudentNavbar = lazy(() => import('./components/StudentNavbar').then(m => ({ default: m.StudentNavbar })));
@@ -92,6 +93,30 @@ const CoordinatorDatabase = lazy(() => import("./coordinator/CoordinatorDatabase
 const CoordinatorDashboard = lazy(() => import("./coordinator/CoordinatorDashboard"));
 
 const gradientBg = "bg-white";
+const LAZY_IMPORT_RETRY_KEY = 'peerprep:lazy-import-retry';
+
+// Recover automatically when a deployment or Vite dependency refresh leaves
+// the current tab holding an obsolete dynamic-module URL. One guarded reload
+// fetches the current module graph without creating a reload loop.
+function lazy(loader) {
+  return reactLazy(async () => {
+    try {
+      const module = await loader();
+      window.sessionStorage.removeItem(LAZY_IMPORT_RETRY_KEY);
+      return module;
+    } catch (error) {
+      const message = String(error?.message || error || '');
+      const isStaleModule = /failed to fetch dynamically imported module|outdated optimize dep|importing a module script failed/i.test(message);
+      const retrySignature = `${window.location.pathname}${window.location.search}`;
+      if (isStaleModule && window.sessionStorage.getItem(LAZY_IMPORT_RETRY_KEY) !== retrySignature) {
+        window.sessionStorage.setItem(LAZY_IMPORT_RETRY_KEY, retrySignature);
+        window.location.reload();
+        return new Promise(() => {});
+      }
+      throw error;
+    }
+  });
+}
 
 /**
  * RoutePrefetcher - Preloads chunks for the current user's role
@@ -214,7 +239,7 @@ function AppContent() {
   );
 
   const CoordinatorAccessDenied = () => (
-    <div className="min-h-screen bg-slate-50 pt-20 dark:bg-gray-950">
+    <div className="min-h-screen bg-slate-50 dark:bg-gray-950">
       <div className="mx-auto max-w-3xl px-4 py-10">
         <div className="rounded-2xl border border-amber-200 bg-white p-6 shadow-sm dark:border-amber-400/20 dark:bg-gray-900">
           <h1 className="text-xl font-bold text-slate-950 dark:text-white">Access not assigned</h1>
@@ -238,6 +263,7 @@ function AppContent() {
     <div className="min-h-screen w-full flex flex-col">
       <RoutePrefetcher />
       <ScrollToTop />
+      <PopupDismissManager />
       {/* Navbar: Renders independently with its own Suspense boundary.
           Shows NavbarSkeleton briefly instead of nothing, so the page structure
           streams in progressively (navbar skeleton â†’ navbar â†’ content skeleton â†’ content) */}

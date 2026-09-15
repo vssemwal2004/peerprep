@@ -389,16 +389,16 @@ export default function EventDetail() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white dark:bg-gray-900 flex items-center justify-center pt-20">
+      <div className="min-h-screen bg-white dark:bg-gray-900 flex items-center justify-center">
         <div className="text-slate-600 dark:text-gray-400">Loading...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 flex flex-col pt-20">
+    <div className="min-h-screen bg-white dark:bg-gray-900 flex flex-col">
       {eventCreatedMsg && (
-        <div className="fixed top-20 left-1/2 transform -translate-x-1/2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-6 py-2 rounded-lg shadow-lg z-50 text-base font-semibold">
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-6 py-2 rounded-lg shadow-lg z-50 text-base font-semibold">
           {eventCreatedMsg}
         </div>
       )}
@@ -424,7 +424,7 @@ export default function EventDetail() {
                 exit={{ x: window.innerWidth < 1024 ? "-100%" : 0 }}
                 className={`lg:block lg:w-80 ${
                   window.innerWidth < 1024 
-                    ? "fixed inset-0 top-20 z-30 bg-white p-4 overflow-y-auto" 
+                    ? "fixed inset-0 top-0 z-30 bg-white p-4 overflow-y-auto"
                     : "relative"
                 }`}
               >

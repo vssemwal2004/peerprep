@@ -278,7 +278,7 @@ function AssessmentFeedbackDetail({ assessment, onBack }) {
   const summary = data.summary || {};
 
   return (
-    <div className="min-h-[calc(100vh-5rem)] bg-[linear-gradient(180deg,#f8fbff_0%,#f8fafc_55%,#eef4ff_100%)] px-3 py-4 dark:bg-gray-950 sm:px-5 lg:px-6">
+    <div className="min-h-screen bg-[linear-gradient(180deg,#f8fbff_0%,#f8fafc_55%,#eef4ff_100%)] px-3 py-4 dark:bg-gray-950 sm:px-5 lg:px-6">
       <div className="mx-auto max-w-[1500px]">
         <button
           type="button"
@@ -446,7 +446,7 @@ export default function AssessmentFeedback() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-5rem)] bg-[linear-gradient(180deg,#f8fbff_0%,#f8fafc_55%,#eef4ff_100%)] px-3 py-4 dark:bg-gray-950 sm:px-5 lg:px-6">
+    <div className="min-h-screen bg-[linear-gradient(180deg,#f8fbff_0%,#f8fafc_55%,#eef4ff_100%)] px-3 py-4 dark:bg-gray-950 sm:px-5 lg:px-6">
       <div className="mx-auto max-w-[1500px]">
         <header className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>

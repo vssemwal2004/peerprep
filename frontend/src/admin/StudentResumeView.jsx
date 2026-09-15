@@ -47,9 +47,9 @@ export default function StudentResumeView() {
     finally { setDownloading(false); }
   };
 
-  if (loading) return <div className="min-h-screen bg-slate-50 pt-20 dark:bg-slate-950"><div className="mx-auto h-[720px] max-w-6xl animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-900" /></div>;
+  if (loading) return <div className="min-h-screen bg-slate-50 p-6 dark:bg-slate-950"><div className="mx-auto h-[720px] max-w-6xl animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-900" /></div>;
   return (
-    <div className="min-h-screen bg-slate-50 pt-16 dark:bg-slate-950">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
         <div className="mb-5 flex flex-wrap items-center gap-3">
           <button type="button" onClick={() => navigate(`${rolePrefix}/students/${studentId}`)} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"><ArrowLeft className="h-4 w-4" />Back to profile</button>

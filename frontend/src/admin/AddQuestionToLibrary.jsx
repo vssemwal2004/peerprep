@@ -785,7 +785,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
   }
 
   return (
-    <div ref={editorTopRef} className={embedded ? 'min-h-0 bg-slate-50 dark:bg-gray-950' : 'min-h-screen bg-slate-50 pt-20 dark:bg-gray-950'}>
+    <div ref={editorTopRef} className={embedded ? 'min-h-0 bg-slate-50 dark:bg-gray-950' : 'min-h-screen bg-slate-50 dark:bg-gray-950'}>
       <div className={embedded ? 'mx-auto max-w-[1180px]' : 'mx-auto max-w-[1180px] px-4 py-8 pb-20'}>
         
         {/* Header Section */}

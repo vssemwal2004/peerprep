@@ -87,6 +87,10 @@ const problemSchema = new mongoose.Schema({
     min: 64,
     max: 1024,
   },
+  totalMarks: {
+    type: Number,
+    min: 0.01,
+  },
   status: {
     type: String,
     enum: ['draft', 'published'],

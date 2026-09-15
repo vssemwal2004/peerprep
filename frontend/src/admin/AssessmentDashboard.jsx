@@ -1135,7 +1135,7 @@ export default function AssessmentDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 pt-20 dark:bg-gray-950">
+    <div className="min-h-screen bg-slate-50 dark:bg-gray-950">
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
         <header className="border-b border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-950">
           <div className="mx-auto flex min-h-16 max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6">

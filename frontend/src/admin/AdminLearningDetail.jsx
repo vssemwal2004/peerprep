@@ -308,15 +308,15 @@ export default function AdminLearningDetail() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pt-20 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 dark:border-indigo-400"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pt-20">
-      <div className="flex h-[calc(100vh-5rem)]">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="flex h-screen">
         {/* Sidebar */}
         <motion.aside
           initial={false}
@@ -366,7 +366,7 @@ export default function AdminLearningDetail() {
           {!sidebarOpen && (
             <button
               onClick={() => setSidebarOpen(true)}
-              className="fixed left-4 top-20 z-10 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+              className="fixed left-[calc(var(--admin-sidebar-width)+1rem)] top-4 z-10 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700"
             >
               <Menu className="w-5 h-5 dark:text-gray-300" />
             </button>

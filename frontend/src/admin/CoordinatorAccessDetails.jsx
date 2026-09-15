@@ -141,7 +141,7 @@ export default function CoordinatorAccessDetails() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 pt-20 dark:bg-gray-950">
+      <div className="min-h-screen bg-slate-50 dark:bg-gray-950">
         <div className="mx-auto flex min-h-[420px] max-w-7xl items-center justify-center px-4 py-6">
           <Loader2 className="h-8 w-8 animate-spin text-sky-600" />
         </div>
@@ -154,7 +154,7 @@ export default function CoordinatorAccessDetails() {
   const accessPercent = Math.round((enabledCount / Math.max(totalCount, 1)) * 100);
 
   return (
-    <div className="min-h-screen bg-slate-50 pt-20 dark:bg-gray-950">
+    <div className="min-h-screen bg-slate-50 dark:bg-gray-950">
       <div className="mx-auto max-w-7xl px-4 py-6">
         <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>

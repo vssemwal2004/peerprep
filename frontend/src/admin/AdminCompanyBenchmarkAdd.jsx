@@ -82,7 +82,7 @@ export default function AdminCompanyBenchmarkAdd() {
   };
 
   return (
-    <div className="min-h-screen bg-white pt-20 dark:bg-gray-900">
+    <div className="min-h-screen bg-white dark:bg-gray-900">
       <div className="mx-auto max-w-6xl px-4 py-6">
         <div className="mb-6">
           <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-gray-400">

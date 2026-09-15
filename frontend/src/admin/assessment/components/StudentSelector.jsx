@@ -3,7 +3,6 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  FileSpreadsheet,
   Filter,
   Loader2,
   Search,
@@ -38,8 +37,6 @@ export default function StudentSelector({ selected = [], onChange }) {
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [showFilters, setShowFilters] = useState(false);
-  const [uploadBatchId, setUploadBatchId] = useState('');
-  const [uploadBatches, setUploadBatches] = useState([]);
   const [managedSemesters, setManagedSemesters] = useState([]);
   const [facets, setFacets] = useState({});
   const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 });
@@ -96,18 +93,6 @@ export default function StudentSelector({ selected = [], onChange }) {
   }, []);
 
   useEffect(() => {
-    let active = true;
-    api.listStudentUploadBatches()
-      .then((data) => {
-        if (active) setUploadBatches(Array.isArray(data?.batches) ? data.batches : []);
-      })
-      .catch(() => {
-        if (active) setUploadBatches([]);
-      });
-    return () => { active = false; };
-  }, []);
-
-  useEffect(() => {
     if (!showFilters) return undefined;
     const handleOutsideClick = (event) => {
       if (!filterPanelRef.current?.contains(event.target)) setShowFilters(false);
@@ -125,7 +110,6 @@ export default function StudentSelector({ selected = [], onChange }) {
     api.listAllStudents({
       search: debouncedQuery,
       ...filters,
-      uploadBatchId,
       sortOrder: 'asc',
       page: pagination.page,
       limit: PAGE_SIZE,
@@ -161,7 +145,7 @@ export default function StudentSelector({ selected = [], onChange }) {
       .finally(() => {
         if (requestRef.current === requestId) setLoading(false);
       });
-  }, [debouncedQuery, filters, pagination.page, uploadBatchId]);
+  }, [debouncedQuery, filters, pagination.page]);
 
   const toggleStudent = (student) => {
     const id = String(student._id);
@@ -184,7 +168,6 @@ export default function StudentSelector({ selected = [], onChange }) {
       const data = await api.listAllStudents({
         search: debouncedQuery,
         ...filters,
-        uploadBatchId,
         sortOrder: 'asc',
       });
       const matchingStudents = Array.isArray(data.students) ? data.students : [];
@@ -211,7 +194,7 @@ export default function StudentSelector({ selected = [], onChange }) {
 
   const visibleSelected = students.filter((student) => selectedIds.has(String(student._id))).length;
   const allVisibleSelected = students.length > 0 && visibleSelected === students.length;
-  const hasActiveCriteria = Boolean(debouncedQuery || activeFilterCount > 0 || uploadBatchId);
+  const hasActiveCriteria = Boolean(debouncedQuery || activeFilterCount > 0);
   const allMatchingSelected = hasActiveCriteria
     && pagination.total > 0
     && selected.length === pagination.total
@@ -221,56 +204,42 @@ export default function StudentSelector({ selected = [], onChange }) {
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900">
-      <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50/80 p-2.5 dark:border-gray-700 dark:bg-gray-800/60 lg:flex-row lg:items-center">
-        <div className="relative min-w-0 flex-1">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-          <input
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setPagination((current) => ({ ...current, page: 1 }));
-            }}
-            placeholder="Search name, email, or student ID"
-            className="h-9 w-full rounded-md border border-slate-200 bg-white pl-8 pr-8 text-xs text-slate-700 outline-none placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:focus:ring-sky-900/40"
-          />
-          {query && (
-            <button
-              type="button"
-              title="Clear search"
-              aria-label="Clear search"
-              onClick={() => {
-                setQuery('');
-                setDebouncedQuery('');
+      <div className="space-y-3 border-b border-slate-200 bg-slate-50/80 p-3 dark:border-gray-700 dark:bg-gray-800/60">
+        <div>
+          <label htmlFor="assessment-student-search" className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-gray-400">Search students</label>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sky-500" />
+            <input
+              id="assessment-student-search"
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
                 setPagination((current) => ({ ...current, page: 1 }));
               }}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-gray-700"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
+              placeholder="Search by student name, ID, or email address"
+              autoComplete="off"
+              className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-10 text-sm text-slate-800 shadow-sm outline-none placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:focus:ring-sky-900/40"
+            />
+            {query && (
+              <button
+                type="button"
+                title="Clear search"
+                aria-label="Clear search"
+                onClick={() => {
+                  setQuery('');
+                  setDebouncedQuery('');
+                  setPagination((current) => ({ ...current, page: 1 }));
+                }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-gray-700"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
         </div>
 
-        <div className="relative min-w-[180px]">
-          <FileSpreadsheet className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-          <select
-            value={uploadBatchId}
-            onChange={(event) => {
-              setUploadBatchId(event.target.value);
-              setPagination((current) => ({ ...current, page: 1 }));
-            }}
-            aria-label="Filter by uploaded Excel list"
-            className="h-9 w-full appearance-none rounded-md border border-slate-200 bg-white pl-8 pr-7 text-xs font-medium text-slate-700 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:focus:ring-sky-900/40"
-          >
-            <option value="">All Excel lists</option>
-            {uploadBatches.map((batch) => (
-              <option key={batch._id} value={batch._id}>
-                {batch.name}{batch.originalFileName && batch.originalFileName !== batch.name ? ` — ${batch.originalFileName}` : ''}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="relative min-w-[155px]">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+        <div className="relative min-w-[175px]">
           <Filter className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
           <select
             value={filters.semester}
@@ -339,6 +308,7 @@ export default function StudentSelector({ selected = [], onChange }) {
                 : `Select all filtered (${pagination.total})`
               : allVisibleSelected ? 'Page selected' : 'Select page'}
         </button>
+        </div>
       </div>
 
       <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2 text-[11px] text-slate-500 dark:border-gray-800 dark:text-gray-400">

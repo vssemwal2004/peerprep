@@ -32,11 +32,20 @@ export default defineConfig({
     drop: ['console', 'debugger'],
   },
   server: {
+    headers: {
+      // Source modules should always be revalidated during development. This
+      // prevents tabs from retaining URLs from an older optimized-dep graph.
+      'Cache-Control': 'no-store'
+    },
     hmr: {
       overlay: true
     }
   },
   optimizeDeps: {
-    include: ['react', 'react-dom', 'react-router-dom']
+    include: ['react', 'react-dom', 'react-router-dom'],
+    // Monaco ships as ESM and manages its own worker graph. Pre-bundling its
+    // language contributions can leave the dev server with stale hashed URLs
+    // after dependency changes (504 "Outdated Optimize Dep").
+    exclude: ['monaco-editor']
   }
 });

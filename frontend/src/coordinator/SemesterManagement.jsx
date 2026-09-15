@@ -332,7 +332,7 @@ export default function SemesterManagement() {
   }
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 pt-16">
+    <div className="min-h-screen bg-white dark:bg-gray-900">
       <div className="flex h-[calc(100vh-4rem)]">
         {/* LEFT SIDEBAR - Learning Modules */}
         <div className={`${getSidebarWidthClass()} transition-all duration-300 overflow-hidden border-r border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm`}>

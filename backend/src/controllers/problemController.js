@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import Problem, { SUPPORTED_LANGUAGES } from '../models/Problem.js';
 import Submission from '../models/Submission.js';
 import TestCase from '../models/TestCase.js';
@@ -297,6 +298,31 @@ function normalizeHiddenTestCases(value) {
     .filter((testCase) => testCase.input || testCase.output);
 }
 
+function sumTestCaseMarks(testCases = []) {
+  return Number((testCases || []).reduce(
+    (total, testCase) => total + Math.max(0.01, Number(testCase?.marks) || 1),
+    0,
+  ).toFixed(2));
+}
+
+function distributeTestCaseMarks(testCases = [], totalMarks = 0) {
+  if (!Array.isArray(testCases) || testCases.length === 0) return [];
+  const totalCents = Math.max(testCases.length, Math.round(Number(totalMarks || 0) * 100));
+  const weights = testCases.map((testCase) => Math.max(0.01, Number(testCase?.marks) || 1));
+  const weightTotal = weights.reduce((total, weight) => total + weight, 0) || testCases.length;
+  const distributableCents = totalCents - testCases.length;
+  const shares = weights.map((weight) => (distributableCents * weight) / weightTotal);
+  const allocations = shares.map((share) => 1 + Math.floor(share));
+  let remaining = totalCents - allocations.reduce((total, value) => total + value, 0);
+  const order = shares
+    .map((share, index) => ({ index, remainder: share - Math.floor(share) }))
+    .sort((left, right) => right.remainder - left.remainder || left.index - right.index);
+  for (let index = 0; remaining > 0; index += 1, remaining -= 1) {
+    allocations[order[index % order.length].index] += 1;
+  }
+  return testCases.map((testCase, index) => ({ ...testCase, marks: allocations[index] / 100 }));
+}
+
 function extractHiddenTestCasesFromFiles(files = []) {
   const hiddenFiles = files.filter((file) => file.fieldname === 'hiddenTestFiles');
   if (hiddenFiles.length === 0) {
@@ -482,6 +508,7 @@ function buildProblemPayload(
   {
     existingHiddenTestCaseCount = 0,
     existingHiddenBulkCaseCount = 0,
+    existingTotalMarks = 1,
   } = {},
 ) {
   const title = normalizeProblemTitleText(sanitizeString(req.body.title, 200));
@@ -499,7 +526,7 @@ function buildProblemPayload(
   const hiddenTestCasesFromFiles = extractHiddenTestCasesFromFiles(req.files || []);
   const bulkHiddenFiles = extractBulkHiddenFiles(req.files || []);
   const hiddenBulkDelimiter = normalizeHiddenBulkDelimiter(req.body.hiddenBulkDelimiter);
-  const hiddenBulkCases = bulkHiddenFiles
+  let hiddenBulkCases = bulkHiddenFiles
     ? parseBulkCasePair(
       bulkHiddenFiles.inputFile.buffer.toString('utf8'),
       bulkHiddenFiles.outputFile.buffer.toString('utf8'),
@@ -512,8 +539,20 @@ function buildProblemPayload(
     throw new HttpError(400, 'Use either bulk hidden files or per-case hidden files/JSON, not both.');
   }
   const sampleTestCases = sampleTestCasesProvided ? normalizeSampleTestCases(req.body.sampleTestCases) : null;
-  const hiddenTestCases = hiddenTestCasesFromFiles
+  let hiddenTestCases = hiddenTestCasesFromFiles
     || (req.body.hiddenTestCases !== undefined ? normalizeHiddenTestCases(req.body.hiddenTestCases) : null);
+  const requestedTotalMarks = Number(req.body.totalMarks);
+  const hasRequestedTotalMarks = Number.isFinite(requestedTotalMarks) && requestedTotalMarks > 0;
+  const derivedTotalMarks = hiddenTestCases?.length
+    ? sumTestCaseMarks(hiddenTestCases)
+    : (hiddenBulkCases?.length || Number(existingTotalMarks) || 1);
+  const totalMarks = hasRequestedTotalMarks ? requestedTotalMarks : derivedTotalMarks;
+  if (hasRequestedTotalMarks && hiddenTestCases?.length) {
+    hiddenTestCases = distributeTestCaseMarks(hiddenTestCases, totalMarks);
+  }
+  if (hasRequestedTotalMarks && hiddenBulkCases?.length) {
+    hiddenBulkCases = distributeTestCaseMarks(hiddenBulkCases, totalMarks);
+  }
 
   if (status === 'published') {
     const effectiveSampleCount = sampleTestCases ? sampleTestCases.length : 0;
@@ -547,6 +586,7 @@ function buildProblemPayload(
     faqs: normalizeFaqs(req.body.faqs),
     timeLimitSeconds: parseNumber(req.body.timeLimitSeconds ?? req.body.timeLimit, 2, { min: 1, max: 15, integer: false }),
     memoryLimitMb: parseNumber(req.body.memoryLimitMb ?? req.body.memoryLimit, 256, { min: 64, max: 1024, integer: true }),
+    totalMarks: parseNumber(totalMarks, 1, { min: 0.01, max: 100000, integer: false }),
     status,
     visibility: normalizeVisibility(req.body.visibility),
   };
@@ -793,7 +833,7 @@ async function loadProblemShape(
     includeReferenceSolutions = false,
   } = {},
 ) {
-  const [problem, sampleTestCases, hiddenTestCaseCount, hiddenTestCases] = await Promise.all([
+  const [problem, sampleTestCases, hiddenTestCaseCount, hiddenTestCases, hiddenMarksResult] = await Promise.all([
     Problem.findById(problemId).lean(),
     TestCase.find({ problem: problemId, kind: 'sample' })
       .sort({ position: 1 })
@@ -804,6 +844,10 @@ async function loadProblemShape(
         .sort({ position: 1 })
         .lean()
       : Promise.resolve([]),
+    TestCase.aggregate([
+      { $match: { problem: new mongoose.Types.ObjectId(problemId), kind: 'hidden' } },
+      { $group: { _id: null, total: { $sum: '$marks' } } },
+    ]),
   ]);
 
   if (!problem) {
@@ -813,6 +857,12 @@ async function loadProblemShape(
   const effectiveHiddenTestCaseCount = Math.max(
     Number(hiddenTestCaseCount || 0),
     Number(problem.hiddenTestSource?.caseCount || 0),
+  );
+  const hiddenTestCaseTotalMarks = Number(
+    problem.totalMarks
+    || hiddenMarksResult?.[0]?.total
+    || effectiveHiddenTestCaseCount
+    || 1,
   );
 
   return {
@@ -825,6 +875,7 @@ async function loadProblemShape(
         marks: testCase.marks || 1,
       })),
       hiddenTestCaseCount: effectiveHiddenTestCaseCount,
+      hiddenTestCaseTotalMarks,
       hiddenTestCases: hiddenTestCases.map((testCase) => ({
         input: testCase.input || '',
         output: testCase.output || '',
@@ -1227,6 +1278,7 @@ export async function updateProblem(req, res) {
   const payload = prepareHiddenTestCasePersistence(buildProblemPayload(req, {
     existingHiddenTestCaseCount,
     existingHiddenBulkCaseCount: Number(existingProblem.hiddenTestSource?.caseCount || 0),
+    existingTotalMarks: Number(existingProblem.totalMarks || 1),
   }));
   await ensureUniqueProblemTitle(payload.problem.title, existingProblem._id);
   const canRetainPreviewStatus = payload.problem.status === 'published' && (existingProblem.previewValidated ?? existingProblem.previewTested);

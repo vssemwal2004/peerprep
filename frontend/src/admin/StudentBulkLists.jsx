@@ -94,7 +94,7 @@ export default function StudentBulkLists() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/70 px-4 pb-12 pt-20 dark:bg-gray-950 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-slate-50/70 px-4 pb-12 pt-6 dark:bg-gray-950 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
         <section className="relative mb-5 overflow-hidden rounded-2xl border border-sky-100 bg-gradient-to-br from-white via-sky-50/70 to-indigo-50 p-5 shadow-sm dark:border-sky-900/40 dark:from-gray-900 dark:via-sky-950/30 dark:to-indigo-950/20 sm:p-6">
           <div className="absolute -right-16 -top-20 h-48 w-48 rounded-full bg-sky-200/30 blur-3xl dark:bg-sky-600/10" />

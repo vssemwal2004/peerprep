@@ -22,6 +22,7 @@ import {
   RotateCcw,
   Send,
   ShieldCheck,
+  Timer,
   Video,
   WifiOff,
 } from 'lucide-react';
@@ -347,6 +348,21 @@ const getCodingStarterCode = (question, language) => (
 const getPassageKey = (question) => question?.passage?.passageId
   || (question?.passage?.text ? `${question.passage.title || ''}::${question.passage.text}` : '');
 
+const hasAttemptedResponse = (value = {}, question = {}, type = '') => {
+  if (type === 'mcq') {
+    return Array.isArray(value.answer)
+      ? value.answer.length > 0
+      : value.answer !== undefined && value.answer !== null && value.answer !== '';
+  }
+  if (type === 'coding') {
+    const sourceCode = String(value.code || '').trim();
+    if (!sourceCode) return false;
+    const language = value.language || getCodingLanguagesFromData(getCodingDataFromQuestion(question))[0];
+    return sourceCode !== String(getCodingStarterCode(question, language) || '').trim();
+  }
+  return String(value.answer ?? '').trim().length > 0;
+};
+
 export default function AssessmentAttempt() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -360,6 +376,7 @@ export default function AssessmentAttempt() {
   const [activeSection, setActiveSection] = useState(0);
   const [activeQuestion, setActiveQuestion] = useState(0);
   const [timeLeft, setTimeLeft] = useState(0);
+  const [mcqTimeLeft, setMcqTimeLeft] = useState(0);
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -568,6 +585,8 @@ export default function AssessmentAttempt() {
   const idleAction = securitySettings.idleAction || 'warn';
   const sectionWiseLock = Boolean(securitySettings.sectionWiseLock);
   const sectionGraceSec = Number(securitySettings.sectionGraceSec || 10);
+  const perMcqTimingEnabled = Boolean(securitySettings.perMcqTimingEnabled);
+  const perMcqTimeSec = Math.min(3600, Math.max(10, Number(securitySettings.perMcqTimeSec || 60)));
   const duplicateTabCount = detectedTabs.filter((tab) => !tab.current).length;
   const totalViolations = tabSwitches + fullscreenExits + cameraFlags + copyPasteCount;
   const totalWarnings = totalViolations + screenshotWarnings + aiWarnings;
@@ -844,6 +863,15 @@ export default function AssessmentAttempt() {
     return value.answer && String(value.answer).trim().length > 0 ? 'answered' : 'unanswered';
   }, [answersMap, markedMap, assessment]);
 
+  const attemptedQuestionCounts = useMemo(() => Object.entries(answersMap).reduce((counts, [key, value]) => {
+    const [sectionIndex, questionIndex] = key.split('-').map(Number);
+    const sectionItem = assessment?.sections?.[sectionIndex];
+    const questionItem = sectionItem?.questions?.[questionIndex];
+    const type = questionItem?.type || sectionItem?.type;
+    if (type && hasAttemptedResponse(value, questionItem, type)) counts[type] = (counts[type] || 0) + 1;
+    return counts;
+  }, {}), [answersMap, assessment]);
+
   useEffect(() => {
     securityStatusRef.current = securityStatus;
   }, [securityStatus]);
@@ -921,6 +949,24 @@ export default function AssessmentAttempt() {
 
   const handleSubmit = useCallback(async (auto = false, autoMessage = '') => {
     if (!assessment || submissionInFlightRef.current) return false;
+    if (!auto && assessment.settings?.questionSelectionEnabled) {
+      const attemptedByType = Object.entries(answersMap).reduce((counts, [key, value]) => {
+        const [sectionIndex, questionIndex] = key.split('-').map(Number);
+        const sectionItem = assessment.sections?.[sectionIndex];
+        const questionItem = sectionItem?.questions?.[questionIndex];
+        const type = questionItem?.type || sectionItem?.type;
+        if (type && hasAttemptedResponse(value, questionItem, type)) counts[type] = (counts[type] || 0) + 1;
+        return counts;
+      }, {});
+      const missingType = Object.entries(assessment.settings?.questionAttemptRequirements || {}).find(([type, required]) => (
+        Number(required) > 0 && Number(attemptedByType[type] || 0) < Number(required)
+      ));
+      if (missingType) {
+        const [type, required] = missingType;
+        toast.error(`Answer ${required} ${type.replace('_', ' ')} question${Number(required) === 1 ? '' : 's'} before submitting.`);
+        return false;
+      }
+    }
     submissionInFlightRef.current = true;
     setSaving(true);
     let submissionCompleted = false;
@@ -965,7 +1011,7 @@ export default function AssessmentAttempt() {
     toast.success(auto ? (autoMessage || 'Time is up. Assessment auto-submitted.') : 'Assessment submitted successfully');
     navigate(`/student/assessment/${assessment._id}/feedback`, { replace: true });
     return true;
-  }, [assessment, buildAnswersPayload, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violationScore, pauseCount, lastPauseAt, securityHeartbeat, violations, stopAiProctoring, toast, navigate]);
+  }, [assessment, answersMap, buildAnswersPayload, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violationScore, pauseCount, lastPauseAt, securityHeartbeat, violations, stopAiProctoring, toast, navigate]);
 
   const triggerForcePause = useCallback((type, message, serverState = {}) => {
     if (type !== 'tab_switch') {
@@ -2305,10 +2351,38 @@ export default function AssessmentAttempt() {
     return () => clearInterval(interval);
   }, [secureActive, assessment?._id, fullscreenRequired, fullscreenRecovery.active, tabGuardEnabled, cameraRequired, cameraFlags]);
 
+  const wouldExceedQuestionAttemptLimit = (sectionIndex, questionIndex, nextValue) => {
+    const sectionItem = assessment?.sections?.[sectionIndex];
+    const questionItem = sectionItem?.questions?.[questionIndex];
+    const type = questionItem?.type || sectionItem?.type;
+    const limit = Number(assessment?.settings?.questionAttemptRequirements?.[type] || 0);
+    if (!limit || !questionItem) return false;
+    const key = answerKey(sectionIndex, questionIndex);
+    const currentValue = answersMap[key] || {};
+    if (hasAttemptedResponse(currentValue, questionItem, type) || !hasAttemptedResponse(nextValue, questionItem, type)) return false;
+    const attempted = Object.entries(answersMap).reduce((total, [entryKey, entryValue]) => {
+      if (entryKey === key) return total;
+      const [entrySectionIndex, entryQuestionIndex] = entryKey.split('-').map(Number);
+      const entrySection = assessment?.sections?.[entrySectionIndex];
+      const entryQuestion = entrySection?.questions?.[entryQuestionIndex];
+      const entryType = entryQuestion?.type || entrySection?.type;
+      return total + (entryType === type && hasAttemptedResponse(entryValue, entryQuestion, entryType) ? 1 : 0);
+    }, 0);
+    return attempted >= limit;
+  };
+
   const updateAnswer = (sectionIndex, questionIndex, value) => {
+    const key = answerKey(sectionIndex, questionIndex);
+    const nextValue = { ...(answersMap[key] || {}), ...value };
+    if (wouldExceedQuestionAttemptLimit(sectionIndex, questionIndex, nextValue)) {
+      const type = assessment?.sections?.[sectionIndex]?.type || 'question';
+      const limit = Number(assessment?.settings?.questionAttemptRequirements?.[type] || 0);
+      toast.error(`You can attempt only ${limit} ${type.replace('_', ' ')} question${limit === 1 ? '' : 's'}. Clear another response to change your choice.`);
+      return;
+    }
     setAnswersMap((prev) => ({
       ...prev,
-      [answerKey(sectionIndex, questionIndex)]: { ...prev[answerKey(sectionIndex, questionIndex)], ...value },
+      [key]: { ...prev[key], ...value },
     }));
   };
 
@@ -2820,6 +2894,16 @@ export default function AssessmentAttempt() {
       toast.error(validationMessage);
       return;
     }
+    const nextCodingAnswer = {
+      ...(answersMap[key] || {}),
+      language,
+      code: sourceCode,
+    };
+    if (wouldExceedQuestionAttemptLimit(activeSection, activeQuestion, nextCodingAnswer)) {
+      const limit = Number(assessment?.settings?.questionAttemptRequirements?.coding || 0);
+      toast.error(`You can attempt only ${limit} coding question${limit === 1 ? '' : 's'}. Clear another response to change your choice.`);
+      return;
+    }
 
     setAnswersMap((prev) => ({
       ...prev,
@@ -2964,6 +3048,28 @@ export default function AssessmentAttempt() {
     if (target) navigateToQuestion(target.sectionIndex, target.questionIndex);
   };
 
+  useEffect(() => {
+    const isTimedMcq = perMcqTimingEnabled && assessment?.sections?.[activeSection]?.type === 'mcq';
+    setMcqTimeLeft(isTimedMcq ? perMcqTimeSec : 0);
+  }, [perMcqTimingEnabled, perMcqTimeSec, assessment?.sections, activeSection, activeQuestion]);
+
+  useEffect(() => {
+    const isTimedMcq = perMcqTimingEnabled && assessment?.sections?.[activeSection]?.type === 'mcq';
+    if (!isTimedMcq || phase !== 'active' || isSubmitted || mcqTimeLeft <= 0) return undefined;
+    const timer = window.setTimeout(() => {
+      setMcqTimeLeft((current) => {
+        if (current > 1) return current - 1;
+        const target = flatQuestions[currentNavigationEndIndex + 1];
+        if (target) window.setTimeout(() => {
+          setActiveSection(target.sectionIndex);
+          setActiveQuestion(target.questionIndex);
+        }, 0);
+        return 0;
+      });
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [perMcqTimingEnabled, assessment?.sections, activeSection, phase, isSubmitted, mcqTimeLeft, flatQuestions, currentNavigationEndIndex]);
+
   const clearResponse = () => {
     const section = assessment?.sections?.[activeSection];
     const key = answerKey(activeSection, activeQuestion);
@@ -3067,6 +3173,9 @@ export default function AssessmentAttempt() {
   const runInputUsed = runInputUsedMap[activeAnswerKey] ?? null;
   const currentSectionLabel = section?.sectionName || `Section ${activeSection + 1}`;
   const breadcrumbLabel = `${currentSectionLabel} / ${currentQuestionTypeLabel} ${currentTypeQuestionNumber}`;
+  const currentAttemptType = question?.type || section?.type || currentQuestionKind;
+  const currentAttemptLimit = Number(assessment?.settings?.questionAttemptRequirements?.[currentAttemptType] || 0);
+  const currentAttemptedCount = Number(attemptedQuestionCounts[currentAttemptType] || 0);
   const fallbackRules = [
     { type: 'bullet', text: 'Fullscreen mode is required' },
     { type: 'bullet', text: 'Do not switch tabs during the test' },
@@ -3209,6 +3318,16 @@ export default function AssessmentAttempt() {
           <div className="flex items-center gap-1.5 rounded-xl border border-sky-100 bg-sky-50 px-3 py-1.5 text-[11px] font-semibold text-sky-800 dark:border-sky-900/40 dark:bg-sky-900/20 dark:text-sky-200">
             {currentQuestionTypeLabel} {currentTypeQuestionNumber}/{currentTypeQuestionTotal || 1}
           </div>
+          {currentAttemptLimit > 0 && (
+            <div className="flex items-center gap-1.5 rounded-xl border border-violet-100 bg-violet-50 px-3 py-1.5 text-[11px] font-semibold text-violet-800 dark:border-violet-900/40 dark:bg-violet-900/20 dark:text-violet-200">
+              Attempted {currentAttemptedCount}/{currentAttemptLimit}
+            </div>
+          )}
+          {perMcqTimingEnabled && section?.type === 'mcq' && (
+            <div className={`flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-bold tabular-nums ${mcqTimeLeft <= 10 ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300' : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300'}`}>
+              <Timer className="h-3.5 w-3.5" /> MCQ {formatTime(mcqTimeLeft * 1000)}
+            </div>
+          )}
           <div className="flex flex-1 items-center justify-end gap-2">
             <button
               type="button"
@@ -3440,7 +3559,7 @@ export default function AssessmentAttempt() {
                           <div className="flex shrink-0 items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${status === 'answered' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-white text-slate-500 dark:bg-gray-900 dark:text-gray-400'}`}>{status === 'answered' ? 'Answered' : 'Not answered'}</span><span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-slate-600 dark:bg-gray-900 dark:text-gray-300">{passageQuestion.marks ?? passageQuestion.points ?? section?.marksPerQuestion ?? 0} marks</span></div>
                         </div>
                         {passageQuestion.questionImage?.url && <img src={passageQuestion.questionImage.url} alt={passageQuestion.questionImage.alt || ''} className="mt-4 max-h-72 w-full rounded-xl border border-slate-200 bg-white object-contain p-2 dark:border-gray-700 dark:bg-gray-800" />}
-                        <AssessmentMcqOptions question={passageQuestion} answer={response} onChange={(answer) => updateAnswer(activeSection, questionIndex, { answer })} disabled={isSubmitted} />
+                        <AssessmentMcqOptions question={passageQuestion} answer={response} onChange={(answer) => updateAnswer(activeSection, questionIndex, { answer })} disabled={isSubmitted || (perMcqTimingEnabled && mcqTimeLeft <= 0)} />
                       </section>
                     );
                   })}
@@ -3451,7 +3570,7 @@ export default function AssessmentAttempt() {
                     <div className="text-lg font-bold leading-snug text-slate-900 dark:text-white md:text-[1.15rem]">{question?.questionText || 'Question'}</div>
                     {question?.questionImage?.url && <img src={question.questionImage.url} alt={question.questionImage.alt || ''} className="mt-4 max-h-72 w-full rounded-xl border border-slate-200 bg-white object-contain p-2 dark:border-gray-700 dark:bg-gray-800" />}
                   </div>
-                  {section?.type === 'mcq' && <div className="px-5 pb-5 md:px-6"><AssessmentMcqOptions question={question} answer={answersMap[answerKey(activeSection, activeQuestion)]?.answer} onChange={(answer) => updateAnswer(activeSection, activeQuestion, { answer })} disabled={isSubmitted} /></div>}
+                  {section?.type === 'mcq' && <div className="px-5 pb-5 md:px-6"><AssessmentMcqOptions question={question} answer={answersMap[answerKey(activeSection, activeQuestion)]?.answer} onChange={(answer) => updateAnswer(activeSection, activeQuestion, { answer })} disabled={isSubmitted || (perMcqTimingEnabled && mcqTimeLeft <= 0)} /></div>}
                 </>
               )}
 

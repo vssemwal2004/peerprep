@@ -5,12 +5,11 @@ import { useLocation } from 'react-router-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
-import { ArrowLeft, ClipboardList, Save, Send, Plus, Eye, EyeOff, Hash, Lock, Shield, Globe, Copy, Camera, Volume2, Monitor, Shuffle, Droplet, Navigation, Layers, Timer, RotateCcw, CheckSquare, Clock } from 'lucide-react';
+import { ArrowLeft, ClipboardList, Save, Send, Plus, Eye, EyeOff, Hash, Lock, Shield, Globe, Copy, Camera, Volume2, Monitor, Shuffle, Droplet, Navigation, Layers, Timer, RotateCcw, CheckSquare, Clock, BookOpen, FilePlus2, Check } from 'lucide-react';
 import { SectionCard } from './compiler/CompilerUi';
 import RichTextEditor from './compiler/RichTextEditor';
 import { createDefaultProblemForm, createProblemFormFromProblem } from './compiler/compilerUtils';
 import AssessmentCard from './assessment/components/AssessmentCard';
-import CSVUploader from './assessment/components/CSVUploader';
 import StudentSelector from './assessment/components/StudentSelector';
 import SectionBuilder from './assessment/components/SectionBuilder';
 import AssessmentPreview from './assessment/components/AssessmentPreview';
@@ -18,6 +17,7 @@ import AIProctoringSettings, { DEFAULT_AI_PROCTORING_SETTINGS, normalizeAiProcto
 import { listCodingDrafts, loadCodingDraft, saveCodingDraft } from './assessment/assessmentCodingStore';
 import { loadAssessmentDraft, saveAssessmentDraft, clearAssessmentDraft } from './assessment/assessmentDraftStore';
 import { consumeProblemSelections, consumeQuestionSelections } from './assessment/assessmentProblemSelectionStore';
+import { buildAssessmentQuestionIdentitySet, getLibraryQuestionIdentityKeys, isLibraryQuestionAlreadyAdded } from './assessment/assessmentQuestionIdentity';
 import DateTimePicker from '../components/DateTimePicker';
 
 const PREDEFINED_TEST_TYPES = [
@@ -76,15 +76,15 @@ function generateUniqueAssessmentId() {
 }
 
 const steps = [
-  { id: 'basic', label: 'Details', description: 'Name the assessment and set candidate-facing information.' },
-  { id: 'sections', label: 'Questions', description: 'Choose reusable questions or build new assessment content.' },
-  { id: 'target', label: 'Audience & Schedule', description: 'Choose candidates and define the assessment window.' },
-  { id: 'settings', label: 'Settings', description: 'Configure access, proctoring, navigation and results.' },
-  { id: 'preview', label: 'Review & Publish', description: 'Preview the candidate experience and complete validation.' },
+  { id: 'basic', label: 'Basics', description: 'Assessment identity and candidate-facing information.' },
+  { id: 'sections', label: 'Question set', description: 'Create or select questions and configure delivery rules.' },
+  { id: 'schedule', label: 'Schedule', description: 'Set the assessment duration and availability window.' },
+  { id: 'target', label: 'Candidates', description: 'Choose the students who can take this assessment.' },
+  { id: 'settings', label: 'Settings', description: 'Configure access, proctoring, behavior and results.' },
+  { id: 'preview', label: 'Review', description: 'Validate the complete assessment before publishing.' },
 ];
 
 const normalizeBuilderStep = (step) => {
-  if (step === 'schedule') return 'target';
   return steps.some((item) => item.id === step) ? step : 'basic';
 };
 
@@ -111,8 +111,20 @@ const createQuestionId = () => {
 
 const withAiProctoringSettings = (settings = {}) => {
   const source = settings && typeof settings === 'object' ? settings : {};
+  const normalized = { ...source };
+  delete normalized.shiftSystemEnabled;
+  if (normalized.questionDistributionMode === 'random_per_shift') {
+    normalized.questionDistributionMode = 'random_per_student';
+  }
+  normalized.questionDistributionModes = Object.fromEntries(
+    QUESTION_DELIVERY_TYPES.map(({ id }) => {
+      const configured = source.questionDistributionModes?.[id];
+      const fallback = normalized.questionDistributionMode || 'random_per_student';
+      return [id, ['random_per_student', 'same_for_all'].includes(configured) ? configured : fallback];
+    }),
+  );
   return {
-    ...source,
+    ...normalized,
     aiProctoring: normalizeAiProctoringSettings(source.aiProctoring),
   };
 };
@@ -135,6 +147,34 @@ const toLocalIsoMinutes = (value) => {
   const hours = String(date.getHours()).padStart(2, '0');
   const minutes = String(date.getMinutes()).padStart(2, '0');
   return `${year}-${month}-${day}T${hours}:${minutes}`;
+};
+
+const QUESTION_DELIVERY_TYPES = [
+  { id: 'mcq', label: 'MCQ', helper: 'Multiple-choice questions' },
+  { id: 'coding', label: 'Coding', helper: 'Programming problems' },
+  { id: 'one_line', label: 'One word', helper: 'One-line answers' },
+  { id: 'short', label: 'Short answer', helper: 'Written responses' },
+];
+
+const QUESTION_DISTRIBUTION_MODES = [
+  { id: 'random_per_student', title: 'Different set per student', text: 'Randomly select from this question type. The set stays fixed after the attempt starts.' },
+  { id: 'same_for_all', title: 'Same set for everyone', text: 'Every student receives the same selected questions from this type.' },
+];
+
+const getCodingProblemMarks = (problem = {}) => {
+  const hiddenCases = Array.isArray(problem.hiddenTestCases) ? problem.hiddenTestCases : [];
+  const hiddenCaseMarks = hiddenCases.reduce(
+    (total, testCase) => total + (Number(testCase?.marks) > 0 ? Number(testCase.marks) : 1),
+    0,
+  );
+  return Math.max(0.01, Number(
+    problem.totalMarks
+    || problem.hiddenTestCaseTotalMarks
+    || hiddenCaseMarks
+    || problem.hiddenTestCaseCount
+    || problem.hiddenTestSource?.caseCount
+    || 1,
+  ) || 1);
 };
 
 const toUtcISOString = (value) => {
@@ -234,7 +274,8 @@ export default function CreateAssessment() {
     endTime: '',
     duration: 60,
     allowLateSubmission: false,
-    targetMode: 'all',
+    attemptLimit: 1,
+    targetMode: 'individual',
     sendEmail: false,
     lifecycleStatus: 'draft',
     testType: '',
@@ -251,7 +292,6 @@ export default function CreateAssessment() {
   const [sections, setSections] = useState([]);
   const [selectedStudents, setSelectedStudents] = useState([]);
   const [csvState, setCsvState] = useState(emptyCsvState);
-  const [studentTotal, setStudentTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState('');
@@ -261,6 +301,8 @@ export default function CreateAssessment() {
   const [showCustomTypeInput, setShowCustomTypeInput] = useState(false);
   const [newCustomTypeInput, setNewCustomTypeInput] = useState('');
   const [newCustomInstruction, setNewCustomInstruction] = useState('');
+  const [activeSettingsGroup, setActiveSettingsGroup] = useState('access');
+  const [activeDeliveryType, setActiveDeliveryType] = useState('mcq');
 
   const draftLoadedRef = useRef(false);
   const isSavingRef = useRef(false);
@@ -289,29 +331,10 @@ export default function CreateAssessment() {
     setDirty(true);
   };
 
-  const updateCsvState = (next) => {
-    setCsvState(next);
-    setDirty(true);
-  };
-
   const updateSelectedStudents = (next) => {
     setSelectedStudents(next);
     setDirty(true);
   };
-
-  useEffect(() => {
-    let active = true;
-    api.listAllStudents({ sortOrder: 'asc', page: 1, limit: 1 })
-      .then((data) => {
-        if (active) setStudentTotal(Number(data?.pagination?.total ?? data?.total ?? data?.count ?? 0));
-      })
-      .catch((error) => {
-        if (active) toast.error(error.message || 'Failed to load students');
-      });
-    return () => {
-      active = false;
-    };
-  }, [toast]);
 
   const ensureQuestionMeta = (question, fallbackType) => ({
     ...question,
@@ -327,6 +350,7 @@ export default function CreateAssessment() {
       const section = nextSections[draft.sectionIndex];
       if (!section || !section.questions?.[draft.questionIndex]) return;
       const question = section.questions[draft.questionIndex];
+      const codingMarks = getCodingProblemMarks(draft.problemData || question.problemDataSnapshot || {});
       section.questions[draft.questionIndex] = ensureQuestionMeta({
         ...question,
         type: 'coding',
@@ -334,6 +358,8 @@ export default function CreateAssessment() {
         codingEditorId: draft.tempId || question.codingEditorId,
         problemId: draft.problemData?._id || draft.problemId || question.problemId,
         problemDataSnapshot: draft.problemData || question.problemDataSnapshot,
+        points: question.marksMode === 'custom' ? question.points : codingMarks,
+        marksMode: question.marksMode === 'custom' ? 'custom' : 'test_cases',
         coding: {
           ...(question.coding || {}),
           problemId: draft.problemData?._id || draft.problemId || question.coding?.problemId,
@@ -349,22 +375,31 @@ export default function CreateAssessment() {
   const addProblemsToSection = (prevSections, sectionIndex, problems = []) => {
     if (!problems.length) return prevSections;
     const sourceSections = Array.isArray(prevSections) ? prevSections : [];
+    const existingIdentities = buildAssessmentQuestionIdentitySet(sourceSections);
+    const uniqueProblems = problems.filter((problem) => {
+      const key = problem?._id ? `problem:${String(problem._id)}` : '';
+      if (!key || existingIdentities.has(key)) return false;
+      existingIdentities.add(key);
+      return true;
+    });
+    if (!uniqueProblems.length) return sourceSections;
     const requestedSection = sourceSections[sectionIndex];
     const existingCodingIndex = requestedSection?.type === 'coding'
       ? sectionIndex
       : sourceSections.findIndex((section) => section.type === 'coding');
     if (existingCodingIndex < 0) {
-      const incomingQuestions = problems.map((problem) => ensureQuestionMeta({
+      const incomingQuestions = uniqueProblems.map((problem) => ensureQuestionMeta({
         type: 'coding',
         questionText: problem.title || '',
         problemId: problem._id,
         problemDataSnapshot: problem,
-        points: 1,
+        points: getCodingProblemMarks(problem),
+        marksMode: 'test_cases',
       }, 'coding'));
       return [...sourceSections, {
         sectionName: LIBRARY_SECTION_LABELS.coding,
         type: 'coding',
-        marksPerQuestion: 1,
+        marksPerQuestion: getCodingProblemMarks(uniqueProblems[0]),
         negativeMarksPerQuestion: 0,
         questions: incomingQuestions,
       }];
@@ -377,13 +412,13 @@ export default function CreateAssessment() {
         && !baseQuestions[0]?.problemId
         && !baseQuestions[0]?.problemDataSnapshot
         && !baseQuestions[0]?.questionText;
-      const sectionMarks = Number(section.marksPerQuestion || 1) || 1;
-      const incomingQuestions = problems.map((problem) => ensureQuestionMeta({
+      const incomingQuestions = uniqueProblems.map((problem) => ensureQuestionMeta({
         type: 'coding',
         questionText: problem.title || '',
         problemId: problem._id,
         problemDataSnapshot: problem,
-        points: sectionMarks,
+        points: getCodingProblemMarks(problem),
+        marksMode: 'test_cases',
       }, 'coding'));
       const mergedQuestions = isSingleEmpty ? incomingQuestions : [...baseQuestions, ...incomingQuestions];
       return { ...section, questions: mergedQuestions };
@@ -395,8 +430,10 @@ export default function CreateAssessment() {
     const nextSections = Array.isArray(prevSections)
       ? prevSections.map((section) => ({ ...section, questions: [...(section.questions || [])] }))
       : [];
+    const existingIdentities = buildAssessmentQuestionIdentitySet(nextSections);
 
     (libraryQuestions || []).forEach((libraryQuestion) => {
+      if (isLibraryQuestionAlreadyAdded(libraryQuestion, existingIdentities)) return;
       const baseQuestion = libraryQuestion.questionData || libraryQuestion;
       const type = baseQuestion.type || libraryQuestion.questionType || 'mcq';
       const isPassageSet = type === 'mcq'
@@ -406,16 +443,27 @@ export default function CreateAssessment() {
         ? { ...(baseQuestion.passage || {}), passageId: createQuestionId() }
         : null;
       const sourceQuestions = isPassageSet ? baseQuestion.questions : [baseQuestion];
-      const clonedQuestions = sourceQuestions.map((sourceQuestion, index) => ensureQuestionMeta({
-        ...sourceQuestion,
-        questionId: createQuestionId(),
-        type,
-        ...(isPassageSet ? {
-          passage: sharedPassage,
-          passageQuestionIndex: index,
-          passageQuestionCount: sourceQuestions.length,
-        } : {}),
-      }, type));
+      const clonedQuestions = sourceQuestions.map((sourceQuestion, index) => {
+        const codingSnapshot = sourceQuestion.problemDataSnapshot || baseQuestion.problemDataSnapshot || {};
+        return ensureQuestionMeta({
+          ...sourceQuestion,
+          questionId: createQuestionId(),
+          librarySourceId: String(libraryQuestion._id || ''),
+          librarySourceQuestionId: String(libraryQuestion.sourceQuestionId || ''),
+          librarySourceChildId: String(sourceQuestion.questionId || index),
+          type,
+          ...(type === 'coding' ? {
+            points: getCodingProblemMarks(codingSnapshot),
+            marksMode: 'test_cases',
+          } : {}),
+          ...(isPassageSet ? {
+            passage: sharedPassage,
+            passageQuestionIndex: index,
+            passageQuestionCount: sourceQuestions.length,
+          } : {}),
+        }, type);
+      });
+      getLibraryQuestionIdentityKeys(libraryQuestion).forEach((key) => existingIdentities.add(key));
 
       const existingSectionIndex = nextSections.findIndex((section) => section.type === type);
       if (existingSectionIndex >= 0) {
@@ -542,6 +590,7 @@ export default function CreateAssessment() {
           setForm((prev) => ({
             ...prev,
             ...draft.form,
+            targetMode: 'individual',
             assessmentId: prev.assessmentId,
             settings: withAiProctoringSettings(draft.form.settings || prev.settings),
           }));
@@ -567,10 +616,6 @@ export default function CreateAssessment() {
         const data = await api.getAssessmentById(id);
         const assessment = data.assessment || {};
         const isDraft = assessment.lifecycleStatus === 'draft';
-        const fallbackTargetMode = assessment.targetType === 'all' ? 'all' : 'individual';
-        const resolvedTargetMode = isDraft
-          ? ((assessment.draftTargetMode && assessment.draftTargetMode !== 'all') ? assessment.draftTargetMode : fallbackTargetMode)
-          : fallbackTargetMode;
         const draftAssigned = Array.isArray(assessment.draftAssignedStudents) ? assessment.draftAssignedStudents : [];
         const sessionDraft = loadAssessmentDraft(assessmentKey);
         const draftForm = sessionDraft?.form && typeof sessionDraft.form === 'object' ? sessionDraft.form : null;
@@ -587,7 +632,8 @@ export default function CreateAssessment() {
           endTime: assessment.endTime ? toLocalIsoMinutes(assessment.endTime) : '',
           duration: assessment.duration || 60,
           allowLateSubmission: Boolean(assessment.allowLateSubmission),
-          targetMode: resolvedTargetMode,
+          attemptLimit: Math.max(1, Number(assessment.attemptLimit) || 1),
+          targetMode: 'individual',
           lifecycleStatus: assessment.lifecycleStatus || 'draft',
           sendEmail: false,
           testType: assessment.testType || '',
@@ -598,38 +644,24 @@ export default function CreateAssessment() {
           passwordValue: '',
           settings: withAiProctoringSettings(assessment.settings),
         };
-        const effectiveTargetMode = draftForm?.targetMode || resolvedTargetMode;
-
         setForm((prev) => ({
           ...prev,
           ...baseForm,
           ...(draftForm || {}),
+          targetMode: 'individual',
           assessmentId: draftForm?.assessmentId || baseForm.assessmentId || prev.assessmentId,
           settings: withAiProctoringSettings(draftForm?.settings || baseForm.settings),
         }));
         setVersion(draftVersion || assessment.version || 1);
 
-        if (effectiveTargetMode === 'csv') {
-          setCsvState(draftCsvState ? { ...emptyCsvState, ...draftCsvState } : {
-            file: null,
-            rows: draftAssigned,
-            errors: [],
-            summary: draftAssigned.length ? `Draft loaded with ${draftAssigned.length} row(s). Revalidate before publish.` : '',
-          });
-          setSelectedStudents(draftSelectedStudents || []);
-        } else if (effectiveTargetMode === 'individual') {
-          if (draftSelectedStudents) {
-            setSelectedStudents(draftSelectedStudents);
-          } else if (isDraft && draftAssigned.length) {
-            setSelectedStudents(draftAssigned);
-          } else {
-            setSelectedStudents(Array.isArray(assessment.assignedStudents) ? assessment.assignedStudents : []);
-          }
-          setCsvState(draftCsvState ? { ...emptyCsvState, ...draftCsvState } : emptyCsvState);
+        if (draftSelectedStudents?.length) {
+          setSelectedStudents(draftSelectedStudents);
+        } else if (isDraft && draftAssigned.length) {
+          setSelectedStudents(draftAssigned);
         } else {
-          setSelectedStudents(draftSelectedStudents || []);
-          setCsvState(draftCsvState ? { ...emptyCsvState, ...draftCsvState } : emptyCsvState);
+          setSelectedStudents(Array.isArray(assessment.assignedStudents) ? assessment.assignedStudents : []);
         }
+        setCsvState(draftCsvState ? { ...emptyCsvState, ...draftCsvState } : emptyCsvState);
 
         if (draftStep) setActiveStep(normalizeBuilderStep(draftStep));
 
@@ -724,21 +756,11 @@ export default function CreateAssessment() {
   }, [assessmentKey]);
 
   const assignedSummary = useMemo(() => {
-    if (form.targetMode === 'all') {
-      return { count: studentTotal || 'All Students', newAccounts: 0, accountSummary: 'Existing students' };
-    }
-    if (form.targetMode === 'individual') {
-      return { count: selectedStudents.length, newAccounts: 0, accountSummary: 'Existing students' };
-    }
-    if (!csvState.rows.length) {
-      return { count: 0, newAccounts: 0, accountSummary: 'No CSV students' };
-    }
     return {
-      count: csvState.rows.length,
-      newAccounts: 'On publish',
-      accountSummary: 'Accounts matched on publish',
+      count: selectedStudents.length,
+      accountSummary: 'Individually selected students',
     };
-  }, [form.targetMode, selectedStudents, csvState.rows, studentTotal]);
+  }, [selectedStudents]);
 
   const assessmentValidation = useMemo(() => {
     const sectionsArray = Array.isArray(sections) ? sections : [];
@@ -763,12 +785,73 @@ export default function CreateAssessment() {
     };
   }, [sections]);
 
+  const questionTypeCounts = useMemo(() => (
+    (sections || []).reduce((counts, section) => {
+      const type = section.type || 'mcq';
+      counts[type] = (counts[type] || 0) + (section.questions?.length || 0);
+      return counts;
+    }, { mcq: 0, one_line: 0, short: 0, coding: 0 })
+  ), [sections]);
+
+  const configuredDeliveryTypes = useMemo(
+    () => QUESTION_DELIVERY_TYPES.filter(({ id: type }) => questionTypeCounts[type] > 0),
+    [questionTypeCounts],
+  );
+
+  useEffect(() => {
+    if (!configuredDeliveryTypes.length) return;
+    if (!configuredDeliveryTypes.some(({ id: type }) => type === activeDeliveryType)) {
+      setActiveDeliveryType(configuredDeliveryTypes[0].id);
+    }
+  }, [activeDeliveryType, configuredDeliveryTypes]);
+
+  const updateQuestionDeliverySettings = (updates) => updateForm({
+    settings: withAiProctoringSettings({ ...(form.settings || {}), ...updates }),
+  });
+
+  const updateQuestionDeliveryRule = (type, updates) => {
+    const currentDeliver = Number(form.settings?.questionRequirements?.[type] ?? questionTypeCounts[type] ?? 0);
+    const currentAttempt = Number(form.settings?.questionAttemptRequirements?.[type] ?? currentDeliver);
+    const nextDeliver = Math.min(questionTypeCounts[type] || 0, Math.max(1, Number(updates.deliver ?? currentDeliver) || 1));
+    const nextAttempt = Math.min(nextDeliver, Math.max(1, Number(updates.attempt ?? currentAttempt) || 1));
+    updateQuestionDeliverySettings({
+      questionRequirements: { ...(form.settings?.questionRequirements || {}), [type]: nextDeliver },
+      questionAttemptRequirements: { ...(form.settings?.questionAttemptRequirements || {}), [type]: nextAttempt },
+      questionDistributionModes: updates.distributionMode
+        ? { ...(form.settings?.questionDistributionModes || {}), [type]: updates.distributionMode }
+        : form.settings?.questionDistributionModes,
+    });
+  };
+
+  const toggleQuestionSelection = (enabled) => {
+    if (!enabled) {
+      updateQuestionDeliverySettings({ questionSelectionEnabled: false });
+      return;
+    }
+    const questionRequirements = { ...(form.settings?.questionRequirements || {}) };
+    const questionAttemptRequirements = { ...(form.settings?.questionAttemptRequirements || {}) };
+    const questionDistributionModes = { ...(form.settings?.questionDistributionModes || {}) };
+    Object.entries(questionTypeCounts).forEach(([type, count]) => {
+      if (!count) return;
+      if (!Number(questionRequirements[type])) questionRequirements[type] = count;
+      if (!Number(questionAttemptRequirements[type])) questionAttemptRequirements[type] = questionRequirements[type];
+      if (!['random_per_student', 'same_for_all'].includes(questionDistributionModes[type])) {
+        questionDistributionModes[type] = form.settings?.questionDistributionMode || 'random_per_student';
+      }
+    });
+    updateQuestionDeliverySettings({
+      questionSelectionEnabled: true,
+      questionDistributionMode: form.settings?.questionDistributionMode || 'random_per_student',
+      questionRequirements,
+      questionAttemptRequirements,
+      questionDistributionModes,
+    });
+  };
+
   const buildPayload = (statusOverride) => {
     const lifecycleStatus = statusOverride || form.lifecycleStatus || 'draft';
-    const normalizedTargetType = form.targetMode === 'all' ? 'all' : 'selected';
-    const assignedStudents = form.targetMode === 'csv'
-      ? csvState.rows
-      : selectedStudents;
+    const normalizedTargetType = 'selected';
+    const assignedStudents = selectedStudents;
 
     const normalizedSections = (sections || []).map((section) => {
       const questions = (section.questions || []).map((question) => {
@@ -789,6 +872,26 @@ export default function CreateAssessment() {
       });
       return { ...section, questions };
     });
+    const normalizedSettings = withAiProctoringSettings(form.settings);
+    if (normalizedSettings.questionSelectionEnabled) {
+      normalizedSettings.questionRequirements = Object.fromEntries(Object.entries(questionTypeCounts)
+        .filter(([, count]) => count > 0)
+        .map(([type, count]) => [type, Math.min(count, Math.max(1, Number(normalizedSettings.questionRequirements?.[type] ?? count) || 1))]));
+      normalizedSettings.questionAttemptRequirements = Object.fromEntries(Object.entries(questionTypeCounts)
+        .filter(([, count]) => count > 0)
+        .map(([type, count]) => {
+          const delivered = normalizedSettings.questionRequirements[type] || count;
+          return [type, Math.min(delivered, Math.max(1, Number(normalizedSettings.questionAttemptRequirements?.[type] ?? delivered) || 1))];
+        }));
+      normalizedSettings.questionDistributionModes = Object.fromEntries(Object.entries(questionTypeCounts)
+        .filter(([, count]) => count > 0)
+        .map(([type]) => [
+          type,
+          ['random_per_student', 'same_for_all'].includes(normalizedSettings.questionDistributionModes?.[type])
+            ? normalizedSettings.questionDistributionModes[type]
+            : 'random_per_student',
+        ]));
+    }
 
     return {
       title: form.title,
@@ -801,9 +904,10 @@ export default function CreateAssessment() {
       endTime: toUtcISOString(form.endTime),
       duration: form.duration,
       allowLateSubmission: form.allowLateSubmission,
+      attemptLimit: Math.max(1, Number(form.attemptLimit) || 1),
       targetType: normalizedTargetType,
-      draftTargetMode: form.targetMode,
-      assignedStudents: form.targetMode === 'all' ? [] : assignedStudents,
+      draftTargetMode: 'individual',
+      assignedStudents,
       sections: normalizedSections,
       lifecycleStatus,
       sendEmail: false,
@@ -813,7 +917,7 @@ export default function CreateAssessment() {
       customInstructions: form.customInstructions || [],
       passwordEnabled: Boolean(form.passwordEnabled),
       password: form.passwordEnabled ? (form.passwordValue || '') : '',
-      settings: withAiProctoringSettings(form.settings),
+      settings: normalizedSettings,
     };
   };
 
@@ -890,11 +994,7 @@ export default function CreateAssessment() {
       toast.error('All coding questions must be published and validated before publishing the assessment.');
       return false;
     }
-    if (form.targetMode === 'csv' && csvState.errors.length > 0) {
-      toast.error('Fix CSV errors before publishing.');
-      return false;
-    }
-    if (form.targetMode !== 'all' && assignedSummary.count === 0) {
+    if (assignedSummary.count === 0) {
       toast.error('Select at least one student before publishing.');
       return false;
     }
@@ -920,7 +1020,7 @@ export default function CreateAssessment() {
           testType: form.testType,
           isVisible: form.isVisible,
           totalQuestions: assessmentValidation.totalQuestions,
-          targetMode: form.targetMode,
+          targetMode: 'individual',
         },
       }).catch(() => { });
       toast.success('Assessment published');
@@ -950,6 +1050,60 @@ export default function CreateAssessment() {
   };
 
   const stepIndex = steps.findIndex((step) => step.id === activeStep);
+  const singleScheduleValid = Boolean(
+    form.startTime
+    && form.endTime
+    && Number(form.duration) > 0
+    && new Date(form.endTime).getTime() > new Date(form.startTime).getTime(),
+  );
+  const candidateSelectionValid = selectedStudents.length > 0;
+  const questionDeliveryValid = !form.settings?.questionSelectionEnabled || Object.entries(questionTypeCounts)
+    .filter(([, count]) => count > 0)
+    .every(([type, count]) => {
+      const deliver = Number(form.settings?.questionRequirements?.[type] ?? count);
+      const attempt = Number(form.settings?.questionAttemptRequirements?.[type] ?? deliver);
+      return deliver >= 1 && deliver <= count && attempt >= 1 && attempt <= deliver;
+    });
+  const questionChoiceSummary = Object.entries(questionTypeCounts).reduce((summary, [type, count]) => {
+    if (!count) return summary;
+    const shown = form.settings?.questionSelectionEnabled
+      ? Math.min(count, Math.max(1, Number(form.settings?.questionRequirements?.[type] ?? count) || 1))
+      : count;
+    const required = form.settings?.questionSelectionEnabled
+      ? Math.min(shown, Math.max(1, Number(form.settings?.questionAttemptRequirements?.[type] ?? shown) || 1))
+      : shown;
+    return {
+      created: summary.created + count,
+      shown: summary.shown + shown,
+      required: summary.required + required,
+    };
+  }, { created: 0, shown: 0, required: 0 });
+  const activeDeliveryDefinition = configuredDeliveryTypes.find(({ id: type }) => type === activeDeliveryType)
+    || configuredDeliveryTypes[0]
+    || QUESTION_DELIVERY_TYPES[0];
+  const activeDeliveryCount = Number(questionTypeCounts[activeDeliveryDefinition.id] || 0);
+  const activeDeliveryShown = Math.min(
+    activeDeliveryCount,
+    Math.max(1, Number(form.settings?.questionRequirements?.[activeDeliveryDefinition.id] ?? activeDeliveryCount) || 1),
+  );
+  const activeDeliveryRequired = Math.min(
+    activeDeliveryShown,
+    Math.max(1, Number(form.settings?.questionAttemptRequirements?.[activeDeliveryDefinition.id] ?? activeDeliveryShown) || 1),
+  );
+  const activeDistributionMode = form.settings?.questionDistributionModes?.[activeDeliveryDefinition.id]
+    || form.settings?.questionDistributionMode
+    || 'random_per_student';
+  const phaseCompletion = {
+    basic: Boolean(form.title.trim() && form.testType),
+    sections: assessmentValidation.totalQuestions > 0 && !assessmentValidation.emptySection && questionDeliveryValid,
+    schedule: singleScheduleValid,
+    target: candidateSelectionValid,
+    settings: true,
+    preview: false,
+  };
+  const firstIncompleteStepIndex = steps.findIndex((step) => !phaseCompletion[step.id]);
+  const maxUnlockedStepIndex = firstIncompleteStepIndex < 0 ? steps.length - 1 : firstIncompleteStepIndex;
+  const publishReady = steps.slice(0, -1).every((step) => phaseCompletion[step.id]);
   const allTestTypes = [...PREDEFINED_TEST_TYPES.filter((t) => t !== 'Other'), ...customTestTypes, 'Other'];
 
   const handleTestTypeChange = (value) => {
@@ -997,25 +1151,27 @@ export default function CreateAssessment() {
           <span className="ml-auto font-semibold text-slate-600 dark:text-gray-300">{form.lifecycleStatus === 'published' ? 'Published' : 'Draft'}</span>
         </div>
 
-        <SectionCard compact title="Basic Information" subtitle="Define core details for the assessment.">
+        <SectionCard compact title="Assessment details" subtitle="Fields marked with * are required before you can continue.">
           <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <label className="text-xs font-medium text-slate-500 dark:text-gray-400">Test Name</label>
+              <label className="text-xs font-semibold text-slate-700 dark:text-gray-300">Assessment name <span className="text-rose-500">*</span></label>
               <input
+                required
                 value={form.title}
                 onChange={(e) => updateForm({ title: e.target.value })}
-                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:focus:ring-sky-950"
                 placeholder="e.g. Java Developer Round 1"
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-500 dark:text-gray-400">Test Type</label>
+              <label className="text-xs font-semibold text-slate-700 dark:text-gray-300">Assessment type <span className="text-rose-500">*</span></label>
               <select
+                required
                 value={form.testType}
                 onChange={(e) => handleTestTypeChange(e.target.value)}
-                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:focus:ring-sky-950"
               >
-                <option value="">-- Select Test Type --</option>
+                <option value="">Select assessment type</option>
                 {allTestTypes.map((type) => (
                   <option key={type} value={type}>{type}</option>
                 ))}
@@ -1040,19 +1196,22 @@ export default function CreateAssessment() {
               )}
             </div>
             <div className="md:col-span-2">
-              <label className="text-xs font-medium text-slate-500 dark:text-gray-400">Short Description</label>
+              <div className="flex items-center justify-between gap-3">
+                <label className="text-xs font-semibold text-slate-700 dark:text-gray-300">Short description</label>
+                <span className="text-[10px] font-medium text-slate-400">Optional</span>
+              </div>
               <input
                 value={form.description}
                 onChange={(e) => updateForm({ description: e.target.value })}
-                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-                placeholder="Brief summary for admins"
+                className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:focus:ring-sky-950"
+                placeholder="Add a short internal summary"
               />
             </div>
           </div>
         </SectionCard>
 
         {/* Instructions Section */}
-        <SectionCard compact title="Instructions" subtitle="Default instructions are always shown. Add custom ones below.">
+        <SectionCard compact title="Candidate instructions" subtitle="Platform instructions are included automatically. Additional instructions are optional.">
           <div className="space-y-4">
             <details className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50/80 dark:border-gray-700 dark:bg-gray-800/60">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-xs font-semibold text-slate-700 dark:text-gray-200">
@@ -1119,49 +1278,17 @@ export default function CreateAssessment() {
       </div>
     ),
     target: (
-      <SectionCard compact title="Target Students" subtitle="Choose how you want to assign this assessment.">
-        <div className="space-y-4">
-          <div className="flex flex-wrap gap-4">
-            {[
-              { id: 'all', label: 'All Students' },
-              { id: 'csv', label: 'Upload CSV' },
-              { id: 'individual', label: 'Add Individual Students' },
-            ].map((option) => (
-              <label key={option.id} className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors ${form.targetMode === option.id ? 'border-sky-500 bg-sky-50 text-sky-700 dark:border-sky-400/60 dark:bg-sky-900/20 dark:text-sky-200' : 'border-slate-200 bg-white text-slate-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}>
-                <input
-                  type="radio"
-                  checked={form.targetMode === option.id}
-                  onChange={() => updateForm({ targetMode: option.id })}
-                />
-                {option.label}
-              </label>
-            ))}
-          </div>
-
-          {form.targetMode === 'csv' && (
-            <CSVUploader csvState={csvState} onChange={updateCsvState} />
-          )}
-
-          {form.targetMode === 'individual' && (
-            <StudentSelector
-              selected={selectedStudents}
-              onChange={updateSelectedStudents}
-            />
-          )}
-
-          {form.targetMode === 'all' && (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
-              All active students in the system will be assigned once published.
-            </div>
-          )}
-        </div>
-      </SectionCard>
+      <div className="space-y-4">
+        <SectionCard compact title="Select candidates" subtitle="Search and choose the students who can take this assessment.">
+          <StudentSelector selected={selectedStudents} onChange={updateSelectedStudents} />
+        </SectionCard>
+      </div>
     ),
     schedule: (
-      <SectionCard compact title="Schedule & Limits" subtitle="Define timing and duration.">
+      <SectionCard compact title="Assessment schedule" subtitle="Define the duration and availability window. Fields marked with * are required.">
         <div className="grid gap-4 md:grid-cols-2">
           <div>
-            <label className="text-xs text-slate-500 dark:text-gray-400">Start Date & Time</label>
+            <label className="text-xs font-semibold text-slate-700 dark:text-gray-300">Start date & time <span className="text-rose-500">*</span></label>
             <div className="mt-1">
               <DateTimePicker
                 value={form.startTime}
@@ -1184,7 +1311,7 @@ export default function CreateAssessment() {
             </div>
           </div>
           <div>
-            <label className="text-xs text-slate-500 dark:text-gray-400">End Date & Time</label>
+            <label className="text-xs font-semibold text-slate-700 dark:text-gray-300">End date & time <span className="text-rose-500">*</span></label>
             <div className="mt-1">
               <DateTimePicker
                 value={form.endTime}
@@ -1199,7 +1326,7 @@ export default function CreateAssessment() {
             </div>
           </div>
           <div>
-            <label className="text-xs text-slate-500 dark:text-gray-400">Duration (minutes)</label>
+            <label className="text-xs font-semibold text-slate-700 dark:text-gray-300">Duration <span className="text-rose-500">*</span></label>
             <input
               type="number"
               min="1"
@@ -1218,30 +1345,26 @@ export default function CreateAssessment() {
           />
           Allow late submission (after window closes)
         </div>
+
       </SectionCard>
     ),
     sections: (
-      <div className="space-y-5">
-        <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Questions</h2>
-            <p className="mt-0.5 text-[11px] text-slate-500 dark:text-gray-400">
-              {sections.length} section{sections.length !== 1 ? 's' : ''} &middot; {sections.reduce((total, section) => total + (section.questions?.length || 0), 0)} questions
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button type="button" onClick={() => handleOpenProblemLibrary()} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:border-sky-200 hover:text-sky-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
-              <ClipboardList className="h-3.5 w-3.5" /> Add questions from library
+      <div className="space-y-4">
+        <section className="rounded-2xl border border-slate-200 bg-white px-4 py-5 text-center shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          <h2 className="text-base font-bold text-slate-950 dark:text-white">Build your question set</h2>
+          <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Create new questions or reuse validated questions from the library.</p>
+          <div className="mx-auto mt-4 grid max-w-2xl gap-3 sm:grid-cols-2">
+            <button type="button" onClick={handleCreateQuestion} className="group flex min-h-24 items-center gap-4 rounded-xl border border-sky-200 bg-sky-50/70 px-5 py-4 text-left transition hover:border-sky-400 hover:bg-sky-100/70 hover:shadow-sm dark:border-sky-900 dark:bg-sky-950/25 dark:hover:border-sky-700">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white shadow-sm"><FilePlus2 className="h-5 w-5" /></span>
+              <span><strong className="block text-sm text-sky-900 dark:text-sky-100">Create questions</strong><span className="mt-1 block text-[11px] leading-4 text-slate-500 dark:text-gray-400">Independent, passage-based, MCQ, short answer or coding</span></span>
             </button>
-            <button
-              type="button"
-              onClick={handleCreateQuestion}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500"
-            >
-              <Plus className="h-3.5 w-3.5" /> Create question
+            <button type="button" onClick={() => handleOpenProblemLibrary()} className="group flex min-h-24 items-center gap-4 rounded-xl border border-sky-200 bg-sky-50/70 px-5 py-4 text-left transition hover:border-sky-400 hover:bg-sky-100/70 hover:shadow-sm dark:border-sky-900 dark:bg-sky-950/25 dark:hover:border-sky-700">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white shadow-sm"><BookOpen className="h-5 w-5" /></span>
+              <span><strong className="block text-sm text-sky-900 dark:text-sky-100">Add from library</strong><span className="mt-1 block text-[11px] leading-4 text-slate-500 dark:text-gray-400">Search, filter and select multiple published questions</span></span>
             </button>
           </div>
-        </div>
+          <div className="mt-4 text-[11px] font-medium text-slate-500 dark:text-gray-400">{sections.length} section{sections.length !== 1 ? 's' : ''} &middot; {assessmentValidation.totalQuestions} question{assessmentValidation.totalQuestions !== 1 ? 's' : ''}</div>
+        </section>
 
         <SectionBuilder
           sections={sections}
@@ -1252,6 +1375,83 @@ export default function CreateAssessment() {
             error: (message) => toast.error(message),
           }}
         />
+
+        {assessmentValidation.totalQuestions > 0 && (
+          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 px-4 py-4 dark:border-gray-800">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Question choice</h3>
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-gray-400">Control how many questions each student sees and needs to answer.</p>
+              </div>
+              <label className="flex items-center gap-3 rounded-xl bg-slate-50 px-3 py-2 dark:bg-gray-800">
+                <span className="text-right"><span className="block text-xs font-bold text-slate-700 dark:text-gray-200">Enable choice</span><span className="block text-[10px] text-slate-500">Optional questions</span></span>
+                <Toggle value={Boolean(form.settings?.questionSelectionEnabled)} onChange={toggleQuestionSelection} />
+              </label>
+            </div>
+            {form.settings?.questionSelectionEnabled && (
+              <div className="space-y-4 p-4">
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {[
+                    { label: 'Total questions', value: questionChoiceSummary.created, helper: 'Created by admin' },
+                    { label: 'Each student sees', value: questionChoiceSummary.shown, helper: 'Selected from total' },
+                    { label: 'Student answers', value: questionChoiceSummary.required, helper: 'Required to attempt' },
+                  ].map((item) => <div key={item.label} className="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3 dark:border-gray-700 dark:bg-gray-800/70"><p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{item.label}</p><p className="mt-1 text-xl font-bold text-slate-900 dark:text-white">{item.value}</p><p className="text-[10px] text-slate-500">{item.helper}</p></div>)}
+                </div>
+
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Configure one type at a time</p>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4" role="tablist" aria-label="Question delivery types">
+                    {configuredDeliveryTypes.map((definition) => {
+                      const type = definition.id;
+                      const count = questionTypeCounts[type];
+                      const shown = Math.min(count, Number(form.settings?.questionRequirements?.[type] ?? count));
+                      const required = Math.min(shown, Number(form.settings?.questionAttemptRequirements?.[type] ?? shown));
+                      const active = type === activeDeliveryDefinition.id;
+                      return (
+                        <button key={type} type="button" role="tab" aria-selected={active} onClick={() => setActiveDeliveryType(type)} className={`rounded-xl border px-3 py-3 text-left transition ${active ? 'border-sky-400 bg-sky-50 text-sky-900 shadow-sm ring-1 ring-sky-100 dark:border-sky-700 dark:bg-sky-950/30 dark:text-sky-100' : 'border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:bg-sky-50/40 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}>
+                          <span className="flex items-center justify-between gap-2"><strong className="text-xs">{definition.label}</strong><span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-slate-600 shadow-sm dark:bg-gray-800 dark:text-gray-200">{count}</span></span>
+                          <span className="mt-2 block text-[10px] text-slate-500 dark:text-gray-400">Show {shown} · answer {required}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="overflow-hidden rounded-2xl border border-sky-200 bg-sky-50/40 dark:border-sky-900/60 dark:bg-sky-950/15">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-sky-100 bg-white/80 px-4 py-3 dark:border-sky-900/50 dark:bg-gray-900/70">
+                    <div><p className="text-sm font-bold text-slate-900 dark:text-white">{activeDeliveryDefinition.label} delivery</p><p className="mt-0.5 text-[10px] text-slate-500 dark:text-gray-400">{activeDeliveryDefinition.helper} are configured independently.</p></div>
+                    <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-bold text-sky-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300">{activeDeliveryCount} available</span>
+                  </div>
+                  <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
+                      <p className="text-xs font-bold text-slate-800 dark:text-white">How many should each student get?</p>
+                      <div className="mt-4 grid grid-cols-[1fr_auto_1fr] items-end gap-3">
+                        <label><span className="block text-[10px] font-bold uppercase tracking-wide text-slate-400">Show</span><input aria-label={`${activeDeliveryDefinition.label} questions shown to each student`} type="number" min="1" max={activeDeliveryCount} value={activeDeliveryShown} onChange={(event) => updateQuestionDeliveryRule(activeDeliveryDefinition.id, { deliver: event.target.value, attempt: Math.min(activeDeliveryRequired, Number(event.target.value) || 1) })} className="mt-1 h-11 w-full rounded-xl border border-slate-200 px-3 text-center text-base font-bold text-slate-900 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-white" /></label>
+                        <span className="pb-3 text-slate-300">→</span>
+                        <label><span className="block text-[10px] font-bold uppercase tracking-wide text-slate-400">Must answer</span><input aria-label={`${activeDeliveryDefinition.label} questions each student must answer`} type="number" min="1" max={activeDeliveryShown} value={activeDeliveryRequired} onChange={(event) => updateQuestionDeliveryRule(activeDeliveryDefinition.id, { deliver: activeDeliveryShown, attempt: event.target.value })} className="mt-1 h-11 w-full rounded-xl border border-slate-200 px-3 text-center text-base font-bold text-slate-900 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-white" /></label>
+                      </div>
+                      <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-[11px] leading-5 text-slate-600 dark:bg-gray-800 dark:text-gray-300">From <strong>{activeDeliveryCount}</strong> {activeDeliveryDefinition.label.toLowerCase()} question{activeDeliveryCount === 1 ? '' : 's'}, each student sees <strong>{activeDeliveryShown}</strong> and must answer <strong>{activeDeliveryRequired}</strong>.</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-800 dark:text-white">Who receives which questions?</p>
+                      <div className="mt-2 grid gap-2">
+                        {QUESTION_DISTRIBUTION_MODES.map((mode) => {
+                          const active = activeDistributionMode === mode.id;
+                          return <button key={mode.id} type="button" onClick={() => updateQuestionDeliveryRule(activeDeliveryDefinition.id, { deliver: activeDeliveryShown, attempt: activeDeliveryRequired, distributionMode: mode.id })} className={`rounded-xl border px-3 py-3 text-left transition ${active ? 'border-sky-400 bg-white text-sky-900 shadow-sm ring-1 ring-sky-100 dark:border-sky-700 dark:bg-gray-900 dark:text-sky-100' : 'border-sky-100 bg-white/50 text-slate-600 hover:bg-white dark:border-sky-900/50 dark:bg-gray-900/40 dark:text-gray-300'}`}><span className="flex items-center gap-2 text-xs font-bold"><span className={`flex h-4 w-4 items-center justify-center rounded-full border ${active ? 'border-sky-600 bg-sky-600 text-white' : 'border-slate-300'}`}>{active && <Check className="h-2.5 w-2.5" />}</span>{mode.title}</span><span className="mt-1.5 block pl-6 text-[10px] leading-4 opacity-75">{mode.text}</span></button>;
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2.5 text-xs leading-5 text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-200">
+                  <strong>Current rule:</strong> {activeDistributionMode === 'random_per_student' ? 'students can receive different fixed sets' : 'every student receives the same fixed set'} of {activeDeliveryShown} {activeDeliveryDefinition.label.toLowerCase()} question{activeDeliveryShown === 1 ? '' : 's'}, and they must answer {activeDeliveryRequired}.
+                </div>
+              </div>
+            )}
+            {!form.settings?.questionSelectionEnabled && <div className="px-4 py-3 text-xs text-slate-500 dark:text-gray-400">Choice is off: every student will see all {questionChoiceSummary.created} questions, with no optional-question rule applied.</div>}
+          </section>
+        )}
       </div>
     ),
     settings: (() => {
@@ -1259,20 +1459,23 @@ export default function CreateAssessment() {
       const upd = (key, val) => updateForm({ settings: withAiProctoringSettings({ ...(form.settings || {}), [key]: val }) });
       const updateAiProctoring = (nextValue) => upd('aiProctoring', normalizeAiProctoringSettings(nextValue));
       const rowProps = { settings: s, onSettingChange: upd };
+      const settingsGroups = [
+        { id: 'access', label: 'Access', description: 'Visibility and entry', Icon: Lock },
+        { id: 'proctoring', label: 'Proctoring', description: 'Integrity controls', Icon: Shield },
+        { id: 'behavior', label: 'Behavior', description: 'Navigation and timing', Icon: Navigation },
+        { id: 'results', label: 'Results', description: 'Scores and retakes', Icon: CheckSquare },
+      ];
 
       return (
-        <div className="grid items-start gap-4 lg:grid-cols-[180px_minmax(0,1fr)]">
-          <aside className="rounded-xl border border-slate-200 bg-white p-2 dark:border-gray-800 dark:bg-gray-900 lg:sticky lg:top-24">
-            <p className="px-2 pb-2 pt-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Settings</p>
-            {[
-              ['assessment-settings-access', 'Access control'],
-              ['assessment-settings-proctoring', 'Proctoring'],
-              ['assessment-settings-behavior', 'Candidate behavior'],
-              ['assessment-settings-results', 'Scoring & results'],
-            ].map(([href, label]) => (
-              <a key={href} href={`#${href}`} className="block rounded-md px-2 py-2 text-xs font-medium text-slate-600 hover:bg-sky-50 hover:text-sky-700 dark:text-gray-300 dark:hover:bg-sky-900/20 dark:hover:text-sky-300">{label}</a>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm sm:grid-cols-4 dark:border-gray-800 dark:bg-gray-900" role="tablist" aria-label="Assessment setting categories">
+            {settingsGroups.map(({ id: groupId, label, description, Icon }) => (
+              <button key={groupId} type="button" role="tab" aria-selected={activeSettingsGroup === groupId} onClick={() => setActiveSettingsGroup(groupId)} className={`flex min-h-12 items-center gap-2 rounded-lg px-3 text-left transition ${activeSettingsGroup === groupId ? 'bg-sky-50 text-sky-800 ring-1 ring-inset ring-sky-200 dark:bg-sky-950/40 dark:text-sky-200 dark:ring-sky-800' : 'text-slate-500 hover:bg-slate-50 dark:text-gray-400 dark:hover:bg-gray-800'}`}>
+                <Icon className="h-4 w-4 shrink-0" />
+                <span className="min-w-0"><strong className="block truncate text-xs">{label}</strong><span className="hidden truncate text-[9px] font-medium opacity-70 lg:block">{description}</span></span>
+              </button>
             ))}
-          </aside>
+          </div>
           <div className="min-w-0 space-y-4">
           {/* Quick Summary Bar */}
           <div className="flex items-center justify-between gap-3 rounded-lg border border-sky-100 bg-sky-50/60 px-3 py-2.5 dark:border-sky-900/30 dark:bg-sky-900/10">
@@ -1286,7 +1489,7 @@ export default function CreateAssessment() {
           </div>
 
           {/* ── PASSWORD PROTECTION ── */}
-          <div id="assessment-settings-access" className="scroll-mt-24">
+          <div id="assessment-settings-access" className={activeSettingsGroup === 'access' ? 'block' : 'hidden'}>
             <h3 className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-gray-500">
               <Lock className="h-3.5 w-3.5" /> Access Control
             </h3>
@@ -1326,7 +1529,7 @@ export default function CreateAssessment() {
           </div>
 
           {/* ── PROCTORING ── */}
-          <div id="assessment-settings-proctoring" className="scroll-mt-24">
+          <div id="assessment-settings-proctoring" className={activeSettingsGroup === 'proctoring' ? 'block' : 'hidden'}>
             <h3 className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-gray-500">
               <Shield className="h-3.5 w-3.5" /> Proctoring & Anti-Cheating
             </h3>
@@ -1466,11 +1669,20 @@ export default function CreateAssessment() {
           </div>
 
           {/* ── CANDIDATE BEHAVIOR ── */}
-          <div id="assessment-settings-behavior" className="scroll-mt-24">
+          <div id="assessment-settings-behavior" className={activeSettingsGroup === 'behavior' ? 'block' : 'hidden'}>
             <h3 className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-gray-500">
               <Navigation className="h-3.5 w-3.5" /> Candidate Behavior
             </h3>
             <div className="space-y-2">
+              {questionTypeCounts.mcq > 0 && (
+                <Row {...rowProps} icon={<Timer className="h-4 w-4" />} iconBg="bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-300"
+                  title="Per-MCQ Timer" desc="Set an individual countdown for every MCQ; expiry automatically advances the candidate." toggleKey="perMcqTimingEnabled">
+                  <FieldRow label="Time allowed for each MCQ">
+                    <NumInput value={s.perMcqTimeSec} onChange={(value) => upd('perMcqTimeSec', value)} min={10} max={3600} placeholder="60" unit="sec" />
+                  </FieldRow>
+                </Row>
+              )}
+
               <Row {...rowProps} icon={<Timer className="h-4 w-4" />} iconBg="bg-orange-50 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400"
                 title="Auto-Submit on Timer End" desc="Automatically submits the test when the timer reaches zero." badge="recommended" toggleKey="autoSubmitOnEnd">
                 <FieldRow label="Warn candidate before auto-submit (minutes)">
@@ -1520,7 +1732,7 @@ export default function CreateAssessment() {
           </div>
 
           {/* ── SCORING & RESULTS ── */}
-          <div id="assessment-settings-results" className="scroll-mt-24">
+          <div id="assessment-settings-results" className={activeSettingsGroup === 'results' ? 'block' : 'hidden'}>
             <h3 className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-gray-500">
               <CheckSquare className="h-3.5 w-3.5" /> Scoring & Results
             </h3>
@@ -1551,10 +1763,15 @@ export default function CreateAssessment() {
                 </Row>
               )}
 
-              <Row {...rowProps} icon={<RotateCcw className="h-4 w-4" />} title="Allow Retake" desc="Permit candidates to re-attempt the test (respects attempt limit in Schedule)." toggleKey="allowRetake">
-                <FieldRow label="Minimum gap between attempts (hours)">
-                  <NumInput value={s.retakeGapHours} onChange={(v) => upd('retakeGapHours', v)} min={0} placeholder="0" unit="hrs" />
-                </FieldRow>
+              <Row {...rowProps} icon={<RotateCcw className="h-4 w-4" />} title="Allow Retake" desc="Permit candidates to take the assessment more than once." toggleKey="allowRetake">
+                <div className="space-y-3">
+                  <FieldRow label="Maximum attempts">
+                    <NumInput value={form.attemptLimit} onChange={(value) => updateForm({ attemptLimit: Math.max(1, Number(value) || 1) })} min={1} max={20} placeholder="2" unit="attempts" />
+                  </FieldRow>
+                  <FieldRow label="Minimum gap between attempts (hours)">
+                    <NumInput value={s.retakeGapHours} onChange={(v) => upd('retakeGapHours', v)} min={0} placeholder="0" unit="hrs" />
+                  </FieldRow>
+                </div>
               </Row>
 
             </div>
@@ -1564,8 +1781,8 @@ export default function CreateAssessment() {
       );
     })(),
     preview: (
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="min-w-0">
           {currentId && (
             <button
               type="button"
@@ -1577,31 +1794,22 @@ export default function CreateAssessment() {
           )}
           <AssessmentPreview assessment={{ ...form, sections }} />
         </div>
-        <div className="space-y-4">
-          <AssessmentCard
-            label="Assigned Students"
-            value={assignedSummary.count}
-            helper={assignedSummary.accountSummary}
-          />
-          <SectionCard compact title="Notification Settings" subtitle="Review email notification settings.">
-            <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-gray-200">
-              <input
-                type="checkbox"
-                checked={false}
-                disabled
-                onChange={() => {}}
-              />
-              Invitations are sent manually after publishing
+        <aside className="space-y-3 lg:sticky lg:top-3">
+          <section className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 dark:border-emerald-900/50 dark:bg-emerald-950/20">
+            <div className="flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-white"><Check className="h-4 w-4" /></span><div><p className="text-sm font-bold text-emerald-900 dark:text-emerald-200">Ready to publish</p><p className="text-[10px] text-emerald-700/80 dark:text-emerald-300/70">All required phases are complete</p></div></div>
+            <div className="mt-3 grid grid-cols-3 divide-x divide-emerald-200 text-center dark:divide-emerald-900">
+              <div><strong className="block text-sm text-slate-900 dark:text-white">{assessmentValidation.totalQuestions}</strong><span className="text-[9px] uppercase text-slate-500">Questions</span></div>
+              <div><strong className="block text-sm text-slate-900 dark:text-white">{assignedSummary.count}</strong><span className="text-[9px] uppercase text-slate-500">Candidates</span></div>
+              <div><strong className="block text-sm text-slate-900 dark:text-white">{form.duration}m</strong><span className="text-[9px] uppercase text-slate-500">Duration</span></div>
             </div>
-            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
-              Email preview will include assessment title, time window, and instructions.
+          </section>
+          <SectionCard compact title="Publish checklist" subtitle="Final configuration summary.">
+            <div className="space-y-1.5">
+              {steps.slice(0, -1).map((step) => <div key={step.id} className="flex items-center justify-between rounded-lg bg-slate-50 px-2.5 py-2 text-xs dark:bg-gray-800"><span className="text-slate-600 dark:text-gray-300">{step.label}</span><span className="inline-flex items-center gap-1 font-bold text-emerald-600 dark:text-emerald-300"><Check className="h-3 w-3" /> Complete</span></div>)}
             </div>
           </SectionCard>
-          <SectionCard compact title="Version Control" subtitle="Track changes for auditability.">
-            <div className="text-sm font-semibold text-slate-800 dark:text-gray-100">Version {version}</div>
-            <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Every publish/update increments the version counter.</p>
-          </SectionCard>
-        </div>
+          <AssessmentCard label="Assessment version" value={`v${version}`} helper={assignedSummary.accountSummary} />
+        </aside>
       </div>
     ),
   };
@@ -1611,16 +1819,26 @@ export default function CreateAssessment() {
   };
 
   const goNext = () => {
+    if (!phaseCompletion[activeStep]) {
+      const messages = {
+        basic: 'Complete the required assessment name and type.',
+        sections: 'Add at least one valid question and check the delivery rules.',
+        schedule: 'Complete the required assessment schedule.',
+        target: 'Select who can take this assessment.',
+      };
+      toast.error(messages[activeStep] || 'Complete this phase before continuing.');
+      return;
+    }
     if (stepIndex < steps.length - 1) setActiveStep(steps[stepIndex + 1].id);
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/70 pt-20 dark:bg-gray-950">
+    <div className="min-h-screen bg-slate-50/70 dark:bg-gray-950">
       <motion.div
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.24 }}
-        className="mx-auto max-w-[1600px] px-4 py-4 sm:px-6"
+        className="mx-auto max-w-[1180px] px-3 py-3 sm:px-5"
       >
         <header className="flex flex-col gap-3 border-b border-slate-200 pb-3 dark:border-gray-800 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
@@ -1660,7 +1878,8 @@ export default function CreateAssessment() {
             <button
               type="button"
               onClick={() => setShowPublishModal(true)}
-              disabled={loading}
+              disabled={loading || !publishReady}
+              title={publishReady ? 'Review and publish assessment' : 'Complete all required phases before publishing'}
               className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-sky-600 px-3.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-60"
             >
               <Send className="h-3.5 w-3.5" />
@@ -1669,16 +1888,20 @@ export default function CreateAssessment() {
           </div>
         </header>
 
-        <nav className="mt-3 overflow-x-auto border-b border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-950" aria-label="Assessment creation progress">
-          <ol className="grid min-w-[720px] grid-cols-5">
+        <nav className="mt-3 overflow-x-auto rounded-2xl border border-slate-200 bg-white px-2 py-3 shadow-sm dark:border-gray-800 dark:bg-gray-900" aria-label="Assessment creation progress">
+          <ol className="relative grid min-w-[760px] grid-cols-6">
+            <span className="absolute left-[8.33%] right-[8.33%] top-4 h-0.5 bg-slate-200 dark:bg-gray-700" aria-hidden="true">
+              <span className="block h-full bg-sky-500 transition-all duration-500" style={{ width: `${(Math.max(0, maxUnlockedStepIndex) / (steps.length - 1)) * 100}%` }} />
+            </span>
             {steps.map((step, index) => {
               const isActive = activeStep === step.id;
-              const isComplete = index < stepIndex;
+              const isComplete = Boolean(phaseCompletion[step.id]);
+              const isLocked = index > maxUnlockedStepIndex;
               return (
-                <li key={step.id}>
-                  <button type="button" onClick={() => setActiveStep(step.id)} className={`flex h-11 w-full items-center justify-center gap-2 border-b-2 px-3 text-center text-xs font-semibold transition-colors ${isActive ? 'border-sky-600 bg-sky-50/60 text-sky-700 dark:bg-sky-900/10 dark:text-sky-300' : 'border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-900 dark:text-gray-400 dark:hover:bg-gray-900 dark:hover:text-white'}`}>
-                    <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${isActive ? 'bg-sky-600 text-white' : isComplete ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300' : 'bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-gray-400'}`}>{index + 1}</span>
-                    <span>{step.label}</span>
+                <li key={step.id} className="relative z-10">
+                  <button type="button" disabled={isLocked} onClick={() => setActiveStep(step.id)} aria-current={isActive ? 'step' : undefined} title={isLocked ? `Complete ${steps[maxUnlockedStepIndex]?.label || 'the previous phase'} first` : step.description} className={`flex w-full flex-col items-center gap-1.5 px-2 text-center transition ${isLocked ? 'cursor-not-allowed text-slate-300 dark:text-gray-600' : isActive ? 'text-sky-700 dark:text-sky-300' : 'text-slate-500 hover:text-slate-900 dark:text-gray-400 dark:hover:text-white'}`}>
+                    <span className={`flex h-8 w-8 items-center justify-center rounded-full border-2 text-[10px] font-bold shadow-sm transition ${isActive ? 'border-sky-600 bg-sky-600 text-white ring-4 ring-sky-100 dark:ring-sky-950' : isComplete ? 'border-sky-500 bg-sky-500 text-white' : isLocked ? 'border-slate-200 bg-slate-100 text-slate-400 dark:border-gray-700 dark:bg-gray-800' : 'border-sky-300 bg-white text-sky-700 dark:border-sky-700 dark:bg-gray-900 dark:text-sky-300'}`}>{isComplete && !isActive ? <Check className="h-3.5 w-3.5" /> : index + 1}</span>
+                    <span className="whitespace-nowrap text-[10px] font-bold sm:text-[11px]">{step.label}</span>
                   </button>
                 </li>
               );
@@ -1686,14 +1909,9 @@ export default function CreateAssessment() {
           </ol>
         </nav>
 
-        <div className="mt-4">
-          {activeStep === 'target' ? (
-            <div className="grid items-start gap-4 xl:grid-cols-2">
-              {stepContent.schedule}
-              {stepContent.target}
-            </div>
-          ) : stepContent[activeStep]}
-        </div>
+        <div className="mt-3 flex items-center gap-2 px-1 text-[11px] text-slate-500 dark:text-gray-400"><span className="font-bold text-sky-700 dark:text-sky-300">Phase {stepIndex + 1} of {steps.length}</span><span aria-hidden="true">&middot;</span><span>{steps[stepIndex]?.description}</span></div>
+
+        <div className="mt-3">{stepContent[activeStep]}</div>
 
         <div className="sticky bottom-0 z-30 -mx-4 mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white/95 px-4 py-2.5 shadow-[0_-6px_18px_rgba(15,23,42,0.05)] backdrop-blur sm:-mx-6 sm:px-6 dark:border-gray-800 dark:bg-gray-900/95">
           <button
@@ -1704,7 +1922,7 @@ export default function CreateAssessment() {
           >
             Previous
           </button>
-          {stepIndex < steps.length - 1 ? <button type="button" onClick={goNext} className="rounded-xl bg-sky-600 px-5 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-sky-500">Continue to {steps[stepIndex + 1].label}</button> : <button type="button" onClick={() => setShowPublishModal(true)} disabled={loading} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-5 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:opacity-60"><Send className="h-3.5 w-3.5" /> Publish Assessment</button>}
+          {stepIndex < steps.length - 1 ? <button type="button" onClick={goNext} className="rounded-lg bg-sky-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500">Continue</button> : <button type="button" onClick={() => setShowPublishModal(true)} disabled={loading || !publishReady} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:opacity-60"><Send className="h-3.5 w-3.5" /> Publish Assessment</button>}
         </div>
 
         {showPublishModal && (
@@ -1747,11 +1965,9 @@ export default function CreateAssessment() {
                   )}
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">New Accounts</div>
-                  <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-white">{assignedSummary.newAccounts}</div>
-                  <div className="mt-1 text-[11px] text-slate-500">
-                    {form.targetMode === 'csv' ? 'Existing records are matched during publish' : 'No CSV onboarding'}
-                  </div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Assignment</div>
+                  <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-white">Direct selection</div>
+                  <div className="mt-1 text-[11px] text-slate-500">Only selected students receive access</div>
                 </div>
               </div>
 

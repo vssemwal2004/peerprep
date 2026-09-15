@@ -17,6 +17,7 @@ export function serializeProblem(
   {
     sampleTestCases = [],
     hiddenTestCaseCount = 0,
+    hiddenTestCaseTotalMarks = 0,
     hiddenTestCases = [],
     includeHiddenTestCases = false,
     includeReferenceSolutions = false,
@@ -60,6 +61,8 @@ export function serializeProblem(
       : [],
     timeLimitSeconds: problem.timeLimitSeconds,
     memoryLimitMb: problem.memoryLimitMb,
+    totalMarks: Number(problem.totalMarks || hiddenTestCaseTotalMarks || hiddenTestCaseCount || 1),
+    hiddenTestCaseTotalMarks: Number(hiddenTestCaseTotalMarks || problem.totalMarks || hiddenTestCaseCount || 1),
     status,
     visibility: problem.visibility || 'public',
     previewValidated: Boolean(previewValidated),

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { AlertTriangle, BookOpenText, ChevronLeft, ChevronRight, Code2, Copy, Edit2, Eye, EyeOff, FilePlus2, FileText, FlaskConical, Plus, Save, Trash2, Upload, X } from 'lucide-react';
+import { AlertTriangle, BookOpenText, ChevronLeft, ChevronRight, Code2, Copy, Edit2, Eye, EyeOff, FilePlus2, FileText, FlaskConical, Hash, Plus, Save, Trash2, Upload, X } from 'lucide-react';
 import { api } from '../../utils/api';
 import { useToast } from '../../components/CustomToast';
 import RichTextEditor from './RichTextEditor';
@@ -14,8 +14,10 @@ import {
   createEmptySampleTestCase,
   createProblemFormFromProblem,
   deriveHiddenFilePairs,
+  distributeMarksAcrossTestCases,
   getLanguageLabel,
   parseBulkCasePair,
+  sumTestCaseMarks,
 } from './compilerUtils';
 import { EmptyState, LoadingPanel, SectionCard } from './CompilerUi';
 import { loadCodingDraft, saveCodingDraft } from '../assessment/assessmentCodingStore';
@@ -66,6 +68,23 @@ function TemplateButton({ children, onClick }) {
 
 function RequiredFieldLabel({ children, optional = false }) {
   return <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-gray-300">{children}{optional ? <span className="ml-1 text-xs font-normal text-slate-400">(optional)</span> : <span className="ml-1 font-bold text-rose-500" aria-label="required">*</span>}</label>;
+}
+
+function isConfiguredHiddenCase(testCase = {}) {
+  return Boolean(String(testCase.input || '').trim() || String(testCase.output || '').trim());
+}
+
+function redistributeConfiguredHiddenCases(testCases = [], totalMarks = 0) {
+  const configuredIndexes = testCases
+    .map((testCase, index) => (isConfiguredHiddenCase(testCase) ? index : -1))
+    .filter((index) => index >= 0);
+  if (!configuredIndexes.length) return testCases;
+  const distributed = distributeMarksAcrossTestCases(
+    configuredIndexes.map((index) => testCases[index]),
+    totalMarks,
+  );
+  const byIndex = new Map(configuredIndexes.map((sourceIndex, index) => [sourceIndex, distributed[index]]));
+  return testCases.map((testCase, index) => byIndex.get(index) || testCase);
 }
 
 function TestCaseEditorCard({ title, cases, onAdd, onRemove, onDuplicate, onChange, includeExplanation = false, staged = false }) {
@@ -413,6 +432,7 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
   const hiddenCount = form.hiddenTestUploadMode === 'bulk'
     ? Math.max(bulkHiddenCount, form.existingHiddenTestCaseCount || 0)
     : Math.max(hiddenPairs.pairs.filter((pair) => pair.complete).length, manualHiddenCount, form.existingHiddenTestCaseCount || 0);
+  const codingTotalMarks = Math.max(0.01, Number(form.totalMarks) || 1);
   const activeTemplate = form.codeTemplates[activeLanguage] || '';
   const hasTemplate = form.supportedLanguages.some((language) => String(form.codeTemplates?.[language] || '').trim());
   const canAddToAssessment = isAssessment && previewValidated && visibleSampleCount > 0 && hiddenCount > 0 && hasTemplate;
@@ -470,11 +490,52 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
   };
 
   const updateHiddenTestCase = (index, field, value) => {
+    setForm((previous) => {
+      let hiddenTestCases = previous.hiddenTestCases.map((testCase, itemIndex) => (
+        itemIndex === index ? { ...testCase, [field]: value } : testCase
+      ));
+      if (field !== 'marks' && previous.totalMarksCustomized) {
+        hiddenTestCases = redistributeConfiguredHiddenCases(hiddenTestCases, previous.totalMarks);
+      }
+      const configuredCases = hiddenTestCases.filter(isConfiguredHiddenCase);
+      return {
+        ...previous,
+        hiddenTestCases,
+        totalMarks: field === 'marks' && configuredCases.length
+          ? sumTestCaseMarks(configuredCases)
+          : previous.totalMarks,
+        totalMarksCustomized: field === 'marks' ? false : previous.totalMarksCustomized,
+      };
+    });
+    setIsDirty(true);
+  };
+
+  const replaceHiddenTestCases = (nextCases) => {
+    setForm((previous) => {
+      const configuredCases = nextCases.filter(isConfiguredHiddenCase);
+      const hiddenTestCases = previous.totalMarksCustomized
+        ? redistributeConfiguredHiddenCases(nextCases, previous.totalMarks)
+        : nextCases;
+      return {
+        ...previous,
+        hiddenTestCases,
+        totalMarks: previous.totalMarksCustomized
+          ? previous.totalMarks
+          : (configuredCases.length ? sumTestCaseMarks(configuredCases) : 1),
+      };
+    });
+    setIsDirty(true);
+  };
+
+  const updateCodingTotalMarks = (value) => {
+    const parsed = value === '' ? '' : Number(value);
     setForm((previous) => ({
       ...previous,
-      hiddenTestCases: previous.hiddenTestCases.map((testCase, itemIndex) => (
-        itemIndex === index ? { ...testCase, [field]: value } : testCase
-      )),
+      totalMarks: parsed,
+      totalMarksCustomized: true,
+      hiddenTestCases: parsed === ''
+        ? previous.hiddenTestCases
+        : redistributeConfiguredHiddenCases(previous.hiddenTestCases, parsed),
     }));
     setIsDirty(true);
   };
@@ -709,7 +770,10 @@ if (!isValidated || publishedProblem.status !== 'published') {
         ...previous,
         hiddenTestUploadMode: 'pairs',
         hiddenTestFiles: files,
-        hiddenTestCases: loadedCases,
+        hiddenTestCases: previous.totalMarksCustomized
+          ? redistributeConfiguredHiddenCases(loadedCases, previous.totalMarks)
+          : loadedCases,
+        totalMarks: previous.totalMarksCustomized ? previous.totalMarks : sumTestCaseMarks(loadedCases),
       }));
       setIsDirty(true);
       toast.success(`${loadedCases.length} hidden test case pair(s) loaded. Review inputs, outputs, and marks below.`);
@@ -740,6 +804,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
       setForm((previous) => ({
         ...previous,
         hiddenBulkCaseCount: parsedCases.length,
+        totalMarks: previous.totalMarksCustomized ? previous.totalMarks : Math.max(1, parsedCases.length),
       }));
       toast.success(`${parsedCases.length} bulk hidden test case(s) detected.`);
     } catch (error) {
@@ -761,7 +826,11 @@ if (!isValidated || publishedProblem.status !== 'published') {
         form.hiddenBulkOutputFile.text(),
       ]);
       const parsedCases = parseBulkCasePair(inputsContent, outputsContent, delimiter || '###CASE###');
-      setForm((previous) => ({ ...previous, hiddenBulkCaseCount: parsedCases.length }));
+      setForm((previous) => ({
+        ...previous,
+        hiddenBulkCaseCount: parsedCases.length,
+        totalMarks: previous.totalMarksCustomized ? previous.totalMarks : Math.max(1, parsedCases.length),
+      }));
     } catch {
       setForm((previous) => ({ ...previous, hiddenBulkCaseCount: 0 }));
     }
@@ -916,6 +985,23 @@ if (!isValidated || publishedProblem.status !== 'published') {
 
             <SectionCard title="Hidden Test Cases" subtitle="Add private judge cases manually or import files when you have many cases.">
               <RequiredFieldLabel>At least one hidden judge case</RequiredFieldLabel>
+              <div className="mb-5 overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50/60 dark:border-emerald-900/60 dark:bg-emerald-950/20">
+                <div className="grid gap-4 p-4 sm:grid-cols-[minmax(0,1fr)_180px] sm:items-center">
+                  <div className="flex items-start gap-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm"><Hash className="h-4.5 w-4.5" /></span>
+                    <div><p className="text-sm font-bold text-slate-900 dark:text-white">Coding question marks</p><p className="mt-1 text-xs leading-5 text-slate-600 dark:text-gray-300">By default, the total is the sum of hidden test-case marks. Enter a custom total and it is distributed proportionally across every hidden case.</p></div>
+                  </div>
+                  <label>
+                    <span className="block text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-300">Total question marks</span>
+                    <input type="number" min={Math.max(0.01, hiddenCount * 0.01)} step="0.01" value={form.totalMarks ?? ''} onChange={(event) => updateCodingTotalMarks(event.target.value)} onBlur={() => { if (!(Number(form.totalMarks) > 0)) updateCodingTotalMarks(Math.max(1, hiddenCount)); }} className="mt-1.5 h-11 w-full rounded-xl border border-emerald-200 bg-white px-3 text-base font-bold text-slate-900 outline-none focus:border-emerald-500 dark:border-emerald-800 dark:bg-gray-900 dark:text-white" />
+                  </label>
+                </div>
+                <div className="grid grid-cols-3 border-t border-emerald-200 bg-white/60 text-center dark:border-emerald-900/60 dark:bg-gray-900/30">
+                  <div className="px-2 py-2.5"><p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">Hidden cases</p><p className="mt-0.5 text-sm font-bold text-slate-800 dark:text-white">{hiddenCount}</p></div>
+                  <div className="border-x border-emerald-100 px-2 py-2.5 dark:border-emerald-900/50"><p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">Scoring</p><p className="mt-0.5 text-sm font-bold text-slate-800 dark:text-white">{form.totalMarksCustomized ? 'Custom total' : 'Test-case total'}</p></div>
+                  <div className="px-2 py-2.5"><p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">Question total</p><p className="mt-0.5 text-sm font-bold text-emerald-700 dark:text-emerald-300">{codingTotalMarks}</p></div>
+                </div>
+              </div>
               <div className="mb-5 grid gap-3 md:grid-cols-3">
                 <label className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3 transition-colors ${form.hiddenTestUploadMode === 'manual' ? 'border-sky-300 bg-sky-50 ring-2 ring-sky-100 dark:border-sky-700 dark:bg-sky-900/10 dark:ring-sky-900/30' : 'border-slate-200 bg-white hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800'}`}>
                   <input type="radio" name="hidden-upload-mode" checked={form.hiddenTestUploadMode === 'manual'} onChange={() => updateHiddenUploadMode('manual')} className="mt-0.5 h-4 w-4 border-slate-300 text-sky-600 focus:ring-sky-500" />
@@ -938,9 +1024,9 @@ if (!isValidated || publishedProblem.status !== 'published') {
                     title="Hidden"
                     cases={form.hiddenTestCases}
                     staged
-                    onAdd={() => updateField('hiddenTestCases', [...form.hiddenTestCases, createEmptyHiddenTestCase()])}
-                    onRemove={(index) => updateField('hiddenTestCases', form.hiddenTestCases.filter((_, itemIndex) => itemIndex !== index))}
-                    onDuplicate={(index) => updateField('hiddenTestCases', [...form.hiddenTestCases, { ...form.hiddenTestCases[index] }])}
+                    onAdd={() => replaceHiddenTestCases([...form.hiddenTestCases, createEmptyHiddenTestCase()])}
+                    onRemove={(index) => replaceHiddenTestCases(form.hiddenTestCases.filter((_, itemIndex) => itemIndex !== index))}
+                    onDuplicate={(index) => replaceHiddenTestCases([...form.hiddenTestCases, { ...form.hiddenTestCases[index] }])}
                     onChange={updateHiddenTestCase}
                   />
                 </div>
@@ -999,9 +1085,9 @@ if (!isValidated || publishedProblem.status !== 'published') {
                       title="Hidden"
                       cases={form.hiddenTestCases}
                       staged
-                      onAdd={() => updateField('hiddenTestCases', [...form.hiddenTestCases, createEmptyHiddenTestCase()])}
-                      onRemove={(index) => updateField('hiddenTestCases', form.hiddenTestCases.filter((_, itemIndex) => itemIndex !== index))}
-                      onDuplicate={(index) => updateField('hiddenTestCases', [...form.hiddenTestCases, { ...form.hiddenTestCases[index] }])}
+                      onAdd={() => replaceHiddenTestCases([...form.hiddenTestCases, createEmptyHiddenTestCase()])}
+                      onRemove={(index) => replaceHiddenTestCases(form.hiddenTestCases.filter((_, itemIndex) => itemIndex !== index))}
+                      onDuplicate={(index) => replaceHiddenTestCases([...form.hiddenTestCases, { ...form.hiddenTestCases[index] }])}
                       onChange={updateHiddenTestCase}
                     />
                   </div>}

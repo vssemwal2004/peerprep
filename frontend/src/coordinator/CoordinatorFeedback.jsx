@@ -324,7 +324,7 @@ export default function CoordinatorFeedback() {
   const selectedEvent = events.find(e => e._id === selectedEventId);
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 flex pt-14">
+    <div className="min-h-screen bg-white dark:bg-gray-900 flex">
       {/* Left Sidebar - Events List */}
       <div
         ref={sidebarRef}

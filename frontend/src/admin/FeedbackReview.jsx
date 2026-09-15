@@ -218,7 +218,7 @@ export default function FeedbackReview() {
   const selectedEvent = events.find(e => e._id === selectedEventId);
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 flex flex-col lg:flex-row pt-14">
+    <div className="min-h-screen bg-white dark:bg-gray-900 flex flex-col lg:flex-row">
       {/* Left Sidebar - Events List (hidden on mobile by default) */}
       <div
         ref={sidebarRef}

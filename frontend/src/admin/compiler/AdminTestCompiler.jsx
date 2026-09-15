@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Building2,
@@ -332,7 +333,7 @@ function normalizeSubmitResult(response) {
   };
 }
 
-export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', editLabel = 'Back to Edit' } = {}) {
+export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', editLabel = 'Back to Edit', headerTargetId = '' } = {}) {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
@@ -351,6 +352,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
   const [isApprovingPublish, setIsApprovingPublish] = useState(false);
   const [leftWidth, setLeftWidth] = useState(null);
   const [mobileView, setMobileView] = useState('description');
+  const [headerTarget, setHeaderTarget] = useState(null);
 
   const splitContainerRef = useRef(null);
   const dragFrameRef = useRef(null);
@@ -359,6 +361,12 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
   useEffect(() => () => {
     resizeCleanupRef.current?.();
   }, []);
+
+  useEffect(() => {
+    if (!headerTargetId) return undefined;
+    setHeaderTarget(document.getElementById(headerTargetId));
+    return () => setHeaderTarget(null);
+  }, [headerTargetId]);
 
   useEffect(() => {
     let isMounted = true;
@@ -422,6 +430,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
   const canApprovePublish = Boolean(problem?._id)
     && (isAcceptedSubmission || previewValidated)
     && String(problem?.status || 'draft').toLowerCase() !== 'published';
+  const isPublished = String(problem?.status || '').toLowerCase() === 'published';
 
   const updateDraft = (nextCode) => {
     setDrafts((previous) => ({
@@ -639,9 +648,37 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
         ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
         : 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300';
 
+  const previewHeader = (
+    <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-3">
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-bold text-slate-950 dark:text-white">{problem.title}</p>
+          <p className="text-[11px] text-slate-500 dark:text-gray-400">Coding preview · validate before publishing</p>
+        </div>
+        <span className={`hidden rounded-full px-2.5 py-1 text-[11px] font-semibold sm:inline-flex ${statusBadgeClass}`}>
+          {verdictStatus || (previewValidated ? 'Preview Passed' : 'Validation Pending')}
+        </span>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <button type="button" onClick={() => navigate(backTo || `${rolePrefix}/library/coding/problems`)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800">{backLabel}</button>
+        <button type="button" onClick={() => navigate(editTo || `${rolePrefix}/library/coding/${problem._id}/edit`)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:border-sky-300 hover:text-sky-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">{editLabel}</button>
+        <button
+          type="button"
+          onClick={canApprovePublish ? handleApproveToPublish : undefined}
+          disabled={!canApprovePublish || isApprovingPublish || isSubmitting || isRunning}
+          title={!isPublished && !canApprovePublish ? 'Submit an accepted solution to enable publishing.' : ''}
+          className={`min-w-24 rounded-lg px-3 py-2 text-xs font-bold transition-colors ${isPublished ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : canApprovePublish ? 'bg-sky-600 text-white hover:bg-sky-500' : 'cursor-not-allowed bg-slate-200 text-slate-500 dark:bg-gray-700 dark:text-gray-400'}`}
+        >
+          {isPublished ? 'Published' : isApprovingPublish ? 'Publishing...' : 'Publish'}
+        </button>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="h-[calc(100vh-var(--app-navbar-height,5rem))] min-h-[680px] w-full overflow-hidden bg-[linear-gradient(180deg,_#f7fbff_0%,_#f1f7fc_100%)] dark:bg-[linear-gradient(180deg,_#0f172a_0%,_#111827_100%)]">
+    <div className="h-full min-h-[680px] w-full overflow-hidden bg-[linear-gradient(180deg,_#f7fbff_0%,_#f1f7fc_100%)] dark:bg-[linear-gradient(180deg,_#0f172a_0%,_#111827_100%)]">
       <div className="flex h-full min-h-0 flex-col">
+        {headerTarget ? createPortal(previewHeader, headerTarget) : <header className="flex min-h-14 shrink-0 items-center border-b border-slate-200 bg-white px-4 py-2.5 dark:border-gray-800 dark:bg-gray-900">{previewHeader}</header>}
         <div className="relative hidden h-full min-h-0 flex-1 overflow-hidden p-2.5 lg:flex">
 
           <div
@@ -655,42 +692,6 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
               }}
               className="flex h-full min-w-[280px] shrink-0 flex-col overflow-hidden rounded-[24px] border border-transparent bg-white/72 shadow-[0_12px_36px_-28px_rgba(15,23,42,0.24)] backdrop-blur-sm dark:border-transparent dark:bg-gray-900/84"
             >
-              <div className="flex flex-none items-center justify-between gap-3 border-b border-transparent px-5 py-3 dark:border-transparent">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-slate-900 dark:text-gray-100">{problem.title}</p>
-                  <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusBadgeClass}`}>
-                    {verdictStatus || (previewValidated ? 'Preview Passed' : 'Validation Pending')}
-                  </span>
-                </div>
-
-                <div className="flex shrink-0 items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => navigate(backTo || `${rolePrefix}/library/coding/problems`)}
-                    className="rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-                  >
-                    {backLabel}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => navigate(editTo || `${rolePrefix}/library/coding/${problem._id}/edit`)}
-                    className="rounded-xl bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.03)] transition-colors hover:bg-slate-50 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
-                  >
-                    {editLabel}
-                  </button>
-                  {canApprovePublish ? (
-                    <button
-                      type="button"
-                      onClick={handleApproveToPublish}
-                      disabled={isApprovingPublish || isSubmitting || isRunning}
-                      className="rounded-xl bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"
-                      title={!isAcceptedSubmission && !previewValidated ? 'Submit an Accepted solution to enable approval.' : ''}
-                    >
-                      {isApprovingPublish ? 'Approving...' : 'Approve to Publish'}
-                    </button>
-                  ) : null}
-                </div>
-              </div>
               <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain scroll-smooth">
                 <ProblemDescriptionPanel problem={problem} previewValidated={previewValidated} />
               </div>
@@ -740,33 +741,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
 
         <div className="min-h-0 flex-1 space-y-3 px-3 py-3 lg:hidden">
           <div className="rounded-[24px] bg-white/88 px-3 py-3 shadow-[0_10px_32px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:bg-gray-900/88">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-slate-900 dark:text-gray-100">{problem.title}</p>
-                <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusBadgeClass}`}>
-                  {verdictStatus || (previewValidated ? 'Preview Passed' : 'Validation Pending')}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => navigate(backTo || `${rolePrefix}/library/coding/problems`)}
-                  className="rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-                >
-                  {backLabel}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => navigate(editTo || `${rolePrefix}/library/coding/${problem._id}/edit`)}
-                  className="rounded-xl bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.03)] transition-colors hover:bg-slate-50 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
-                >
-                  {editLabel}
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-3 flex items-center gap-1 rounded-2xl bg-slate-100 p-1 dark:bg-gray-800">
+            <div className="flex items-center gap-1 rounded-2xl bg-slate-100 p-1 dark:bg-gray-800">
               <button
                 type="button"
                 onClick={() => setMobileView('description')}

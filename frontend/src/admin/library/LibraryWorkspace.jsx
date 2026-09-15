@@ -130,6 +130,7 @@ export default function LibraryWorkspace({ view = 'questions' }) {
   const [searchParams] = useSearchParams();
   const [typeDrawerOpen, setTypeDrawerOpen] = useState(false);
   const [questionCounts, setQuestionCounts] = useState({ all: 0, draft: 0, coding: 0, mcq: 0, short: 0, one_line: 0 });
+  const [compilerProblemCount, setCompilerProblemCount] = useState(null);
   const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
   const libraryRoot = `${rolePrefix}/library`;
   const selectedType = searchParams.get('type') || 'all';
@@ -147,6 +148,16 @@ export default function LibraryWorkspace({ view = 'questions' }) {
   const canCreateCoding = hasPermission(user, 'coordinator.compiler.create');
   const canManageCoding = hasPermission(user, 'coordinator.compiler.manage');
   const canViewCodingAnalytics = hasPermission(user, 'coordinator.compiler.analytics');
+
+  const displayedQuestionCounts = useMemo(() => {
+    if (compilerProblemCount === null) return questionCounts;
+    const codingDifference = compilerProblemCount - questionCounts.coding;
+    return {
+      ...questionCounts,
+      coding: compilerProblemCount,
+      all: Math.max(0, questionCounts.all + codingDifference),
+    };
+  }, [compilerProblemCount, questionCounts]);
 
   const updateQuestionCounts = useCallback((payload = []) => {
     const entries = Array.isArray(payload) ? payload : (payload.categories || []);
@@ -181,6 +192,17 @@ export default function LibraryWorkspace({ view = 'questions' }) {
       .catch(() => {});
     return () => { active = false; };
   }, [canViewQuestions, updateQuestionCounts, view]);
+
+  useEffect(() => {
+    if (!canManageCoding) return undefined;
+    let active = true;
+    api.listCompilerProblems({ page: 1, limit: 1, skipCache: true })
+      .then((data) => {
+        if (active) setCompilerProblemCount(Number(data.pagination?.total) || 0);
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [canManageCoding, view]);
 
   const assessmentContext = useMemo(() => {
     if (mode !== 'assessment' && mode !== 'assessment-create') return undefined;
@@ -275,6 +297,7 @@ export default function LibraryWorkspace({ view = 'questions' }) {
     if (view === 'edit-question') return <AddQuestionToLibrary embedded editQuestionId={routeItemId} />;
     if (view === 'preview-coding') {
       return <AdminTestCompiler
+        headerTargetId="coding-preview-drawer-header"
         backTo={mode === 'assessment' ? editorRoute : (requestedReturnTo || `${libraryRoot}/coding/problems`)}
         editTo={mode === 'assessment' ? editorRoute : `${libraryRoot}/coding/${codingProblemId}/edit`}
         backLabel={mode === 'assessment' ? 'Back to editor' : 'Back to library'}
@@ -304,7 +327,7 @@ export default function LibraryWorkspace({ view = 'questions' }) {
                     <Link key={type} to={to} className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${active ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300' : 'text-slate-600 hover:bg-white hover:text-slate-950 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'}`}>
                       <Icon className="h-4 w-4" />
                       <span className="min-w-0 flex-1 truncate">{label}</span>
-                      <span className={`shrink-0 text-[11px] tabular-nums ${active ? 'text-sky-600 dark:text-sky-300' : 'text-slate-400 dark:text-gray-500'}`}>({questionCounts[type].toLocaleString()})</span>
+                      <span className={`shrink-0 text-[11px] tabular-nums ${active ? 'text-sky-600 dark:text-sky-300' : 'text-slate-400 dark:text-gray-500'}`}>({displayedQuestionCounts[type].toLocaleString()})</span>
                     </Link>
                   );
                 })}
@@ -342,7 +365,7 @@ export default function LibraryWorkspace({ view = 'questions' }) {
               const to = questionBankUrl(type);
               return (
                 <Link key={type} to={to} className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${active ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300' : 'bg-white text-slate-600 dark:bg-gray-900 dark:text-gray-300'}`}>
-                  <Icon className="h-4 w-4" /><span>{label}</span><span className="text-[11px] tabular-nums text-slate-400">({questionCounts[type].toLocaleString()})</span>
+                  <Icon className="h-4 w-4" /><span>{label}</span><span className="text-[11px] tabular-nums text-slate-400">({displayedQuestionCounts[type].toLocaleString()})</span>
                 </Link>
               );
             })}
@@ -355,19 +378,19 @@ export default function LibraryWorkspace({ view = 'questions' }) {
               </Link>
             ))}
           </nav>}
-          {view !== 'coding-analytics' && <header className="sticky top-[var(--app-navbar-height,5rem)] z-20 border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur sm:px-6 lg:px-8 dark:border-gray-800 dark:bg-gray-900/95">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <div className="flex items-center gap-2 text-xs font-medium text-slate-400"><BookOpenCheck className="h-3.5 w-3.5" /> Library <ChevronRight className="h-3 w-3" /> <span className="text-slate-600 dark:text-gray-300">{title}</span></div>
-                <h1 className="mt-1 text-xl font-bold text-slate-950 dark:text-white">{title}</h1>
+          {view !== 'coding-analytics' && <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 px-4 backdrop-blur sm:px-5 lg:px-6 dark:border-gray-800 dark:bg-gray-900/95">
+            <div className="flex min-h-16 items-center justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400"><BookOpenCheck className="h-3.5 w-3.5" /> Library <ChevronRight className="h-3 w-3" /> <span className="truncate text-slate-600 dark:text-gray-300">{title}</span></div>
+                <h1 className="mt-0.5 truncate text-lg font-bold leading-tight text-slate-950 dark:text-white">{title}</h1>
               </div>
-              {!assessmentSelectionMode && (canCreateGeneral || canCreateCoding) && <button type="button" onClick={() => setTypeDrawerOpen(true)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-500">
+              {!assessmentSelectionMode && (canCreateGeneral || canCreateCoding) && <button type="button" onClick={() => setTypeDrawerOpen(true)} className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-sky-600 px-3.5 text-xs font-semibold text-white shadow-sm transition hover:bg-sky-500">
                 <Plus className="h-4 w-4" /> Create question
               </button>}
             </div>
           </header>}
 
-          <div className={view === 'coding-analytics' ? 'px-4 py-4 sm:px-6 lg:px-7' : 'px-4 py-5 sm:px-6 lg:px-8'}>
+          <div className={view === 'coding-analytics' ? 'px-4 py-4 sm:px-6 lg:px-7' : 'px-3 py-3 sm:px-4 lg:px-5'}>
             <Suspense fallback={<LoadingPanel />}>
               {isDrawerView ? <LibraryBackdrop /> : renderMainContent()}
             </Suspense>
@@ -381,14 +404,14 @@ export default function LibraryWorkspace({ view = 'questions' }) {
         <>
           <button type="button" aria-label="Close question editor" className="fixed inset-0 z-[90] bg-slate-950/45 backdrop-blur-[1px]" onClick={() => navigate(closeTarget)} />
           <section className="fixed inset-y-0 right-0 z-[91] flex h-dvh w-full flex-col overflow-hidden border-l border-slate-200 bg-slate-50 shadow-2xl lg:w-[86vw] xl:max-w-[1480px] dark:border-gray-700 dark:bg-gray-950">
-            <div className="z-30 flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5 py-3 dark:border-gray-800 dark:bg-gray-900">
-              <div>
+            <div className="z-30 flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2.5 sm:px-5 dark:border-gray-800 dark:bg-gray-900">
+              {view === 'preview-coding' ? <div id="coding-preview-drawer-header" className="flex min-w-0 flex-1" /> : <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-600 dark:text-sky-400">Question library</p>
                 <h2 className="mt-0.5 text-base font-bold text-slate-950 dark:text-white">{drawerTitle}</h2>
-              </div>
+              </div>}
               <button type="button" onClick={() => navigate(closeTarget)} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"><X className="h-4 w-4" /></button>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6">
+            <div className={`min-h-0 flex-1 overflow-y-auto overscroll-contain ${view === 'preview-coding' ? 'p-0' : 'p-4 sm:p-6'}`}>
               <Suspense fallback={<LoadingPanel />}>{renderDrawerContent()}</Suspense>
             </div>
           </section>

@@ -84,6 +84,39 @@ export function createEmptyFaq() {
   };
 }
 
+export function sumTestCaseMarks(testCases = []) {
+  return Number((testCases || []).reduce(
+    (total, testCase) => total + (Number(testCase?.marks) > 0 ? Number(testCase.marks) : 1),
+    0,
+  ).toFixed(2));
+}
+
+export function distributeMarksAcrossTestCases(testCases = [], totalMarks = 0) {
+  const source = Array.isArray(testCases) ? testCases : [];
+  if (!source.length) return [];
+
+  const requestedCents = Math.round(Number(totalMarks || 0) * 100);
+  const totalCents = Math.max(source.length, requestedCents);
+  const weights = source.map((testCase) => (Number(testCase?.marks) > 0 ? Number(testCase.marks) : 1));
+  const weightTotal = weights.reduce((total, weight) => total + weight, 0) || source.length;
+  const distributableCents = totalCents - source.length;
+  const shares = weights.map((weight) => (distributableCents * weight) / weightTotal);
+  const allocations = shares.map((share) => 1 + Math.floor(share));
+  let remaining = totalCents - allocations.reduce((total, value) => total + value, 0);
+  const remainderOrder = shares
+    .map((share, index) => ({ index, remainder: share - Math.floor(share) }))
+    .sort((left, right) => right.remainder - left.remainder || left.index - right.index);
+
+  for (let index = 0; remaining > 0; index += 1, remaining -= 1) {
+    allocations[remainderOrder[index % remainderOrder.length].index] += 1;
+  }
+
+  return source.map((testCase, index) => ({
+    ...testCase,
+    marks: allocations[index] / 100,
+  }));
+}
+
 export function createDefaultProblemForm() {
   return {
     title: '',
@@ -111,6 +144,8 @@ export function createDefaultProblemForm() {
     hiddenBulkOutputFile: null,
     hiddenBulkDelimiter: '###CASE###',
     hiddenBulkCaseCount: 0,
+    totalMarks: 1,
+    totalMarksCustomized: false,
     visibility: 'public',
     previewValidated: false,
     previewTested: false,
@@ -120,6 +155,17 @@ export function createDefaultProblemForm() {
 export function createProblemFormFromProblem(problem) {
   const configuredLanguages = getProblemSupportedLanguages(problem);
   const supportedLanguages = configuredLanguages.length ? configuredLanguages : ['python'];
+
+  const hiddenTestCases = problem?.hiddenTestCases?.length
+    ? problem.hiddenTestCases.map((testCase) => ({
+      input: testCase.input || '',
+      output: testCase.output || '',
+      marks: Number(testCase.marks) > 0 ? Number(testCase.marks) : 1,
+    }))
+    : [createEmptyHiddenTestCase()];
+  const derivedHiddenMarks = problem?.hiddenTestCases?.length
+    ? sumTestCaseMarks(hiddenTestCases)
+    : Math.max(1, Number(problem?.hiddenTestCaseCount || problem?.hiddenTestSource?.caseCount || 1));
 
   return {
     title: problem?.title || '',
@@ -151,13 +197,7 @@ export function createProblemFormFromProblem(problem) {
         marks: Number(testCase.marks) > 0 ? Number(testCase.marks) : 1,
       }))
       : [createEmptySampleTestCase()],
-    hiddenTestCases: problem?.hiddenTestCases?.length
-      ? problem.hiddenTestCases.map((testCase) => ({
-        input: testCase.input || '',
-        output: testCase.output || '',
-        marks: Number(testCase.marks) > 0 ? Number(testCase.marks) : 1,
-      }))
-      : [createEmptyHiddenTestCase()],
+    hiddenTestCases,
     existingHiddenTestCaseCount: problem?.hiddenTestCaseCount || 0,
     hiddenTestUploadMode: problem?.hiddenTestSource?.provider === 's3' ? 'bulk' : 'manual',
     hiddenTestFiles: [],
@@ -165,6 +205,8 @@ export function createProblemFormFromProblem(problem) {
     hiddenBulkOutputFile: null,
     hiddenBulkDelimiter: problem?.hiddenTestSource?.delimiter || '###CASE###',
     hiddenBulkCaseCount: problem?.hiddenTestCaseCount || 0,
+    totalMarks: Number(problem?.totalMarks || problem?.hiddenTestCaseTotalMarks || derivedHiddenMarks) || derivedHiddenMarks,
+    totalMarksCustomized: false,
     visibility: problem?.visibility || 'public',
     previewValidated: Boolean(problem?.previewValidated ?? problem?.previewTested),
     previewTested: Boolean(problem?.previewTested),
@@ -221,6 +263,7 @@ export function buildProblemFormData(problemForm, status) {
   formData.append('faqs', JSON.stringify(problemForm.faqs || []));
   formData.append('timeLimitSeconds', String(problemForm.timeLimitSeconds || 2));
   formData.append('memoryLimitMb', String(problemForm.memoryLimitMb || 256));
+  formData.append('totalMarks', String(Number(problemForm.totalMarks) > 0 ? Number(problemForm.totalMarks) : 1));
   formData.append('sampleTestCases', JSON.stringify(problemForm.sampleTestCases || []));
   formData.append('status', status);
 

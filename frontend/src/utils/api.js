@@ -1214,6 +1214,7 @@ export const api = {
     sortOrder = "desc",
     page = 1,
     limit = 8,
+    skipCache = false,
   } = {}) => {
     const params = new URLSearchParams();
     if (search) params.append("search", search);
@@ -1227,6 +1228,7 @@ export const api = {
     params.append("limit", String(limit));
     return request(`/compiler/problems?${params.toString()}`, {
       cacheTtlMs: 30 * 1000,
+      skipCache,
     });
   },
   createCompilerProblem: (formData) =>

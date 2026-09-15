@@ -5,6 +5,8 @@ import { ArrowLeft, BookOpenText, CheckSquare, ChevronLeft, ChevronRight, Column
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import { queueQuestionSelection } from './assessment/assessmentProblemSelectionStore';
+import { loadAssessmentDraft } from './assessment/assessmentDraftStore';
+import { buildAssessmentQuestionIdentitySet, isLibraryQuestionAlreadyAdded } from './assessment/assessmentQuestionIdentity';
 import { getLanguageLabel, getProblemSupportedLanguages } from './compiler/compilerUtils';
 
 const TYPE_LABELS = {
@@ -15,14 +17,32 @@ const TYPE_LABELS = {
   one_line: 'One-word Questions',
 };
 
-const SOURCE_LABELS = {
-  assessment: 'Assessment',
-  compiler: 'Coding Library',
-  manual: 'Manual',
-};
-
 function labelForType(type = '') {
   return TYPE_LABELS[type] || `${String(type || 'other').replace(/_/g, ' ')} Questions`;
+}
+
+function labelForQuestionType(question = {}) {
+  if (isPassageSet(question)) return 'Passage MCQ';
+  return {
+    coding: 'Coding problem',
+    mcq: 'MCQ question',
+    short: 'Descriptive question',
+    one_line: 'One-word question',
+  }[question.questionType] || 'Other question';
+}
+
+function getQuestionState(question = {}) {
+  const status = String(question.status || '').toLowerCase();
+  if (status === 'draft') return { label: 'Draft', className: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300' };
+  if (status === 'hidden') return { label: 'Hidden', className: 'border-slate-200 bg-slate-100 text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300' };
+  if (status === 'archived') return { label: 'Archived', className: 'border-slate-200 bg-slate-100 text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300' };
+  if (question.visibility === 'private') return { label: 'Private', className: 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-900/20 dark:text-violet-300' };
+  return { label: 'Public', className: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300' };
+}
+
+function QuestionStateBadge({ question }) {
+  const state = getQuestionState(question);
+  return <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold ${state.className}`}>{state.label}</span>;
 }
 
 function isPassageSet(question = {}) {
@@ -42,6 +62,20 @@ function getLibraryQuestionTitle(question = {}) {
     return question.passageTitle || data.passage?.title || question.questionText || 'Passage MCQ set';
   }
   return question.questionText || data.questionText || 'Untitled Question';
+}
+
+function getFullQuestionStatement(question = {}) {
+  const data = question.questionData || {};
+  if (question.questionType === 'coding') {
+    const coding = data.problemDataSnapshot || data.coding || {};
+    return coding.statement || coding.description || question.questionText || data.questionText || getLibraryQuestionTitle(question);
+  }
+  if (isPassageSet(question)) {
+    const passage = data.passage?.text;
+    const questions = (data.questions || []).map((item, index) => `${index + 1}. ${item.questionText || ''}`).filter(Boolean).join('\n\n');
+    return [passage, questions].filter(Boolean).join('\n\n') || getLibraryQuestionTitle(question);
+  }
+  return question.questionText || data.questionText || getLibraryQuestionTitle(question);
 }
 
 function renderQuestionPreview(question = {}) {
@@ -144,7 +178,6 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
     difficulty: '',
     status: initialStatus,
     visibility: '',
-    sourceType: '',
     sortBy: 'updatedAt',
     sortOrder: 'desc',
   });
@@ -163,6 +196,8 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   const [activeQuestion, setActiveQuestion] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [tagsModal, setTagsModal] = useState({ open: false, questionText: '', tags: [] });
+  const [usageModal, setUsageModal] = useState({ open: false, questionText: '', assessments: [] });
+  const [statementModal, setStatementModal] = useState({ open: false, title: '', statement: '' });
   const [actionMenuId, setActionMenuId] = useState('');
   const [bulkMenuOpen, setBulkMenuOpen] = useState(false);
   const [bulkSelecting, setBulkSelecting] = useState(false);
@@ -175,12 +210,22 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   const [visibleColumns, setVisibleColumns] = useState(() => {
     try {
       const saved = window.localStorage.getItem('peerprep-library-columns');
-      return saved ? JSON.parse(saved) : { type: true, difficulty: true, tags: true, source: true, updated: true };
+      return saved ? { difficulty: true, tags: true, usedIn: true, updated: true, ...JSON.parse(saved), type: true, source: false } : { type: true, difficulty: true, tags: true, usedIn: true, source: false, updated: true };
     } catch {
-      return { type: true, difficulty: true, tags: true, source: true, updated: true };
+      return { type: true, difficulty: true, tags: true, usedIn: true, source: false, updated: true };
     }
   });
   const rowSelectionActive = selectionMode || bulkSelecting;
+  const assessmentQuestionIdentities = useMemo(() => {
+    if (!selectionMode) return new Set();
+    const draft = loadAssessmentDraft(assessmentKey);
+    return buildAssessmentQuestionIdentitySet(draft?.sections || []);
+  }, [assessmentKey, selectionMode]);
+  const questionAlreadyAdded = (question) => selectionMode
+    && isLibraryQuestionAlreadyAdded(question, assessmentQuestionIdentities);
+  const eligibleQuestions = useMemo(() => questions.filter((question) => (
+    !selectionMode || !isLibraryQuestionAlreadyAdded(question, assessmentQuestionIdentities)
+  )), [assessmentQuestionIdentities, questions, selectionMode]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -222,7 +267,6 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
           difficulty: filters.difficulty,
           status: filters.status,
           visibility: filters.visibility,
-          sourceType: filters.sourceType,
           sortBy: filters.sortBy,
           sortOrder: filters.sortOrder,
           page,
@@ -277,26 +321,30 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
     }, {});
   }, [selectedMeta]);
 
-  const activeFilterCount = [filters.tag, filters.difficulty, filters.status, filters.visibility, filters.sourceType].filter(Boolean).length;
+  const activeFilterCount = [filters.tag, filters.difficulty, filters.status, filters.visibility].filter(Boolean).length;
   const columnTemplate = useMemo(() => {
     const columns = [];
     if (rowSelectionActive) columns.push('42px');
-    columns.push('minmax(280px, 2fr)');
-    if (visibleColumns.type) columns.push('minmax(105px, .7fr)');
-    if (visibleColumns.difficulty) columns.push('minmax(90px, .6fr)');
-    if (visibleColumns.tags) columns.push('minmax(170px, 1.2fr)');
-    if (visibleColumns.source) columns.push('minmax(130px, .9fr)');
-    if (visibleColumns.updated) columns.push('minmax(105px, .65fr)');
-    if (!rowSelectionActive) columns.push('96px');
+    columns.push('minmax(320px, 2.2fr)');
+    columns.push('minmax(130px, .75fr)');
+    if (visibleColumns.difficulty) columns.push('minmax(100px, .55fr)');
+    if (visibleColumns.tags) columns.push('minmax(240px, 1.25fr)');
+    if (visibleColumns.usedIn) columns.push('minmax(210px, 1fr)');
+    if (visibleColumns.updated) columns.push('minmax(110px, .6fr)');
+    if (!rowSelectionActive) columns.push('88px');
     return columns.join(' ');
   }, [rowSelectionActive, visibleColumns]);
 
   const resetFilters = () => {
-    setFilters((prev) => ({ ...prev, tag: '', difficulty: '', status: '', visibility: '', sourceType: '' }));
+    setFilters((prev) => ({ ...prev, tag: '', difficulty: '', status: '', visibility: '' }));
     setPage(1);
   };
 
   const toggleSelection = (question) => {
+    if (questionAlreadyAdded(question)) {
+      toast.info('This question is already in the assessment.');
+      return;
+    }
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(question._id)) next.delete(question._id);
@@ -325,16 +373,16 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   };
 
   const toggleSelectVisibleQuestions = () => {
-    const allVisibleSelected = questions.length > 0 && questions.every((question) => selectedIds.has(question._id));
+    const allVisibleSelected = eligibleQuestions.length > 0 && eligibleQuestions.every((question) => selectedIds.has(question._id));
     if (allVisibleSelected) {
-      const visibleIds = new Set(questions.map((question) => question._id));
+      const visibleIds = new Set(eligibleQuestions.map((question) => question._id));
       setSelectedIds((previous) => new Set([...previous].filter((id) => !visibleIds.has(id))));
       setSelectedMeta((previous) => Object.fromEntries(Object.entries(previous).filter(([id]) => !visibleIds.has(id))));
       return;
     }
 
-    setSelectedIds((previous) => new Set([...previous, ...questions.map((question) => question._id)]));
-    setSelectedMeta((previous) => questions.reduce((acc, question) => ({ ...acc, [question._id]: question }), previous));
+    setSelectedIds((previous) => new Set([...previous, ...eligibleQuestions.map((question) => question._id)]));
+    setSelectedMeta((previous) => eligibleQuestions.reduce((acc, question) => ({ ...acc, [question._id]: question }), previous));
   };
 
   const selectAllMatchingQuestions = async () => {
@@ -349,13 +397,14 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
         difficulty: filters.difficulty,
         status: filters.status,
         visibility: filters.visibility,
-        sourceType: filters.sourceType,
         sortBy: filters.sortBy,
         sortOrder: filters.sortOrder,
         selectAll: true,
         skipCache: true,
       });
-      const matches = data.questions || [];
+      const matches = (data.questions || []).filter((question) => (
+        !selectionMode || !isLibraryQuestionAlreadyAdded(question, assessmentQuestionIdentities)
+      ));
       const matchingMeta = {};
       matches.forEach((question) => { matchingMeta[question._id] = question; });
       setSelectedIds(new Set(matches.map((question) => question._id)));
@@ -401,7 +450,15 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
       return;
     }
     try {
-      const data = await api.resolveLibraryQuestions(Array.from(selectedIds));
+      const selectableIds = Object.values(selectedMeta)
+        .filter((question) => !questionAlreadyAdded(question))
+        .map((question) => question._id);
+      if (!selectableIds.length) {
+        toast.error('All selected questions are already in this assessment.');
+        clearSelection();
+        return;
+      }
+      const data = await api.resolveLibraryQuestions(selectableIds);
       queueQuestionSelection(assessmentKey, { questions: data.questions || [], lockType });
       toast.success('Selected library questions added to the assessment draft.');
       navigate(returnTo);
@@ -650,8 +707,8 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   };
 
   return (
-    <div className={embedded ? 'bg-white dark:bg-gray-900' : 'min-h-screen bg-white pt-20 dark:bg-gray-900'}>
-      <div className={embedded ? 'w-full' : 'mx-auto max-w-7xl px-4 py-6'}>
+    <div className={embedded ? 'bg-white dark:bg-gray-900 md:flex md:h-[calc(100vh-5.5rem)] md:min-h-0 md:flex-col' : 'min-h-screen bg-white dark:bg-gray-900'}>
+      <div className={embedded ? 'w-full md:flex md:min-h-0 md:flex-1 md:flex-col' : 'mx-auto max-w-7xl px-4 py-6'}>
         {!embedded && <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
             {selectionMode && (
@@ -790,6 +847,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                 ? Object.entries(selectionSummary).map(([type, count]) => `${count} ${labelForType(type)}`).join(' • ')
                 : 'Choose questions across any category. They will be grouped by type automatically when added to the assessment.')}
             </div>
+            <p className="mt-1 text-[10px] font-medium text-sky-700 dark:text-sky-300">Questions already present in this assessment are marked Added and cannot be selected again.</p>
           </div>
         )}
 
@@ -800,7 +858,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
             </div>
             <div className="flex items-center gap-2">
               <button type="button" onClick={toggleSelectVisibleQuestions} className="rounded-lg border border-sky-200 bg-white px-3 py-1.5 font-semibold text-sky-700 hover:bg-sky-50 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300">
-                {questions.length > 0 && questions.every((question) => selectedIds.has(question._id)) ? 'Clear Page' : 'Select Page'}
+                {eligibleQuestions.length > 0 && eligibleQuestions.every((question) => selectedIds.has(question._id)) ? 'Clear Page' : 'Select Page'}
               </button>
               <button type="button" onClick={selectAllMatchingQuestions} disabled={!total || selectingAll} className="rounded-lg bg-sky-600 px-3 py-1.5 font-semibold text-white hover:bg-sky-500 disabled:opacity-50">
                 {selectingAll ? 'Selecting...' : `Select all ${total}`}
@@ -849,8 +907,8 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
           </section>
         )}
 
-        <div className={`${embedded ? '' : 'mt-5'} flex flex-col gap-3 border-b border-slate-200 pb-5 dark:border-gray-800 xl:flex-row xl:items-center`}>
-          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 shadow-sm focus-within:border-sky-400 focus-within:ring-2 focus-within:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:focus-within:ring-sky-900/30">
+        <div className={`${embedded ? 'shrink-0' : 'mt-5'} flex flex-col gap-2 border-b border-slate-200 pb-3 dark:border-gray-800 xl:flex-row xl:items-center`}>
+          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus-within:border-sky-400 focus-within:ring-2 focus-within:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:focus-within:ring-sky-900/30">
             <Search className="h-4 w-4 shrink-0 text-slate-400" />
             <input
               value={searchInput}
@@ -864,14 +922,14 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
           <div className="flex flex-wrap items-center gap-2">
             {embedded && !selectionMode && (
               <>
-                <button type="button" onClick={toggleBulkSelecting} className={`inline-flex h-10 items-center gap-2 rounded-xl border px-3 text-xs font-semibold shadow-sm transition-colors ${bulkSelecting ? 'border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-700 dark:bg-sky-900/20 dark:text-sky-300' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}><CheckSquare className="h-3.5 w-3.5" />{bulkSelecting ? `${selectedIds.size} selected` : 'Select'}</button>
+                <button type="button" onClick={toggleBulkSelecting} className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold shadow-sm transition-colors ${bulkSelecting ? 'border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-700 dark:bg-sky-900/20 dark:text-sky-300' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}><CheckSquare className="h-3.5 w-3.5" />{bulkSelecting ? `${selectedIds.size} selected` : 'Select'}</button>
                 {bulkSelecting && (
                   <div className="relative">
-                    <button type="button" aria-label="Bulk actions" aria-expanded={bulkMenuOpen} onClick={() => setBulkMenuOpen((open) => !open)} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><MoreVertical className="h-4 w-4" /></button>
+                    <button type="button" aria-label="Bulk actions" aria-expanded={bulkMenuOpen} onClick={() => setBulkMenuOpen((open) => !open)} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><MoreVertical className="h-4 w-4" /></button>
                     {bulkMenuOpen && (
                       <div className="absolute right-0 top-12 z-50 w-60 overflow-hidden rounded-2xl border border-slate-200 bg-white py-1 text-xs font-semibold text-slate-600 shadow-2xl dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
                         <div className="border-b border-slate-100 px-3 py-2.5 dark:border-gray-800"><p className="font-bold text-slate-900 dark:text-white">Bulk actions</p><p className="mt-0.5 text-[10px] font-normal text-slate-400">{selectedIds.size} selected</p></div>
-                        <button type="button" onClick={toggleSelectVisibleQuestions} disabled={!questions.length} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-50 dark:hover:bg-gray-800"><CheckSquare className="h-3.5 w-3.5" />{questions.length && questions.every((question) => selectedIds.has(question._id)) ? 'Clear current page' : 'Select current page'}</button>
+                        <button type="button" onClick={toggleSelectVisibleQuestions} disabled={!eligibleQuestions.length} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-50 dark:hover:bg-gray-800"><CheckSquare className="h-3.5 w-3.5" />{eligibleQuestions.length && eligibleQuestions.every((question) => selectedIds.has(question._id)) ? 'Clear current page' : 'Select current page'}</button>
                         <button type="button" onClick={selectAllMatchingQuestions} disabled={!total || selectingAll} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-50 dark:hover:bg-gray-800"><CheckSquare className="h-3.5 w-3.5" />{selectingAll ? 'Selecting all...' : `Select all ${total} matches`}</button>
                         <button type="button" onClick={() => bulkUpdateQuestions({ title: 'Publish Selected Questions?', message: `Publish ${selectedIds.size} selected question${selectedIds.size === 1 ? '' : 's'}? Coding problems must already pass their validation checks.`, confirmLabel: 'Publish Selected', body: { status: 'published' }, successMessage: 'Selected questions published.' })} disabled={!selectedIds.size} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-50 dark:hover:bg-gray-800"><Eye className="h-3.5 w-3.5" />Publish selected</button>
                         <button type="button" onClick={() => bulkUpdateQuestions({ title: 'Move Selected to Draft?', message: `Move ${selectedIds.size} selected question${selectedIds.size === 1 ? '' : 's'} to draft?`, confirmLabel: 'Move to Draft', body: { status: 'draft' }, successMessage: 'Selected questions moved to draft.' })} disabled={!selectedIds.size} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-50 dark:hover:bg-gray-800"><Edit3 className="h-3.5 w-3.5" />Move to draft</button>
@@ -888,13 +946,13 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
             )}
             {embedded && selectionMode && (
               <>
-                <button type="button" onClick={() => navigate(returnTo)} className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><ArrowLeft className="h-3.5 w-3.5" />Back</button>
-                <button type="button" onClick={selectAllMatchingQuestions} disabled={!total || selectingAll} className="inline-flex h-10 items-center gap-2 rounded-xl border border-sky-200 bg-white px-3 text-xs font-semibold text-sky-700 shadow-sm hover:bg-sky-50 disabled:opacity-50 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300"><CheckSquare className="h-3.5 w-3.5" />{selectingAll ? 'Selecting...' : `Select all ${total}`}</button>
-                <button type="button" onClick={handleAddSelected} disabled={!selectedIds.size} className="inline-flex h-10 items-center gap-2 rounded-xl bg-sky-600 px-4 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"><CheckSquare className="h-3.5 w-3.5" />Add selected ({selectedIds.size})</button>
+                <button type="button" onClick={() => navigate(returnTo)} className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><ArrowLeft className="h-3.5 w-3.5" />Back</button>
+                <button type="button" onClick={selectAllMatchingQuestions} disabled={!total || selectingAll} className="inline-flex h-9 items-center gap-2 rounded-lg border border-sky-200 bg-white px-3 text-xs font-semibold text-sky-700 shadow-sm hover:bg-sky-50 disabled:opacity-50 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300"><CheckSquare className="h-3.5 w-3.5" />{selectingAll ? 'Selecting...' : `Select all ${total}`}</button>
+                <button type="button" onClick={handleAddSelected} disabled={!selectedIds.size} className="inline-flex h-9 items-center gap-2 rounded-lg bg-sky-600 px-4 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"><CheckSquare className="h-3.5 w-3.5" />Add selected ({selectedIds.size})</button>
               </>
             )}
             <div className="relative">
-              <button type="button" onClick={() => { setFilterPanelOpen((open) => !open); setColumnsPanelOpen(false); }} className={`inline-flex h-10 items-center gap-2 rounded-xl border px-3 text-xs font-semibold shadow-sm transition-colors ${filterPanelOpen || activeFilterCount ? 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
+              <button type="button" aria-expanded={filterPanelOpen} onClick={() => { setFilterPanelOpen((open) => !open); setColumnsPanelOpen(false); }} className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold shadow-sm transition-colors ${filterPanelOpen || activeFilterCount ? 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
                 <Filter className="h-3.5 w-3.5" /> Filters
                 {activeFilterCount > 0 && <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-sky-600 px-1.5 text-[10px] text-white">{activeFilterCount}</span>}
               </button>
@@ -906,7 +964,6 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                     <label className="grid gap-1.5 text-xs font-semibold text-slate-600 dark:text-gray-300">Tag or topic<select value={filters.tag} onChange={(event) => { setFilters((prev) => ({ ...prev, tag: event.target.value })); setPage(1); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal dark:border-gray-700 dark:bg-gray-800"><option value="">All tags</option>{availableTags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}</select></label>
                     <label className="grid gap-1.5 text-xs font-semibold text-slate-600 dark:text-gray-300">Status<select value={filters.status} onChange={(event) => { setFilters((prev) => ({ ...prev, status: event.target.value })); setPage(1); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal dark:border-gray-700 dark:bg-gray-800"><option value="">All statuses</option><option value="published">Published</option><option value="draft">Draft</option><option value="hidden">Hidden</option><option value="archived">Archived</option></select></label>
                     <label className="grid gap-1.5 text-xs font-semibold text-slate-600 dark:text-gray-300">Visibility<select value={filters.visibility} onChange={(event) => { setFilters((prev) => ({ ...prev, visibility: event.target.value })); setPage(1); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal dark:border-gray-700 dark:bg-gray-800"><option value="">All visibility</option><option value="public">Public</option><option value="private">Private</option></select></label>
-                    <label className="grid gap-1.5 text-xs font-semibold text-slate-600 dark:text-gray-300 sm:col-span-2">Source<select value={filters.sourceType} onChange={(event) => { setFilters((prev) => ({ ...prev, sourceType: event.target.value })); setPage(1); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal dark:border-gray-700 dark:bg-gray-800"><option value="">All sources</option><option value="manual">Directly created</option><option value="assessment">Assessment</option><option value="compiler">Coding workspace</option></select></label>
                   </div>
                   <button type="button" onClick={() => setFilterPanelOpen(false)} className="mt-4 w-full rounded-xl bg-sky-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-sky-500">Show questions</button>
                 </div>
@@ -914,44 +971,45 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
             </div>
 
             <div className="relative">
-              <button type="button" onClick={() => { setColumnsPanelOpen((open) => !open); setFilterPanelOpen(false); }} className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"><Columns3 className="h-3.5 w-3.5" /> Columns</button>
+              <button type="button" aria-expanded={columnsPanelOpen} onClick={() => { setColumnsPanelOpen((open) => !open); setFilterPanelOpen(false); }} className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"><Columns3 className="h-3.5 w-3.5" /> Columns</button>
               {columnsPanelOpen && (
                 <div className="absolute right-0 top-12 z-40 w-64 rounded-2xl border border-slate-200 bg-white p-3 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
                   <div className="px-1 pb-2"><p className="text-sm font-bold text-slate-900 dark:text-white">Visible columns</p><p className="mt-0.5 text-[11px] text-slate-500">Saved for this browser.</p></div>
-                  {Object.entries({ type: 'Question type', difficulty: 'Difficulty', tags: 'Tags / topics', source: 'Source', updated: 'Last updated' }).map(([key, label]) => (
+                  <div className="flex items-center gap-3 rounded-lg bg-slate-50 px-2 py-2 text-xs font-medium text-slate-700 dark:bg-gray-800 dark:text-gray-200"><input type="checkbox" checked disabled className="h-4 w-4 rounded border-slate-300 text-sky-600" /><span className="flex-1">Question type</span><span className="text-[10px] font-bold uppercase tracking-wide text-sky-600 dark:text-sky-400">Required</span></div>
+                  {Object.entries({ difficulty: 'Difficulty', tags: 'Tags / topics', usedIn: 'Used in assessments', updated: 'Last updated' }).map(([key, label]) => (
                     <label key={key} className="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800"><input type="checkbox" checked={visibleColumns[key]} onChange={() => setVisibleColumns((prev) => ({ ...prev, [key]: !prev[key] }))} className="h-4 w-4 rounded border-slate-300 text-sky-600" />{label}</label>
                   ))}
-                  <button type="button" onClick={() => setVisibleColumns({ type: true, difficulty: true, tags: true, source: true, updated: true })} className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Restore defaults</button>
+                  <button type="button" onClick={() => setVisibleColumns({ type: true, difficulty: true, tags: true, usedIn: true, source: false, updated: true })} className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Restore defaults</button>
                 </div>
               )}
             </div>
 
-            <select value={`${filters.sortBy}:${filters.sortOrder}`} onChange={(event) => { const [sortBy, sortOrder] = event.target.value.split(':'); setFilters((prev) => ({ ...prev, sortBy, sortOrder })); setPage(1); }} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+            <select value={`${filters.sortBy}:${filters.sortOrder}`} onChange={(event) => { const [sortBy, sortOrder] = event.target.value.split(':'); setFilters((prev) => ({ ...prev, sortBy, sortOrder })); setPage(1); }} className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
               <option value="updatedAt:desc">Recently updated</option>
               <option value="createdAt:desc">Recently created</option>
               <option value="questionText:asc">Question A–Z</option>
               <option value="difficulty:asc">Difficulty</option>
             </select>
-            <button type="button" onClick={refreshLibrary} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800" aria-label="Refresh library"><RefreshCw className="h-4 w-4" /></button>
+            <button type="button" onClick={refreshLibrary} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800" aria-label="Refresh library"><RefreshCw className="h-4 w-4" /></button>
           </div>
         </div>
 
         {activeFilterCount > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            {[['difficulty', filters.difficulty], ['tag', filters.tag], ['status', filters.status], ['visibility', filters.visibility], ['sourceType', filters.sourceType]].filter(([, value]) => value).map(([key, value]) => <button key={key} type="button" onClick={() => { setFilters((prev) => ({ ...prev, [key]: '' })); setPage(1); }} className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300">{value}<X className="h-3 w-3" /></button>)}
+            {[['difficulty', filters.difficulty], ['tag', filters.tag], ['status', filters.status], ['visibility', filters.visibility]].filter(([, value]) => value).map(([key, value]) => <button key={key} type="button" onClick={() => { setFilters((prev) => ({ ...prev, [key]: '' })); setPage(1); }} className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300">{value}<X className="h-3 w-3" /></button>)}
             <button type="button" onClick={resetFilters} className="text-[11px] font-semibold text-slate-500 hover:text-slate-900 dark:hover:text-white">Clear filters</button>
           </div>
         )}
 
-        <div className="mt-5 overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
-          <div className="min-w-[780px]">
-          <div className="grid gap-3 border-b border-slate-200 bg-slate-50/70 px-4 py-3 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-400" style={{ gridTemplateColumns: columnTemplate }}>
-            {rowSelectionActive ? <div className="flex items-center justify-center"><input type="checkbox" aria-label="Select all questions on this page" checked={questions.length > 0 && questions.every((question) => selectedIds.has(question._id))} onChange={toggleSelectVisibleQuestions} className="h-4 w-4 rounded border-slate-300 text-sky-600" /></div> : null}
+        <div className={`${embedded ? 'mt-3 min-h-0 flex-1 overflow-auto' : 'mt-5 overflow-x-auto'} rounded-xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900`}>
+          <div className="min-w-[960px]">
+          <div className={`grid gap-3 border-b border-slate-200 bg-slate-50/95 px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500 backdrop-blur dark:border-gray-700 dark:bg-gray-800/95 dark:text-gray-400 ${embedded ? 'sticky top-0 z-20 shadow-[0_1px_0_rgba(148,163,184,0.18)]' : ''}`} style={{ gridTemplateColumns: columnTemplate }}>
+            {rowSelectionActive ? <div className="flex items-center justify-center"><input type="checkbox" aria-label="Select all available questions on this page" checked={eligibleQuestions.length > 0 && eligibleQuestions.every((question) => selectedIds.has(question._id))} disabled={!eligibleQuestions.length} onChange={toggleSelectVisibleQuestions} className="h-4 w-4 rounded border-slate-300 text-sky-600 disabled:opacity-40" /></div> : null}
             <div>Question</div>
-            {visibleColumns.type && <div>Type</div>}
+            <div>Question type</div>
             {visibleColumns.difficulty && <div>Difficulty</div>}
             {visibleColumns.tags && <div>Tags / Topics</div>}
-            {visibleColumns.source && <div>Source</div>}
+            {visibleColumns.usedIn && <div>Used in assessments</div>}
             {visibleColumns.updated && <div>Updated</div>}
             {!rowSelectionActive ? <div className="text-right">Actions</div> : null}
           </div>
@@ -968,10 +1026,11 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
               <div
                 key={question._id}
                 onClick={() => (rowSelectionActive ? toggleSelection(question) : previewQuestion(question))}
-                className={`grid w-full cursor-pointer items-center gap-3 border-b border-slate-100 px-4 py-3.5 text-left text-sm text-slate-600 transition-colors last:border-b-0 hover:bg-slate-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800/60 ${selectedIds.has(question._id) ? 'bg-sky-50/60 dark:bg-sky-900/10' : ''}`}
+                className={`grid w-full items-center gap-3 border-b border-slate-200/80 px-4 py-3 text-left text-sm text-slate-600 transition-colors last:border-b-0 dark:border-gray-800 dark:text-gray-300 ${questionAlreadyAdded(question) ? 'cursor-not-allowed bg-slate-50/80 opacity-65 dark:bg-gray-800/50' : 'cursor-pointer hover:bg-sky-50/50 dark:hover:bg-sky-950/20'} ${selectedIds.has(question._id) ? 'bg-sky-50/60 dark:bg-sky-900/10' : ''}`}
                 style={{ gridTemplateColumns: columnTemplate }}
                 role="button"
                 tabIndex={0}
+                aria-disabled={questionAlreadyAdded(question)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') {
                     if (rowSelectionActive) toggleSelection(question);
@@ -984,65 +1043,56 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                     <input
                       type="checkbox"
                       checked={selectedIds.has(question._id)}
+                      disabled={questionAlreadyAdded(question)}
                       onChange={(event) => {
                         event.stopPropagation();
                         toggleSelection(question);
                       }}
                       onClick={(event) => event.stopPropagation()}
-                      className="h-4 w-4 rounded border-slate-300 text-sky-600"
+                      className="h-4 w-4 rounded border-slate-300 text-sky-600 disabled:cursor-not-allowed disabled:opacity-50"
                     />
                   </div>
                 )}
                 <div>
-                  <div className="flex flex-wrap items-center gap-2 font-semibold text-slate-800 dark:text-gray-100">
+                  <div className="flex min-w-0 items-center gap-1.5 font-semibold text-slate-800 dark:text-gray-100">
                     {isPassageSet(question) && <BookOpenText className="h-4 w-4 shrink-0 text-sky-600" />}
-                    <span>{getLibraryQuestionTitle(question)}</span>
-                    {isPassageSet(question) && (
-                      <>
-                        <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold text-sky-700 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300">Passage set</span>
-                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">{getLibraryQuestionCount(question)} questions</span>
-                      </>
-                    )}
+                    <span className="min-w-0 max-w-[calc(100%-4rem)] truncate leading-5">{getLibraryQuestionTitle(question)}</span>
+                    {questionAlreadyAdded(question) && <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">Added</span>}
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setStatementModal({ open: true, title: getLibraryQuestionTitle(question), statement: getFullQuestionStatement(question) });
+                      }}
+                      className="inline-flex h-[22px] shrink-0 items-center rounded-full border border-sky-200 bg-sky-50 px-1.5 text-[11px] font-semibold leading-none text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300"
+                    >
+                      + More
+                    </button>
                   </div>
-                  <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-gray-400">
-                    <span>{question.sectionName || 'General'}</span>
-                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 font-semibold text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
-                      {SOURCE_LABELS[question.sourceType] || 'Library'}
-                    </span>
-                    <span className={`rounded-full border px-2 py-0.5 font-semibold ${
-                      question.visibility === 'private'
-                        ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300'
-                        : 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300'
-                    }`}>
-                      {question.visibility === 'private' ? 'Private' : 'Public'}
-                    </span>
-                    {question.status && question.status !== 'published' && (
-                      <span className={`rounded-full border px-2 py-0.5 font-semibold ${question.status === 'draft' ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300' : 'border-slate-200 bg-slate-100 text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}>
-                        {question.status.charAt(0).toUpperCase() + question.status.slice(1)}
-                      </span>
-                    )}
+                  <div className="mt-1.5 flex items-center text-[11px] text-slate-500 dark:text-gray-400">
+                    <QuestionStateBadge question={question} />
                   </div>
                 </div>
-                {visibleColumns.type && <div className="text-xs font-semibold text-slate-700 dark:text-gray-200">{isPassageSet(question) ? 'Passage MCQ' : labelForType(question.questionType).replace(' Questions', '')}</div>}
+                <div className="text-xs font-semibold leading-5 text-slate-700 dark:text-gray-200">{labelForQuestionType(question)}</div>
                 {visibleColumns.difficulty && <div><span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-bold ${String(question.difficulty || '').toLowerCase() === 'hard' ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-900/15 dark:text-rose-300' : String(question.difficulty || '').toLowerCase() === 'medium' ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-900/15 dark:text-amber-300' : String(question.difficulty || '').toLowerCase() === 'easy' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-900/15 dark:text-emerald-300' : 'border-slate-200 bg-slate-50 text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}>{question.difficulty || 'Not set'}</span></div>}
-                {visibleColumns.tags && <div className="flex flex-wrap items-start gap-1.5">
+                {visibleColumns.tags && <div className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap">
                   {(question.tags || []).length ? (
                     <>
-                      {(question.tags || []).slice(0, 4).map((tag) => (
-                        <span key={`${question._id}-${tag}`} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                      {(question.tags || []).slice(0, 2).map((tag) => (
+                        <span key={`${question._id}-${tag}`} title={tag} className="max-w-[92px] shrink-0 truncate rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
                           {tag}
                         </span>
                       ))}
-                      {(question.tags || []).length > 4 && (
+                      {(question.tags || []).length > 2 && (
                         <button
                           type="button"
                           onClick={(event) => {
                             event.stopPropagation();
-                            openTagsModal(question.questionText || 'Question', (question.tags || []).slice(4));
+                            openTagsModal(question.questionText || 'Question', question.tags || []);
                           }}
-                          className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300"
+                          className="shrink-0 rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300"
                         >
-                          + More
+                          +{(question.tags || []).length - 2} more
                         </button>
                       )}
                     </>
@@ -1050,7 +1100,12 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                     <span className="text-xs text-slate-500 dark:text-gray-400">-</span>
                   )}
                 </div>}
-                {visibleColumns.source && <div className="text-xs text-slate-500 dark:text-gray-400">{question.sourceTitle || question.sourceAssessmentTitle || '-'}</div>}
+                {visibleColumns.usedIn && <div className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap">
+                  {(question.usedInAssessments || []).length ? <>
+                    {(question.usedInAssessments || []).slice(0, 2).map((assessment) => <span key={`${question._id}-usage-${assessment}`} title={assessment} className="max-w-[94px] shrink-0 truncate rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-300">{assessment}</span>)}
+                    {(question.usedInAssessments || []).length > 2 && <button type="button" onClick={(event) => { event.stopPropagation(); setUsageModal({ open: true, questionText: question.questionText || 'Question', assessments: question.usedInAssessments || [] }); }} className="shrink-0 rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300">+{question.usedInAssessments.length - 2} more</button>}
+                  </> : <span className="text-xs text-slate-400 dark:text-gray-500">Not used yet</span>}
+                </div>}
                 {visibleColumns.updated && <div className="text-xs text-slate-500 dark:text-gray-400">{question.updatedAt ? new Date(question.updatedAt).toLocaleDateString() : '-'}</div>}
                 {!rowSelectionActive && (
                   <div className="relative flex justify-end gap-2">
@@ -1084,9 +1139,6 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                         className="absolute right-0 top-10 z-30 w-48 overflow-hidden rounded-2xl border border-slate-200 bg-white py-1 text-xs font-semibold text-slate-600 shadow-xl dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
                         onClick={(event) => event.stopPropagation()}
                       >
-                        <button type="button" onClick={() => previewQuestion(question)} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-gray-800">
-                          <Eye className="h-3.5 w-3.5" /> Preview
-                        </button>
                         <button type="button" onClick={() => startEditQuestion(question)} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-gray-800">
                           <Edit3 className="h-3.5 w-3.5" /> Edit
                         </button>
@@ -1116,7 +1168,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
           </div>
         </div>
 
-        <div className="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-4 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between dark:border-gray-800 dark:text-gray-400">
+        <div className="mt-3 flex shrink-0 flex-col gap-2 border-t border-slate-200 pt-3 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between dark:border-gray-800 dark:text-gray-400">
           <div>Showing {questions.length ? ((page - 1) * 20) + 1 : 0}-{Math.min(page * 20, total)} of {total} questions</div>
           <div className="flex items-center gap-1.5">
           <button
@@ -1158,14 +1210,14 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
               onClick={() => setActiveQuestion(null)}
             />
             <motion.div
-              initial={{ opacity: 0, scale: 0.98, y: 12 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.98, y: 12 }}
-              className="fixed inset-0 z-[61] flex items-center justify-center p-3 sm:p-5"
+              initial={{ opacity: 0, x: 40 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 40 }}
+              className="fixed inset-y-0 right-0 z-[61] flex w-full justify-end lg:w-[86vw] xl:max-w-[1480px]"
               onClick={() => setActiveQuestion(null)}
             >
               <div
-                className="flex h-[min(92vh,860px)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-2xl dark:border-gray-700 dark:bg-gray-950"
+                className="flex h-dvh w-full flex-col overflow-hidden border-l border-slate-200 bg-slate-50 shadow-2xl dark:border-gray-700 dark:bg-gray-950"
                 onClick={(e) => e.stopPropagation()}
                 role="dialog"
                 aria-modal="true"
@@ -1395,6 +1447,33 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
             </motion.div>
           </>
         )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {statementModal.open && (
+          <>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] bg-slate-950/45 backdrop-blur-sm" onClick={() => setStatementModal({ open: false, title: '', statement: '' })} />
+            <motion.div initial={{ opacity: 0, y: 12, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: 0.98 }} className="fixed inset-0 z-[71] flex items-center justify-center p-4" onClick={() => setStatementModal({ open: false, title: '', statement: '' })}>
+              <section className="flex max-h-[82vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900" role="dialog" aria-modal="true" aria-label="Full question statement" onClick={(event) => event.stopPropagation()}>
+                <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 dark:border-gray-800">
+                  <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-600 dark:text-sky-400">Full question statement</p><h3 className="mt-1 text-base font-bold text-slate-950 dark:text-white">{statementModal.title}</h3></div>
+                  <button type="button" onClick={() => setStatementModal({ open: false, title: '', statement: '' })} className="shrink-0 rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" aria-label="Close full statement"><X className="h-4 w-4" /></button>
+                </header>
+                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4"><p className="whitespace-pre-wrap text-sm leading-7 text-slate-700 dark:text-gray-200">{statementModal.statement}</p></div>
+              </section>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {usageModal.open && <>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[60] bg-slate-950/45 backdrop-blur-sm" onClick={() => setUsageModal({ open: false, questionText: '', assessments: [] })} />
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 12 }} className="fixed inset-0 z-[61] flex items-center justify-center px-4">
+            <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-900" onClick={(event) => event.stopPropagation()}>
+              <div className="flex items-start justify-between gap-4"><div><div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-violet-600 dark:text-violet-400">Used in assessments</div><h3 className="mt-2 line-clamp-2 text-lg font-semibold text-slate-900 dark:text-white">{usageModal.questionText}</h3></div><button type="button" onClick={() => setUsageModal({ open: false, questionText: '', assessments: [] })} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" aria-label="Close assessment usage"><X className="h-4 w-4" /></button></div>
+              <div className="mt-5 grid gap-2">{usageModal.assessments.map((assessment, index) => <div key={`usage-${assessment}`} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-[10px] font-bold text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">{index + 1}</span><span className="min-w-0 truncate">{assessment}</span></div>)}</div>
+            </div>
+          </motion.div>
+        </>}
       </AnimatePresence>
       <AnimatePresence>
         {tagsModal.open && (

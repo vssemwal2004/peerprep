@@ -109,15 +109,6 @@ export async function uploadLibraryAsset(req, res) {
   }
 }
 
-function normalizeIdentityText(value = '') {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9+#]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
 function getCodingProblemId(question = {}) {
   const data = question.questionData || {};
   const coding = data.coding || {};
@@ -134,19 +125,11 @@ function getCodingUniqueKey(question = {}) {
   const problemId = getCodingProblemId(question);
   if (problemId) return `problem:${String(problemId)}`;
 
-  const data = question.questionData || {};
-  const coding = data.coding || {};
-  const snapshot = data.problemDataSnapshot || coding.problemData || {};
-  const title = normalizeIdentityText(
-    question.questionText
-    || question.sourceProblemTitle
-    || snapshot.title
-    || coding.title
-    || data.questionText
-    || question.sourceAssessmentTitle,
-  );
-
-  return title ? `title:${title}` : `source:${question.sourceKey || question._id}`;
+  // Titles are display data, not identity. Two independently authored coding
+  // questions can legitimately share a title, so only collapse records that
+  // point to the same compiler problem. Unlinked assessment/manual questions
+  // retain their own stable source identity and must each contribute to counts.
+  return `source:${question.sourceKey || question._id}`;
 }
 
 function compareLibraryPriority(a = {}, b = {}) {
@@ -184,6 +167,25 @@ function uniqueLibraryQuestions(questions = []) {
     const bUpdated = new Date(b.updatedAt || b.createdAt || 0).getTime();
     return bUpdated - aUpdated;
   });
+}
+
+function getLibraryUsageKey(question = {}) {
+  if (question.questionType === 'coding') return getCodingUniqueKey(question);
+  const stableQuestionId = question.sourceType === 'manual'
+    ? question.sourceKey
+    : (question.sourceQuestionId || question.sourceKey || question._id);
+  return `question:${String(stableQuestionId)}`;
+}
+
+function buildAssessmentUsageMap(questions = []) {
+  const usage = new Map();
+  questions.forEach((question) => {
+    if (question.sourceType !== 'assessment' || !question.sourceAssessmentTitle) return;
+    const key = getLibraryUsageKey(question);
+    if (!usage.has(key)) usage.set(key, new Set());
+    usage.get(key).add(String(question.sourceAssessmentTitle).trim());
+  });
+  return usage;
 }
 
 function buildCategoryCounts(questions = []) {
@@ -262,7 +264,7 @@ export async function listLibraryQuestions(req, res) {
         .sort({ updatedAt: -1, createdAt: -1 })
         .lean(),
       QuestionLibrary.find(scopeMatch)
-        .select('questionType status sourceType sourceId sourceProblemId createdAt updatedAt')
+        .select('sourceKey questionType questionData status sourceType sourceProblemId sourceQuestionId sourceAssessmentTitle createdAt updatedAt')
         .lean(),
       QuestionLibrary.distinct('tags', baseMatch),
       QuestionLibrary.distinct('difficulty', { ...baseMatch, difficulty: { $ne: '' } }),
@@ -270,6 +272,7 @@ export async function listLibraryQuestions(req, res) {
 
     const uniqueBaseQuestions = uniqueLibraryQuestions(baseQuestions);
     const uniqueScopeQuestions = uniqueLibraryQuestions(scopeQuestions);
+    const assessmentUsage = buildAssessmentUsageMap(scopeQuestions);
     const categories = buildCategoryCounts(uniqueScopeQuestions);
     const statuses = buildStatusCounts(uniqueScopeQuestions);
     const selectedType = normalizeType(type);
@@ -297,7 +300,10 @@ export async function listLibraryQuestions(req, res) {
     const questions = includeAllMatches ? sortedQuestions : sortedQuestions.slice(skip, skip + limitNum);
 
     res.json({
-      questions: questions.map(formatLibraryQuestionSummary),
+      questions: questions.map((question) => ({
+        ...formatLibraryQuestionSummary(question),
+        usedInAssessments: Array.from(assessmentUsage.get(getLibraryUsageKey(question)) || []).sort((a, b) => a.localeCompare(b)),
+      })),
       pagination: {
         page: includeAllMatches ? 1 : pageNum,
         limit: includeAllMatches ? total : limitNum,

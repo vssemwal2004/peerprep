@@ -720,15 +720,17 @@ async function executeSubmitPayload({ sourceCode, languageId, problem }) {
   let peakMemoryKb = 0;
   let passed = 0;
   let passedTestCaseMarks = 0;
-  const totalTestCaseMarks = allTestCases.reduce(
+  const configuredTestCaseMarks = allTestCases.reduce(
     (sum, testCase) => sum + Math.max(0.01, Number(testCase?.marks) || 1),
     0,
   );
+  const totalTestCaseMarks = Math.max(0.01, Number(problem?.totalMarks) || configuredTestCaseMarks);
   let firstFailure = null;
 
   for (let index = 0; index < allTestCases.length; index += 1) {
     const testCase = allTestCases[index];
-    const testCaseMarks = Math.max(0.01, Number(testCase?.marks) || 1);
+    const configuredMarks = Math.max(0.01, Number(testCase?.marks) || 1);
+    const testCaseMarks = (configuredMarks / configuredTestCaseMarks) * totalTestCaseMarks;
     const judgeResult = await runJudge0(sourceCode, languageId, testCase.input || '', judge0Options);
     const evaluation = evaluateSubmissionResult(judgeResult, testCase.output || '');
     const executionTimeMs = secondsToMilliseconds(judgeResult.time);
