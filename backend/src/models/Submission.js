@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { SUPPORTED_LANGUAGES } from './Problem.js';
 
 const submissionCaseResultSchema = new mongoose.Schema({
   index: Number,
@@ -58,7 +59,7 @@ const submissionSchema = new mongoose.Schema({
   },
   language: {
     type: String,
-    enum: ['python', 'javascript', 'java', 'cpp', 'c'],
+    enum: SUPPORTED_LANGUAGES,
     required: true,
   },
   sourceCode: {
