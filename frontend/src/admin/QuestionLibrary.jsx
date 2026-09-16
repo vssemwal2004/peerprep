@@ -324,14 +324,14 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   const activeFilterCount = [filters.tag, filters.difficulty, filters.status, filters.visibility].filter(Boolean).length;
   const columnTemplate = useMemo(() => {
     const columns = [];
-    if (rowSelectionActive) columns.push('42px');
-    columns.push('minmax(320px, 2.2fr)');
-    columns.push('minmax(130px, .75fr)');
-    if (visibleColumns.difficulty) columns.push('minmax(100px, .55fr)');
-    if (visibleColumns.tags) columns.push('minmax(240px, 1.25fr)');
-    if (visibleColumns.usedIn) columns.push('minmax(210px, 1fr)');
-    if (visibleColumns.updated) columns.push('minmax(110px, .6fr)');
-    if (!rowSelectionActive) columns.push('88px');
+    if (rowSelectionActive) columns.push('32px');
+    columns.push('minmax(0, 2fr)');
+    columns.push('minmax(0, .9fr)');
+    if (visibleColumns.difficulty) columns.push('minmax(0, .62fr)');
+    if (visibleColumns.tags) columns.push('minmax(0, 1.35fr)');
+    if (visibleColumns.usedIn) columns.push('minmax(0, 1.2fr)');
+    if (visibleColumns.updated) columns.push('minmax(0, .72fr)');
+    if (!rowSelectionActive) columns.push('76px');
     return columns.join(' ');
   }, [rowSelectionActive, visibleColumns]);
 
@@ -1001,15 +1001,15 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
           </div>
         )}
 
-        <div className={`${embedded ? 'mt-3 min-h-0 flex-1 overflow-auto' : 'mt-5 overflow-x-auto'} rounded-xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900`}>
-          <div className="min-w-[960px]">
-          <div className={`grid gap-3 border-b border-slate-200 bg-slate-50/95 px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500 backdrop-blur dark:border-gray-700 dark:bg-gray-800/95 dark:text-gray-400 ${embedded ? 'sticky top-0 z-20 shadow-[0_1px_0_rgba(148,163,184,0.18)]' : ''}`} style={{ gridTemplateColumns: columnTemplate }}>
+        <div className={`${embedded ? 'mt-3 min-h-0 flex-1 overflow-y-auto overflow-x-hidden' : 'mt-5 overflow-hidden'} rounded-xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900`}>
+          <div className="w-full min-w-0">
+          <div className={`grid min-w-0 gap-2 border-b border-slate-200 bg-slate-50/95 px-3 py-2.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500 backdrop-blur dark:border-gray-700 dark:bg-gray-800/95 dark:text-gray-400 ${embedded ? 'sticky top-0 z-20 shadow-[0_1px_0_rgba(148,163,184,0.18)]' : ''}`} style={{ gridTemplateColumns: columnTemplate }}>
             {rowSelectionActive ? <div className="flex items-center justify-center"><input type="checkbox" aria-label="Select all available questions on this page" checked={eligibleQuestions.length > 0 && eligibleQuestions.every((question) => selectedIds.has(question._id))} disabled={!eligibleQuestions.length} onChange={toggleSelectVisibleQuestions} className="h-4 w-4 rounded border-slate-300 text-sky-600 disabled:opacity-40" /></div> : null}
-            <div>Question</div>
-            <div>Question type</div>
+            <div className="min-w-0">Question</div>
+            <div className="min-w-0">Question type</div>
             {visibleColumns.difficulty && <div>Difficulty</div>}
-            {visibleColumns.tags && <div>Tags / Topics</div>}
-            {visibleColumns.usedIn && <div>Used in assessments</div>}
+            {visibleColumns.tags && <div className="min-w-0">Tags / Topics</div>}
+            {visibleColumns.usedIn && <div className="min-w-0 leading-4">Used in assessments</div>}
             {visibleColumns.updated && <div>Updated</div>}
             {!rowSelectionActive ? <div className="text-right">Actions</div> : null}
           </div>
@@ -1026,7 +1026,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
               <div
                 key={question._id}
                 onClick={() => (rowSelectionActive ? toggleSelection(question) : previewQuestion(question))}
-                className={`grid w-full items-center gap-3 border-b border-slate-200/80 px-4 py-3 text-left text-sm text-slate-600 transition-colors last:border-b-0 dark:border-gray-800 dark:text-gray-300 ${questionAlreadyAdded(question) ? 'cursor-not-allowed bg-slate-50/80 opacity-65 dark:bg-gray-800/50' : 'cursor-pointer hover:bg-sky-50/50 dark:hover:bg-sky-950/20'} ${selectedIds.has(question._id) ? 'bg-sky-50/60 dark:bg-sky-900/10' : ''}`}
+                className={`grid w-full min-w-0 items-center gap-2 border-b border-slate-200/80 px-3 py-3 text-left text-sm text-slate-600 transition-colors last:border-b-0 dark:border-gray-800 dark:text-gray-300 ${questionAlreadyAdded(question) ? 'cursor-not-allowed bg-slate-50/80 opacity-65 dark:bg-gray-800/50' : 'cursor-pointer hover:bg-sky-50/50 dark:hover:bg-sky-950/20'} ${selectedIds.has(question._id) ? 'bg-sky-50/60 dark:bg-sky-900/10' : ''}`}
                 style={{ gridTemplateColumns: columnTemplate }}
                 role="button"
                 tabIndex={0}
@@ -1053,10 +1053,10 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                     />
                   </div>
                 )}
-                <div>
+                <div className="min-w-0">
                   <div className="flex min-w-0 items-center gap-1.5 font-semibold text-slate-800 dark:text-gray-100">
                     {isPassageSet(question) && <BookOpenText className="h-4 w-4 shrink-0 text-sky-600" />}
-                    <span className="min-w-0 max-w-[calc(100%-4rem)] truncate leading-5">{getLibraryQuestionTitle(question)}</span>
+                    <span className="min-w-0 max-w-[calc(100%-3.25rem)] truncate leading-5">{getLibraryQuestionTitle(question)}</span>
                     {questionAlreadyAdded(question) && <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">Added</span>}
                     <button
                       type="button"
@@ -1064,7 +1064,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                         event.stopPropagation();
                         setStatementModal({ open: true, title: getLibraryQuestionTitle(question), statement: getFullQuestionStatement(question) });
                       }}
-                      className="inline-flex h-[22px] shrink-0 items-center rounded-full border border-sky-200 bg-sky-50 px-1.5 text-[11px] font-semibold leading-none text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300"
+                      className="inline-flex shrink-0 items-center px-0.5 text-[11px] font-semibold leading-5 text-sky-600 transition-colors hover:text-sky-800 hover:underline dark:text-sky-400 dark:hover:text-sky-300"
                     >
                       + More
                     </button>
@@ -1073,13 +1073,13 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                     <QuestionStateBadge question={question} />
                   </div>
                 </div>
-                <div className="text-xs font-semibold leading-5 text-slate-700 dark:text-gray-200">{labelForQuestionType(question)}</div>
+                <div className="min-w-0 truncate text-xs font-semibold leading-5 text-slate-700 dark:text-gray-200" title={labelForQuestionType(question)}>{labelForQuestionType(question)}</div>
                 {visibleColumns.difficulty && <div><span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-bold ${String(question.difficulty || '').toLowerCase() === 'hard' ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-900/15 dark:text-rose-300' : String(question.difficulty || '').toLowerCase() === 'medium' ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-900/15 dark:text-amber-300' : String(question.difficulty || '').toLowerCase() === 'easy' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-900/15 dark:text-emerald-300' : 'border-slate-200 bg-slate-50 text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}>{question.difficulty || 'Not set'}</span></div>}
                 {visibleColumns.tags && <div className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap">
                   {(question.tags || []).length ? (
                     <>
                       {(question.tags || []).slice(0, 2).map((tag) => (
-                        <span key={`${question._id}-${tag}`} title={tag} className="max-w-[92px] shrink-0 truncate rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                        <span key={`${question._id}-${tag}`} title={tag} className="min-w-0 max-w-[88px] truncate rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
                           {tag}
                         </span>
                       ))}
@@ -1102,20 +1102,20 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                 </div>}
                 {visibleColumns.usedIn && <div className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap">
                   {(question.usedInAssessments || []).length ? <>
-                    {(question.usedInAssessments || []).slice(0, 2).map((assessment) => <span key={`${question._id}-usage-${assessment}`} title={assessment} className="max-w-[94px] shrink-0 truncate rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-300">{assessment}</span>)}
+                    {(question.usedInAssessments || []).slice(0, 2).map((assessment) => <span key={`${question._id}-usage-${assessment}`} title={assessment} className="min-w-0 max-w-[88px] truncate rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-300">{assessment}</span>)}
                     {(question.usedInAssessments || []).length > 2 && <button type="button" onClick={(event) => { event.stopPropagation(); setUsageModal({ open: true, questionText: question.questionText || 'Question', assessments: question.usedInAssessments || [] }); }} className="shrink-0 rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300">+{question.usedInAssessments.length - 2} more</button>}
                   </> : <span className="text-xs text-slate-400 dark:text-gray-500">Not used yet</span>}
                 </div>}
                 {visibleColumns.updated && <div className="text-xs text-slate-500 dark:text-gray-400">{question.updatedAt ? new Date(question.updatedAt).toLocaleDateString() : '-'}</div>}
                 {!rowSelectionActive && (
-                  <div className="relative flex justify-end gap-2">
+                  <div className="relative flex min-w-0 justify-end gap-1.5">
                     <button
                       type="button"
                       onClick={(event) => {
                         event.stopPropagation();
                         previewQuestion(question);
                       }}
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-sky-200 bg-sky-50 text-sky-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300"
+                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-sky-200 bg-sky-50 text-sky-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300"
                       aria-label={`Preview ${question.questionText || 'question'}`}
                       title="Candidate preview"
                     >
@@ -1129,7 +1129,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                         event.stopPropagation();
                         setActionMenuId((current) => current === question._id ? '' : question._id);
                       }}
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
                       aria-label="Question actions"
                     >
                       <MoreVertical className="h-4 w-4" />

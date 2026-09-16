@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  Activity,
   BarChart3,
   Check,
   ChevronDown,
@@ -13,12 +12,11 @@ import {
   Search,
   SlidersHorizontal,
   Target,
+  Users,
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  Area,
-  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -80,6 +78,28 @@ const createEmptyFilters = () => ({
 });
 const percentage = (value) => `${Math.round(Number(value || 0) * 10) / 10}%`;
 const sameValue = (left, right) => String(left) === String(right);
+
+const getNicePercentageMaximum = (maximum, step) => {
+  const safeStep = Math.max(1, Number(step) || 10);
+  const safeMaximum = Math.max(0, Number(maximum) || 0);
+  if (safeMaximum === 0) return Math.min(100, safeStep);
+  const paddedMaximum = safeMaximum + Math.max(safeStep, safeMaximum * 0.08);
+  return Math.min(100, Math.max(safeStep, Math.ceil(paddedMaximum / safeStep) * safeStep));
+};
+
+const getNiceCountScale = (maximum) => {
+  const safeMaximum = Math.max(0, Number(maximum) || 0);
+  if (safeMaximum === 0) return { maximum: 1, ticks: [0, 1] };
+  const roughStep = Math.max(1, safeMaximum / 4);
+  const magnitude = 10 ** Math.floor(Math.log10(roughStep));
+  const normalized = roughStep / magnitude;
+  const niceStep = (normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10) * magnitude;
+  const roundedMaximum = Math.ceil(safeMaximum / niceStep) * niceStep;
+  const axisMaximum = roundedMaximum === safeMaximum ? roundedMaximum + niceStep : roundedMaximum;
+  const ticks = [];
+  for (let value = 0; value <= axisMaximum; value += niceStep) ticks.push(value);
+  return { maximum: axisMaximum, ticks };
+};
 
 function MultiSelectField({ label, options, values, onChange, placeholder }) {
   const [expanded, setExpanded] = useState(false);
@@ -194,8 +214,8 @@ function MultiSelectField({ label, options, values, onChange, placeholder }) {
   );
 }
 
-function TopicProficiencyChart({ data, ticks }) {
-  const chartWidth = Math.max(920, data.length * 132);
+function TopicProficiencyChart({ data, ticks, yAxisMaximum }) {
+  const chartWidth = Math.max(780, data.length * 120);
   const [activeTooltip, setActiveTooltip] = useState(null);
   const showTooltip = (event, item, rate, color) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -216,14 +236,14 @@ function TopicProficiencyChart({ data, ticks }) {
     <>
       <div className="flex min-w-0">
         <div className="relative z-10 w-24 shrink-0 bg-white dark:bg-gray-900">
-        <div className="relative h-[420px] border-r border-slate-300 dark:border-gray-600">
+        <div className="relative h-[320px] border-r border-slate-300 dark:border-gray-600">
           <span className="absolute -left-12 top-1/2 w-44 -translate-y-1/2 -rotate-90 text-center text-[11px] font-semibold text-slate-500">
             Students who solved (%)
           </span>
           {ticks.map((tick) => (
             <span
               key={tick}
-              style={{ bottom: `calc(${tick}% - 8px)` }}
+              style={{ bottom: `calc(${(tick / yAxisMaximum) * 100}% - 8px)` }}
               className="absolute right-2 text-[11px] font-medium text-slate-500"
             >
               {tick}%
@@ -237,11 +257,11 @@ function TopicProficiencyChart({ data, ticks }) {
           onScroll={() => setActiveTooltip(null)}
         >
         <div style={{ width: chartWidth }}>
-          <div className="relative h-[420px] border-b border-slate-300 dark:border-gray-600">
+          <div className="relative h-[320px] border-b border-slate-300 dark:border-gray-600">
             {ticks.map((tick) => (
               <span
                 key={tick}
-                style={{ bottom: `${tick}%` }}
+                style={{ bottom: `${(tick / yAxisMaximum) * 100}%` }}
                 className="pointer-events-none absolute inset-x-0 border-t border-dashed border-slate-200 dark:border-gray-700"
               />
             ))}
@@ -267,7 +287,7 @@ function TopicProficiencyChart({ data, ticks }) {
                       }}
                       className="relative w-full max-w-14 rounded-t-md outline-none transition-[filter,transform] duration-150 hover:-translate-y-0.5 hover:brightness-110 focus:-translate-y-0.5 focus:brightness-110 focus:ring-2 focus:ring-sky-400 focus:ring-offset-2"
                       style={{
-                        height: `${rate > 0 ? Math.max(rate, 0.8) : 0}%`,
+                        height: `${rate > 0 ? Math.max((rate / yAxisMaximum) * 100, 1) : 0}%`,
                         backgroundColor: color,
                       }}
                     >
@@ -338,19 +358,22 @@ function TopicProficiencyChart({ data, ticks }) {
   );
 }
 
-function ChartCard({ title, description, icon: Icon, children }) {
+function ChartCard({ title, description, icon: Icon, action, children }) {
   return (
     <section className="min-w-0 rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
-      <header className="flex items-center gap-3 border-b border-slate-100 px-4 py-3 dark:border-gray-800">
-        <span className="rounded-lg bg-sky-50 p-2 text-sky-700 dark:bg-sky-950/30 dark:text-sky-300">
-          <Icon className="h-4 w-4" />
-        </span>
-        <div>
-          <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-            {title}
-          </h3>
-          <p className="text-[10px] text-slate-500">{description}</p>
+      <header className="flex min-h-[68px] items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 dark:border-gray-800">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="rounded-lg bg-sky-50 p-2 text-sky-700 dark:bg-sky-950/30 dark:text-sky-300">
+            <Icon className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <h3 className="truncate text-sm font-bold text-slate-900 dark:text-white">
+              {title}
+            </h3>
+            <p className="truncate text-[10px] text-slate-500">{description}</p>
+          </div>
         </div>
+        {action && <div className="shrink-0">{action}</div>}
       </header>
       <div className="h-72 p-4">{children}</div>
     </section>
@@ -418,15 +441,19 @@ const DEFAULT_EXPORT_COLUMNS = Object.fromEntries(
   ]),
 );
 
-export default function CompilerAnalytics() {
+export default function CompilerAnalytics({ assessmentId = "", assessmentTitle = "", embedded = false }) {
   const toast = useToast();
+  const initialFilters = () => ({
+    ...createEmptyFilters(),
+    assessmentIds: assessmentId ? [String(assessmentId)] : [],
+  });
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
-  const [filters, setFilters] = useState(createEmptyFilters);
-  const [draftFilters, setDraftFilters] = useState(createEmptyFilters);
+  const [filters, setFilters] = useState(initialFilters);
+  const [draftFilters, setDraftFilters] = useState(initialFilters);
   const [yAxisStep, setYAxisStep] = useState(10);
   const [draftYAxisStep, setDraftYAxisStep] = useState(10);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -434,6 +461,28 @@ export default function CompilerAnalytics() {
   const [exportOpen, setExportOpen] = useState(false);
   const [exportReport, setExportReport] = useState("topics");
   const [exportColumns, setExportColumns] = useState(DEFAULT_EXPORT_COLUMNS);
+  const [problemDetailsOpen, setProblemDetailsOpen] = useState(false);
+  const [problemSearch, setProblemSearch] = useState("");
+
+  useEffect(() => {
+    const assessmentIds = assessmentId ? [String(assessmentId)] : [];
+    setFilters((current) => (
+      current.assessmentIds.length === assessmentIds.length
+      && current.assessmentIds.every((id, index) => String(id) === assessmentIds[index])
+        ? current
+        : { ...current, assessmentIds }
+    ));
+    setDraftFilters((current) => ({ ...current, assessmentIds }));
+  }, [assessmentId]);
+
+  useEffect(() => {
+    if (!problemDetailsOpen) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setProblemDetailsOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [problemDetailsOpen]);
 
   useEffect(() => {
     let active = true;
@@ -471,15 +520,48 @@ export default function CompilerAnalytics() {
       item.knowledgeRate ??
         (cohortSize
           ? (Number(item.solvedStudents || 0) / cohortSize) * 100
-          : 0),
+      : 0),
     ),
   }));
+  const topicAxisMaximum = useMemo(
+    () => getNicePercentageMaximum(
+      Math.max(0, ...chartData.map((item) => Number(item.knowledgeRate) || 0)),
+      yAxisStep,
+    ),
+    [chartData, yAxisStep],
+  );
   const yTicks = useMemo(() => {
     const ticks = [];
-    for (let value = 0; value <= 100; value += yAxisStep) ticks.push(value);
-    if (ticks[ticks.length - 1] !== 100) ticks.push(100);
+    for (let value = 0; value <= topicAxisMaximum; value += yAxisStep) ticks.push(value);
+    if (ticks[ticks.length - 1] !== topicAxisMaximum) ticks.push(topicAxisMaximum);
     return ticks;
-  }, [yAxisStep]);
+  }, [topicAxisMaximum, yAxisStep]);
+  const allProblemConversionData = useMemo(() => (
+    (analytics?.problemAnalysis || [])
+      .map((problem) => ({
+        ...problem,
+        studentsAttempted: Number(problem.studentsAttempted || 0),
+        studentsSolved: Number(problem.studentsSolved || 0),
+        conversionGap: Math.max(0, Number(problem.studentsAttempted || 0) - Number(problem.studentsSolved || 0)),
+      }))
+      .sort((left, right) => right.conversionGap - left.conversionGap || right.studentsAttempted - left.studentsAttempted || String(left.title).localeCompare(String(right.title)))
+  ), [analytics?.problemAnalysis]);
+  const problemConversionData = useMemo(
+    () => allProblemConversionData.filter((problem) => problem.studentsAttempted > 0).slice(0, 6),
+    [allProblemConversionData],
+  );
+  const filteredProblemConversionData = useMemo(() => {
+    const query = problemSearch.trim().toLowerCase();
+    if (!query) return allProblemConversionData;
+    return allProblemConversionData.filter((problem) => (
+      String(problem.title || "").toLowerCase().includes(query)
+      || String(problem.difficulty || "").toLowerCase().includes(query)
+    ));
+  }, [allProblemConversionData, problemSearch]);
+  const problemCountScale = useMemo(
+    () => getNiceCountScale(Math.max(0, ...problemConversionData.map((item) => item.studentsAttempted))),
+    [problemConversionData],
+  );
 
   const selectedDraftAssessments = (filterOptions.assessments || []).filter(
     (assessment) =>
@@ -555,6 +637,10 @@ export default function CompilerAnalytics() {
   const assessmentOptions = (filterOptions.assessments || []).map((item) => ({
     value: item._id,
     label: `${item.title} · ${item.studentCount} eligible`,
+  }));
+  const assessmentNameOptions = (filterOptions.assessments || []).map((item) => ({
+    value: item._id,
+    label: item.title,
   }));
   const assessmentProblemIdSet = new Set(
     selectedDraftAssessments.flatMap((assessment) =>
@@ -646,7 +732,7 @@ export default function CompilerAnalytics() {
     filters.uploadBatchIds.length &&
       `Excel batches: ${filters.uploadBatchIds.length} selected`,
     filters.assessmentIds.length &&
-      `Assessments: ${optionLabels(assessmentOptions, filters.assessmentIds).join(", ")}`,
+      `${filters.assessmentIds.length === 1 ? "Assessment" : "Assessments"}: ${optionLabels(assessmentNameOptions, filters.assessmentIds).join(", ")}`,
     filters.topics.length &&
       `Topics: ${optionLabels(topicOptions, filters.topics).join(", ")}`,
     filters.difficulties.length &&
@@ -846,18 +932,23 @@ export default function CompilerAnalytics() {
     );
 
   return (
-    <div className="flex min-h-[calc(100vh-var(--app-navbar-height,5rem)-2rem)] flex-col gap-3">
+    <div className={`flex flex-col gap-3 ${embedded ? 'min-h-0' : 'min-h-[calc(100vh-var(--app-navbar-height,5rem)-2rem)]'}`}>
       <header className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-gray-800 dark:bg-gray-900">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white">
-            <BarChart3 className="h-5 w-5" />
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-sky-50 ring-1 ring-sky-100 dark:bg-sky-950/40 dark:ring-sky-900">
+            <img
+              src="/images/peerprep-analytics-icon.png"
+              alt=""
+              aria-hidden="true"
+              className="h-10 w-10 object-contain"
+            />
           </span>
           <div>
             <h1 className="text-lg font-bold text-slate-950 dark:text-white">
-              Topic proficiency
+              Coding analysis
             </h1>
             <p className="text-xs text-slate-500 dark:text-gray-400">
-              Percentage of selected students who solved each topic
+              {assessmentTitle ? `${assessmentTitle} · coding performance` : 'Topic proficiency, submissions, difficulty, and language performance'}
             </p>
           </div>
         </div>
@@ -920,10 +1011,10 @@ export default function CompilerAnalytics() {
 
       <section className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-slate-200 bg-slate-200 sm:grid-cols-4 dark:border-gray-800 dark:bg-gray-800">
         {[
-          ["Selected students", cohortSize],
-          ["Students with activity", summary.activeStudents || 0],
-          ["Topics shown", chartData.length],
-          ["Problems included", summary.problemsCovered || 0],
+          ["Total students", cohortSize],
+          ["Total attempts", summary.totalAttempts || 0],
+          ["Total topics", chartData.length],
+          ["Total problems", summary.problemsCovered || 0],
         ].map(([label, value]) => (
           <div key={label} className="bg-white px-4 py-2.5 dark:bg-gray-900">
             <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">
@@ -936,7 +1027,7 @@ export default function CompilerAnalytics() {
         ))}
       </section>
 
-      <section className="flex min-h-[620px] flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+      <section className="flex min-h-[500px] flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 dark:border-gray-800">
           <div>
             <h2 className="text-sm font-bold text-slate-900 dark:text-white">
@@ -947,15 +1038,21 @@ export default function CompilerAnalytics() {
               topic.
             </p>
           </div>
-          <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-[10px] font-bold text-slate-600 dark:bg-gray-800 dark:text-gray-300">
-            Y-axis interval: {yAxisStep}%
-          </span>
+          <div className="flex items-center gap-2 text-[10px] font-bold">
+            <span className="rounded-lg bg-sky-50 px-2.5 py-1.5 text-sky-700 dark:bg-sky-950/30 dark:text-sky-300">
+              Auto scale: 0–{topicAxisMaximum}%
+            </span>
+            <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-slate-600 dark:bg-gray-800 dark:text-gray-300">
+              {yAxisStep}% intervals
+            </span>
+          </div>
         </div>
-        <div className="min-h-0 flex-1 p-3 sm:p-5">
+        <div className="min-h-0 flex-1 p-3 sm:p-4">
           {chartData.length ? (
-            <TopicProficiencyChart data={chartData} ticks={yTicks} />
+            <TopicProficiencyChart data={chartData} ticks={yTicks} yAxisMaximum={topicAxisMaximum} />
           ) : (
-            <div className="flex h-full min-h-[540px] flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-6 text-center dark:border-gray-700 dark:bg-gray-800/40">
+            <div className="flex h-full min-h-[400px] flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-6 text-center dark:border-gray-700 dark:bg-gray-800/40">
+              <img src="/images/peerprep-analytics-icon.png" alt="" aria-hidden="true" className="mb-3 h-16 w-16 object-contain opacity-70" />
               <p className="text-sm font-bold text-slate-700 dark:text-gray-200">
                 No topic data for this selection
               </p>
@@ -969,48 +1066,67 @@ export default function CompilerAnalytics() {
 
       <section className="grid gap-3 xl:grid-cols-2">
         <ChartCard
-          title="Submission activity"
-          description="Attempt volume across the selected time range"
-          icon={Activity}
+          title="Problem conversion"
+          description={`Top ${problemConversionData.length} completion gaps · Light attempted, dark solved`}
+          icon={Users}
+          action={allProblemConversionData.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => {
+                setProblemSearch("");
+                setProblemDetailsOpen(true);
+              }}
+              className="rounded-lg border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-[10px] font-bold text-sky-700 transition-colors hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300 dark:hover:bg-sky-900/40"
+            >
+              View all {allProblemConversionData.length}
+            </button>
+          ) : null}
         >
-          {analytics?.charts?.submissionsOverTime?.some(
-            (item) => item.count,
-          ) ? (
+          {problemConversionData.length ? (
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart
-                data={analytics.charts.submissionsOverTime}
-                margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+              <BarChart
+                layout="vertical"
+                data={problemConversionData}
+                margin={{ top: 4, right: 18, left: 10, bottom: 0 }}
               >
-                <defs>
-                  <linearGradient id="attemptArea" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0284c7" stopOpacity={0.28} />
-                    <stop offset="95%" stopColor="#0284c7" stopOpacity={0.02} />
-                  </linearGradient>
-                </defs>
                 <CartesianGrid
                   strokeDasharray="4 4"
-                  vertical={false}
+                  horizontal={false}
                   stroke="#e2e8f0"
                 />
                 <XAxis
-                  dataKey="date"
-                  tick={{ fontSize: 10, fill: "#64748b" }}
-                  minTickGap={26}
-                />
-                <YAxis
+                  type="number"
+                  domain={[0, problemCountScale.maximum]}
+                  ticks={problemCountScale.ticks}
                   allowDecimals={false}
                   tick={{ fontSize: 10, fill: "#64748b" }}
                 />
-                <Tooltip />
-                <Area
-                  type="monotone"
-                  dataKey="count"
-                  name="Attempts"
-                  stroke="#0284c7"
-                  strokeWidth={2.5}
-                  fill="url(#attemptArea)"
+                <YAxis
+                  type="category"
+                  dataKey="title"
+                  width={118}
+                  tick={{ fontSize: 10, fill: "#64748b" }}
+                  tickFormatter={(value) => String(value).length > 17 ? `${String(value).slice(0, 17)}…` : String(value)}
                 />
-              </AreaChart>
+                <Tooltip
+                  formatter={(value, name) => [value, name]}
+                  labelFormatter={(value) => value}
+                />
+                <Bar
+                  dataKey="studentsAttempted"
+                  name="Attempted"
+                  fill="#7dd3fc"
+                  radius={[0, 5, 5, 0]}
+                  maxBarSize={15}
+                />
+                <Bar
+                  dataKey="studentsSolved"
+                  name="Solved"
+                  fill="#0369a1"
+                  radius={[0, 5, 5, 0]}
+                  maxBarSize={15}
+                />
+              </BarChart>
             </ResponsiveContainer>
           ) : (
             <EmptyChart />
@@ -1174,6 +1290,97 @@ export default function CompilerAnalytics() {
         </ChartCard>
       </section>
 
+      {problemDetailsOpen && createPortal(
+        <div
+          className="fixed inset-0 z-[160] flex justify-end bg-slate-950/45 backdrop-blur-[1px]"
+          role="dialog"
+          aria-modal="true"
+          aria-label="All problem conversion details"
+        >
+          <button
+            type="button"
+            className="absolute inset-0"
+            aria-label="Close problem details"
+            onClick={() => setProblemDetailsOpen(false)}
+          />
+          <aside className="relative z-10 flex h-full w-full max-w-3xl flex-col border-l border-slate-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+            <header className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-200 px-5 py-4 dark:border-gray-800">
+              <div className="min-w-0">
+                <h2 className="text-base font-bold text-slate-950 dark:text-white">Problem conversion details</h2>
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-gray-400">
+                  All {allProblemConversionData.length} scoped problems, ordered by the largest completion gap.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setProblemDetailsOpen(false)}
+                aria-label="Close problem details"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </header>
+
+            <div className="shrink-0 border-b border-slate-200 p-4 dark:border-gray-800">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="search"
+                  value={problemSearch}
+                  onChange={(event) => setProblemSearch(event.target.value)}
+                  placeholder="Search question or difficulty"
+                  autoFocus
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-sky-600"
+                />
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-auto">
+              <table data-no-serial className="min-w-[660px] w-full text-left">
+                <thead className="sticky top-0 z-10 bg-slate-50 text-[10px] font-bold uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgba(226,232,240,1)] dark:bg-gray-800 dark:text-gray-400 dark:shadow-[0_1px_0_0_rgba(55,65,81,1)]">
+                  <tr>
+                    <th className="px-5 py-3">Question</th>
+                    <th className="px-3 py-3 text-right">Attempted</th>
+                    <th className="px-3 py-3 text-right">Solved</th>
+                    <th className="px-3 py-3 text-right">Conversion</th>
+                    <th className="px-5 py-3 text-right">Gap</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
+                  {filteredProblemConversionData.map((problem) => {
+                    const conversionRate = problem.studentsAttempted > 0
+                      ? Math.round((problem.studentsSolved / problem.studentsAttempted) * 1000) / 10
+                      : 0;
+                    return (
+                      <tr key={problem.problemId} className="text-xs text-slate-700 hover:bg-sky-50/50 dark:text-gray-300 dark:hover:bg-sky-950/20">
+                        <td className="px-5 py-3">
+                          <div className="max-w-sm font-semibold text-slate-900 dark:text-white">{problem.title}</div>
+                          <span className="mt-1 inline-flex rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-slate-500 dark:bg-gray-800 dark:text-gray-400">
+                            {problem.difficulty || 'Unspecified'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-right font-semibold tabular-nums">{problem.studentsAttempted}</td>
+                        <td className="px-3 py-3 text-right font-semibold tabular-nums text-sky-700 dark:text-sky-300">{problem.studentsSolved}</td>
+                        <td className="px-3 py-3 text-right tabular-nums">{problem.studentsAttempted > 0 ? `${conversionRate}%` : '—'}</td>
+                        <td className="px-5 py-3 text-right font-bold tabular-nums text-slate-900 dark:text-white">{problem.conversionGap}</td>
+                      </tr>
+                    );
+                  })}
+                  {!filteredProblemConversionData.length && (
+                    <tr>
+                      <td colSpan={5} className="px-5 py-12 text-center text-sm text-slate-400">
+                        No questions match this search.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </aside>
+        </div>,
+        document.body,
+      )}
+
       <AnimatePresence>
         {filterOpen && (
           <motion.div
@@ -1323,29 +1530,36 @@ export default function CompilerAnalytics() {
                       </p>
                     </div>
                     <div className="sm:col-span-2">
-                      <MultiSelectField
-                        label="Assessments"
-                        options={assessmentOptions}
-                        values={draftFilters.assessmentIds}
-                        onChange={(value) =>
-                          setDraftFilters((current) => ({
-                            ...current,
-                            assessmentIds: value,
-                            studentIds: [],
-                            semesters: [],
-                            groups: [],
-                            branches: [],
-                            courses: [],
-                            colleges: [],
-                            uploadBatchIds: [],
-                            topics: [],
-                            difficulties: [],
-                            problemStatuses: [],
-                            problemIds: [],
-                          }))
-                        }
-                        placeholder="All assessments"
-                      />
+                      {assessmentId ? (
+                        <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-3 dark:border-sky-800 dark:bg-sky-950/25">
+                          <div className="text-[10px] font-bold uppercase tracking-wide text-sky-600 dark:text-sky-300">Assessment scope</div>
+                          <div className="mt-1 truncate text-sm font-semibold text-slate-900 dark:text-white">{assessmentTitle || 'Selected assessment'}</div>
+                        </div>
+                      ) : (
+                        <MultiSelectField
+                          label="Assessments"
+                          options={assessmentOptions}
+                          values={draftFilters.assessmentIds}
+                          onChange={(value) =>
+                            setDraftFilters((current) => ({
+                              ...current,
+                              assessmentIds: value,
+                              studentIds: [],
+                              semesters: [],
+                              groups: [],
+                              branches: [],
+                              courses: [],
+                              colleges: [],
+                              uploadBatchIds: [],
+                              topics: [],
+                              difficulties: [],
+                              problemStatuses: [],
+                              problemIds: [],
+                            }))
+                          }
+                          placeholder="All assessments"
+                        />
+                      )}
                     </div>
                     <div className="sm:col-span-2">
                       <MultiSelectField
@@ -1465,8 +1679,8 @@ export default function CompilerAnalytics() {
                         Graph display
                       </h3>
                       <p className="mt-1 text-[11px] text-slate-500">
-                        Choose how much percentage detail appears on the fixed
-                        Y-axis.
+                        Choose the percentage interval. The upper limit adjusts
+                        automatically to the highest visible topic.
                       </p>
                     </div>
                     <label className="block text-xs font-bold text-slate-600 dark:text-gray-300">
@@ -1486,8 +1700,8 @@ export default function CompilerAnalytics() {
                       </select>
                     </label>
                     <div className="rounded-xl border border-sky-100 bg-sky-50 p-3 text-[11px] leading-5 text-sky-800 dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-300">
-                      The Y-axis remains fixed from 0% to 100%. Only topics
-                      scroll horizontally.
+                      Auto scale keeps one interval of headroom above the tallest
+                      bar, up to 100%. Topics continue to scroll horizontally.
                     </div>
                   </div>
                 )}

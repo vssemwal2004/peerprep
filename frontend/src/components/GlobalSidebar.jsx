@@ -428,8 +428,9 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
         <div ref={profileRef} className="relative shrink-0 border-t border-sky-100 py-2 dark:border-sky-950">
           {isProfileOpen && (
             <div
-              className="fixed bottom-3 z-[70] w-[18rem] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_55px_rgba(15,23,42,0.18)] transition-[left] duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)] dark:border-gray-700 dark:bg-gray-900 dark:shadow-black/50"
+              className="pointer-events-auto fixed bottom-3 z-[200] w-[18rem] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_55px_rgba(15,23,42,0.18)] transition-[left] duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)] dark:border-gray-700 dark:bg-gray-900 dark:shadow-black/50"
               style={{ left: 'calc(var(--admin-sidebar-width) + 0.75rem)' }}
+              onMouseDown={(event) => event.stopPropagation()}
             >
               <div className="border-b border-slate-100 bg-gradient-to-br from-slate-50 to-white px-4 py-4 dark:border-gray-800 dark:from-gray-800 dark:to-gray-900">
                 <div className="flex items-center gap-3">
@@ -464,7 +465,16 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
                 </Link>
 
                 <div className="my-2 border-t border-slate-100 dark:border-gray-800" />
-                <button type="button" onClick={toggleTheme} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800">
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    toggleTheme();
+                  }}
+                  className="relative z-10 flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-gray-200 dark:hover:bg-gray-800"
+                  role="switch"
+                  aria-checked={theme === 'dark'}
+                >
                   {theme === 'dark' ? <Moon className="h-4 w-4 text-sky-400" /> : <Sun className="h-4 w-4 text-amber-500" />}
                   <span className="flex-1">Dark theme</span>
                   <span className={`relative h-6 w-11 rounded-full transition-colors ${theme === 'dark' ? 'bg-sky-500' : 'bg-slate-200 dark:bg-gray-700'}`} aria-hidden="true">

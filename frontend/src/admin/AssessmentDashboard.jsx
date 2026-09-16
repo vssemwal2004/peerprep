@@ -1164,9 +1164,9 @@ export default function AssessmentDashboard() {
             testTypes={testTypes}
             onTestTypeChange={(value) => setFilters((current) => ({ ...current, testType: value }))}
           />
-          <main className="min-w-0 px-4 py-5 sm:px-6">
-            <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 dark:border-gray-800 xl:flex-row xl:items-center xl:justify-between">
-              <div className="relative w-full xl:max-w-2xl">
+          <main className="min-w-0 px-4 py-4 sm:px-6">
+            <div className="flex flex-col gap-3 border-b border-slate-200 pb-3 dark:border-gray-800 xl:flex-row xl:items-center">
+              <div className="relative min-w-0 flex-1">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
                   value={filters.search}
@@ -1175,8 +1175,8 @@ export default function AssessmentDashboard() {
                   className="h-10 w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-700 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:focus:ring-sky-900/30"
                 />
               </div>
-              <div className="flex items-center justify-between gap-2 xl:justify-end">
-                <span className="mr-auto whitespace-nowrap text-xs text-slate-500 dark:text-gray-400 xl:mr-2">{filtered.length} assessment{filtered.length === 1 ? '' : 's'}</span>
+              <div className="flex shrink-0 items-center gap-2">
+                <span className="whitespace-nowrap rounded-lg bg-slate-100 px-2.5 py-2 text-xs font-medium text-slate-600 dark:bg-gray-800 dark:text-gray-300">{filtered.length} assessment{filtered.length === 1 ? '' : 's'}</span>
                 <select value={filters.sort} onChange={(event) => setFilters((current) => ({ ...current, sort: event.target.value }))} className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-600 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
                   <option value="updated">Recently updated</option>
                   <option value="oldest">Oldest created</option>
@@ -1189,7 +1189,7 @@ export default function AssessmentDashboard() {
               </div>
             </div>
 
-          <section className="pt-4" aria-label="Assessment list">
+          <section className="pt-3" aria-label="Assessment list">
             {loading ? (
               <div className="flex min-h-56 items-center justify-center rounded-lg border border-slate-200 bg-white text-sm text-slate-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading assessments...</div>
             ) : error ? (
@@ -1202,20 +1202,26 @@ export default function AssessmentDashboard() {
                 <button type="button" onClick={() => { setActiveTab('all'); setFilters({ search: '', creationWindow: 'any', startDate: '', endDate: '', testType: 'all', sort: 'updated' }); }} className="mt-4 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Clear filters</button>
               </div>
             ) : (
-              <table className="block min-w-0 text-sm">
-                <thead className="sr-only">
-                  <tr>
-                    <th className="px-5 py-3.5">Assessment</th>
-                    <th className="px-4 py-3.5">Schedule</th>
-                    <th className="px-4 py-3.5">Content</th>
-                    <th className="px-4 py-3.5">Status</th>
-                    <th className="px-4 py-3.5">Candidates</th>
-                    <th className="px-5 py-3.5 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="block space-y-3">
-                  {filtered.map((assessment) => (
-                    <tr
+              <div role="list" className="space-y-2.5">
+                <div className="hidden grid-cols-[minmax(230px,2fr)_minmax(120px,1fr)_minmax(100px,.75fr)_minmax(145px,1.15fr)_minmax(125px,.95fr)_90px_28px] items-center gap-x-5 px-4 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 xl:grid dark:text-gray-500">
+                  <span>Assessment</span>
+                  <span>Schedule</span>
+                  <span>Content</span>
+                  <span>Completion</span>
+                  <span>Access</span>
+                  <span>Status</span>
+                  <span className="sr-only">Actions</span>
+                </div>
+                {filtered.map((assessment) => {
+                  const completedCount = Number(assessment.completedCount || 0);
+                  const assignedCount = Number(assessment.assignedCount || 0);
+                  const completionPercent = assignedCount > 0
+                    ? Math.min(100, Math.round((completedCount / assignedCount) * 100))
+                    : 0;
+                  const lifecycleStatus = assessment.lifecycleStatus === 'draft' ? 'Draft' : assessment.status;
+
+                  return (
+                    <article
                       key={assessment._id}
                       role="link"
                       tabIndex={0}
@@ -1229,35 +1235,58 @@ export default function AssessmentDashboard() {
                           navigate(`${rolePrefix}/assessment/${assessment._id}/edit`);
                         }
                       }}
-                      className="group relative grid cursor-pointer items-center gap-x-4 gap-y-3 rounded-xl border border-slate-200 bg-white py-3.5 pl-4 pr-14 shadow-sm transition-colors hover:border-sky-300 hover:bg-sky-50/20 focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-sky-800 dark:hover:bg-sky-950/10 sm:grid-cols-2 xl:grid-cols-[minmax(220px,2fr)_minmax(130px,1fr)_110px_90px_160px]"
+                      className="group grid cursor-pointer grid-cols-1 items-center gap-x-5 gap-y-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition-all hover:-translate-y-px hover:border-sky-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-sky-800 md:grid-cols-2 xl:grid-cols-[minmax(230px,2fr)_minmax(120px,1fr)_minmax(100px,.75fr)_minmax(145px,1.15fr)_minmax(125px,.95fr)_90px_28px]"
                     >
-                      <td className="min-w-0 sm:col-span-2 xl:col-span-1">
-                        <div className="max-w-xs font-bold text-slate-900 group-hover:text-sky-700 dark:text-white dark:group-hover:text-sky-300">{assessment.title || 'Untitled assessment'}</div>
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-400 dark:text-gray-500"><span>{assessment.testType || 'General'}</span><span aria-hidden="true">•</span><span>ID {assessment.assessmentId || '—'}</span></div>
-                      </td>
-                      <td className="whitespace-nowrap text-xs text-slate-600 dark:text-gray-300"><div className="font-semibold text-slate-700 dark:text-gray-200">{assessment.startTime ? formatShortDate(assessment.startTime) : 'Not scheduled'}</div><div className="mt-1 text-[11px] text-slate-400">{assessment.duration ? `${assessment.duration} min` : 'No duration'}</div></td>
-                      <td className="text-xs text-slate-600 dark:text-gray-300"><div className="font-semibold text-slate-700 dark:text-gray-200">{assessment.totalQuestions || 0} questions</div><div className="mt-1 text-[11px] text-slate-400">{assessment.totalMarks || 0} marks</div></td>
-                      <td>
-                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusStyles[assessment.lifecycleStatus === 'draft' ? 'Draft' : assessment.status] || statusStyles.Upcoming}`}>
-                          {assessment.status === 'Active' && <span className="mr-1 h-1.5 w-1.5 rounded-full bg-emerald-500" />}{displayStatus(assessment.lifecycleStatus === 'draft' ? 'Draft' : assessment.status)}
-                        </span>
-                      </td>
-                      <td>
-                        <div className="text-xs font-semibold text-slate-700 dark:text-gray-200">{assessment.completedCount || 0}/{assessment.assignedCount || 0} completed</div>
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          <span className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${assessment.isVisible !== false ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}>
-                            {assessment.isVisible !== false ? <Globe className="h-3 w-3" /> : <ShieldOff className="h-3 w-3" />}
-                            {assessment.isVisible !== false ? 'Visible' : 'Hidden'}
-                          </span>
-                          <span className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${assessment.passwordEnabled ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-slate-100 text-slate-400'}`}>
-                            {assessment.passwordEnabled ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
-                            {assessment.passwordEnabled ? 'Protected' : 'Open'}
-                          </span>
+                      <div className="min-w-0 md:col-span-2 xl:col-span-1">
+                        <div className="truncate text-sm font-semibold text-slate-900 transition-colors group-hover:text-sky-700 dark:text-white dark:group-hover:text-sky-300">{assessment.title || 'Untitled assessment'}</div>
+                        <div className="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-slate-400 dark:text-gray-500">
+                          <span className="truncate">{assessment.testType || assessment.assessmentType || 'General'}</span>
+                          <span className="h-1 w-1 shrink-0 rounded-full bg-slate-300" aria-hidden="true" />
+                          <span className="shrink-0">ID {assessment.assessmentId || '—'}</span>
                         </div>
-                      </td>
-                      <td className="absolute right-3 top-3">
-                        <div className="flex items-center justify-end">
-                          <ThreeDotsMenu
+                      </div>
+
+                      <div className="min-w-0 text-xs">
+                        <div className="font-semibold text-slate-700 dark:text-gray-200">{assessment.startTime ? formatShortDate(assessment.startTime) : 'Not scheduled'}</div>
+                        <div className="mt-0.5 text-[11px] text-slate-400 dark:text-gray-500">{assessment.duration ? `${assessment.duration} min` : 'Duration not set'}</div>
+                      </div>
+
+                      <div className="text-xs">
+                        <div className="font-semibold text-slate-700 dark:text-gray-200">{assessment.totalQuestions || 0} questions</div>
+                        <div className="mt-0.5 text-[11px] text-slate-400 dark:text-gray-500">{assessment.totalMarks || 0} marks</div>
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="flex items-center justify-between gap-2 text-xs">
+                          <span className="font-semibold text-slate-700 dark:text-gray-200">{completedCount} of {assignedCount}</span>
+                          <span className="text-[10px] tabular-nums text-slate-400 dark:text-gray-500">{completionPercent}%</span>
+                        </div>
+                        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-gray-800">
+                          <div className="h-full rounded-full bg-sky-500 transition-[width]" style={{ width: `${completionPercent}%` }} />
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-1 text-[10px] font-medium ${assessment.isVisible !== false ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400'}`}>
+                          {assessment.isVisible !== false ? <Globe className="h-3 w-3" /> : <ShieldOff className="h-3 w-3" />}
+                          {assessment.isVisible !== false ? 'Visible' : 'Hidden'}
+                        </span>
+                        {assessment.passwordEnabled && (
+                          <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-1 text-[10px] font-medium text-amber-700">
+                            <Lock className="h-3 w-3" /> Protected
+                          </span>
+                        )}
+                      </div>
+
+                      <div>
+                        <span className={`inline-flex items-center rounded-full border px-2 py-1 text-[10px] font-semibold ${statusStyles[lifecycleStatus] || statusStyles.Upcoming}`}>
+                          {assessment.status === 'Active' && <span className="mr-1 h-1.5 w-1.5 rounded-full bg-emerald-500" />}
+                          {displayStatus(lifecycleStatus)}
+                        </span>
+                      </div>
+
+                      <div className="justify-self-start md:justify-self-end">
+                        <ThreeDotsMenu
                             assessment={assessment}
                             onOpen={() => navigate(`${rolePrefix}/assessment/${assessment._id}/edit`)}
                             onPreview={() => navigate(`${rolePrefix}/assessment/preview/${assessment._id}`)}
@@ -1272,13 +1301,12 @@ export default function AssessmentDashboard() {
                             onResetSubmissions={() => openResetSubmissions(assessment)}
                             onMarkComplete={() => openMarkComplete(assessment)}
                             onReleaseAnswers={() => openReleaseAnswers(assessment)}
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                        />
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
             )}
           </section>
           </main>

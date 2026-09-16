@@ -3,6 +3,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  FileSpreadsheet,
   Filter,
   Loader2,
   Search,
@@ -37,6 +38,8 @@ export default function StudentSelector({ selected = [], onChange }) {
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [showFilters, setShowFilters] = useState(false);
+  const [uploadBatchId, setUploadBatchId] = useState('');
+  const [uploadBatches, setUploadBatches] = useState([]);
   const [managedSemesters, setManagedSemesters] = useState([]);
   const [facets, setFacets] = useState({});
   const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 });
@@ -93,6 +96,18 @@ export default function StudentSelector({ selected = [], onChange }) {
   }, []);
 
   useEffect(() => {
+    let active = true;
+    api.listStudentUploadBatches()
+      .then((data) => {
+        if (active) setUploadBatches(Array.isArray(data?.batches) ? data.batches : []);
+      })
+      .catch(() => {
+        if (active) setUploadBatches([]);
+      });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
     if (!showFilters) return undefined;
     const handleOutsideClick = (event) => {
       if (!filterPanelRef.current?.contains(event.target)) setShowFilters(false);
@@ -110,6 +125,7 @@ export default function StudentSelector({ selected = [], onChange }) {
     api.listAllStudents({
       search: debouncedQuery,
       ...filters,
+      uploadBatchId,
       sortOrder: 'asc',
       page: pagination.page,
       limit: PAGE_SIZE,
@@ -145,7 +161,7 @@ export default function StudentSelector({ selected = [], onChange }) {
       .finally(() => {
         if (requestRef.current === requestId) setLoading(false);
       });
-  }, [debouncedQuery, filters, pagination.page]);
+  }, [debouncedQuery, filters, pagination.page, uploadBatchId]);
 
   const toggleStudent = (student) => {
     const id = String(student._id);
@@ -168,6 +184,7 @@ export default function StudentSelector({ selected = [], onChange }) {
       const data = await api.listAllStudents({
         search: debouncedQuery,
         ...filters,
+        uploadBatchId,
         sortOrder: 'asc',
       });
       const matchingStudents = Array.isArray(data.students) ? data.students : [];
@@ -194,7 +211,7 @@ export default function StudentSelector({ selected = [], onChange }) {
 
   const visibleSelected = students.filter((student) => selectedIds.has(String(student._id))).length;
   const allVisibleSelected = students.length > 0 && visibleSelected === students.length;
-  const hasActiveCriteria = Boolean(debouncedQuery || activeFilterCount > 0);
+  const hasActiveCriteria = Boolean(debouncedQuery || activeFilterCount > 0 || uploadBatchId);
   const allMatchingSelected = hasActiveCriteria
     && pagination.total > 0
     && selected.length === pagination.total
@@ -205,6 +222,32 @@ export default function StudentSelector({ selected = [], onChange }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900">
       <div className="space-y-3 border-b border-slate-200 bg-slate-50/80 p-3 dark:border-gray-700 dark:bg-gray-800/60">
+        <div className="grid gap-3 rounded-xl border border-sky-200 bg-sky-50/70 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(260px,0.9fr)] sm:items-center dark:border-sky-900/60 dark:bg-sky-950/20">
+          <div className="flex items-start gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-600 text-white shadow-sm"><FileSpreadsheet className="h-4 w-4" /></span>
+            <div><p className="text-xs font-bold text-slate-900 dark:text-white">Select from a saved Excel list</p><p className="mt-1 text-[10px] leading-4 text-slate-500 dark:text-gray-400">Choose an already uploaded list, review its students, then select the complete list.</p></div>
+          </div>
+          <label>
+            <span className="sr-only">Saved Excel student list</span>
+            <select
+              value={uploadBatchId}
+              onChange={(event) => {
+                setUploadBatchId(event.target.value);
+                setPagination((current) => ({ ...current, page: 1 }));
+              }}
+              aria-label="Select a saved Excel student list"
+              className="h-10 w-full appearance-none rounded-xl border border-sky-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-sky-800 dark:bg-gray-900 dark:text-gray-200 dark:focus:ring-sky-900/40"
+            >
+              <option value="">Browse all students</option>
+              {uploadBatches.map((batch) => (
+                <option key={batch._id} value={batch._id}>
+                  {batch.name}{Array.isArray(batch.studentIds) ? ` (${batch.studentIds.length} students)` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
         <div>
           <label htmlFor="assessment-student-search" className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-gray-400">Search students</label>
           <div className="relative">
@@ -304,8 +347,8 @@ export default function StudentSelector({ selected = [], onChange }) {
             ? 'Selecting...'
             : hasActiveCriteria
               ? allMatchingSelected
-                ? `All filtered selected (${pagination.total})`
-                : `Select all filtered (${pagination.total})`
+                ? uploadBatchId ? `Excel list selected (${pagination.total})` : `All filtered selected (${pagination.total})`
+                : uploadBatchId ? `Select Excel list (${pagination.total})` : `Select all filtered (${pagination.total})`
               : allVisibleSelected ? 'Page selected' : 'Select page'}
         </button>
         </div>

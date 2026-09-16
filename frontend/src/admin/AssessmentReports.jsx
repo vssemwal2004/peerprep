@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
-import DateTimePicker from '../components/DateTimePicker';
 import {
-  Activity, ArrowLeft, ArrowRight, BarChart3, Calendar, CheckCircle2, ChevronDown, Clock, Download, FileSpreadsheet, Filter,
-  GraduationCap, Layers, LayoutDashboard, RotateCcw, Save, Search,
-  ShieldAlert, SlidersHorizontal, Sparkles, Target, TrendingUp, Users, X,
+  ArrowLeft, ArrowRight, BarChart3, Download, FileSpreadsheet,
+  GraduationCap, Layers, LayoutDashboard, RotateCcw, Search,
+  ShieldAlert, SlidersHorizontal, Target, TrendingUp, Users, X,
 } from 'lucide-react';
-import { AreaChart, Heatmap, PieChart, Sparkline, MiniBarChart } from './reports/ReportCharts';
+import { Sparkline } from './reports/ReportCharts';
 import {
   TrendBadge, StatusBadge, KpiCard, FilterChip, SortHeader,
   AssessmentListItem, TableEmpty, TableRow, SkeletonRow,
@@ -15,13 +14,14 @@ import {
 } from './reports/ReportComponents';
 import ReportDetailDrawer from './reports/ReportDetailDrawer';
 import ReportViolationModal from './reports/ReportViolationModal';
+import CompilerAnalytics from './compiler/CompilerAnalytics';
 
 const PAGE_SIZES = [25, 50, 100, 250];
 
 const tabsConfig = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'candidates', label: 'Candidates', icon: GraduationCap },
-  { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+  { id: 'analytics', label: 'Analysis', icon: BarChart3 },
   { id: 'violations', label: 'Violations', icon: ShieldAlert },
 ];
 
@@ -147,7 +147,7 @@ function activityTone(value, max) {
   return 'bg-sky-100 dark:bg-sky-900';
 }
 
-function YearlyAssessmentActivity({ calendar = [], monthly = [], onSelectAssessment }) {
+export function YearlyAssessmentActivity({ calendar = [], monthly = [], onSelectAssessment }) {
   const [hoveredDay, setHoveredDay] = useState(null);
   const [pinnedDay, setPinnedDay] = useState(null);
   const activityMap = useMemo(() => {
@@ -419,13 +419,6 @@ export default function AssessmentReports() {
     assessmentWindow: 'all',
   });
   const [assessmentSearch, setAssessmentSearch] = useState('');
-  const [sidebarCollapsed, setSidebarCollapsed] = useState({ scope: true, schedule: true, list: false });
-  const [showFilters, setShowFilters] = useState(false);
-  const [savedFilterName, setSavedFilterName] = useState('');
-  const [savedFilters, setSavedFilters] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('peerprep_report_filters') || '[]'); }
-    catch { return []; }
-  });
 
   /* Data */
   const [assessments, setAssessments] = useState([]);
@@ -535,7 +528,6 @@ export default function AssessmentReports() {
       }
     }, 350);
     return () => { active = false; clearTimeout(timeout); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, pagination.page, pagination.limit, sort, activeTab, toast]);
 
   useEffect(() => {
@@ -865,28 +857,6 @@ export default function AssessmentReports() {
     setSort((prev) => ({ key, dir: prev.key === key && prev.dir === 'asc' ? 'desc' : 'asc' }));
   }, []);
 
-  /* ── Saved filters ── */
-  const saveCurrentFilter = useCallback(() => {
-    if (!savedFilterName.trim()) return;
-    const next = [...savedFilters, { name: savedFilterName.trim(), filters: { ...filters }, createdAt: Date.now() }];
-    setSavedFilters(next);
-    localStorage.setItem('peerprep_report_filters', JSON.stringify(next));
-    setSavedFilterName('');
-    toast.success('Filter saved');
-  }, [savedFilters, savedFilterName, filters, toast]);
-
-  const applySavedFilter = useCallback((saved) => {
-    setFilters((prev) => ({ ...prev, ...saved.filters }));
-    setPagination((p) => ({ ...p, page: 1 }));
-    toast.info(`Applied: ${saved.name}`);
-  }, [toast]);
-
-  const removeSavedFilter = useCallback((index) => {
-    const next = savedFilters.filter((_, i) => i !== index);
-    setSavedFilters(next);
-    localStorage.setItem('peerprep_report_filters', JSON.stringify(next));
-  }, [savedFilters]);
-
   /* ── Clear ── */
   const clearFilters = useCallback(() => {
     setFilters({
@@ -935,10 +905,9 @@ export default function AssessmentReports() {
 
     const baseKPIs = [
       {
-        icon: Users, label: 'Total Assessments', value: summary?.totalAssessments || allAssessments.length || assessments.length || 0,
-        insight: allAssessments.length ? `${allAssessments.length} published assessments` : undefined,
+        icon: Layers, label: 'Questions', value: selectedAssessment?.totalQuestions || 0,
+        insight: `${selectedAssessment?.totalMarks || 0} total marks`,
         trend: s.assessmentGrowth, tone: 'sky',
-        chart: Array.isArray(s.assessmentTrend) && s.assessmentTrend.length > 1 ? <Sparkline data={s.assessmentTrend} stroke="#0ea5e9" /> : null,
       },
       {
         icon: GraduationCap, label: 'Total Attempts', value: totalStudents,
@@ -1000,7 +969,7 @@ export default function AssessmentReports() {
     }
 
     return baseKPIs;
-  }, [summary, allAssessments.length, assessments, pagination.total, activeTab, students]);
+  }, [summary, selectedAssessment, pagination.total, activeTab, students]);
 
   const distributionLabels = ['0-25', '26-50', '51-75', '76-90', '91-100'];
   const distributionData = useMemo(() => {
@@ -1019,20 +988,13 @@ export default function AssessmentReports() {
     return buckets;
   }, [summary, students]);
 
-  // Compute attempt trend from student submission dates (last 10 days)
-  const attemptTrend = useMemo(() => {
-    const trend = summary?.attemptTrend;
-    if (Array.isArray(trend) && trend.length > 0) return trend;
-    // Compute from student attemptDate
-    const dateMap = new Map();
-    students.forEach((st) => {
-      const date = st.attemptDate ? new Date(st.attemptDate).toISOString().slice(0, 10) : null;
-      if (date) dateMap.set(date, (dateMap.get(date) || 0) + 1);
-    });
-    const sorted = Array.from(dateMap.entries()).sort((a, b) => a[0].localeCompare(b[0])).slice(-10);
-    if (sorted.length === 0) return [];
-    return sorted.map(([, count]) => count);
-  }, [summary, students]);
+  const distributionMaximum = Math.max(1, ...distributionData);
+  const overviewPassCount = Number(summary?.passCount || 0);
+  const overviewReviewCount = Number(summary?.failCount || 0);
+  const overviewOutcomeTotal = overviewPassCount + overviewReviewCount;
+  const overviewPassRate = overviewOutcomeTotal > 0
+    ? Math.round((overviewPassCount / overviewOutcomeTotal) * 100)
+    : 0;
 
   // Violation-specific chart data
   const violationLabels = ['Tab Switch', 'Fullscreen Exit', 'Camera Off', 'Copy/Paste'];
@@ -1058,23 +1020,11 @@ export default function AssessmentReports() {
 
     return backendData;
   }, [summary, students]);
-
-  // Compute violation trend from student data (last 10 days)
-  const violationTrend = useMemo(() => {
-    const trend = summary?.violationTrend;
-    if (Array.isArray(trend) && trend.length > 0 && trend.some(v => v > 0)) return trend;
-
-    // Fallback: compute from student data
-    const dateMap = new Map();
-    students.forEach((st) => {
-      const date = st.attemptDate ? new Date(st.attemptDate).toISOString().slice(0, 10) : null;
-      const vCount = Number(st.violationCount) || 0;
-      if (date && vCount > 0) dateMap.set(date, (dateMap.get(date) || 0) + vCount);
-    });
-    const sorted = Array.from(dateMap.entries()).sort((a, b) => a[0].localeCompare(b[0])).slice(-10);
-    if (sorted.length === 0) return [0, 0, 0, 0, 0, 0, 0, 0];
-    return sorted.map(([, count]) => count);
-  }, [summary?.violationTrend, students]);
+  const totalViolationEvents = violationData.reduce((total, count) => total + count, 0)
+    || Number(summary?.violationCount)
+    || 0;
+  const highestViolationCategoryCount = Math.max(1, ...violationData);
+  const mostFlaggedCandidate = summary?.topViolators?.[0] || null;
 
   const assessmentSidebarItems = useMemo(() => {
     const now = Date.now();
@@ -1099,199 +1049,33 @@ export default function AssessmentReports() {
         const aTime = new Date(a.startTime || a.createdAt || 0).getTime();
         const bTime = new Date(b.startTime || b.createdAt || 0).getTime();
         return bTime - aTime;
-      });
+      })
+      .slice(0, 24);
   }, [allAssessments, assessments, assessmentSearch, filters.assessmentWindow]);
-
-  const assessmentWindowTabs = useMemo(() => {
-    const now = Date.now();
-    const source = allAssessments.length ? allAssessments : assessments;
-    const counts = source.reduce((acc, assessment) => {
-      const start = assessment.startTime ? new Date(assessment.startTime).getTime() : null;
-      const end = assessment.endTime ? new Date(assessment.endTime).getTime() : null;
-      const bucket = assessment.lifecycleBucket || (start && start > now ? 'upcoming' : end && end < now ? 'completed' : 'current');
-      acc.all += 1;
-      if (bucket === 'current') acc.current += 1;
-      if (bucket === 'upcoming') acc.upcoming += 1;
-      if (bucket === 'completed') acc.completed += 1;
-      return acc;
-    }, { all: 0, current: 0, upcoming: 0, completed: 0 });
-    return [
-      { id: 'all', label: 'All Assessments', count: counts.all, icon: Layers },
-      { id: 'current', label: 'Current Assessments', count: counts.current, icon: Activity },
-      { id: 'upcoming', label: 'Upcoming Assessments', count: counts.upcoming, icon: Clock },
-      { id: 'completed', label: 'Completed Assessments', count: counts.completed, icon: CheckCircle2 },
-    ];
-  }, [allAssessments, assessments]);
-  const activeAssessmentWindowTab = useMemo(
-    () => assessmentWindowTabs.find((tab) => tab.id === filters.assessmentWindow) || assessmentWindowTabs[0],
-    [assessmentWindowTabs, filters.assessmentWindow],
-  );
-  const ActiveAssessmentWindowIcon = activeAssessmentWindowTab?.icon || Layers;
-
-  const subjectPerformanceRows = useMemo(() => (
-    (summary?.subjectPerformance || assessments || []).slice(0, 6).map((item) => ({
-      label: item.title || item.subject || item.assessmentType || 'Assessment',
-      value: Number(item.avgScore || item.score || item.attempted || 0),
-    }))
-  ), [summary?.subjectPerformance, assessments]);
-
-  const heatmapRows = useMemo(() => {
-    const byAssessment = assessmentSidebarItems.slice(0, 5).map((assessment) => ({
-      label: assessment.title || 'Untitled',
-      values: [
-        Number(assessment.submissionCount || assessment.attempts || 0),
-        Number(assessment.completedCount || assessment.submissions || 0),
-        Number(assessment.violationCount || 0),
-        Number(assessment.avgScore || 0),
-        Number(assessment.totalQuestions || 0),
-        Number(assessment.duration || 0),
-        Number(assessment.maxScore || 0),
-      ],
-    }));
-    return byAssessment;
-  }, [assessmentSidebarItems]);
-
-  const yearlyActivity = useMemo(
-    () => Array.isArray(summary?.assessmentCalendar) ? summary.assessmentCalendar : [],
-    [summary?.assessmentCalendar],
-  );
-
-  const monthlyActivity = useMemo(
-    () => Array.isArray(summary?.monthlyAssessments) ? summary.monthlyAssessments : [],
-    [summary?.monthlyAssessments],
-  );
 
   const totalPages = Math.max(1, Math.ceil((pagination.total || 0) / pagination.limit));
 
   const assessmentRail = (
-    <div className="flex h-full min-h-0 flex-col rounded-2xl border border-sky-100 bg-white shadow-sm shadow-sky-950/5 dark:border-sky-900/40 dark:bg-gray-900">
-      <div className="shrink-0 border-b border-sky-100 px-4 py-4 dark:border-sky-900/40">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-600 dark:text-sky-300">Report Scope</div>
-            <h2 className="mt-1 text-sm font-semibold text-slate-950 dark:text-white">Assessments</h2>
-          </div>
-          <span className="rounded-full bg-lime-50 px-2.5 py-1 text-[11px] font-semibold text-lime-700 ring-1 ring-lime-200 dark:bg-lime-900/20 dark:text-lime-300 dark:ring-lime-800">
-            {allAssessments.length || assessments.length}
-          </span>
-        </div>
-
-        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/80 dark:border-gray-800 dark:bg-gray-950/40">
-          <button
-            type="button"
-            onClick={() => setSidebarCollapsed((prev) => ({ ...prev, scope: !prev.scope }))}
-            className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left"
-          >
-            <span className="flex min-w-0 items-center gap-2">
-              <ActiveAssessmentWindowIcon className="h-3.5 w-3.5 shrink-0 text-sky-600 dark:text-sky-300" />
-              <span className="min-w-0">
-                <span className="block truncate text-xs font-semibold text-slate-800 dark:text-gray-100">
-                  {activeAssessmentWindowTab?.label || 'All Assessments'}
-                </span>
-                <span className="block text-[10px] font-medium text-slate-400 dark:text-gray-500">Assessment filters</span>
-              </span>
-            </span>
-            <span className="flex shrink-0 items-center gap-2">
-              <span className="rounded-full bg-sky-600 px-2 py-0.5 text-[10px] font-bold text-white">
-                {activeAssessmentWindowTab?.count ?? 0}
-              </span>
-              <ChevronDown className={`h-3.5 w-3.5 text-slate-400 transition-transform ${sidebarCollapsed.scope ? '-rotate-90' : ''}`} />
-            </span>
-          </button>
-
-          {!sidebarCollapsed.scope && (
-            <div className="border-t border-slate-200 p-2 dark:border-gray-800">
-              <div className="grid gap-2">
-                {assessmentWindowTabs.map((tab) => {
-                  const Icon = tab.icon;
-                  const active = filters.assessmentWindow === tab.id;
-                  return (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => updateFilter('assessmentWindow', tab.id)}
-                      className={`flex items-center justify-between rounded-xl border px-3 py-2.5 text-left text-xs font-semibold transition-colors ${
-                        active
-                          ? 'border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-800 dark:bg-sky-900/25 dark:text-sky-200'
-                          : 'border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:bg-sky-50/60 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-sky-800 dark:hover:bg-sky-900/10'
-                      }`}
-                    >
-                      <span className="flex min-w-0 items-center gap-2">
-                        <Icon className={`h-3.5 w-3.5 shrink-0 ${active ? 'text-sky-600 dark:text-sky-300' : 'text-slate-400'}`} />
-                        <span className="truncate">{tab.label}</span>
-                      </span>
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                        active ? 'bg-sky-600 text-white' : 'bg-lime-50 text-lime-700 dark:bg-lime-900/20 dark:text-lime-300'
-                      }`}>
-                        {tab.count}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="relative mt-3">
-                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search assessments"
-                  value={assessmentSearch}
-                  onChange={(e) => setAssessmentSearch(e.target.value)}
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-xs text-slate-700 outline-none transition-colors placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:focus:ring-sky-900/40"
-                />
-              </div>
-            </div>
-          )}
+    <div className="flex h-full min-h-0 flex-col border-r border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-950">
+      <div className="shrink-0 border-b border-slate-200 p-3 dark:border-gray-800">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+          <input
+            id="report-assessment-search"
+            type="search"
+            placeholder="Search assessments"
+            value={assessmentSearch}
+            onChange={(e) => setAssessmentSearch(e.target.value)}
+            className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-xs text-slate-700 outline-none placeholder:text-slate-400 focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+          />
         </div>
       </div>
 
-      <div className="shrink-0 border-b border-sky-100 px-4 py-3 dark:border-sky-900/40">
-        <button
-          type="button"
-          onClick={() => setSidebarCollapsed((prev) => ({ ...prev, schedule: !prev.schedule }))}
-          className="flex w-full items-center justify-between text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-gray-400"
-        >
-          Date Range
-          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${sidebarCollapsed.schedule ? '-rotate-90' : ''}`} />
-        </button>
-        {!sidebarCollapsed.schedule && (
-          <div className="mt-3 space-y-2">
-            <DateTimePicker
-              value={filters.from}
-              onChange={(v) => setFilters((p) => ({ ...p, from: v }))}
-              placeholder="From date"
-              autoSelectToday={false}
-              allowPast
-              className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-200"
-            />
-            <DateTimePicker
-              value={filters.to}
-              onChange={(v) => setFilters((p) => ({ ...p, to: v }))}
-              placeholder="To date"
-              autoSelectToday={false}
-              allowPast
-              className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-200"
-            />
-          </div>
-        )}
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-        <div className="mb-2 flex items-center justify-between px-1">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-gray-400">Directory</span>
-          <button
-            type="button"
-            onClick={() => updateFilter('assessmentId', '')}
-            className="text-[11px] font-semibold text-sky-600 hover:text-sky-700 dark:text-sky-300"
-          >
-            All
-          </button>
-        </div>
-
-        <div className="space-y-2">
+      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+        <div>
           {loading && !assessments.length ? (
-            Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="h-20 animate-pulse rounded-xl bg-slate-100 dark:bg-gray-800" />
+            Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="h-12 animate-pulse rounded-md bg-slate-100 dark:bg-gray-800" />
             ))
           ) : assessmentSidebarItems.length ? (
             assessmentSidebarItems.map((a) => {
@@ -1301,26 +1085,29 @@ export default function AssessmentReports() {
                   key={a._id}
                   type="button"
                   onClick={() => selectAssessmentReport(a, { openOverview: false })}
-                  className={`w-full rounded-xl border p-3 text-left transition-colors ${
+                  className={`group flex w-full items-center gap-2.5 border-b border-slate-200/80 px-2.5 py-3 text-left transition-colors last:border-b-0 dark:border-gray-800 ${
                     active
-                      ? 'border-sky-300 bg-sky-50 text-sky-950 ring-1 ring-sky-100 dark:border-sky-700 dark:bg-sky-900/20 dark:text-sky-100 dark:ring-sky-900'
-                      : 'border-slate-200 bg-white text-slate-700 hover:border-sky-200 hover:bg-sky-50/50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-sky-800'
+                      ? 'rounded-lg bg-sky-50 text-sky-950 dark:bg-sky-900/20 dark:text-sky-100'
+                      : 'text-slate-700 hover:bg-slate-50 dark:text-gray-300 dark:hover:bg-gray-900'
                   }`}
                 >
-                  <div className="truncate text-xs font-semibold">{a.title || 'Untitled'}</div>
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-slate-500 dark:text-gray-400">
-                    <span className="rounded bg-lime-50 px-1.5 py-0.5 font-semibold text-lime-700 dark:bg-lime-900/20 dark:text-lime-300">{a.assessmentType || 'mixed'}</span>
-                    <span>{a.totalQuestions || 0} Qs</span>
-                    <span>{a.submissionCount || 0} attempts</span>
+                  <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${active ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-400 group-hover:bg-sky-50 group-hover:text-sky-600 dark:bg-gray-800 dark:text-gray-500'}`}>
+                    <FileSpreadsheet className="h-3.5 w-3.5" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-xs font-semibold">{a.title || 'Untitled'}</div>
+                    <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-gray-500">
+                      <span className="truncate">{a.assessmentType || 'Mixed'}</span>
+                      <span aria-hidden="true">·</span>
+                      <span className="shrink-0">{a.submissionCount || 0} attempts</span>
+                    </div>
                   </div>
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-gray-800">
-                    <div className="h-full rounded-full bg-sky-500" style={{ width: `${Math.min(100, Math.max(0, Number(a.avgScore || 0)))}%` }} />
-                  </div>
+                  {active && <span className="h-2 w-2 shrink-0 rounded-full bg-sky-500" aria-label="Selected" />}
                 </button>
               );
             })
           ) : (
-            <div className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center text-xs text-slate-500 dark:border-gray-800 dark:text-gray-400">
+            <div className="rounded-lg border border-dashed border-slate-200 px-3 py-6 text-center text-xs text-slate-500 dark:border-gray-800 dark:text-gray-400">
               No assessments found
             </div>
           )}
@@ -1340,14 +1127,14 @@ export default function AssessmentReports() {
             <div>
               <h1 className="text-lg font-semibold text-slate-950 dark:text-white">Assessment Reports</h1>
               <p className="text-xs text-slate-500 dark:text-gray-400">
-                {pagination.total || 0} candidate records across {allAssessments.length || assessments.length} assessments
+                {selectedAssessment ? `${selectedAssessment.title} · ${pagination.total || 0} candidate records` : 'Choose an assessment to view its report'}
               </p>
             </div>
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-wrap items-center gap-3">
-              <div className="relative hidden sm:block">
+              <div className={`relative hidden sm:block ${activeTab === 'analytics' || (activeTab === 'overview' && !selectedAssessment) ? 'lg:hidden' : ''}`}>
                 <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                 <input
                   ref={searchRef}
@@ -1358,13 +1145,13 @@ export default function AssessmentReports() {
                 />
               </div>
 
-              <div className="relative">
+              <div className="relative lg:hidden">
                 <select
                   value={filters.assessmentId || ''}
                   onChange={(e) => updateFilter('assessmentId', e.target.value)}
                   className="h-9 w-48 rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-8 text-xs text-slate-700 outline-none ring-sky-200 transition-all focus:border-sky-400 focus:ring-2 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:ring-sky-900"
                 >
-                  <option value="">All Assessments</option>
+                  <option value="">Choose assessment</option>
                   {(allAssessments.length ? allAssessments : assessments).map((a) => (
                     <option key={a._id} value={a._id}>{a.title || 'Untitled'}</option>
                   ))}
@@ -1380,24 +1167,7 @@ export default function AssessmentReports() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowFilters((p) => !p)}
-                className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors ${
-                  showFilters || activeChips.length
-                    ? 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300'
-                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
-                }`}
-              >
-                <SlidersHorizontal className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Filters</span>
-                {activeChips.length > 0 && (
-                  <span className="ml-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-sky-600 text-[9px] font-bold text-white">
-                    {activeChips.length}
-                  </span>
-                )}
-              </button>
-
+            {activeTab !== 'analytics' && (activeTab !== 'overview' || selectedAssessment) && <div className="flex items-center gap-2">
               <button onClick={() => setPagination((p) => ({ ...p, page: 1 }))} className="inline-flex h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700" title="Refresh">
                 <RotateCcw className="h-3.5 w-3.5" />
               </button>
@@ -1409,7 +1179,7 @@ export default function AssessmentReports() {
                 <Download className="h-3.5 w-3.5" />
                 <span>Download Excel</span>
               </button>
-            </div>
+            </div>}
           </div>
         </div>
 
@@ -1437,233 +1207,191 @@ export default function AssessmentReports() {
         </div>
       </div>
 
-      <div className="mx-auto grid h-[calc(100vh-113px)] max-w-[1600px] grid-cols-1 gap-4 overflow-hidden px-4 py-4 sm:px-6 lg:grid-cols-[310px_minmax(0,1fr)]">
+      <div className="mx-auto grid h-[calc(100vh-113px)] max-w-[1600px] grid-cols-1 overflow-hidden lg:grid-cols-[244px_minmax(0,1fr)]">
         <aside className="hidden min-h-0 lg:block">
           {assessmentRail}
         </aside>
 
-        <main className="min-h-0 overflow-y-auto pr-1">
+        <main className={`min-h-0 px-4 py-4 sm:px-5 ${activeTab === 'candidates' ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'}`}>
+        {activeTab === 'overview' && !selectedAssessment && (
+          <div className="flex min-h-[500px] items-center justify-center">
+            <div className="max-w-md px-6 text-center">
+              <div className="relative mx-auto flex h-36 w-36 items-center justify-center" aria-hidden="true">
+                <div className="absolute inset-3 rounded-full bg-sky-200/70 blur-2xl dark:bg-sky-800/25" />
+                <div className="relative flex h-28 w-28 items-center justify-center rounded-[28px] border border-sky-100 bg-white/90 p-2 shadow-xl shadow-sky-200/60 dark:border-sky-900/60 dark:bg-gray-900 dark:shadow-black/20">
+                  <img src="/images/peerprep-analytics-icon.png" alt="" className="h-full w-full object-contain" />
+                </div>
+              </div>
+              <h2 className="mt-2 text-lg font-bold text-slate-900 dark:text-white">Select an assessment</h2>
+              <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-gray-400">Choose a test from the list to explore performance, candidate outcomes, and integrity insights.</p>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'overview' && selectedAssessment && (
+          <section className="mb-3 flex flex-col gap-3 rounded-xl border border-sky-100 bg-white px-4 py-3 shadow-sm dark:border-sky-900/40 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="truncate text-sm font-bold text-slate-900 dark:text-white">{selectedAssessment.title || 'Untitled assessment'}</h2>
+                <StatusBadge value={selectedAssessment.lifecycleStatus || 'draft'} type="assessment" />
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-400 dark:text-gray-500">
+                <span>{selectedAssessment.assessmentType || selectedAssessment.testType || 'Mixed'}</span>
+                <span aria-hidden="true">·</span>
+                <span>ID {selectedAssessment.assessmentId || '—'}</span>
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-5 text-xs">
+              <div><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Starts</div><div className="mt-0.5 font-semibold text-slate-700 dark:text-gray-200">{formatDateTime(selectedAssessment.startTime)}</div></div>
+              <div><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Duration</div><div className="mt-0.5 font-semibold text-slate-700 dark:text-gray-200">{selectedAssessment.duration ? `${selectedAssessment.duration} min` : 'Not set'}</div></div>
+            </div>
+          </section>
+        )}
+
         {/* ── KPI Cards ── */}
-        {(activeTab === 'overview' || activeTab === 'analytics') && (
-          <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        {activeTab === 'overview' && selectedAssessment && (
+          <div className="mb-4 grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             {kpiData.map((k, i) => <KpiCard key={k.label} {...k} delay={i * 50} />)}
           </div>
         )}
 
-        {/* Charts Row */}
-        {(activeTab === 'overview' || activeTab === 'analytics') && (
-          <div className="mb-6 grid gap-4 lg:grid-cols-3">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
-                  <TrendingUp className="h-4 w-4 text-sky-600" />Score Distribution
+        {/* ── Compact performance insights ── */}
+        {activeTab === 'overview' && selectedAssessment && (
+          <section className="mb-3 grid gap-px overflow-hidden rounded-xl border border-slate-200 bg-slate-200 shadow-sm lg:grid-cols-3 dark:border-gray-700 dark:bg-gray-700">
+            <article className="flex min-h-44 flex-col bg-white dark:bg-gray-900">
+              <header className="flex h-11 items-center justify-between border-b border-slate-100 px-4 dark:border-gray-800">
+                <span className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
+                  <TrendingUp className="h-3.5 w-3.5 text-sky-600" />Score distribution
+                </span>
+                <span className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">Candidates</span>
+              </header>
+              <div className="grid flex-1 grid-cols-5 items-end gap-2 px-4 pb-3 pt-4">
+                {distributionLabels.map((label, index) => {
+                  const count = Number(distributionData[index] || 0);
+                  return (
+                    <div key={label} className="flex min-w-0 flex-col items-center">
+                      <strong className="mb-1 text-xs tabular-nums text-slate-900 dark:text-white">{count}</strong>
+                      <div className="flex h-16 w-full max-w-10 items-end overflow-hidden rounded-t bg-slate-50 dark:bg-gray-800">
+                        <div
+                          className="w-full rounded-t bg-sky-500 transition-[height] duration-500"
+                          style={{ height: `${count ? Math.max(10, (count / distributionMaximum) * 100) : 0}%` }}
+                        />
+                      </div>
+                      <span className="mt-1.5 truncate text-[9px] font-medium text-slate-400">{label}%</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </article>
+
+            <article className="flex min-h-44 flex-col bg-white dark:bg-gray-900">
+              <header className="flex h-11 items-center border-b border-slate-100 px-4 dark:border-gray-800">
+                <span className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
+                  <BarChart3 className="h-3.5 w-3.5 text-sky-600" />Score range
+                </span>
+              </header>
+              <div className="grid flex-1 grid-cols-3 items-center divide-x divide-slate-100 px-2 dark:divide-gray-800">
+                {[
+                  ['Lowest', summary?.minScore],
+                  ['Average', summary?.avgScore],
+                  ['Highest', summary?.maxScore],
+                ].map(([label, value]) => (
+                  <div key={label} className="px-2 text-center">
+                    <strong className="text-xl tabular-nums text-slate-950 dark:text-white">{Math.round(Number(value || 0) * 10) / 10}%</strong>
+                    <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-slate-400">{label}</p>
+                  </div>
+                ))}
+              </div>
+            </article>
+
+            <article className="flex min-h-44 flex-col bg-white dark:bg-gray-900">
+              <header className="flex h-11 items-center justify-between border-b border-slate-100 px-4 dark:border-gray-800">
+                <span className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
+                  <Target className="h-3.5 w-3.5 text-lime-600" />Completion outcome
+                </span>
+                <strong className="text-xs text-lime-600 dark:text-lime-400">{overviewPassRate}% pass</strong>
+              </header>
+              <div className="flex flex-1 flex-col justify-center px-4 py-4">
+                <div className="flex h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-gray-800">
+                  {overviewOutcomeTotal > 0 ? (
+                    <>
+                      <span className="h-full bg-lime-500" style={{ width: `${overviewPassRate}%` }} />
+                      <span className="h-full flex-1 bg-sky-500" />
+                    </>
+                  ) : (
+                    <span className="h-full w-full bg-slate-200 dark:bg-gray-700" />
+                  )}
                 </div>
-                <span className="text-[10px] text-slate-400 dark:text-gray-500">% of candidates</span>
-              </div>
-              <div className="mt-4"><MiniBarChart data={distributionData} labels={distributionLabels} width={320} height={60} barColor="#0ea5e9" /></div>
-              <div className="mt-3 grid grid-cols-5 gap-1 text-center">
-                {distributionLabels.map((l, i) => (
-                  <div key={l}>
-                    <div className="text-sm font-bold text-slate-900 dark:text-white">{distributionData[i]}</div>
-                    <div className="text-[10px] text-slate-400 dark:text-gray-500">{l}%</div>
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div className="rounded-lg bg-lime-50 px-3 py-2 dark:bg-lime-900/15">
+                    <p className="text-[9px] font-bold uppercase tracking-wide text-lime-700 dark:text-lime-400">Passed</p>
+                    <strong className="mt-0.5 block text-lg text-slate-950 dark:text-white">{overviewPassCount}</strong>
                   </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-              <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
-                <BarChart3 className="h-4 w-4 text-lime-600" />Attempt Trends
-              </div>
-              <div className="mt-4"><Sparkline data={attemptTrend} width={320} height={70} stroke="#84cc16" fill="rgba(132,204,22,0.08)" strokeWidth={2} /></div>
-              <div className="mt-3 flex items-center justify-between text-[11px] text-slate-500 dark:text-gray-400">
-                <span>Last {attemptTrend.length} days</span>
-                <span className="font-semibold text-lime-600 dark:text-lime-400">{attemptTrend.length > 1 ? `${((attemptTrend[attemptTrend.length - 1] - attemptTrend[0]) / Math.max(1, attemptTrend[0]) * 100).toFixed(0)}%` : ''}</span>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-              <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
-                <GraduationCap className="h-4 w-4 text-lime-600" />Top Performing
-              </div>
-              <div className="mt-4 space-y-3">
-                {(summary?.topAssessments || assessments.slice(0, 5)).map((a, i) => (
-                  <div key={a._id || i} className="flex items-center gap-3">
-                    <div className={`flex h-6 w-6 items-center justify-center rounded-md text-[10px] font-bold ${i < 3 ? 'bg-lime-50 text-lime-700 dark:bg-lime-900/20 dark:text-lime-300' : 'bg-slate-50 text-slate-500 dark:bg-gray-800 dark:text-gray-400'}`}>{i + 1}</div>
-                    <div className="min-w-0 flex-1"><div className="truncate text-xs font-semibold text-slate-800 dark:text-gray-200">{a.title || 'Untitled'}</div></div>
-                    <div className="text-xs font-bold text-slate-900 dark:text-white">{a.avgScore?.toFixed?.(0) || a.attempted || 0}%</div>
+                  <div className="rounded-lg bg-sky-50 px-3 py-2 dark:bg-sky-900/15">
+                    <p className="text-[9px] font-bold uppercase tracking-wide text-sky-700 dark:text-sky-400">Needs review</p>
+                    <strong className="mt-0.5 block text-lg text-slate-950 dark:text-white">{overviewReviewCount}</strong>
                   </div>
-                ))}
+                </div>
               </div>
-            </div>
-          </div>
+            </article>
+          </section>
         )}
 
-        {(activeTab === 'overview' || activeTab === 'analytics') && (
-          <div className="mb-6 grid gap-4 lg:grid-cols-[1.1fr_0.9fr_1fr]">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
-                  <Activity className="h-4 w-4 text-sky-600" />
-                  Real-time Activity
-                </div>
-                <span className="rounded-full bg-sky-50 px-2 py-1 text-[10px] font-semibold text-sky-700 dark:bg-sky-900/20 dark:text-sky-300">Live trend</span>
-              </div>
-              <div className="mt-4">
-                <AreaChart data={attemptTrend} stroke="#0ea5e9" />
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-              <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
-                <Target className="h-4 w-4 text-lime-600" />
-                Completion Outcome
-              </div>
-              <div className="mt-4 flex items-center gap-4">
-                <PieChart
-                  data={[
-                    { label: 'Pass', value: Number(summary?.passCount || 0) },
-                    { label: 'Needs review', value: Number(summary?.failCount || 0) },
-                  ]}
-                  colors={['#84cc16', '#0ea5e9']}
-                />
-                <div className="space-y-2 text-xs">
-                  <div className="flex items-center gap-2 text-slate-600 dark:text-gray-300"><span className="h-2.5 w-2.5 rounded-full bg-lime-500" />Pass: {summary?.passCount || 0}</div>
-                  <div className="flex items-center gap-2 text-slate-600 dark:text-gray-300"><span className="h-2.5 w-2.5 rounded-full bg-sky-500" />Needs review: {summary?.failCount || 0}</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-              <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
-                <BarChart3 className="h-4 w-4 text-sky-600" />
-                Subject-wise Performance
-              </div>
-              <div className="mt-4 space-y-3">
-                {subjectPerformanceRows.map((row) => (
-                  <div key={row.label}>
-                    <div className="mb-1 flex items-center justify-between text-[11px]">
-                      <span className="max-w-[180px] truncate font-semibold text-slate-600 dark:text-gray-300">{row.label}</span>
-                      <span className="font-bold text-slate-900 dark:text-white">{Number(row.value || 0).toFixed(1)}%</span>
-                    </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-gray-800">
-                      <div className="h-full rounded-full bg-gradient-to-r from-sky-500 to-lime-400" style={{ width: `${Math.min(100, Number(row.value || 0))}%` }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── Violations Charts Row ── */}
+        {/* ── Compact integrity summary ── */}
         {activeTab === 'violations' && (
-          <div className="mb-6 grid gap-4 lg:grid-cols-3">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
-                  <ShieldAlert className="h-4 w-4 text-sky-600" />Violation Types
+          <section className="mb-3 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+            <div className="grid divide-y divide-slate-200 lg:grid-cols-[220px_minmax(0,1fr)_260px] lg:divide-x lg:divide-y-0 dark:divide-gray-700">
+              <div className="flex items-center gap-3 px-4 py-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-600 dark:bg-sky-900/25 dark:text-sky-300">
+                  <ShieldAlert className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 dark:text-gray-500">Integrity events</p>
+                  <div className="mt-0.5 flex items-baseline gap-2">
+                    <strong className="text-xl leading-none text-slate-950 dark:text-white">{totalViolationEvents}</strong>
+                    <span className="text-[10px] text-slate-500 dark:text-gray-400">{pagination.total || 0} flagged sessions</span>
+                  </div>
                 </div>
-                <span className="text-[10px] text-slate-400 dark:text-gray-500">by category</span>
               </div>
-              <div className="mt-4"><MiniBarChart data={violationData} labels={violationLabels.map(l => l.split(' ')[0])} width={320} height={60} barColor="#0ea5e9" /></div>
-              <div className="mt-3 grid grid-cols-4 gap-1 text-center">
-                {violationLabels.map((l, i) => (
-                  <div key={l}>
-                    <div className="text-sm font-bold text-slate-900 dark:text-white">{violationData[i]}</div>
-                    <div className="text-[10px] text-slate-400 dark:text-gray-500">{l.split(' ')[0]}</div>
-                  </div>
-                ))}
+
+              <div className="grid grid-cols-2 divide-x divide-y divide-slate-100 sm:grid-cols-4 sm:divide-y-0 dark:divide-gray-800">
+                {violationLabels.map((label, index) => {
+                  const count = violationData[index] || 0;
+                  return (
+                    <div key={label} className="min-w-0 px-3 py-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate text-[10px] font-semibold text-slate-500 dark:text-gray-400">{label}</span>
+                        <strong className="text-xs tabular-nums text-slate-900 dark:text-white">{count}</strong>
+                      </div>
+                      <div className="mt-2 h-1 overflow-hidden rounded-full bg-slate-100 dark:bg-gray-800">
+                        <div
+                          className="h-full rounded-full bg-sky-500 transition-[width] duration-500"
+                          style={{ width: `${(count / highestViolationCategoryCount) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center gap-3 px-4 py-3">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-600 dark:bg-gray-800 dark:text-gray-300">
+                  {(mostFlaggedCandidate?.studentName || '?').trim().charAt(0).toUpperCase() || '?'}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 dark:text-gray-500">Most flagged candidate</p>
+                  <p className="mt-0.5 truncate text-xs font-semibold text-slate-800 dark:text-gray-200">
+                    {mostFlaggedCandidate?.studentName || 'No flagged candidate'}
+                  </p>
+                </div>
+                {mostFlaggedCandidate && (
+                  <span className="shrink-0 rounded-md bg-sky-50 px-2 py-1 text-[10px] font-bold text-sky-700 dark:bg-sky-900/25 dark:text-sky-300">
+                    {mostFlaggedCandidate.violationCount || 0} flags
+                  </span>
+                )}
               </div>
             </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-              <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
-                <BarChart3 className="h-4 w-4 text-sky-600" />Violation Trend
-              </div>
-              <div className="mt-4"><Sparkline data={violationTrend} width={320} height={70} stroke="#0ea5e9" fill="rgba(14,165,233,0.08)" strokeWidth={2} /></div>
-              <div className="mt-3 flex items-center justify-between text-[11px] text-slate-500 dark:text-gray-400">
-                <span>Last {violationTrend.length} days</span>
-                <span className="font-semibold text-sky-600 dark:text-sky-400">{violationTrend.length > 1 ? `${((violationTrend[violationTrend.length - 1] - violationTrend[0]) / Math.max(1, violationTrend[0]) * 100).toFixed(0)}%` : ''}</span>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-              <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
-                <GraduationCap className="h-4 w-4 text-sky-600" />Top Violators
-              </div>
-              <div className="mt-4 space-y-3">
-                {(summary?.topViolators || []).slice(0, 5).map((v, i) => (
-                  <div key={i} className="flex items-center gap-3">
-                    <div className={`flex h-6 w-6 items-center justify-center rounded-md text-[10px] font-bold ${i < 3 ? 'bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-300' : 'bg-slate-50 text-slate-500 dark:bg-gray-800 dark:text-gray-400'}`}>{i + 1}</div>
-                    <div className="min-w-0 flex-1"><div className="truncate text-xs font-semibold text-slate-800 dark:text-gray-200">{v.studentName || 'Unknown'}</div></div>
-                    <div className="text-xs font-bold text-slate-900 dark:text-white">{v.violationCount || 0}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── Filter Panel ── */}
-        {showFilters && (
-          <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-gray-500">
-                <Filter className="h-3.5 w-3.5" />Advanced Filters
-              </div>
-              <button onClick={clearFilters} className="text-[11px] font-medium text-sky-600 hover:text-sky-700 dark:text-sky-400">Reset all</button>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
-              <select value={filters.assessmentType} onChange={(e) => updateFilter('assessmentType', e.target.value)} className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
-                <option value="">All Types</option>
-                <option value="mcq">MCQ</option>
-                <option value="short">Short Answer</option>
-                <option value="one_line">One Line</option>
-                <option value="coding">Coding</option>
-                <option value="mixed">Mixed</option>
-              </select>
-              <select value={filters.status} onChange={(e) => updateFilter('status', e.target.value)} className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
-                <option value="">All Statuses</option>
-                <option value="submitted">Completed</option>
-                <option value="violation">Violation</option>
-                <option value="in_progress">In Progress</option>
-                <option value="expired">Expired</option>
-                <option value="incomplete">Incomplete</option>
-              </select>
-              <select value={filters.difficulty} onChange={(e) => updateFilter('difficulty', e.target.value)} className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
-                <option value="">All Difficulties</option>
-                <option value="easy">Easy</option>
-                <option value="medium">Medium</option>
-                <option value="hard">Hard</option>
-              </select>
-              <input value={filters.department} onChange={(e) => updateFilter('department', e.target.value)} placeholder="Department" className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
-              <DateTimePicker value={filters.from} onChange={(iso) => updateFilter('from', iso)} placeholder="From Date" className="text-xs" autoSelectToday={false} allowPast />
-              <DateTimePicker value={filters.to} onChange={(iso) => updateFilter('to', iso)} min={filters.from || undefined} placeholder="To Date" className="text-xs" autoSelectToday={false} allowPast />
-              <input type="number" value={filters.scoreMin} onChange={(e) => updateFilter('scoreMin', e.target.value)} placeholder="Min Score %" className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
-              <input type="number" value={filters.scoreMax} onChange={(e) => updateFilter('scoreMax', e.target.value)} placeholder="Max Score %" className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
-            </div>
-
-            {savedFilters.length > 0 && (
-              <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 dark:border-gray-800">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-gray-500">Saved:</span>
-                {savedFilters.map((sf, i) => (
-                  <button key={i} onClick={() => applySavedFilter(sf)} className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-600 transition-colors hover:border-sky-200 hover:bg-sky-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-sky-800 dark:hover:bg-sky-900/20">
-                    <Sparkles className="h-3 w-3 text-lime-500" />{sf.name}
-                    <span onClick={(e) => { e.stopPropagation(); removeSavedFilter(i); }} className="ml-0.5 cursor-pointer rounded p-0.5 hover:bg-slate-200 dark:hover:bg-gray-700"><SlidersHorizontal className="h-3 w-3" /></span>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <div className="mt-3 flex items-center gap-2">
-              <input value={savedFilterName} onChange={(e) => setSavedFilterName(e.target.value)} placeholder="Save current filters..." className="h-8 w-48 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" onKeyDown={(e) => e.key === 'Enter' && saveCurrentFilter()} />
-              <button onClick={saveCurrentFilter} disabled={!savedFilterName.trim()} className="inline-flex h-8 items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-3 text-xs font-semibold text-sky-700 transition-colors hover:bg-sky-100 disabled:opacity-40 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300 dark:hover:bg-sky-900/30">
-                <Save className="h-3 w-3" />Save
-              </button>
-            </div>
-          </div>
+          </section>
         )}
 
         {/* ── Active Filter Chips ── */}
@@ -1674,264 +1402,38 @@ export default function AssessmentReports() {
           </div>
         )}
 
-        {/* ══════════════════════ MAIN CONTENT ══════════════════════ */}
         {activeTab === 'analytics' && (
-          <div className="mb-6 space-y-4">
-            <YearlyAssessmentActivity
-              calendar={yearlyActivity}
-              monthly={monthlyActivity}
-              onSelectAssessment={selectAssessmentReport}
-            />
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-sm font-bold text-slate-900 dark:text-white">Assessment Health Matrix</h2>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Attempts, completion, violations, score, questions, duration, and peak score by assessment.</p>
-                </div>
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600 dark:bg-gray-800 dark:text-gray-300">Dynamic signals</span>
-              </div>
-              {heatmapRows.length ? (
-                <Heatmap rows={heatmapRows} />
-              ) : (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-400 dark:border-gray-700 dark:bg-gray-800/40">
-                  No assessment signal data is available for the selected filters yet.
-                </div>
-              )}
-            </div>
-          </div>
+          <CompilerAnalytics
+            assessmentId={selectedAssessmentId}
+            assessmentTitle={selectedAssessment?.title || ''}
+            embedded
+          />
         )}
 
-        <div className="mb-4 rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900 lg:hidden">
-          <button
-            type="button"
-            onClick={() => setSidebarCollapsed((prev) => ({ ...prev, scope: !prev.scope }))}
-            className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left"
-          >
-            <span className="flex min-w-0 items-center gap-2">
-              <ActiveAssessmentWindowIcon className="h-3.5 w-3.5 shrink-0 text-sky-600 dark:text-sky-300" />
-              <span className="truncate text-xs font-bold text-slate-800 dark:text-gray-100">
-                {activeAssessmentWindowTab?.label || 'All Assessments'}
-              </span>
-            </span>
-            <span className="flex shrink-0 items-center gap-2">
-              <span className="rounded-full bg-sky-600 px-2 py-0.5 text-[10px] font-bold text-white">
-                {activeAssessmentWindowTab?.count ?? 0}
-              </span>
-              <ChevronDown className={`h-3.5 w-3.5 text-slate-400 transition-transform ${sidebarCollapsed.scope ? '-rotate-90' : ''}`} />
-            </span>
-          </button>
-          {!sidebarCollapsed.scope && (
-            <div className="grid gap-2 border-t border-slate-200 p-2 dark:border-gray-800">
-              {assessmentWindowTabs.map((tab) => {
-                const Icon = tab.icon;
-                const active = filters.assessmentWindow === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => updateFilter('assessmentWindow', tab.id)}
-                    className={`flex items-center justify-between rounded-xl border px-3 py-2.5 text-xs font-bold transition-colors ${active ? 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300' : 'border-slate-200 bg-white text-slate-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
-                  >
-                    <span className="flex min-w-0 items-center gap-2">
-                      <Icon className="h-3.5 w-3.5 shrink-0" />
-                      <span className="truncate">{tab.label}</span>
-                    </span>
-                    <span className={active ? 'text-sky-600 dark:text-sky-300' : 'text-slate-400'}>{tab.count}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <div className="block">
-          {/* ── Professional Assessment Sidebar ── */}
-          <div className="hidden">
-            <div className="sticky top-[136px] max-h-[calc(100vh-160px)] overflow-y-auto rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-lg shadow-slate-200/50 backdrop-blur-sm dark:border-gray-700/80 dark:bg-gray-900/90 dark:shadow-gray-900/50">
-              {/* Header */}
-              <div className="mb-4 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-blue-600 text-white shadow-sm">
-                    <Layers className="h-3.5 w-3.5" />
-                  </div>
-                  <span className="text-sm font-bold text-slate-800 dark:text-white">Assessments</span>
-                </div>
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:bg-gray-800 dark:text-gray-400">
-                  {allAssessments.length || assessments.length}
-                </span>
-              </div>
-
-              <div className="mb-4 grid gap-2">
-                {assessmentWindowTabs.map((tab) => {
-                  const Icon = tab.icon;
-                  const active = filters.assessmentWindow === tab.id;
-                  return (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => updateFilter('assessmentWindow', tab.id)}
-                      className={`group flex items-center justify-between rounded-xl border px-3 py-2.5 text-left transition-all duration-300 ${
-                        active
-                          ? 'border-sky-200 bg-sky-50 text-sky-800 shadow-sm shadow-sky-100 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-200'
-                          : 'border-transparent bg-slate-50/70 text-slate-600 hover:border-slate-200 hover:bg-white hover:text-slate-900 dark:bg-gray-800/70 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:bg-gray-800'
-                      }`}
-                    >
-                      <span className="flex items-center gap-2 text-xs font-bold">
-                        <Icon className={`h-3.5 w-3.5 ${active ? 'text-sky-600 dark:text-sky-300' : 'text-slate-400 group-hover:text-sky-500'}`} />
-                        {tab.label}
-                      </span>
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${active ? 'bg-sky-600 text-white' : 'bg-white text-slate-500 dark:bg-gray-900 dark:text-gray-400'}`}>
-                        {tab.count}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Search Filter */}
-              <div className="mb-3 relative">
-                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search assessments..."
-                  value={assessmentSearch}
-                  onChange={(e) => setAssessmentSearch(e.target.value)}
-                  className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 text-xs text-slate-700 outline-none transition-all placeholder:text-slate-400 focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:placeholder:text-gray-500 dark:focus:border-sky-500 dark:focus:ring-sky-900/30"
-                />
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setSidebarCollapsed((prev) => ({ ...prev, schedule: !prev.schedule }))}
-                className="mb-2 flex w-full items-center justify-between rounded-lg px-1 text-[11px] font-bold uppercase tracking-wider text-slate-400"
-              >
-                Quick date filters
-                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${sidebarCollapsed.schedule ? '-rotate-90' : ''}`} />
-              </button>
-              {!sidebarCollapsed.schedule && <div className="mb-4 space-y-2">
-                <div className="relative">
-                  <Calendar className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                  <DateTimePicker
-                    value={filters.from}
-                    onChange={(v) => setFilters((p) => ({ ...p, from: v }))}
-                    placeholder="From date"
-                    autoSelectToday={false}
-                    allowPast
-                    className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 text-xs text-slate-700 outline-none transition-all placeholder:text-slate-400 focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:placeholder:text-gray-500 dark:focus:border-sky-500 dark:focus:ring-sky-900/30"
-                  />
-                </div>
-                <div className="relative">
-                  <Calendar className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                  <DateTimePicker
-                    value={filters.to}
-                    onChange={(v) => setFilters((p) => ({ ...p, to: v }))}
-                    placeholder="To date"
-                    autoSelectToday={false}
-                    allowPast
-                    className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 text-xs text-slate-700 outline-none transition-all placeholder:text-slate-400 focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:placeholder:text-gray-500 dark:focus:border-sky-500 dark:focus:ring-sky-900/30"
-                  />
-                </div>
-              </div>}
-
-              <button
-                type="button"
-                onClick={() => setSidebarCollapsed((prev) => ({ ...prev, list: !prev.list }))}
-                className="mb-2 flex w-full items-center justify-between rounded-lg px-1 text-[11px] font-bold uppercase tracking-wider text-slate-400"
-              >
-                Assessment directory
-                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${sidebarCollapsed.list ? '-rotate-90' : ''}`} />
-              </button>
-
-              {/* Assessment List */}
-              {!sidebarCollapsed.list && <div className="space-y-2">
-                {loading && !assessments.length ? (
-                  Array.from({ length: 5 }).map((_, i) => (
-                    <div key={i} className="h-20 animate-pulse rounded-xl bg-gradient-to-r from-slate-100 to-slate-50 dark:from-gray-800 dark:to-gray-800/50" />
-                  ))
-                ) : (
-                  assessmentSidebarItems.map((a) => (
-                    <button
-                      key={a._id}
-                      onClick={() => selectAssessmentReport(a, { openOverview: false })}
-                      className={`group relative flex w-full flex-col gap-2.5 rounded-xl border p-3.5 text-left transition-all duration-300 ease-out ${
-                        String(a._id) === String(selectedAssessmentId)
-                          ? 'border-sky-300 bg-gradient-to-br from-sky-50 to-blue-50/50 shadow-md shadow-sky-100/50 dark:border-sky-600/50 dark:from-sky-900/20 dark:to-blue-900/10 dark:shadow-sky-900/20'
-                          : 'border-slate-100/80 bg-white/80 hover:border-sky-200 hover:bg-gradient-to-br hover:from-slate-50 hover:to-sky-50/30 hover:shadow-md hover:shadow-slate-200/30 hover:-translate-y-0.5 dark:border-gray-800 dark:bg-gray-900/80 dark:hover:border-sky-800 dark:hover:from-gray-800 dark:hover:to-sky-900/10 dark:hover:shadow-gray-900/30'
-                      }`}
-                    >
-                      {/* Active indicator */}
-                      {String(a._id) === String(selectedAssessmentId) && (
-                        <div className="absolute -left-0.5 top-1/2 h-8 w-1 -translate-y-1/2 rounded-full bg-gradient-to-b from-sky-400 to-blue-500" />
-                      )}
-
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-xs font-bold text-slate-800 group-hover:text-sky-700 dark:text-gray-200 dark:group-hover:text-sky-300 transition-colors">
-                            {a.title || 'Untitled'}
-                          </div>
-                          <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-gray-500">
-                            <span className="rounded bg-slate-100 px-1 py-0.5 font-medium dark:bg-gray-800">{a.assessmentType || 'N/A'}</span>
-                            <span>-</span>
-                            <span>{a.totalQuestions || 0} Qs</span>
-                          </div>
-                        </div>
-                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                          a.lifecycleStatus === 'published'
-                            ? 'bg-lime-50 text-lime-700 dark:bg-lime-900/30 dark:text-lime-300'
-                            : 'bg-sky-50 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
-                        }`}>
-                          {a.lifecycleStatus || 'draft'}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-3 text-[10px] text-slate-500 dark:text-gray-500">
-                        <div className="flex items-center gap-1">
-                          <Users className="h-3 w-3" />
-                          <span className="font-semibold text-slate-700 dark:text-gray-300">{a.submissionCount || 0}</span>
-                          <span>attempts</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <TrendingUp className="h-3 w-3" />
-                          <span className="font-semibold text-slate-700 dark:text-gray-300">
-                            {a.avgScore ? `${Number(a.avgScore).toFixed(1)}%` : 'N/A'}
-                          </span>
-                        </div>
-                      </div>
-
-                      {Array.isArray(a.trend) && a.trend.length > 1 && (
-                        <div className="h-0 overflow-hidden opacity-0 transition-all duration-300 group-hover:h-6 group-hover:opacity-100">
-                          <Sparkline
-                            data={a.trend}
-                            width={220}
-                            height={20}
-                            stroke={String(a._id) === String(selectedAssessmentId) ? '#0ea5e9' : '#94a3b8'}
-                            strokeWidth={1.5}
-                          />
-                        </div>
-                      )}
-                    </button>
-                  ))
-                )}
-                {!loading && !assessmentSidebarItems.length && (
-                  <div className="py-8 text-center">
-                    <Search className="mx-auto h-8 w-8 text-slate-300 dark:text-gray-600" />
-                    <p className="mt-2 text-xs text-slate-400 dark:text-gray-500">No assessments found</p>
-                  </div>
-                )}
-              </div>}
-            </div>
-          </div>
+        <div className={activeTab === 'analytics' || (activeTab === 'overview' && !selectedAssessment) ? 'hidden' : activeTab === 'candidates' ? 'flex min-h-0 flex-1 flex-col' : 'block'}>
 
           {/* ── Data Table ── */}
-          <div className="space-y-4">
-            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-gray-700">
-                <div className="flex items-center gap-2">
+          <div className={activeTab === 'candidates' ? 'min-h-0 flex-1' : 'space-y-4'}>
+            <div className={`rounded-xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900 ${activeTab === 'candidates' ? 'flex h-full min-h-0 flex-col overflow-hidden' : ''}`}>
+              <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-gray-700">
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                   <GraduationCap className="h-4 w-4 text-sky-600" />
                   <span className="text-sm font-bold text-slate-900 dark:text-white">
                     {activeTab === 'violations' ? 'Flagged Sessions' : 'Candidate Performance'}
                   </span>
                   {selectedAssessment && <span className="text-xs text-slate-400 dark:text-gray-500">- {selectedAssessment.title}</span>}
+                  {activeTab === 'candidates' && (
+                    <div className="relative w-full sm:ml-2 sm:w-64 sm:max-w-[40vw]">
+                      <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="search"
+                        value={filters.studentQuery}
+                        onChange={(e) => updateFilter('studentQuery', e.target.value)}
+                        placeholder="Search name, ID or email"
+                        className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 text-xs text-slate-700 outline-none placeholder:text-slate-400 focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-600"
+                      />
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -1962,11 +1464,10 @@ export default function AssessmentReports() {
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-left">
-                  <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:bg-gray-800 dark:text-gray-400">
+              <div className={activeTab === 'candidates' ? 'min-h-0 flex-1 overflow-auto' : 'overflow-x-auto'}>
+                <table className="min-w-full text-left" style={{ '--serial-start': (pagination.page - 1) * pagination.limit }}>
+                  <thead className={`${activeTab === 'candidates' ? 'sticky top-0 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] dark:shadow-[0_1px_0_0_rgba(55,65,81,1)]' : ''} bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:bg-gray-800 dark:text-gray-400`}>
                     <tr>
-                      <th className="px-4 py-3">#</th>
                       {visibleColumns.student && <SortHeader label="Candidate" sortKey="studentName" currentSort={sort} onSort={handleSort} />}
                       {visibleColumns.attemptDate && <SortHeader label="Attempted" sortKey="attemptDate" currentSort={sort} onSort={handleSort} />}
                       {visibleColumns.attempts && <SortHeader label="Tries" sortKey="attempts" currentSort={sort} onSort={handleSort} align="center" />}
@@ -1985,12 +1486,10 @@ export default function AssessmentReports() {
                     ) : students.length === 0 ? (
                       <TableEmpty />
                     ) : (
-                      students.map((row, idx) => (
+                      students.map((row) => (
                         <TableRow
                           key={row._id}
                           row={row}
-                          idx={idx}
-                          pagination={pagination}
                           visibleColumns={visibleColumns}
                           openStudentDetail={openStudentDetail}
                           openViolationReport={openViolationReport}
@@ -2002,7 +1501,7 @@ export default function AssessmentReports() {
                 </table>
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 dark:border-gray-700">
+              <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 dark:border-gray-700">
                 <span className="text-xs text-slate-500 dark:text-gray-400">
                   Showing <span className="font-semibold text-slate-700 dark:text-gray-300">{students.length}</span> of{' '}
                   <span className="font-semibold text-slate-700 dark:text-gray-300">{pagination.total}</span> results

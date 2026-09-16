@@ -77,7 +77,7 @@ export function StatusBadge({ value, type = 'student' }) {
 }
 
 /* ═════════════════ KPI CARD ═════════════════ */
-export function KpiCard({ icon: Icon, label, value, sub, insight, trend, chart, tone = 'sky' }) {
+export function KpiCard({ icon: Icon, label, value, sub, insight, trend, tone = 'sky' }) {
   const toneBg =
     tone === 'lime' ? 'bg-lime-50 text-lime-700 dark:bg-lime-900/20 dark:text-lime-300'
     : tone === 'emerald' ? 'bg-lime-50 text-lime-700 dark:bg-lime-900/20 dark:text-lime-300'
@@ -86,18 +86,18 @@ export function KpiCard({ icon: Icon, label, value, sub, insight, trend, chart, 
     : tone === 'violet' ? 'bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-300'
     : 'bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-300';
   return (
-    <div className="group relative flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md dark:border-gray-700 dark:bg-gray-900">
-      <div className="flex items-start justify-between">
-        <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${toneBg}`}><Icon className="h-5 w-5" /></div>
+    <div className="relative flex h-[116px] flex-col rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm transition-all hover:-translate-y-px hover:border-sky-200 hover:shadow-md dark:border-gray-700 dark:bg-gray-900">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${toneBg}`}><Icon className="h-4 w-4" /></div>
+          <div className="truncate text-[11px] font-semibold text-slate-500 dark:text-gray-400">{label}</div>
+        </div>
         {trend !== undefined && <TrendBadge change={trend} />}
       </div>
-      <div className="mt-3 min-w-0">
-        <div className="truncate text-2xl font-bold tracking-tight text-slate-900 dark:text-white" title={String(value ?? '')}>{value}</div>
-        <div className="mt-0.5 text-xs font-medium text-slate-500 dark:text-gray-400">{label}</div>
+      <div className="mt-2 min-w-0">
+        <div className="truncate text-xl font-bold tracking-tight text-slate-900 dark:text-white" title={String(value ?? '')}>{value}</div>
       </div>
-      {chart && <div className="mt-3 opacity-60 transition-opacity group-hover:opacity-100">{chart}</div>}
-      {insight && <div className="mt-2 text-[11px] leading-relaxed text-slate-400 dark:text-gray-500">{insight}</div>}
-      {sub && <div className="mt-1 text-[11px] text-slate-400 dark:text-gray-500">{sub}</div>}
+      {(insight || sub) && <div className="mt-auto truncate text-[10px] text-slate-400 dark:text-gray-500">{insight || sub}</div>}
     </div>
   );
 }
@@ -171,11 +171,10 @@ export function TableEmpty() {
 }
 
 /* ═════════════════ TABLE ROW ═════════════════ */
-export function TableRow({ row, idx, pagination, visibleColumns, openStudentDetail, openViolationReport, toast }) {
+export function TableRow({ row, visibleColumns, openStudentDetail, openViolationReport, toast }) {
   const getInitials = (name) => (name || 'U').split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
   return (
     <tr key={row._id} className="group cursor-pointer text-slate-700 transition-colors hover:bg-sky-50/40 dark:text-slate-200 dark:hover:bg-sky-900/10" onClick={() => openStudentDetail(row)}>
-      <td className="px-4 py-3 text-[11px] text-slate-400 dark:text-gray-500">{(pagination.page - 1) * pagination.limit + idx + 1}</td>
       {visibleColumns.student && (
         <td className="px-4 py-3">
           <div className="flex items-center gap-3">

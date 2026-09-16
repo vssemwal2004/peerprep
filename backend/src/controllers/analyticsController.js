@@ -736,6 +736,7 @@ export async function getAdminCompilerAnalytics(req, res) {
           _id: '$problem',
           title: { $first: '$problemSnapshot.title' },
           totalAttempts: { $sum: 1 },
+          attemptedStudents: { $addToSet: '$user' },
           acceptedStudents: {
             $addToSet: {
               $cond: [{ $eq: ['$status', 'AC'] }, '$user', '$$REMOVE'],
@@ -753,6 +754,7 @@ export async function getAdminCompilerAnalytics(req, res) {
           _id: 1,
           title: 1,
           totalAttempts: 1,
+          studentsAttempted: { $size: '$attemptedStudents' },
           studentsSolved: { $size: '$acceptedStudents' },
           failureRate: {
             $cond: [{ $gt: ['$totalAttempts', 0] }, { $multiply: [{ $divide: ['$failedAttempts', '$totalAttempts'] }, 100] }, 0],
@@ -885,6 +887,7 @@ export async function getAdminCompilerAnalytics(req, res) {
         difficulty: problem.difficulty,
         topics: problem.tags || [],
         totalAttempts: row?.totalAttempts || 0,
+        studentsAttempted: row?.studentsAttempted || 0,
         studentsSolved: row?.studentsSolved || 0,
         failureRate: round(row?.failureRate || 0),
       };
