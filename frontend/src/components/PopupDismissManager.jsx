@@ -8,12 +8,25 @@ function getPopupBoundary(trigger) {
     || trigger.parentElement;
 }
 
+function eventIsInsideControlledPopup(trigger, event) {
+  const controlledIds = String(trigger.getAttribute('aria-controls') || '')
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!controlledIds.length) return false;
+
+  const eventPath = typeof event.composedPath === 'function' ? event.composedPath() : [];
+  return controlledIds.some((id) => {
+    const popup = document.getElementById(id);
+    return popup && (popup.contains(event.target) || eventPath.includes(popup));
+  });
+}
+
 export default function PopupDismissManager() {
   useEffect(() => {
     const closeOpenPopups = (event) => {
       document.querySelectorAll(OPEN_POPUP_TRIGGER).forEach((trigger) => {
         const boundary = getPopupBoundary(trigger);
-        if (boundary?.contains(event.target)) return;
+        if (boundary?.contains(event.target) || eventIsInsideControlledPopup(trigger, event)) return;
 
         // Let the current pointer event finish first. This keeps switching
         // directly from one popup to another smooth and avoids stale state.

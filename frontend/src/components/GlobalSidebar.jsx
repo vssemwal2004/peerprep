@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, NavLink, useLocation } from 'react-router-dom';
+import { createPortal } from 'react-dom';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   CalendarPlus,
@@ -33,6 +34,7 @@ import {
   PanelLeftOpen,
   Sun,
   User,
+  X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -220,10 +222,9 @@ const buildNavItems = (role = 'admin') => {
 
 export default function GlobalSidebar({ role = 'admin', isExpanded = false, onExpand = () => {}, onCollapse = () => {} }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const profileRef = useRef(null);
-  const profileMenuRef = useRef(null);
   const profileOpenRef = useRef(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const isCoordinator = role === 'coordinator';
@@ -232,6 +233,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
   const displayEmail = user?.email || localStorage.getItem(`${storagePrefix}Email`) || '';
   const avatarUrl = user?.avatarUrl || localStorage.getItem(`${storagePrefix}AvatarUrl`) || '';
   const homePath = isCoordinator ? '/coordinator/overview' : '/admin/overview';
+  const accountMenuId = `${storagePrefix}-account-menu`;
   const accent = isCoordinator ? 'emerald' : 'sky';
   const navItems = useMemo(() => {
     const items = buildNavItems(role);
@@ -269,23 +271,6 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
       localStorage.setItem(`${storagePrefix}AvatarUrl`, user.avatarUrl || '');
     }
   }, [storagePrefix, user]);
-
-  useEffect(() => {
-    updateProfileOpen(false);
-  }, [location.pathname]);
-
-  useEffect(() => {
-    const handleOutsideClick = (event) => {
-      const eventPath = typeof event.composedPath === 'function' ? event.composedPath() : [];
-      const clickedProfile = profileRef.current?.contains(event.target) || eventPath.includes(profileRef.current);
-      const clickedMenu = profileMenuRef.current?.contains(event.target) || eventPath.includes(profileMenuRef.current);
-      if (profileOpenRef.current && !clickedProfile && !clickedMenu) {
-        updateProfileOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, []);
 
   useEffect(() => {
     if (!isExpanded) {
@@ -440,12 +425,14 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
         })}
         </nav>
 
-        <div ref={profileRef} className="relative shrink-0 border-t border-sky-100 py-2 dark:border-sky-950">
-          {isProfileOpen && (
+        <div className="relative shrink-0 border-t border-sky-100 py-2 dark:border-sky-950">
+          {isProfileOpen && createPortal(
             <div
-              ref={profileMenuRef}
-              className="pointer-events-auto fixed bottom-3 z-[200] w-[18rem] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_55px_rgba(15,23,42,0.18)] transition-[left] duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)] dark:border-gray-700 dark:bg-gray-900 dark:shadow-black/50"
-              style={{ left: 'calc(var(--admin-sidebar-width) + 0.75rem)' }}
+              id={accountMenuId}
+              className="pointer-events-auto fixed bottom-3 z-[9999] w-[18rem] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_55px_rgba(15,23,42,0.18)] transition-[left] duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)] dark:border-gray-700 dark:bg-gray-900 dark:shadow-black/50"
+              style={{ left: `calc(${isExpanded ? '13.6rem' : '4rem'} + 0.75rem)` }}
+              role="dialog"
+              aria-label="Account menu"
             >
               <div className="border-b border-slate-100 bg-gradient-to-br from-slate-50 to-white px-4 py-4 dark:border-gray-800 dark:from-gray-800 dark:to-gray-900">
                 <div className="flex items-center gap-3">
@@ -460,24 +447,27 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
                     <p className="truncate text-sm font-bold text-slate-900 dark:text-white">{displayName}</p>
                     <p className="truncate text-xs text-slate-500 dark:text-gray-400">{displayEmail || (isCoordinator ? 'Coordinator account' : 'Administrator account')}</p>
                   </div>
+                  <button type="button" onClick={() => updateProfileOpen(false)} className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-gray-700 dark:hover:text-gray-100" aria-label="Close account menu">
+                    <X className="h-4 w-4" />
+                  </button>
                 </div>
               </div>
 
               <div className="p-2">
                 {isCoordinator && (
-                  <Link to="/coordinator/profile" onClick={() => updateProfileOpen(false)} className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800">
+                  <button type="button" onClick={() => navigate('/coordinator/profile')} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800">
                     <User className="h-4 w-4 text-slate-400" />
                     My profile
-                  </Link>
+                  </button>
                 )}
-                <Link to={isCoordinator ? '/coordinator/activity' : '/admin/activity'} onClick={() => updateProfileOpen(false)} className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800">
+                <button type="button" onClick={() => navigate(isCoordinator ? '/coordinator/activity' : '/admin/activity')} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800">
                   <Activity className="h-4 w-4 text-slate-400" />
                   Activity log
-                </Link>
-                <Link to={isCoordinator ? '/coordinator/change-password' : '/admin/change-password'} onClick={() => updateProfileOpen(false)} className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800">
+                </button>
+                <button type="button" onClick={() => navigate(isCoordinator ? '/coordinator/change-password' : '/admin/change-password')} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800">
                   <Lock className="h-4 w-4 text-slate-400" />
                   Change password
-                </Link>
+                </button>
 
                 <div className="my-2 border-t border-slate-100 dark:border-gray-800" />
                 <button
@@ -501,7 +491,8 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
                   Sign out
                 </button>
               </div>
-            </div>
+            </div>,
+            document.body,
           )}
 
           <button
@@ -512,6 +503,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
             }}
             className={`relative flex h-14 w-full items-center overflow-hidden rounded-xl text-left transition ${isProfileOpen ? 'bg-white/80 dark:bg-gray-800' : 'hover:bg-white/70 dark:hover:bg-gray-800/80'}`}
             aria-expanded={isProfileOpen}
+            aria-controls={accountMenuId}
             aria-label="Open account menu"
           >
             {avatarUrl ? (
