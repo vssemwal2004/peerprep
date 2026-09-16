@@ -36,6 +36,7 @@ function DetailBlock({ title, children }) {
 }
 
 function AssessmentCodingProblemPanel({ question, codingData = {}, marks = 0, sectionLabel = 'Coding' }) {
+  const isSql = codingData.category === 'SQL';
   const examples = useMemo(() => normalizeVisibleExamples(codingData), [codingData]);
   const hints = useMemo(() => (
     Array.isArray(codingData.hints)
@@ -47,7 +48,7 @@ function AssessmentCodingProblemPanel({ question, codingData = {}, marks = 0, se
       ? codingData.faqs.filter((faq) => String(faq?.question || '').trim() || String(faq?.answer || '').trim())
       : []
   ), [codingData.faqs]);
-  const title = question?.questionText || codingData.title || 'Coding problem';
+  const title = question?.questionText || codingData.title || (isSql ? 'SQL problem' : 'Coding problem');
   const description = codingData.description || codingData.statement || '';
 
   return (
@@ -80,6 +81,7 @@ function AssessmentCodingProblemPanel({ question, codingData = {}, marks = 0, se
                   {codingData.memoryLimitMb} MB
                 </span>
               ) : null}
+              {isSql ? <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:bg-sky-900/20 dark:text-sky-300">SQLite</span> : null}
             </div>
             <h1 className="mt-3 text-xl font-bold leading-8 text-slate-900 dark:text-gray-100">{title}</h1>
           </section>
@@ -94,9 +96,11 @@ function AssessmentCodingProblemPanel({ question, codingData = {}, marks = 0, se
           </section>
 
           <div className="space-y-5 border-t border-slate-100 pt-5 dark:border-gray-800">
-            <DetailBlock title="Input">{codingData.inputFormat}</DetailBlock>
-            <DetailBlock title="Output">{codingData.outputFormat}</DetailBlock>
-            <DetailBlock title="Constraints">{codingData.constraints}</DetailBlock>
+            {isSql && codingData.sqlConfig?.schemaSql ? <div><h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">Database schema</h3><pre className="mt-2 max-h-64 overflow-auto rounded-xl bg-slate-950 p-4 font-mono text-xs leading-5 text-sky-100">{codingData.sqlConfig.schemaSql}</pre></div> : null}
+            {isSql && codingData.sqlConfig?.seedDataSql ? <div><h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">Sample data</h3><pre className="mt-2 max-h-64 overflow-auto rounded-xl bg-slate-950 p-4 font-mono text-xs leading-5 text-sky-100">{codingData.sqlConfig.seedDataSql}</pre></div> : null}
+            <DetailBlock title={isSql ? 'Schema notes' : 'Input'}>{codingData.inputFormat}</DetailBlock>
+            <DetailBlock title={isSql ? 'Required result' : 'Output'}>{codingData.outputFormat}</DetailBlock>
+            <DetailBlock title={isSql ? 'Query rules' : 'Constraints'}>{codingData.constraints}</DetailBlock>
           </div>
 
           <section className="space-y-3">
@@ -113,11 +117,11 @@ function AssessmentCodingProblemPanel({ question, codingData = {}, marks = 0, se
                     </div>
                     <div className="grid gap-3 p-4 sm:grid-cols-2">
                       <div>
-                        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Input</div>
-                        <pre className="min-h-12 whitespace-pre-wrap break-words rounded-xl bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-800 dark:bg-gray-800 dark:text-gray-200">{example.input || '(empty)'}</pre>
+                        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">{isSql ? 'Additional dataset SQL' : 'Input'}</div>
+                        <pre className="min-h-12 whitespace-pre-wrap break-words rounded-xl bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-800 dark:bg-gray-800 dark:text-gray-200">{example.input || (isSql ? 'Uses shared sample data' : '(empty)')}</pre>
                       </div>
                       <div>
-                        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Output</div>
+                        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">{isSql ? 'Expected result' : 'Output'}</div>
                         <pre className="min-h-12 whitespace-pre-wrap break-words rounded-xl bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-800 dark:bg-gray-800 dark:text-gray-200">{example.output || '(empty)'}</pre>
                       </div>
                       {example.explanation ? (

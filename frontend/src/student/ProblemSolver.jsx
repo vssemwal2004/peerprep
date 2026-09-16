@@ -323,6 +323,7 @@ function ProblemDescriptionPanel({ problem }) {
   const faqs = Array.isArray(problem.faqs)
     ? problem.faqs.filter((faq) => String(faq?.question || '').trim() || String(faq?.answer || '').trim())
     : [];
+  const isSql = problem?.category === 'SQL';
 
   return (
     <div className="space-y-6 px-5 py-5">
@@ -330,6 +331,7 @@ function ProblemDescriptionPanel({ problem }) {
         <div className="flex flex-wrap items-center gap-2">
           <DifficultyBadge difficulty={problem.difficulty} />
           <StudentProgressBadge status={problem.studentStatus || 'Unsolved'} />
+          {isSql ? <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:bg-sky-900/20 dark:text-sky-300">SQLite</span> : null}
         </div>
         <div>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-gray-100">{problem.title}</h1>
@@ -347,20 +349,22 @@ function ProblemDescriptionPanel({ problem }) {
       </section>
 
       <section className="space-y-6">
+        {isSql && problem.sqlConfig?.schemaSql ? <div className="space-y-2"><h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Database schema</h2><pre className="max-h-72 overflow-auto rounded-xl bg-slate-950 p-4 font-mono text-xs leading-5 text-sky-100">{problem.sqlConfig.schemaSql}</pre></div> : null}
+        {isSql && problem.sqlConfig?.seedDataSql ? <div className="space-y-2"><h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Sample data</h2><pre className="max-h-72 overflow-auto rounded-xl bg-slate-950 p-4 font-mono text-xs leading-5 text-sky-100">{problem.sqlConfig.seedDataSql}</pre></div> : null}
         <div className="space-y-2">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Input</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">{isSql ? 'Schema notes' : 'Input'}</h2>
           <p className="whitespace-pre-wrap text-sm text-slate-700 dark:text-gray-300">
             {problem.inputFormat || 'Input format will appear here.'}
           </p>
         </div>
         <div className="space-y-2">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Output</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">{isSql ? 'Required result' : 'Output'}</h2>
           <p className="whitespace-pre-wrap text-sm text-slate-700 dark:text-gray-300">
             {problem.outputFormat || 'Output format will appear here.'}
           </p>
         </div>
         <div className="space-y-2">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Constraints</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">{isSql ? 'Query rules' : 'Constraints'}</h2>
           <p className="whitespace-pre-wrap text-sm text-slate-700 dark:text-gray-300">
             {problem.constraints || 'Constraints will appear here.'}
           </p>
@@ -1772,6 +1776,7 @@ export default function ProblemSolver() {
               onReset={resetCode}
               showToolbar={false}
               valueVersion={codeValueVersion}
+              executionMode={problem?.category === 'SQL' ? 'sql' : 'code'}
             />
           </section>
           </div>
@@ -1830,6 +1835,7 @@ export default function ProblemSolver() {
               onReset={resetCode}
               showToolbar={false}
               valueVersion={codeValueVersion}
+              executionMode={problem?.category === 'SQL' ? 'sql' : 'code'}
             />
           </div>
         </div>

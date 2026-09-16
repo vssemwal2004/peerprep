@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 export const SUPPORTED_LANGUAGES = [
   'python', 'javascript', 'java', 'cpp', 'c', 'typescript', 'csharp',
   'php', 'go', 'rust', 'kotlin', 'ruby', 'swift',
-  'r',
+  'r', 'sql',
 ];
 
 const problemSchema = new mongoose.Schema({
@@ -55,6 +55,16 @@ const problemSchema = new mongoose.Schema({
   constraints: {
     type: String,
     default: '',
+  },
+  category: {
+    type: String,
+    enum: ['DSA', 'SQL'],
+    default: 'DSA',
+  },
+  sqlConfig: {
+    dialect: { type: String, enum: ['sqlite'], default: 'sqlite' },
+    schemaSql: { type: String, default: '' },
+    seedDataSql: { type: String, default: '' },
   },
   editorial: {
     type: String,

@@ -12,6 +12,7 @@ export const COMPILER_LANGUAGES = [
   { id: 'kotlin', label: 'Kotlin', monacoLanguage: 'kotlin', judge0LanguageId: 78 },
   { id: 'ruby', label: 'Ruby', monacoLanguage: 'ruby', judge0LanguageId: 72 },
   { id: 'r', label: 'R', monacoLanguage: 'r', judge0LanguageId: 80 },
+  { id: 'sql', label: 'SQL (SQLite)', monacoLanguage: 'sql', judge0LanguageId: 82 },
   { id: 'swift', label: 'Swift', monacoLanguage: 'swift', judge0LanguageId: 83 },
 ];
 
@@ -20,6 +21,7 @@ const LANGUAGE_ID_ALIASES = {
   cpp: 'cpp',
   'c#': 'csharp',
   'c-sharp': 'csharp',
+  sqlite: 'sql',
   csharp: 'csharp',
   js: 'javascript',
   javascript: 'javascript',
@@ -122,6 +124,12 @@ export function createDefaultProblemForm() {
     title: '',
     description: '',
     difficulty: 'Easy',
+    category: 'DSA',
+    sqlConfig: {
+      dialect: 'sqlite',
+      schemaSql: '',
+      seedDataSql: '',
+    },
     tags: '',
     companyTags: '',
     supportedLanguages: ['python', 'javascript'],
@@ -171,6 +179,12 @@ export function createProblemFormFromProblem(problem) {
     title: problem?.title || '',
     description: problem?.description || '',
     difficulty: problem?.difficulty || 'Easy',
+    category: problem?.category === 'SQL' ? 'SQL' : 'DSA',
+    sqlConfig: {
+      dialect: 'sqlite',
+      schemaSql: problem?.sqlConfig?.schemaSql || '',
+      seedDataSql: problem?.sqlConfig?.seedDataSql || '',
+    },
     tags: (problem?.tags || []).join(', '),
     companyTags: (problem?.companyTags || []).join(', '),
     supportedLanguages,
@@ -250,6 +264,8 @@ export function buildProblemFormData(problemForm, status) {
   formData.append('title', problemForm.title || '');
   formData.append('description', problemForm.description || '');
   formData.append('difficulty', problemForm.difficulty || 'Easy');
+  formData.append('category', problemForm.category === 'SQL' ? 'SQL' : 'DSA');
+  formData.append('sqlConfig', JSON.stringify(problemForm.sqlConfig || {}));
   formData.append('tags', problemForm.tags || '');
   formData.append('companyTags', problemForm.companyTags || '');
   formData.append('visibility', problemForm.visibility || 'public');
@@ -310,6 +326,8 @@ export function buildPreviewRunFormData(problemForm, language, customInput) {
   formData.append('codeTemplates', JSON.stringify(problemForm.codeTemplates || {}));
   formData.append('sampleTestCases', JSON.stringify(problemForm.sampleTestCases || []));
   formData.append('timeLimitSeconds', String(problemForm.timeLimitSeconds || 2));
+  formData.append('category', problemForm.category === 'SQL' ? 'SQL' : 'DSA');
+  formData.append('sqlConfig', JSON.stringify(problemForm.sqlConfig || {}));
   formData.append('customInput', customInput || '');
   return formData;
 }

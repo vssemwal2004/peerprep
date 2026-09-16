@@ -376,7 +376,7 @@ async function hydrateAssessmentCodingRuntime(assessment) {
   if (!problemIds.length) return source;
 
   const problems = await Problem.find({ _id: { $in: problemIds } })
-    .select('_id supportedLanguages codeTemplates')
+    .select('_id supportedLanguages codeTemplates category sqlConfig')
     .lean();
   const problemsById = new Map(problems.map((problem) => [String(problem._id), problem]));
 
@@ -406,6 +406,8 @@ async function hydrateAssessmentCodingRuntime(assessment) {
           _id: liveProblem._id,
           supportedLanguages,
           codeTemplates,
+          category: liveProblem.category || existingSnapshot.category || 'DSA',
+          sqlConfig: liveProblem.sqlConfig || existingSnapshot.sqlConfig,
         };
 
         return {

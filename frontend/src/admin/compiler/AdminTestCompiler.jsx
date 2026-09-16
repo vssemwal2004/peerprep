@@ -78,6 +78,7 @@ function ProblemDescriptionPanel({ problem, previewValidated }) {
   const topics = Array.isArray(problem?.tags) ? problem.tags : [];
   const companies = Array.isArray(problem?.companyTags) ? problem.companyTags : [];
   const sampleCount = Array.isArray(problem?.sampleTestCases) ? problem.sampleTestCases.length : 0;
+  const isSql = problem?.category === 'SQL';
 
   return (
     <div className="space-y-6 px-5 py-5">
@@ -85,6 +86,7 @@ function ProblemDescriptionPanel({ problem, previewValidated }) {
         <div className="flex flex-wrap items-center gap-2">
           <DifficultyBadge difficulty={problem.difficulty} />
           <ProblemStatusBadge status={problem.status} />
+          {isSql ? <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:bg-sky-900/20 dark:text-sky-300">SQLite</span> : null}
           <span className={`rounded-full px-3 py-1 text-xs font-semibold ${previewBadgeClass(previewValidated)}`}>
             {previewValidated ? 'Preview Passed' : 'Preview Required'}
           </span>
@@ -106,20 +108,22 @@ function ProblemDescriptionPanel({ problem, previewValidated }) {
       </section>
 
       <section className="space-y-6">
+        {isSql && problem.sqlConfig?.schemaSql ? <div className="space-y-2"><h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Database schema</h2><pre className="max-h-72 overflow-auto rounded-xl bg-slate-950 p-4 font-mono text-xs leading-5 text-sky-100">{problem.sqlConfig.schemaSql}</pre></div> : null}
+        {isSql && problem.sqlConfig?.seedDataSql ? <div className="space-y-2"><h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Sample data</h2><pre className="max-h-72 overflow-auto rounded-xl bg-slate-950 p-4 font-mono text-xs leading-5 text-sky-100">{problem.sqlConfig.seedDataSql}</pre></div> : null}
         <div className="space-y-2">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Input</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">{isSql ? 'Schema notes' : 'Input'}</h2>
           <p className="whitespace-pre-wrap text-sm text-slate-700 dark:text-gray-300">
             {problem.inputFormat || 'Input format will appear here.'}
           </p>
         </div>
         <div className="space-y-2">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Output</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">{isSql ? 'Required result' : 'Output'}</h2>
           <p className="whitespace-pre-wrap text-sm text-slate-700 dark:text-gray-300">
             {problem.outputFormat || 'Output format will appear here.'}
           </p>
         </div>
         <div className="space-y-2">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Constraints</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">{isSql ? 'Query rules' : 'Constraints'}</h2>
           <p className="whitespace-pre-wrap text-sm text-slate-700 dark:text-gray-300">
             {problem.constraints || 'Constraints will appear here.'}
           </p>
@@ -734,6 +738,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
                 showToolbar
                 internalClipboardOnly={false}
                 editorKey={`admin-test:${problem?._id || 'draft'}`}
+                executionMode={problem?.category === 'SQL' ? 'sql' : 'code'}
               />
             </section>
           </div>
@@ -789,6 +794,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
               onReset={resetCode}
               showToolbar
               internalClipboardOnly={false}
+              executionMode={problem?.category === 'SQL' ? 'sql' : 'code'}
               editorKey={`admin-test:${problem?._id || 'draft'}`}
             />
           </div>

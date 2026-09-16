@@ -42,6 +42,7 @@ const KEY_TO_LANGUAGE_ID = {
   typescript: 74,
   kotlin: 78,
   r: 80,
+  sql: 82,
   swift: 83,
 };
 
@@ -216,6 +217,7 @@ const LANGUAGE_ALIASES = {
   'c-sharp': 'csharp',
   js: 'javascript',
   ts: 'typescript',
+  sqlite: 'sql',
 };
 
 function normalizeLanguageId(value) {
@@ -296,6 +298,24 @@ function normalizeHiddenTestCases(value) {
       marks: Math.max(0.01, Number(testCase?.marks) || 1),
     }))
     .filter((testCase) => testCase.input || testCase.output);
+}
+
+function normalizeProblemCategory(value) {
+  return String(value || '').trim().toUpperCase() === 'SQL' ? 'SQL' : 'DSA';
+}
+
+function normalizeSqlConfig(value, category = 'DSA') {
+  if (category !== 'SQL') {
+    return { dialect: 'sqlite', schemaSql: '', seedDataSql: '' };
+  }
+  const parsed = parseJsonField(value, {});
+  const source = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  const schemaSql = String(source.schemaSql || '').replace(/\r\n/g, '\n').trim();
+  const seedDataSql = String(source.seedDataSql || '').replace(/\r\n/g, '\n').trim();
+  if (Buffer.byteLength(`${schemaSql}\n${seedDataSql}`, 'utf8') > 40 * 1024) {
+    throw new HttpError(400, 'Combined SQL schema and seed data must be 40 KB or less.');
+  }
+  return { dialect: 'sqlite', schemaSql, seedDataSql };
 }
 
 function sumTestCaseMarks(testCases = []) {
@@ -522,6 +542,14 @@ function buildProblemPayload(
   }
 
   const status = normalizeStatus(req.body.status);
+  const category = normalizeProblemCategory(req.body.category);
+  if (category === 'SQL' && (supportedLanguages.length !== 1 || supportedLanguages[0] !== 'sql')) {
+    throw new HttpError(400, 'SQL problems must use the SQLite language runtime.');
+  }
+  const sqlConfig = normalizeSqlConfig(req.body.sqlConfig, category);
+  if (status === 'published' && category === 'SQL' && !sqlConfig.schemaSql) {
+    throw new HttpError(400, 'Publishing a SQL problem requires database schema SQL.');
+  }
   const sampleTestCasesProvided = req.body.sampleTestCases !== undefined;
   const hiddenTestCasesFromFiles = extractHiddenTestCasesFromFiles(req.files || []);
   const bulkHiddenFiles = extractBulkHiddenFiles(req.files || []);
@@ -573,6 +601,8 @@ function buildProblemPayload(
     title,
     description: String(req.body.description ?? ''),
     difficulty: ['Easy', 'Medium', 'Hard'].includes(req.body.difficulty) ? req.body.difficulty : 'Easy',
+    category,
+    sqlConfig,
     tags: parseCommaOrJsonList(req.body.tags),
     companyTags: parseCommaOrJsonList(req.body.companyTags),
     supportedLanguages,
@@ -1441,6 +1471,8 @@ export async function previewRunProblem(req, res) {
     ? String(req.body.customInput)
     : (sampleTestCases[0]?.input || '');
   const timeLimitSeconds = parseNumber(req.body.timeLimitSeconds ?? req.body.timeLimit, 2, { min: 1, max: 15, integer: false });
+  const category = normalizeProblemCategory(req.body.category);
+  const sqlConfig = normalizeSqlConfig(req.body.sqlConfig, category);
 
   const languageId = KEY_TO_LANGUAGE_ID[selectedLanguage];
   if (!languageId) {
@@ -1455,6 +1487,9 @@ export async function previewRunProblem(req, res) {
       cpuTimeLimitSeconds: timeLimitSeconds,
       wallTimeLimitSeconds: Math.max(5, timeLimitSeconds * 2),
       memoryLimitKb: DEFAULT_MEMORY_LIMIT_MB * 1024,
+      sqlSetupCode: category === 'SQL'
+        ? [sqlConfig.schemaSql, sqlConfig.seedDataSql].filter(Boolean).join('\n\n')
+        : '',
     },
   );
 

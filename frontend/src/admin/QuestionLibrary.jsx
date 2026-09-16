@@ -23,6 +23,8 @@ function labelForType(type = '') {
 
 function labelForQuestionType(question = {}) {
   if (isPassageSet(question)) return 'Passage MCQ';
+  const codingData = question?.questionData?.problemDataSnapshot || question?.questionData?.coding || {};
+  if (question.questionType === 'coding' && codingData.category === 'SQL') return 'SQL problem';
   return {
     coding: 'Coding problem',
     mcq: 'MCQ question',
@@ -150,6 +152,7 @@ function renderQuestionPreview(question = {}) {
           <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Statement</div>
           <div className="mt-1 whitespace-pre-wrap text-sm leading-6">{coding.statement || coding.description || data.questionText || '-'}</div>
         </div>
+        {coding.category === 'SQL' && coding.sqlConfig?.schemaSql ? <div className="rounded-xl border border-slate-200 bg-slate-950 p-3 text-sm text-sky-100 md:col-span-2"><div className="text-[11px] uppercase tracking-[0.16em] text-sky-300">Database schema</div><pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap font-mono text-xs leading-5">{coding.sqlConfig.schemaSql}</pre></div> : null}
       </div>
     );
   }

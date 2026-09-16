@@ -3536,6 +3536,7 @@ export default function AssessmentAttempt() {
                         onLiveCodeChange={(code) => {
                           liveCodingCodeRef.current[key] = code;
                         }}
+                        executionMode={codingData?.category === 'SQL' ? 'sql' : 'code'}
                       />
                     );
                   })()}

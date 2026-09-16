@@ -39,6 +39,7 @@ export const LANGUAGE_ID_TO_KEY = {
   74: 'typescript',
   78: 'kotlin',
   80: 'r',
+  82: 'sql',
   83: 'swift',
 };
 
@@ -57,6 +58,8 @@ export const KEY_TO_LANGUAGE_ID = {
   typescript: 74,
   kotlin: 78,
   r: 80,
+  sql: 82,
+  sqlite: 82,
   swift: 83,
 };
 
@@ -259,13 +262,25 @@ async function judge0Request(path, { method = 'GET', body } = {}) {
 }
 
 export async function runJudge0(sourceCodeInput, languageId, stdin = '', options = {}) {
-  const sourceCode = sanitizeExecutionText(sourceCodeInput, MAX_SOURCE_CODE_SIZE_BYTES, 'Source code');
-  const standardInput = sanitizeExecutionText(stdin, MAX_STDIN_SIZE_BYTES, 'Input');
   const numericLanguageId = Number(languageId);
 
   if (!LANGUAGE_ID_TO_KEY[numericLanguageId]) {
     throw new HttpError(400, 'Unsupported language_id.');
   }
+
+  const isSql = LANGUAGE_ID_TO_KEY[numericLanguageId] === 'sql';
+  const rawInput = sanitizeExecutionText(stdin, MAX_STDIN_SIZE_BYTES, isSql ? 'Dataset SQL' : 'Input');
+  const sqlSetupCode = isSql
+    ? sanitizeExecutionText(options.sqlSetupCode || '', MAX_SOURCE_CODE_SIZE_BYTES, 'SQL schema and seed data')
+    : '';
+  const sourceCode = sanitizeExecutionText(
+    isSql
+      ? [sqlSetupCode, rawInput, sourceCodeInput].filter((part) => String(part || '').trim()).join('\n\n')
+      : sourceCodeInput,
+    MAX_SOURCE_CODE_SIZE_BYTES,
+    isSql ? 'Combined SQL submission' : 'Source code',
+  );
+  const standardInput = isSql ? '' : rawInput;
 
   const cpuTimeLimit = clampNumber(
     options.cpuTimeLimitSeconds || DEFAULT_TIME_LIMIT_SECONDS,
@@ -400,6 +415,11 @@ export function buildJudge0Options(problem) {
     cpuTimeLimitSeconds: problem?.timeLimitSeconds || DEFAULT_TIME_LIMIT_SECONDS,
     wallTimeLimitSeconds: Math.max(5, (problem?.timeLimitSeconds || DEFAULT_TIME_LIMIT_SECONDS) * 2),
     memoryLimitKb: Math.trunc((problem?.memoryLimitMb || 256) * 1024),
+    sqlSetupCode: String(problem?.category || '').toUpperCase() === 'SQL'
+      ? [problem?.sqlConfig?.schemaSql, problem?.sqlConfig?.seedDataSql]
+        .filter((part) => String(part || '').trim())
+        .join('\n\n')
+      : '',
   };
 }
 

@@ -59,6 +59,12 @@ function buildProblemSnapshot(problem = {}, { sampleTestCases = [], hiddenTestCa
     title: problem.title || '',
     description: problem.description || '',
     difficulty: problem.difficulty || 'Easy',
+    category: problem.category || 'DSA',
+    sqlConfig: {
+      dialect: problem.sqlConfig?.dialect || 'sqlite',
+      schemaSql: problem.sqlConfig?.schemaSql || '',
+      seedDataSql: problem.sqlConfig?.seedDataSql || '',
+    },
     tags: Array.isArray(problem.tags) ? problem.tags : [],
     companyTags: Array.isArray(problem.companyTags) ? problem.companyTags : [],
     supportedLanguages: Array.isArray(problem.supportedLanguages) ? problem.supportedLanguages : [],

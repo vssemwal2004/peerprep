@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { AlertTriangle, BookOpenText, ChevronLeft, ChevronRight, Code2, Copy, Edit2, Eye, EyeOff, FilePlus2, FileText, FlaskConical, Hash, Plus, Save, Trash2, Upload, X } from 'lucide-react';
+import { AlertTriangle, BookOpenText, ChevronLeft, ChevronRight, Code2, Copy, Database, Edit2, Eye, EyeOff, FilePlus2, FileText, FlaskConical, Hash, Plus, Save, Trash2, Upload, X } from 'lucide-react';
 import { api } from '../../utils/api';
 import { useToast } from '../../components/CustomToast';
 import RichTextEditor from './RichTextEditor';
@@ -87,7 +87,21 @@ function redistributeConfiguredHiddenCases(testCases = [], totalMarks = 0) {
   return testCases.map((testCase, index) => byIndex.get(index) || testCase);
 }
 
-function TestCaseEditorCard({ title, cases, onAdd, onRemove, onDuplicate, onChange, includeExplanation = false, staged = false }) {
+function TestCaseEditorCard({
+  title,
+  cases,
+  onAdd,
+  onRemove,
+  onDuplicate,
+  onChange,
+  includeExplanation = false,
+  staged = false,
+  inputLabel = 'Input',
+  outputLabel = 'Expected output',
+  inputPlaceholder = 'Input',
+  outputPlaceholder = 'Output',
+  requireInput = true,
+}) {
   const [savedIndexes, setSavedIndexes] = useState(() => new Set(
     cases.map((testCase, index) => ((testCase.input || testCase.output) ? index : null)).filter((index) => index !== null),
   ));
@@ -114,8 +128,8 @@ function TestCaseEditorCard({ title, cases, onAdd, onRemove, onDuplicate, onChan
 
   const saveCase = (index) => {
     const testCase = cases[index];
-    if (!String(testCase?.input || '').trim() || !String(testCase?.output || '').trim()) {
-      setValidationError(`Add both input and expected output before saving this ${title.toLowerCase()} case.`);
+    if ((requireInput && !String(testCase?.input || '').trim()) || !String(testCase?.output || '').trim()) {
+      setValidationError(`Add ${requireInput ? `both ${inputLabel.toLowerCase()} and ` : ''}${outputLabel.toLowerCase()} before saving this ${title.toLowerCase()} case.`);
       return;
     }
     setSavedIndexes((current) => new Set([...current, index]));
@@ -148,7 +162,7 @@ function TestCaseEditorCard({ title, cases, onAdd, onRemove, onDuplicate, onChan
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <h4 className="text-sm font-semibold text-slate-800 dark:text-gray-100">{title} {index + 1} saved</h4>
-              <p className="mt-1 truncate font-mono text-xs text-slate-500 dark:text-gray-400">Input: {testCase.input}</p>
+              <p className="mt-1 truncate font-mono text-xs text-slate-500 dark:text-gray-400">{inputLabel}: {testCase.input || 'Uses shared database data'}</p>
               <p className="mt-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300">{Number(testCase.marks) || 1} mark(s)</p>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-1">
@@ -160,8 +174,8 @@ function TestCaseEditorCard({ title, cases, onAdd, onRemove, onDuplicate, onChan
           </div>
           </div>
           {expandedIndexes.has(index) && <div className={`grid gap-3 border-t border-emerald-200 bg-white/80 p-4 text-xs dark:border-emerald-800 dark:bg-gray-900/50 ${includeExplanation ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
-            <div><p className="font-bold uppercase tracking-wide text-slate-400">Input</p><pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-100 p-3 font-mono text-slate-700 dark:bg-gray-800 dark:text-gray-200">{testCase.input || '(empty)'}</pre></div>
-            <div><p className="font-bold uppercase tracking-wide text-slate-400">Expected output</p><pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-100 p-3 font-mono text-slate-700 dark:bg-gray-800 dark:text-gray-200">{testCase.output || '(empty)'}</pre></div>
+            <div><p className="font-bold uppercase tracking-wide text-slate-400">{inputLabel}</p><pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-100 p-3 font-mono text-slate-700 dark:bg-gray-800 dark:text-gray-200">{testCase.input || '(uses shared database data)'}</pre></div>
+            <div><p className="font-bold uppercase tracking-wide text-slate-400">{outputLabel}</p><pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-100 p-3 font-mono text-slate-700 dark:bg-gray-800 dark:text-gray-200">{testCase.output || '(empty)'}</pre></div>
             {includeExplanation && <div><p className="font-bold uppercase tracking-wide text-slate-400">Explanation</p><p className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-100 p-3 leading-5 text-slate-700 dark:bg-gray-800 dark:text-gray-200">{testCase.explanation || 'No explanation added.'}</p></div>}
           </div>}
         </div>
@@ -176,14 +190,14 @@ function TestCaseEditorCard({ title, cases, onAdd, onRemove, onDuplicate, onChan
               value={testCase.input}
               onChange={(event) => updateCase(index, 'input', event.target.value)}
               rows={5}
-              placeholder="Input"
+              placeholder={inputPlaceholder}
               className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-xs text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"
             />
             <textarea
               value={testCase.output}
               onChange={(event) => updateCase(index, 'output', event.target.value)}
               rows={5}
-              placeholder="Output"
+              placeholder={outputPlaceholder}
               className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-xs text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"
             />
             {includeExplanation ? (
@@ -426,6 +440,7 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
   }, [activeLanguage, form.supportedLanguages]);
 
   const hiddenPairs = useMemo(() => deriveHiddenFilePairs(form.hiddenTestFiles), [form.hiddenTestFiles]);
+  const isSqlProblem = form.category === 'SQL';
   const visibleSampleCount = form.sampleTestCases.filter((testCase) => testCase.input || testCase.output || testCase.explanation).length;
   const manualHiddenCount = form.hiddenTestCases.filter((testCase) => testCase.input || testCase.output).length;
   const bulkHiddenCount = Number(form.hiddenBulkCaseCount || 0);
@@ -441,6 +456,47 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
 
   const updateField = (field, value) => {
     setForm((previous) => ({ ...previous, [field]: value }));
+    setIsDirty(true);
+  };
+
+  const switchProblemCategory = (category) => {
+    setForm((previous) => {
+      if (category === 'SQL') {
+        return {
+          ...previous,
+          category: 'SQL',
+          supportedLanguages: ['sql'],
+          codeTemplates: {
+            ...previous.codeTemplates,
+            sql: previous.codeTemplates?.sql || 'SELECT -- columns\nFROM -- table\nWHERE -- condition;',
+          },
+          sqlConfig: {
+            dialect: 'sqlite',
+            schemaSql: previous.sqlConfig?.schemaSql || '',
+            seedDataSql: previous.sqlConfig?.seedDataSql || '',
+          },
+        };
+      }
+      const nonSqlLanguages = previous.supportedLanguages.filter((language) => language !== 'sql');
+      return {
+        ...previous,
+        category: 'DSA',
+        supportedLanguages: nonSqlLanguages.length ? nonSqlLanguages : ['python', 'javascript'],
+      };
+    });
+    setActiveLanguage(category === 'SQL' ? 'sql' : 'python');
+    setPreviewValidated(false);
+    setIsDirty(true);
+  };
+
+  const updateSqlConfig = (field, value) => {
+    setForm((previous) => ({
+      ...previous,
+      sqlConfig: {
+        ...(previous.sqlConfig || { dialect: 'sqlite' }),
+        [field]: value,
+      },
+    }));
     setIsDirty(true);
   };
 
@@ -838,7 +894,9 @@ if (!isValidated || publishedProblem.status !== 'published') {
   const activeTabIndex = EDITOR_TABS.findIndex((tab) => tab.key === activeTab);
   const isFinalTab = activeTabIndex === EDITOR_TABS.length - 1;
   const tabCompletion = {
-    details: Boolean(form.title?.trim() && form.description?.trim() && form.inputFormat?.trim() && form.outputFormat?.trim() && form.constraints?.trim()),
+    details: isSqlProblem
+      ? Boolean(form.title?.trim() && form.description?.trim() && form.sqlConfig?.schemaSql?.trim() && form.outputFormat?.trim() && form.constraints?.trim())
+      : Boolean(form.title?.trim() && form.description?.trim() && form.inputFormat?.trim() && form.outputFormat?.trim() && form.constraints?.trim()),
     tests: visibleSampleCount > 0 && hiddenCount > 0,
     templates: form.supportedLanguages.length > 0 && hasTemplate,
     editorial: Boolean(form.editorial?.trim() || form.hints?.length || form.faqs?.length),
@@ -860,10 +918,10 @@ if (!isValidated || publishedProblem.status !== 'published') {
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900 sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white"><Code2 className="h-5 w-5" /></span>
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white">{isSqlProblem ? <Database className="h-5 w-5" /> : <Code2 className="h-5 w-5" />}</span>
               <div className="min-w-0">
-                <p className="truncate text-sm font-bold text-slate-950 dark:text-white">{isAssessment ? 'Assessment coding question' : (isEditMode ? 'Edit coding problem' : 'Create coding problem')}</p>
-                <p className="text-xs text-slate-500 dark:text-gray-400">{currentStatus === 'published' ? 'Published' : 'Draft'} · {visibleSampleCount} sample · {hiddenCount} hidden · {form.supportedLanguages.length} languages</p>
+                <p className="truncate text-sm font-bold text-slate-950 dark:text-white">{isAssessment ? `Assessment ${isSqlProblem ? 'SQL' : 'coding'} question` : (isEditMode ? `Edit ${isSqlProblem ? 'SQL' : 'coding'} problem` : `Create ${isSqlProblem ? 'SQL' : 'coding'} problem`)}</p>
+                <p className="text-xs text-slate-500 dark:text-gray-400">{currentStatus === 'published' ? 'Published' : 'Draft'} · {visibleSampleCount} sample · {hiddenCount} hidden · {isSqlProblem ? 'SQLite' : `${form.supportedLanguages.length} languages`}</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -877,13 +935,25 @@ if (!isValidated || publishedProblem.status !== 'published') {
           <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold">
             <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600 dark:bg-gray-800 dark:text-gray-300">{visibleSampleCount} sample</span>
             <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600 dark:bg-gray-800 dark:text-gray-300">{hiddenCount} hidden</span>
-            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600 dark:bg-gray-800 dark:text-gray-300">{form.supportedLanguages.length} languages</span>
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600 dark:bg-gray-800 dark:text-gray-300">{isSqlProblem ? 'SQL · SQLite' : `${form.supportedLanguages.length} languages`}</span>
             <span className={`rounded-full px-2.5 py-1 ${previewValidated ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300'}`}>{previewValidated ? 'Preview validated' : 'Validation pending'}</span>
           </div>
         </section>
 
         {activeTab === 'details' ? (
           <>
+            <SectionCard title="Question type" subtitle="Choose the workspace and evaluation model before adding content.">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button type="button" onClick={() => switchProblemCategory('DSA')} className={`flex items-start gap-3 rounded-2xl border p-4 text-left transition ${!isSqlProblem ? 'border-sky-300 bg-sky-50 ring-2 ring-sky-100 dark:border-sky-700 dark:bg-sky-950/30 dark:ring-sky-900/40' : 'border-slate-200 hover:border-slate-300 dark:border-gray-700'}`}>
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white dark:bg-gray-700"><Code2 className="h-5 w-5" /></span>
+                  <span><span className="block text-sm font-bold text-slate-900 dark:text-white">Programming</span><span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-gray-400">Functions, stdin/output and language-specific solutions.</span></span>
+                </button>
+                <button type="button" onClick={() => switchProblemCategory('SQL')} className={`flex items-start gap-3 rounded-2xl border p-4 text-left transition ${isSqlProblem ? 'border-sky-300 bg-sky-50 ring-2 ring-sky-100 dark:border-sky-700 dark:bg-sky-950/30 dark:ring-sky-900/40' : 'border-slate-200 hover:border-slate-300 dark:border-gray-700'}`}>
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white"><Database className="h-5 w-5" /></span>
+                  <span><span className="block text-sm font-bold text-slate-900 dark:text-white">SQL query</span><span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-gray-400">LeetCode-style SQLite schema, datasets and result-table evaluation.</span></span>
+                </button>
+              </div>
+            </SectionCard>
             <SectionCard title="Question Details" subtitle="Core metadata and public-facing problem statement.">
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="md:col-span-2">
@@ -909,19 +979,40 @@ if (!isValidated || publishedProblem.status !== 'published') {
               </div>
             </SectionCard>
 
-            <SectionCard title="Input / Output Specification" subtitle="Public contract shown to problem solvers.">
+            {isSqlProblem ? (
+              <SectionCard title="Database environment" subtitle="This shared schema and sample data are loaded before every student query.">
+                <div className="mb-4 rounded-xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-xs leading-5 text-slate-600 dark:border-sky-900/50 dark:bg-sky-950/20 dark:text-gray-300">
+                  Use SQLite syntax. Keep the schema stable; add alternative rows for edge cases inside each sample or hidden dataset. Every run starts with a fresh isolated database.
+                </div>
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div>
+                    <RequiredFieldLabel>Schema SQL</RequiredFieldLabel>
+                    <MonacoCodeEditor language="sql" value={form.sqlConfig?.schemaSql || ''} onChange={(value) => updateSqlConfig('schemaSql', value)} height={300} contentKey="sql-schema" />
+                  </div>
+                  <div>
+                    <RequiredFieldLabel optional>Shared sample data</RequiredFieldLabel>
+                    <MonacoCodeEditor language="sql" value={form.sqlConfig?.seedDataSql || ''} onChange={(value) => updateSqlConfig('seedDataSql', value)} height={300} contentKey="sql-seed-data" />
+                  </div>
+                </div>
+              </SectionCard>
+            ) : null}
+
+            <SectionCard title={isSqlProblem ? 'Query specification' : 'Input / Output Specification'} subtitle={isSqlProblem ? 'Explain the available tables and the required result columns.' : 'Public contract shown to problem solvers.'}>
               <div className="grid gap-4 md:grid-cols-3">
-                <div>
+                {!isSqlProblem ? <div>
                   <RequiredFieldLabel>Input format</RequiredFieldLabel>
                   <textarea value={form.inputFormat} onChange={(event) => updateField('inputFormat', event.target.value)} rows={5} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
-                </div>
+                </div> : <div>
+                  <RequiredFieldLabel optional>Schema notes</RequiredFieldLabel>
+                  <textarea value={form.inputFormat} onChange={(event) => updateField('inputFormat', event.target.value)} rows={5} placeholder="Explain table relationships or important columns." className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
+                </div>}
                 <div>
-                  <RequiredFieldLabel>Output format</RequiredFieldLabel>
+                  <RequiredFieldLabel>{isSqlProblem ? 'Required result' : 'Output format'}</RequiredFieldLabel>
                   <textarea value={form.outputFormat} onChange={(event) => updateField('outputFormat', event.target.value)} rows={5} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
                 </div>
                 <div>
-                  <RequiredFieldLabel>Constraints</RequiredFieldLabel>
-                  <RichTextEditor value={form.constraints} onChange={(value) => updateField('constraints', value)} rows={7} placeholder="Add one constraint per line, then format lines with headings, bold, lists, quotes, or code." />
+                  <RequiredFieldLabel>{isSqlProblem ? 'Query rules' : 'Constraints'}</RequiredFieldLabel>
+                  <RichTextEditor value={form.constraints} onChange={(value) => updateField('constraints', value)} rows={7} placeholder={isSqlProblem ? 'Example: return one row per employee; sort by salary descending.' : 'Add one constraint per line, then format lines with headings, bold, lists, quotes, or code.'} />
                 </div>
               </div>
             </SectionCard>
@@ -969,7 +1060,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
 
         {activeTab === 'tests' ? (
           <>
-            <SectionCard title="Sample Test Cases" subtitle="Visible examples for the statement and admin run flow.">
+            <SectionCard title={isSqlProblem ? 'Sample datasets' : 'Sample Test Cases'} subtitle={isSqlProblem ? 'Visible database variations and the exact result produced by the reference query.' : 'Visible examples for the statement and admin run flow.'}>
               <RequiredFieldLabel>At least one complete sample</RequiredFieldLabel>
               <TestCaseEditorCard
                 title="Sample"
@@ -980,16 +1071,21 @@ if (!isValidated || publishedProblem.status !== 'published') {
                 onRemove={(index) => updateField('sampleTestCases', form.sampleTestCases.filter((_, itemIndex) => itemIndex !== index))}
                 onDuplicate={(index) => updateField('sampleTestCases', [...form.sampleTestCases, { ...form.sampleTestCases[index] }])}
                 onChange={updateSampleTestCase}
+                inputLabel={isSqlProblem ? 'Additional dataset SQL' : 'Input'}
+                outputLabel={isSqlProblem ? 'Expected result rows' : 'Expected output'}
+                inputPlaceholder={isSqlProblem ? 'Optional INSERT/UPDATE statements for this dataset' : 'Input'}
+                outputPlaceholder={isSqlProblem ? 'Asha|80000\nRavi|60000' : 'Output'}
+                requireInput={!isSqlProblem}
               />
             </SectionCard>
 
-            <SectionCard title="Hidden Test Cases" subtitle="Add private judge cases manually or import files when you have many cases.">
+            <SectionCard title={isSqlProblem ? 'Hidden datasets' : 'Hidden Test Cases'} subtitle={isSqlProblem ? 'Private data variations used to validate the submitted query.' : 'Add private judge cases manually or import files when you have many cases.'}>
               <RequiredFieldLabel>At least one hidden judge case</RequiredFieldLabel>
               <div className="mb-5 overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50/60 dark:border-emerald-900/60 dark:bg-emerald-950/20">
                 <div className="grid gap-4 p-4 sm:grid-cols-[minmax(0,1fr)_180px] sm:items-center">
                   <div className="flex items-start gap-3">
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm"><Hash className="h-4.5 w-4.5" /></span>
-                    <div><p className="text-sm font-bold text-slate-900 dark:text-white">Coding question marks</p><p className="mt-1 text-xs leading-5 text-slate-600 dark:text-gray-300">By default, the total is the sum of hidden test-case marks. Enter a custom total and it is distributed proportionally across every hidden case.</p></div>
+                    <div><p className="text-sm font-bold text-slate-900 dark:text-white">{isSqlProblem ? 'SQL question marks' : 'Coding question marks'}</p><p className="mt-1 text-xs leading-5 text-slate-600 dark:text-gray-300">By default, the total is the sum of hidden test-case marks. Enter a custom total and it is distributed proportionally across every hidden case.</p></div>
                   </div>
                   <label>
                     <span className="block text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-300">Total question marks</span>
@@ -1028,6 +1124,11 @@ if (!isValidated || publishedProblem.status !== 'published') {
                     onRemove={(index) => replaceHiddenTestCases(form.hiddenTestCases.filter((_, itemIndex) => itemIndex !== index))}
                     onDuplicate={(index) => replaceHiddenTestCases([...form.hiddenTestCases, { ...form.hiddenTestCases[index] }])}
                     onChange={updateHiddenTestCase}
+                    inputLabel={isSqlProblem ? 'Additional dataset SQL' : 'Input'}
+                    outputLabel={isSqlProblem ? 'Expected result rows' : 'Expected output'}
+                    inputPlaceholder={isSqlProblem ? 'Optional INSERT/UPDATE statements for this hidden dataset' : 'Input'}
+                    outputPlaceholder={isSqlProblem ? 'Expected pipe-separated SQLite output' : 'Output'}
+                    requireInput={!isSqlProblem}
                   />
                 </div>
               ) : form.hiddenTestUploadMode === 'pairs' ? (
@@ -1089,6 +1190,11 @@ if (!isValidated || publishedProblem.status !== 'published') {
                       onRemove={(index) => replaceHiddenTestCases(form.hiddenTestCases.filter((_, itemIndex) => itemIndex !== index))}
                       onDuplicate={(index) => replaceHiddenTestCases([...form.hiddenTestCases, { ...form.hiddenTestCases[index] }])}
                       onChange={updateHiddenTestCase}
+                      inputLabel={isSqlProblem ? 'Additional dataset SQL' : 'Input'}
+                      outputLabel={isSqlProblem ? 'Expected result rows' : 'Expected output'}
+                      inputPlaceholder={isSqlProblem ? 'Optional INSERT/UPDATE statements for this hidden dataset' : 'Input'}
+                      outputPlaceholder={isSqlProblem ? 'Expected pipe-separated SQLite output' : 'Output'}
+                      requireInput={!isSqlProblem}
                     />
                   </div>}
                 </div>
@@ -1224,10 +1330,15 @@ if (!isValidated || publishedProblem.status !== 'published') {
 
         {activeTab === 'templates' ? (
           <>
-            <SectionCard title="Supported Languages" subtitle="Choose runtimes for admin testing and submissions.">
-              <RequiredFieldLabel>Allowed languages</RequiredFieldLabel>
+            <SectionCard title={isSqlProblem ? 'SQL runtime' : 'Supported Languages'} subtitle={isSqlProblem ? 'SQL questions run in an isolated SQLite database.' : 'Choose runtimes for admin testing and submissions.'}>
+              {isSqlProblem ? (
+                <div className="flex items-center gap-3 rounded-2xl border border-sky-200 bg-sky-50 p-4 dark:border-sky-800 dark:bg-sky-950/20">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-600 text-white"><Database className="h-5 w-5" /></span>
+                  <div><p className="text-sm font-bold text-slate-900 dark:text-white">SQLite 3.27.2</p><p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Judge0 language 82 · fresh database for every dataset</p></div>
+                </div>
+              ) : <><RequiredFieldLabel>Allowed languages</RequiredFieldLabel>
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {COMPILER_LANGUAGES.map((language) => {
+                {COMPILER_LANGUAGES.filter((language) => language.id !== 'sql').map((language) => {
                   const checked = form.supportedLanguages.includes(language.id);
                   return (
                     <label key={language.id} className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 transition-colors ${checked ? 'border-sky-300 bg-sky-50 dark:border-sky-700 dark:bg-sky-900/10' : 'border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900'}`}>
@@ -1236,14 +1347,14 @@ if (!isValidated || publishedProblem.status !== 'published') {
                     </label>
                   );
                 })}
-              </div>
+              </div></>}
             </SectionCard>
 
-            <SectionCard title="Code Templates" subtitle="Provide starter code for each language. Students can fully replace it with any valid program entrypoint.">
-              <RequiredFieldLabel>Starter code</RequiredFieldLabel>
-              <div className="mb-4 flex flex-wrap gap-2">
+            <SectionCard title={isSqlProblem ? 'Starter query' : 'Code Templates'} subtitle={isSqlProblem ? 'Give students a focused starting point without exposing the reference query.' : 'Provide starter code for each language. Students can fully replace it with any valid program entrypoint.'}>
+              <RequiredFieldLabel>{isSqlProblem ? 'Student query template' : 'Starter code'}</RequiredFieldLabel>
+              {!isSqlProblem && <div className="mb-4 flex flex-wrap gap-2">
                 <div className="flex flex-wrap gap-2">{form.supportedLanguages.map((languageId) => <button key={languageId} type="button" onClick={() => setActiveLanguage(languageId)} className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${activeLanguage === languageId ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}>{getLanguageLabel(languageId)}</button>)}</div>
-              </div>
+              </div>}
               <MonacoCodeEditor
                 language={activeLanguage}
                 value={activeTemplate}

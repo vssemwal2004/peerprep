@@ -223,6 +223,8 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const profileRef = useRef(null);
+  const profileMenuRef = useRef(null);
+  const profileOpenRef = useRef(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const isCoordinator = role === 'coordinator';
   const storagePrefix = isCoordinator ? 'coordinator' : 'admin';
@@ -246,6 +248,14 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
   }, [role, user]);
   const [openGroup, setOpenGroup] = useState(null);
 
+  const updateProfileOpen = (nextValue) => {
+    setIsProfileOpen((currentValue) => {
+      const resolvedValue = typeof nextValue === 'function' ? nextValue(currentValue) : nextValue;
+      profileOpenRef.current = resolvedValue;
+      return resolvedValue;
+    });
+  };
+
   const initials = displayName
     .split(' ')
     .filter(Boolean)
@@ -263,18 +273,21 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
   }, [storagePrefix, user]);
 
   useEffect(() => {
-    setIsProfileOpen(false);
+    updateProfileOpen(false);
   }, [location.pathname]);
 
   useEffect(() => {
     const handleOutsideClick = (event) => {
-      if (isProfileOpen && profileRef.current && !profileRef.current.contains(event.target)) {
-        setIsProfileOpen(false);
+      const eventPath = typeof event.composedPath === 'function' ? event.composedPath() : [];
+      const clickedProfile = profileRef.current?.contains(event.target) || eventPath.includes(profileRef.current);
+      const clickedMenu = profileMenuRef.current?.contains(event.target) || eventPath.includes(profileMenuRef.current);
+      if (profileOpenRef.current && !clickedProfile && !clickedMenu) {
+        updateProfileOpen(false);
       }
     };
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, [isProfileOpen]);
+  }, []);
 
   useEffect(() => {
     if (!isExpanded) {
@@ -305,7 +318,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
     <aside
       onMouseEnter={onExpand}
       onMouseLeave={() => {
-        if (!isProfileOpen) onCollapse();
+        if (!profileOpenRef.current) onCollapse();
       }}
       className="fixed left-0 top-0 z-40 h-screen overflow-visible border-r border-sky-100 bg-sky-50/90 shadow-[4px_0_28px_rgba(14,165,233,0.08)] backdrop-blur-xl transition-[width] duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)] dark:border-sky-950 dark:bg-slate-950/95 dark:shadow-black/20"
       style={{ width: 'var(--admin-sidebar-width)' }}
@@ -428,8 +441,10 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
         <div ref={profileRef} className="relative shrink-0 border-t border-sky-100 py-2 dark:border-sky-950">
           {isProfileOpen && (
             <div
+              ref={profileMenuRef}
               className="pointer-events-auto fixed bottom-3 z-[200] w-[18rem] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_55px_rgba(15,23,42,0.18)] transition-[left] duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)] dark:border-gray-700 dark:bg-gray-900 dark:shadow-black/50"
               style={{ left: 'calc(var(--admin-sidebar-width) + 0.75rem)' }}
+              onPointerDown={(event) => event.stopPropagation()}
               onMouseDown={(event) => event.stopPropagation()}
             >
               <div className="border-b border-slate-100 bg-gradient-to-br from-slate-50 to-white px-4 py-4 dark:border-gray-800 dark:from-gray-800 dark:to-gray-900">
@@ -468,8 +483,10 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
                 <button
                   type="button"
                   onClick={(event) => {
+                    event.preventDefault();
                     event.stopPropagation();
                     toggleTheme();
+                    updateProfileOpen(true);
                   }}
                   className="relative z-10 flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-gray-200 dark:hover:bg-gray-800"
                   role="switch"
@@ -493,7 +510,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
             type="button"
             onClick={() => {
               if (!isExpanded) onExpand();
-              setIsProfileOpen((open) => !open);
+              updateProfileOpen((open) => !open);
             }}
             className={`relative flex h-14 w-full items-center overflow-hidden rounded-xl text-left transition ${isProfileOpen ? 'bg-white/80 dark:bg-gray-800' : 'hover:bg-white/70 dark:hover:bg-gray-800/80'}`}
             aria-expanded={isProfileOpen}

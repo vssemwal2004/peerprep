@@ -41,6 +41,12 @@ export function serializeProblem(
     title: problem.title,
     description: problem.description || '',
     difficulty: problem.difficulty,
+    category: problem.category || 'DSA',
+    sqlConfig: {
+      dialect: problem.sqlConfig?.dialect || 'sqlite',
+      schemaSql: problem.sqlConfig?.schemaSql || '',
+      seedDataSql: problem.sqlConfig?.seedDataSql || '',
+    },
     tags: problem.tags || [],
     companyTags: problem.companyTags || [],
     supportedLanguages: problem.supportedLanguages || [],

@@ -145,7 +145,9 @@ function CodeEditor({
   editorKey = '',
   onLiveCodeChange,
   valueVersion = 0,
+  executionMode = 'code',
 }) {
+  const isSqlMode = executionMode === 'sql' || language === 'sql';
   const rootRef = useRef(null);
   const toolbarRef = useRef(null);
   const splitterRef = useRef(null);
@@ -624,7 +626,7 @@ function CodeEditor({
               className="inline-flex h-8 items-center gap-2 rounded-md bg-slate-900 px-3 text-xs font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-sky-700 dark:hover:bg-sky-600 dark:disabled:bg-gray-700"
             >
               <Play className="h-3.5 w-3.5" />
-              {isRunning ? 'Running...' : 'Run Code'}
+              {isRunning ? 'Running...' : (isSqlMode ? 'Run Query' : 'Run Code')}
             </button>
             <button
               type="button"
@@ -633,7 +635,7 @@ function CodeEditor({
               className="inline-flex h-8 items-center gap-2 rounded-md bg-sky-600 px-3 text-xs font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"
             >
               <Send className="h-3.5 w-3.5" />
-              {isSubmitting ? 'Submitting...' : 'Submit Code'}
+              {isSubmitting ? 'Submitting...' : (isSqlMode ? 'Submit Query' : 'Submit Code')}
             </button>
             <button
               type="button"
@@ -642,7 +644,7 @@ function CodeEditor({
               className="inline-flex h-8 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
             >
               <RotateCcw className="h-3.5 w-3.5" />
-              Reset Code
+              {isSqlMode ? 'Reset Query' : 'Reset Code'}
             </button>
           </div>
         </div>
@@ -699,7 +701,7 @@ function CodeEditor({
                 : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-gray-400 dark:hover:text-gray-200'
             }`}
           >
-            Testcase
+            {isSqlMode ? 'Dataset' : 'Testcase'}
           </button>
           <button
             type="button"
@@ -744,7 +746,7 @@ function CodeEditor({
 
               {hasValue(activeTestCase?.input) && activeTestCase?.kind === 'custom' && onTestCaseInputChange ? (
                 <div className="rounded-md bg-white px-3 py-2 ring-1 ring-slate-200 focus-within:ring-2 focus-within:ring-sky-200 dark:bg-gray-900 dark:ring-gray-700 dark:focus-within:ring-sky-900/50">
-                  <label htmlFor={`custom-input-${editorKey || 'editor'}`} className="mb-1 block text-[10px] font-semibold uppercase text-slate-400 dark:text-gray-500">Input</label>
+                  <label htmlFor={`custom-input-${editorKey || 'editor'}`} className="mb-1 block text-[10px] font-semibold uppercase text-slate-400 dark:text-gray-500">{isSqlMode ? 'Additional dataset SQL' : 'Input'}</label>
                   <textarea
                     id={`custom-input-${editorKey || 'editor'}`}
                     value={activeTestCase.input || ''}
@@ -755,13 +757,13 @@ function CodeEditor({
                 </div>
               ) : hasValue(activeTestCase?.input) ? (
                 <div className="rounded-md bg-white px-3 py-2 ring-1 ring-slate-200 dark:bg-gray-900 dark:ring-gray-700">
-                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-gray-500">Input</div>
+                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-gray-500">{isSqlMode ? 'Additional dataset SQL' : 'Input'}</div>
                   <ResultValue value={activeTestCase.input || ''} />
                 </div>
               ) : null}
               {hasValue(activeTestCase?.expectedOutput) && (
                 <div className="rounded-md bg-white px-3 py-2 ring-1 ring-slate-200 dark:bg-gray-900 dark:ring-gray-700">
-                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-gray-500">Expected Output</div>
+                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-gray-500">{isSqlMode ? 'Expected result' : 'Expected Output'}</div>
                   <ResultValue value={activeTestCase.expectedOutput || ''} />
                 </div>
               )}
@@ -1003,6 +1005,7 @@ function codeEditorPropsEqual(previous, next) {
     && previous.clipboardScope === next.clipboardScope
     && previous.editorKey === next.editorKey
     && previous.valueVersion === next.valueVersion
+    && previous.executionMode === next.executionMode
     && sameStringList(previous.supportedLanguages, next.supportedLanguages)
     && sameTestCases(previous.testCases, next.testCases);
 }
