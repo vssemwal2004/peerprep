@@ -445,6 +445,7 @@ function normalizeAiProctoringSettings(settings = {}) {
     detectMultiplePersons: source.detectMultiplePersons !== false,
     detectNoFace: source.detectNoFace !== false,
     detectFaceOutOfFrame: source.detectFaceOutOfFrame !== false,
+    faceOutOfFrameGraceSec: clampSettingNumber(source.faceOutOfFrameGraceSec, 10, { min: 3, max: 60 }),
     detectLookingAway: source.detectLookingAway !== false,
     detectionIntervalMs: clampSettingNumber(source.detectionIntervalMs, 500, { min: 500, max: 5000 }),
     ignoreLimit: clampSettingNumber(source.ignoreLimit, 5, { min: 0, max: 50 }),
@@ -4314,7 +4315,6 @@ export async function getAssessmentReportsExportData(req, res) {
 
     const exportRows = [];
     const sectionRows = [];
-    const proctoringRows = [];
 
     groupedByAssessment.forEach((rows) => {
       const rankedRows = [...rows].sort((a, b) => {
@@ -4436,22 +4436,6 @@ export async function getAssessmentReportsExportData(req, res) {
           });
         });
 
-        buildMonitoringTimeline(row).forEach((logEntry, logIndex) => {
-          proctoringRows.push({
-            submissionId: String(row._id),
-            candidateName: row.student?.name || 'Unknown',
-            candidateStudentId: row.student?.studentId || '',
-            assessmentName: assessmentDoc.title || 'Untitled Assessment',
-            sequence: logIndex + 1,
-            type: logEntry?.type || 'other',
-            message: logEntry?.message || '',
-            at: logEntry?.at || null,
-            severity: logEntry?.severity || 'medium',
-            source: logEntry?.source || '',
-            weight: logEntry?.meta?.weight ?? '',
-            meta: JSON.stringify(logEntry?.meta || {}),
-          });
-        });
       });
     });
 
@@ -4477,9 +4461,6 @@ export async function getAssessmentReportsExportData(req, res) {
     if (sectionRows.length) {
       ['sectionScores', 'sectionPerformance'].forEach((key) => availableColumns.add(key));
     }
-    if (proctoringRows.length) {
-      ['proctoringFlags', 'proctoringActivityCount', 'securityHeartbeat'].forEach((key) => availableColumns.add(key));
-    }
 
     let filteredRows = exportRows;
     if (selectedColumnKeys.length) {
@@ -4498,7 +4479,6 @@ export async function getAssessmentReportsExportData(req, res) {
       summary,
       rows: filteredRows,
       sectionRows,
-      proctoringRows,
       availableColumns: Array.from(availableColumns),
     });
   } catch (err) {

@@ -24,7 +24,6 @@ import {
   ShieldCheck,
   Timer,
   Video,
-  WifiOff,
 } from 'lucide-react';
 import CodeEditor from './CodeEditor';
 import { preloadMonacoEditor } from '../admin/compiler/MonacoCodeEditor';
@@ -445,7 +444,7 @@ export default function AssessmentAttempt() {
   });
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [proctoringStatus, setProctoringStatus] = useState(null);
-  const [networkStatus, setNetworkStatus] = useState(() => (
+  const [, setNetworkStatus] = useState(() => (
     typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'online'
   ));
   const validationVideoRef = useRef(null);
@@ -532,7 +531,6 @@ export default function AssessmentAttempt() {
   const answerKey = (sectionIndex, questionIndex) => `${sectionIndex}-${questionIndex}`;
   const isSubmitted = submission?.status === 'submitted';
   const secureActive = phase === 'active' && !isSubmitted;
-  const networkPaused = secureActive && networkStatus !== 'online';
   const securitySettings = useMemo(() => assessment?.settings || {}, [assessment?.settings]);
   const watermarkConfig = useMemo(() => {
     const type = securitySettings.watermarkTextType || 'platform';
@@ -651,11 +649,6 @@ export default function AssessmentAttempt() {
     setFaceStatus('idle');
   }, []);
 
-  useEffect(() => {
-    if (networkPaused && !networkPauseStartedAtRef.current) {
-      networkPauseStartedAtRef.current = new Date().toISOString();
-    }
-  }, [networkPaused]);
   const syncCompletedSecuritySteps = useCallback((completedSteps = []) => {
     const orderedCompletedSteps = setupSteps
       .map((item) => item.key)
@@ -1517,7 +1510,7 @@ export default function AssessmentAttempt() {
   }, [isCodingForLayout, activeSection, activeQuestion]);
 
   useEffect(() => {
-    if (!assessment || !allowedEndTime || isPaused || networkPaused || phase !== 'active') return undefined;
+    if (!assessment || !allowedEndTime || isPaused || phase !== 'active') return undefined;
     const timer = setInterval(() => {
       const now = Date.now() + offset;
       const remaining = allowedEndTime - now;
@@ -1527,7 +1520,7 @@ export default function AssessmentAttempt() {
       }
     }, 1000);
     return () => clearInterval(timer);
-  }, [assessment, submission, offset, allowedEndTime, isPaused, networkPaused, phase, autoSubmitOnEnd, handleSubmit]);
+  }, [assessment, submission, offset, allowedEndTime, isPaused, phase, autoSubmitOnEnd, handleSubmit]);
 
   useEffect(() => {
     if (!securityRecheckActive || !securityRecheckStartedAt) return undefined;
@@ -1553,12 +1546,12 @@ export default function AssessmentAttempt() {
   }, []);
 
   useEffect(() => {
-    if (!secureActive || isSubmitted || networkPaused) return undefined;
+    if (!secureActive || isSubmitted) return undefined;
     const interval = setInterval(() => {
       handleSave();
     }, 15000);
     return () => clearInterval(interval);
-  }, [secureActive, isSubmitted, networkPaused, handleSave]);
+  }, [secureActive, isSubmitted, handleSave]);
 
   useEffect(() => {
     if (!secureActive) return;
@@ -3130,7 +3123,40 @@ export default function AssessmentAttempt() {
   }, [watermarkConfig]);
 
   if (loading) {
-    return <div className="min-h-screen bg-white dark:bg-gray-900 pt-20 text-center text-slate-500">Loading assessment...</div>;
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-gray-950" role="status" aria-label="Loading assessment">
+        <div className="h-16 border-b border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+          <div className="mx-auto flex h-full max-w-[1800px] items-center justify-between px-5">
+            <div className="h-5 w-44 animate-pulse rounded-md bg-slate-200 dark:bg-gray-700" />
+            <div className="h-9 w-28 animate-pulse rounded-xl bg-slate-200 dark:bg-gray-700" />
+          </div>
+        </div>
+        <div className="mx-auto grid max-w-[1800px] gap-4 p-4 lg:h-[calc(100vh-4rem)] lg:grid-cols-[minmax(20rem,38%)_minmax(0,1fr)_3.5rem]">
+          <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+            <div className="h-7 w-2/3 animate-pulse rounded-md bg-slate-200 dark:bg-gray-700" />
+            <div className="h-4 w-1/3 animate-pulse rounded bg-slate-100 dark:bg-gray-800" />
+            <div className="space-y-3 pt-4">
+              {[100, 92, 96, 72].map((width) => (
+                <div key={width} className="h-4 animate-pulse rounded bg-slate-100 dark:bg-gray-800" style={{ width: `${width}%` }} />
+              ))}
+            </div>
+          </div>
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+            <div className="flex h-14 items-center gap-3 border-b border-slate-200 px-4 dark:border-gray-800">
+              <div className="h-9 w-28 animate-pulse rounded-lg bg-slate-200 dark:bg-gray-700" />
+              <div className="ml-auto h-9 w-24 animate-pulse rounded-lg bg-slate-200 dark:bg-gray-700" />
+            </div>
+            <div className="space-y-4 p-6">
+              {[78, 62, 84, 48, 70, 56].map((width) => (
+                <div key={width} className="h-4 animate-pulse rounded bg-slate-100 dark:bg-gray-800" style={{ width: `${width}%` }} />
+              ))}
+            </div>
+          </div>
+          <div className="hidden animate-pulse rounded-2xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900 lg:block" />
+        </div>
+        <span className="sr-only">Preparing your assessment and code editor</span>
+      </div>
+    );
   }
 
   if (error) {
@@ -4334,36 +4360,6 @@ export default function AssessmentAttempt() {
               <Maximize className="h-4 w-4" />
               {fullscreenRecovery.remaining > 0 ? 'Re-enter Fullscreen' : 'Submitting Assessment...'}
             </button>
-          </div>
-        </div>
-      )}
-
-      {networkPaused && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/90 px-4 backdrop-blur-sm"
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="network-pause-title"
-        >
-          <div className="w-full max-w-md rounded-2xl border border-amber-300 bg-white p-6 text-center shadow-2xl dark:border-amber-700 dark:bg-gray-900">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-              <WifiOff className="h-6 w-6" />
-            </div>
-            <h2 id="network-pause-title" className="mt-4 text-xl font-semibold text-slate-900 dark:text-white">
-              {networkStatus === 'offline' ? 'Internet connection lost' : 'Checking internet connection'}
-            </h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-gray-300">
-              {networkStatus === 'offline'
-                ? 'The assessment is paused on this device. Check Wi-Fi or mobile data to continue.'
-                : 'The connection is too weak to safely synchronize the assessment. Reconnecting automatically...'}
-            </p>
-            <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs font-medium text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200">
-              Your current answers are preserved locally. The assessment will unlock after the server connection is verified.
-            </div>
-            <div className="mt-5 flex items-center justify-center gap-2 text-xs font-semibold text-amber-700 dark:text-amber-300">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Reconnecting
-            </div>
           </div>
         </div>
       )}

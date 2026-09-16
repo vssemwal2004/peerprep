@@ -15,6 +15,7 @@ export const DEFAULT_AI_PROCTORING_SETTINGS = Object.freeze({
   detectMultiplePersons: true,
   detectNoFace: true,
   detectFaceOutOfFrame: true,
+  faceOutOfFrameGraceSec: 10,
   detectLookingAway: true,
   detectionIntervalMs: 500,
   ignoreLimit: 5,

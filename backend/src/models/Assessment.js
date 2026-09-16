@@ -81,6 +81,7 @@ const aiProctoringSettingsSchema = new mongoose.Schema({
   detectMultiplePersons: { type: Boolean, default: true },
   detectNoFace: { type: Boolean, default: true },
   detectFaceOutOfFrame: { type: Boolean, default: true },
+  faceOutOfFrameGraceSec: { type: Number, default: 10, min: 3, max: 60 },
   detectLookingAway: { type: Boolean, default: true },
   detectionIntervalMs: { type: Number, default: 500, min: 500, max: 5000 },
   ignoreLimit: { type: Number, default: 5, min: 0, max: 50 },

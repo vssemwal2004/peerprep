@@ -405,6 +405,9 @@ function loadSavedExportColumns() {
 export default function AssessmentReports() {
   const toast = useToast();
   const searchRef = useRef(null);
+  const initialAssessmentId = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('assessmentId') || ''
+    : '';
 
   /* View state */
   const [activeTab, setActiveTab] = useState('overview');
@@ -412,7 +415,7 @@ export default function AssessmentReports() {
 
   /* Filters */
   const [filters, setFilters] = useState({
-    assessmentId: '', assessmentType: '', studentQuery: '', status: '',
+    assessmentId: initialAssessmentId, assessmentType: '', studentQuery: '', status: '',
     createdBy: '', tag: '', department: '', difficulty: '',
     from: '', to: '', scoreMin: '', scoreMax: '',
     completionRateMin: '', completionRateMax: '', attemptsMin: '', attemptsMax: '',
@@ -620,7 +623,6 @@ export default function AssessmentReports() {
       const payload = await api.getAssessmentReportsExportData(exportParams);
       const rows = Array.isArray(payload?.rows) ? payload.rows : [];
       const sectionRows = Array.isArray(payload?.sectionRows) ? payload.sectionRows : [];
-      const proctoringRows = Array.isArray(payload?.proctoringRows) ? payload.proctoringRows : [];
       const summary = payload?.summary || {};
 
       if (!rows.length) {
@@ -628,75 +630,160 @@ export default function AssessmentReports() {
         return;
       }
 
-      const XLSX = await import('xlsx');
-      const workbook = XLSX.utils.book_new();
-
       const selectedTitle = selectedAssessment?.title || 'All Assessments';
-      const reportHeader = [
-        ['PeerPrep Assessment Analytics Report'],
-        ['Assessment', selectedTitle],
-        ['Generated At', formatDateTime(payload?.generatedAt)],
-        ['Filters', Object.entries(exportParams).filter(([, value]) => value).map(([key, value]) => `${key}: ${value}`).join(' | ') || 'None'],
-        [],
-      ];
-      const candidateRows = rows.map((row) => Object.fromEntries(
-        selectedDefs.map(({ key, label }) => [label, buildExportValue(row, key)]),
-      ));
-      const candidateSheet = XLSX.utils.aoa_to_sheet(reportHeader);
-      XLSX.utils.sheet_add_json(candidateSheet, candidateRows, { origin: 'A6' });
-      candidateSheet['!autofilter'] = { ref: candidateSheet['!ref'] || 'A1' };
-      candidateSheet['!freeze'] = { xSplit: 0, ySplit: 6 };
-      candidateSheet['!cols'] = selectedDefs.map(({ key, label }) => {
-        const maxValueLength = Math.max(
-          label.length,
-          ...candidateRows.map((row) => String(row[label] ?? '').length),
-        );
-        if (['sectionScores', 'sectionPerformance', 'proctoringFlags', 'userAgent', 'securityHeartbeat', 'location'].includes(key)) {
-          return { wch: Math.min(48, Math.max(18, maxValueLength)) };
-        }
-        return { wch: Math.min(28, Math.max(14, maxValueLength)) };
-      });
-      XLSX.utils.book_append_sheet(workbook, candidateSheet, 'Candidates');
+      const excelModule = await import('exceljs');
+      const ExcelJS = excelModule.default || excelModule;
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'PeerPrep';
+      workbook.company = 'PeerPrep';
+      workbook.subject = `${selectedTitle} assessment report`;
+      workbook.title = `PeerPrep | ${selectedTitle}`;
+      workbook.created = new Date();
 
-      const summarySheetRows = [
-        { Metric: 'Generated At', Value: formatDateTime(payload?.generatedAt) },
-        { Metric: 'Total Assessments', Value: summary.totalAssessments || 0 },
-        { Metric: 'Total Candidates', Value: summary.totalCandidates || 0 },
-        { Metric: 'Average Score', Value: summary.avgScore || 0 },
-        { Metric: 'Max Score', Value: summary.maxScore || 0 },
-        { Metric: 'Min Score', Value: summary.minScore || 0 },
-        { Metric: 'Pass Count', Value: summary.passCount || 0 },
-        { Metric: 'Fail Count', Value: summary.failCount || 0 },
-        { Metric: 'Violation Count', Value: summary.violationCount || 0 },
+      const palette = {
+        navy: 'FF0F2742', blue: 'FF0284C7', sky: 'FFE0F2FE', pale: 'FFF5FAFE',
+        green: 'FF059669', greenPale: 'FFD1FAE5', amber: 'FFD97706', amberPale: 'FFFEF3C7',
+        red: 'FFDC2626', redPale: 'FFFEE2E2', slate: 'FF475569', border: 'FFDCE7F1', white: 'FFFFFFFF',
+      };
+      const thinBorder = { style: 'thin', color: { argb: palette.border } };
+      const humanizeKey = (key) => String(key || '')
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, (letter) => letter.toUpperCase());
+      const styleTableSheet = (sheet, headers, data, { hiddenKeys = [] } = {}) => {
+        const headerRowNumber = 1;
+        sheet.showGridLines = false;
+        sheet.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9, margins: { left: 0.25, right: 0.25, top: 0.35, bottom: 0.35, header: 0.15, footer: 0.15 } };
+        sheet.headerFooter.oddFooter = '&RPage &P of &N';
+        const headerRow = sheet.getRow(headerRowNumber);
+        headerRow.values = headers.map((header) => header.label);
+        headerRow.height = 28;
+        headerRow.eachCell((cell) => {
+          cell.font = { name: 'Aptos', size: 10, bold: true, color: { argb: palette.white } };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: palette.blue } };
+          cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+          cell.border = { bottom: { style: 'medium', color: { argb: palette.navy } } };
+        });
+        data.forEach((sourceRow, rowIndex) => {
+          const row = sheet.addRow(headers.map(({ key, value }) => value ? value(sourceRow) : sourceRow?.[key] ?? ''));
+          row.height = 22;
+          row.eachCell((cell, columnIndex) => {
+            cell.font = { name: 'Aptos', size: 9, color: { argb: 'FF1E293B' } };
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowIndex % 2 ? 'FFF8FAFC' : palette.white } };
+            cell.border = { bottom: thinBorder };
+            cell.alignment = { vertical: 'middle', horizontal: typeof cell.value === 'number' ? 'right' : 'left', wrapText: false };
+            const key = headers[columnIndex - 1]?.key;
+            if (['percentage', 'accuracy', 'completionRate'].includes(key) && typeof cell.value === 'number') cell.numFmt = '0.0"%"';
+            if (['score', 'totalMarks', 'violationCount', 'violationScore', 'rank', 'percentile'].includes(key) && typeof cell.value === 'number') cell.numFmt = '#,##0.00';
+          });
+          const statusIndex = headers.findIndex(({ key }) => key === 'completionStatus');
+          if (statusIndex >= 0) {
+            const statusCell = row.getCell(statusIndex + 1);
+            const status = String(statusCell.value || '').toLowerCase();
+            const positive = status === 'submitted' || status === 'completed';
+            statusCell.font = { name: 'Aptos', size: 9, bold: true, color: { argb: positive ? palette.green : palette.amber } };
+            statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: positive ? palette.greenPale : palette.amberPale } };
+          }
+          const violationIndex = headers.findIndex(({ key }) => key === 'violationCount');
+          if (violationIndex >= 0 && Number(row.getCell(violationIndex + 1).value || 0) > 0) {
+            row.getCell(violationIndex + 1).font = { name: 'Aptos', size: 9, bold: true, color: { argb: palette.red } };
+            row.getCell(violationIndex + 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: palette.redPale } };
+          }
+        });
+        sheet.autoFilter = { from: { row: headerRowNumber, column: 1 }, to: { row: headerRowNumber, column: headers.length } };
+        sheet.views = [{ state: 'frozen', ySplit: headerRowNumber, activeCell: `A${headerRowNumber + 1}`, showGridLines: false }];
+        headers.forEach(({ key, label }, index) => {
+          const values = data.slice(0, 250).map((row) => String(row?.[key] ?? ''));
+          const contentWidth = Math.max(label.length + 2, ...values.map((value) => value.length + 2));
+          const wide = ['candidateEmail', 'sectionScores', 'sectionPerformance', 'proctoringFlags', 'message', 'userAgent', 'securityHeartbeat', 'location'].includes(key);
+          sheet.getColumn(index + 1).width = Math.min(wide ? 44 : 26, Math.max(wide ? 18 : 11, contentWidth));
+          sheet.getColumn(index + 1).hidden = hiddenKeys.includes(key);
+        });
+      };
+
+      const summarySheet = workbook.addWorksheet('Summary', { views: [{ showGridLines: false }] });
+      summarySheet.mergeCells('A1:H1');
+      summarySheet.getCell('A1').value = selectedTitle;
+      summarySheet.getCell('A1').font = { name: 'Aptos Display', size: 16, bold: true, color: { argb: palette.white } };
+      summarySheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: palette.navy } };
+      summarySheet.getCell('A1').alignment = { vertical: 'middle', horizontal: 'left' };
+      summarySheet.getRow(1).height = 30;
+      summarySheet.showGridLines = false;
+      summarySheet.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 1, paperSize: 9 };
+      summarySheet.headerFooter.oddFooter = '&RPage &P of &N';
+      const kpis = [
+        ['Candidates', summary.totalCandidates || rows.length || 0, palette.blue, palette.sky],
+        ['Average score', summary.avgScore || 0, palette.navy, 'FFE8EEF5'],
+        ['Passed', summary.passCount || 0, palette.green, palette.greenPale],
+        ['Failed', summary.failCount || 0, palette.red, palette.redPale],
       ];
-      const summarySheet = XLSX.utils.aoa_to_sheet([
-        ['PeerPrep Assessment Report Summary'],
-        ['Assessment', selectedTitle],
-        [],
-      ]);
-      XLSX.utils.sheet_add_json(summarySheet, summarySheetRows, { origin: 'A4' });
-      summarySheet['!cols'] = [{ wch: 24 }, { wch: 24 }];
-      XLSX.utils.book_append_sheet(workbook, summarySheet, 'Summary');
+      kpis.forEach(([label, value, color, fill], index) => {
+        const startColumn = 1 + (index * 2);
+        summarySheet.mergeCells(3, startColumn, 3, startColumn + 1);
+        summarySheet.mergeCells(4, startColumn, 5, startColumn + 1);
+        const labelCell = summarySheet.getCell(3, startColumn);
+        labelCell.value = label;
+        labelCell.font = { name: 'Aptos', size: 9, bold: true, color: { argb: palette.slate } };
+        labelCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill } };
+        labelCell.alignment = { horizontal: 'center', vertical: 'middle' };
+        const valueCell = summarySheet.getCell(4, startColumn);
+        valueCell.value = value;
+        valueCell.font = { name: 'Aptos Display', size: 22, bold: true, color: { argb: color } };
+        valueCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill } };
+        valueCell.alignment = { horizontal: 'center', vertical: 'middle' };
+        [3, 4, 5].forEach((rowNumber) => {
+          for (let column = startColumn; column <= startColumn + 1; column += 1) summarySheet.getCell(rowNumber, column).border = { bottom: thinBorder };
+        });
+      });
+      summarySheet.getRow(3).height = 22;
+      summarySheet.getRow(4).height = 26;
+      summarySheet.getRow(5).height = 18;
+      summarySheet.getCell('A8').value = 'Results';
+      summarySheet.getCell('A8').font = { name: 'Aptos', size: 11, bold: true, color: { argb: palette.navy } };
+      const totalResults = Number(summary.passCount || 0) + Number(summary.failCount || 0);
+      const detailRows = [
+        ['Highest score', summary.maxScore || 0],
+        ['Lowest score', summary.minScore || 0],
+        ['Pass rate', totalResults ? Number(((Number(summary.passCount || 0) / totalResults) * 100).toFixed(1)) : 0],
+      ];
+      detailRows.forEach(([label, value], index) => {
+        const row = 9 + index;
+        summarySheet.getCell(row, 1).value = label;
+        summarySheet.getCell(row, 1).font = { name: 'Aptos', size: 9, bold: true, color: { argb: palette.slate } };
+        summarySheet.mergeCells(row, 2, row, 4);
+        summarySheet.getCell(row, 2).value = value;
+        summarySheet.getCell(row, 2).font = { name: 'Aptos', size: 9, color: { argb: 'FF1E293B' } };
+        summarySheet.getCell(row, 2).alignment = { wrapText: true, vertical: 'middle' };
+        if (label === 'Pass rate') summarySheet.getCell(row, 2).numFmt = '0.0"%"';
+        summarySheet.getRow(row).height = 22;
+        for (let column = 1; column <= 4; column += 1) summarySheet.getCell(row, column).border = { bottom: thinBorder };
+      });
+      summarySheet.columns.forEach((column) => { column.width = 15; });
+      summarySheet.getColumn(1).width = 20;
+      summarySheet.views = [{ state: 'frozen', ySplit: 1, showGridLines: false }];
+
+      const candidateSheet = workbook.addWorksheet('Candidates');
+      const candidateHeaders = selectedDefs.map(({ key, label }) => ({ key, label, value: (row) => buildExportValue(row, key) }));
+      styleTableSheet(candidateSheet, candidateHeaders, rows);
 
       if (sectionRows.length) {
-        const sectionSheet = XLSX.utils.json_to_sheet(sectionRows);
-        sectionSheet['!autofilter'] = { ref: sectionSheet['!ref'] || 'A1' };
-        sectionSheet['!cols'] = Object.keys(sectionRows[0] || {}).map((key) => ({ wch: key.includes('Name') ? 24 : 16 }));
-        XLSX.utils.book_append_sheet(workbook, sectionSheet, 'Section Performance');
-      }
-
-      if (proctoringRows.length) {
-        const proctoringSheet = XLSX.utils.json_to_sheet(proctoringRows);
-        proctoringSheet['!autofilter'] = { ref: proctoringSheet['!ref'] || 'A1' };
-        proctoringSheet['!cols'] = Object.keys(proctoringRows[0] || {}).map((key) => (
-          { wch: key === 'meta' ? 40 : key === 'message' ? 36 : 18 }
-        ));
-        XLSX.utils.book_append_sheet(workbook, proctoringSheet, 'Proctoring Logs');
+        const sectionSheet = workbook.addWorksheet('Section Performance');
+        const sectionHeaders = Object.keys(sectionRows[0] || {}).map((key) => ({ key, label: humanizeKey(key) }));
+        styleTableSheet(sectionSheet, sectionHeaders, sectionRows, { hiddenKeys: ['submissionId'] });
       }
 
       const dateStamp = new Date().toISOString().slice(0, 10);
       const safeAssessmentName = selectedTitle.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'all-assessments';
-      XLSX.writeFile(workbook, `assessment-report-${safeAssessmentName}-${dateStamp}.xlsx`);
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const downloadUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = downloadUrl;
+      anchor.download = `assessment-report-${safeAssessmentName}-${dateStamp}.xlsx`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(downloadUrl);
       setShowExportModal(false);
       toast.success('Excel exported successfully');
     } catch (err) {

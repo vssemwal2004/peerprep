@@ -1470,7 +1470,14 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 12 }} className="fixed inset-0 z-[61] flex items-center justify-center px-4">
             <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-900" onClick={(event) => event.stopPropagation()}>
               <div className="flex items-start justify-between gap-4"><div><div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-violet-600 dark:text-violet-400">Used in assessments</div><h3 className="mt-2 line-clamp-2 text-lg font-semibold text-slate-900 dark:text-white">{usageModal.questionText}</h3></div><button type="button" onClick={() => setUsageModal({ open: false, questionText: '', assessments: [] })} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800" aria-label="Close assessment usage"><X className="h-4 w-4" /></button></div>
-              <div className="mt-5 grid gap-2">{usageModal.assessments.map((assessment, index) => <div key={`usage-${assessment}`} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-[10px] font-bold text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">{index + 1}</span><span className="min-w-0 truncate">{assessment}</span></div>)}</div>
+              <div className="mt-5 max-h-72 space-y-2 overflow-y-auto pr-1" role="list" aria-label="Assessments using this question">
+                {usageModal.assessments.map((assessment, index) => (
+                  <div key={`usage-${assessment}-${index}`} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-sm font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" role="listitem">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 text-[11px] font-extrabold tabular-nums text-white shadow-sm ring-2 ring-violet-100 dark:ring-violet-900/50">{index + 1}</span>
+                    <span className="min-w-0 flex-1 truncate" title={assessment}>{assessment}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </motion.div>
         </>}
@@ -1505,11 +1512,12 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                     <X className="h-4 w-4" />
                   </button>
                 </div>
-                <div className="mt-5 flex flex-wrap gap-2">
-                  {tagsModal.tags.map((tag) => (
-                    <span key={`modal-${tag}`} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
-                      {tag}
-                    </span>
+                <div className="mt-5 max-h-72 space-y-2 overflow-y-auto pr-1" role="list" aria-label="Question tags and topics">
+                  {tagsModal.tags.map((tag, index) => (
+                    <div key={`modal-${tag}-${index}`} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5 dark:border-gray-700 dark:bg-gray-800" role="listitem">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 to-blue-600 text-[11px] font-extrabold tabular-nums text-white shadow-sm ring-2 ring-sky-100 dark:ring-sky-900/50">{index + 1}</span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-700 dark:text-gray-200" title={tag}>{tag}</span>
+                    </div>
                   ))}
                 </div>
               </div>

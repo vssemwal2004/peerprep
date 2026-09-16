@@ -99,7 +99,7 @@ function AssessmentQuestionPalette({
         </button>
       ) : null}
       <aside
-        className={`${dockable && !mobileOpen ? 'hidden lg:flex' : 'flex'} w-full flex-none flex-col overflow-hidden rounded-[24px] border border-slate-200/90 bg-white shadow-[0_22px_55px_-28px_rgba(15,23,42,0.36)] transition-transform duration-200 ease-out dark:border-gray-700 dark:bg-gray-900 lg:h-full lg:w-[18rem] ${
+        className={`${dockable && !mobileOpen ? 'hidden lg:flex' : 'flex'} w-full flex-none flex-col overflow-hidden rounded-[24px] border border-slate-200/90 bg-white shadow-[0_22px_55px_-28px_rgba(15,23,42,0.36)] transition-transform duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform dark:border-gray-700 dark:bg-gray-900 lg:h-full lg:w-[18rem] ${
           dockable
             ? `${pinned ? 'lg:relative' : 'lg:absolute lg:right-0 lg:top-0'} ${expanded ? 'lg:translate-x-0' : 'lg:translate-x-[calc(100%_-_3rem)]'}`
             : ''

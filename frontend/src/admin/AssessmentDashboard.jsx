@@ -9,7 +9,7 @@ import {
   ClipboardList, Filter, Plus, Search, Trash2, Eye, EyeOff,
   Pencil, Copy, X, MoreVertical, Lock, Unlock, Globe, ShieldOff,
   RotateCcw, CheckCircle2, AlertTriangle, FileCheck2, Mail, Send, Loader2,
-  Users, UserMinus, UserPlus, ChevronLeft, ChevronRight,
+  Users, UserMinus, UserPlus, ChevronLeft, ChevronRight, BarChart3,
 } from 'lucide-react';
 import AssessmentLifecycleSidebar from './assessment/components/AssessmentLifecycleSidebar';
 import { deriveStudentFacets, filterStudentsLocally, mergeSemesterOptions } from '../utils/semesterOptions';
@@ -43,7 +43,7 @@ const getStudentAddedBadgeClass = (createdAt) => {
   return 'border-slate-200 bg-slate-50 text-slate-500';
 };
 
-function ThreeDotsMenu({ assessment, onOpen, onPreview, onEdit, onDuplicate, onDelete, onToggleVisibility, onEditPassword, onSendInvitations, onEligibleStudents, onAddStudents, onResetSubmissions, onMarkComplete, onReleaseAnswers }) {
+function ThreeDotsMenu({ assessment, onOpen, onPreview, onViewReport, onEdit, onDuplicate, onDelete, onToggleVisibility, onEditPassword, onSendInvitations, onEligibleStudents, onAddStudents, onResetSubmissions, onMarkComplete, onReleaseAnswers }) {
   const [open, setOpen] = useState(false);
   const [menuStyle, setMenuStyle] = useState(null);
   const ref = useRef(null);
@@ -126,6 +126,7 @@ function ThreeDotsMenu({ assessment, onOpen, onPreview, onEdit, onDuplicate, onD
         >
           {item(<ClipboardList className="h-3.5 w-3.5" />, assessment.lifecycleStatus === 'draft' ? 'Continue Assessment' : 'Open Assessment', onOpen)}
           {item(<Eye className="h-3.5 w-3.5" />, 'Preview Assessment', onPreview)}
+          {item(<BarChart3 className="h-3.5 w-3.5" />, 'View Report', onViewReport)}
           {item(<Copy className="h-3.5 w-3.5" />, 'Copy Assessment', onDuplicate)}
           <div className="my-1 h-px bg-slate-100 dark:bg-gray-700" />
           {item(<Pencil className="h-3.5 w-3.5" />, 'Edit Assessment', onEdit)}
@@ -1238,7 +1239,18 @@ export default function AssessmentDashboard() {
                       className="group grid cursor-pointer grid-cols-1 items-center gap-x-5 gap-y-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition-all hover:-translate-y-px hover:border-sky-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-sky-800 md:grid-cols-2 xl:grid-cols-[minmax(230px,2fr)_minmax(120px,1fr)_minmax(100px,.75fr)_minmax(145px,1.15fr)_minmax(125px,.95fr)_90px_28px]"
                     >
                       <div className="min-w-0 md:col-span-2 xl:col-span-1">
-                        <div className="truncate text-sm font-semibold text-slate-900 transition-colors group-hover:text-sky-700 dark:text-white dark:group-hover:text-sky-300">{assessment.title || 'Untitled assessment'}</div>
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          <div className="truncate text-sm font-semibold text-slate-900 transition-colors group-hover:text-sky-700 dark:text-white dark:group-hover:text-sky-300">{assessment.title || 'Untitled assessment'}</div>
+                          {assessment.passwordEnabled && (
+                            <span
+                              className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-amber-600 dark:text-amber-400"
+                              title="Password protected"
+                              aria-label="Password protected"
+                            >
+                              <Lock className="h-3 w-3" />
+                            </span>
+                          )}
+                        </div>
                         <div className="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-slate-400 dark:text-gray-500">
                           <span className="truncate">{assessment.testType || assessment.assessmentType || 'General'}</span>
                           <span className="h-1 w-1 shrink-0 rounded-full bg-slate-300" aria-hidden="true" />
@@ -1271,11 +1283,6 @@ export default function AssessmentDashboard() {
                           {assessment.isVisible !== false ? <Globe className="h-3 w-3" /> : <ShieldOff className="h-3 w-3" />}
                           {assessment.isVisible !== false ? 'Visible' : 'Hidden'}
                         </span>
-                        {assessment.passwordEnabled && (
-                          <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-1 text-[10px] font-medium text-amber-700">
-                            <Lock className="h-3 w-3" /> Protected
-                          </span>
-                        )}
                       </div>
 
                       <div>
@@ -1290,6 +1297,7 @@ export default function AssessmentDashboard() {
                             assessment={assessment}
                             onOpen={() => navigate(`${rolePrefix}/assessment/${assessment._id}/edit`)}
                             onPreview={() => navigate(`${rolePrefix}/assessment/preview/${assessment._id}`)}
+                            onViewReport={() => navigate(`${rolePrefix}/assessment/reports?assessmentId=${encodeURIComponent(assessment._id)}`)}
                             onEdit={() => navigate(`${rolePrefix}/assessment/${assessment._id}/edit`)}
                             onDuplicate={() => handleDuplicate(assessment._id)}
                             onDelete={() => handleDelete(assessment._id)}

@@ -5,6 +5,7 @@ export const DEFAULT_AI_PROCTORING_SETTINGS = {
   detectMultiplePersons: true,
   detectNoFace: true,
   detectFaceOutOfFrame: true,
+  faceOutOfFrameGraceSec: 10,
   detectLookingAway: true,
   detectionIntervalMs: 500,
   ignoreLimit: 5,
@@ -14,9 +15,13 @@ export const DEFAULT_AI_PROCTORING_SETTINGS = {
 
 export function normalizeAiProctoringSettings(value = {}) {
   const source = value && typeof value === 'object' ? value : {};
+  const requestedGrace = Number(source.faceOutOfFrameGraceSec);
   return {
     ...DEFAULT_AI_PROCTORING_SETTINGS,
     ...source,
+    faceOutOfFrameGraceSec: Number.isFinite(requestedGrace)
+      ? Math.max(3, Math.min(60, requestedGrace))
+      : DEFAULT_AI_PROCTORING_SETTINGS.faceOutOfFrameGraceSec,
   };
 }
 
@@ -89,6 +94,25 @@ export default function AIProctoringSettings({ value, onChange, disabled = false
       <FieldRow label="Detect face out of frame" disabled={disabled}>
         <Toggle value={Boolean(settings.detectFaceOutOfFrame)} onChange={(next) => update('detectFaceOutOfFrame', next)} disabled={disabled} />
       </FieldRow>
+      <div className="rounded-xl border border-sky-100 bg-sky-50/70 p-3 dark:border-sky-900/40 dark:bg-sky-950/20">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold text-slate-800 dark:text-gray-100">Face absence grace period</p>
+            <p className="mt-1 max-w-xl text-[11px] leading-5 text-slate-500 dark:text-gray-400">
+              Gives students time to look down or write on paper. A footer warning and violation are created only when no face or an out-of-frame face continues for this duration. Phone and multiple-person detections stay immediate.
+            </p>
+          </div>
+          <NumberInput
+            value={settings.faceOutOfFrameGraceSec}
+            onChange={(next) => update('faceOutOfFrameGraceSec', next)}
+            min={3}
+            max={60}
+            placeholder="10"
+            unit="sec"
+            disabled={disabled || (!settings.detectNoFace && !settings.detectFaceOutOfFrame)}
+          />
+        </div>
+      </div>
       <FieldRow label="Detect looking away" disabled={disabled}>
         <Toggle value={Boolean(settings.detectLookingAway)} onChange={(next) => update('detectLookingAway', next)} disabled={disabled} />
       </FieldRow>

@@ -20,6 +20,7 @@
     "@tensorflow-models/coco-ssd": "^2.2.3",
     "@tensorflow/tfjs": "^4.22.0",
     "baseline-browser-mapping": "^2.9.11",
+    "exceljs": "^4.4.0",
     "flatpickr": "^4.6.13",
     "framer-motion": "^11.11.17",
     "fuse.js": "^7.1.0",

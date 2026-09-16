@@ -169,27 +169,39 @@ const FALLBACK_FACE_CENTER_TOLERANCE_RATIO = 0.32;
 const FALLBACK_FACE_MIN_WIDTH_RATIO = 0.12;
 const FALLBACK_FRAME_VARIANCE_THRESHOLD = 95;
 
-function isBufferedIssueVisible(buffer, type, timestamp = Date.now()) {
+function getFaceAbsenceGraceMs(settings = {}) {
+  const requestedSeconds = Number(settings.faceOutOfFrameGraceSec);
+  const seconds = Number.isFinite(requestedSeconds)
+    ? Math.max(3, Math.min(60, requestedSeconds))
+    : DEFAULT_AI_PROCTORING_SETTINGS.faceOutOfFrameGraceSec;
+  return seconds * 1000;
+}
+
+function isBufferedIssueVisible(buffer, type, timestamp = Date.now(), settings = {}) {
   const state = buffer?.getState?.(type);
   if (!state?.firstSeenAt) return false;
-  const confirmMs = FOOTER_ISSUE_CONFIRM_MS_BY_TYPE[type] ?? FOOTER_ISSUE_CONFIRM_MS;
+  const usesFaceAbsenceGrace = type === AI_PROCTORING_EVENTS.NO_FACE
+    || type === AI_PROCTORING_EVENTS.FACE_OUT_OF_FRAME;
+  const confirmMs = usesFaceAbsenceGrace
+    ? getFaceAbsenceGraceMs(settings)
+    : (FOOTER_ISSUE_CONFIRM_MS_BY_TYPE[type] ?? FOOTER_ISSUE_CONFIRM_MS);
   return state.consecutiveCount >= FOOTER_ISSUE_CONFIRM_COUNT
     && timestamp - state.firstSeenAt >= confirmMs;
 }
 
-function getStatusFromDetectionResult(result = {}, buffer = null) {
+function getStatusFromDetectionResult(result = {}, buffer = null, settings = {}) {
   const cameraActive = result.cameraActive !== false;
   const faceCount = Number(result.faceCount || 0);
   const personCount = Number(result.personCount || 0);
   const timestamp = Number(result.timestamp) || Date.now();
   const multipleFacesVisible = faceCount > 1
-    && isBufferedIssueVisible(buffer, AI_PROCTORING_EVENTS.MULTIPLE_FACES, timestamp);
+    && isBufferedIssueVisible(buffer, AI_PROCTORING_EVENTS.MULTIPLE_FACES, timestamp, settings);
   const noFaceVisible = result.facePresent === false
-    && isBufferedIssueVisible(buffer, AI_PROCTORING_EVENTS.NO_FACE, timestamp);
+    && isBufferedIssueVisible(buffer, AI_PROCTORING_EVENTS.NO_FACE, timestamp, settings);
   const faceOutVisible = result.faceOutOfFrame === true
-    && isBufferedIssueVisible(buffer, AI_PROCTORING_EVENTS.FACE_OUT_OF_FRAME, timestamp);
+    && isBufferedIssueVisible(buffer, AI_PROCTORING_EVENTS.FACE_OUT_OF_FRAME, timestamp, settings);
   const lookingAwayVisible = result.lookingAway === true
-    && isBufferedIssueVisible(buffer, AI_PROCTORING_EVENTS.LOOKING_AWAY, timestamp);
+    && isBufferedIssueVisible(buffer, AI_PROCTORING_EVENTS.LOOKING_AWAY, timestamp, settings);
   const multiplePersonsVisible = personCount > 1;
 
   if (!cameraActive) {
@@ -605,7 +617,7 @@ export class ProctoringManager {
       if (confirmed) this.emitConfirmedViolation(candidate, confirmed);
     });
 
-      const statusPatch = getStatusFromDetectionResult(result, this.violationBuffer);
+      const statusPatch = getStatusFromDetectionResult(result, this.violationBuffer, this.settings);
       this.updateStatus({
         ...statusPatch,
       error: this.getModelAvailabilityError(),
