@@ -69,13 +69,10 @@ function TemplateActionsMenu({ template, onView, onEdit, onToggleEnabled, onDele
       if (!button) return;
       const rect = button.getBoundingClientRect();
       const width = 232;
-      const height = menuRef.current?.getBoundingClientRect().height || 220;
       const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
       const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
       const left = Math.max(8, Math.min(rect.right - width, viewportWidth - width - 8));
-      const opensUpward = rect.bottom + 8 + height > viewportHeight - 8;
-      const top = opensUpward ? Math.max(8, rect.top - height - 8) : rect.bottom + 8;
-      setMenuStyle({ left, top, width });
+      setMenuStyle({ left, top: rect.bottom + 8, width, maxHeight: Math.max(160, viewportHeight - rect.bottom - 16) });
     };
 
     updatePosition();
@@ -108,12 +105,13 @@ function TemplateActionsMenu({ template, onView, onEdit, onToggleEnabled, onDele
       <div
         ref={menuRef}
         data-platform-action-menu
+        data-dropdown-direction="down"
         role="menu"
         onPointerDown={(event) => event.stopPropagation()}
         onMouseDown={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
         style={menuStyle}
-        className="fixed z-[1000] overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-2xl ring-1 ring-slate-950/5 dark:border-gray-700 dark:bg-gray-900"
+        className="fixed z-[1000] overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-2xl ring-1 ring-slate-950/5 dark:border-gray-700 dark:bg-gray-900"
       >
         {action(<Eye className="h-3.5 w-3.5" />, 'View Template', onView)}
         {action(<Edit3 className="h-3.5 w-3.5" />, 'Edit Template', onEdit)}

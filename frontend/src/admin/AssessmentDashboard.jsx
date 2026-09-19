@@ -70,16 +70,16 @@ function ThreeDotsMenu({ assessment, onOpen, onPreview, onViewReport, onEdit, on
       if (!button) return;
       const rect = button.getBoundingClientRect();
       const menuWidth = 240;
-      const menuHeight = menuRef.current?.getBoundingClientRect().height || 360;
       const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
       const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
       const left = Math.max(8, Math.min(rect.right - menuWidth, viewportWidth - menuWidth - 8));
-      const opensUpward = rect.bottom + 8 + menuHeight > viewportHeight - 8;
-      const top = opensUpward
-        ? Math.max(8, rect.top - menuHeight - 8)
-        : Math.min(rect.bottom + 8, viewportHeight - menuHeight - 8);
-
-      setMenuStyle({ left, top, width: menuWidth, transformOrigin: opensUpward ? 'bottom right' : 'top right' });
+      setMenuStyle({
+        left,
+        top: rect.bottom + 8,
+        width: menuWidth,
+        maxHeight: Math.max(160, viewportHeight - rect.bottom - 16),
+        transformOrigin: 'top right',
+      });
     };
 
     updatePosition();
@@ -118,6 +118,7 @@ function ThreeDotsMenu({ assessment, onOpen, onPreview, onViewReport, onEdit, on
         <motion.div
           ref={menuRef}
           data-platform-action-menu
+          data-dropdown-direction="down"
           role="menu"
           onPointerDown={(event) => event.stopPropagation()}
           onMouseDown={(event) => event.stopPropagation()}
@@ -127,7 +128,7 @@ function ThreeDotsMenu({ assessment, onOpen, onPreview, onViewReport, onEdit, on
           exit={{ opacity: 0, scale: 0.95, y: -4 }}
           transition={{ duration: 0.12 }}
           style={menuStyle}
-          className="fixed z-[1000] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl ring-1 ring-slate-950/5 dark:border-gray-700 dark:bg-gray-900"
+          className="fixed z-[1000] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-2xl ring-1 ring-slate-950/5 dark:border-gray-700 dark:bg-gray-900"
         >
           {item(<ClipboardList className="h-3.5 w-3.5" />, assessment.lifecycleStatus === 'draft' ? 'Continue Assessment' : 'Open Assessment', onOpen)}
           {item(<Eye className="h-3.5 w-3.5" />, 'Preview Assessment', onPreview)}

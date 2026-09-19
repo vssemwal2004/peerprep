@@ -42,11 +42,10 @@ function CoordinatorActionMenu({ coordinator, onEdit, onToggle, onView, onAccess
   const toggleMenu = () => {
     if (!open && buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect();
-      const menuHeight = 300;
-      const openAbove = window.innerHeight - rect.bottom < menuHeight && rect.top > menuHeight;
       setPosition({
-        top: openAbove ? Math.max(8, rect.top - menuHeight - 6) : rect.bottom + 6,
+        top: rect.bottom + 8,
         left: Math.max(8, Math.min(window.innerWidth - 216, rect.right - 208)),
+        maxHeight: Math.max(160, window.innerHeight - rect.bottom - 16),
       });
     }
     setOpen((value) => !value);
@@ -72,7 +71,7 @@ function CoordinatorActionMenu({ coordinator, onEdit, onToggle, onView, onAccess
     <div className="relative">
       <button ref={buttonRef} type="button" onClick={toggleMenu} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/10" aria-label={`Actions for ${coordinator.name || coordinator.email}`} aria-haspopup="menu" aria-expanded={open}><MoreVertical className="h-4 w-4" /></button>
       {open && createPortal(
-        <div ref={menuRef} data-platform-action-menu role="menu" style={{ top: position.top, left: position.left }} onPointerDown={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} className="fixed z-[1000] w-52 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-2xl dark:border-white/10 dark:bg-gray-900">
+        <div ref={menuRef} data-platform-action-menu data-dropdown-direction="down" role="menu" style={{ top: position.top, left: position.left, maxHeight: position.maxHeight }} onPointerDown={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} className="fixed z-[1000] w-52 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-2xl dark:border-white/10 dark:bg-gray-900">
           <button type="button" onClick={action(onView)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-bold text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-white/10"><Eye className="h-4 w-4" />View details</button>
           <button type="button" onClick={action(onEdit)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-bold text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-white/10"><Edit2 className="h-4 w-4" />Edit coordinator</button>
           <button type="button" onClick={action(onAccess)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-bold text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-400/10"><ShieldCheck className="h-4 w-4" />Manage access</button>

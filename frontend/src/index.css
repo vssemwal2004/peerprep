@@ -153,6 +153,13 @@ a {
   touch-action: manipulation;
 }
 
+/* Three-dot action menus consistently open below their trigger. Long menus
+   stay usable through internal scrolling instead of flipping over the row. */
+[data-platform-action-menu][data-dropdown-direction="down"] {
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
 [data-platform-action-menu] * {
   pointer-events: auto;
 }
