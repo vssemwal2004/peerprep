@@ -103,7 +103,7 @@ function ThreeDotsMenu({ assessment, onOpen, onPreview, onViewReport, onEdit, on
   const item = (icon, label, onClick, danger = false) => (
     <button
       type="button"
-      onClick={() => { setOpen(false); onClick(); }}
+      onClick={(event) => { event.preventDefault(); event.stopPropagation(); onClick(); setOpen(false); }}
       className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs font-medium transition-colors hover:bg-slate-50 dark:hover:bg-gray-700 ${danger ? 'text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-gray-200'}`}
     >
       {icon}
@@ -117,12 +117,17 @@ function ThreeDotsMenu({ assessment, onOpen, onPreview, onViewReport, onEdit, on
       {open && menuStyle && (
         <motion.div
           ref={menuRef}
+          data-platform-action-menu
+          role="menu"
+          onPointerDown={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
           initial={{ opacity: 0, scale: 0.95, y: -4 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: -4 }}
           transition={{ duration: 0.12 }}
           style={menuStyle}
-          className="fixed z-[90] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl ring-1 ring-slate-950/5 dark:border-gray-700 dark:bg-gray-900"
+          className="fixed z-[1000] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl ring-1 ring-slate-950/5 dark:border-gray-700 dark:bg-gray-900"
         >
           {item(<ClipboardList className="h-3.5 w-3.5" />, assessment.lifecycleStatus === 'draft' ? 'Continue Assessment' : 'Open Assessment', onOpen)}
           {item(<Eye className="h-3.5 w-3.5" />, 'Preview Assessment', onPreview)}

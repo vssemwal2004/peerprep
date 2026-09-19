@@ -90,9 +90,11 @@ function TemplateActionsMenu({ template, onView, onEdit, onToggleEnabled, onDele
   const action = (icon, label, onClick, className = '') => (
     <button
       type="button"
-      onClick={() => {
-        setOpen(false);
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
         onClick(template);
+        setOpen(false);
       }}
       className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs font-semibold transition-colors hover:bg-slate-50 dark:hover:bg-gray-800 ${className || 'text-slate-700 dark:text-slate-200'}`}
     >
@@ -105,8 +107,13 @@ function TemplateActionsMenu({ template, onView, onEdit, onToggleEnabled, onDele
     open && menuStyle ? (
       <div
         ref={menuRef}
+        data-platform-action-menu
+        role="menu"
+        onPointerDown={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
         style={menuStyle}
-        className="fixed z-[90] overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-2xl ring-1 ring-slate-950/5 dark:border-gray-700 dark:bg-gray-900"
+        className="fixed z-[1000] overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-2xl ring-1 ring-slate-950/5 dark:border-gray-700 dark:bg-gray-900"
       >
         {action(<Eye className="h-3.5 w-3.5" />, 'View Template', onView)}
         {action(<Edit3 className="h-3.5 w-3.5" />, 'Edit Template', onEdit)}

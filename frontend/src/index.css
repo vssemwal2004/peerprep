@@ -147,8 +147,21 @@ a {
 }
 
 [data-platform-action-menu] {
-  z-index: 120 !important;
+  z-index: 1000 !important;
   isolation: isolate;
+  pointer-events: auto !important;
+  touch-action: manipulation;
+}
+
+[data-platform-action-menu] * {
+  pointer-events: auto;
+}
+
+[data-platform-action-menu] :where(button, a, [role="menuitem"]) {
+  position: relative;
+  z-index: 1;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
 /* Platform-wide serial-number column for every rendered data table.
