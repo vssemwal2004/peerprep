@@ -40,7 +40,13 @@ const STUDENT_COLUMNS = [
   { key: 'actions', label: 'Actions' },
 ];
 
-const DEFAULT_STUDENT_COLUMNS = STUDENT_COLUMNS.map((column) => column.key);
+// Credential delivery is an operational field, so keep it opt-in to avoid
+// crowding the default student table. It remains available in Columns.
+const DEFAULT_STUDENT_COLUMNS = STUDENT_COLUMNS
+  .filter((column) => column.key !== 'credentialMail')
+  .map((column) => column.key);
+const STUDENT_COLUMNS_PREFERENCE_KEY = 'peerprep.studentColumns';
+const STUDENT_COLUMNS_V2_MIGRATION_KEY = 'peerprep.studentColumns.v2';
 
 export default function StudentDirectory() {
   const navigate = useNavigate();
@@ -78,8 +84,16 @@ export default function StudentDirectory() {
   const [showColumns, setShowColumns] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem('peerprep.studentColumns') || 'null');
-      return Array.isArray(saved) && saved.length ? new Set(saved) : new Set(DEFAULT_STUDENT_COLUMNS);
+      const saved = JSON.parse(localStorage.getItem(STUDENT_COLUMNS_PREFERENCE_KEY) || 'null');
+      const migrated = localStorage.getItem(STUDENT_COLUMNS_V2_MIGRATION_KEY) === 'true';
+      if (Array.isArray(saved) && saved.length) {
+        const next = new Set(saved);
+        // Older defaults included this column. Hide it once during migration;
+        // subsequent explicit selections are preserved.
+        if (!migrated) next.delete('credentialMail');
+        return next.size ? next : new Set(DEFAULT_STUDENT_COLUMNS);
+      }
+      return new Set(DEFAULT_STUDENT_COLUMNS);
     } catch {
       return new Set(DEFAULT_STUDENT_COLUMNS);
     }
@@ -207,7 +221,8 @@ export default function StudentDirectory() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('peerprep.studentColumns', JSON.stringify([...visibleColumns]));
+    localStorage.setItem(STUDENT_COLUMNS_PREFERENCE_KEY, JSON.stringify([...visibleColumns]));
+    localStorage.setItem(STUDENT_COLUMNS_V2_MIGRATION_KEY, 'true');
   }, [visibleColumns]);
 
   useEffect(() => {
@@ -953,7 +968,7 @@ export default function StudentDirectory() {
                 </button>
                 {showColumns && (
                   <div className="absolute right-0 top-11 z-40 w-64 rounded-lg border border-slate-200 bg-white p-3 shadow-xl dark:border-gray-700 dark:bg-gray-900">
-                    <div className="mb-2 flex items-center justify-between"><div><p className="text-xs font-semibold text-slate-900 dark:text-white">Visible columns</p><p className="text-[10px] text-slate-500">Choose what appears in the table</p></div><button type="button" onClick={() => setVisibleColumns(new Set(DEFAULT_STUDENT_COLUMNS))} className="text-[10px] font-semibold text-sky-600">Show all</button></div>
+                    <div className="mb-2 flex items-center justify-between"><div><p className="text-xs font-semibold text-slate-900 dark:text-white">Visible columns</p><p className="text-[10px] text-slate-500">Choose what appears in the table</p></div><button type="button" onClick={() => setVisibleColumns(new Set(STUDENT_COLUMNS.map((column) => column.key)))} className="text-[10px] font-semibold text-sky-600">Show all</button></div>
                     <div className="max-h-72 space-y-1 overflow-y-auto">
                       {STUDENT_COLUMNS.map((column) => {
                         const checked = isColumnVisible(column.key);
