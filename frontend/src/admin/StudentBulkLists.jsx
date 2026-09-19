@@ -18,6 +18,7 @@ export default function StudentBulkLists() {
   const [workingId, setWorkingId] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [uploaderModal, setUploaderModal] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -130,7 +131,7 @@ export default function StudentBulkLists() {
                     <td className="px-5 py-4 text-slate-600 dark:text-gray-300"><span className="inline-flex items-center gap-1.5"><CalendarDays className="h-4 w-4" />{new Date(batch.createdAt).toLocaleString()}</span></td>
                     <td className="px-5 py-4 font-semibold text-slate-800 dark:text-gray-200"><span className="inline-flex items-center gap-1.5"><Users className="h-4 w-4" />{batch.studentIds?.length || 0}</span></td>
                     <td className="px-5 py-4 text-xs">{isCoordinator ? <span className="text-sky-600">Assigned students only</span> : <><span className="text-emerald-600">{batch.createdCount} added</span><span className="mx-1.5 text-slate-300">•</span><span className="text-blue-600">{batch.updatedCount} updated</span>{batch.failedCount > 0 && <><span className="mx-1.5 text-slate-300">•</span><span className="text-red-600">{batch.failedCount} failed</span></>}</>}</td>
-                    <td className="px-5 py-4 text-slate-600 dark:text-gray-300">{batch.uploadedBy?.name || batch.uploadedByEmail || 'Admin'}</td>
+                    <td className="px-5 py-4 text-slate-600 dark:text-gray-300"><button type="button" onClick={(event) => { event.stopPropagation(); setUploaderModal(batch.uploadedBy || { name: batch.uploadedByEmail || 'Administrator', email: batch.uploadedByEmail, role: 'admin' }); }} className="text-left font-semibold text-sky-700 hover:underline dark:text-sky-300">{batch.uploadedBy?.name || batch.uploadedByEmail || 'Administrator'}<span className="block text-[10px] font-bold uppercase tracking-wide text-slate-400">{batch.uploadedBy?.role || 'admin'}</span></button></td>
                     <td className="relative px-5 py-4 text-right" onClick={(event) => event.stopPropagation()}>
                       <button data-platform-menu-trigger aria-expanded={activeMenu === batch._id} onClick={() => setActiveMenu((value) => value === batch._id ? '' : batch._id)} className="rounded-md p-2 hover:bg-slate-100 dark:hover:bg-gray-700">{workingId === batch._id ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreVertical className="h-4 w-4" />}</button>
                       {activeMenu === batch._id && <div data-platform-action-menu className="absolute right-5 top-12 z-[80] w-52 rounded-xl border border-slate-200 bg-white py-1 text-left shadow-2xl dark:border-gray-700 dark:bg-gray-900">
@@ -147,6 +148,8 @@ export default function StudentBulkLists() {
             </table>
           </div>
         </div>
+
+        {uploaderModal && <div className="fixed inset-0 z-[220] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setUploaderModal(null); }}><div role="dialog" aria-modal="true" aria-label="Upload owner" className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-gray-700 dark:bg-gray-900"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-sky-600">Uploaded by</p><h2 className="mt-1 text-lg font-bold text-slate-950 dark:text-white">{uploaderModal.name || 'Administrator'}</h2></div><button type="button" onClick={() => setUploaderModal(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-gray-800"><X className="h-4 w-4" /></button></div><dl className="mt-4 space-y-3 text-sm"><div><dt className="text-xs font-bold uppercase tracking-wide text-slate-400">Role</dt><dd className="mt-1 capitalize font-semibold text-slate-800 dark:text-slate-100">{uploaderModal.role || 'admin'}</dd></div>{uploaderModal.email && <div><dt className="text-xs font-bold uppercase tracking-wide text-slate-400">Email</dt><dd className="mt-1 break-all text-slate-700 dark:text-slate-200">{uploaderModal.email}</dd></div>}{uploaderModal.coordinatorId && <div><dt className="text-xs font-bold uppercase tracking-wide text-slate-400">Teacher ID</dt><dd className="mt-1 font-mono font-bold text-slate-700 dark:text-slate-200">{uploaderModal.coordinatorId}</dd></div>}</dl></div></div>}
 
         {deleteTarget && <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget && !workingId) setDeleteTarget(null); }}>
           <div role="alertdialog" aria-modal="true" className="w-full max-w-lg rounded-2xl border border-red-200 bg-white p-6 shadow-2xl dark:border-red-900/50 dark:bg-gray-900">

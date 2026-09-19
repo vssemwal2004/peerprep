@@ -269,7 +269,7 @@ function assessmentForSubmission(assessment = {}, submission = {}) {
 function canManageAssessmentForRequest(assessment = {}, user = {}) {
   if (!assessment || !user) return false;
   if (user.role === 'admin') return true;
-  if (user.role === 'coordinator') return String(assessment.createdBy || '') === String(user._id || '');
+  if (user.role === 'coordinator') return user.coordinatorDataScope === 'all' || String(assessment.createdBy || '') === String(user._id || '');
   return false;
 }
 
@@ -1895,10 +1895,13 @@ export async function createAssessment(req, res) {
 export async function listAssessments(req, res) {
   try {
     const query = {};
-    if (req.user?.role === 'coordinator') {
+    if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') {
       query.createdBy = req.user._id;
     }
-    const assessments = await Assessment.find(query).sort({ createdAt: -1 }).lean();
+    const assessments = await Assessment.find(query)
+      .sort({ createdAt: -1 })
+      .populate('createdBy', 'name email role coordinatorId')
+      .lean();
     const submissionCounts = await AssessmentSubmission.aggregate([
       {
         $group: {
@@ -2258,7 +2261,7 @@ export async function resetAssessmentSubmissions(req, res) {
     const { id } = req.params;
     const assessment = await Assessment.findById(id);
     if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
-    if (req.user?.role === 'coordinator' && assessment.createdBy?.toString() !== req.user._id.toString()) {
+    if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all' && assessment.createdBy?.toString() !== req.user._id.toString()) {
       return res.status(403).json({ error: 'Not allowed to reset this assessment.' });
     }
 
@@ -2543,7 +2546,7 @@ export async function markAssessmentComplete(req, res) {
     const { id } = req.params;
     const assessment = await Assessment.findById(id);
     if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
-    if (req.user?.role === 'coordinator' && assessment.createdBy?.toString() !== req.user._id.toString()) {
+    if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all' && assessment.createdBy?.toString() !== req.user._id.toString()) {
       return res.status(403).json({ error: 'Not allowed to complete this assessment.' });
     }
     if (assessment.lifecycleStatus === 'draft') {
@@ -2581,7 +2584,7 @@ export async function releaseAssessmentAnswers(req, res) {
     const { id } = req.params;
     const assessment = await Assessment.findById(id);
     if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
-    if (req.user?.role === 'coordinator' && assessment.createdBy?.toString() !== req.user._id.toString()) {
+    if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all' && assessment.createdBy?.toString() !== req.user._id.toString()) {
       return res.status(403).json({ error: 'Not allowed to release answers for this assessment.' });
     }
     if (assessment.lifecycleStatus === 'draft') {
@@ -2635,7 +2638,7 @@ export async function sendAssessmentInvitations(req, res) {
     const suppliedPassword = typeof req.body?.password === 'string' ? req.body.password.trim() : '';
     const assessment = await Assessment.findById(id);
     if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
-    if (req.user?.role === 'coordinator' && String(assessment.createdBy) !== String(req.user._id)) {
+    if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all' && String(assessment.createdBy) !== String(req.user._id)) {
       return res.status(403).json({ error: 'Not allowed to send invitations for this assessment.' });
     }
     if (assessment.lifecycleStatus !== 'published') {
@@ -3548,7 +3551,7 @@ export async function getAssessmentReports(req, res) {
         { 'student.studentId': regex },
       ];
     }
-    if (req.user?.role === 'coordinator') {
+    if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') {
       postMatch['assessment.createdBy'] = req.user._id;
     }
     if (Object.keys(postMatch).length) {
@@ -3580,7 +3583,7 @@ export async function getAssessmentReports(req, res) {
         { 'student.studentId': regex },
       ];
     }
-    if (req.user?.role === 'coordinator') {
+    if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') {
       summaryPostMatch['assessment.createdBy'] = req.user._id;
     }
     if (Object.keys(summaryPostMatch).length) {
@@ -3831,14 +3834,14 @@ export async function getAssessmentReports(req, res) {
     };
     if (assessmentId) assessmentSummariesMatch._id = new mongoose.Types.ObjectId(assessmentId);
     if (assessmentType) assessmentSummariesMatch.assessmentType = assessmentType;
-    if (req.user?.role === 'coordinator') assessmentSummariesMatch.createdBy = req.user._id;
+    if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') assessmentSummariesMatch.createdBy = req.user._id;
 
     const assessmentCalendarMatch = {
       lifecycleStatus: { $ne: 'draft' },
       ...buildAssessmentCollectionWindowMatch(assessmentWindow, now),
     };
     if (assessmentType) assessmentCalendarMatch.assessmentType = assessmentType;
-    if (req.user?.role === 'coordinator') assessmentCalendarMatch.createdBy = req.user._id;
+    if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') assessmentCalendarMatch.createdBy = req.user._id;
 
     const assessmentCreatedTrendRows = await Assessment.aggregate([
       { $match: assessmentCalendarMatch },
@@ -4131,7 +4134,7 @@ export async function getStudentAssessmentReport(req, res) {
       return res.status(404).json({ error: 'Assessment not found' });
     }
 
-    if (req.user?.role === 'coordinator' && String(assessment.createdBy) !== String(req.user._id)) {
+    if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all' && String(assessment.createdBy) !== String(req.user._id)) {
       return res.status(403).json({ error: 'Not authorized to view this report.' });
     }
 
@@ -4240,7 +4243,7 @@ export async function getAssessmentReportsExportData(req, res) {
         { 'student.studentId': regex },
       ];
     }
-    if (req.user?.role === 'coordinator') {
+    if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') {
       postMatch['assessment.createdBy'] = req.user._id;
     }
     if (Object.keys(postMatch).length) {
@@ -5011,7 +5014,7 @@ export async function getSubmissionViolations(req, res) {
       .select('violationLog violations monitoringEvents proctoringSnapshots aiProctoringSummary tabSwitches fullscreenExits copyPasteCount cameraFlags violationScore pauseCount lastPauseAt status startedAt submittedAt studentId assessmentId securitySetup securityHeartbeat lastIp lastUserAgent')
       .lean();
     if (!submission) return res.status(404).json({ error: 'Submission not found.' });
-    if (req.user && req.user.role === 'coordinator') {
+    if (req.user && req.user.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') {
       const assessment = await Assessment.findById(submission.assessmentId).select('createdBy').lean();
       if (!assessment || String(assessment.createdBy) !== String(req.user._id)) {
         return res.status(403).json({ error: 'Access denied.' });

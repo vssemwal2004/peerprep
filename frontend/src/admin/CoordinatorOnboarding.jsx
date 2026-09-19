@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertCircle, CheckCircle2, Download, Eye, EyeOff, FileText, Loader2, ShieldCheck, Upload, UserPlus, Users } from 'lucide-react';
 import { api } from '../utils/api';
@@ -8,12 +8,16 @@ import { defaultCoordinatorPermissions } from './coordinatorPermissions';
 const initialForm = {
   coordinatorName: '',
   coordinatorEmail: '',
-  coordinatorID: '',
   coordinatorPassword: '',
   phone: '',
   department: '',
   college: '',
+  dataScope: 'own',
 };
+
+function SelectField({ label, value, onChange, options, placeholder, error }) {
+  return <div><label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">{label}</label><select value={value} onChange={(event) => onChange(event.target.value)} className={`w-full rounded-xl border bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:ring-2 dark:bg-gray-950 dark:text-white ${error ? 'border-rose-300' : 'border-slate-200 focus:border-sky-400 focus:ring-sky-100 dark:border-white/10'}`}><option value="">{placeholder}</option>{options.map((entry) => <option key={entry._id} value={entry.name}>{entry.name}</option>)}</select>{error ? <p className="mt-1.5 text-xs font-semibold text-rose-600">{error}</p> : null}</div>;
+}
 
 function Field({ label, value, onChange, error, type = 'text', placeholder, action }) {
   return (
@@ -69,13 +73,28 @@ export default function CoordinatorOnboarding() {
   const [bulkErrors, setBulkErrors] = useState([]);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkResult, setBulkResult] = useState(null);
+  const [masterData, setMasterData] = useState([]);
+
+  useEffect(() => {
+    let active = true;
+    api.listMasterData({ activeOnly: true }).then((response) => {
+      if (active) setMasterData(response.entries || []);
+    }).catch(() => {
+      if (active) toast.error('Could not load department and college master data.');
+    });
+    return () => { active = false; };
+  }, [toast]);
+
+  const departments = useMemo(() => masterData.filter((entry) => entry.category === 'branch'), [masterData]);
+  const colleges = useMemo(() => masterData.filter((entry) => entry.category === 'campus'), [masterData]);
 
   const errors = useMemo(() => {
     const next = {};
     if (!form.coordinatorName.trim()) next.coordinatorName = 'Coordinator name is required.';
     if (!form.coordinatorEmail.trim()) next.coordinatorEmail = 'Email is required.';
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.coordinatorEmail)) next.coordinatorEmail = 'Enter a valid email address.';
-    if (!form.coordinatorID.trim()) next.coordinatorID = 'Coordinator ID is required.';
+    if (!form.department) next.department = 'Select a department from master data.';
+    if (!form.college) next.college = 'Select a college from master data.';
     if (form.coordinatorPassword && form.coordinatorPassword.length < 6) next.coordinatorPassword = 'Use at least 6 characters.';
     return next;
   }, [form]);
@@ -105,7 +124,7 @@ export default function CoordinatorOnboarding() {
         : ` Login credentials could not be queued${result.credentialEmailError ? `: ${result.credentialEmailError}` : '.'}`;
       setMessage({
         type: result.credentialEmailQueued ? 'success' : 'warning',
-        text: `Coordinator created with ${result.permissionCount ?? 0} assigned permissions.${emailMessage}`,
+        text: `Coordinator created. Teacher ID: ${result.coordinatorID}. ${result.permissionCount ?? 0} permissions, ${result.dataScope === 'all' ? 'whole-data' : 'own-data'} scope.${emailMessage}`,
       });
       if (result.credentialEmailQueued) {
         toast.success('Coordinator created and credential email queued.');
@@ -124,7 +143,7 @@ export default function CoordinatorOnboarding() {
   };
 
   const downloadTemplate = () => {
-    const csv = 'Name,Email,CoordinatorId,Password,Phone,Department,College,GrantDefaultAccess\nJane Doe,jane@university.edu,COO2026-001,,+919876543210,Computer Science,PeerPrep University,false\n';
+    const csv = 'Name,Email,Password,Phone,Department,College,GrantDefaultAccess\nJane Doe,jane@university.edu,,+919876543210,Computer Science,PeerPrep University,false\n';
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
     const anchor = document.createElement('a');
     anchor.href = url;
@@ -146,7 +165,7 @@ export default function CoordinatorOnboarding() {
       try {
         const lines = String(event.target?.result || '').split(/\r?\n/).filter((line) => line.trim());
         const headers = parseCsvLine(lines.shift() || '').map((header) => header.toLowerCase().replace(/[\s_-]/g, ''));
-        const required = ['name', 'email', 'coordinatorid'];
+        const required = ['name', 'email'];
         const missing = required.filter((header) => !headers.includes(header));
         if (missing.length) throw new Error(`Missing required columns: ${missing.join(', ')}`);
         const rows = lines.map((line, index) => {
@@ -156,7 +175,7 @@ export default function CoordinatorOnboarding() {
             row: index + 2,
             name: raw.name,
             email: raw.email,
-            coordinatorId: raw.coordinatorid,
+            coordinatorId: '',
             password: raw.password,
             phone: raw.phone,
             department: raw.department,
@@ -166,18 +185,14 @@ export default function CoordinatorOnboarding() {
         });
         if (!rows.length) throw new Error('The CSV does not contain coordinator rows.');
         const seenEmails = new Set();
-        const seenIds = new Set();
         const validationErrors = [];
         rows.forEach((row) => {
-          if (!row.name || !row.email || !row.coordinatorId) validationErrors.push(`Row ${row.row}: Name, email, and Coordinator ID are required.`);
+          if (!row.name || !row.email) validationErrors.push(`Row ${row.row}: Name and email are required.`);
           if (row.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) validationErrors.push(`Row ${row.row}: Invalid email address.`);
           if (row.password && row.password.length < 6) validationErrors.push(`Row ${row.row}: Password must have at least 6 characters.`);
           const emailKey = row.email.toLowerCase();
-          const idKey = row.coordinatorId.toLowerCase();
           if (seenEmails.has(emailKey)) validationErrors.push(`Row ${row.row}: Duplicate email in this file.`);
-          if (seenIds.has(idKey)) validationErrors.push(`Row ${row.row}: Duplicate Coordinator ID in this file.`);
           seenEmails.add(emailKey);
-          seenIds.add(idKey);
         });
         setBulkRows(rows);
         setBulkErrors(validationErrors);
@@ -231,7 +246,7 @@ export default function CoordinatorOnboarding() {
         {mode === 'bulk' && (
           <div className="space-y-5">
             <div className="rounded-2xl border border-sky-200 bg-sky-50 p-5 dark:border-sky-400/20 dark:bg-sky-400/10">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="font-bold text-sky-950 dark:text-sky-100">Coordinator CSV guidelines</h2><p className="mt-1 text-sm text-sky-800/80 dark:text-sky-200/80">Required: Name, Email, CoordinatorId. Password defaults to CoordinatorId. Optional: Phone, Department, College, GrantDefaultAccess.</p></div><button type="button" onClick={downloadTemplate} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-500"><Download className="h-4 w-4" />Download template</button></div>
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="font-bold text-sky-950 dark:text-sky-100">Coordinator CSV guidelines</h2><p className="mt-1 text-sm text-sky-800/80 dark:text-sky-200/80">Required: Name, Email. Teacher IDs are generated automatically; the password defaults to that generated ID. Optional: Password, Phone, Department, College, GrantDefaultAccess.</p></div><button type="button" onClick={downloadTemplate} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-500"><Download className="h-4 w-4" />Download template</button></div>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-gray-900">
               <label className="relative flex min-h-52 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 p-8 text-center transition hover:border-sky-400 hover:bg-sky-50 dark:border-white/15 dark:bg-white/[0.03] dark:hover:border-sky-400/50"><input type="file" accept=".csv,text/csv" onChange={(event) => readBulkFile(event.target.files?.[0])} className="absolute inset-0 cursor-pointer opacity-0" /><span className="flex h-12 w-12 items-center justify-center rounded-xl bg-sky-600 text-white"><Upload className="h-5 w-5" /></span><span className="mt-4 text-sm font-bold text-slate-900 dark:text-white">Drop or select coordinator CSV</span><span className="mt-1 text-xs text-slate-500">Maximum 500 coordinator rows</span></label>
@@ -269,14 +284,14 @@ export default function CoordinatorOnboarding() {
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="Full Name" value={form.coordinatorName} onChange={(value) => update('coordinatorName', value)} error={errors.coordinatorName} placeholder="Jane Doe" />
               <Field label="Email" value={form.coordinatorEmail} onChange={(value) => update('coordinatorEmail', value)} error={errors.coordinatorEmail} placeholder="jane@university.edu" />
-              <Field label="Coordinator ID" value={form.coordinatorID} onChange={(value) => update('coordinatorID', value)} error={errors.coordinatorID} placeholder="COO2026-001" />
+              <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-100"><span className="block text-xs font-bold uppercase tracking-wider">Teacher ID</span><span className="mt-1 block font-semibold">Generated automatically as a unique 5-character code.</span></div>
               <Field
                 label="Temporary Password"
                 value={form.coordinatorPassword}
                 onChange={(value) => update('coordinatorPassword', value)}
                 error={errors.coordinatorPassword}
                 type={showPassword ? 'text' : 'password'}
-                placeholder="Defaults to Coordinator ID"
+                placeholder="Defaults to generated Teacher ID"
                 action={(
                   <button type="button" onClick={() => setShowPassword((value) => !value)} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -284,9 +299,16 @@ export default function CoordinatorOnboarding() {
                 )}
               />
               <Field label="Phone" value={form.phone} onChange={(value) => update('phone', value)} placeholder="+91 98765 43210" />
-              <Field label="Department" value={form.department} onChange={(value) => update('department', value)} placeholder="Computer Science" />
+              <SelectField label="Department" value={form.department} onChange={(value) => update('department', value)} options={departments} placeholder="Select department" error={errors.department} />
               <div className="md:col-span-2">
-                <Field label="College / Organization" value={form.college} onChange={(value) => update('college', value)} placeholder="PeerPrep University" />
+                <SelectField label="College / Organization" value={form.college} onChange={(value) => update('college', value)} options={colleges} placeholder="Select college / campus" error={errors.college} />
+              </div>
+            </div>
+
+            <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+              <label className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Data visibility</label>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {[['own', 'Own data', 'Only assigned students and records created by this coordinator.'], ['all', 'Whole data', 'Institution-wide records for every enabled feature.']].map(([value, title, description]) => <label key={value} className={`cursor-pointer rounded-xl border p-3 ${form.dataScope === value ? 'border-sky-400 bg-sky-50 dark:bg-sky-400/10' : 'border-slate-200 bg-white dark:border-white/10 dark:bg-gray-950'}`}><input type="radio" name="dataScope" value={value} checked={form.dataScope === value} onChange={() => update('dataScope', value)} className="mr-2" /><span className="text-sm font-bold text-slate-950 dark:text-white">{title}</span><span className="mt-1 block text-xs leading-5 text-slate-500">{description}</span></label>)}
               </div>
             </div>
 

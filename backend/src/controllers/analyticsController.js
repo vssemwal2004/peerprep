@@ -136,15 +136,18 @@ function buildDateSeriesFromRange(startDate, endDate, aggregation) {
   return dates;
 }
 
-async function getControlledStudents() {
-  return User.find({ role: 'student' })
+async function getControlledStudents(req) {
+  const query = req?.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all'
+    ? { role: 'student', teacherIds: req.user.coordinatorId }
+    : { role: 'student' };
+  return User.find(query)
     .select('_id name email studentId semester group course branch college uploadBatchIds createdAt')
     .sort({ name: 1 })
     .lean();
 }
 
 async function getControlledProblems(req) {
-  const query = req?.user?.role === 'coordinator' ? { createdBy: req.user._id } : {};
+  const query = req?.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all' ? { createdBy: req.user._id } : {};
   return Problem.find(query)
     .select('_id title difficulty tags companyTags status createdAt')
     .sort({ createdAt: -1 })
@@ -164,10 +167,10 @@ export async function getAdminCompilerOverview(req, res) {
   const oneDayAgo = new Date();
   oneDayAgo.setHours(0, 0, 0, 0);
   const today = new Date();
-  const students = await getControlledStudents();
+  const students = await getControlledStudents(req);
   const controlledStudentIds = students.map((student) => student._id);
 
-  const problemQuery = req?.user?.role === 'coordinator' ? { createdBy: req.user._id } : {};
+  const problemQuery = req?.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all' ? { createdBy: req.user._id } : {};
 
   const [problems, totalSubmissions, acceptedSubmissions, activeStudents, recentSubmissions, recentProblems, recentActiveStudents, topSolved, topAccuracy, problemAttempts, submissionTrendAgg, activityHeatmapAgg, topSolvedDaily, topSolvedWeekly, problemGrowthAgg, submissionCalendarAgg, topSolvedDetailedAgg] = await Promise.all([
     getControlledProblems(req),
@@ -571,13 +574,13 @@ export async function getAdminCompilerAnalytics(req, res) {
   }
   if (selectedLanguages.length) baseSubmissionMatch.language = { $in: selectedLanguages };
   const [allControlledStudents, allControlledProblems, assessments, uploadBatches, masterData] = await Promise.all([
-    getControlledStudents(),
+    getControlledStudents(req),
     getControlledProblems(req),
-    Assessment.find(req?.user?.role === 'coordinator' ? { createdBy: req.user._id, 'sections.type': 'coding' } : { 'sections.type': 'coding' })
+    Assessment.find(req?.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all' ? { createdBy: req.user._id, 'sections.type': 'coding' } : { 'sections.type': 'coding' })
       .select('_id title lifecycleStatus startTime createdAt targetType assignedStudents draftTargetMode draftAssignedStudents sections.questions.problemId sections.questions.coding.problemId sections.questions.problemDataSnapshot._id sections.questions.coding.problemData._id')
       .sort({ createdAt: -1 })
       .lean(),
-    StudentUploadBatch.find(req?.user?.role === 'coordinator' ? { uploadedBy: req.user._id } : {})
+    StudentUploadBatch.find(req?.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all' ? { uploadedBy: req.user._id } : {})
       .select('_id name originalFileName createdAt studentIds')
       .sort({ createdAt: -1 })
       .lean(),
@@ -1284,7 +1287,7 @@ export async function getCompilerAnalyticsOverview(req, res) {
 export async function getCompilerProblemAnalytics(req, res) {
   ensureObjectId(req.params.id, 'Problem ID');
   const search = sanitizeSearchQuery(req.query.search || '');
-  const students = await getControlledStudents();
+  const students = await getControlledStudents(req);
   const controlledStudentIds = students.map((student) => student._id);
 
   const match = {
@@ -1293,7 +1296,7 @@ export async function getCompilerProblemAnalytics(req, res) {
   };
   const problem = await Problem.findById(req.params.id).select('_id title difficulty status createdBy').lean();
   
-  if (!problem || (req?.user?.role === 'coordinator' && String(problem.createdBy) !== String(req.user._id))) {
+  if (!problem || (req?.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all' && String(problem.createdBy) !== String(req.user._id))) {
     throw new HttpError(404, 'Problem not found.');
   }
 

@@ -129,6 +129,7 @@ export default function CoordinatorDirectory() {
   const [selected, setSelected] = useState(null);
   const [editing, setEditing] = useState(null);
   const [editForm, setEditForm] = useState({});
+  const [masterData, setMasterData] = useState([]);
   const [saving, setSaving] = useState(false);
   const [selectedCoordinatorIds, setSelectedCoordinatorIds] = useState(new Set());
   const [bulkMenuOpen, setBulkMenuOpen] = useState(false);
@@ -149,7 +150,13 @@ export default function CoordinatorDirectory() {
 
   useEffect(() => {
     load();
+    api.listMasterData({ activeOnly: true })
+      .then((data) => setMasterData(data.entries || []))
+      .catch(() => setError('Could not load academic master data.'));
   }, []);
+
+  const departmentOptions = useMemo(() => masterData.filter((entry) => entry.category === 'branch'), [masterData]);
+  const collegeOptions = useMemo(() => masterData.filter((entry) => entry.category === 'campus'), [masterData]);
 
   const filtered = useMemo(() => {
     const text = query.trim().toLowerCase();
@@ -260,7 +267,6 @@ export default function CoordinatorDirectory() {
     setEditForm({
       coordinatorName: coordinator.name || '',
       coordinatorEmail: coordinator.email || '',
-      coordinatorID: coordinator.coordinatorId || '',
       phone: coordinator.phone || '',
       department: coordinator.department || '',
       college: coordinator.college || '',
@@ -276,7 +282,6 @@ export default function CoordinatorDirectory() {
         ...item,
         name: editForm.coordinatorName,
         email: editForm.coordinatorEmail,
-        coordinatorId: editForm.coordinatorID,
         phone: editForm.phone,
         department: editForm.department,
         college: editForm.college,
@@ -472,16 +477,16 @@ export default function CoordinatorDirectory() {
                 {[
                   ['coordinatorName', 'Name'],
                   ['coordinatorEmail', 'Email'],
-                  ['coordinatorID', 'Coordinator ID'],
                   ['phone', 'Phone'],
-                  ['department', 'Department'],
-                  ['college', 'College'],
                 ].map(([key, label]) => (
                   <label key={key} className={key === 'college' ? 'sm:col-span-2' : ''}>
                     <span className="mb-1.5 block text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</span>
                     <input value={editForm[key] || ''} onChange={(event) => setEditForm((current) => ({ ...current, [key]: event.target.value }))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-white/10 dark:bg-gray-950 dark:text-white" />
                   </label>
                 ))}
+                <label><span className="mb-1.5 block text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Teacher ID</span><input value={editing.coordinatorId || ''} readOnly className="w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-100 px-3 py-2.5 text-sm font-bold text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300" /><span className="mt-1 block text-[11px] text-slate-400">Generated automatically and cannot be changed.</span></label>
+                <label><span className="mb-1.5 block text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Department</span><select value={editForm.department || ''} onChange={(event) => setEditForm((current) => ({ ...current, department: event.target.value }))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 dark:border-white/10 dark:bg-gray-950 dark:text-white"><option value="">Select department</option>{departmentOptions.map((entry) => <option key={entry._id} value={entry.name}>{entry.name}</option>)}</select></label>
+                <label className="sm:col-span-2"><span className="mb-1.5 block text-xs font-bold uppercase tracking-[0.12em] text-slate-500">College</span><select value={editForm.college || ''} onChange={(event) => setEditForm((current) => ({ ...current, college: event.target.value }))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 dark:border-white/10 dark:bg-gray-950 dark:text-white"><option value="">Select college / campus</option>{collegeOptions.map((entry) => <option key={entry._id} value={entry.name}>{entry.name}</option>)}</select></label>
               </div>
               <div className="mt-6 flex justify-end gap-2">
                 <button onClick={() => setEditing(null)} disabled={saving} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-700 dark:border-white/10 dark:text-slate-200">Cancel</button>

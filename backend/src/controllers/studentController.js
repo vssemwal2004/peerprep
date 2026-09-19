@@ -40,7 +40,7 @@ function escapeRegex(value = '') {
 }
 
 function studentScope(user = {}) {
-  return user.role === 'coordinator'
+  return user.role === 'coordinator' && user.coordinatorDataScope !== 'all'
     ? { role: 'student', teacherIds: user.coordinatorId }
     : { role: 'student' };
 }
@@ -385,7 +385,7 @@ export async function resendStudentCredentials(req, res) {
 }
 
 function promotionStudentScope(user = {}) {
-  return user.role === 'coordinator'
+  return user.role === 'coordinator' && user.coordinatorDataScope !== 'all'
     ? { role: 'student', teacherIds: user.coordinatorId }
     : { role: 'student' };
 }
@@ -479,7 +479,7 @@ export async function getStudentById(req, res) {
   try {
     const user = req.user;
     const { studentId } = req.params;
-    const query = user.role === 'coordinator'
+    const query = user.role === 'coordinator' && user.coordinatorDataScope !== 'all'
       ? { _id: studentId, role: 'student', teacherIds: user.coordinatorId }
       : { _id: studentId, role: 'student' };
 
@@ -1355,14 +1355,14 @@ export async function listStudentUploadBatches(req, res) {
     const search = String(req.query.search || '').trim().slice(0, 120);
     const query = search ? { name: new RegExp(escapeRegex(search), 'i') } : {};
     let scopedStudentIds = null;
-    if (req.user.role === 'coordinator') {
+    if (req.user.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') {
       const assigned = await User.find({ role: 'student', teacherIds: req.user.coordinatorId }).select('_id').lean();
       scopedStudentIds = new Set(assigned.map((student) => String(student._id)));
       query.studentIds = { $in: [...scopedStudentIds] };
     }
     const batches = await StudentUploadBatch.find(query)
       .sort({ createdAt: -1 })
-      .populate('uploadedBy', 'name email')
+      .populate('uploadedBy', 'name email role coordinatorId')
       .lean();
     const visibleBatches = scopedStudentIds
       ? batches.map((batch) => ({

@@ -1487,7 +1487,7 @@ export async function listEvents(req, res) {
   
     let query = {};
     // Coordinators see only their events; admins see all; students see coordinator-matching or unscoped events, or ones explicitly allowed
-    if (req.user?.role === 'coordinator') {
+    if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') {
       query.coordinatorId = req.user.coordinatorId;
     } else if (req.user?.role === 'student') {
       const teacherIds = Array.isArray(req.user?.teacherIds) ? req.user.teacherIds : [];
@@ -1503,7 +1503,10 @@ export async function listEvents(req, res) {
       orClauses.push({ allowedParticipants: req.user._id });
       query.$or = orClauses;
     }
-    const events = await Event.find(query).sort({ createdAt: -1 }).lean();
+    const events = await Event.find(query)
+      .sort({ createdAt: -1 })
+      .populate('createdBy', 'name email role coordinatorId')
+      .lean();
     const assignedEventIds = req.user?.role === 'student'
       ? new Set((await EventParticipant.find({
         studentId: userId,

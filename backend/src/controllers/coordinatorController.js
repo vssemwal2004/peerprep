@@ -8,6 +8,33 @@ import {
 } from '../services/coordinatorPermissions.js';
 import { enqueueMailJobs } from '../services/mailQueueService.js';
 import crypto from 'crypto';
+import MasterData from '../models/MasterData.js';
+import { invalidateUserCache } from '../middleware/auth.js';
+
+const COORDINATOR_ID_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+async function generateCoordinatorId() {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const candidate = Array.from({ length: 5 }, () => COORDINATOR_ID_ALPHABET[crypto.randomInt(0, COORDINATOR_ID_ALPHABET.length)]).join('');
+    if (!await User.exists({ coordinatorId: candidate })) return candidate;
+  }
+  throw new Error('Could not generate a unique Teacher ID. Please try again.');
+}
+
+function normalizeDataScope(value) {
+  return value === 'all' ? 'all' : 'own';
+}
+
+async function validateCoordinatorMasterData(department, college) {
+  const requested = [
+    department && { category: 'branch', name: String(department).trim(), label: 'Department' },
+    college && { category: 'campus', name: String(college).trim(), label: 'College' },
+  ].filter(Boolean);
+  for (const item of requested) {
+    const exists = await MasterData.exists({ category: item.category, normalizedName: item.name.toLowerCase(), isActive: true });
+    if (!exists) throw new Error(`${item.label} must be selected from active master data.`);
+  }
+}
 
 function generateTemporaryPassword(length = 10) {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
@@ -21,6 +48,7 @@ function summarizePermissions(user) {
     permissionCount: permissions.length,
     totalPermissionCount: DEFAULT_COORDINATOR_PERMISSIONS.length,
     lastPermissionUpdatedAt: user.coordinatorPermissionHistory?.[0]?.createdAt || user.updatedAt,
+    dataScope: normalizeDataScope(user.coordinatorDataScope),
   };
 }
 
@@ -42,7 +70,7 @@ export async function listAllCoordinators(req, res) {
     }
 
     const users = await User.find(query)
-      .select('name email phone role coordinatorId department college createdAt updatedAt avatarUrl isActive coordinatorPermissions coordinatorPermissionHistory activeSessionCreatedAt credentialEmailStatus credentialEmailSentAt credentialEmailLastAttemptAt')
+      .select('name email phone role coordinatorId department college createdAt updatedAt avatarUrl isActive coordinatorPermissions coordinatorDataScope coordinatorPermissionHistory activeSessionCreatedAt credentialEmailStatus credentialEmailSentAt credentialEmailLastAttemptAt')
       .sort({ createdAt: -1 })
       .lean();
 
@@ -121,17 +149,20 @@ export async function listAllCoordinators(req, res) {
 
 export async function createCoordinator(req, res) {
   try {
-    const { coordinatorName, coordinatorEmail, coordinatorPassword, coordinatorID, phone, department, college, permissions } = req.body || {};
+    const { coordinatorName, coordinatorEmail, coordinatorPassword, phone, department, college, permissions, dataScope } = req.body || {};
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!coordinatorName || !coordinatorEmail || !coordinatorID) {
-      return res.status(400).json({ error: 'Missing required fields (coordinatorName, coordinatorEmail, coordinatorID)' });
+    if (!coordinatorName || !coordinatorEmail || !department || !college) {
+      return res.status(400).json({ error: 'Name, email, department, and college are required.' });
     }
     if (!emailRegex.test(coordinatorEmail)) {
       return res.status(400).json({ error: 'Invalid email format' });
     }
 
-    const exists = await User.findOne({ $or: [{ email: coordinatorEmail }, { coordinatorId: coordinatorID }] });
-    if (exists) return res.status(409).json({ error: 'Coordinator with email or coordinatorID already exists' });
+    await validateCoordinatorMasterData(department, college);
+    const exists = await User.findOne({ email: coordinatorEmail });
+    if (exists) return res.status(409).json({ error: 'Coordinator with this email already exists' });
+
+    const coordinatorID = await generateCoordinatorId();
 
     const defaultPassword = coordinatorPassword || coordinatorID;
     const passwordHash = await User.hashPassword(defaultPassword);
@@ -147,6 +178,7 @@ export async function createCoordinator(req, res) {
       mustChangePassword: true,
       isActive: true,
       coordinatorPermissions: normalizeCoordinatorPermissions(permissions),
+      coordinatorDataScope: normalizeDataScope(dataScope),
       credentialEmailStatus: 'not_sent',
     });
 
@@ -207,6 +239,7 @@ export async function createCoordinator(req, res) {
       coordinatorID: user.coordinatorId,
       status: 'created',
       permissionCount: user.coordinatorPermissions.length,
+      dataScope: user.coordinatorDataScope,
       credentialEmailQueued,
       credentialEmailBatchId: credentialEmailQueued ? batchId : undefined,
       credentialEmailError: credentialEmailError || undefined,
@@ -219,20 +252,18 @@ export async function createCoordinator(req, res) {
 export async function updateCoordinator(req, res) {
   try {
     const { coordinatorId } = req.params;
-    const { coordinatorName, coordinatorEmail, coordinatorID, phone, department, college } = req.body || {};
+    const { coordinatorName, coordinatorEmail, phone, department, college } = req.body || {};
 
     const coordinator = await User.findOne({ _id: coordinatorId, role: 'coordinator' });
     if (!coordinator) {
       return res.status(404).json({ error: 'Coordinator not found' });
     }
-    const previousCoordinatorCode = coordinator.coordinatorId;
-
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (coordinatorEmail && !emailRegex.test(coordinatorEmail)) {
       return res.status(400).json({ error: 'Invalid email format' });
     }
 
-    // Check for duplicates if email or coordinatorID is changing
+    // Teacher IDs are immutable server-generated identifiers.
     if (coordinatorEmail && coordinatorEmail !== coordinator.email) {
       const exists = await User.findOne({
         _id: { $ne: coordinatorId },
@@ -243,53 +274,16 @@ export async function updateCoordinator(req, res) {
       }
     }
 
-    if (coordinatorID && coordinatorID !== coordinator.coordinatorId) {
-      const exists = await User.findOne({
-        _id: { $ne: coordinatorId },
-        coordinatorId: coordinatorID,
-      });
-      if (exists) {
-        return res.status(409).json({ error: 'Another coordinator with this Coordinator ID already exists' });
-      }
-    }
+    await validateCoordinatorMasterData(department, college);
 
     if (coordinatorName) coordinator.name = coordinatorName;
     if (coordinatorEmail) coordinator.email = coordinatorEmail;
-    if (coordinatorID) coordinator.coordinatorId = coordinatorID;
     if (phone !== undefined) coordinator.phone = phone;
     if (department !== undefined) coordinator.department = department;
     if (college !== undefined) coordinator.college = college;
 
     await coordinator.save();
-
-    if (coordinatorID && previousCoordinatorCode && coordinatorID !== previousCoordinatorCode) {
-      await Promise.all([
-        User.updateMany(
-          { role: 'student', teacherIds: previousCoordinatorCode },
-          [{
-            $set: {
-              teacherIds: {
-                $map: {
-                  input: '$teacherIds',
-                  as: 'teacherId',
-                  in: {
-                    $cond: [
-                      { $eq: ['$$teacherId', previousCoordinatorCode] },
-                      coordinatorID,
-                      '$$teacherId',
-                    ],
-                  },
-                },
-              },
-            },
-          }],
-        ),
-        Event.updateMany(
-          { coordinatorId: previousCoordinatorCode },
-          { $set: { coordinatorId: coordinatorID } },
-        ),
-      ]);
-    }
+    invalidateUserCache(coordinator._id);
 
     logActivity({
       userEmail: req.user.email,
@@ -324,12 +318,11 @@ export async function bulkCreateCoordinators(req, res) {
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const seenEmails = new Set();
-    const seenIds = new Set();
     const normalizedRows = rows.map((row, index) => ({
       row: Number(row.row || index + 2),
       name: String(row.name || row.coordinatorName || '').trim(),
       email: String(row.email || row.coordinatorEmail || '').trim().toLowerCase(),
-      coordinatorId: String(row.coordinatorId || row.coordinatorID || '').trim(),
+      coordinatorId: '',
       password: String(row.password || row.coordinatorPassword || '').trim(),
       phone: String(row.phone || '').trim(),
       department: String(row.department || '').trim(),
@@ -339,17 +332,22 @@ export async function bulkCreateCoordinators(req, res) {
 
     const results = [];
     const validRows = [];
+    const [departmentEntries, collegeEntries] = await Promise.all([
+      MasterData.find({ category: 'branch', isActive: true }).select('normalizedName').lean(),
+      MasterData.find({ category: 'campus', isActive: true }).select('normalizedName').lean(),
+    ]);
+    const validDepartments = new Set(departmentEntries.map((entry) => entry.normalizedName));
+    const validColleges = new Set(collegeEntries.map((entry) => entry.normalizedName));
     for (const row of normalizedRows) {
       const errors = [];
       if (!row.name) errors.push('Name is required');
       if (!row.email) errors.push('Email is required');
       else if (!emailRegex.test(row.email)) errors.push('Email format is invalid');
-      if (!row.coordinatorId) errors.push('Coordinator ID is required');
       if (row.password && row.password.length < 6) errors.push('Password must have at least 6 characters');
+      if (!row.department || !validDepartments.has(row.department.toLowerCase())) errors.push('Department must match active master data');
+      if (!row.college || !validColleges.has(row.college.toLowerCase())) errors.push('College must match active master data');
       if (seenEmails.has(row.email)) errors.push('Duplicate email in file');
-      if (seenIds.has(row.coordinatorId.toLowerCase())) errors.push('Duplicate Coordinator ID in file');
       seenEmails.add(row.email);
-      seenIds.add(row.coordinatorId.toLowerCase());
       if (errors.length) results.push({ row: row.row, status: 'error', errors });
       else validRows.push(row);
     }
@@ -358,19 +356,18 @@ export async function bulkCreateCoordinators(req, res) {
       role: 'coordinator',
       $or: [
         { email: { $in: validRows.map((row) => row.email) } },
-        { coordinatorId: { $in: validRows.map((row) => row.coordinatorId) } },
       ],
     }).select('email coordinatorId').lean() : [];
     const existingEmails = new Set(existing.map((user) => String(user.email || '').toLowerCase()));
-    const existingIds = new Set(existing.map((user) => String(user.coordinatorId || '').toLowerCase()));
     const created = [];
 
     for (const row of validRows) {
-      if (existingEmails.has(row.email) || existingIds.has(row.coordinatorId.toLowerCase())) {
-        results.push({ row: row.row, status: 'exists', errors: ['Coordinator email or ID already exists'] });
+      if (existingEmails.has(row.email)) {
+        results.push({ row: row.row, status: 'exists', errors: ['Coordinator email already exists'] });
         continue;
       }
       try {
+        row.coordinatorId = await generateCoordinatorId();
         const temporaryPassword = row.password || row.coordinatorId;
         const user = await User.create({
           role: 'coordinator',
@@ -506,7 +503,7 @@ export async function getCoordinatorAccess(req, res) {
   try {
     const { coordinatorId } = req.params;
     const coordinator = await User.findOne({ _id: coordinatorId, role: 'coordinator' })
-      .select('name email phone role coordinatorId department college createdAt updatedAt isActive coordinatorPermissions coordinatorPermissionHistory activeSessionCreatedAt avatarUrl')
+      .select('name email phone role coordinatorId department college createdAt updatedAt isActive coordinatorPermissions coordinatorDataScope coordinatorPermissionHistory activeSessionCreatedAt avatarUrl')
       .lean();
 
     if (!coordinator) {
@@ -531,7 +528,7 @@ export async function getCoordinatorAccess(req, res) {
 export async function updateCoordinatorAccess(req, res) {
   try {
     const { coordinatorId } = req.params;
-    const { permissions, note } = req.body || {};
+    const { permissions, note, dataScope } = req.body || {};
     const coordinator = await User.findOne({ _id: coordinatorId, role: 'coordinator' });
 
     if (!coordinator) {
@@ -542,6 +539,7 @@ export async function updateCoordinatorAccess(req, res) {
     const nextPermissions = normalizeCoordinatorPermissions(permissions);
 
     coordinator.coordinatorPermissions = nextPermissions;
+    coordinator.coordinatorDataScope = normalizeDataScope(dataScope ?? coordinator.coordinatorDataScope);
     coordinator.coordinatorPermissionHistory.unshift({
       changedBy: req.user._id,
       changedByEmail: req.user.email,
@@ -551,6 +549,7 @@ export async function updateCoordinatorAccess(req, res) {
     });
     coordinator.coordinatorPermissionHistory = coordinator.coordinatorPermissionHistory.slice(0, 25);
     await coordinator.save();
+    invalidateUserCache(coordinator._id);
 
     logActivity({
       userEmail: req.user.email,
@@ -578,6 +577,7 @@ export async function updateCoordinatorAccess(req, res) {
         coordinatorId: coordinator.coordinatorId,
         status: coordinator.isActive === false ? 'disabled' : 'active',
         ...summarizePermissions(coordinator),
+        dataScope: coordinator.coordinatorDataScope,
       },
       history: coordinator.coordinatorPermissionHistory,
     });

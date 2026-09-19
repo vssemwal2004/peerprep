@@ -252,19 +252,21 @@ export async function listLibraryQuestions(req, res) {
     if (sourceType) {
       baseMatch.sourceType = String(sourceType).trim().toLowerCase();
     }
-    if (req.user?.role === 'coordinator') {
+    if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') {
       baseMatch.createdBy = req.user._id;
     }
 
-    const scopeMatch = req.user?.role === 'coordinator'
+    const scopeMatch = req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all'
       ? { createdBy: req.user._id }
       : {};
     const [baseQuestions, scopeQuestions, tags, difficulties] = await Promise.all([
       QuestionLibrary.find(baseMatch)
         .sort({ updatedAt: -1, createdAt: -1 })
+        .populate('createdBy', 'name email role coordinatorId')
         .lean(),
       QuestionLibrary.find(scopeMatch)
-        .select('sourceKey questionType questionData status sourceType sourceProblemId sourceQuestionId sourceAssessmentTitle createdAt updatedAt')
+        .select('sourceKey questionType questionData status sourceType sourceProblemId sourceQuestionId sourceAssessmentTitle createdBy createdAt updatedAt')
+        .populate('createdBy', 'name email role coordinatorId')
         .lean(),
       QuestionLibrary.distinct('tags', baseMatch),
       QuestionLibrary.distinct('difficulty', { ...baseMatch, difficulty: { $ne: '' } }),
@@ -332,11 +334,13 @@ export async function getLibraryQuestion(req, res) {
     }
 
     const query = { _id: id };
-    if (req.user?.role === 'coordinator') {
+    if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') {
       query.createdBy = req.user._id;
     }
 
-    const question = await QuestionLibrary.findOne(query).lean();
+    const question = await QuestionLibrary.findOne(query)
+      .populate('createdBy', 'name email role coordinatorId')
+      .lean();
     if (!question) return res.status(404).json({ error: 'Library question not found' });
 
     res.json({
@@ -353,7 +357,7 @@ export async function getLibraryQuestion(req, res) {
 
 function buildLibraryQuestionQuery(req, id) {
   const query = { _id: id };
-  if (req.user?.role === 'coordinator') {
+  if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') {
     query.createdBy = req.user._id;
   }
   return query;
@@ -498,12 +502,13 @@ export async function resolveLibraryQuestions(req, res) {
     }
 
     const query = { _id: { $in: validIds } };
-    if (req.user?.role === 'coordinator') {
+    if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') {
       query.createdBy = req.user._id;
     }
 
     const questions = await QuestionLibrary.find(query)
       .sort({ updatedAt: -1 })
+      .populate('createdBy', 'name email role coordinatorId')
       .lean();
 
     res.json({

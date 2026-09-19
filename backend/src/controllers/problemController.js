@@ -54,6 +54,10 @@ function isCoordinatorRequest(req) {
   return req.user?.role === 'coordinator';
 }
 
+function coordinatorRequiresOwnership(req) {
+  return isCoordinatorRequest(req) && req.user?.coordinatorDataScope !== 'all';
+}
+
 function isStudentRequest(req) {
   return req.user?.role === 'student';
 }
@@ -991,7 +995,7 @@ async function resolveExecutionProblem(req) {
   }
 
   const visibility = problem.visibility || 'public';
-  if (!isAdminRequest(req) && !(isCoordinatorRequest(req) && String(problem.createdBy) === String(req.user._id)) && (!isPublishedStatus(problem.status) || visibility !== 'public')) {
+  if (!isAdminRequest(req) && !(isCoordinatorRequest(req) && (!coordinatorRequiresOwnership(req) || String(problem.createdBy) === String(req.user._id))) && (!isPublishedStatus(problem.status) || visibility !== 'public')) {
     throw new HttpError(404, 'Problem not found.');
   }
 
@@ -1009,7 +1013,7 @@ export async function getCompilerOverview(req, res) {
   startDate.setHours(0, 0, 0, 0);
   startDate.setDate(startDate.getDate() - 6);
 
-  const baseQuery = isCoordinatorRequest(req) ? { createdBy: req.user._id } : {};
+  const baseQuery = coordinatorRequiresOwnership(req) ? { createdBy: req.user._id } : {};
 
   const [
     totalProblems,
@@ -1116,7 +1120,7 @@ export async function listProblems(req, res) {
   const accessQuery = isAdminRequest(req)
     ? {}
     : isCoordinatorRequest(req)
-      ? { createdBy: req.user._id }
+      ? (coordinatorRequiresOwnership(req) ? { createdBy: req.user._id } : {})
       : { status: { $in: ['published', 'Active', 'active'] }, $or: [{ visibility: 'public' }, { visibility: { $exists: false } }] };
   const query = { ...accessQuery };
 
@@ -1220,7 +1224,7 @@ export async function getProblemDetail(req, res) {
     throw new HttpError(404, 'Problem not found.');
   }
 
-  const isAuthor = isAdminRequest(req) || (isCoordinatorRequest(req) && String(problemDoc.createdBy) === String(req.user._id));
+  const isAuthor = isAdminRequest(req) || (isCoordinatorRequest(req) && (!coordinatorRequiresOwnership(req) || String(problemDoc.createdBy) === String(req.user._id)));
 
   const { problem, serializedProblem } = await loadProblemShape(req.params.id, {
     studentStatus,
@@ -1296,7 +1300,7 @@ export async function updateProblem(req, res) {
   ensureObjectId(req.params.id, 'Problem ID');
 
   const existingProblem = await Problem.findById(req.params.id);
-  if (!existingProblem || (isCoordinatorRequest(req) && String(existingProblem.createdBy) !== String(req.user._id))) {
+  if (!existingProblem || (coordinatorRequiresOwnership(req) && String(existingProblem.createdBy) !== String(req.user._id))) {
     throw new HttpError(404, 'Problem not found.');
   }
 
@@ -1382,7 +1386,7 @@ export async function deleteProblem(req, res) {
   ensureObjectId(req.params.id, 'Problem ID');
 
   const problem = await Problem.findById(req.params.id).select('_id createdBy');
-  if (!problem || (isCoordinatorRequest(req) && String(problem.createdBy) !== String(req.user._id))) {
+  if (!problem || (coordinatorRequiresOwnership(req) && String(problem.createdBy) !== String(req.user._id))) {
     throw new HttpError(404, 'Problem not found.');
   }
 
@@ -1400,7 +1404,7 @@ export async function updateProblemVisibility(req, res) {
   ensureObjectId(req.params.id, 'Problem ID');
 
   const problem = await Problem.findById(req.params.id);
-  if (!problem || (isCoordinatorRequest(req) && String(problem.createdBy) !== String(req.user._id))) {
+  if (!problem || (coordinatorRequiresOwnership(req) && String(problem.createdBy) !== String(req.user._id))) {
     throw new HttpError(404, 'Problem not found.');
   }
 
@@ -1416,7 +1420,7 @@ export async function updateProblemStatus(req, res) {
   ensureObjectId(req.params.id, 'Problem ID');
 
   const problem = await Problem.findById(req.params.id);
-  if (!problem || (isCoordinatorRequest(req) && String(problem.createdBy) !== String(req.user._id))) {
+  if (!problem || (coordinatorRequiresOwnership(req) && String(problem.createdBy) !== String(req.user._id))) {
     throw new HttpError(404, 'Problem not found.');
   }
 
@@ -1515,7 +1519,7 @@ export async function approveProblemPreview(req, res) {
   ensureObjectId(req.params.id, 'Problem ID');
 
   const problem = await Problem.findById(req.params.id);
-  if (!problem || (isCoordinatorRequest(req) && String(problem.createdBy) !== String(req.user._id))) {
+  if (!problem || (coordinatorRequiresOwnership(req) && String(problem.createdBy) !== String(req.user._id))) {
     throw new HttpError(404, 'Problem not found.');
   }
 

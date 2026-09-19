@@ -52,6 +52,7 @@ const userSchema = new mongoose.Schema({
   phone: { type: String, trim: true },
   isActive: { type: Boolean, default: true },
   coordinatorPermissions: { type: [String], default: undefined },
+  coordinatorDataScope: { type: String, enum: ['own', 'all'], default: 'own' },
   coordinatorPermissionHistory: [{
     changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     changedByEmail: String,

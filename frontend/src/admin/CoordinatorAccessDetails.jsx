@@ -49,6 +49,8 @@ export default function CoordinatorAccessDetails() {
   const [accessFilter, setAccessFilter] = useState('all');
   const [showHistory, setShowHistory] = useState(false);
   const [confirm, setConfirm] = useState(null);
+  const [dataScope, setDataScope] = useState('own');
+  const [initialDataScope, setInitialDataScope] = useState('own');
 
   useEffect(() => {
     let mounted = true;
@@ -62,6 +64,9 @@ export default function CoordinatorAccessDetails() {
         setSelected(permissions);
         setInitial(permissions);
         setHistory(data.history || []);
+        const scope = data.coordinator?.dataScope === 'all' ? 'all' : 'own';
+        setDataScope(scope);
+        setInitialDataScope(scope);
       } catch (err) {
         toast.error(err.message || 'Failed to load coordinator access.');
         navigate('/admin/coordinator-access');
@@ -74,7 +79,7 @@ export default function CoordinatorAccessDetails() {
   }, [coordinatorId, navigate, toast]);
 
   const selectedSet = useMemo(() => new Set(selected), [selected]);
-  const dirty = useMemo(() => selected.length !== initial.length || selected.some((permission) => !initial.includes(permission)), [selected, initial]);
+  const dirty = useMemo(() => dataScope !== initialDataScope || selected.length !== initial.length || selected.some((permission) => !initial.includes(permission)), [selected, initial, dataScope, initialDataScope]);
 
   const phaseStats = useMemo(() => coordinatorPermissionCategories.map((category) => {
     const total = category.permissions.length;
@@ -117,11 +122,12 @@ export default function CoordinatorAccessDetails() {
   const save = async (note = 'Manual permission update') => {
     setSaving(true);
     try {
-      const data = await api.updateCoordinatorAccess(coordinatorId, { permissions: selected, note });
+      const data = await api.updateCoordinatorAccess(coordinatorId, { permissions: selected, dataScope, note });
       const permissions = normalizePermissions(data.coordinator?.permissions);
       setSelected(permissions);
       setInitial(permissions);
       setHistory(data.history || []);
+      setInitialDataScope(data.coordinator?.dataScope === 'all' ? 'all' : 'own');
       toast.success('Coordinator permissions updated.');
     } catch (err) {
       toast.error(err.message || 'Failed to save permissions.');
@@ -191,6 +197,11 @@ export default function CoordinatorAccessDetails() {
         </div>
 
         <section className="mb-5 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-gray-900">
+          <div className="mb-5 rounded-xl border border-sky-200 bg-sky-50 p-4 dark:border-sky-400/20 dark:bg-sky-400/10">
+            <h2 className="text-sm font-bold text-slate-950 dark:text-white">Data visibility for enabled features</h2>
+            <div className="mt-3 flex flex-wrap gap-2">{[['own', 'Own data only'], ['all', 'Whole institution data']].map(([value, label]) => <button key={value} type="button" onClick={() => setDataScope(value)} className={`rounded-xl px-4 py-2 text-sm font-bold ${dataScope === value ? 'bg-sky-600 text-white' : 'border border-slate-200 bg-white text-slate-700 dark:border-white/10 dark:bg-gray-950 dark:text-slate-200'}`}>{label}</button>)}</div>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">This scope applies to every feature permission enabled below.</p>
+          </div>
           <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <div>
               <h2 className="text-base font-bold text-slate-950 dark:text-white">Access Phases</h2>

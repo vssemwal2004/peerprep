@@ -95,7 +95,7 @@ export async function requireAuth(req, res, next) {
     // All tokens now resolve to the unified User model
     // Use lean() + select() for faster query - only fetch needed fields
     user = await User.findById(payload.sub)
-      .select('_id email name role semester activeSessionToken passwordChangedAt avatarUrl coordinatorId teacherIds studentId course branch college group department phone isSpecialStudent isActive coordinatorPermissions')
+      .select('_id email name role semester activeSessionToken passwordChangedAt avatarUrl coordinatorId teacherIds studentId course branch college group department phone isSpecialStudent isActive coordinatorPermissions coordinatorDataScope')
       .lean();
     if (!user) throw new HttpError(401, 'User not found');
     
@@ -177,6 +177,7 @@ export function requireCoordinatorPermission(permission) {
     if (!hasCoordinatorPermission(req.user, permission)) {
       throw new HttpError(403, 'Coordinator permission required');
     }
+    req.coordinatorDataScope = req.user.coordinatorDataScope === 'all' ? 'all' : 'own';
     return next();
   };
 }

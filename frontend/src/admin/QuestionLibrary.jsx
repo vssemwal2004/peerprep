@@ -201,6 +201,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   const [tagsModal, setTagsModal] = useState({ open: false, questionText: '', tags: [] });
   const [usageModal, setUsageModal] = useState({ open: false, questionText: '', assessments: [] });
   const [statementModal, setStatementModal] = useState({ open: false, title: '', statement: '' });
+  const [actorModal, setActorModal] = useState(null);
   const [actionMenuId, setActionMenuId] = useState('');
   const [bulkMenuOpen, setBulkMenuOpen] = useState(false);
   const [bulkSelecting, setBulkSelecting] = useState(false);
@@ -1074,6 +1075,8 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                   </div>
                   <div className="mt-1.5 flex items-center text-[11px] text-slate-500 dark:text-gray-400">
                     <QuestionStateBadge question={question} />
+                    <span className="mx-1.5 text-slate-300">•</span>
+                    <button type="button" onClick={(event) => { event.stopPropagation(); setActorModal(question.createdBy || { role: 'admin', name: 'Administrator' }); }} className="font-semibold text-sky-700 hover:underline dark:text-sky-300">Added by {question.createdBy?.name || (question.createdBy?.role === 'coordinator' ? 'Coordinator' : 'Administrator')}</button>
                   </div>
                 </div>
                 <div className="min-w-0 truncate text-xs font-semibold leading-5 text-slate-700 dark:text-gray-200" title={labelForQuestionType(question)}>{labelForQuestionType(question)}</div>
@@ -1170,6 +1173,8 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
           )}
           </div>
         </div>
+
+        {actorModal && <div className="fixed inset-0 z-[220] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setActorModal(null); }}><div role="dialog" aria-modal="true" aria-label="Record creator" className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-gray-700 dark:bg-gray-900"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-sky-600">Added by</p><h2 className="mt-1 text-lg font-bold text-slate-950 dark:text-white">{actorModal.name || 'Administrator'}</h2></div><button type="button" onClick={() => setActorModal(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-gray-800"><X className="h-4 w-4" /></button></div><dl className="mt-4 space-y-3 text-sm"><div><dt className="text-xs font-bold uppercase tracking-wide text-slate-400">Role</dt><dd className="mt-1 capitalize font-semibold text-slate-800 dark:text-slate-100">{actorModal.role || 'admin'}</dd></div>{actorModal.email && <div><dt className="text-xs font-bold uppercase tracking-wide text-slate-400">Email</dt><dd className="mt-1 break-all text-slate-700 dark:text-slate-200">{actorModal.email}</dd></div>}{actorModal.coordinatorId && <div><dt className="text-xs font-bold uppercase tracking-wide text-slate-400">Teacher ID</dt><dd className="mt-1 font-mono font-bold text-slate-700 dark:text-slate-200">{actorModal.coordinatorId}</dd></div>}</dl></div></div>}
 
         <div className="mt-3 flex shrink-0 flex-col gap-2 border-t border-slate-200 pt-3 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between dark:border-gray-800 dark:text-gray-400">
           <div>Showing {questions.length ? ((page - 1) * 20) + 1 : 0}-{Math.min(page * 20, total)} of {total} questions</div>

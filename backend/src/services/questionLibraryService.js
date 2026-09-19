@@ -501,6 +501,15 @@ export function formatLibraryQuestionSummary(question = {}) {
     difficulty: question.difficulty || '',
     status: question.status || 'published',
     visibility: question.visibility || 'public',
+    createdBy: question.createdBy && typeof question.createdBy === 'object'
+      ? {
+        _id: question.createdBy._id,
+        name: question.createdBy.name || '',
+        email: question.createdBy.email || '',
+        role: question.createdBy.role || '',
+        coordinatorId: question.createdBy.coordinatorId || '',
+      }
+      : (question.createdBy ? { _id: question.createdBy } : null),
     createdAt: question.createdAt,
     updatedAt: question.updatedAt,
   };
