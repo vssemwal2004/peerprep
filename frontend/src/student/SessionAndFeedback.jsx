@@ -80,7 +80,7 @@ export default function SessionAndFeedback() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col pt-16">
+    <div className="flex min-h-screen flex-col bg-gray-50 pt-3 dark:bg-gray-900">
       <div className="flex-1 w-full max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
         <div className="flex flex-col lg:flex-row h-[calc(100vh-4rem)] gap-6">
           {/* Desktop Sidebar */}

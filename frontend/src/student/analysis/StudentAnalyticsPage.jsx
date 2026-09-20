@@ -219,7 +219,7 @@ export default function StudentAnalyticsPage() {
   const generatedAt = meta?.generatedAt || rawAnalysis?.generatedAt;
 
   return (
-    <div className="min-h-screen bg-slate-50 pt-14 text-slate-950 transition-colors dark:bg-slate-950 dark:text-white">
+    <div className="min-h-screen bg-slate-50 text-slate-950 transition-colors dark:bg-slate-950 dark:text-white">
       <WorkspaceHeader
         activeSection={activeSection}
         onSectionChange={changeSection}

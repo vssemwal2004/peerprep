@@ -29,7 +29,7 @@ export default function AssessmentModuleLayout({ title, children }) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 pt-16 transition-colors dark:bg-gray-950">
+    <div className="min-h-screen bg-slate-50 pt-3 transition-colors dark:bg-gray-950">
       <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-[1600px]">
         <aside
           onMouseEnter={() => setExpanded(true)}

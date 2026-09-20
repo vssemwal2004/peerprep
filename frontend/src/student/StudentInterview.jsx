@@ -2713,14 +2713,14 @@ export default function StudentInterview() {
 
   return (
     <RequirePasswordChange user={user}>
-      <div className="min-h-screen w-full bg-slate-50 dark:bg-gray-950 flex flex-col pt-14">
+      <div className="flex min-h-screen w-full flex-col bg-slate-50 dark:bg-gray-950">
         <div className="flex-1 w-full flex">
           {/* ── Collapsible Sidebar ──────────────────────────────────────
               Collapsed: 60px (icons only)
               Expanded:  320px (on hover or when pinned)
           ─────────────────────────────────────────────────────────── */}
           <div
-            className={`hidden lg:flex flex-col flex-shrink-0 bg-white dark:bg-gray-900 border-r border-slate-200 dark:border-gray-800 h-[calc(100vh-3.5rem)] sticky top-14 transition-all duration-300 ease-in-out overflow-hidden ${
+            className={`hidden lg:flex flex-col flex-shrink-0 bg-white dark:bg-gray-900 border-r border-slate-200 dark:border-gray-800 h-screen sticky top-0 transition-all duration-300 ease-in-out overflow-hidden ${
               sidebarExpanded ? 'w-[300px]' : 'w-[68px]'
             }`}
             onMouseEnter={() => setSidebarHovered(true)}

@@ -182,4 +182,17 @@ export function requireCoordinatorPermission(permission) {
   };
 }
 
+export function requireAnyCoordinatorPermission(...permissions) {
+  return (req, res, next) => {
+    if (!req.user) throw new HttpError(401, 'Unauthorized');
+    if (req.user.role === 'admin') return next();
+    if (req.user.role !== 'coordinator') throw new HttpError(403, 'Coordinator only');
+    if (!permissions.some((permission) => hasCoordinatorPermission(req.user, permission))) {
+      throw new HttpError(403, 'Coordinator permission required');
+    }
+    req.coordinatorDataScope = req.user.coordinatorDataScope === 'all' ? 'all' : 'own';
+    return next();
+  };
+}
+
 

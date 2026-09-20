@@ -41,6 +41,27 @@ import { useTheme } from '../context/ThemeContext';
 import { hasPermission } from '../admin/coordinatorPermissions';
 
 const buildNavItems = (role = 'admin') => {
+  if (role === 'student') {
+    return [
+      { type: 'link', label: 'Dashboard', to: '/student/dashboard', icon: LayoutDashboard },
+      { type: 'link', label: 'Analysis', to: '/student/analysis', icon: BarChart3 },
+      { type: 'link', label: 'Interviews', to: '/student/interview', icon: CalendarDays },
+      {
+        type: 'group',
+        key: 'assessments',
+        label: 'Assessments',
+        icon: ClipboardList,
+        items: [
+          { label: 'Available Tests', to: '/student/assessments', icon: ClipboardList },
+          { label: 'Reports', to: '/student/assessment-reports', icon: BarChart3 },
+          { label: 'History', to: '/student/assessment-history', icon: History },
+        ],
+      },
+      { type: 'link', label: 'Learning', to: '/student/learning', icon: BookOpen },
+      { type: 'link', label: 'Coding Problems', to: '/problems', icon: ListChecks },
+      { type: 'link', label: 'Resume Builder', to: '/student/resume', icon: UserCog },
+    ];
+  }
   if (role === 'coordinator') {
     return [
       {
@@ -61,8 +82,17 @@ const buildNavItems = (role = 'admin') => {
           { label: 'Scheduled Interviews', to: '/coordinator', icon: CalendarClock, permissionKey: 'coordinator.interviews.view' },
         ],
       },
-      { type: 'link', label: 'My Students', to: '/coordinator/students', icon: Users, permissionKey: 'coordinator.students.view' },
-      { type: 'link', label: 'Bulk Student Lists', to: '/coordinator/students/bulk-lists', icon: ListChecks, permissionKey: 'coordinator.students.bulk-lists' },
+      {
+        type: 'group',
+        key: 'student-management',
+        label: 'Students',
+        icon: GraduationCap,
+        items: [
+          { label: 'Student List', to: '/coordinator/students', icon: Users, permissionKey: 'coordinator.students.view' },
+          { label: 'Bulk Student Lists', to: '/coordinator/students/bulk-lists', icon: ListChecks, permissionKey: 'coordinator.students.bulk-lists' },
+          { label: 'Add Student', to: '/coordinator/onboarding', icon: UserPlus, permissionKey: 'coordinator.students.create' },
+        ],
+      },
       { type: 'link', label: 'Learning Modules', to: '/coordinator/subjects', icon: BookOpen, permissionKey: 'coordinator.learning.manage' },
       { type: 'link', label: 'Registered Courses', to: '/coordinator/database', icon: Building2, permissionKey: 'coordinator.courses.view' },
       { type: 'link', label: 'Feedback', to: '/coordinator/feedback', icon: MessageSquare, permissionKey: 'coordinator.feedback.view' },
@@ -75,6 +105,7 @@ const buildNavItems = (role = 'admin') => {
           { label: 'All Assessments', to: '/coordinator/assessment', icon: ClipboardList, permissionKey: 'coordinator.assessment.view' },
           { label: 'Create Assessment', to: '/coordinator/assessment/create', icon: CalendarPlus, permissionKey: 'coordinator.assessment.create' },
           { label: 'Reports', to: '/coordinator/assessment/reports', icon: ClipboardList, permissionKey: 'coordinator.assessment.reports' },
+          { label: 'Feedback', to: '/coordinator/assessment-feedback', icon: MessageSquareText, permissionKey: 'coordinator.assessment.feedback' },
         ],
       },
       {
@@ -84,6 +115,9 @@ const buildNavItems = (role = 'admin') => {
         icon: Library,
         items: [
           { label: 'View Library', to: '/coordinator/library', icon: Library, permissionKey: 'coordinator.library.view', match: (loc) => loc.pathname === '/coordinator/library' },
+          { label: 'Add Question', to: '/coordinator/library/add-question', icon: UserPlus, permissionKey: 'coordinator.library.create' },
+          { label: 'Create Coding Problem', to: '/coordinator/library/coding/create', icon: CalendarPlus, permissionKey: 'coordinator.compiler.create' },
+          { label: 'Manage Coding Problems', to: '/coordinator/library/coding/problems', icon: ListChecks, permissionKey: 'coordinator.compiler.manage' },
           { label: 'Coding Analytics', to: '/coordinator/library/coding/analytics', icon: BarChart3, permissionKey: 'coordinator.compiler.analytics' },
         ],
       },
@@ -114,6 +148,12 @@ const buildNavItems = (role = 'admin') => {
         icon: Settings,
         items: [
           { label: 'Promote Students', to: '/coordinator/settings/promote-students', icon: GraduationCap, permissionKey: 'coordinator.students.promote' },
+          { label: 'Master Data', to: '/coordinator/settings/master-data', icon: Database, permissionKey: 'coordinator.master-data.manage' },
+          { label: 'Email Templates', to: '/coordinator/settings/email-templates', icon: Mail, permissionKey: 'coordinator.email-templates.manage' },
+          { label: 'Email Queue', to: '/coordinator/email-queue', icon: Mail, permissionKey: 'coordinator.email-queue.manage' },
+          { label: 'My Activity', to: '/coordinator/activity', icon: Activity, permissionKey: 'coordinator.activity.view' },
+          { label: 'Profile', to: '/coordinator/profile', icon: User, permissionKey: 'coordinator.profile.manage' },
+          { label: 'Change Password', to: '/coordinator/change-password', icon: Lock, permissionKey: 'coordinator.profile.manage' },
         ],
       },
     ];
@@ -228,11 +268,13 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
   const profileOpenRef = useRef(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const isCoordinator = role === 'coordinator';
-  const storagePrefix = isCoordinator ? 'coordinator' : 'admin';
-  const displayName = user?.name || localStorage.getItem(`${storagePrefix}Name`) || (isCoordinator ? 'Coordinator' : 'Admin');
+  const isStudent = role === 'student';
+  const storagePrefix = isCoordinator ? 'coordinator' : isStudent ? 'student' : 'admin';
+  const roleLabel = isCoordinator ? 'Coordinator' : isStudent ? 'Student' : 'Administrator';
+  const displayName = user?.name || localStorage.getItem(`${storagePrefix}Name`) || roleLabel;
   const displayEmail = user?.email || localStorage.getItem(`${storagePrefix}Email`) || '';
   const avatarUrl = user?.avatarUrl || localStorage.getItem(`${storagePrefix}AvatarUrl`) || '';
-  const homePath = isCoordinator ? '/coordinator/overview' : '/admin/overview';
+  const homePath = isCoordinator ? '/coordinator/overview' : isStudent ? '/student/dashboard' : '/admin/overview';
   const accountMenuId = `${storagePrefix}-account-menu`;
   const accent = isCoordinator ? 'emerald' : 'sky';
   const navItems = useMemo(() => {
@@ -295,7 +337,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
       await logout();
     } finally {
       updateProfileOpen(false);
-      ['token', 'isAdmin', 'adminName', 'adminEmail', 'adminAvatarUrl', 'coordinatorName', 'coordinatorEmail', 'coordinatorAvatarUrl']
+      ['token', 'isAdmin', 'isStudent', 'adminName', 'adminEmail', 'adminAvatarUrl', 'coordinatorName', 'coordinatorEmail', 'coordinatorAvatarUrl', 'studentName', 'studentEmail', 'studentAvatarUrl']
         .forEach((key) => localStorage.removeItem(key));
       window.location.assign('/');
     }
@@ -333,7 +375,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
           </div>
         </Link>
 
-        <nav className="min-h-0 flex-1 space-y-1 overflow-x-hidden overflow-y-auto px-1.5 py-3 [scrollbar-width:thin]" aria-label={`${isCoordinator ? 'Coordinator' : 'Admin'} navigation`}>
+        <nav className="min-h-0 flex-1 space-y-1 overflow-x-hidden overflow-y-auto px-1.5 py-3 [scrollbar-width:thin]" aria-label={`${roleLabel} navigation`}>
         {navItems.map((item) => {
           if (item.type === 'link') {
             const Icon = item.icon;
@@ -440,12 +482,12 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
                     <img src={avatarUrl} alt="" className="h-11 w-11 rounded-xl object-cover ring-2 ring-white dark:ring-gray-700" />
                   ) : (
                     <span className={`flex h-11 w-11 items-center justify-center rounded-xl text-sm font-bold ${accent === 'emerald' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300'}`}>
-                      {initials || (isCoordinator ? 'CO' : 'AD')}
+                      {initials || (isCoordinator ? 'CO' : isStudent ? 'ST' : 'AD')}
                     </span>
                   )}
                   <div className="min-w-0">
                     <p className="truncate text-sm font-bold text-slate-900 dark:text-white">{displayName}</p>
-                    <p className="truncate text-xs text-slate-500 dark:text-gray-400">{displayEmail || (isCoordinator ? 'Coordinator account' : 'Administrator account')}</p>
+                    <p className="truncate text-xs text-slate-500 dark:text-gray-400">{displayEmail || `${roleLabel} account`}</p>
                   </div>
                   <button type="button" onClick={() => updateProfileOpen(false)} className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-gray-700 dark:hover:text-gray-100" aria-label="Close account menu">
                     <X className="h-4 w-4" />
@@ -454,17 +496,17 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
               </div>
 
               <div className="p-2">
-                {isCoordinator && (
-                  <button type="button" onClick={() => navigate('/coordinator/profile')} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800">
+                {(isCoordinator || isStudent) && (
+                  <button type="button" onClick={() => navigate(isStudent ? '/student/profile' : '/coordinator/profile')} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800">
                     <User className="h-4 w-4 text-slate-400" />
                     My profile
                   </button>
                 )}
-                <button type="button" onClick={() => navigate(isCoordinator ? '/coordinator/activity' : '/admin/activity')} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800">
+                {!isStudent && <button type="button" onClick={() => navigate(isCoordinator ? '/coordinator/activity' : '/admin/activity')} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800">
                   <Activity className="h-4 w-4 text-slate-400" />
                   Activity log
-                </button>
-                <button type="button" onClick={() => navigate(isCoordinator ? '/coordinator/change-password' : '/admin/change-password')} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800">
+                </button>}
+                <button type="button" onClick={() => navigate(isCoordinator ? '/coordinator/change-password' : isStudent ? '/student/change-password' : '/admin/change-password')} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800">
                   <Lock className="h-4 w-4 text-slate-400" />
                   Change password
                 </button>
@@ -510,12 +552,12 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
               <img src={avatarUrl} alt="" className="absolute left-3 h-10 w-10 rounded-xl object-cover" />
             ) : (
               <span className={`absolute left-3 flex h-10 w-10 items-center justify-center rounded-xl text-xs font-bold ${accent === 'emerald' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300'}`}>
-                {initials || (isCoordinator ? 'CO' : 'AD')}
+                {initials || (isCoordinator ? 'CO' : isStudent ? 'ST' : 'AD')}
               </span>
             )}
             <span className={`ml-16 min-w-0 flex-1 ${isExpanded ? 'visible' : 'pointer-events-none invisible'}`}>
               <span className="block truncate text-sm font-bold text-slate-800 dark:text-gray-100">{displayName}</span>
-              <span className="block text-[11px] font-medium text-slate-500 dark:text-gray-400">{isCoordinator ? 'Coordinator' : 'Administrator'}</span>
+              <span className="block text-[11px] font-medium text-slate-500 dark:text-gray-400">{roleLabel}</span>
             </span>
             {isExpanded && <ChevronUp className={`absolute right-3 h-4 w-4 text-slate-400 transition-transform ${isProfileOpen ? 'rotate-180' : ''}`} />}
           </button>

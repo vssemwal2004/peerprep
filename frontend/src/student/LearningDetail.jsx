@@ -531,14 +531,14 @@ export default function LearningDetail() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white dark:bg-gray-900 pt-20 flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-white pt-3 dark:bg-gray-900">
         <div className="animate-spin rounded-full h-10 w-10 border-2 border-slate-200 border-t-sky-500"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 pt-16">
+    <div className="min-h-screen bg-white pt-3 dark:bg-gray-900">
       <div className="flex h-[calc(100vh-4rem)]">
         {/* Sidebar */}
         <motion.aside

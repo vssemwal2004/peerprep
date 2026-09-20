@@ -867,7 +867,7 @@ export default function StudentDashboard() {
 
   return (
     <RequirePasswordChange user={user}>
-      <div className="relative min-h-screen w-full overflow-hidden bg-gradient-to-br from-sky-100 via-white to-slate-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 pt-20 pb-10">
+      <div className="relative min-h-screen w-full overflow-hidden bg-gradient-to-br from-sky-100 via-white to-slate-50 pb-10 pt-3 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
 
         {/* Fixed grid background (doesn't scroll) */}
         <div aria-hidden="true" className="pointer-events-none fixed inset-0">

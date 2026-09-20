@@ -630,7 +630,7 @@ export default function StudentResume() {
     return () => window.removeEventListener('keydown', handler);
   }, [handleDownload, saveResume, undoAction, undoLastAction]);
 
-  if (loading) return <div className="min-h-screen bg-slate-50 pt-20 dark:bg-slate-950"><div className="mx-auto grid max-w-[1600px] gap-6 px-4 py-6 lg:grid-cols-[minmax(0,.9fr)_minmax(540px,1.1fr)]"><div className="h-[700px] animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-800" /><div className="h-[700px] animate-pulse rounded-2xl bg-slate-300 dark:bg-slate-900" /></div></div>;
+  if (loading) return <div className="min-h-screen bg-slate-50 pt-3 dark:bg-slate-950"><div className="mx-auto grid max-w-[1600px] gap-6 px-4 py-6 lg:grid-cols-[minmax(0,.9fr)_minmax(540px,1.1fr)]"><div className="h-[700px] animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-800" /><div className="h-[700px] animate-pulse rounded-2xl bg-slate-300 dark:bg-slate-900" /></div></div>;
   if (!resume) return <div className="min-h-screen bg-slate-50 pt-24 text-center dark:bg-slate-950"><p className="text-slate-600 dark:text-slate-300">{error || 'Resume builder is unavailable.'}</p><button onClick={() => navigate('/student/dashboard')} className="mt-4 rounded-xl bg-sky-600 px-4 py-2 text-sm font-bold text-white">Back to dashboard</button></div>;
 
   const saveLabel = saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : saveState === 'error' ? 'Retry save' : dirty ? 'Unsaved changes' : 'Save';
@@ -638,8 +638,8 @@ export default function StudentResume() {
 
   return (
     <RequirePasswordChange user={user}>
-      <div className="min-h-screen bg-slate-50 pb-10 pt-16 dark:bg-slate-950">
-        <div className="sticky top-14 z-30 border-b border-slate-200 bg-white/95 backdrop-blur-lg dark:border-slate-800 dark:bg-slate-950/95">
+      <div className="min-h-screen bg-slate-50 pb-10 dark:bg-slate-950">
+        <div className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur-lg dark:border-slate-800 dark:bg-slate-950/95">
           <div className="mx-auto flex max-w-[1680px] flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
             <button type="button" onClick={() => navigate('/student/dashboard')} className="rounded-xl p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"><ArrowLeft className="h-4 w-4" /></button>
             <div className="flex min-w-0 flex-1 items-center gap-3">

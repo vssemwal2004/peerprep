@@ -1,16 +1,16 @@
 import { BrowserRouter, Navigate, Routes, Route, useLocation } from "react-router-dom";
-import { lazy as reactLazy, Suspense, useEffect, useCallback, useLayoutEffect, useRef } from "react";
+import { lazy as reactLazy, Suspense, useEffect, useCallback, useLayoutEffect, useRef, useState } from "react";
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './components/CustomToast';
 import AdminLayout from './admin/AdminLayout';
-import { LandingPageSkeleton, NavbarSkeleton, PageSkeleton, DashboardSkeleton } from './components/Skeletons';
+import { LandingPageSkeleton, PageSkeleton, DashboardSkeleton } from './components/Skeletons';
 import { useAuth } from './context/AuthContext';
 import { hasPermission } from './admin/coordinatorPermissions';
 import PopupDismissManager from './components/PopupDismissManager';
+import GlobalSidebar from './components/GlobalSidebar';
 
 // Lazy-load navbars to keep them out of the main bundle
-const StudentNavbar = lazy(() => import('./components/StudentNavbar').then(m => ({ default: m.StudentNavbar })));
 const CoordinatorLayout = lazy(() => import('./coordinator/CoordinatorLayout'));
 const Footer = lazy(() => import('./components/Footer').then(m => ({ default: m.Footer })));
 
@@ -216,6 +216,7 @@ function AppContent() {
   useHideGlobalLoader();
   const location = useLocation();
   const { user } = useAuth();
+  const [isStudentSidebarExpanded, setIsStudentSidebarExpanded] = useState(false);
   const isAssessmentModuleAlias = /^\/(assessments|assessment-reports|assessment-history)(\/)?$/.test(location.pathname);
   const isProblemSolver = /^\/problems\/[^/]+$/.test(location.pathname);
   const isMain = location.pathname === "/";
@@ -231,6 +232,11 @@ function AppContent() {
   const isAssessmentPreview = location.pathname.startsWith("/admin/assessment/preview/");
   const isResumePage = location.pathname === "/student/resume" || /\/(admin|coordinator)\/students\/[^/]+\/resume$/.test(location.pathname);
   const isCoordinator = location.pathname.startsWith("/coordinator");
+  const isStudentShell = user?.role === 'student'
+    && (location.pathname.startsWith('/student/') || isStudentProblems || isAssessmentModuleAlias)
+    && !isFeedbackForm
+    && !isAssessmentAttempt
+    && !isProblemSolver;
   const isLoginPage = isMain || isStudentLogin || isResetPassword;
   const AdminShell = ({ children, layout = true }) => (
     <AdminProtectedRoute>
@@ -260,23 +266,29 @@ function AppContent() {
   );
 
   return (
-    <div className="min-h-screen w-full flex flex-col">
+    <div
+      className="min-h-screen w-full flex flex-col"
+      style={isStudentShell ? { '--admin-sidebar-width': isStudentSidebarExpanded ? '13.6rem' : '4rem', '--app-navbar-height': '0rem' } : undefined}
+    >
       <RoutePrefetcher />
       <ScrollToTop />
       <PopupDismissManager />
       {/* Navbar: Renders independently with its own Suspense boundary.
           Shows NavbarSkeleton briefly instead of nothing, so the page structure
           streams in progressively (navbar skeleton â†’ navbar â†’ content skeleton â†’ content) */}
-      {!isFeedbackForm && !isPublicPage && !isAssessmentPreview && !isAssessmentAttempt && (
-        <Suspense fallback={isStudentDashboard ? <NavbarSkeleton /> : null}>
-          {(isStudentDashboard && !isProblemSolver) ? <StudentNavbar /> : null}
-        </Suspense>
+      {isStudentShell && (
+        <GlobalSidebar
+          role="student"
+          isExpanded={isStudentSidebarExpanded}
+          onExpand={() => setIsStudentSidebarExpanded(true)}
+          onCollapse={() => setIsStudentSidebarExpanded(false)}
+        />
       )}
      
       {/* Main content: Each route section gets a role-appropriate skeleton.
           This is the "streaming rendering" pattern - the page structure appears 
           immediately as skeleton shapes, then real content swaps in when loaded */}
-      <main tabIndex="-1" className={gradientBg + " dark:bg-gray-900 flex-grow outline-none"}>
+      <main tabIndex="-1" className={gradientBg + " dark:bg-gray-900 flex-grow outline-none transition-[padding] duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)]"} style={isStudentShell ? { paddingLeft: 'var(--admin-sidebar-width)' } : undefined}>
         <Suspense fallback={
           isMain ? <LandingPageSkeleton /> :
           isAdmin ? <DashboardSkeleton /> :
@@ -380,10 +392,11 @@ function AppContent() {
         
         {/* Coordinator Routes - Protected */}
         <Route path="/coordinator/overview" element={<CoordinatorShell permission="coordinator.dashboard.overview"><CoordinatorDashboard /></CoordinatorShell>} />
-        <Route path="/coordinator" element={<CoordinatorShell permission="coordinator.interviews.view"><CoordinatorEventDetail /></CoordinatorShell>} />
+        <Route path="/coordinator" element={<Navigate to="/coordinator/overview" replace />} />
         <Route path="/coordinator/interviews" element={<CoordinatorShell permission="coordinator.interviews.view"><CoordinatorEventDetail /></CoordinatorShell>} />
         <Route path="/coordinator/event/:id" element={<CoordinatorShell permission="coordinator.interviews.view"><CoordinatorEventDetail /></CoordinatorShell>} />
         <Route path="/coordinator/students" element={<CoordinatorShell permission="coordinator.students.view"><CoordinatorStudents /></CoordinatorShell>} />
+        <Route path="/coordinator/onboarding" element={<CoordinatorShell permission="coordinator.students.create"><StudentOnboarding /></CoordinatorShell>} />
         <Route path="/coordinator/students/bulk-lists" element={<CoordinatorShell permission="coordinator.students.bulk-lists"><StudentBulkLists /></CoordinatorShell>} />
         <Route path="/coordinator/students/:studentId" element={<CoordinatorShell permission="coordinator.students.profile"><AdminStudentProfile /></CoordinatorShell>} />
         <Route path="/coordinator/students/:studentId/resume" element={<CoordinatorShell permission="coordinator.students.profile"><StudentResumeView /></CoordinatorShell>} />
@@ -401,6 +414,7 @@ function AppContent() {
         <Route path="/coordinator/assessment/create" element={<CoordinatorShell permission="coordinator.assessment.create"><CreateAssessment /></CoordinatorShell>} />
         <Route path="/coordinator/assessment/:id/edit" element={<CoordinatorShell permission="coordinator.assessment.edit"><CreateAssessment /></CoordinatorShell>} />
         <Route path="/coordinator/assessment/reports" element={<CoordinatorShell permission="coordinator.assessment.reports"><AssessmentReports /></CoordinatorShell>} />
+        <Route path="/coordinator/assessment-feedback" element={<CoordinatorShell permission="coordinator.assessment.feedback"><AssessmentFeedback /></CoordinatorShell>} />
         <Route path="/coordinator/assessment/select-problem" element={<CoordinatorShell permission="coordinator.assessment.create"><SelectProblemFromLibrary /></CoordinatorShell>} />
         <Route path="/coordinator/assessment/preview/:id" element={<CoordinatorShell layout={false} permission="coordinator.assessment.edit"><AdminAssessmentPreview /></CoordinatorShell>} />
         <Route path="/coordinator/library" element={<CoordinatorShell permission="coordinator.library.view"><LibraryWorkspace view="questions" /></CoordinatorShell>} />
@@ -423,11 +437,15 @@ function AppContent() {
         <Route path="/coordinator/compiler/analytics" element={<CoordinatorShell permission="coordinator.compiler.analytics"><LibraryWorkspace view="coding-analytics" /></CoordinatorShell>} />
         <Route path="/coordinator/company-insights" element={<CoordinatorShell permission="coordinator.company.view"><AdminCompanyInsights /></CoordinatorShell>} />
         <Route path="/coordinator/company-insights/add" element={<CoordinatorShell permission="coordinator.company.create"><AdminCompanyBenchmarkAdd /></CoordinatorShell>} />
+        <Route path="/coordinator/settings/email-templates" element={<CoordinatorShell permission="coordinator.email-templates.manage"><AdminEmailTemplates /></CoordinatorShell>} />
+        <Route path="/coordinator/settings/master-data" element={<CoordinatorShell permission="coordinator.master-data.manage"><MasterData /></CoordinatorShell>} />
+        <Route path="/coordinator/settings/master-data/:category" element={<CoordinatorShell permission="coordinator.master-data.manage"><MasterData /></CoordinatorShell>} />
+        <Route path="/coordinator/email-queue" element={<CoordinatorShell permission="coordinator.email-queue.manage"><AdminEmailQueue /></CoordinatorShell>} />
           </Routes>
         </Suspense>
       </main>
       
-      {!isAdmin && !isLoginPage && !isFeedbackForm && !isPublicPage && !isProblemSolver && !isAssessmentPreview && !isAssessmentAttempt && !isResumePage && (
+      {user?.role !== 'student' && !location.pathname.startsWith('/student/') && !isStudentProblems && !isAssessmentModuleAlias && !isAdmin && !isCoordinator && !isLoginPage && !isFeedbackForm && !isPublicPage && !isProblemSolver && !isAssessmentPreview && !isAssessmentAttempt && !isResumePage && (
         <Suspense fallback={null}><Footer /></Suspense>
       )}
     </div>

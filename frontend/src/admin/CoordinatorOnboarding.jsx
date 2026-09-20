@@ -284,7 +284,7 @@ export default function CoordinatorOnboarding() {
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="Full Name" value={form.coordinatorName} onChange={(value) => update('coordinatorName', value)} error={errors.coordinatorName} placeholder="Jane Doe" />
               <Field label="Email" value={form.coordinatorEmail} onChange={(value) => update('coordinatorEmail', value)} error={errors.coordinatorEmail} placeholder="jane@university.edu" />
-              <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-100"><span className="block text-xs font-bold uppercase tracking-wider">Teacher ID</span><span className="mt-1 block font-semibold">Generated automatically as a unique 5-character code.</span></div>
+              <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-100"><span className="block text-xs font-bold uppercase tracking-wider">Teacher ID</span><span className="mt-1 block font-semibold">Generated automatically as a unique five-digit number (for example, 48327).</span></div>
               <Field
                 label="Temporary Password"
                 value={form.coordinatorPassword}

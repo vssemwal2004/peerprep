@@ -109,7 +109,7 @@ export default function ProblemsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen px-4 pb-8 pt-20">
+      <div className="min-h-screen px-4 pb-8 pt-3">
         <div className="w-full">
           <LoadingPanel label="Loading problem set..." />
         </div>
@@ -118,7 +118,7 @@ export default function ProblemsPage() {
   }
 
   return (
-    <div className="min-h-screen px-4 pb-8 pt-20">
+    <div className="min-h-screen px-4 pb-8 pt-3">
       <div className="w-full space-y-6">
         <SectionCard
           title="Problems"

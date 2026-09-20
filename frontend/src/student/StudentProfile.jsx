@@ -1081,7 +1081,7 @@ export default function StudentProfile() {
 
   if (loading && !user) {
     return (
-      <div className="min-h-screen bg-[#f6f8fb] pt-16 dark:bg-slate-950">
+      <div className="min-h-screen bg-[#f6f8fb] pt-3 dark:bg-slate-950">
         <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
           <div className="h-[520px] animate-pulse rounded-[32px] bg-slate-200 dark:bg-gray-800" />
         </div>
@@ -1091,7 +1091,7 @@ export default function StudentProfile() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-[#f6f8fb] pt-16 dark:bg-slate-950">
+      <div className="min-h-screen bg-[#f6f8fb] pt-3 dark:bg-slate-950">
         <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
           <Panel title="Profile Unavailable" subtitle={error || 'We could not load your profile right now.'}>
             <EmptyState message="Please refresh the page and try again." />
@@ -1102,7 +1102,7 @@ export default function StudentProfile() {
   }
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#f4f7fb_52%,#f8fafc_100%)] pt-16 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_52%,#020617_100%)]">
+    <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#f4f7fb_52%,#f8fafc_100%)] pt-3 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_52%,#020617_100%)]">
       <MotionDiv
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}

@@ -290,8 +290,8 @@ export async function resendStudentCredentials(req, res) {
   }
 
   const candidates = await User.find({
+    ...studentScope(req.user),
     _id: { $in: studentIds },
-    role: 'student',
     activeSessionCreatedAt: { $exists: false },
   }).select('_id name email studentId passwordHash mustChangePassword activeSessionCreatedAt');
   const batchId = crypto.randomUUID();
@@ -302,8 +302,8 @@ export async function resendStudentCredentials(req, res) {
   for (const candidate of candidates) {
     const claimed = await User.findOneAndUpdate(
       {
+        ...studentScope(req.user),
         _id: candidate._id,
-        role: 'student',
         activeSessionCreatedAt: { $exists: false },
         $or: [
           { credentialEmailStatus: { $ne: 'pending' } },
@@ -1076,6 +1076,9 @@ export async function createStudent(req, res) {
     if (teacherIdList.length === 0) {
       return res.status(400).json({ error: 'At least one Teacher ID / Coordinator code is required.' });
     }
+    if (req.user.role === 'coordinator' && req.user.coordinatorDataScope !== 'all' && !teacherIdList.includes(req.user.coordinatorId)) {
+      return res.status(403).json({ error: 'Own-data coordinators can only create students assigned to their Teacher ID.' });
+    }
     
     // Validate ALL provided coordinator IDs exist
     const coordinators = await User.find({ role: 'coordinator', coordinatorId: { $in: teacherIdList } }).select('coordinatorId').lean();
@@ -1327,7 +1330,7 @@ export async function deleteStudent(req, res) {
     const { studentId } = req.params;
     
     // Find and delete the student
-    const student = await User.findOneAndDelete({ _id: studentId, role: 'student' });
+    const student = await User.findOneAndDelete({ ...studentScope(req.user), _id: studentId });
     
     if (!student) {
       return res.status(404).json({ error: 'Student not found' });
@@ -1385,7 +1388,7 @@ export async function createStudentUploadBatch(req, res) {
     const validIds = requestedIds.filter((id) => {
       try { validateObjectId(id, 'student ID'); return true; } catch { return false; }
     });
-    const students = await User.find({ _id: { $in: validIds }, role: 'student' }).select('_id').lean();
+    const students = await User.find({ ...studentScope(req.user), _id: { $in: validIds } }).select('_id').lean();
     if (!students.length) return res.status(400).json({ error: 'No uploaded students were available to save in this list.' });
     const studentIds = students.map((student) => student._id);
     const batch = await StudentUploadBatch.create({
@@ -1407,13 +1410,17 @@ export async function createStudentUploadBatch(req, res) {
 export async function renameStudentUploadBatch(req, res) {
   const name = String(req.body?.name || '').trim();
   if (!name || name.length > 120) return res.status(400).json({ error: 'Enter a list name up to 120 characters.' });
-  const batch = await StudentUploadBatch.findByIdAndUpdate(req.params.batchId, { name }, { new: true });
+  const query = { _id: req.params.batchId };
+  if (req.user.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') query.uploadedBy = req.user._id;
+  const batch = await StudentUploadBatch.findOneAndUpdate(query, { name }, { new: true });
   if (!batch) return res.status(404).json({ error: 'Bulk list not found.' });
   res.json({ batch });
 }
 
 export async function deleteStudentUploadBatch(req, res) {
-  const batch = await StudentUploadBatch.findById(req.params.batchId);
+  const query = { _id: req.params.batchId };
+  if (req.user.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') query.uploadedBy = req.user._id;
+  const batch = await StudentUploadBatch.findOne(query);
   if (!batch) return res.status(404).json({ error: 'Bulk list not found.' });
   const studentIds = batch.studentIds || [];
   const deleteResult = await User.deleteMany({ _id: { $in: studentIds }, role: 'student' });
@@ -1463,7 +1470,7 @@ export async function bulkDeleteStudents(req, res) {
       return res.status(400).json({ error: 'One or more selected students are invalid.' });
     }
 
-    const students = await User.find({ _id: { $in: validIds }, role: 'student' })
+    const students = await User.find({ ...studentScope(req.user), _id: { $in: validIds } })
       .select('_id name email studentId')
       .lean();
 
@@ -1518,7 +1525,7 @@ export async function updateStudent(req, res) {
     const { name, email, studentId: sid, course, branch, college, semester, group, teacherId, bio, linkedinUrl, githubUrl, portfolioUrl } = req.body;
     
     // Find student
-    const student = await User.findOne({ _id: studentId, role: 'student' });
+    const student = await User.findOne({ ...studentScope(req.user), _id: studentId });
     
     if (!student) {
       return res.status(404).json({ error: 'Student not found' });
@@ -1545,6 +1552,9 @@ export async function updateStudent(req, res) {
     // Handle teacherId - can be comma-separated string or array
     if (teacherId !== undefined) {
       const teacherIdList = parseTeacherIds(teacherId);
+      if (req.user.role === 'coordinator' && req.user.coordinatorDataScope !== 'all' && !teacherIdList.includes(req.user.coordinatorId)) {
+        return res.status(403).json({ error: 'Your Teacher ID must remain assigned to students in your own-data scope.' });
+      }
       // Validate all coordinator IDs if provided
       if (teacherIdList.length > 0) {
         const coordinators = await User.find({ role: 'coordinator', coordinatorId: { $in: teacherIdList } }).select('coordinatorId').lean();

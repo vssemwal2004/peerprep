@@ -120,7 +120,7 @@ export default function CoordinatorAccess() {
                         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-100 text-xs font-semibold text-sky-700">{(coordinator.name || '?').charAt(0).toUpperCase()}</div>
                         <div className="max-w-[220px] leading-tight">
                           <div className="truncate text-xs font-semibold text-slate-900 dark:text-white">{coordinator.name || 'Unnamed'}</div>
-                          <div className="truncate text-[10px] text-slate-500">{coordinator.coordinatorId || '-'}</div>
+                          <div className="truncate font-mono text-[10px] font-semibold tabular-nums tracking-wider text-slate-500">ID {coordinator.coordinatorId || '-'}</div>
                         </div>
                       </div>
                     </td>

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireAuth, requireAdmin } from '../middleware/auth.js';
+import { requireAuth, requireCoordinatorPermission } from '../middleware/auth.js';
 import {
   listEmailTemplates,
   getEmailTemplate,
@@ -10,7 +10,7 @@ import {
 
 const router = Router();
 
-router.use(requireAuth, requireAdmin);
+router.use(requireAuth, requireCoordinatorPermission('coordinator.email-templates.manage'));
 router.get('/', listEmailTemplates);
 router.post('/', createEmailTemplate);
 router.get('/:id', getEmailTemplate);

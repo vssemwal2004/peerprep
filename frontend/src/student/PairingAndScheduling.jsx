@@ -379,7 +379,7 @@ export default function PairingAndScheduling() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-gray-900 flex flex-col pt-16">
+    <div className="flex min-h-screen flex-col bg-slate-50 pt-3 dark:bg-gray-900">
       <div className="flex-1 w-full mx-auto px-4 py-4">
         <div className="flex flex-col lg:flex-row h-[calc(100vh-4rem)] gap-3">
           {/* Desktop Sidebar */}

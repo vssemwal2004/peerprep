@@ -86,7 +86,7 @@ export default function MasterData() {
 
   useEffect(() => {
     if (!routeCategory || !CATEGORIES.some((item) => item.key === routeCategory)) {
-      navigate("/admin/settings/master-data/campus", { replace: true });
+      navigate(`${window.location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin'}/settings/master-data/campus`, { replace: true });
     }
   }, [navigate, routeCategory]);
 
@@ -219,7 +219,7 @@ export default function MasterData() {
                     key={item.key}
                     type="button"
                     onClick={() =>
-                      navigate(`/admin/settings/master-data/${item.key}`)
+                      navigate(`${window.location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin'}/settings/master-data/${item.key}`)
                     }
                     className={`flex items-center gap-3 rounded-xl px-3 py-3 text-left transition ${active ? "bg-sky-600 text-white shadow-sm" : "text-slate-600 hover:bg-white hover:text-slate-950 dark:text-gray-300 dark:hover:bg-gray-800"}`}
                   >

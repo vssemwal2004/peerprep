@@ -25,6 +25,8 @@ export const COORDINATOR_PERMISSION_CATEGORIES = [
       'coordinator.students.view',
       'coordinator.students.bulk-lists',
       'coordinator.students.profile',
+      'coordinator.students.create',
+      'coordinator.students.manage',
       'coordinator.students.promote',
     ],
   },
@@ -33,6 +35,7 @@ export const COORDINATOR_PERMISSION_CATEGORIES = [
     label: 'Reports & Analytics',
     permissions: [
       'coordinator.assessment.reports',
+      'coordinator.assessment.feedback',
       'coordinator.compiler.analytics',
     ],
   },
@@ -57,6 +60,9 @@ export const COORDINATOR_PERMISSION_CATEGORIES = [
     permissions: [
       'coordinator.profile.manage',
       'coordinator.activity.view',
+      'coordinator.master-data.manage',
+      'coordinator.email-templates.manage',
+      'coordinator.email-queue.manage',
     ],
   },
   {

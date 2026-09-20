@@ -11,11 +11,15 @@ import crypto from 'crypto';
 import MasterData from '../models/MasterData.js';
 import { invalidateUserCache } from '../middleware/auth.js';
 
-const COORDINATOR_ID_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const MIN_COORDINATOR_ID = 10000;
+const MAX_COORDINATOR_ID_EXCLUSIVE = 100000;
 
 async function generateCoordinatorId() {
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const candidate = Array.from({ length: 5 }, () => COORDINATOR_ID_ALPHABET[crypto.randomInt(0, COORDINATOR_ID_ALPHABET.length)]).join('');
+    // Stored as a string because this identifier is referenced across student,
+    // learning, event, and reporting records, but its value is always a
+    // five-digit positive integer (10000-99999).
+    const candidate = String(crypto.randomInt(MIN_COORDINATOR_ID, MAX_COORDINATOR_ID_EXCLUSIVE));
     if (!await User.exists({ coordinatorId: candidate })) return candidate;
   }
   throw new Error('Could not generate a unique Teacher ID. Please try again.');

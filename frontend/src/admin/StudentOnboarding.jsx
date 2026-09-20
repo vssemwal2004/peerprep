@@ -408,7 +408,7 @@ export default function StudentOnboarding() {
         });
       setNamingBatch(data.batch);
       toast.success('Bulk list name saved.');
-      navigate(`/admin/students/bulk-lists`);
+      navigate(`${window.location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin'}/students/bulk-lists`);
     } catch (error) {
       toast.error(error.message || 'Failed to save list name.');
     } finally {
@@ -526,7 +526,7 @@ export default function StudentOnboarding() {
                 </div>
                 <div className="space-y-1 hidden lg:block">
                   <p><strong>Passwords:</strong> Automatically generated (7-8 characters) and sent via email to each student.</p>
-                  <p><strong>Teacher ID & Semester:</strong> Teacher ID must match coordinator code(s); use commas for multiple (e.g., COO1,COO2). Semester must be 1-8.</p>
+                  <p><strong>Teacher ID & Semester:</strong> Teacher ID must match the coordinator's five-digit number; use commas for multiple IDs (for example, 48327,61504). Semester must be 1-8.</p>
                 </div>
               </div>
             </div>
@@ -571,7 +571,7 @@ export default function StudentOnboarding() {
                 { key: 'email', label: 'Email Address *', placeholder: 'john@university.edu' },
                 { key: 'studentid', label: 'Student ID *', placeholder: 'STU2024001' },
                 { key: 'branch', label: 'Branch *', masterCategory: 'branch' },
-                { key: 'teacherid', label: 'Teacher ID(s) *', placeholder: 'COO1 or COO1,COO2', hint: 'Comma-separated for multiple' },
+                { key: 'teacherid', label: 'Teacher ID(s) *', placeholder: '48327 or 48327,61504', hint: 'Five digits each; comma-separated for multiple' },
                 { key: 'semester', label: 'Semester *', masterCategory: 'semester' },
                 { key: 'course', label: 'Course *', masterCategory: 'course' },
                 { key: 'college', label: 'Campus / College *', masterCategory: 'campus' },
