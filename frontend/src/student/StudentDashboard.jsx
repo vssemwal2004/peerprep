@@ -1,4 +1,3 @@
-/* eslint-disable no-unused-vars */
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
@@ -19,7 +18,6 @@ import { api } from "../utils/api";
 import socketService from "../utils/socket";
 import { useAuth } from "../context/AuthContext";
 import RequirePasswordChange from "./RequirePasswordChange";
-import GridBackground from "../landing/components/GridBackground";
 
 function RocketFlightScene() {
   return (
@@ -111,6 +109,8 @@ function RocketFlightScene() {
         <img
           src="/images/img%201.png"
           alt="Student on a rocket"
+          loading="lazy"
+          decoding="async"
           className="h-full w-full object-contain select-none mix-blend-multiply dark:mix-blend-normal"
           style={{
             WebkitMaskImage:
@@ -633,6 +633,34 @@ function HeroInsightPanel({ displayAnnouncements, announcementIndex, fallbackTho
   );
 }
 
+function StudentDashboardSkeleton() {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-sky-100 via-white to-slate-50 px-4 py-6 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 sm:px-6 lg:px-10">
+      <div className="animate-pulse space-y-6">
+        <div className="rounded-[28px] border border-white/70 bg-white/65 p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.05] sm:p-8">
+          <div className="grid min-h-[480px] items-center gap-8 lg:grid-cols-[1.18fr_.82fr]">
+            <div>
+              <div className="h-7 w-52 rounded-full bg-sky-100 dark:bg-slate-800" />
+              <div className="mt-6 h-12 max-w-xl rounded-xl bg-slate-200 dark:bg-slate-800" />
+              <div className="mt-3 h-12 w-3/4 rounded-xl bg-slate-200 dark:bg-slate-800" />
+              <div className="mt-6 h-5 max-w-lg rounded bg-slate-100 dark:bg-slate-800" />
+              <div className="mt-8 flex gap-3"><div className="h-12 w-40 rounded-xl bg-sky-200 dark:bg-slate-700" /><div className="h-12 w-40 rounded-xl bg-slate-100 dark:bg-slate-800" /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="h-28 rounded-2xl bg-white dark:bg-slate-800" />
+              <div className="h-28 rounded-2xl bg-white dark:bg-slate-800" />
+              <div className="col-span-2 h-52 rounded-2xl bg-white dark:bg-slate-800" />
+            </div>
+          </div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-40 rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" />)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Main Dashboard ─── */
 export default function StudentDashboard() {
   const navigate = useNavigate();
@@ -643,6 +671,7 @@ export default function StudentDashboard() {
   const [activityByDate, setActivityByDate] = useState({});
   const [announcementIndex, setAnnouncementIndex] = useState(0);
   const [thoughtIndex, setThoughtIndex] = useState(0);
+  const [dashboardLoading, setDashboardLoading] = useState(true);
 
   useEffect(() => {
     let mounted = true;
@@ -655,6 +684,8 @@ export default function StudentDashboard() {
       const ar = results[1]?.status === "fulfilled" ? results[1].value : null;
       const al = ar?.assessments || ar || [];
       setAssessments(Array.isArray(al) ? al : []);
+    }).finally(() => {
+      if (mounted) setDashboardLoading(false);
     });
     return () => { mounted = false; };
   }, []);
@@ -833,14 +864,6 @@ export default function StudentDashboard() {
       tone: "amber",
     },
     {
-      title: "Feedback System",
-      description: "Get detailed feedback after every session.",
-      cta: "View sessions",
-      icon: CheckCircle2,
-      path: "/student/session",
-      tone: "emerald",
-    },
-    {
       title: "Performance Tracking",
       description: "Track your progress and improve consistently.",
       cta: "See analytics",
@@ -865,13 +888,34 @@ export default function StudentDashboard() {
     transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] }
   };
 
+  if (dashboardLoading) {
+    return (
+      <RequirePasswordChange user={user}>
+        <StudentDashboardSkeleton />
+      </RequirePasswordChange>
+    );
+  }
+
   return (
     <RequirePasswordChange user={user}>
-      <div className="relative min-h-screen w-full overflow-hidden bg-gradient-to-br from-sky-100 via-white to-slate-50 pb-10 pt-3 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
+      <div className="relative min-h-screen w-full scroll-smooth overflow-x-hidden bg-gradient-to-br from-sky-100 via-white to-slate-50 pb-10 pt-3 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
 
-        {/* Fixed grid background (doesn't scroll) */}
-        <div aria-hidden="true" className="pointer-events-none fixed inset-0">
-          <GridBackground />
+        {/* Page-level background avoids an expensive fixed-layer repaint while scrolling. */}
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div
+            className="absolute inset-0 opacity-20 dark:hidden"
+            style={{
+              backgroundImage: "linear-gradient(rgba(14,165,233,.18) 1px, transparent 1px), linear-gradient(90deg, rgba(14,165,233,.18) 1px, transparent 1px)",
+              backgroundSize: "40px 40px",
+            }}
+          />
+          <div
+            className="absolute inset-0 hidden opacity-10 dark:block"
+            style={{
+              backgroundImage: "linear-gradient(rgba(125,211,252,.2) 1px, transparent 1px), linear-gradient(90deg, rgba(125,211,252,.2) 1px, transparent 1px)",
+              backgroundSize: "40px 40px",
+            }}
+          />
         </div>
 
         {/* Keep all page content above the grid */}
@@ -1005,7 +1049,7 @@ export default function StudentDashboard() {
         <div className="w-full px-4 sm:px-6 lg:px-10 space-y-12 pt-10 pb-16">
 
           {/* ── 2. PLATFORM OVERVIEW ── */}
-          <motion.section {...sectionFade}>
+          <motion.section {...sectionFade} style={{ contentVisibility: "auto", containIntrinsicSize: "760px" }}>
             <div className="rounded-3xl bg-gradient-to-br from-white/80 via-white/65 to-slate-50/55 dark:from-gray-900/45 dark:via-gray-900/35 dark:to-gray-900/30 shadow-sm">
               <div className="px-6 sm:px-10 py-10 sm:py-12">
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14 items-center">
@@ -1050,7 +1094,7 @@ export default function StudentDashboard() {
           </motion.section>
 
           {/* ── 3. PROGRESS + ACTIVITY ── */}
-          <motion.section {...sectionFade} className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+          <motion.section {...sectionFade} style={{ contentVisibility: "auto", containIntrinsicSize: "620px" }} className="grid grid-cols-1 lg:grid-cols-5 gap-6">
             <div className="lg:col-span-3 rounded-2xl bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-700 p-7 sm:p-8 shadow-sm">
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -1179,7 +1223,7 @@ export default function StudentDashboard() {
           </motion.section>
 
           {/* ── 4. FINAL CTA ── */}
-          <motion.section {...sectionFade}>
+          <motion.section {...sectionFade} style={{ contentVisibility: "auto", containIntrinsicSize: "260px" }}>
             <div className="relative overflow-hidden rounded-2xl p-8 sm:p-12 flex flex-col sm:flex-row items-start sm:items-center gap-6 sm:gap-0 sm:justify-between">
               <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900" />
               <div className="absolute inset-0 bg-sky-500/10" />

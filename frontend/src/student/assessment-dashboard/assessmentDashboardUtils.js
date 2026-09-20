@@ -1,7 +1,7 @@
 export function formatDateTime(value) {
-  if (!value) return 'TBD';
+  if (!value) return 'Not available';
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'TBD';
+  if (Number.isNaN(date.getTime())) return 'Not available';
   return date.toLocaleString([], {
     month: 'short',
     day: 'numeric',
@@ -12,9 +12,9 @@ export function formatDateTime(value) {
 }
 
 export function formatShortDate(value) {
-  if (!value) return 'TBD';
+  if (!value) return 'Not available';
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'TBD';
+  if (Number.isNaN(date.getTime())) return 'Not available';
   return date.toLocaleDateString([], {
     month: 'short',
     day: 'numeric',
@@ -22,7 +22,8 @@ export function formatShortDate(value) {
   });
 }
 
-export function formatDurationMinutes(value = 0) {
+export function formatDurationMinutes(value) {
+  if (value === undefined || value === null || value === '') return 'Not available';
   const minutes = Number(value || 0);
   if (!minutes) return '0 min';
   if (minutes < 60) return `${minutes} min`;
@@ -31,7 +32,8 @@ export function formatDurationMinutes(value = 0) {
   return remaining ? `${hours}h ${remaining}m` : `${hours}h`;
 }
 
-export function formatSeconds(value = 0) {
+export function formatSeconds(value) {
+  if (value === undefined || value === null || value === '') return 'Not available';
   const totalSeconds = Number(value || 0);
   if (!totalSeconds) return '0m';
   const hours = Math.floor(totalSeconds / 3600);
@@ -47,7 +49,8 @@ export function formatSeconds(value = 0) {
   return `${seconds}s`;
 }
 
-export function formatScore(value = 0) {
+export function formatScore(value) {
+  if (value === undefined || value === null || value === '') return 'Not available';
   const number = Number(value || 0);
   if (Number.isInteger(number)) return String(number);
   return number.toFixed(2);

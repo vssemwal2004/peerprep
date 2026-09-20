@@ -1,114 +1,13 @@
-import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { NavLink, useLocation } from 'react-router-dom';
-import { BarChart3, ClipboardList, History } from 'lucide-react';
-
-const NAV_ITEMS = [
-  { label: 'Your Assessments', to: '/student/assessments', icon: ClipboardList },
-  { label: 'Assessment Reports', to: '/student/assessment-reports', icon: BarChart3 },
-  { label: 'Assessment History', to: '/student/assessment-history', icon: History },
-];
-
 export default function AssessmentModuleLayout({ title, children }) {
-  const location = useLocation();
-  const [expanded, setExpanded] = useState(false);
-
-  const aliasMap = {
-    '/student/assessments': '/assessments',
-    '/student/assessment-reports': '/assessment-reports',
-    '/student/assessment-history': '/assessment-history',
-  };
-
-  const isActive = (path) => {
-    const alias = aliasMap[path];
-    return (
-      location.pathname === path ||
-      location.pathname.startsWith(`${path}/`) ||
-      (alias ? location.pathname === alias || location.pathname.startsWith(`${alias}/`) : false)
-    );
-  };
-
   return (
-    <div className="min-h-screen bg-slate-50 pt-3 transition-colors dark:bg-gray-950">
-      <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-[1600px]">
-        <aside
-          onMouseEnter={() => setExpanded(true)}
-          onMouseLeave={() => setExpanded(false)}
-          className="sticky top-16 hidden h-[calc(100vh-4rem)] md:block"
-        >
-          <motion.div
-            animate={{ width: expanded ? 240 : 88 }}
-            transition={{ duration: 0.22, ease: 'easeOut' }}
-            className="flex h-full flex-col border-r border-slate-200 bg-white shadow-sm transition-colors dark:border-gray-800 dark:bg-gray-900"
-          >
-            <div className="border-b border-slate-200 px-4 py-4 dark:border-gray-800">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-600 text-white">
-                  <ClipboardList className="h-5 w-5" strokeWidth={1.9} />
-                </div>
-                <span className={`whitespace-nowrap text-sm font-semibold text-slate-900 transition-opacity dark:text-white ${expanded ? 'opacity-100' : 'opacity-0'}`}>
-                  Assessment
-                </span>
-              </div>
-            </div>
-
-            <nav className="flex-1 space-y-2 px-3 py-4">
-              {NAV_ITEMS.map((item) => {
-                const Icon = item.icon;
-                const active = isActive(item.to);
-
-                return (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors ${
-                      active
-                        ? 'bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-300'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'
-                    }`}
-                  >
-                    <span className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl ${
-                      active ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300' : 'bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-gray-400'
-                    }`}>
-                      <Icon className="h-4 w-4" strokeWidth={1.9} />
-                    </span>
-                    <span className={`whitespace-nowrap transition-all duration-200 ${expanded ? 'opacity-100' : 'pointer-events-none opacity-0'}`}>
-                      {item.label}
-                    </span>
-                  </NavLink>
-                );
-              })}
-            </nav>
-          </motion.div>
-        </aside>
-
-        <div className="min-w-0 flex-1">
-          <div className="border-b border-slate-200 bg-white px-4 py-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 sm:px-6">
-            <h1 className="text-xl font-semibold text-slate-900 dark:text-white">{title}</h1>
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-950 transition-colors dark:bg-gray-950 dark:text-white">
+      <div className="mx-auto min-h-[calc(100vh-4rem)] max-w-[1680px]">
+        <div className="min-w-0">
+          <div className="border-b border-slate-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-900 sm:px-5">
+            <h1 className="text-lg font-semibold text-slate-950 dark:text-white">{title}</h1>
           </div>
 
-          <div className="border-b border-slate-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-900 md:hidden">
-            <div className="flex gap-2 overflow-x-auto">
-              {NAV_ITEMS.map((item) => {
-                const Icon = item.icon;
-                const active = isActive(item.to);
-                return (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    className={`inline-flex min-w-max items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium ${
-                      active ? 'bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-300' : 'bg-slate-100 text-slate-600 dark:bg-gray-800 dark:text-gray-300'
-                    }`}
-                  >
-                    <Icon className="h-4 w-4" strokeWidth={1.9} />
-                    <span>{item.label}</span>
-                  </NavLink>
-                );
-              })}
-            </div>
-          </div>
-
-          <main className="p-4 sm:p-6">{children}</main>
+          <main className="p-3 sm:p-4">{children}</main>
         </div>
       </div>
     </div>

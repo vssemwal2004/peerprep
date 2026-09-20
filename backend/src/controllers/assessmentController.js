@@ -870,12 +870,12 @@ function buildStudentResultPermissions(assessment = {}, submission = {}, now = n
   const settings = normalizeAssessmentSettings(assessment.settings || {});
   const submittedAt = submission?.submittedAt ? new Date(submission.submittedAt) : null;
   const delayHours = Number(settings.resultDelayHours || 0);
-  const delayedReleaseAt = submittedAt && delayHours > 0
+  const immediateRelease = Boolean(settings.showResultsAfterSubmit);
+  const delayedReleaseAt = !immediateRelease && submittedAt && delayHours > 0
     ? new Date(submittedAt.getTime() + delayHours * 60 * 60 * 1000)
     : null;
-  const resultReleased = Boolean(settings.showResultsAfterSubmit)
-    || !delayedReleaseAt
-    || delayedReleaseAt.getTime() <= now.getTime();
+  const resultReleased = immediateRelease
+    || Boolean(delayedReleaseAt && delayedReleaseAt.getTime() <= now.getTime());
 
   return {
     resultReleased,
@@ -1171,7 +1171,7 @@ function buildStudentReportRow(assessment = {}, submission = {}, { rankInfo = nu
     skippedQuestions: permissions.canViewScore ? analytics.skippedQuestions : null,
     pendingEvaluationQuestions: permissions.canViewScore ? analytics.pendingEvaluationQuestions : null,
     accuracy: permissions.canViewPercentage ? accuracy : null,
-    timeTakenSec: computeSubmissionTimeTakenSec(submission),
+    timeTakenSec: permissions.canViewTimeAnalysis ? computeSubmissionTimeTakenSec(submission) : null,
     submittedAt: submission.submittedAt,
     startedAt: submission.startedAt,
     sectionBreakdown,

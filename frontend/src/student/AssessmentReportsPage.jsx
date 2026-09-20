@@ -11,7 +11,6 @@ import {
   FileText,
   Filter,
   Lock,
-  RefreshCcw,
   Search,
   SlidersHorizontal,
   Target,
@@ -19,7 +18,7 @@ import {
 } from 'lucide-react';
 import AssessmentModuleLayout from './assessment-dashboard/AssessmentModuleLayout';
 import { useStudentAssessmentDashboardData } from './assessment-dashboard/useStudentAssessmentDashboardData';
-import { formatDateTime, formatScore, formatSeconds, formatShortDate } from './assessment-dashboard/assessmentDashboardUtils';
+import { formatDateTime, formatDurationMinutes, formatScore, formatSeconds, formatShortDate } from './assessment-dashboard/assessmentDashboardUtils';
 import { useToast } from '../components/CustomToast';
 
 const STORAGE_KEY = 'peerprep_student_report_workspace_v1';
@@ -29,11 +28,15 @@ const mutedText = 'text-slate-500 dark:text-gray-400';
 const labelClass = 'text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-gray-500';
 
 function permission(report, key) {
-  return Boolean(report?.permissions?.[key]);
+  return Boolean(report?.permissions?.resultReleased && report?.permissions?.[key]);
 }
 
 function hasValue(value) {
   return value !== undefined && value !== null && value !== '';
+}
+
+function displayValue(value) {
+  return hasValue(value) ? value : 'Not available';
 }
 
 function percent(value, total) {
@@ -57,27 +60,27 @@ function safeFileName(value = 'assessment-report') {
 }
 
 async function exportStudentReportExcel(report) {
-  if (!report) return;
+  if (!report?.permissions?.resultReleased) return;
   const XLSX = await import('xlsx');
   const workbook = XLSX.utils.book_new();
   const pct = scorePercent(report);
   const scoreVisible = permission(report, 'canViewScore');
 
   const summaryRows = [
-    ['Assessment', report.assessmentName || 'Untitled Assessment'],
-    ['Status', report.status || ''],
-    ['Assessment type', report.assessmentType || ''],
-    ['Submitted', report.submittedAt ? formatDateTime(report.submittedAt) : ''],
-    ['Started', report.startedAt ? formatDateTime(report.startedAt) : ''],
+    ['Assessment', displayValue(report.assessmentName)],
+    ['Status', displayValue(report.status)],
+    ['Assessment type', displayValue(report.assessmentType)],
+    ['Submitted', formatDateTime(report.submittedAt)],
+    ['Started', formatDateTime(report.startedAt)],
     ['Score', scoreVisible ? `${formatScore(report.score)} / ${formatScore(report.totalMarks)}` : 'Hidden'],
     ['Percentage', pct !== null ? `${Math.round(pct)}%` : 'Hidden'],
     ['Time spent', permission(report, 'canViewTimeAnalysis') ? formatSeconds(report.timeTakenSec) : 'Hidden'],
     ['Rank', permission(report, 'canViewRank') && report.rank ? `#${report.rank} of ${report.participants || '-'}` : 'Hidden'],
-    ['Total questions', report.totalQuestions ?? ''],
-    ['Correct', scoreVisible ? report.correctAnswers ?? 0 : 'Hidden'],
-    ['Wrong', scoreVisible ? report.wrongAnswers ?? 0 : 'Hidden'],
-    ['Skipped', scoreVisible ? report.skippedQuestions ?? 0 : 'Hidden'],
-    ['Violation count', report.violationCount ?? report.securityInfo?.totalViolations ?? 'No data'],
+    ['Total questions', displayValue(report.totalQuestions)],
+    ['Correct', scoreVisible ? displayValue(report.correctAnswers) : 'Hidden'],
+    ['Wrong', scoreVisible ? displayValue(report.wrongAnswers) : 'Hidden'],
+    ['Skipped', scoreVisible ? displayValue(report.skippedQuestions) : 'Hidden'],
+    ['Violation count', report.violationCount ?? report.securityInfo?.totalViolations ?? 'Not available'],
   ];
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(summaryRows), 'Summary');
 
@@ -138,14 +141,14 @@ function stateStyle(state) {
 }
 
 function getReportAvailability(report) {
-  if (!report) return 'No data';
+  if (!report) return 'Not available';
   if (report.permissions?.resultReleased) return 'Available result';
   if (report.permissions?.releaseAt) return 'Pending result';
   return 'Locked result';
 }
 
 function getAttemptState(report) {
-  if (!report) return '';
+  if (!report) return 'Not available';
   if (report.status) return report.status;
   if (report.submittedAt) return 'Completed';
   if (report.startedAt) return 'Attempted';
@@ -198,7 +201,7 @@ function EmptyState({ icon: Icon = FileText, title, message }) {
 
 function Skeleton() {
   return (
-    <div className="grid h-[calc(100vh-10rem)] gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
+    <div className="grid h-[calc(100vh-10rem)] gap-3 lg:grid-cols-[260px_minmax(0,1fr)]">
       <div className="animate-pulse rounded-xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900" />
       <div className="animate-pulse rounded-xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900" />
     </div>
@@ -209,19 +212,26 @@ function SummaryRow({ label, value, hidden }) {
   return (
     <div className="flex min-w-0 items-center justify-between gap-4 border-b border-slate-100 py-2.5 last:border-0 dark:border-gray-800">
       <span className={`text-xs ${mutedText}`}>{label}</span>
-      <span className="truncate text-right text-sm font-semibold text-slate-900 dark:text-white">{hidden ? 'Hidden' : value}</span>
+      <span className="truncate text-right text-xs font-semibold text-slate-900 dark:text-white">{hidden ? 'Hidden' : displayValue(value)}</span>
     </div>
   );
 }
 
-function SectionShell({ id, title, children, defaultOpen = true, onJump }) {
+function ReportMetric({ label, value, hidden, tone = 'text-slate-950 dark:text-white' }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2.5 dark:border-gray-800 dark:bg-gray-950/50">
+      <div className={labelClass}>{label}</div>
+      <div className={`mt-1 truncate text-sm font-semibold ${tone}`}>{hidden ? 'Hidden' : displayValue(value)}</div>
+    </div>
+  );
+}
+
+function SectionShell({ id, title, children, defaultOpen = true }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <section id={id} className={`${shellClass} overflow-hidden rounded-xl`}>
       <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-900">
-        <button type="button" onClick={() => onJump?.(id)} className="text-sm font-semibold text-slate-950 dark:text-white">
-          {title}
-        </button>
+        <h3 className="text-sm font-semibold text-slate-950 dark:text-white">{title}</h3>
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
@@ -231,7 +241,7 @@ function SectionShell({ id, title, children, defaultOpen = true, onJump }) {
           <ChevronDown className={`h-4 w-4 transition-transform ${open ? '' : '-rotate-90'}`} />
         </button>
       </div>
-      {open ? <div className="p-4">{children}</div> : null}
+      {open ? <div className="p-3">{children}</div> : null}
     </section>
   );
 }
@@ -243,16 +253,14 @@ function ReportNavigation({ reports, selectedId, query, setQuery, status, setSta
   }, [reports]);
 
   return (
-    <aside className={`${shellClass} flex min-h-0 flex-col rounded-xl`}>
+    <aside className={`${shellClass} flex max-h-[300px] min-h-0 flex-col rounded-xl lg:max-h-none`}>
       <div className="shrink-0 border-b border-slate-200 p-3 dark:border-gray-800">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className={labelClass}>Report Library</div>
-            <div className="mt-0.5 text-sm font-semibold text-slate-950 dark:text-white">{reports.length} assessments</div>
+            <div className={labelClass}>Reports</div>
+            <div className="mt-0.5 text-xs font-semibold text-slate-950 dark:text-white">{reports.length} assessments</div>
           </div>
-          <span className="rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300">
-            Dynamic
-          </span>
+          <BarChart3 className="h-4 w-4 text-sky-600 dark:text-sky-300" />
         </div>
         <div className="relative mt-3">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
@@ -290,7 +298,7 @@ function ReportNavigation({ reports, selectedId, query, setQuery, status, setSta
               key={report.id}
               type="button"
               onClick={() => onSelect(report)}
-              className={`mb-1.5 w-full rounded-lg border px-3 py-2.5 text-left transition-colors ${
+              className={`mb-1.5 w-full rounded-lg border px-2.5 py-2 text-left transition-colors ${
                 selected
                   ? 'border-sky-300 bg-sky-50 text-sky-950 ring-1 ring-sky-100 dark:border-sky-700 dark:bg-sky-900/20 dark:text-sky-100 dark:ring-sky-900'
                   : 'border-transparent text-slate-700 hover:border-slate-200 hover:bg-slate-50 dark:text-gray-300 dark:hover:border-gray-800 dark:hover:bg-gray-950/70'
@@ -298,10 +306,10 @@ function ReportNavigation({ reports, selectedId, query, setQuery, status, setSta
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold">{report.assessmentName}</div>
+                  <div className="truncate text-xs font-semibold">{displayValue(report.assessmentName)}</div>
                   <div className={`mt-1 flex flex-wrap items-center gap-1.5 text-[11px] ${mutedText}`}>
-                    {report.assessmentType ? <span>{report.assessmentType}</span> : null}
-                    {report.dateAttempted ? <span>{formatShortDate(report.dateAttempted)}</span> : null}
+                    <span>{displayValue(report.assessmentType)}</span>
+                    <span>{formatShortDate(report.dateAttempted)}</span>
                   </div>
                 </div>
                 <span className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${stateStyle(availability)}`}>
@@ -316,7 +324,7 @@ function ReportNavigation({ reports, selectedId, query, setQuery, status, setSta
           );
         }) : (
           <div className="rounded-lg border border-dashed border-slate-200 px-3 py-8 text-center text-xs text-slate-500 dark:border-gray-800 dark:text-gray-400">
-            No report data received.
+            No assessment reports available.
           </div>
         )}
       </div>
@@ -324,17 +332,17 @@ function ReportNavigation({ reports, selectedId, query, setQuery, status, setSta
   );
 }
 
-function WorkspaceHeader({ report, onRefresh, onExport, search, setSearch, filterOpen, setFilterOpen }) {
+function WorkspaceHeader({ report, onExport, search, setSearch, filterOpen, setFilterOpen, activeTab }) {
   if (!report) return null;
   const pct = scorePercent(report);
   const scoreVisible = permission(report, 'canViewScore');
   const percentageVisible = permission(report, 'canViewPercentage');
   const metadata = [
-    report.assessmentType,
-    hasValue(report.totalQuestions) ? `${report.totalQuestions} questions` : null,
-    hasValue(report.duration) ? `${report.duration} min` : null,
-    report.status,
-  ].filter(Boolean);
+    displayValue(report.assessmentType),
+    hasValue(report.totalQuestions) ? `${report.totalQuestions} questions` : 'Questions not available',
+    formatDurationMinutes(report.duration),
+    displayValue(report.status),
+  ];
 
   return (
     <div className={`${shellClass} sticky top-0 z-30 rounded-xl shadow-sm`}>
@@ -350,40 +358,45 @@ function WorkspaceHeader({ report, onRefresh, onExport, search, setSearch, filte
               {getReportAvailability(report)}
             </span>
           </div>
-          <h2 className="mt-2 truncate text-base font-semibold text-slate-950 dark:text-white">{report.assessmentName}</h2>
+          <h2 className="mt-2 truncate text-base font-semibold text-slate-950 dark:text-white">{displayValue(report.assessmentName)}</h2>
           <div className={`mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs ${mutedText}`}>
-            {report.submittedAt || report.dateAttempted ? <span>Submitted {formatDateTime(report.submittedAt || report.dateAttempted)}</span> : null}
-            {report.startedAt ? <span>Started {formatDateTime(report.startedAt)}</span> : null}
+            <span>Submitted {formatDateTime(report.submittedAt || report.dateAttempted)}</span>
+            <span>Started {formatDateTime(report.startedAt)}</span>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search in report"
-              className="h-8 w-44 rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-200"
-            />
-          </div>
-          <button type="button" onClick={() => setFilterOpen(!filterOpen)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-800">
-            <SlidersHorizontal className="h-3.5 w-3.5" /> Filters
-          </button>
-          <button type="button" onClick={onRefresh} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-800">
-            <RefreshCcw className="h-3.5 w-3.5" /> Refresh
-          </button>
-          <button type="button" onClick={onExport} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-2.5 text-xs font-semibold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300">
-            <Download className="h-3.5 w-3.5" /> Export Excel
-          </button>
+          {activeTab === 'questions' ? (
+            <>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search questions"
+                  className="h-8 w-44 rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-200"
+                />
+              </div>
+              <button type="button" onClick={() => setFilterOpen(!filterOpen)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-800">
+                <SlidersHorizontal className="h-3.5 w-3.5" /> Filters
+              </button>
+            </>
+          ) : null}
+          {report.permissions?.resultReleased ? (
+            <button type="button" onClick={onExport} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-2.5 text-xs font-semibold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300">
+              <Download className="h-3.5 w-3.5" /> Export Excel
+            </button>
+          ) : null}
         </div>
       </div>
-      <div className="grid gap-0 px-4 py-2 text-xs sm:grid-cols-4">
-        <SummaryRow label="Score" value={`${formatScore(report.score)} / ${formatScore(report.totalMarks)}`} hidden={!scoreVisible} />
-        <SummaryRow label="Percentage" value={pct !== null ? `${Math.round(pct)}%` : 'Hidden'} hidden={!percentageVisible} />
-        <SummaryRow label="Attempt count" value={report.attempts || report.attemptCount || 1} />
-        <SummaryRow label="Time spent" value={formatSeconds(report.timeTakenSec)} hidden={!permission(report, 'canViewTimeAnalysis')} />
-      </div>
+      {report.permissions?.resultReleased ? (
+        <div className="grid grid-cols-2 gap-2 p-3 lg:grid-cols-4">
+          <ReportMetric label="Score" value={hasValue(report.score) && hasValue(report.totalMarks) ? `${formatScore(report.score)} / ${formatScore(report.totalMarks)}` : 'Not available'} hidden={!scoreVisible} tone="text-sky-700 dark:text-sky-300" />
+          <ReportMetric label="Percentage" value={pct !== null ? `${Math.round(pct)}%` : 'Not available'} hidden={!percentageVisible} />
+          <ReportMetric label="Attempts" value={report.attempts ?? report.attemptCount} />
+          <ReportMetric label="Time spent" value={formatSeconds(report.timeTakenSec)} hidden={!permission(report, 'canViewTimeAnalysis')} />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -391,16 +404,16 @@ function WorkspaceHeader({ report, onRefresh, onExport, search, setSearch, filte
 function ReportTabs({ tabs, activeTab, setActiveTab }) {
   if (!tabs.length) return null;
   return (
-    <div className="flex gap-1 overflow-x-auto border-b border-slate-200 bg-[#f8fbff] py-2 dark:border-gray-800 dark:bg-gray-950">
+    <div className="flex gap-5 overflow-x-auto border-b border-slate-200 bg-[#f8fbff] px-1 dark:border-gray-800 dark:bg-gray-950">
       {tabs.map((tab) => (
         <button
           key={tab.id}
           type="button"
           onClick={() => setActiveTab(tab.id)}
-          className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+          className={`shrink-0 border-b-2 px-1 py-2 text-xs font-semibold transition-colors ${
             activeTab === tab.id
-              ? 'bg-sky-600 text-white'
-              : 'border border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:text-sky-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300'
+              ? 'border-sky-600 text-sky-700 dark:border-sky-400 dark:text-sky-300'
+              : 'border-transparent text-slate-500 hover:text-sky-700 dark:text-gray-400'
           }`}
         >
           {tab.label}
@@ -410,47 +423,50 @@ function ReportTabs({ tabs, activeTab, setActiveTab }) {
   );
 }
 
-function OverviewPanel({ report, onJump }) {
+function OverviewPanel({ report }) {
   if (!report) return null;
+  if (!report.permissions?.resultReleased) {
+    return (
+      <EmptyState
+        icon={Lock}
+        title="Result not released"
+        message={report.permissions?.releaseAt ? `Your result will be available after ${formatDateTime(report.permissions.releaseAt)}.` : 'The administrator has not released this assessment result yet.'}
+      />
+    );
+  }
   const scoreVisible = permission(report, 'canViewScore');
   const pct = scorePercent(report);
-  const totalQuestions = Number(report.totalQuestions || 0);
-  const attempted = totalQuestions - Number(report.skippedQuestions || 0);
+  const totalQuestions = hasValue(report.totalQuestions) ? Number(report.totalQuestions) : null;
+  const attempted = totalQuestions !== null && hasValue(report.skippedQuestions)
+    ? Math.max(0, totalQuestions - Number(report.skippedQuestions))
+    : null;
   return (
     <div className="space-y-3">
-      {!report.permissions?.resultReleased ? (
-        <EmptyState
-          icon={Lock}
-          title="Result release pending"
-          message={report.permissions?.releaseAt ? `Your detailed result is scheduled for ${formatDateTime(report.permissions.releaseAt)}.` : 'Your admin has not released detailed results for this assessment yet.'}
-        />
-      ) : null}
-
-      <SectionShell id="summary" title="Report Summary" onJump={onJump}>
-        <div className="grid gap-x-8 md:grid-cols-2">
-          <SummaryRow label="Score" value={`${formatScore(report.score)} / ${formatScore(report.totalMarks)}`} hidden={!scoreVisible} />
-          <SummaryRow label="Rank" value={`#${report.rank} of ${report.participants || '-'}`} hidden={!permission(report, 'canViewRank') || !report.rank} />
-          <SummaryRow label="Accuracy" value={pct !== null ? `${Math.round(pct)}%` : 'Hidden'} hidden={!permission(report, 'canViewPercentage')} />
-          <SummaryRow label="Time taken" value={formatSeconds(report.timeTakenSec)} hidden={!permission(report, 'canViewTimeAnalysis')} />
-          <SummaryRow label="Questions attempted" value={`${attempted} / ${totalQuestions}`} hidden={!scoreVisible} />
-          <SummaryRow label="Correct count" value={report.correctAnswers ?? 'Hidden'} hidden={!scoreVisible} />
-          <SummaryRow label="Wrong count" value={report.wrongAnswers ?? 'Hidden'} hidden={!scoreVisible} />
-          <SummaryRow label="Skipped count" value={report.skippedQuestions ?? 'Hidden'} hidden={!scoreVisible} />
-          <SummaryRow label="Violation count" value={report.violationCount ?? report.securityInfo?.totalViolations ?? 'No data'} />
+      <SectionShell id="summary" title="Result overview">
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+          <ReportMetric label="Score" value={hasValue(report.score) && hasValue(report.totalMarks) ? `${formatScore(report.score)} / ${formatScore(report.totalMarks)}` : 'Not available'} hidden={!scoreVisible} />
+          <ReportMetric label="Rank" value={hasValue(report.rank) ? `#${report.rank}${hasValue(report.participants) ? ` of ${report.participants}` : ''}` : 'Not available'} hidden={!permission(report, 'canViewRank')} />
+          <ReportMetric label="Accuracy" value={pct !== null ? `${Math.round(pct)}%` : 'Not available'} hidden={!permission(report, 'canViewPercentage')} />
+          <ReportMetric label="Time taken" value={formatSeconds(report.timeTakenSec)} hidden={!permission(report, 'canViewTimeAnalysis')} />
+          <ReportMetric label="Attempted" value={attempted !== null && totalQuestions !== null ? `${attempted} / ${totalQuestions}` : 'Not available'} hidden={!scoreVisible} />
+          <ReportMetric label="Correct" value={report.correctAnswers} hidden={!scoreVisible} />
+          <ReportMetric label="Wrong" value={report.wrongAnswers} hidden={!scoreVisible} />
+          <ReportMetric label="Skipped" value={report.skippedQuestions} hidden={!scoreVisible} />
+          <ReportMetric label="Violations" value={report.violationCount ?? report.securityInfo?.totalViolations} />
         </div>
       </SectionShell>
     </div>
   );
 }
 
-function PerformancePanel({ report, onJump }) {
+function PerformancePanel({ report }) {
   if (!permission(report, 'canViewSectionAnalytics')) {
     return <EmptyState icon={Lock} title="Section analytics hidden" message="Section-wise analytics are disabled for this assessment." />;
   }
   const sections = report.sectionBreakdown || [];
   if (!sections.length) return <EmptyState title="No section performance data" message="The backend did not return section breakdown for this report." />;
   return (
-    <SectionShell id="performance" title="Section Performance" onJump={onJump}>
+    <SectionShell id="performance" title="Section Performance">
       <div className="space-y-2">
         {sections.map((section) => {
           const accuracy = percent(section.correctAnswers, section.totalQuestions);
@@ -458,8 +474,8 @@ function PerformancePanel({ report, onJump }) {
             <div key={`${section.sectionIndex}-${section.sectionName}`} className="rounded-lg border border-slate-200 p-3 dark:border-gray-800">
               <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold text-slate-950 dark:text-white">{section.sectionName}</div>
-                  <div className={`mt-0.5 text-xs ${mutedText}`}>{section.type || 'Section'} - {section.totalQuestions || 0} questions</div>
+                  <div className="truncate text-sm font-semibold text-slate-950 dark:text-white">{displayValue(section.sectionName)}</div>
+                  <div className={`mt-0.5 text-xs ${mutedText}`}>{displayValue(section.type)} · {hasValue(section.totalQuestions) ? `${section.totalQuestions} questions` : 'Questions not available'}</div>
                 </div>
                 <div className="text-sm font-semibold text-slate-900 dark:text-white">{Math.round(accuracy)}%</div>
               </div>
@@ -487,7 +503,7 @@ function QuestionReview({ report, search, filterOpen }) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showExplanation, setShowExplanation] = useState(false);
 
-  const questions = report?.questionWise || [];
+  const questions = useMemo(() => report?.questionWise || [], [report?.questionWise]);
   const dynamicStatuses = useMemo(() => Array.from(new Set(questions.map((question) => question.status).filter(Boolean))), [questions]);
   const dynamicSections = useMemo(() => Array.from(new Set(questions.map((question) => question.sectionName).filter(Boolean))), [questions]);
   const dynamicDifficulties = useMemo(() => Array.from(new Set(questions.map((question) => question.difficulty).filter(Boolean))), [questions]);
@@ -573,7 +589,7 @@ function QuestionReview({ report, search, filterOpen }) {
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <div className={labelClass}>{selected.sectionName || 'Question'}</div>
+                  <div className={labelClass}>{displayValue(selected.sectionName)}</div>
                   <h3 className="mt-1 text-base font-semibold text-slate-950 dark:text-white">Q{selectedIndex + 1}</h3>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
@@ -584,7 +600,7 @@ function QuestionReview({ report, search, filterOpen }) {
               </div>
 
               <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-900 dark:border-gray-800 dark:bg-gray-950/40 dark:text-gray-100">
-                {selected.questionText}
+                {displayValue(selected.questionText)}
               </div>
 
               <div className="grid gap-3 xl:grid-cols-2">
@@ -639,7 +655,7 @@ function ViolationsPanel({ report }) {
 }
 
 export default function AssessmentReportsPage() {
-  const { dashboard, loading, error, refresh } = useStudentAssessmentDashboardData();
+  const { dashboard, loading, error } = useStudentAssessmentDashboardData();
   const toast = useToast();
   const [selectedReport, setSelectedReport] = useState(null);
   const [query, setQuery] = useState('');
@@ -649,7 +665,7 @@ export default function AssessmentReportsPage() {
   const [activeTab, setActiveTab] = useState('overview');
   const workspaceRef = useRef(null);
 
-  const reports = dashboard.reports || [];
+  const reports = useMemo(() => dashboard.reports || [], [dashboard.reports]);
 
   const filteredReports = useMemo(() => {
     const search = query.trim().toLowerCase();
@@ -707,13 +723,6 @@ export default function AssessmentReportsPage() {
     workspaceRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
-  const jumpTo = useCallback((id) => {
-    const container = workspaceRef.current;
-    const target = container?.querySelector(`#${id}`);
-    if (!container || !target) return;
-    container.scrollTo({ top: target.offsetTop - 126, behavior: 'smooth' });
-  }, []);
-
   const handleExport = useCallback(async () => {
     if (!currentReport) return;
     try {
@@ -726,7 +735,7 @@ export default function AssessmentReportsPage() {
 
   return (
     <AssessmentModuleLayout title="Assessment Reports">
-      <div className="h-[calc(100vh-9.5rem)] overflow-hidden rounded-xl bg-[#f8fbff] text-slate-900 dark:bg-gray-950 dark:text-gray-100">
+      <div className="min-h-[420px] rounded-xl bg-[#f8fbff] text-slate-900 dark:bg-gray-950 dark:text-gray-100 lg:h-[calc(100vh-9.5rem)] lg:overflow-hidden">
         {loading ? (
           <Skeleton />
         ) : error ? (
@@ -735,7 +744,7 @@ export default function AssessmentReportsPage() {
             {error}
           </div>
         ) : (
-          <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
+          <div className="grid min-h-0 gap-3 lg:h-full lg:grid-cols-[260px_minmax(0,1fr)]">
             <ReportNavigation
               reports={filteredReports}
               selectedId={currentReport?.id}
@@ -746,23 +755,23 @@ export default function AssessmentReportsPage() {
               onSelect={selectReport}
             />
 
-            <main ref={workspaceRef} className="min-h-0 overflow-y-auto pr-1">
+            <main ref={workspaceRef} className="min-h-0 pr-1 lg:overflow-y-auto">
               {currentReport ? (
                 <div className="space-y-3">
                   <WorkspaceHeader
                     report={currentReport}
-                    onRefresh={refresh}
                     onExport={handleExport}
                     search={reportSearch}
                     setSearch={setReportSearch}
                     filterOpen={filterOpen}
                     setFilterOpen={setFilterOpen}
+                    activeTab={activeTab}
                   />
                   <ReportTabs tabs={tabs} activeTab={activeTab} setActiveTab={setActiveTab} />
 
-                  {activeTab === 'overview' ? <OverviewPanel report={currentReport} onJump={jumpTo} /> : null}
+                  {activeTab === 'overview' ? <OverviewPanel report={currentReport} /> : null}
                   {activeTab === 'questions' ? <QuestionReview report={currentReport} search={reportSearch} filterOpen={filterOpen} /> : null}
-                  {activeTab === 'performance' ? <PerformancePanel report={currentReport} onJump={jumpTo} /> : null}
+                  {activeTab === 'performance' ? <PerformancePanel report={currentReport} /> : null}
                   {activeTab === 'violations' ? <ViolationsPanel report={currentReport} /> : null}
                   {activeTab === 'feedback' && hasValue(currentReport.feedback) ? (
                     <SectionShell id="feedback" title="Feedback">
