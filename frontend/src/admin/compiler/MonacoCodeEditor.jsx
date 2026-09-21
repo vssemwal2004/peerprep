@@ -23,6 +23,81 @@ import { getMonacoLanguage } from './compilerUtils';
 
 const internalEditorClipboards = new Map();
 const MAX_CACHED_MODELS = 24;
+let rCompletionProviderRegistered = false;
+
+const R_KEYWORDS = [
+  'if', 'else', 'repeat', 'while', 'for', 'in', 'next', 'break', 'function',
+  'return', 'switch', 'try', 'tryCatch', 'stop', 'warning',
+];
+
+const R_CONSTANTS_AND_TYPES = [
+  'TRUE', 'FALSE', 'NULL', 'NA', 'NaN', 'Inf', 'NA_integer_', 'NA_real_',
+  'NA_complex_', 'NA_character_', 'logical', 'integer', 'double', 'numeric',
+  'complex', 'character', 'raw', 'list', 'matrix', 'array', 'factor',
+  'data.frame', 'Date', 'POSIXct', 'environment',
+];
+
+const R_BASE_FUNCTIONS = [
+  'c', 'list', 'vector', 'matrix', 'array', 'data.frame', 'factor', 'seq',
+  'seq_len', 'seq_along', 'rep', 'length', 'nrow', 'ncol', 'dim', 'names',
+  'rownames', 'colnames', 'class', 'typeof', 'attributes', 'attr', 'structure',
+  'as.logical', 'as.integer', 'as.numeric', 'as.double', 'as.character',
+  'as.factor', 'as.matrix', 'as.data.frame', 'is.null', 'is.na', 'is.nan',
+  'is.finite', 'is.infinite', 'is.logical', 'is.integer', 'is.numeric',
+  'is.character', 'is.list', 'is.matrix', 'is.array', 'is.data.frame',
+  'print', 'cat', 'message', 'readline', 'scan', 'readLines', 'writeLines',
+  'read.csv', 'read.table', 'write.csv', 'write.table', 'paste', 'paste0',
+  'sprintf', 'format', 'substr', 'substring', 'strsplit', 'grep', 'grepl',
+  'gsub', 'sub', 'tolower', 'toupper', 'trimws', 'chartr', 'nchar',
+  'sum', 'prod', 'min', 'max', 'range', 'mean', 'median', 'quantile', 'var',
+  'sd', 'cor', 'cov', 'round', 'signif', 'floor', 'ceiling', 'trunc', 'abs',
+  'sqrt', 'exp', 'log', 'log10', 'sin', 'cos', 'tan', 'choose', 'factorial',
+  'sort', 'order', 'rank', 'rev', 'unique', 'duplicated', 'match', '%in%',
+  'which', 'which.max', 'which.min', 'any', 'all', 'anyNA', 'complete.cases',
+  'sample', 'set.seed', 'rnorm', 'runif', 'dnorm', 'pnorm', 'qnorm',
+  'apply', 'lapply', 'sapply', 'vapply', 'tapply', 'mapply', 'Map', 'Reduce',
+  'Filter', 'aggregate', 'merge', 'subset', 'transform', 'within', 'split',
+  'rbind', 'cbind', 'do.call', 'unlist', 'append', 'head', 'tail', 'str',
+  'summary', 'table', 'prop.table', 'cut', 'findInterval', 'diff', 'cumsum',
+  'cumprod', 'cummin', 'cummax', 'lm', 'glm', 'predict', 'anova', 'plot',
+  'hist', 'boxplot', 'barplot', 'lines', 'points', 'legend', 'par',
+  'library', 'require', 'data', 'get', 'assign', 'exists', 'rm', 'ls',
+  'source', 'invisible', 'identical', 'all.equal', 'quote', 'expression',
+];
+
+function registerRCompletionProvider(monaco) {
+  if (rCompletionProviderRegistered) return;
+  rCompletionProviderRegistered = true;
+  const keywordSet = new Set(R_KEYWORDS);
+  const typeSet = new Set(R_CONSTANTS_AND_TYPES);
+  const labels = [...new Set([...R_KEYWORDS, ...R_CONSTANTS_AND_TYPES, ...R_BASE_FUNCTIONS])];
+
+  monaco.languages.registerCompletionItemProvider('r', {
+    triggerCharacters: ['.', '_'],
+    provideCompletionItems(model, position) {
+      const word = model.getWordUntilPosition(position);
+      const range = {
+        startLineNumber: position.lineNumber,
+        endLineNumber: position.lineNumber,
+        startColumn: word.startColumn,
+        endColumn: word.endColumn,
+      };
+      return {
+        suggestions: labels.map((label) => ({
+          label,
+          insertText: label,
+          range,
+          kind: keywordSet.has(label)
+            ? monaco.languages.CompletionItemKind.Keyword
+            : typeSet.has(label)
+              ? monaco.languages.CompletionItemKind.Class
+              : monaco.languages.CompletionItemKind.Function,
+          detail: keywordSet.has(label) ? 'R keyword' : typeSet.has(label) ? 'R constant or data type' : 'Base R function',
+        })),
+      };
+    },
+  });
+}
 
 if (typeof window !== 'undefined') {
   window.MonacoEnvironment = {
@@ -267,6 +342,7 @@ export default function MonacoCodeEditor({
 
     try {
       definePeerprepThemes(bundledMonaco);
+      registerRCompletionProvider(bundledMonaco);
       const initialModelKey = getModelKey(contentKeyRef.current);
       const initialModel = bundledMonaco.editor.createModel(
         externalValueRef.current,
@@ -305,12 +381,12 @@ export default function MonacoCodeEditor({
         parameterHints: { enabled: false },
         inlayHints: { enabled: 'off' },
         lightbulb: { enabled: 'off' },
-        quickSuggestions: false,
-        suggestOnTriggerCharacters: false,
-        wordBasedSuggestions: 'off',
+        quickSuggestions: { other: true, comments: false, strings: false },
+        suggestOnTriggerCharacters: true,
+        wordBasedSuggestions: 'currentDocument',
         inlineSuggest: { enabled: false },
-        tabCompletion: 'off',
-        acceptSuggestionOnEnter: 'off',
+        tabCompletion: 'on',
+        acceptSuggestionOnEnter: 'smart',
         bracketPairColorization: { enabled: true },
         guides: { bracketPairs: true, indentation: true, highlightActiveIndentation: true },
         occurrencesHighlight: 'off',

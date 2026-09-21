@@ -105,9 +105,17 @@ export default function CoordinatorAccessDetails() {
   }, [activePhase, accessFilter, query, selectedSet]);
 
   const togglePermission = (key) => {
-    setSelected((current) => current.includes(key)
-      ? current.filter((permission) => permission !== key)
-      : [...current, key]);
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+        if (key === 'coordinator.assessment.create') next.delete('coordinator.assessment.candidates');
+      } else {
+        next.add(key);
+        if (key === 'coordinator.assessment.candidates') next.add('coordinator.assessment.create');
+      }
+      return [...next];
+    });
   };
 
   const setCategory = (category, enabled) => {

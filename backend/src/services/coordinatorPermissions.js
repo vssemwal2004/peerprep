@@ -86,6 +86,7 @@ export const COORDINATOR_PERMISSION_CATEGORIES = [
     permissions: [
       'coordinator.assessment.view',
       'coordinator.assessment.create',
+      'coordinator.assessment.candidates',
       'coordinator.assessment.edit',
     ],
   },

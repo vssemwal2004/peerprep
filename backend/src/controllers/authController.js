@@ -56,6 +56,8 @@ export async function changePassword(req, res) {
   // Update password (all students and coordinators use User model hashing)
   user.passwordHash = await User.hashPassword(newPassword);
   user.mustChangePassword = false;
+  user.temporaryPasswordEncrypted = undefined;
+  user.markModified('temporaryPasswordEncrypted');
   await user.save();
   invalidateUserCache(user._id);
 
@@ -75,7 +77,7 @@ export async function changePassword(req, res) {
   }
 
   // Auto-enroll student in all courses for their semester on first login
-  if (wasFirstLogin) {
+  if (wasFirstLogin && user.accessScope !== 'assessment_only') {
     // Re-fetch with populated semester field (lean object from req.user may be stale)
     const freshStudent = await User.findById(user._id).lean();
     autoEnrollStudentInCourses(freshStudent).then(result => {
@@ -187,6 +189,7 @@ export async function me(req, res) {
     username: u.username || '',
     name: u.name, 
     role: u.role, 
+    accessScope: u.accessScope || 'full',
     avatarUrl: u.avatarUrl,
     isSpecialStudent: Boolean(u.isSpecialStudent),
     bio: u.bio || '',
@@ -500,6 +503,10 @@ export async function forcePasswordChange(req, res) {
   
   user.passwordHash = await User.hashPassword(newPassword);
   user.mustChangePassword = false;
+  if (user.accessScope === 'assessment_only') {
+    user.temporaryPasswordEncrypted = undefined;
+    user.markModified('temporaryPasswordEncrypted');
+  }
   await user.save();
   invalidateUserCache(user._id);
   res.json({ message: 'Password updated' });
@@ -509,6 +516,7 @@ function sanitizeUser(u) {
   const user = {
     id: u._id,
     role: u.role,
+    accessScope: u.accessScope || 'full',
     name: u.name,
     email: u.email,
     studentId: u.studentId,

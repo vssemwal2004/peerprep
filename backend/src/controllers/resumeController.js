@@ -6,6 +6,7 @@ const FIXED_SECTIONS = ['education', 'experience', 'projects', 'skills', 'achiev
 const VISIBILITY_KEYS = ['location', 'email', 'mobile', 'linkedin', 'github', 'portfolio'];
 const MAX_ITEMS = 30;
 const MAX_BULLETS = 20;
+const RESUME_TEMPLATES = new Set(['iit-bombay-classic', 'peerprep-nova', 'peerprep-meridian', 'peerprep-circuit']);
 
 const cleanText = (value, max = 1000) => String(value ?? '')
   .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
@@ -69,9 +70,10 @@ const normalizeResume = (body = {}) => {
   );
 
   const normalized = {
-    template: 'iit-bombay-classic',
+    template: RESUME_TEMPLATES.has(body.template) ? body.template : 'iit-bombay-classic',
     basics: {
       name: cleanText(body.basics?.name, 160),
+      headline: cleanText(body.basics?.headline, 160),
       location: cleanText(body.basics?.location, 160),
       email: cleanText(body.basics?.email, 254),
       mobile: cleanText(body.basics?.mobile, 60),
@@ -130,6 +132,7 @@ const getProfileSeed = async (studentId) => {
     template: 'iit-bombay-classic',
     basics: {
       name: profile?.name || '',
+      headline: '',
       location: '',
       email: profile?.email || '',
       mobile: profile?.phone || '',
@@ -161,6 +164,7 @@ export async function saveMyResume(req, res) {
   const existing = await Resume.findOne({ student: req.user._id }).lean();
   const previousVersion = existing ? {
     data: {
+      template: existing.template,
       basics: existing.basics,
       basicsVisibility: existing.basicsVisibility,
       education: existing.education,
@@ -191,6 +195,7 @@ export async function restorePreviousResume(req, res) {
   const normalized = normalizeResume(resume.previousVersion.data);
   const currentSnapshot = {
     data: {
+      template: resume.template,
       basics: resume.basics,
       basicsVisibility: resume.basicsVisibility,
       education: resume.education,

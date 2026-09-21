@@ -40,6 +40,7 @@ import ResumePreview from '../features/resume/ResumePreview';
 import {
   DEFAULT_SECTION_ORDER,
   FIXED_SECTION_META,
+  RESUME_TEMPLATES,
   calculateReadiness,
   createEmptyDetailEntry,
   filenameForResume,
@@ -635,6 +636,7 @@ export default function StudentResume() {
 
   const saveLabel = saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : saveState === 'error' ? 'Retry save' : dirty ? 'Unsaved changes' : 'Save';
   const sectionItems = [{ key: 'basics', label: 'Basics' }, ...resume.sectionOrder.map((key) => ({ key, label: key.startsWith('custom:') ? resume.customSections.find((section) => `custom:${section.id}` === key)?.title || 'Custom' : FIXED_SECTION_META[key]?.label || key }))];
+  const selectedTemplate = RESUME_TEMPLATES.find((template) => template.id === resume.template) || RESUME_TEMPLATES[0];
 
   return (
     <RequirePasswordChange user={user}>
@@ -655,6 +657,22 @@ export default function StudentResume() {
 
         <div className="mx-auto mt-4 flex max-w-[1680px] gap-2 px-4 lg:hidden"><button type="button" onClick={() => setMobileTab('edit')} className={`flex-1 rounded-xl px-4 py-2.5 text-xs font-bold ${mobileTab === 'edit' ? 'bg-sky-600 text-white' : 'bg-white text-slate-600 dark:bg-slate-900 dark:text-slate-300'}`}>Edit Resume</button><button type="button" onClick={() => setMobileTab('preview')} className={`flex-1 rounded-xl px-4 py-2.5 text-xs font-bold ${mobileTab === 'preview' ? 'bg-sky-600 text-white' : 'bg-white text-slate-600 dark:bg-slate-900 dark:text-slate-300'}`}>Preview</button></div>
 
+        <section className="mx-auto mt-3 max-w-[1680px] px-4 sm:px-6" aria-labelledby="resume-template-title">
+          <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 dark:bg-slate-900">
+            <div className="min-w-0">
+              <h2 id="resume-template-title" className="text-xs font-black text-slate-950 dark:text-white">Resume template</h2>
+              <p className="truncate text-[10px] text-slate-500 dark:text-slate-400">{selectedTemplate.caption} · Preview and PDF use the same layout</p>
+            </div>
+            <label className="relative block w-full shrink-0 sm:w-64">
+              <span className="sr-only">Select resume template</span>
+              <select value={selectedTemplate.id} onChange={(event) => { updateResume((current) => ({ ...current, template: event.target.value })); setPreviewPage(0); }} className="h-9 w-full appearance-none rounded-lg border border-slate-200 bg-slate-50 pl-3 pr-9 text-xs font-bold text-slate-800 outline-none transition hover:border-sky-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:ring-sky-950">
+                {RESUME_TEMPLATES.map((template) => <option key={template.id} value={template.id}>{template.name} — {template.caption}</option>)}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            </label>
+          </div>
+        </section>
+
         <main ref={workspaceRef} className={`resume-workspace mx-auto max-w-[1680px] px-4 py-4 sm:px-6 ${editorCollapsed ? 'resume-workspace-collapsed' : ''}`} style={{ '--resume-editor-width': `${editorWidth}%` }}>
           <div className={`${mobileTab === 'preview' ? 'hidden lg:block' : 'block'} ${editorCollapsed ? 'lg:hidden' : ''} min-w-0 space-y-4`}>
             {error ? <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-3.5 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><span className="flex-1">{error}</span><button type="button" onClick={() => setError('')}><X className="h-4 w-4" /></button></div> : null}
@@ -673,8 +691,8 @@ export default function StudentResume() {
             <SectionCard sectionKey="basics" title="Basic Details" help={SECTION_HELP.basics} icon={UserRound} active={activeSection === 'basics'} collapsed={collapsed.basics} onCollapse={() => setCollapsed((state) => ({ ...state, basics: !state.basics }))} onFocus={() => setActiveSection('basics')} status={isReady('basics') ? 'Ready' : 'Not added'}>
               <div className="mb-4 rounded-xl bg-sky-50 px-3 py-2 text-[11px] leading-5 text-sky-800 dark:bg-sky-950/40 dark:text-sky-200">Profile information is used only as a starting point. Editing or hiding it here does not change your PeerPrep profile.</div>
               <div className="grid gap-3 sm:grid-cols-2">
-                {Object.entries({ name: 'Full Name', location: 'Location', email: 'Email', mobile: 'Mobile', linkedin: 'LinkedIn', github: 'GitHub', portfolio: 'Portfolio' }).map(([key, label]) => (
-                  <div key={key} className={key === 'portfolio' ? 'sm:col-span-2' : ''}><Field label={label} type={['email'].includes(key) ? key : key === 'mobile' ? 'tel' : ['linkedin', 'github', 'portfolio'].includes(key) ? 'url' : 'text'} value={resume.basics[key] || ''} onChange={(event) => updateResume((current) => ({ ...current, basics: { ...current.basics, [key]: event.target.value } }))} placeholder={key === 'name' ? 'Your full name' : key === 'location' ? 'City, India' : key === 'email' ? 'you@example.com' : key === 'mobile' ? '+91...' : 'https://...'} visibility={key === 'name' ? undefined : resume.basicsVisibility[key]} onToggleVisibility={key === 'name' ? undefined : () => updateResume((current) => ({ ...current, basicsVisibility: { ...current.basicsVisibility, [key]: !current.basicsVisibility[key] } }))} /></div>
+                {Object.entries({ name: 'Full Name', headline: 'Professional headline', location: 'Location', email: 'Email', mobile: 'Mobile', linkedin: 'LinkedIn', github: 'GitHub', portfolio: 'Portfolio' }).map(([key, label]) => (
+                  <div key={key} className={['headline', 'portfolio'].includes(key) ? 'sm:col-span-2' : ''}><Field label={label} type={['email'].includes(key) ? key : key === 'mobile' ? 'tel' : ['linkedin', 'github', 'portfolio'].includes(key) ? 'url' : 'text'} value={resume.basics[key] || ''} onChange={(event) => updateResume((current) => ({ ...current, basics: { ...current.basics, [key]: event.target.value } }))} placeholder={key === 'name' ? 'Your full name' : key === 'headline' ? 'Software Engineer or Automation QA Engineer' : key === 'location' ? 'City, India' : key === 'email' ? 'you@example.com' : key === 'mobile' ? '+91...' : 'https://...'} visibility={['name', 'headline'].includes(key) ? undefined : resume.basicsVisibility[key]} onToggleVisibility={['name', 'headline'].includes(key) ? undefined : () => updateResume((current) => ({ ...current, basicsVisibility: { ...current.basicsVisibility, [key]: !current.basicsVisibility[key] } }))} /></div>
                 ))}
               </div>
             </SectionCard>

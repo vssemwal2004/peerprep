@@ -5,6 +5,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
+import { useAuth } from '../context/AuthContext';
+import { hasPermission } from './coordinatorPermissions';
 import {
   ClipboardList, Filter, Plus, Search, Trash2, Eye, EyeOff,
   Pencil, Copy, X, MoreVertical, Lock, Unlock, Globe, ShieldOff,
@@ -946,7 +948,10 @@ function PasswordModal({ assessment, onClose, onSave }) {
 export default function AssessmentDashboard() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
   const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
+  const canCreateAssessments = hasPermission(user, 'coordinator.assessment.create');
+  const canCreateAssessmentCandidates = hasPermission(user, 'coordinator.assessment.candidates');
   const toast = useToast();
   const [assessments, setAssessments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -956,6 +961,7 @@ export default function AssessmentDashboard() {
   const [invitationTarget, setInvitationTarget] = useState(null);
   const [eligibleTarget, setEligibleTarget] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
+  const [showCreateMode, setShowCreateMode] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
   const [filters, setFilters] = useState({
     search: '',
@@ -1145,9 +1151,9 @@ export default function AssessmentDashboard() {
               <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Assessments</p>
               <h1 className="mt-0.5 text-xl font-bold tracking-tight text-slate-950 dark:text-white">All Assessments</h1>
             </div>
-            <button type="button" onClick={() => navigate(`${rolePrefix}/assessment/create`)} className="inline-flex h-9 items-center gap-2 rounded-lg bg-sky-600 px-3.5 text-xs font-semibold text-white hover:bg-sky-500">
+            {canCreateAssessments && <button type="button" onClick={() => setShowCreateMode(true)} className="inline-flex h-9 items-center gap-2 rounded-lg bg-sky-600 px-3.5 text-xs font-semibold text-white hover:bg-sky-500">
               <Plus className="h-4 w-4" /> Create Assessment
-            </button>
+            </button>}
           </div>
         </header>
 
@@ -1205,8 +1211,9 @@ export default function AssessmentDashboard() {
               </div>
             ) : (
               <div role="list" className="space-y-2.5">
-                <div className="hidden grid-cols-[minmax(210px,1.8fr)_110px_100px_100px_minmax(130px,1fr)_105px_84px_28px] items-center gap-x-4 px-4 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 xl:grid dark:text-gray-500">
+                <div className="hidden grid-cols-[minmax(190px,1.5fr)_130px_105px_95px_95px_minmax(120px,1fr)_95px_80px_28px] items-center gap-x-3 px-4 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 xl:grid dark:text-gray-500">
                   <span>Assessment</span>
+                  <span>Audience</span>
                   <span>Date</span>
                   <span>Time</span>
                   <span>Content</span>
@@ -1242,7 +1249,7 @@ export default function AssessmentDashboard() {
                           navigate(`${rolePrefix}/assessment/reports?assessmentId=${encodeURIComponent(assessment._id)}`);
                         }
                       }}
-                      className="group grid cursor-pointer grid-cols-1 items-center gap-x-4 gap-y-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition-all hover:-translate-y-px hover:border-sky-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-sky-800 md:grid-cols-2 xl:grid-cols-[minmax(210px,1.8fr)_110px_100px_100px_minmax(130px,1fr)_105px_84px_28px]"
+                      className="group grid cursor-pointer grid-cols-1 items-center gap-x-3 gap-y-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition-all hover:-translate-y-px hover:border-sky-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-sky-800 md:grid-cols-2 xl:grid-cols-[minmax(190px,1.5fr)_130px_105px_95px_95px_minmax(120px,1fr)_95px_80px_28px]"
                     >
                       <div className="min-w-0 md:col-span-2 xl:col-span-1">
                         <div className="flex min-w-0 items-center gap-1.5">
@@ -1262,6 +1269,12 @@ export default function AssessmentDashboard() {
                           <span className="h-1 w-1 shrink-0 rounded-full bg-slate-300" aria-hidden="true" />
                           <span className="shrink-0">ID {assessment.assessmentId || '—'}</span>
                         </div>
+                      </div>
+
+                      <div className="min-w-0">
+                        <span className={`inline-flex max-w-full items-center rounded-md border px-2 py-1 text-[10px] font-semibold ${assessment.audienceType === 'assessment_candidates' ? 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-300' : 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300'}`}>
+                          <span className="truncate">{assessment.audienceType === 'assessment_candidates' ? 'Assessment candidates' : 'Platform students'}</span>
+                        </span>
                       </div>
 
                       <div className="min-w-0 text-xs">
@@ -1331,6 +1344,18 @@ export default function AssessmentDashboard() {
           </main>
         </div>
       </motion.div>
+
+      {showCreateMode && (
+        <div className="fixed inset-0 z-[180] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="assessment-mode-title" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowCreateMode(false); }}>
+          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+            <div className="flex items-start justify-between gap-4"><div><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-600">New assessment</p><h2 id="assessment-mode-title" className="mt-1 text-xl font-bold text-slate-950 dark:text-white">Who will take this assessment?</h2><p className="mt-1 text-sm text-slate-500 dark:text-gray-400">Choose the audience type. This controls student selection, credentials and platform access.</p></div><button type="button" onClick={() => setShowCreateMode(false)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-gray-800" aria-label="Close"><X className="h-4 w-4" /></button></div>
+            <div className="mt-5 grid gap-3 md:grid-cols-2">
+              <button type="button" onClick={() => navigate(`${rolePrefix}/assessment/create?audience=platform_students`)} className="group rounded-2xl border border-slate-200 p-5 text-left transition hover:border-sky-400 hover:bg-sky-50/60 dark:border-gray-700 dark:hover:border-sky-700 dark:hover:bg-sky-950/20"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300"><Users className="h-5 w-5" /></span><span className="mt-4 block text-base font-bold text-slate-900 dark:text-white">Platform Students</span><span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-gray-400">Select students who already have complete PeerPrep accounts and full platform access.</span><span className="mt-4 block text-xs font-bold text-sky-700 dark:text-sky-300">Use existing student list →</span></button>
+              {canCreateAssessmentCandidates && <button type="button" onClick={() => navigate(`${rolePrefix}/assessment/create?audience=assessment_candidates`)} className="group rounded-2xl border border-slate-200 p-5 text-left transition hover:border-violet-400 hover:bg-violet-50/60 dark:border-gray-700 dark:hover:border-violet-700 dark:hover:bg-violet-950/20"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300"><ClipboardList className="h-5 w-5" /></span><span className="mt-4 block text-base font-bold text-slate-900 dark:text-white">Assessment Candidates</span><span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-gray-400">Invite external candidates who can access only assigned assessments—not the rest of PeerPrep.</span><span className="mt-4 block text-xs font-bold text-violet-700 dark:text-violet-300">Create assessment-only access →</span></button>}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Detail Drawer */}
       <AnimatePresence>

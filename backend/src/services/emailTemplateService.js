@@ -171,7 +171,7 @@ const defaultTemplates = [
     type: EMAIL_TEMPLATE_TYPES.ASSESSMENT_INVITATION,
     name: 'Assessment Invitation',
     subject: 'You are invited: {{assessmentTitle}} | PeerPrep',
-    variables: ['studentName', 'assessmentTitle', 'assessmentId', 'testType', 'description', 'startLabel', 'endLabel', 'duration', 'attemptLimit', 'passwordSection', 'assessmentUrl'],
+    variables: ['studentName', 'assessmentTitle', 'assessmentId', 'testType', 'description', 'startLabel', 'endLabel', 'duration', 'attemptLimit', 'credentialsSection', 'passwordSection', 'assessmentUrl'],
     htmlContent: `
       <div style="margin:0;background:#f1f5f9;padding:32px 12px;font-family:Arial,sans-serif;color:#0f172a;">
         <div style="max-width:640px;margin:0 auto;overflow:hidden;border:1px solid #e2e8f0;border-radius:18px;background:#ffffff;box-shadow:0 16px 40px rgba(15,23,42,.08);">
@@ -182,6 +182,7 @@ const defaultTemplates = [
           <div style="padding:30px 32px;">
             <p style="margin:0 0 16px;font-size:16px;">Hello <strong>{{studentName}}</strong>,</p>
             <p style="margin:0 0 22px;color:#475569;line-height:1.7;">You are eligible for this assessment. Review the complete schedule and access details below before starting.</p>
+            {{credentialsSection}}
             <div style="border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
               <table role="presentation" style="width:100%;border-collapse:collapse;font-size:14px;">
                 <tr><td style="padding:12px 16px;background:#f8fafc;color:#64748b;width:38%;">Assessment ID</td><td style="padding:12px 16px;font-weight:700;">{{assessmentId}}</td></tr>

@@ -95,7 +95,7 @@ export async function requireAuth(req, res, next) {
     // All tokens now resolve to the unified User model
     // Use lean() + select() for faster query - only fetch needed fields
     user = await User.findById(payload.sub)
-      .select('_id email name role semester activeSessionToken passwordChangedAt avatarUrl coordinatorId teacherIds studentId course branch college group department phone isSpecialStudent isActive coordinatorPermissions coordinatorDataScope')
+      .select('_id email name role accessScope semester activeSessionToken passwordChangedAt avatarUrl coordinatorId teacherIds studentId course branch college group department phone isSpecialStudent isActive coordinatorPermissions coordinatorDataScope')
       .lean();
     if (!user) throw new HttpError(401, 'User not found');
     
@@ -166,6 +166,13 @@ export function requireStudent(req, res, next) {
 
 export function requireCoordinator(req, res, next) {
   if (!req.user || req.user.role !== 'coordinator') throw new HttpError(403, 'Coordinator only');
+  next();
+}
+
+export function requireFullStudent(req, res, next) {
+  if (req.user?.role === 'student' && req.user?.accessScope === 'assessment_only') {
+    throw new HttpError(403, 'This account can access assessments only.');
+  }
   next();
 }
 

@@ -33,15 +33,22 @@ function ResumeHeader({ resume }) {
   return (
     <header className="resume-document-header">
       {basics.name ? <h1>{basics.name}</h1> : null}
+      {basics.headline && resume.template !== 'iit-bombay-classic' ? <div className="resume-professional-headline">{basics.headline}</div> : null}
       {contacts.map((item, index) => (
         <div key={`${item.label}-${index}`} className="resume-contact-line">
-          {item.label ? <strong>{item.label}: </strong> : null}
+          {item.label && resume.template === 'iit-bombay-classic' ? <strong>{item.label}: </strong> : null}
           {item.href ? <a href={item.href} target="_blank" rel="noreferrer">{item.value}</a> : item.value}
         </div>
       ))}
     </header>
   );
 }
+
+const templateSectionTitle = (resume, sectionKey) => {
+  const title = getSectionTitle(resume, sectionKey);
+  if (resume.template === 'iit-bombay-classic') return title;
+  return title.toLowerCase().replace(/(^|\s)\S/g, (letter) => letter.toUpperCase());
+};
 
 function EducationSection({ entries }) {
   return (
@@ -58,11 +65,11 @@ function EducationSection({ entries }) {
   );
 }
 
-function DetailEntries({ entries, custom = false }) {
+function DetailEntries({ entries, custom = false, reference = false }) {
   return entries.map((entry, index) => (
     <div className="resume-detail-entry" key={index}>
       <div className="resume-entry-heading">
-        <strong>{entry.link ? <a href={entry.link} target="_blank" rel="noreferrer">{entry.title}</a> : entry.title}</strong>
+        <strong>{entry.link ? <a href={entry.link} target="_blank" rel="noreferrer">{entry.title}</a> : entry.title}{reference && entry.technologies ? <><span> | </span><em>{entry.technologies}</em></> : null}</strong>
         {entry.date ? <em>{entry.date}</em> : null}
       </div>
       {(entry.subtitle || entry.location) ? (
@@ -70,7 +77,7 @@ function DetailEntries({ entries, custom = false }) {
           <em>{entry.subtitle}</em>{entry.location ? <span>{entry.location}</span> : null}
         </div>
       ) : null}
-      {entry.technologies ? custom ? <div className="resume-custom-paragraph"><InlineText text={entry.technologies} /></div> : <div className="resume-technologies"><strong>Tech: </strong><em>{entry.technologies}</em></div> : null}
+      {entry.technologies && (!reference || custom) ? custom ? <div className="resume-custom-paragraph"><InlineText text={entry.technologies} /></div> : <div className="resume-technologies"><strong>Tech: </strong><em>{entry.technologies}</em></div> : null}
       {entry.bullets?.length ? (
         <ul>{entry.bullets.map((bullet, bulletIndex) => <li key={bulletIndex}><InlineText text={bullet.text || bullet} /></li>)}</ul>
       ) : null}
@@ -101,18 +108,18 @@ function ResumeSection({ resume, sectionKey }) {
   const compactCertifications = custom && /certificat/i.test(getSectionTitle(resume, sectionKey));
   return (
     <section className="resume-document-section">
-      <div className="resume-section-title">{getSectionTitle(resume, sectionKey)}</div>
+      <div className="resume-section-title">{templateSectionTitle(resume, sectionKey)}</div>
       {sectionKey === 'education' ? <EducationSection entries={entries} />
         : sectionKey === 'skills' ? <SkillsSection entries={entries} />
           : compactCertifications ? <CompactCertificationEntries entries={entries} />
-          : <DetailEntries entries={entries} custom={custom} />}
+          : <DetailEntries entries={entries} custom={custom} reference={resume.template !== 'iit-bombay-classic'} />}
     </section>
   );
 }
 
 export function ResumePage({ resume, sections, firstPage = false }) {
   return (
-    <article className="resume-a4-page">
+    <article className={`resume-a4-page resume-template-${resume.template || 'iit-bombay-classic'}`}>
       {firstPage ? <ResumeHeader resume={resume} /> : null}
       {sections.map((key) => <ResumeSection key={key} resume={resume} sectionKey={key} />)}
     </article>

@@ -744,6 +744,8 @@ export const api = {
   // Assessments (Admin)
   createAssessment: (body) =>
     request("/admin/assessment/create", { method: "POST", body }),
+  sendAssessmentTestEmail: (assessment) =>
+    request("/admin/assessment/test-email", { method: "POST", body: { assessment } }),
   listAssessments: () => request("/admin/assessment/list"),
   getAssessmentById: (id) => request(`/admin/assessment/${id}`),
   updateAssessment: (id, body) =>

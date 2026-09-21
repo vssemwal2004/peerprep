@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 
 const userSchema = new mongoose.Schema({
   role: { type: String, enum: ['admin', 'student', 'coordinator'], default: 'student' },
+  accessScope: { type: String, enum: ['full', 'assessment_only'], default: 'full', index: true },
   username: { type: String, unique: true, sparse: true, trim: true, maxlength: 32 },
   name: String,
   email: { type: String, unique: true, sparse: true },
@@ -11,6 +12,7 @@ const userSchema = new mongoose.Schema({
   teacherIds: [String], // For students: links to coordinator's coordinatorID (supports multiple)
   passwordHash: { type: String, required: true },
   mustChangePassword: { type: Boolean, default: false },
+  temporaryPasswordEncrypted: { type: String, select: false },
   credentialEmailStatus: {
     type: String,
     enum: ['not_sent', 'pending', 'sent', 'failed'],

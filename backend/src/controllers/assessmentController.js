@@ -11,6 +11,8 @@ import { removeAssessmentQuestionsFromLibrary, syncAssessmentQuestionsToLibrary 
 import { logActivity } from './adminActivityController.js';
 import { enqueueMailJobs } from '../services/mailQueueService.js';
 import { decryptAssessmentPassword, encryptAssessmentPassword } from '../services/assessmentPasswordService.js';
+import { sendAssessmentInvitationEmail } from '../utils/mailer.js';
+import { hasCoordinatorPermission } from '../services/coordinatorPermissions.js';
 import {
   getCodingQuestionScore,
   scoreAssessmentWithTestCases,
@@ -181,7 +183,7 @@ function isStudentAssignedToAssessment(assessment = {}, student = {}) {
   const studentObjectId = String(student?._id || '');
   const studentCode = String(student?.studentId || '').trim().toLowerCase();
   if (assessment.targetType === 'all' && (!Array.isArray(assessment.assignedStudents) || assessment.assignedStudents.length === 0)) {
-    return true;
+    return student?.accessScope !== 'assessment_only';
   }
   return (assessment.assignedStudents || []).some((entry) => {
     const rawId = String(entry?._id || entry || '');
@@ -277,10 +279,10 @@ function canManageAssessmentForRequest(assessment = {}, user = {}) {
 async function resolveEligibleAssessmentStudents(assessment = {}) {
   const selectedIds = (assessment.assignedStudents || []).map((id) => String(id));
   const query = assessment.targetType === 'all' && selectedIds.length === 0
-    ? { role: 'student' }
+    ? { role: 'student', accessScope: { $ne: 'assessment_only' } }
     : { _id: { $in: selectedIds }, role: 'student' };
   return User.find(query)
-    .select('_id name email studentId course branch college semester group teacherIds phone isActive createdAt')
+    .select('_id name email studentId accessScope +temporaryPasswordEncrypted course branch college semester group teacherIds phone isActive createdAt')
     .sort({ name: 1, studentId: 1 })
     .lean();
 }
@@ -1597,9 +1599,9 @@ async function validatePublishedAssessmentSections(sections = []) {
   }
 }
 
-async function resolveAssignedStudents({ targetType, assignedStudents }) {
+async function resolveAssignedStudents({ targetType, assignedStudents, audienceType = 'platform_students' }) {
   if (targetType === 'all') {
-    const students = await User.find({ role: 'student' }).select('_id email name studentId').lean();
+    const students = await User.find({ role: 'student', accessScope: { $ne: 'assessment_only' } }).select('_id email name studentId accessScope').lean();
     return { ids: students.map(s => s._id), users: students, created: [] };
   }
 
@@ -1618,7 +1620,7 @@ async function resolveAssignedStudents({ targetType, assignedStudents }) {
       { studentId: { $in: studentIds } },
       { _id: { $in: normalizedRows.map(r => r._id).filter(Boolean) } },
     ],
-  }).select('_id email name studentId').lean();
+  }).select('_id email name studentId accessScope').lean();
 
   const existingByEmail = new Map(existing.filter(u => u.email).map(u => [u.email.toLowerCase(), u]));
   const existingByStudentId = new Map(existing.filter(u => u.studentId).map(u => [u.studentId.toString(), u]));
@@ -1636,7 +1638,12 @@ async function resolveAssignedStudents({ targetType, assignedStudents }) {
 
   for (const row of normalizedRows) {
     if (row._id && existingById.has(row._id.toString())) {
-      assignedIds.push(existingById.get(row._id.toString())._id);
+      const matchedUser = existingById.get(row._id.toString());
+      const isAssessmentOnly = matchedUser.accessScope === 'assessment_only';
+      if ((audienceType === 'assessment_candidates') !== isAssessmentOnly) {
+        throw new Error(`“${matchedUser.email || matchedUser.name}” belongs to the other audience type. Select the matching assessment mode.`);
+      }
+      assignedIds.push(matchedUser._id);
       continue;
     }
 
@@ -1645,28 +1652,35 @@ async function resolveAssignedStudents({ targetType, assignedStudents }) {
     const existingUser = byEmail || byStudentId;
 
     if (existingUser) {
+      const isAssessmentOnly = existingUser.accessScope === 'assessment_only';
+      if ((audienceType === 'assessment_candidates') !== isAssessmentOnly) {
+        throw new Error(`“${existingUser.email || existingUser.name}” belongs to the other audience type. Select the matching assessment mode.`);
+      }
       assignedIds.push(existingUser._id);
       continue;
     }
 
-    const required = ['name', 'email', 'studentid', 'branch', 'teacherid', 'semester', 'course', 'college'];
+    const assessmentOnly = audienceType === 'assessment_candidates';
+    const required = assessmentOnly
+      ? ['name', 'email']
+      : ['name', 'email', 'studentid', 'branch', 'teacherid', 'semester', 'course', 'college'];
     const missing = required.filter((k) => !row[k] || row[k].toString().trim() === '');
     if (missing.length > 0) {
       throw new Error(`Missing required fields for new student (${missing.join(', ')}). Use the onboarding CSV template.`);
     }
 
     const teacherIds = parseTeacherIds(row.teacherid);
-    if (teacherIds.length === 0) {
+    if (!assessmentOnly && teacherIds.length === 0) {
       throw new Error('Teacher ID / Coordinator code is required for new students.');
     }
 
-    const invalidIds = teacherIds.filter(id => !validCoordinatorIds.has(id));
+    const invalidIds = assessmentOnly ? [] : teacherIds.filter(id => !validCoordinatorIds.has(id));
     if (invalidIds.length > 0) {
       throw new Error(`Teacher ID / Coordinator code(s) "${invalidIds.join(', ')}" do not match any existing coordinator.`);
     }
 
-    const semesterNum = parseInt(row.semester, 10);
-    if (Number.isNaN(semesterNum) || semesterNum < 1 || semesterNum > 8) {
+    const semesterNum = assessmentOnly ? undefined : parseInt(row.semester, 10);
+    if (!assessmentOnly && (Number.isNaN(semesterNum) || semesterNum < 1 || semesterNum > 8)) {
       throw new Error('Semester must be between 1 and 8 for new students.');
     }
 
@@ -1675,16 +1689,18 @@ async function resolveAssignedStudents({ targetType, assignedStudents }) {
 
     const user = await User.create({
       role: 'student',
+      accessScope: assessmentOnly ? 'assessment_only' : 'full',
       name: row.name,
       email: row.email,
-      studentId: row.studentid,
-      branch: row.branch,
-      course: row.course,
-      college: row.college,
+      studentId: row.studentid || `AC${crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()}`,
+      branch: assessmentOnly ? undefined : row.branch,
+      course: assessmentOnly ? undefined : row.course,
+      college: assessmentOnly ? undefined : row.college,
       teacherIds,
       semester: semesterNum,
       group: row.group,
       passwordHash,
+      temporaryPasswordEncrypted: assessmentOnly ? encryptAssessmentPassword(generatedPassword) : undefined,
       mustChangePassword: true,
     });
 
@@ -1698,8 +1714,76 @@ async function resolveAssignedStudents({ targetType, assignedStudents }) {
     });
   }
 
-  const users = await User.find({ _id: { $in: assignedIds } }).select('_id email name studentId').lean();
+  const users = await User.find({ _id: { $in: assignedIds } }).select('_id email name studentId accessScope +temporaryPasswordEncrypted').lean();
   return { ids: assignedIds, users, created };
+}
+
+async function queueAssessmentAudienceEmails({ assessment, users = [], created = [], requestedBy }) {
+  if (!users.length) return { queued: 0 };
+  let assessmentPassword = '';
+  if (assessment.passwordEnabled && assessment.passwordEncrypted) {
+    assessmentPassword = decryptAssessmentPassword(assessment.passwordEncrypted);
+  }
+  const credentialsByUser = new Map(created.map((entry) => [String(entry.id), entry]));
+  const batchId = crypto.randomUUID();
+  const jobs = users.filter((user) => user.email).map((user) => {
+    const credentials = credentialsByUser.get(String(user._id));
+    let accountPassword = credentials?.password || '';
+    if (!accountPassword && user.accessScope === 'assessment_only' && user.temporaryPasswordEncrypted) {
+      accountPassword = decryptAssessmentPassword(user.temporaryPasswordEncrypted);
+    }
+    return {
+      type: 'assessment_invitation',
+      to: user.email,
+      recipientId: user._id,
+      targetType: 'ASSESSMENT',
+      targetId: assessment._id,
+      idempotencyKey: `assessment-publish:${assessment._id}:${user._id}:${batchId}`,
+      payload: {
+        to: user.email,
+        assessment: assessment.toObject ? assessment.toObject() : assessment,
+        student: user,
+        password: assessmentPassword,
+        accountPassword,
+        assessmentOnly: user.accessScope === 'assessment_only',
+      },
+    };
+  });
+  return enqueueMailJobs(jobs, {
+    batchId,
+    requestedBy: requestedBy?._id,
+    requestedByEmail: requestedBy?.email,
+  });
+}
+
+export async function sendAssessmentTestEmail(req, res) {
+  try {
+    const assessment = req.body?.assessment || {};
+    if (
+      assessment.audienceType === 'assessment_candidates'
+      && req.user?.role === 'coordinator'
+      && !hasCoordinatorPermission(req.user, 'coordinator.assessment.candidates')
+    ) {
+      return res.status(403).json({ error: 'Assessment-only candidate access has not been enabled for this coordinator.' });
+    }
+    if (!req.user?.email) return res.status(400).json({ error: 'Your administrator account has no email address.' });
+    await sendAssessmentInvitationEmail({
+      to: req.user.email,
+      assessment: {
+        ...assessment,
+        _id: assessment._id || 'preview',
+        passwordEnabled: Boolean(assessment.passwordEnabled),
+      },
+      student: { name: req.user.name || 'Administrator' },
+      password: assessment.passwordEnabled ? (assessment.password || 'ASSESSMENT-PASSWORD') : '',
+      accountPassword: assessment.audienceType === 'assessment_candidates' ? 'TemporaryPass123' : '',
+      assessmentOnly: assessment.audienceType === 'assessment_candidates',
+    });
+    return res.json({ message: `Test email sent to ${req.user.email}.` });
+  } catch (err) {
+    console.error('Error sending assessment test email:', err);
+    return res.status(500).json({ error: err.message || 'Failed to send assessment test email.' });
+  }
 }
 
 export async function createAssessment(req, res) {
@@ -1726,6 +1810,7 @@ export async function createAssessment(req, res) {
       settings,
       passwordEnabled,
       password,
+      audienceType,
     } = req.body || {};
 
     const normalizedSections = normalizeAssessmentSections(sections);
@@ -1784,6 +1869,7 @@ export async function createAssessment(req, res) {
       const resolved = await resolveAssignedStudents({
         targetType: normalizedTarget,
         assignedStudents,
+        audienceType,
       });
       ids = resolved.ids;
       users = resolved.users;
@@ -1809,6 +1895,7 @@ export async function createAssessment(req, res) {
       createdBy: req.user._id,
       targetType: normalizedTarget,
       assignedStudents: ids,
+      audienceType: audienceType === 'assessment_candidates' ? 'assessment_candidates' : 'platform_students',
       draftTargetMode: isDraft ? normalizedDraftTarget : 'all',
       draftAssignedStudents: isDraft ? draftAssigned : [],
       sections: marksPayload.sections,
@@ -1836,6 +1923,10 @@ export async function createAssessment(req, res) {
     }
 
     await assessment.save();
+
+    if (!isDraft && sendEmail) {
+      await queueAssessmentAudienceEmails({ assessment, users, created, requestedBy: req.user });
+    }
 
     await syncAssessmentQuestionsToLibrary(assessment);
 
@@ -1972,7 +2063,7 @@ export async function listAssessments(req, res) {
 export async function getAssessment(req, res) {
   try {
     const { id } = req.params;
-    const assessment = await Assessment.findById(id).populate('assignedStudents', 'name email studentId').lean();
+    const assessment = await Assessment.findById(id).populate('assignedStudents', 'name email studentId accessScope').lean();
     if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
     const status = computeStatus(new Date(), assessment);
     res.json({ assessment: { ...sanitizeAssessmentForResponse(assessment), status } });
@@ -2007,10 +2098,26 @@ export async function updateAssessment(req, res) {
       settings,
       passwordEnabled,
       password,
+      audienceType,
     } = req.body || {};
 
-    const assessment = await Assessment.findById(id);
+    if (
+      audienceType === 'assessment_candidates'
+      && req.user?.role === 'coordinator'
+      && !hasCoordinatorPermission(req.user, 'coordinator.assessment.candidates')
+    ) {
+      return res.status(403).json({ error: 'Assessment-only candidate access has not been enabled for this coordinator.' });
+    }
+
+    const assessment = await Assessment.findById(id).select('+passwordEncrypted');
     if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
+    if (
+      (audienceType === 'assessment_candidates' || assessment.audienceType === 'assessment_candidates')
+      && req.user?.role === 'coordinator'
+      && !hasCoordinatorPermission(req.user, 'coordinator.assessment.candidates')
+    ) {
+      return res.status(403).json({ error: 'Assessment-only candidate access has not been enabled for this coordinator.' });
+    }
     const previousPasswordHash = assessment.passwordHash || '';
 
     const beforeSnapshot = {
@@ -2046,6 +2153,9 @@ export async function updateAssessment(req, res) {
     }
     if (assessmentId !== undefined) assessment.assessmentId = assessmentId || '';
     if (testType !== undefined) assessment.testType = testType || '';
+    if (audienceType !== undefined) {
+      assessment.audienceType = audienceType === 'assessment_candidates' ? 'assessment_candidates' : 'platform_students';
+    }
     if (isVisible !== undefined) assessment.isVisible = isVisible !== false;
     if (customInstructions !== undefined) {
       assessment.customInstructions = Array.isArray(customInstructions) ? customInstructions : [];
@@ -2108,6 +2218,8 @@ export async function updateAssessment(req, res) {
     const duplicateQuestionError = validateUniqueAssessmentQuestions(assessment.sections || []);
     if (duplicateQuestionError) return res.status(400).json({ error: duplicateQuestionError });
 
+    let resolvedAudienceUsers = [];
+    let newlyCreatedAudienceUsers = [];
     if (targetType) {
       const normalizedTarget = targetType === 'selected' ? 'selected' : 'all';
       assessment.targetType = normalizedTarget;
@@ -2121,11 +2233,14 @@ export async function updateAssessment(req, res) {
         }
         assessment.assignedStudents = [];
       } else {
-        const { ids } = await resolveAssignedStudents({
+        const { ids, users, created } = await resolveAssignedStudents({
           targetType: normalizedTarget,
           assignedStudents,
+          audienceType: assessment.audienceType,
         });
         assessment.assignedStudents = ids;
+        resolvedAudienceUsers = users;
+        newlyCreatedAudienceUsers = created;
         assessment.draftAssignedStudents = [];
         assessment.draftTargetMode = 'all';
       }
@@ -2150,6 +2265,17 @@ export async function updateAssessment(req, res) {
     assessment.versionUpdatedAt = new Date();
 
     await assessment.save();
+    if (!isDraft && sendEmail) {
+      const mailUsers = resolvedAudienceUsers.length
+        ? resolvedAudienceUsers
+        : await User.find({ _id: { $in: assessment.assignedStudents || [] } }).select('_id email name studentId accessScope +temporaryPasswordEncrypted').lean();
+      await queueAssessmentAudienceEmails({
+        assessment,
+        users: mailUsers,
+        created: newlyCreatedAudienceUsers,
+        requestedBy: req.user,
+      });
+    }
     if ((assessment.passwordHash || '') !== previousPasswordHash) {
       await AssessmentSubmission.updateMany(
         {
@@ -2678,6 +2804,10 @@ export async function sendAssessmentInvitations(req, res) {
         assessment: assessment.toObject(),
         student,
         password: invitationPassword,
+        accountPassword: student.accessScope === 'assessment_only' && student.temporaryPasswordEncrypted
+          ? decryptAssessmentPassword(student.temporaryPasswordEncrypted)
+          : '',
+        assessmentOnly: student.accessScope === 'assessment_only',
       },
     })), {
       batchId,

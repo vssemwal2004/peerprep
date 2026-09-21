@@ -17,6 +17,15 @@ test('student promotion is available as an explicit coordinator permission', () 
   );
 });
 
+test('assessment-only candidate creation is independently permission controlled', () => {
+  assert.ok(DEFAULT_COORDINATOR_PERMISSIONS.includes('coordinator.assessment.create'));
+  assert.ok(DEFAULT_COORDINATOR_PERMISSIONS.includes('coordinator.assessment.candidates'));
+  assert.deepEqual(
+    normalizeCoordinatorPermissions(['coordinator.assessment.candidates', 'unknown.permission']),
+    ['coordinator.assessment.candidates'],
+  );
+});
+
 test('assessment invitation and coordinator onboarding templates are seeded', () => {
   const templates = getDefaultEmailTemplates();
   const invitation = templates.find((template) => template.type === EMAIL_TEMPLATE_TYPES.ASSESSMENT_INVITATION);
@@ -24,6 +33,8 @@ test('assessment invitation and coordinator onboarding templates are seeded', ()
 
   assert.ok(invitation);
   assert.ok(invitation.variables.includes('passwordSection'));
+  assert.ok(invitation.variables.includes('credentialsSection'));
+  assert.match(invitation.htmlContent, /credentialsSection/);
   assert.match(invitation.htmlContent, /PeerPrep Assessment/);
   assert.ok(coordinator);
   assert.ok(coordinator.variables.includes('coordinatorId'));

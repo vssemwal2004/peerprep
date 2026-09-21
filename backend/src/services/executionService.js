@@ -331,6 +331,7 @@ export async function runJudge0(sourceCodeInput, languageId, stdin = '', options
 
 export function mapRunStatusCode(result) {
   const description = String(result.status?.description || '').toLowerCase();
+  const statusId = Number(result.status?.id || 0);
   if (result.compile_output || result.status?.id === 6) {
     return 'CE';
   }
@@ -339,7 +340,10 @@ export function mapRunStatusCode(result) {
   }
   if (description.includes('memory limit')) return 'MLE';
   if (result.status?.id === 13 || description.includes('internal error')) return 'IE';
-  if (result.stderr || (result.status?.id >= 7 && result.status?.id <= 13) || result.message) {
+  // Successful programs may legitimately write diagnostics to stderr. R's
+  // message() and warning() do this, so Judge0's status—not stderr alone—must
+  // decide whether execution failed.
+  if ((statusId >= 7 && statusId <= 12) || statusId === 14 || (!statusId && (result.stderr || result.message))) {
     return 'RE';
   }
   return 'AC';
@@ -359,6 +363,7 @@ export function buildRunResponse(result) {
 
 export function evaluateSubmissionResult(result, expectedOutput) {
   const description = String(result.status?.description || '').toLowerCase();
+  const statusId = Number(result.status?.id || 0);
   if (result.compile_output || result.status?.id === 6) {
     return {
       verdict: 'Compilation Error',
@@ -383,7 +388,7 @@ export function evaluateSubmissionResult(result, expectedOutput) {
     return { verdict: 'Internal Error', internalStatus: 'IE', error: result.message || result.status?.description };
   }
 
-  if (result.stderr || (result.status?.id >= 7 && result.status?.id <= 13) || result.message) {
+  if ((statusId >= 7 && statusId <= 12) || statusId === 14 || (!statusId && (result.stderr || result.message))) {
     return {
       verdict: 'Runtime Error',
       internalStatus: 'RE',

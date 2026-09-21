@@ -105,6 +105,7 @@ const assessmentSchema = new mongoose.Schema({
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   targetType: { type: String, enum: ['all', 'selected'], default: 'all' },
   assignedStudents: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  audienceType: { type: String, enum: ['platform_students', 'assessment_candidates'], default: 'platform_students' },
   draftTargetMode: { type: String, enum: ['all', 'csv', 'individual'], default: 'all' },
   draftAssignedStudents: { type: [mongoose.Schema.Types.Mixed], default: [] },
   lifecycleStatus: { type: String, enum: ['draft', 'published'], default: 'published' },

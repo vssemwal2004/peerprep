@@ -173,6 +173,14 @@ export const coordinatorPermissionCategories = [
         routes: ['/coordinator/assessment/create', '/coordinator/assessment/select-problem'],
       },
       {
+        key: 'coordinator.assessment.candidates',
+        name: 'Assessment-only Candidates',
+        description: 'Create assessments for external candidates and generate restricted assessment-only student accounts.',
+        accessType: 'Create',
+        usage: 'Shows the Assessment Candidates option, CSV upload, credentials, and candidate invitations.',
+        routes: ['/coordinator/assessment/create?audience=assessment_candidates'],
+      },
+      {
         key: 'coordinator.assessment.edit',
         name: 'Edit and Preview Assessment',
         description: 'Edit and preview coordinator-accessible assessments.',

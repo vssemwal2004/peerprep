@@ -5,12 +5,15 @@ import { useLocation } from 'react-router-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
-import { ArrowLeft, ClipboardList, Save, Send, Plus, Eye, EyeOff, Hash, Lock, Shield, Globe, Copy, Camera, Volume2, Monitor, Shuffle, Droplet, Navigation, Layers, Timer, RotateCcw, CheckSquare, Clock, BookOpen, FilePlus2, Check } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { hasPermission } from './coordinatorPermissions';
+import { ArrowLeft, ClipboardList, Save, Send, Plus, Eye, EyeOff, Hash, Lock, Shield, Globe, Copy, Camera, Volume2, Monitor, Shuffle, Droplet, Navigation, Layers, Timer, RotateCcw, CheckSquare, Clock, BookOpen, FilePlus2, Check, X } from 'lucide-react';
 import { SectionCard } from './compiler/CompilerUi';
 import RichTextEditor from './compiler/RichTextEditor';
 import { createDefaultProblemForm, createProblemFormFromProblem } from './compiler/compilerUtils';
 import AssessmentCard from './assessment/components/AssessmentCard';
 import StudentSelector from './assessment/components/StudentSelector';
+import AssessmentCandidateEditor from './assessment/components/AssessmentCandidateEditor';
 import SectionBuilder from './assessment/components/SectionBuilder';
 import AssessmentPreview from './assessment/components/AssessmentPreview';
 import AIProctoringSettings, { DEFAULT_AI_PROCTORING_SETTINGS, normalizeAiProctoringSettings } from '../features/assessment/admin/components/AIProctoringSettings';
@@ -262,8 +265,13 @@ export default function CreateAssessment() {
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
+  const { user } = useAuth();
 
   const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
+  const canCreateAssessmentCandidates = hasPermission(user, 'coordinator.assessment.candidates');
+  const requestedAudience = new URLSearchParams(location.search).get('audience') === 'assessment_candidates' && canCreateAssessmentCandidates
+    ? 'assessment_candidates'
+    : 'platform_students';
 
   const [currentId, setCurrentId] = useState(id || null);
   const [activeStep, setActiveStep] = useState('basic');
@@ -279,6 +287,7 @@ export default function CreateAssessment() {
     attemptLimit: 1,
     targetMode: 'individual',
     sendEmail: false,
+    audienceType: requestedAudience,
     lifecycleStatus: 'draft',
     testType: '',
     assessmentId: generateUniqueAssessmentId(),
@@ -295,6 +304,7 @@ export default function CreateAssessment() {
   const [selectedStudents, setSelectedStudents] = useState([]);
   const [csvState, setCsvState] = useState(emptyCsvState);
   const [loading, setLoading] = useState(false);
+  const [sendingTestEmail, setSendingTestEmail] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState('');
   const [version, setVersion] = useState(1);
@@ -643,6 +653,7 @@ export default function CreateAssessment() {
           targetMode: 'individual',
           lifecycleStatus: assessment.lifecycleStatus || 'draft',
           sendEmail: false,
+          audienceType: assessment.audienceType || 'platform_students',
           testType: assessment.testType || '',
           assessmentId: assessment.assessmentId || '',
           isVisible: assessment.isVisible !== false,
@@ -954,7 +965,8 @@ export default function CreateAssessment() {
       assignedStudents,
       sections: normalizedSections,
       lifecycleStatus,
-      sendEmail: false,
+      sendEmail: lifecycleStatus === 'published' && Boolean(form.sendEmail),
+      audienceType: form.audienceType || 'platform_students',
       testType: form.testType || '',
       assessmentId: form.assessmentId || '',
       isVisible: form.isVisible !== false,
@@ -1096,11 +1108,24 @@ export default function CreateAssessment() {
     setShowPublishModal(false);
   };
 
-  const requestExit = (target = `${rolePrefix}/assessment`) => {
-    if (!dirty) {
-      navigate(target);
+  const handleSendTestEmail = async () => {
+    if (!form.title || !form.startTime || !form.endTime) {
+      toast.error('Complete the title and schedule before sending a test email.');
       return;
     }
+    setSendingTestEmail(true);
+    try {
+      const payload = buildPayload('published');
+      const result = await api.sendAssessmentTestEmail(payload);
+      toast.success(result.message || 'Test email sent.');
+    } catch (error) {
+      toast.error(error.message || 'Failed to send test email.');
+    } finally {
+      setSendingTestEmail(false);
+    }
+  };
+
+  const requestExit = (target = `${rolePrefix}/assessment`) => {
     setExitTarget(target);
   };
 
@@ -1358,8 +1383,10 @@ export default function CreateAssessment() {
     ),
     target: (
       <div className="space-y-4">
-        <SectionCard compact title="Select candidates" subtitle="Search and choose the students who can take this assessment.">
-          <StudentSelector selected={selectedStudents} onChange={updateSelectedStudents} />
+        <SectionCard compact title={form.audienceType === 'assessment_candidates' ? 'Add assessment candidates' : 'Select platform students'} subtitle={form.audienceType === 'assessment_candidates' ? 'Add candidates individually or upload the lightweight CSV template.' : 'Search and choose registered students who can take this assessment.'}>
+          {form.audienceType === 'assessment_candidates'
+            ? <AssessmentCandidateEditor selected={selectedStudents} onChange={updateSelectedStudents} />
+            : <StudentSelector selected={selectedStudents} onChange={updateSelectedStudents} />}
         </SectionCard>
       </div>
     ),
@@ -1965,6 +1992,8 @@ export default function CreateAssessment() {
                 {autoSaveStatus || (dirty ? 'Unsaved changes' : 'All changes saved')}
                 <span aria-hidden="true">&middot;</span>
                 {form.lifecycleStatus === 'published' ? 'Published' : 'Draft'}
+                <span aria-hidden="true">&middot;</span>
+                <span className={form.audienceType === 'assessment_candidates' ? 'font-semibold text-violet-600 dark:text-violet-300' : 'font-semibold text-sky-600 dark:text-sky-300'}>{form.audienceType === 'assessment_candidates' ? 'Assessment Candidates' : 'Platform Students'}</span>
               </p>
             </div>
           </div>
@@ -2080,21 +2109,25 @@ export default function CreateAssessment() {
               </div>
 
               <div className="mt-4 space-y-2 text-xs text-slate-600 dark:text-gray-300">
-                {isEditMode && (
-                  <div className="flex items-center justify-between gap-4 rounded-xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-slate-700 dark:border-sky-900/40 dark:bg-sky-900/10 dark:text-gray-200">
+                <div className="rounded-xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-slate-700 dark:border-sky-900/40 dark:bg-sky-900/10 dark:text-gray-200">
+                  <div className="flex items-center justify-between gap-4">
                     <div>
-                      <div className="text-sm font-semibold text-slate-900 dark:text-white">Send mail to all students</div>
+                      <div className="text-sm font-semibold text-slate-900 dark:text-white">Email assessment access</div>
                       <div className="mt-0.5 text-[11px] text-slate-500 dark:text-gray-400">
-                        Turn this off to save the edited assessment without emailing assigned students.
+                        {form.audienceType === 'assessment_candidates'
+                          ? 'New candidates receive login credentials, schedule, assessment password and access link in one email.'
+                          : 'Selected platform students receive the schedule, assessment password and access link.'}
                       </div>
                     </div>
-                    <Toggle
-                      value={false}
-                      disabled
-                      onChange={() => {}}
-                    />
+                    <Toggle value={Boolean(form.sendEmail)} onChange={(value) => updateForm({ sendEmail: value })} />
                   </div>
-                )}
+                  <div className="mt-3 flex items-center justify-between border-t border-sky-100 pt-3 dark:border-sky-900/40">
+                    <span className="text-[11px] text-slate-500 dark:text-gray-400">Send a preview to your administrator email before publishing.</span>
+                    <button type="button" onClick={handleSendTestEmail} disabled={sendingTestEmail} className="rounded-lg border border-sky-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300">
+                      {sendingTestEmail ? 'Sending…' : 'Send test email'}
+                    </button>
+                  </div>
+                </div>
                 <div className={`rounded-lg border px-3 py-2 ${assessmentValidation.totalQuestions > 0 ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300' : 'border-rose-200 bg-rose-50 text-rose-600 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300'}`}>
                   At least one question required.
                 </div>
@@ -2136,12 +2169,14 @@ export default function CreateAssessment() {
         {exitTarget && (
           <div className="fixed inset-0 z-[170] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-labelledby="assessment-exit-title">
             <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-300"><Save className="h-4 w-4" /></div>
-              <h2 id="assessment-exit-title" className="mt-4 text-base font-bold text-slate-950 dark:text-white">Continue creating this assessment?</h2>
-              <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-gray-400">Your latest changes are autosaved locally. Choose whether to keep working, leave without saving, or store the assessment as a server draft.</p>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-300"><Save className="h-4 w-4" /></div>
+                <button type="button" onClick={() => setExitTarget('')} disabled={exitSaving} aria-label="Close exit confirmation" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50 dark:hover:bg-gray-800 dark:hover:text-gray-200"><X className="h-4 w-4" /></button>
+              </div>
+              <h2 id="assessment-exit-title" className="mt-4 text-base font-bold text-slate-950 dark:text-white">Exit assessment creation?</h2>
+              <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-gray-400">Save this assessment as a draft so you can continue later, or leave without saving your latest work.</p>
               <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <button type="button" onClick={discardAndExit} disabled={exitSaving} className="h-10 rounded-xl border border-rose-200 px-4 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900/60 dark:text-rose-300">Don&apos;t save</button>
-                <button type="button" onClick={() => setExitTarget('')} disabled={exitSaving} className="h-10 rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Continue working</button>
                 <button type="button" onClick={saveAndExit} disabled={exitSaving} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-60"><Save className="h-3.5 w-3.5" />{exitSaving ? 'Saving...' : 'Save as draft'}</button>
               </div>
             </div>

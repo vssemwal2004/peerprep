@@ -18,17 +18,19 @@
 .resume-a4-page { box-sizing:border-box; width:794px; min-height:1123px; overflow:hidden; background:#fff; padding:42px; color:#000; box-shadow:none; font-family:"TeX Gyre Termes",serif; font-size:13.333px; line-height:1.152; font-synthesis:none; }
 .resume-document-header { margin-bottom:8px; }
 .resume-document-header h1 { margin:0 0 1px; font-family:"TeX Gyre Termes",serif; font-size:19.2px; line-height:1.05; font-weight:700; text-transform:uppercase; }
+.resume-professional-headline { margin:1px 0 3px; font-style:italic; }
 .resume-contact-line { min-height:15.36px; overflow-wrap:anywhere; }
 .resume-contact-line a,.resume-detail-entry a { color:#000; text-decoration:none; }
 .resume-document-section { margin-top:12px; background:transparent; }
 .resume-section-title { margin-bottom:2px; background:#dedede; padding:2.5px 5px; color:#000; font-size:10.667px; line-height:1.14; font-weight:700; }
 .resume-education-table { border-bottom:1px solid #333; }
-.resume-education-row { display:grid; grid-template-columns:14% 34% 34% 18%; gap:4px; padding:.4px 5px; background:#fff; line-height:1; }
+.resume-education-row { display:grid; grid-template-columns:14fr 34fr 34fr 18fr; gap:4px; padding:.4px 5px; background:#fff; line-height:1; }
 .resume-education-head { border-bottom:1px solid #333; }
 .resume-education-head strong:last-child { white-space:nowrap; }
 .resume-detail-entry { margin:0 0 6px; break-inside:avoid; }
 .resume-entry-heading,.resume-entry-subheading { display:flex; justify-content:space-between; gap:14px; }
-.resume-entry-heading strong { font-weight:700; }
+.resume-entry-heading strong { min-width:0; overflow-wrap:anywhere; font-weight:700; }
+.resume-entry-heading strong em { font-weight:400; }
 .resume-entry-heading em { flex:none; font-weight:600; }
 .resume-entry-subheading span { margin-left:auto; }
 .resume-technologies { margin-top:1px; }
@@ -39,6 +41,59 @@
 .resume-skill-bullet { display:inline-block; width:11px; font-weight:700; }
 .resume-certification-list { margin:0; padding-left:14px; list-style-type:disc; }
 .resume-certification-list li { margin:0 0 2px; padding-left:1px; }
+/* The three reference-driven templates share stacked, rule-based resume rows. */
+.resume-template-peerprep-nova,.resume-template-peerprep-meridian,.resume-template-peerprep-circuit { color:#000; }
+.resume-template-peerprep-nova .resume-document-header,.resume-template-peerprep-meridian .resume-document-header,.resume-template-peerprep-circuit .resume-document-header { text-align:center; }
+.resume-template-peerprep-nova .resume-contact-line,.resume-template-peerprep-meridian .resume-contact-line,.resume-template-peerprep-circuit .resume-contact-line { display:inline; min-height:0; }
+.resume-template-peerprep-nova .resume-contact-line + .resume-contact-line::before,.resume-template-peerprep-meridian .resume-contact-line + .resume-contact-line::before,.resume-template-peerprep-circuit .resume-contact-line + .resume-contact-line::before { content:" | "; margin:0 3px; }
+.resume-template-peerprep-nova .resume-contact-line a,.resume-template-peerprep-meridian .resume-contact-line a,.resume-template-peerprep-circuit .resume-contact-line a { text-decoration:underline; text-underline-offset:1px; }
+.resume-template-peerprep-nova .resume-section-title,.resume-template-peerprep-meridian .resume-section-title,.resume-template-peerprep-circuit .resume-section-title { padding:0 0 2px; background:transparent; border-bottom:1px solid #111; color:#000; font-weight:400; }
+.resume-template-peerprep-nova .resume-education-head,.resume-template-peerprep-meridian .resume-education-head,.resume-template-peerprep-circuit .resume-education-head { display:none; }
+.resume-template-peerprep-nova .resume-education-table,.resume-template-peerprep-meridian .resume-education-table,.resume-template-peerprep-circuit .resume-education-table { border:0; }
+.resume-template-peerprep-nova .resume-education-row,.resume-template-peerprep-meridian .resume-education-row,.resume-template-peerprep-circuit .resume-education-row { grid-template-columns:minmax(0,1fr) minmax(104px,max-content); grid-template-areas:"institute score" "degree year"; column-gap:24px; row-gap:2px; margin-bottom:3px; padding:2px 14px 4px; line-height:1.16; }
+.resume-template-peerprep-nova .resume-education-row:last-child,.resume-template-peerprep-meridian .resume-education-row:last-child,.resume-template-peerprep-circuit .resume-education-row:last-child { margin-bottom:0; }
+.resume-template-peerprep-nova .resume-education-row span:nth-child(1),.resume-template-peerprep-meridian .resume-education-row span:nth-child(1),.resume-template-peerprep-circuit .resume-education-row span:nth-child(1) { grid-area:year; text-align:right; font-style:italic; }
+.resume-template-peerprep-nova .resume-education-row span:nth-child(2),.resume-template-peerprep-meridian .resume-education-row span:nth-child(2),.resume-template-peerprep-circuit .resume-education-row span:nth-child(2) { grid-area:degree; font-style:italic; }
+.resume-template-peerprep-nova .resume-education-row span:nth-child(3),.resume-template-peerprep-meridian .resume-education-row span:nth-child(3),.resume-template-peerprep-circuit .resume-education-row span:nth-child(3) { grid-area:institute; font-weight:700; }
+.resume-template-peerprep-nova .resume-education-row span:nth-child(4),.resume-template-peerprep-meridian .resume-education-row span:nth-child(4),.resume-template-peerprep-circuit .resume-education-row span:nth-child(4) { grid-area:score; text-align:right; }
+.resume-template-peerprep-nova .resume-education-row span:nth-child(1),.resume-template-peerprep-nova .resume-education-row span:nth-child(4),.resume-template-peerprep-meridian .resume-education-row span:nth-child(1),.resume-template-peerprep-meridian .resume-education-row span:nth-child(4),.resume-template-peerprep-circuit .resume-education-row span:nth-child(1),.resume-template-peerprep-circuit .resume-education-row span:nth-child(4) { min-width:104px; white-space:nowrap; }
+.resume-template-peerprep-nova .resume-entry-heading,.resume-template-peerprep-nova .resume-entry-subheading,.resume-template-peerprep-meridian .resume-entry-heading,.resume-template-peerprep-meridian .resume-entry-subheading,.resume-template-peerprep-circuit .resume-entry-heading,.resume-template-peerprep-circuit .resume-entry-subheading { column-gap:24px; line-height:1.2; }
+.resume-template-peerprep-nova .resume-entry-heading em,.resume-template-peerprep-nova .resume-entry-subheading span,.resume-template-peerprep-meridian .resume-entry-heading em,.resume-template-peerprep-meridian .resume-entry-subheading span,.resume-template-peerprep-circuit .resume-entry-heading em,.resume-template-peerprep-circuit .resume-entry-subheading span { min-width:104px; text-align:right; white-space:nowrap; }
+.resume-template-peerprep-nova .resume-entry-heading > em,.resume-template-peerprep-meridian .resume-entry-heading > em,.resume-template-peerprep-circuit .resume-entry-heading > em { font-style:normal; font-weight:400; }
+.resume-template-peerprep-nova .resume-skills-list > div,.resume-template-peerprep-meridian .resume-skills-list > div,.resume-template-peerprep-circuit .resume-skills-list > div { margin-left:14px; }
+.resume-template-peerprep-nova .resume-skill-bullet,.resume-template-peerprep-meridian .resume-skill-bullet,.resume-template-peerprep-circuit .resume-skill-bullet { display:none; }
+
+/* PeerPrep Nova — full serif professional format. */
+.resume-template-peerprep-nova { padding:42px 46px; font-size:14.667px; line-height:1.16; }
+.resume-template-peerprep-nova .resume-document-header { margin:0 0 12px; }
+.resume-template-peerprep-nova .resume-document-header h1 { margin-bottom:2px; font-size:28px; text-transform:none; letter-spacing:.02em; }
+.resume-template-peerprep-nova .resume-professional-headline { font-size:12.5px; }
+.resume-template-peerprep-nova .resume-document-section { margin-top:10px; }
+.resume-template-peerprep-nova .resume-section-title { font-size:14.5px; font-variant:small-caps; letter-spacing:.02em; }
+.resume-template-peerprep-nova .resume-entry-heading,.resume-template-peerprep-nova .resume-entry-subheading { padding:0 14px; }
+.resume-template-peerprep-nova .resume-detail-entry ul { padding-left:42px; }
+
+/* PeerPrep Meridian — compact classic university format. */
+.resume-template-peerprep-meridian { padding:42px 46px; font-size:14.2px; line-height:1.14; }
+.resume-template-peerprep-meridian .resume-document-header { margin:0 0 11px; }
+.resume-template-peerprep-meridian .resume-document-header h1 { margin-bottom:2px; font-size:29px; text-transform:none; letter-spacing:.04em; }
+.resume-template-peerprep-meridian .resume-professional-headline { font-size:12px; }
+.resume-template-peerprep-meridian .resume-document-section { margin-top:9px; }
+.resume-template-peerprep-meridian .resume-section-title { font-size:14px; font-variant:small-caps; }
+.resume-template-peerprep-meridian .resume-entry-heading,.resume-template-peerprep-meridian .resume-entry-subheading { padding:0 14px; }
+.resume-template-peerprep-meridian .resume-detail-entry ul { padding-left:42px; }
+
+/* PeerPrep Circuit — compact sans-serif ATS software format. */
+.resume-template-peerprep-circuit { padding:42px 46px; font-family:Arial,sans-serif; font-size:13.7px; line-height:1.14; }
+.resume-template-peerprep-circuit .resume-document-header { margin:0 0 11px; }
+.resume-template-peerprep-circuit .resume-document-header h1 { margin-bottom:3px; font-family:Arial,sans-serif; font-size:26px; text-transform:none; letter-spacing:0; }
+.resume-template-peerprep-circuit .resume-professional-headline { font-size:12px; }
+.resume-template-peerprep-circuit .resume-document-section { margin-top:10px; }
+.resume-template-peerprep-circuit .resume-section-title { font-size:14px; }
+.resume-template-peerprep-circuit .resume-entry-heading,.resume-template-peerprep-circuit .resume-entry-subheading { padding:0 14px; }
+.resume-template-peerprep-circuit .resume-detail-entry { margin-bottom:5px; }
+.resume-template-peerprep-circuit .resume-detail-entry ul { padding-left:42px; list-style-type:disc; }
+.resume-template-peerprep-circuit .resume-education-row { padding-left:14px; padding-right:14px; }
 .resume-workspace { display:block; }
 .resume-workspace-divider { display:none; }
 @media (prefers-reduced-motion:reduce) { .resume-preview-scaler { transition:none; } }

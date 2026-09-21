@@ -40,8 +40,21 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { hasPermission } from '../admin/coordinatorPermissions';
 
-const buildNavItems = (role = 'admin') => {
+const buildNavItems = (role = 'admin', accessScope = 'full') => {
   if (role === 'student') {
+    if (accessScope === 'assessment_only') {
+      return [{
+        type: 'group',
+        key: 'assessments',
+        label: 'Assessments',
+        icon: ClipboardList,
+        items: [
+          { label: 'Available Tests', to: '/student/assessments', icon: ClipboardList },
+          { label: 'Reports', to: '/student/assessment-reports', icon: BarChart3 },
+          { label: 'History', to: '/student/assessment-history', icon: History },
+        ],
+      }];
+    }
     return [
       { type: 'link', label: 'Dashboard', to: '/student/dashboard', icon: LayoutDashboard },
       { type: 'link', label: 'Analysis', to: '/student/analysis', icon: BarChart3 },
@@ -270,15 +283,16 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
   const isCoordinator = role === 'coordinator';
   const isStudent = role === 'student';
   const storagePrefix = isCoordinator ? 'coordinator' : isStudent ? 'student' : 'admin';
-  const roleLabel = isCoordinator ? 'Coordinator' : isStudent ? 'Student' : 'Administrator';
+  const isAssessmentCandidate = isStudent && user?.accessScope === 'assessment_only';
+  const roleLabel = isCoordinator ? 'Coordinator' : isAssessmentCandidate ? 'Assessment Candidate' : isStudent ? 'Student' : 'Administrator';
   const displayName = user?.name || localStorage.getItem(`${storagePrefix}Name`) || roleLabel;
   const displayEmail = user?.email || localStorage.getItem(`${storagePrefix}Email`) || '';
   const avatarUrl = user?.avatarUrl || localStorage.getItem(`${storagePrefix}AvatarUrl`) || '';
-  const homePath = isCoordinator ? '/coordinator/overview' : isStudent ? '/student/dashboard' : '/admin/overview';
+  const homePath = isCoordinator ? '/coordinator/overview' : isAssessmentCandidate ? '/student/assessments' : isStudent ? '/student/dashboard' : '/admin/overview';
   const accountMenuId = `${storagePrefix}-account-menu`;
   const accent = isCoordinator ? 'emerald' : 'sky';
   const navItems = useMemo(() => {
-    const items = buildNavItems(role);
+    const items = buildNavItems(role, user?.accessScope);
     if (role !== 'coordinator') return items;
     return items
       .map((item) => {
@@ -496,7 +510,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
               </div>
 
               <div className="p-2">
-                {(isCoordinator || isStudent) && (
+                {(isCoordinator || (isStudent && !isAssessmentCandidate)) && (
                   <button type="button" onClick={() => navigate(isStudent ? '/student/profile' : '/coordinator/profile')} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-gray-200 dark:hover:bg-gray-800">
                     <User className="h-4 w-4 text-slate-400" />
                     My profile

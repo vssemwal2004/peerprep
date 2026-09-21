@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { api } from '../utils/api';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Lock, CheckCircle, AlertCircle, ArrowLeft } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 export default function ChangePassword() {
   const [currentPassword, setCurrentPassword] = useState('');
@@ -19,6 +20,8 @@ export default function ChangePassword() {
     hasSpecialChar: false
   });
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const homePath = user?.accessScope === 'assessment_only' ? '/student/assessments' : '/student/dashboard';
 
   // Real-time password validation
   React.useEffect(() => {
@@ -75,7 +78,7 @@ export default function ChangePassword() {
       await api.changeStudentPassword(currentPassword, newPassword, confirmPassword);
       setSuccess('Password changed successfully!');
       setTimeout(() => {
-        navigate('/student/dashboard', { replace: true });
+        navigate(homePath, { replace: true });
       }, 1500);
     } catch (err) {
       setSuccess('');
@@ -90,7 +93,7 @@ export default function ChangePassword() {
       <div className="w-full max-w-2xl">
         {/* Back Button */}
         <button
-          onClick={() => navigate('/student/dashboard')}
+          onClick={() => navigate(homePath)}
           className="mb-6 flex items-center gap-2 text-slate-600 dark:text-gray-300 hover:text-sky-600 dark:hover:text-sky-400 transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -258,7 +261,7 @@ export default function ChangePassword() {
               {/* Cancel Button */}
               <button
                 type="button"
-                onClick={() => navigate('/student/dashboard')}
+                onClick={() => navigate(homePath)}
                 className="flex-1 py-3 px-4 bg-slate-100 text-slate-700 rounded-lg font-semibold hover:bg-slate-200 transition-all border-2 border-slate-200"
               >
                 Cancel

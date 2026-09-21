@@ -8,6 +8,14 @@ export const FIXED_SECTION_META = {
 
 export const DEFAULT_SECTION_ORDER = Object.keys(FIXED_SECTION_META);
 
+export const RESUME_TEMPLATES = [
+  { id: 'iit-bombay-classic', name: 'PeerPrep Atlas', caption: 'Structured academic' },
+  { id: 'peerprep-nova', name: 'PeerPrep Nova', caption: 'Clean and minimal' },
+  { id: 'peerprep-meridian', name: 'PeerPrep Meridian', caption: 'Elegant professional' },
+  { id: 'peerprep-circuit', name: 'PeerPrep Circuit', caption: 'Compact software' },
+];
+const RESUME_TEMPLATE_IDS = new Set(RESUME_TEMPLATES.map(({ id }) => id));
+
 export const createEmptyDetailEntry = () => ({
   title: '', subtitle: '', location: '', date: '', link: '', technologies: '', bullets: [],
 });
@@ -15,7 +23,7 @@ export const createEmptyDetailEntry = () => ({
 export const createEmptyResume = () => ({
   exists: false,
   template: 'iit-bombay-classic',
-  basics: { name: '', location: '', email: '', mobile: '', linkedin: '', github: '', portfolio: '' },
+  basics: { name: '', headline: '', location: '', email: '', mobile: '', linkedin: '', github: '', portfolio: '' },
   basicsVisibility: { location: true, email: true, mobile: true, linkedin: true, github: true, portfolio: true },
   education: [],
   experience: [],
@@ -46,6 +54,7 @@ export const normalizeClientResume = (value = {}) => {
   return {
     ...base,
     ...value,
+    template: RESUME_TEMPLATE_IDS.has(value.template) ? value.template : base.template,
     basics: { ...base.basics, ...(value.basics || {}) },
     basicsVisibility: { ...base.basicsVisibility, ...(value.basicsVisibility || {}) },
     education: Array.isArray(value.education) ? value.education : [],

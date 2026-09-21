@@ -16,6 +16,7 @@ import {
   markAssessmentComplete,
   releaseAssessmentAnswers,
   sendAssessmentInvitations,
+  sendAssessmentTestEmail,
   getAssessmentReports,
   getStudentAssessmentReport,
   getAssessmentReportsExportData,
@@ -40,6 +41,7 @@ const questionAssetUpload = multer({
 });
 
 router.post('/assessment/create', requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), createAssessment);
+router.post('/assessment/test-email', requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), sendAssessmentTestEmail);
 router.get('/assessment/list', requireAuth, requireCoordinatorPermission('coordinator.assessment.view'), listAssessments);
 router.get('/assessment/reports', requireAuth, requireCoordinatorPermission('coordinator.assessment.reports'), getAssessmentReports);
 router.get('/assessment/reports/submissions/:submissionId', requireAuth, requireCoordinatorPermission('coordinator.assessment.reports'), getStudentAssessmentReport);

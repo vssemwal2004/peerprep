@@ -46,9 +46,10 @@ const resumeSchema = new mongoose.Schema({
     unique: true,
     index: true,
   },
-  template: { type: String, enum: ['iit-bombay-classic'], default: 'iit-bombay-classic' },
+  template: { type: String, enum: ['iit-bombay-classic', 'peerprep-nova', 'peerprep-meridian', 'peerprep-circuit'], default: 'iit-bombay-classic' },
   basics: {
     name: { type: String, default: '', maxlength: 160 },
+    headline: { type: String, default: '', maxlength: 160 },
     location: { type: String, default: '', maxlength: 160 },
     email: { type: String, default: '', maxlength: 254 },
     mobile: { type: String, default: '', maxlength: 60 },

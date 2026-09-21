@@ -107,9 +107,13 @@ export default function StudentLoginPage() {
       } else if (role === 'coordinator') {
         import('../coordinator/CoordinatorStudents');
       } else {
-        import('../student/StudentDashboard');
-        import('../student/StudentInterview');
-        import('../student/SessionAndFeedback');
+        if (res.user?.accessScope === 'assessment_only') {
+          import('../student/StudentAssessmentList');
+        } else {
+          import('../student/StudentDashboard');
+          import('../student/StudentInterview');
+          import('../student/SessionAndFeedback');
+        }
       }
 
       if (role === 'admin') {
@@ -130,7 +134,7 @@ export default function StudentLoginPage() {
         if (res.user?.mustChangePassword) {
           navigate('/student/change-password', { replace: true });
         } else {
-          navigate('/student/dashboard', { replace: true });
+          navigate(res.user?.accessScope === 'assessment_only' ? '/student/assessments' : '/student/dashboard', { replace: true });
         }
       }
     } catch (e) {
