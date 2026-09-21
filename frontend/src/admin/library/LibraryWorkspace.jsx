@@ -228,6 +228,13 @@ export default function LibraryWorkspace({ view = 'questions' }) {
   const closeTarget = (mode === 'assessment' || mode === 'assessment-create') && assessmentContext?.returnTo
     ? assessmentContext.returnTo
     : (requestedReturnTo || libraryRoot);
+  const requestDrawerClose = () => {
+    const event = new CustomEvent('peerprep:request-authoring-exit', {
+      cancelable: true,
+      detail: { target: closeTarget },
+    });
+    if (document.dispatchEvent(event)) navigate(closeTarget);
+  };
 
   const questionBankUrl = (type = 'all', status = '') => {
     const next = new URLSearchParams(searchParams);
@@ -402,14 +409,14 @@ export default function LibraryWorkspace({ view = 'questions' }) {
 
       {isDrawerView && (
         <>
-          <button type="button" aria-label="Close question editor" className="fixed inset-0 z-[90] bg-slate-950/45 backdrop-blur-[1px]" onClick={() => navigate(closeTarget)} />
+          <button type="button" aria-label="Close question editor" className="fixed inset-0 z-[90] bg-slate-950/45 backdrop-blur-[1px]" onClick={requestDrawerClose} />
           <section className="fixed inset-y-0 right-0 z-[91] flex h-dvh w-full flex-col overflow-hidden border-l border-slate-200 bg-slate-50 shadow-2xl lg:w-[86vw] xl:max-w-[1480px] dark:border-gray-700 dark:bg-gray-950">
             <div className="z-30 flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2.5 sm:px-5 dark:border-gray-800 dark:bg-gray-900">
               {view === 'preview-coding' ? <div id="coding-preview-drawer-header" className="flex min-w-0 flex-1" /> : <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-600 dark:text-sky-400">Question library</p>
                 <h2 className="mt-0.5 text-base font-bold text-slate-950 dark:text-white">{drawerTitle}</h2>
               </div>}
-              <button type="button" onClick={() => navigate(closeTarget)} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"><X className="h-4 w-4" /></button>
+              <button type="button" onClick={requestDrawerClose} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"><X className="h-4 w-4" /></button>
             </div>
             <div className={`min-h-0 flex-1 overflow-y-auto overscroll-contain ${view === 'preview-coding' ? 'p-0' : 'p-4 sm:p-6'}`}>
               <Suspense fallback={<LoadingPanel />}>{renderDrawerContent()}</Suspense>

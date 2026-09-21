@@ -767,10 +767,10 @@ export const api = {
     request(`/admin/assessment/${id}/students/${studentId}`, {
       method: "DELETE",
     }),
-  sendAssessmentInvitations: (id, password = "") =>
+  sendAssessmentInvitations: (id) =>
     request(`/admin/assessment/${id}/send-invitations`, {
       method: "POST",
-      body: { password },
+      body: {},
     }),
   markAssessmentComplete: (id) =>
     request(`/admin/assessment/${id}/mark-complete`, { method: "POST" }),

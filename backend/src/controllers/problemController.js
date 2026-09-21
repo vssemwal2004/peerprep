@@ -1185,10 +1185,25 @@ export async function listProblems(req, res) {
       .limit(limit)
       .lean();
 
-  const [total, problemsResult, availableTagsResult] = await Promise.all([
+  const [total, totalProblems, problemsResult, availableTagsResult, tagCountsResult] = await Promise.all([
     Problem.countDocuments(query),
+    Problem.countDocuments(accessQuery),
     problemsPromise,
     Problem.distinct('tags', accessQuery),
+    Problem.aggregate([
+      { $match: accessQuery },
+      { $unwind: '$tags' },
+      { $set: { normalizedTag: { $trim: { input: '$tags' } } } },
+      { $match: { normalizedTag: { $ne: '' } } },
+      {
+        $group: {
+          _id: { $toLower: '$normalizedTag' },
+          label: { $first: '$normalizedTag' },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { count: -1, label: 1 } },
+    ]),
   ]);
 
   const problems = isStudentRequest(req)
@@ -1206,9 +1221,14 @@ export async function listProblems(req, res) {
       pages: Math.max(Math.ceil(total / limit), 1),
     },
     filters: {
+      totalProblems,
       availableTags: availableTagsResult
         .filter(Boolean)
         .sort((left, right) => String(left).localeCompare(String(right), undefined, { sensitivity: 'base' })),
+      tagCounts: tagCountsResult.map((tag) => ({
+        tag: tag.label,
+        count: tag.count,
+      })),
     },
   });
 }

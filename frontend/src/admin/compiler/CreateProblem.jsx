@@ -20,7 +20,7 @@ import {
   sumTestCaseMarks,
 } from './compilerUtils';
 import { EmptyState, LoadingPanel, SectionCard } from './CompilerUi';
-import { loadCodingDraft, saveCodingDraft } from '../assessment/assessmentCodingStore';
+import { loadCodingDraft, removeCodingDraft, saveCodingDraft } from '../assessment/assessmentCodingStore';
 import { queueProblemSelection } from '../assessment/assessmentProblemSelectionStore';
 import AuthoringStepper from '../library/AuthoringStepper';
 
@@ -360,12 +360,15 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState('');
+  const [exitTarget, setExitTarget] = useState('');
+  const [exitSaving, setExitSaving] = useState(false);
   const formRef = useRef(form);
   const autoSaveRef = useRef(null);
   const editorTopRef = useRef(null);
   const assessmentKey = finalAssessmentContext?.assessmentKey || 'new';
   const rolePrefix = window.location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
   const assessmentReturnTo = finalAssessmentContext?.returnTo || `${rolePrefix}/assessment`;
+  const authoringDraftKey = `peerprep_coding_authoring_draft:${rolePrefix}`;
 
   useEffect(() => {
     formRef.current = form;
@@ -405,6 +408,18 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
     }
 
     if (!isEditMode) {
+      try {
+        const storedDraft = JSON.parse(localStorage.getItem(authoringDraftKey) || 'null');
+        if (storedDraft?.form) {
+          setForm(storedDraft.form);
+          setCurrentStatus('draft');
+          setActiveLanguage(storedDraft.form.supportedLanguages?.[0] || 'python');
+          setIsDirty(true);
+          setAutoSaveStatus('Draft restored');
+        }
+      } catch {
+        localStorage.removeItem(authoringDraftKey);
+      }
       setLoading(false);
       return undefined;
     }
@@ -431,7 +446,7 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
     return () => {
       isMounted = false;
     };
-  }, [id, isEditMode, toast, isAssessment, editorId, assessmentKey]);
+  }, [assessmentKey, authoringDraftKey, editorId, id, isAssessment, isEditMode, toast]);
 
   useEffect(() => {
     if (!form.supportedLanguages.includes(activeLanguage)) {
@@ -617,6 +632,31 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
   };
 
   const persistProblem = async (status, { redirectToPreview = false, silent = false } = {}) => {
+    if (status === 'draft' && !redirectToPreview && !String(form.title || '').trim() && (isAssessment || !isEditMode)) {
+      const draftForm = {
+        ...form,
+        hiddenTestFiles: [],
+        hiddenBulkInputFile: null,
+        hiddenBulkOutputFile: null,
+      };
+      if (isAssessment && editorId) {
+        saveCodingDraft(editorId, {
+          assessmentKey,
+          sectionIndex: finalAssessmentContext?.sectionIndex,
+          questionIndex: finalAssessmentContext?.questionIndex,
+          problemId: currentProblemId,
+          form: draftForm,
+          previewValidated,
+          status: currentStatus,
+        });
+      } else {
+        localStorage.setItem(authoringDraftKey, JSON.stringify({ form: draftForm, updatedAt: Date.now() }));
+      }
+      setIsDirty(false);
+      setAutoSaveStatus('Draft saved locally');
+      if (!silent) toast.success('Incomplete question saved as a local draft.');
+      return { localDraft: true };
+    }
     if (form.hiddenTestUploadMode === 'pairs' && hiddenPairs.issues.length > 0) {
       toast.error('Fix hidden testcase file issues before saving.');
       return null;
@@ -652,6 +692,7 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
         return response.supportedLanguages?.[0] || 'python';
       });
       setIsDirty(false);
+      if (!isAssessment) localStorage.removeItem(authoringDraftKey);
 
       if (isAssessment && editorId) {
         saveCodingDraft(editorId, {
@@ -703,14 +744,54 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
       clearInterval(autoSaveRef.current);
     }
     autoSaveRef.current = setInterval(() => {
-      if (!isDirty) return;
+      if (!isDirty || !String(formRef.current.title || '').trim()) return;
       persistProblem('draft', { silent: true });
     }, 8000);
     return () => clearInterval(autoSaveRef.current);
   }, [isAssessment, isDirty, form, currentProblemId]);
 
   useEffect(() => {
-    if (!isAssessment) return undefined;
+    if (!isAssessment || !editorId || !isDirty) return undefined;
+    setAutoSaveStatus('Saving locally...');
+    const timeout = window.setTimeout(() => {
+      saveCodingDraft(editorId, {
+        assessmentKey,
+        sectionIndex: finalAssessmentContext?.sectionIndex,
+        questionIndex: finalAssessmentContext?.questionIndex,
+        problemId: currentProblemId,
+        form: {
+          ...form,
+          hiddenTestFiles: [],
+          hiddenBulkInputFile: null,
+          hiddenBulkOutputFile: null,
+        },
+        previewValidated,
+        status: currentStatus,
+      });
+      setAutoSaveStatus('Draft autosaved');
+    }, 700);
+    return () => window.clearTimeout(timeout);
+  }, [assessmentKey, currentProblemId, currentStatus, editorId, finalAssessmentContext?.questionIndex, finalAssessmentContext?.sectionIndex, form, isAssessment, isDirty, previewValidated]);
+
+  useEffect(() => {
+    if (isAssessment || isEditMode || !isDirty) return undefined;
+    setAutoSaveStatus('Saving locally...');
+    const timeout = window.setTimeout(() => {
+      localStorage.setItem(authoringDraftKey, JSON.stringify({
+        form: {
+          ...form,
+          hiddenTestFiles: [],
+          hiddenBulkInputFile: null,
+          hiddenBulkOutputFile: null,
+        },
+        updatedAt: Date.now(),
+      }));
+      setAutoSaveStatus('Draft autosaved');
+    }, 700);
+    return () => window.clearTimeout(timeout);
+  }, [authoringDraftKey, form, isAssessment, isDirty, isEditMode]);
+
+  useEffect(() => {
     const handleBeforeUnload = (event) => {
       if (!isDirty) return;
       event.preventDefault();
@@ -718,7 +799,80 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [isAssessment, isDirty]);
+  }, [isDirty]);
+
+  useEffect(() => {
+    const interceptInternalLink = (event) => {
+      if (!isDirty || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null;
+      if (!anchor) return;
+      const target = new URL(anchor.href, window.location.href);
+      if (target.origin !== window.location.origin || target.href === window.location.href) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setExitTarget(`${target.pathname}${target.search}${target.hash}`);
+    };
+    document.addEventListener('click', interceptInternalLink, true);
+    return () => document.removeEventListener('click', interceptInternalLink, true);
+  }, [isDirty]);
+
+  useEffect(() => {
+    const handleExitRequest = (event) => {
+      if (!isDirty) return;
+      event.preventDefault();
+      setExitTarget(event.detail?.target || assessmentReturnTo);
+    };
+    document.addEventListener('peerprep:request-authoring-exit', handleExitRequest);
+    return () => document.removeEventListener('peerprep:request-authoring-exit', handleExitRequest);
+  }, [assessmentReturnTo, isDirty]);
+
+  const discardAndExit = () => {
+    if (isAssessment && editorId && !currentProblemId) removeCodingDraft(editorId);
+    if (!isAssessment && !isEditMode) localStorage.removeItem(authoringDraftKey);
+    setIsDirty(false);
+    navigate(exitTarget || assessmentReturnTo);
+  };
+
+  const saveAndExit = async () => {
+    setExitSaving(true);
+    try {
+      if (isAssessment && editorId) {
+        saveCodingDraft(editorId, {
+          assessmentKey,
+          sectionIndex: finalAssessmentContext?.sectionIndex,
+          questionIndex: finalAssessmentContext?.questionIndex,
+          problemId: currentProblemId,
+          form: {
+            ...form,
+            hiddenTestFiles: [],
+            hiddenBulkInputFile: null,
+            hiddenBulkOutputFile: null,
+          },
+          previewValidated,
+          status: currentStatus,
+        });
+      } else if (!isEditMode) {
+        localStorage.setItem(authoringDraftKey, JSON.stringify({
+          form: {
+            ...form,
+            hiddenTestFiles: [],
+            hiddenBulkInputFile: null,
+            hiddenBulkOutputFile: null,
+          },
+          updatedAt: Date.now(),
+        }));
+      }
+      const canPersistToServer = Boolean(String(form.title || '').trim());
+      if (canPersistToServer) {
+        const saved = await persistProblem('draft');
+        if (!saved) return;
+      }
+      setIsDirty(false);
+      navigate(exitTarget || assessmentReturnTo);
+    } finally {
+      setExitSaving(false);
+    }
+  };
   const handleDelete = async () => {
     if (!currentProblemId) return;
     setIsDeleting(true);
@@ -1377,7 +1531,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
               </div>
               <div className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700">
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">Auto-save</p>
-                <p className="mt-2 text-sm text-slate-600 dark:text-gray-300">{isAssessment ? (autoSaveStatus || 'Waiting for changes') : 'Manual save only'}</p>
+                <p className="mt-2 text-sm text-slate-600 dark:text-gray-300">{autoSaveStatus || 'Waiting for changes'}</p>
               </div>
               <div className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700">
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">Preview</p>
@@ -1487,6 +1641,21 @@ if (!isValidated || publishedProblem.status !== 'published') {
             <div className="mt-6 flex justify-end gap-3">
               <button type="button" disabled={isDeleting} onClick={() => setDeleteConfirmOpen(false)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Cancel</button>
               <button type="button" disabled={isDeleting} onClick={handleDelete} className="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-rose-500 disabled:opacity-60"><Trash2 className="h-4 w-4" />{isDeleting ? 'Deleting...' : 'Delete permanently'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {exitTarget && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[1px]">
+          <div role="alertdialog" aria-modal="true" aria-labelledby="coding-exit-title" className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-300"><AlertTriangle className="h-5 w-5" /></div>
+            <h3 id="coding-exit-title" className="mt-4 text-lg font-bold text-slate-950 dark:text-white">Leave this coding question?</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-gray-300">Keep working, leave without the latest changes, or save the question as a draft.</p>
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              <button type="button" disabled={exitSaving} onClick={discardAndExit} className="rounded-xl px-4 py-2.5 text-sm font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-50 dark:hover:bg-rose-900/20">Don't save</button>
+              <button type="button" disabled={exitSaving} onClick={() => setExitTarget('')} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Continue working</button>
+              <button type="button" disabled={exitSaving} onClick={saveAndExit} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-60"><Save className="h-4 w-4" />{exitSaving ? 'Saving...' : 'Save as draft'}</button>
             </div>
           </div>
         </div>

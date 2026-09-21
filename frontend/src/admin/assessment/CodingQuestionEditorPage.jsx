@@ -11,6 +11,13 @@ export default function CodingQuestionEditorPage() {
   const sectionIndex = Number(params.get('section') || 0);
   const questionIndex = Number(params.get('question') || 0);
   const returnTo = params.get('return') || '/admin/assessment';
+  const requestExit = () => {
+    const event = new CustomEvent('peerprep:request-authoring-exit', {
+      cancelable: true,
+      detail: { target: returnTo },
+    });
+    if (document.dispatchEvent(event)) navigate(returnTo);
+  };
 
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900">
@@ -19,7 +26,7 @@ export default function CodingQuestionEditorPage() {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={() => navigate(returnTo)}
+              onClick={requestExit}
               className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:hover:bg-gray-800"
             >
               <ArrowLeft className="h-4 w-4" />

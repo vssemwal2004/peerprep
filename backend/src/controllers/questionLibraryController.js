@@ -397,7 +397,8 @@ export async function updateLibraryQuestion(req, res) {
 
     if (Object.prototype.hasOwnProperty.call(req.body, 'questionText')) {
       const questionText = String(req.body.questionText || '').trim();
-      if (!questionText) return res.status(400).json({ error: 'Question text is required' });
+      const nextStatus = normalizeLibraryStatus(req.body.status || question.status);
+      if (!questionText && nextStatus !== 'draft') return res.status(400).json({ error: 'Question text is required' });
       updates.questionText = questionText;
       dataUpdates.questionText = questionText;
     }
@@ -533,8 +534,9 @@ export async function createLibraryQuestion(req, res) {
     const type = normalizeType(question.type);
     const tags = Array.isArray(question.tags) ? question.tags : [];
     const keywords = Array.isArray(question.keywords) ? question.keywords : [];
+    const status = normalizeLibraryStatus(question.status);
     const questionText = String(question.questionText || '').trim();
-    if (!questionText) return res.status(400).json({ error: 'Question text is required' });
+    if (!questionText && status !== 'draft') return res.status(400).json({ error: 'Question text is required' });
     const sourceKey = `direct_${new mongoose.Types.ObjectId()}`;
 
     const searchPrefixes = buildSearchPrefixes(getQuestionSearchValues({ ...question, questionText, tags, keywords }));
@@ -549,7 +551,7 @@ export async function createLibraryQuestion(req, res) {
       tags,
       keywords,
       difficulty: String(question.difficulty || '').trim(),
-      status: normalizeLibraryStatus(question.status),
+      status,
       visibility: normalizeLibraryVisibility(question.visibility),
       searchPrefixes,
       questionData: {
@@ -586,8 +588,9 @@ export async function createLibraryQuestionsBulk(req, res) {
       const type = normalizeType(question.type);
       const tags = Array.isArray(question.tags) ? question.tags : [];
       const keywords = Array.isArray(question.keywords) ? question.keywords : [];
+      const status = normalizeLibraryStatus(question.status);
       const questionText = String(question.questionText || '').trim();
-      if (!questionText) {
+      if (!questionText && status !== 'draft') {
         const validationError = new Error(`Question ${index + 1} needs question text`);
         validationError.statusCode = 400;
         throw validationError;
@@ -606,7 +609,7 @@ export async function createLibraryQuestionsBulk(req, res) {
         tags,
         keywords,
         difficulty: String(question.difficulty || '').trim(),
-        status: normalizeLibraryStatus(question.status),
+        status,
         visibility: normalizeLibraryVisibility(question.visibility),
         searchPrefixes,
         questionData: {

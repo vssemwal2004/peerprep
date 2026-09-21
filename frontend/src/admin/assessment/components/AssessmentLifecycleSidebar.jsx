@@ -1,9 +1,9 @@
 const statusItems = [
-  { id: 'all', label: 'All assessments', countKey: 'total' },
-  { id: 'drafts', label: 'Drafts', countKey: 'drafts' },
-  { id: 'upcoming', label: 'Scheduled', countKey: 'upcoming' },
-  { id: 'active', label: 'Live', countKey: 'active' },
+  { id: 'all', label: 'All', countKey: 'total' },
+  { id: 'ongoing', label: 'Ongoing', countKey: 'ongoing' },
   { id: 'completed', label: 'Completed', countKey: 'completed' },
+  { id: 'drafts', label: 'Drafts', countKey: 'drafts' },
+  { id: 'archived', label: 'Archived', countKey: 'archived' },
 ];
 
 const creationDateOptions = [

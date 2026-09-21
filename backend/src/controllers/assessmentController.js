@@ -10,6 +10,7 @@ import { enqueueAssessmentCodingEvaluationJobs } from '../services/compilerExecu
 import { removeAssessmentQuestionsFromLibrary, syncAssessmentQuestionsToLibrary } from '../services/questionLibraryService.js';
 import { logActivity } from './adminActivityController.js';
 import { enqueueMailJobs } from '../services/mailQueueService.js';
+import { decryptAssessmentPassword, encryptAssessmentPassword } from '../services/assessmentPasswordService.js';
 import {
   getCodingQuestionScore,
   scoreAssessmentWithTestCases,
@@ -345,6 +346,7 @@ function sanitizeAssessmentForResponse(assessment) {
   if (!assessment) return assessment;
   const source = typeof assessment.toObject === 'function' ? assessment.toObject() : { ...assessment };
   delete source.passwordHash;
+  delete source.passwordEncrypted;
   delete source.shifts;
   source.settings = normalizeAssessmentSettings(source.settings || {});
   return source;
@@ -548,6 +550,7 @@ async function applyAssessmentPassword(assessment, { passwordEnabled, password }
     assessment.passwordEnabled = Boolean(passwordEnabled);
     if (!assessment.passwordEnabled) {
       assessment.passwordHash = undefined;
+      assessment.passwordEncrypted = undefined;
       return;
     }
   }
@@ -557,6 +560,7 @@ async function applyAssessmentPassword(assessment, { passwordEnabled, password }
   const nextPassword = typeof password === 'string' ? password.trim() : '';
   if (nextPassword) {
     assessment.passwordHash = await User.hashPassword(nextPassword);
+    assessment.passwordEncrypted = encryptAssessmentPassword(nextPassword);
   }
 }
 
@@ -1747,6 +1751,9 @@ export async function createAssessment(req, res) {
       if (end <= start) {
         return res.status(400).json({ error: 'End time must be after start time.' });
       }
+      if (start.getTime() < Date.now() - (60 * 1000)) {
+        return res.status(400).json({ error: 'Start time must be the current time or a future time.' });
+      }
 
       durationNum = Number(duration);
       if (Number.isNaN(durationNum) || durationNum <= 0) {
@@ -2635,8 +2642,7 @@ export async function releaseAssessmentAnswers(req, res) {
 export async function sendAssessmentInvitations(req, res) {
   try {
     const { id } = req.params;
-    const suppliedPassword = typeof req.body?.password === 'string' ? req.body.password.trim() : '';
-    const assessment = await Assessment.findById(id);
+    const assessment = await Assessment.findById(id).select('+passwordEncrypted');
     if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
     if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all' && String(assessment.createdBy) !== String(req.user._id)) {
       return res.status(403).json({ error: 'Not allowed to send invitations for this assessment.' });
@@ -2644,10 +2650,16 @@ export async function sendAssessmentInvitations(req, res) {
     if (assessment.lifecycleStatus !== 'published') {
       return res.status(400).json({ error: 'Publish the assessment before sending invitations.' });
     }
+    let invitationPassword = '';
     if (assessment.passwordEnabled) {
-      if (!suppliedPassword) return res.status(400).json({ error: 'Enter the assessment password before sending invitations.' });
-      const passwordMatches = assessment.passwordHash && await bcrypt.compare(suppliedPassword, assessment.passwordHash);
-      if (!passwordMatches) return res.status(400).json({ error: 'The assessment password is incorrect.' });
+      if (!assessment.passwordEncrypted) {
+        return res.status(409).json({ error: 'This older assessment cannot recover its password. Open Edit Assessment and set the password once, then resend invitations.' });
+      }
+      try {
+        invitationPassword = decryptAssessmentPassword(assessment.passwordEncrypted);
+      } catch {
+        return res.status(500).json({ error: 'The saved assessment password could not be prepared for the invitation.' });
+      }
     }
 
     const students = (await resolveEligibleAssessmentStudents(assessment)).filter((student) => student.email);
@@ -2665,7 +2677,7 @@ export async function sendAssessmentInvitations(req, res) {
         to: student.email,
         assessment: assessment.toObject(),
         student,
-        password: assessment.passwordEnabled ? suppliedPassword : '',
+        password: invitationPassword,
       },
     })), {
       batchId,

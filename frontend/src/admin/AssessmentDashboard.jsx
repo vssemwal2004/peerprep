@@ -19,6 +19,7 @@ const statusStyles = {
   Upcoming: 'bg-amber-50 text-amber-700 border-amber-200',
   Active: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   Completed: 'bg-slate-200 text-slate-700 border-slate-300',
+  Archived: 'bg-violet-50 text-violet-700 border-violet-200',
 };
 
 const formatDateTime = (value) => (value ? new Date(value).toLocaleString() : '-');
@@ -26,6 +27,11 @@ const formatShortDate = (value) => (
   value
     ? new Date(value).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })
     : '-'
+);
+const formatTime = (value) => (
+  value
+    ? new Date(value).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+    : 'Not set'
 );
 
 const displayStatus = (status) => {
@@ -142,7 +148,7 @@ function ThreeDotsMenu({ assessment, onOpen, onPreview, onViewReport, onEdit, on
           {assessment.lifecycleStatus !== 'draft' && item(<Mail className="h-3.5 w-3.5" />, 'Send Mail to Eligible Students', onSendInvitations)}
           {item(
             isVisible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />,
-            isVisible ? 'Hide Test' : 'Show Test',
+            isVisible ? 'Archive Assessment' : 'Restore Assessment',
             onToggleVisibility,
           )}
           <div className="my-1 h-px bg-slate-100 dark:bg-gray-700" />
@@ -173,20 +179,14 @@ function ThreeDotsMenu({ assessment, onOpen, onPreview, onViewReport, onEdit, on
 
 function InvitationModal({ assessment, onClose }) {
   const toast = useToast();
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState(null);
 
   const sendInvitations = async () => {
-    if (assessment.passwordEnabled && !password.trim()) {
-      toast.error('Enter the assessment password first.');
-      return;
-    }
     setSending(true);
     setResult(null);
     try {
-      const response = await api.sendAssessmentInvitations(assessment._id, password);
+      const response = await api.sendAssessmentInvitations(assessment._id);
       setResult(response);
       toast.success(`${response.queued || 0} invitation${response.queued === 1 ? '' : 's'} queued. Delivery will continue in the background.`);
     } catch (error) {
@@ -215,13 +215,7 @@ function InvitationModal({ assessment, onClose }) {
           </div>
         </div>
 
-        {assessment.passwordEnabled && (
-          <div className="mt-4">
-            <label className="text-xs font-semibold text-slate-600 dark:text-gray-300">Confirm assessment password</label>
-            <div className="relative mt-1.5"><input type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Enter the current assessment password" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 pr-10 text-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-950 dark:text-white" /><button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div>
-            <p className="mt-1.5 text-xs text-slate-500">The server verifies this password before including it in the invitation; it is never read back from storage.</p>
-          </div>
-        )}
+        {assessment.passwordEnabled && <div className="mt-4 flex items-start gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-xs text-sky-800 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-200"><Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>The saved assessment password will be included automatically in every invitation.</span></div>}
 
         {result && <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{result.queued} queued · {result.eligible} eligible · Batch {result.batchId}</div>}
         <div className="mt-5 flex justify-end gap-2"><button type="button" onClick={onClose} disabled={sending} className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 dark:border-gray-700 dark:text-gray-300">Close</button><button type="button" onClick={sendInvitations} disabled={sending || Boolean(result)} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-60">{sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{sending ? 'Queueing...' : result ? 'Invitations queued' : 'Queue all eligible students'}</button></div>
@@ -990,10 +984,10 @@ export default function AssessmentDashboard() {
   const summary = useMemo(() => {
     const total = assessments.length;
     const drafts = assessments.filter((a) => a.lifecycleStatus === 'draft').length;
-    const active = assessments.filter((a) => a.status === 'Active').length;
-    const upcoming = assessments.filter((a) => a.status === 'Upcoming').length;
-    const completed = assessments.filter((a) => a.status === 'Completed').length;
-    return { total, drafts, active, upcoming, completed };
+    const archived = assessments.filter((a) => a.lifecycleStatus !== 'draft' && (a.lifecycleStatus === 'archived' || a.isVisible === false)).length;
+    const completed = assessments.filter((a) => a.lifecycleStatus !== 'draft' && a.lifecycleStatus !== 'archived' && a.isVisible !== false && a.status === 'Completed').length;
+    const ongoing = Math.max(0, total - drafts - archived - completed);
+    return { total, drafts, ongoing, completed, archived };
   }, [assessments]);
 
   const testTypes = useMemo(() => (
@@ -1010,11 +1004,11 @@ export default function AssessmentDashboard() {
       const rawBucket = String(assessment.lifecycleBucket || '').toLowerCase();
       const bucket = assessment.lifecycleStatus === 'draft'
         ? 'drafts'
-        : rawBucket === 'current'
-          ? 'active'
-          : rawBucket === 'scheduled'
-            ? 'upcoming'
-            : (rawBucket || String(assessment.status || '').toLowerCase());
+        : assessment.lifecycleStatus === 'archived' || assessment.isVisible === false
+          ? 'archived'
+          : rawBucket === 'completed' || String(assessment.status || '').toLowerCase() === 'completed'
+            ? 'completed'
+            : 'ongoing';
       const matchesTab = activeTab === 'all' || bucket === activeTab;
 
       const searchable = [assessment.title, assessment.testType, assessment.assessmentType, assessment.assessmentId]
@@ -1081,8 +1075,9 @@ export default function AssessmentDashboard() {
 
   const handleToggleVisibility = async (assessment) => {
     try {
-      await api.updateAssessment(assessment._id, { ...assessment, isVisible: !assessment.isVisible });
-      toast.success(assessment.isVisible ? 'Test hidden' : 'Test visible');
+      const nextVisible = assessment.isVisible === false;
+      await api.updateAssessment(assessment._id, { ...assessment, isVisible: nextVisible });
+      toast.success(nextVisible ? 'Assessment restored' : 'Assessment archived');
       loadAssessments();
     } catch (err) {
       toast.error(err.message || 'Failed to update visibility');
@@ -1210,9 +1205,10 @@ export default function AssessmentDashboard() {
               </div>
             ) : (
               <div role="list" className="space-y-2.5">
-                <div className="hidden grid-cols-[minmax(230px,2fr)_minmax(120px,1fr)_minmax(100px,.75fr)_minmax(145px,1.15fr)_minmax(125px,.95fr)_90px_28px] items-center gap-x-5 px-4 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 xl:grid dark:text-gray-500">
+                <div className="hidden grid-cols-[minmax(210px,1.8fr)_110px_100px_100px_minmax(130px,1fr)_105px_84px_28px] items-center gap-x-4 px-4 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 xl:grid dark:text-gray-500">
                   <span>Assessment</span>
-                  <span>Schedule</span>
+                  <span>Date</span>
+                  <span>Time</span>
                   <span>Content</span>
                   <span>Completion</span>
                   <span>Access</span>
@@ -1225,7 +1221,11 @@ export default function AssessmentDashboard() {
                   const completionPercent = assignedCount > 0
                     ? Math.min(100, Math.round((completedCount / assignedCount) * 100))
                     : 0;
-                  const lifecycleStatus = assessment.lifecycleStatus === 'draft' ? 'Draft' : assessment.status;
+                  const lifecycleStatus = assessment.lifecycleStatus === 'draft'
+                    ? 'Draft'
+                    : assessment.lifecycleStatus === 'archived' || assessment.isVisible === false
+                      ? 'Archived'
+                      : assessment.status;
 
                   return (
                     <article
@@ -1234,15 +1234,15 @@ export default function AssessmentDashboard() {
                       tabIndex={0}
                       onClick={(event) => {
                         if (event.target.closest('button, a, input, select, textarea')) return;
-                        navigate(`${rolePrefix}/assessment/${assessment._id}/edit`);
+                        navigate(`${rolePrefix}/assessment/reports?assessmentId=${encodeURIComponent(assessment._id)}`);
                       }}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault();
-                          navigate(`${rolePrefix}/assessment/${assessment._id}/edit`);
+                          navigate(`${rolePrefix}/assessment/reports?assessmentId=${encodeURIComponent(assessment._id)}`);
                         }
                       }}
-                      className="group grid cursor-pointer grid-cols-1 items-center gap-x-5 gap-y-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition-all hover:-translate-y-px hover:border-sky-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-sky-800 md:grid-cols-2 xl:grid-cols-[minmax(230px,2fr)_minmax(120px,1fr)_minmax(100px,.75fr)_minmax(145px,1.15fr)_minmax(125px,.95fr)_90px_28px]"
+                      className="group grid cursor-pointer grid-cols-1 items-center gap-x-4 gap-y-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition-all hover:-translate-y-px hover:border-sky-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-sky-800 md:grid-cols-2 xl:grid-cols-[minmax(210px,1.8fr)_110px_100px_100px_minmax(130px,1fr)_105px_84px_28px]"
                     >
                       <div className="min-w-0 md:col-span-2 xl:col-span-1">
                         <div className="flex min-w-0 items-center gap-1.5">
@@ -1266,6 +1266,11 @@ export default function AssessmentDashboard() {
 
                       <div className="min-w-0 text-xs">
                         <div className="font-semibold text-slate-700 dark:text-gray-200">{assessment.startTime ? formatShortDate(assessment.startTime) : 'Not scheduled'}</div>
+                        <div className="mt-0.5 text-[11px] text-slate-400 dark:text-gray-500">{assessment.endTime ? `Ends ${formatShortDate(assessment.endTime)}` : 'End date not set'}</div>
+                      </div>
+
+                      <div className="min-w-0 text-xs">
+                        <div className="font-semibold text-slate-700 dark:text-gray-200">{formatTime(assessment.startTime)}</div>
                         <div className="mt-0.5 text-[11px] text-slate-400 dark:text-gray-500">{assessment.duration ? `${assessment.duration} min` : 'Duration not set'}</div>
                       </div>
 

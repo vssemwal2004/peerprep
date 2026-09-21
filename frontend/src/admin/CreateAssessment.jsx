@@ -83,6 +83,7 @@ const steps = [
   { id: 'settings', label: 'Settings', description: 'Configure access, proctoring, behavior and results.' },
   { id: 'preview', label: 'Review', description: 'Validate the complete assessment before publishing.' },
 ];
+const SETTINGS_GROUP_IDS = ['access', 'proctoring', 'behavior', 'results'];
 
 const normalizeBuilderStep = (step) => {
   return steps.some((item) => item.id === step) ? step : 'basic';
@@ -266,6 +267,7 @@ export default function CreateAssessment() {
 
   const [currentId, setCurrentId] = useState(id || null);
   const [activeStep, setActiveStep] = useState('basic');
+  const [completedSteps, setCompletedSteps] = useState([]);
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -297,11 +299,14 @@ export default function CreateAssessment() {
   const [autoSaveStatus, setAutoSaveStatus] = useState('');
   const [version, setVersion] = useState(1);
   const [showPublishModal, setShowPublishModal] = useState(false);
+  const [exitTarget, setExitTarget] = useState('');
+  const [exitSaving, setExitSaving] = useState(false);
   const [customTestTypes, setCustomTestTypes] = useState(loadCustomTestTypes);
   const [showCustomTypeInput, setShowCustomTypeInput] = useState(false);
   const [newCustomTypeInput, setNewCustomTypeInput] = useState('');
   const [newCustomInstruction, setNewCustomInstruction] = useState('');
   const [activeSettingsGroup, setActiveSettingsGroup] = useState('access');
+  const [visitedSettingsGroups, setVisitedSettingsGroups] = useState([]);
   const [activeDeliveryType, setActiveDeliveryType] = useState('mcq');
 
   const draftLoadedRef = useRef(false);
@@ -492,7 +497,7 @@ export default function CreateAssessment() {
     if (!question) return;
 
     if (dirty) {
-      saveAssessmentDraft(assessmentKey, { form, sections, selectedStudents, csvState, version, activeStep });
+      saveAssessmentDraft(assessmentKey, { form, sections, selectedStudents, csvState, version, activeStep, completedSteps, visitedSettingsGroups });
     }
 
     let editorId = question.codingEditorId
@@ -550,7 +555,7 @@ export default function CreateAssessment() {
 
   const handleOpenProblemLibrary = async (sectionType = '') => {
     // Save current draft before navigating to library so data is preserved when returning
-    await saveAssessmentDraft(assessmentKey, { form, sections, selectedStudents, csvState, version, activeStep });
+    await saveAssessmentDraft(assessmentKey, { form, sections, selectedStudents, csvState, version, activeStep, completedSteps, visitedSettingsGroups });
     const returnTo = currentId ? `${rolePrefix}/assessment/${currentId}/edit` : `${rolePrefix}/assessment/create`;
     const query = new URLSearchParams({
       mode: 'select',
@@ -566,7 +571,7 @@ export default function CreateAssessment() {
   };
 
   const handleCreateQuestion = async () => {
-    await saveAssessmentDraft(assessmentKey, { form, sections, selectedStudents, csvState, version, activeStep });
+    await saveAssessmentDraft(assessmentKey, { form, sections, selectedStudents, csvState, version, activeStep, completedSteps, visitedSettingsGroups });
     const returnTo = currentId ? `${rolePrefix}/assessment/${currentId}/edit` : `${rolePrefix}/assessment/create`;
     const query = new URLSearchParams({
       mode: 'assessment-create',
@@ -608,6 +613,8 @@ export default function CreateAssessment() {
           setVersion(draft.version);
         }
         if (draft.activeStep) setActiveStep(normalizeBuilderStep(draft.activeStep));
+        if (Array.isArray(draft.completedSteps)) setCompletedSteps(draft.completedSteps.filter((step) => steps.some((item) => item.id === step)));
+        if (Array.isArray(draft.visitedSettingsGroups)) setVisitedSettingsGroups(draft.visitedSettingsGroups.filter((group) => SETTINGS_GROUP_IDS.includes(group)));
       }
       return;
     }
@@ -664,6 +671,10 @@ export default function CreateAssessment() {
         setCsvState(draftCsvState ? { ...emptyCsvState, ...draftCsvState } : emptyCsvState);
 
         if (draftStep) setActiveStep(normalizeBuilderStep(draftStep));
+        if (Array.isArray(sessionDraft?.completedSteps)) setCompletedSteps(sessionDraft.completedSteps.filter((step) => steps.some((item) => item.id === step)));
+        else if (assessment.lifecycleStatus === 'published') setCompletedSteps(steps.slice(0, -1).map((step) => step.id));
+        if (Array.isArray(sessionDraft?.visitedSettingsGroups)) setVisitedSettingsGroups(sessionDraft.visitedSettingsGroups.filter((group) => SETTINGS_GROUP_IDS.includes(group)));
+        else if (assessment.lifecycleStatus === 'published') setVisitedSettingsGroups(SETTINGS_GROUP_IDS);
 
         const mappedSections = (assessment.sections || []).map((section, sectionIndex) => {
           const questions = (section.questions || []).map((question, questionIndex) => {
@@ -734,7 +745,40 @@ export default function CreateAssessment() {
     setDirty(true);
   }, [assessmentKey]);
 
-  // Auto-save removed - drafts only save when user explicitly clicks Save Draft button
+  useEffect(() => {
+    if (!dirty) return undefined;
+    setAutoSaveStatus('Saving locally...');
+    const timeout = window.setTimeout(() => {
+      saveAssessmentDraft(assessmentKey, { form, sections, selectedStudents, csvState, version, activeStep, completedSteps, visitedSettingsGroups });
+      setAutoSaveStatus('Draft autosaved');
+    }, 600);
+    return () => window.clearTimeout(timeout);
+  }, [activeStep, assessmentKey, completedSteps, csvState, dirty, form, sections, selectedStudents, version, visitedSettingsGroups]);
+
+  useEffect(() => {
+    const warnBeforeBrowserExit = (event) => {
+      if (!dirty) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeBrowserExit);
+    return () => window.removeEventListener('beforeunload', warnBeforeBrowserExit);
+  }, [dirty]);
+
+  useEffect(() => {
+    const interceptInternalLink = (event) => {
+      if (!dirty || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null;
+      if (!anchor) return;
+      const target = new URL(anchor.href, window.location.href);
+      if (target.origin !== window.location.origin || target.href === window.location.href) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setExitTarget(`${target.pathname}${target.search}${target.hash}`);
+    };
+    document.addEventListener('click', interceptInternalLink, true);
+    return () => document.removeEventListener('click', interceptInternalLink, true);
+  }, [dirty]);
 
   useEffect(() => {
     if (id) return;
@@ -922,7 +966,7 @@ export default function CreateAssessment() {
   };
 
   const saveDraft = async (silent = false) => {
-    if (isSavingRef.current) return;
+    if (isSavingRef.current) return false;
     isSavingRef.current = true;
     setAutoSaveStatus('Saving draft...');
     const payload = buildPayload('draft');
@@ -956,9 +1000,11 @@ export default function CreateAssessment() {
       setAutoSaveStatus('Draft saved');
       clearAssessmentDraft(assessmentKey);
       sessionStorage.removeItem('peerprep_current_assessment_session');
+      return true;
     } catch (err) {
       setAutoSaveStatus('Draft save failed');
       if (!silent) toast.error(err.message || 'Failed to save draft');
+      return false;
     } finally {
       isSavingRef.current = false;
     }
@@ -1026,6 +1072,7 @@ export default function CreateAssessment() {
       toast.success('Assessment published');
       clearAssessmentDraft(assessmentKey);
       sessionStorage.removeItem('peerprep_current_assessment_session');
+      setDirty(false);
       navigate(`${rolePrefix}/assessment`);
       return true;
     } catch (err) {
@@ -1047,6 +1094,33 @@ export default function CreateAssessment() {
   const handleDraftConfirm = async () => {
     await saveDraft(false);
     setShowPublishModal(false);
+  };
+
+  const requestExit = (target = `${rolePrefix}/assessment`) => {
+    if (!dirty) {
+      navigate(target);
+      return;
+    }
+    setExitTarget(target);
+  };
+
+  const discardAndExit = () => {
+    clearAssessmentDraft(assessmentKey);
+    sessionStorage.removeItem('peerprep_current_assessment_session');
+    setDirty(false);
+    const target = exitTarget || `${rolePrefix}/assessment`;
+    setExitTarget('');
+    navigate(target);
+  };
+
+  const saveAndExit = async () => {
+    setExitSaving(true);
+    const saved = await saveDraft(false);
+    setExitSaving(false);
+    if (!saved) return;
+    const target = exitTarget || `${rolePrefix}/assessment`;
+    setExitTarget('');
+    navigate(target);
   };
 
   const stepIndex = steps.findIndex((step) => step.id === activeStep);
@@ -1098,12 +1172,17 @@ export default function CreateAssessment() {
     sections: assessmentValidation.totalQuestions > 0 && !assessmentValidation.emptySection && questionDeliveryValid,
     schedule: singleScheduleValid,
     target: candidateSelectionValid,
-    settings: true,
+    settings: SETTINGS_GROUP_IDS.every((group) => visitedSettingsGroups.includes(group)),
     preview: false,
   };
-  const firstIncompleteStepIndex = steps.findIndex((step) => !phaseCompletion[step.id]);
-  const maxUnlockedStepIndex = firstIncompleteStepIndex < 0 ? steps.length - 1 : firstIncompleteStepIndex;
-  const publishReady = steps.slice(0, -1).every((step) => phaseCompletion[step.id]);
+  let maxUnlockedStepIndex = 0;
+  for (let index = 0; index < steps.length - 1; index += 1) {
+    if (!completedSteps.includes(steps[index].id)) break;
+    maxUnlockedStepIndex = Math.min(index + 1, steps.length - 1);
+  }
+  const publishReady = steps.slice(0, -1).every((step) => (
+    completedSteps.includes(step.id) && phaseCompletion[step.id]
+  ));
   const allTestTypes = [...PREDEFINED_TEST_TYPES.filter((t) => t !== 'Other'), ...customTestTypes, 'Other'];
 
   const handleTestTypeChange = (value) => {
@@ -1465,16 +1544,21 @@ export default function CreateAssessment() {
         { id: 'behavior', label: 'Behavior', description: 'Navigation and timing', Icon: Navigation },
         { id: 'results', label: 'Results', description: 'Scores and retakes', Icon: CheckSquare },
       ];
+      const maxSettingsGroupIndex = Math.min(visitedSettingsGroups.length, settingsGroups.length - 1);
 
       return (
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm sm:grid-cols-4 dark:border-gray-800 dark:bg-gray-900" role="tablist" aria-label="Assessment setting categories">
-            {settingsGroups.map(({ id: groupId, label, description, Icon }) => (
-              <button key={groupId} type="button" role="tab" aria-selected={activeSettingsGroup === groupId} onClick={() => setActiveSettingsGroup(groupId)} className={`flex min-h-12 items-center gap-2 rounded-lg px-3 text-left transition ${activeSettingsGroup === groupId ? 'bg-sky-50 text-sky-800 ring-1 ring-inset ring-sky-200 dark:bg-sky-950/40 dark:text-sky-200 dark:ring-sky-800' : 'text-slate-500 hover:bg-slate-50 dark:text-gray-400 dark:hover:bg-gray-800'}`}>
+            {settingsGroups.map(({ id: groupId, label, description, Icon }, groupIndex) => {
+              const locked = groupIndex > maxSettingsGroupIndex;
+              const visited = visitedSettingsGroups.includes(groupId);
+              return (
+              <button key={groupId} type="button" role="tab" disabled={locked} aria-selected={activeSettingsGroup === groupId} onClick={() => setActiveSettingsGroup(groupId)} className={`flex min-h-12 items-center gap-2 rounded-lg px-3 text-left transition ${locked ? 'cursor-not-allowed text-slate-300 dark:text-gray-600' : activeSettingsGroup === groupId ? 'bg-sky-50 text-sky-800 ring-1 ring-inset ring-sky-200 dark:bg-sky-950/40 dark:text-sky-200 dark:ring-sky-800' : 'text-slate-500 hover:bg-slate-50 dark:text-gray-400 dark:hover:bg-gray-800'}`}>
                 <Icon className="h-4 w-4 shrink-0" />
-                <span className="min-w-0"><strong className="block truncate text-xs">{label}</strong><span className="hidden truncate text-[9px] font-medium opacity-70 lg:block">{description}</span></span>
+                <span className="min-w-0"><strong className="flex items-center gap-1 truncate text-xs">{label}{visited && <Check className="h-3 w-3 text-emerald-500" />}</strong><span className="hidden truncate text-[9px] font-medium opacity-70 lg:block">{locked ? 'Complete previous settings first' : description}</span></span>
               </button>
-            ))}
+              );
+            })}
           </div>
           <div className="min-w-0 space-y-4">
           {/* Quick Summary Bar */}
@@ -1795,8 +1879,8 @@ export default function CreateAssessment() {
           <AssessmentPreview assessment={{ ...form, sections }} />
         </div>
         <aside className="space-y-3 lg:sticky lg:top-3">
-          <section className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 dark:border-emerald-900/50 dark:bg-emerald-950/20">
-            <div className="flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-white"><Check className="h-4 w-4" /></span><div><p className="text-sm font-bold text-emerald-900 dark:text-emerald-200">Ready to publish</p><p className="text-[10px] text-emerald-700/80 dark:text-emerald-300/70">All required phases are complete</p></div></div>
+          <section className={`rounded-xl border p-4 ${publishReady ? 'border-emerald-200 bg-emerald-50/70 dark:border-emerald-900/50 dark:bg-emerald-950/20' : 'border-amber-200 bg-amber-50/70 dark:border-amber-900/50 dark:bg-amber-950/20'}`}>
+            <div className="flex items-center gap-2"><span className={`flex h-7 w-7 items-center justify-center rounded-full text-white ${publishReady ? 'bg-emerald-500' : 'bg-amber-500'}`}>{publishReady ? <Check className="h-4 w-4" /> : <Clock className="h-4 w-4" />}</span><div><p className={`text-sm font-bold ${publishReady ? 'text-emerald-900 dark:text-emerald-200' : 'text-amber-900 dark:text-amber-200'}`}>{publishReady ? 'Ready to publish' : 'Review required'}</p><p className={`text-[10px] ${publishReady ? 'text-emerald-700/80 dark:text-emerald-300/70' : 'text-amber-700/80 dark:text-amber-300/70'}`}>{publishReady ? 'All required phases are complete' : 'Return to any incomplete phase before publishing'}</p></div></div>
             <div className="mt-3 grid grid-cols-3 divide-x divide-emerald-200 text-center dark:divide-emerald-900">
               <div><strong className="block text-sm text-slate-900 dark:text-white">{assessmentValidation.totalQuestions}</strong><span className="text-[9px] uppercase text-slate-500">Questions</span></div>
               <div><strong className="block text-sm text-slate-900 dark:text-white">{assignedSummary.count}</strong><span className="text-[9px] uppercase text-slate-500">Candidates</span></div>
@@ -1805,7 +1889,10 @@ export default function CreateAssessment() {
           </section>
           <SectionCard compact title="Publish checklist" subtitle="Final configuration summary.">
             <div className="space-y-1.5">
-              {steps.slice(0, -1).map((step) => <div key={step.id} className="flex items-center justify-between rounded-lg bg-slate-50 px-2.5 py-2 text-xs dark:bg-gray-800"><span className="text-slate-600 dark:text-gray-300">{step.label}</span><span className="inline-flex items-center gap-1 font-bold text-emerald-600 dark:text-emerald-300"><Check className="h-3 w-3" /> Complete</span></div>)}
+              {steps.slice(0, -1).map((step) => {
+                const complete = completedSteps.includes(step.id) && phaseCompletion[step.id];
+                return <div key={step.id} className="flex items-center justify-between rounded-lg bg-slate-50 px-2.5 py-2 text-xs dark:bg-gray-800"><span className="text-slate-600 dark:text-gray-300">{step.label}</span><span className={`inline-flex items-center gap-1 font-bold ${complete ? 'text-emerald-600 dark:text-emerald-300' : 'text-amber-600 dark:text-amber-300'}`}>{complete ? <><Check className="h-3 w-3" /> Complete</> : 'Review'}</span></div>;
+              })}
             </div>
           </SectionCard>
           <AssessmentCard label="Assessment version" value={`v${version}`} helper={assignedSummary.accountSummary} />
@@ -1819,6 +1906,25 @@ export default function CreateAssessment() {
   };
 
   const goNext = () => {
+    if (activeStep === 'settings') {
+      const groupIndex = SETTINGS_GROUP_IDS.indexOf(activeSettingsGroup);
+      const nextVisitedGroups = visitedSettingsGroups.includes(activeSettingsGroup)
+        ? visitedSettingsGroups
+        : [...visitedSettingsGroups, activeSettingsGroup];
+      setVisitedSettingsGroups(nextVisitedGroups);
+      setDirty(true);
+      if (groupIndex < SETTINGS_GROUP_IDS.length - 1) {
+        setActiveSettingsGroup(SETTINGS_GROUP_IDS[groupIndex + 1]);
+        return;
+      }
+      if (!SETTINGS_GROUP_IDS.every((group) => nextVisitedGroups.includes(group))) {
+        toast.error('Review each settings category before continuing.');
+        return;
+      }
+      setCompletedSteps((previous) => (previous.includes(activeStep) ? previous : [...previous, activeStep]));
+      setActiveStep('preview');
+      return;
+    }
     if (!phaseCompletion[activeStep]) {
       const messages = {
         basic: 'Complete the required assessment name and type.',
@@ -1829,6 +1935,8 @@ export default function CreateAssessment() {
       toast.error(messages[activeStep] || 'Complete this phase before continuing.');
       return;
     }
+    setDirty(true);
+    setCompletedSteps((previous) => (previous.includes(activeStep) ? previous : [...previous, activeStep]));
     if (stepIndex < steps.length - 1) setActiveStep(steps[stepIndex + 1].id);
   };
 
@@ -1844,7 +1952,7 @@ export default function CreateAssessment() {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={() => navigate(`${rolePrefix}/assessment`)}
+              onClick={() => requestExit(`${rolePrefix}/assessment`)}
               className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:hover:bg-gray-800"
             >
               <ArrowLeft className="h-4 w-4" />
@@ -1895,7 +2003,7 @@ export default function CreateAssessment() {
             </span>
             {steps.map((step, index) => {
               const isActive = activeStep === step.id;
-              const isComplete = Boolean(phaseCompletion[step.id]);
+              const isComplete = completedSteps.includes(step.id) && Boolean(phaseCompletion[step.id]);
               const isLocked = index > maxUnlockedStepIndex;
               return (
                 <li key={step.id} className="relative z-10">
@@ -1922,7 +2030,7 @@ export default function CreateAssessment() {
           >
             Previous
           </button>
-          {stepIndex < steps.length - 1 ? <button type="button" onClick={goNext} className="rounded-lg bg-sky-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500">Continue</button> : <button type="button" onClick={() => setShowPublishModal(true)} disabled={loading || !publishReady} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:opacity-60"><Send className="h-3.5 w-3.5" /> Publish Assessment</button>}
+          {stepIndex < steps.length - 1 ? <button type="button" onClick={goNext} className="rounded-lg bg-sky-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500">{activeStep === 'settings' && SETTINGS_GROUP_IDS.indexOf(activeSettingsGroup) < SETTINGS_GROUP_IDS.length - 1 ? `Next: ${SETTINGS_GROUP_IDS[SETTINGS_GROUP_IDS.indexOf(activeSettingsGroup) + 1].charAt(0).toUpperCase()}${SETTINGS_GROUP_IDS[SETTINGS_GROUP_IDS.indexOf(activeSettingsGroup) + 1].slice(1)}` : 'Continue'}</button> : <button type="button" onClick={() => setShowPublishModal(true)} disabled={loading || !publishReady} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:opacity-60"><Send className="h-3.5 w-3.5" /> Publish Assessment</button>}
         </div>
 
         {showPublishModal && (
@@ -2020,6 +2128,21 @@ export default function CreateAssessment() {
                 >
                   Publish
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {exitTarget && (
+          <div className="fixed inset-0 z-[170] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-labelledby="assessment-exit-title">
+            <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-300"><Save className="h-4 w-4" /></div>
+              <h2 id="assessment-exit-title" className="mt-4 text-base font-bold text-slate-950 dark:text-white">Continue creating this assessment?</h2>
+              <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-gray-400">Your latest changes are autosaved locally. Choose whether to keep working, leave without saving, or store the assessment as a server draft.</p>
+              <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button type="button" onClick={discardAndExit} disabled={exitSaving} className="h-10 rounded-xl border border-rose-200 px-4 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900/60 dark:text-rose-300">Don&apos;t save</button>
+                <button type="button" onClick={() => setExitTarget('')} disabled={exitSaving} className="h-10 rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Continue working</button>
+                <button type="button" onClick={saveAndExit} disabled={exitSaving} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-60"><Save className="h-3.5 w-3.5" />{exitSaving ? 'Saving...' : 'Save as draft'}</button>
               </div>
             </div>
           </div>

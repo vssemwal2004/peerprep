@@ -119,6 +119,7 @@ const assessmentSchema = new mongoose.Schema({
   settings: { type: assessmentSettingsSchema, default: () => ({}) },
   passwordEnabled: { type: Boolean, default: false },
   passwordHash: { type: String },
+  passwordEncrypted: { type: String, select: false },
   sections: { type: [sectionSchema], default: [] },
   totalMarks: { type: Number, default: 0 },
 }, { timestamps: true });

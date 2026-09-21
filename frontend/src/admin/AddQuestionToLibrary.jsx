@@ -221,9 +221,19 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
 
   const initialType = ['mcq', 'short', 'one_line'].includes(searchParams.get('type')) ? searchParams.get('type') : 'mcq';
   const type = initialType;
-  const [questions, setQuestions] = useState([emptyQuestion(initialType)]);
+  const authoringDraftKey = `peerprep_question_authoring_draft:${assessmentKey}:${type}`;
+  const storedDraftRef = useRef(undefined);
+  if (storedDraftRef.current === undefined) {
+    try {
+      storedDraftRef.current = !editQuestionId ? JSON.parse(localStorage.getItem(authoringDraftKey) || 'null') : null;
+    } catch {
+      storedDraftRef.current = null;
+    }
+  }
+  const storedDraft = storedDraftRef.current;
+  const [questions, setQuestions] = useState(() => (Array.isArray(storedDraft?.questions) && storedDraft.questions.length ? storedDraft.questions : [emptyQuestion(initialType)]));
   const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
-  const [activeStage, setActiveStage] = useState('content');
+  const [activeStage, setActiveStage] = useState(storedDraft?.activeStage || 'content');
   const [previewOpen, setPreviewOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [navigatorSearch, setNavigatorSearch] = useState('');
@@ -232,8 +242,61 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingQuestion, setIsLoadingQuestion] = useState(Boolean(editQuestionId));
-  const [libraryMeta, setLibraryMeta] = useState({ visibility: 'public', status: 'published' });
+  const [libraryMeta, setLibraryMeta] = useState(storedDraft?.libraryMeta || { visibility: 'public', status: 'draft' });
   const [importState, setImportState] = useState({ status: 'idle', message: '', imported: 0, errors: [] });
+  const [dirty, setDirty] = useState(Boolean(storedDraft));
+  const [draftStatus, setDraftStatus] = useState(storedDraft ? 'Draft restored' : '');
+  const [exitTarget, setExitTarget] = useState('');
+  const [exitSaving, setExitSaving] = useState(false);
+  const authoringBaselineRef = useRef(JSON.stringify({ questions, libraryMeta, activeStage }));
+
+  useEffect(() => {
+    if (editQuestionId) return undefined;
+    const snapshot = JSON.stringify({ questions, libraryMeta, activeStage });
+    if (snapshot === authoringBaselineRef.current) return undefined;
+    setDirty(true);
+    setDraftStatus('Saving locally...');
+    const timeout = window.setTimeout(() => {
+      localStorage.setItem(authoringDraftKey, JSON.stringify({ questions, libraryMeta, activeStage, updatedAt: Date.now() }));
+      setDraftStatus('Draft autosaved');
+    }, 500);
+    return () => window.clearTimeout(timeout);
+  }, [activeStage, authoringDraftKey, editQuestionId, libraryMeta, questions]);
+
+  useEffect(() => {
+    const warnBeforeBrowserExit = (event) => {
+      if (!dirty) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeBrowserExit);
+    return () => window.removeEventListener('beforeunload', warnBeforeBrowserExit);
+  }, [dirty]);
+
+  useEffect(() => {
+    const interceptInternalLink = (event) => {
+      if (!dirty || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null;
+      if (!anchor) return;
+      const target = new URL(anchor.href, window.location.href);
+      if (target.origin !== window.location.origin || target.href === window.location.href) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setExitTarget(`${target.pathname}${target.search}${target.hash}`);
+    };
+    document.addEventListener('click', interceptInternalLink, true);
+    return () => document.removeEventListener('click', interceptInternalLink, true);
+  }, [dirty]);
+
+  useEffect(() => {
+    const handleExitRequest = (event) => {
+      if (!dirty) return;
+      event.preventDefault();
+      setExitTarget(event.detail?.target || assessmentReturnTo);
+    };
+    document.addEventListener('peerprep:request-authoring-exit', handleExitRequest);
+    return () => document.removeEventListener('peerprep:request-authoring-exit', handleExitRequest);
+  }, [assessmentReturnTo, dirty]);
 
   useEffect(() => {
     activeQuestionItemRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -622,15 +685,15 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
     }
   };
 
-  const handleSaveAll = async (requestedStatus = '', { addToAssessment = false } = {}) => {
+  const handleSaveAll = async (requestedStatus = '', { addToAssessment = false, navigateAfterSave = true } = {}) => {
     const targetStatus = typeof requestedStatus === 'string' && requestedStatus
       ? requestedStatus
       : libraryMeta.status;
     const isPublishing = targetStatus === 'published';
-    const validQuestions = questions.filter(q => q.questionText?.trim());
+    const validQuestions = isPublishing ? questions.filter(q => q.questionText?.trim()) : questions;
     if (!validQuestions.length) {
-      toast.error(targetStatus === 'draft' ? 'Add a question statement before saving the draft.' : 'Please enter at least one valid question.');
-      return;
+      toast.error('Please add at least one question.');
+      return false;
     }
 
     // Publishing requires a complete, candidate-ready question. Drafts may remain incomplete.
@@ -690,33 +753,73 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
           status: targetStatus,
         });
         toast.success(targetStatus === 'draft' ? 'Draft updated successfully.' : 'Question updated successfully.');
+        localStorage.removeItem(authoringDraftKey);
+        authoringBaselineRef.current = JSON.stringify({ questions, libraryMeta, activeStage });
+        setDirty(false);
+        setDraftStatus('Draft saved');
         const requestedReturn = location.state?.returnTo;
         const returnTo = typeof requestedReturn === 'string' && requestedReturn.startsWith(`${rolePrefix}/library`)
           ? requestedReturn
           : `${rolePrefix}/library?type=${type}`;
-        navigate(returnTo);
-        return;
+        if (navigateAfterSave) navigate(returnTo);
+        return true;
       }
 
       const response = await api.createLibraryQuestionsBulk(payload);
+      localStorage.removeItem(authoringDraftKey);
+      authoringBaselineRef.current = JSON.stringify({ questions, libraryMeta, activeStage });
+      setDirty(false);
+      setDraftStatus('Draft saved');
       const passageSetCount = payload.filter((item) => item.libraryItemKind === 'passage_set').length;
       if (assessmentCreateMode && addToAssessment) {
         queueQuestionSelection(assessmentKey, { questions: response.questions || [], createdForAssessment: true });
         toast.success(`${validQuestions.length} question${validQuestions.length === 1 ? '' : 's'} published and added to the assessment.`);
-        navigate(assessmentReturnTo);
-        return;
+        if (navigateAfterSave) navigate(assessmentReturnTo);
+        return true;
       }
       toast.success(targetStatus === 'draft'
         ? `Saved ${payload.length} library draft${payload.length === 1 ? '' : 's'}.`
         : `Published ${validQuestions.length} questions as ${payload.length} library item${payload.length === 1 ? '' : 's'}${passageSetCount ? `, including ${passageSetCount} passage set${passageSetCount === 1 ? '' : 's'}` : ''}.`);
-      navigate(targetStatus === 'draft'
-        ? `${rolePrefix}/library?status=draft`
-        : `${rolePrefix}/library?type=${type}`);
+      if (navigateAfterSave) {
+        navigate(targetStatus === 'draft'
+          ? `${rolePrefix}/library?status=draft`
+          : `${rolePrefix}/library?type=${type}`);
+      }
+      return true;
     } catch (err) {
       toast.error(err.message || 'Failed to add questions to library.');
+      return false;
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const requestExit = () => {
+    const rolePrefix = window.location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
+    const target = assessmentCreateMode ? assessmentReturnTo : `${rolePrefix}/library`;
+    if (!dirty) {
+      navigate(target);
+      return;
+    }
+    setExitTarget(target);
+  };
+
+  const discardQuestionDraftAndExit = () => {
+    localStorage.removeItem(authoringDraftKey);
+    setDirty(false);
+    const target = exitTarget;
+    setExitTarget('');
+    navigate(target);
+  };
+
+  const saveQuestionDraftAndExit = async () => {
+    setExitSaving(true);
+    const saved = await handleSaveAll('draft', { navigateAfterSave: false });
+    setExitSaving(false);
+    if (!saved) return;
+    const target = exitTarget;
+    setExitTarget('');
+    navigate(target);
   };
 
   const activeQuestion = questions[activeQuestionIndex] || questions[0];
@@ -792,10 +895,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
         <div className={embedded ? 'hidden' : 'mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between'}>
           <div className="flex items-center gap-3">
             {!embedded && <button
-              onClick={() => {
-                const rolePrefix = window.location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
-                navigate(`${rolePrefix}/library`);
-              }}
+              onClick={requestExit}
               className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-100 dark:border-gray-800 dark:text-gray-400 dark:hover:bg-gray-900"
             >
               <ArrowLeft className="h-4 w-4" />
@@ -808,6 +908,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
               <p className="text-sm text-slate-500 dark:text-gray-400">
                 {selectedQuestionType.description}. Complete only the fields relevant to this format.
               </p>
+              {draftStatus && <p className="mt-1 text-[11px] font-medium text-sky-600 dark:text-sky-300">{draftStatus}</p>}
             </div>
           </div>
           
@@ -1047,6 +1148,21 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
           <div className="relative z-10 w-full max-w-3xl">
             <button type="button" onClick={() => setPreviewOpen(false)} title="Close preview" className="absolute -right-2 -top-12 flex h-9 w-9 items-center justify-center rounded-xl border border-white/25 bg-white text-slate-600 shadow-lg hover:bg-slate-50"><X className="h-4 w-4" /></button>
             <AuthoringPreview type={type} questions={questions} activeQuestionIndex={activeQuestionIndex} onQuestionChange={setActiveQuestionIndex} />
+          </div>
+        </div>
+      )}
+
+      {exitTarget && (
+        <div className="fixed inset-0 z-[170] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-labelledby="question-exit-title">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-300"><Save className="h-4 w-4" /></div>
+            <h2 id="question-exit-title" className="mt-4 text-base font-bold text-slate-950 dark:text-white">Continue creating this question?</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-gray-400">Your changes are autosaved locally. Save an incomplete question as a Library draft, continue editing, or leave without keeping it.</p>
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button type="button" onClick={discardQuestionDraftAndExit} disabled={exitSaving} className="h-10 rounded-xl border border-rose-200 px-4 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900/60 dark:text-rose-300">Don&apos;t save</button>
+              <button type="button" onClick={() => setExitTarget('')} disabled={exitSaving} className="h-10 rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Continue working</button>
+              <button type="button" onClick={saveQuestionDraftAndExit} disabled={exitSaving} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-60"><Save className="h-3.5 w-3.5" />{exitSaving ? 'Saving...' : 'Save as draft'}</button>
+            </div>
           </div>
         </div>
       )}
