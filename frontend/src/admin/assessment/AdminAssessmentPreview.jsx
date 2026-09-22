@@ -118,7 +118,7 @@ export default function AdminAssessmentPreview() {
     navigate(returnTo);
   }, [navigate, returnTo]);
   const editCurrentQuestion = () => {
-    navigate(returnTo, { state: { editQuestion: { sectionIndex: activeSection, questionIndex: activeQuestion } } });
+    navigate(id === 'draft' ? returnTo : `${rolePrefix}/assessment/${id}/edit`, { state: { editQuestion: { sectionIndex: activeSection, questionIndex: activeQuestion } } });
   };
 
   const questionStatus = useCallback((sectionIndex, questionIndex) => {

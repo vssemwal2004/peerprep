@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import {
@@ -404,6 +405,9 @@ function loadSavedExportColumns() {
 
 export default function AssessmentReports() {
   const toast = useToast();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
   const searchRef = useRef(null);
   const initialAssessmentId = typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('assessmentId') || ''
@@ -1208,6 +1212,15 @@ export default function AssessmentReports() {
       <div className="shrink-0 border-b border-sky-100 bg-white/95 shadow-sm shadow-sky-950/5 backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
         <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => navigate(`${rolePrefix}/assessment`)}
+              aria-label="Back to assessments"
+              className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:border-sky-300 hover:bg-sky-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span className="hidden sm:inline">Assessments</span>
+            </button>
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-600 text-white shadow-sm shadow-sky-200 dark:shadow-none">
               <BarChart3 className="h-5 w-5" />
             </div>

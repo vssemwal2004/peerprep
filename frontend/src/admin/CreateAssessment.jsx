@@ -260,7 +260,7 @@ function Row({
   );
 }
 
-export default function CreateAssessment() {
+export default function CreateAssessment({ viewOnly = false }) {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -303,6 +303,8 @@ export default function CreateAssessment() {
   const [studentEntryMode, setStudentEntryMode] = useState('');
   const [csvState, setCsvState] = useState(emptyCsvState);
   const [loading, setLoading] = useState(false);
+  const [assessmentLoading, setAssessmentLoading] = useState(Boolean(id));
+  const [assessmentLoadError, setAssessmentLoadError] = useState('');
   const [sendingTestEmail, setSendingTestEmail] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState('');
@@ -334,6 +336,7 @@ export default function CreateAssessment() {
   }
   const assessmentKey = currentId || sessionIdRef.current || 'new';
   const isEditMode = Boolean(id);
+  const isPublishedEdit = isEditMode && form.lifecycleStatus === 'published';
   const openStudentPreview = () => {
     saveAssessmentDraft(assessmentKey, { form, sections, selectedStudents, csvState, version, activeStep, completedSteps, visitedSettingsGroups });
     const returnTo = `${rolePrefix}/assessment/${currentId ? `${currentId}/edit` : 'create'}`;
@@ -638,12 +641,15 @@ export default function CreateAssessment() {
       return;
     }
     const loadAssessment = async () => {
+      setAssessmentLoading(true);
+      setAssessmentLoadError('');
       try {
         const data = await api.getAssessmentById(id);
         const assessment = data.assessment || {};
         const isDraft = assessment.lifecycleStatus === 'draft';
         const draftAssigned = Array.isArray(assessment.draftAssignedStudents) ? assessment.draftAssignedStudents : [];
-        const sessionDraft = loadAssessmentDraft(assessmentKey);
+        const savedSessionDraft = loadAssessmentDraft(id);
+        const sessionDraft = !viewOnly && savedSessionDraft?.updatedAt > new Date(assessment.updatedAt || 0).getTime() ? savedSessionDraft : null;
         const draftForm = sessionDraft?.form && typeof sessionDraft.form === 'object' ? sessionDraft.form : null;
         const draftSections = Array.isArray(sessionDraft?.sections) ? sessionDraft.sections : null;
         const draftSelectedStudents = Array.isArray(sessionDraft?.selectedStudents) ? sessionDraft.selectedStudents : null;
@@ -675,6 +681,8 @@ export default function CreateAssessment() {
           ...prev,
           ...baseForm,
           ...(draftForm || {}),
+          title: draftForm?.title?.trim() || baseForm.title,
+          testType: draftForm?.testType || baseForm.testType,
           targetMode: 'individual',
           assessmentId: draftForm?.assessmentId || baseForm.assessmentId || prev.assessmentId,
           settings: withAiProctoringSettings(draftForm?.settings || baseForm.settings),
@@ -710,7 +718,7 @@ export default function CreateAssessment() {
               || problemData?._id
               || createEditorId();
 
-            saveCodingDraft(editorId, {
+            if (!viewOnly) saveCodingDraft(editorId, {
               assessmentKey: assessment._id || assessmentKey,
               sectionIndex,
               questionIndex,
@@ -737,8 +745,8 @@ export default function CreateAssessment() {
           });
           return { ...section, questions };
         });
-        const problemSelections = consumeProblemSelections(assessmentKey);
-        const librarySelections = consumeQuestionSelections(assessmentKey);
+        const problemSelections = viewOnly ? [] : consumeProblemSelections(assessmentKey);
+        const librarySelections = viewOnly ? [] : consumeQuestionSelections(assessmentKey);
         const sectionSource = draftSections && draftSections.length ? draftSections : mappedSections;
         let mergedSections = problemSelections.length
           ? problemSelections.reduce((acc, selection) => addProblemsToSection(acc, selection.sectionIndex, selection.problems || []), sectionSource)
@@ -752,28 +760,31 @@ export default function CreateAssessment() {
         setSections(mergedSections);
         setCurrentId(id);
       } catch (err) {
+        setAssessmentLoadError(err.message || 'Failed to load assessment');
         toast.error(err.message || 'Failed to load assessment');
+      } finally {
+        setAssessmentLoading(false);
       }
     };
     loadAssessment();
-  }, [id, toast]);
+  }, [id, toast, viewOnly]);
 
   useEffect(() => {
     const drafts = listCodingDrafts(assessmentKey);
-    if (!drafts.length) return;
+    if (viewOnly || !drafts.length) return;
     setSections((prev) => applyCodingDrafts(drafts, prev));
     setDirty(true);
-  }, [assessmentKey]);
+  }, [assessmentKey, viewOnly]);
 
   useEffect(() => {
-    if (!dirty) return undefined;
+    if (viewOnly || !dirty) return undefined;
     setAutoSaveStatus('Saving locally...');
     const timeout = window.setTimeout(() => {
       saveAssessmentDraft(assessmentKey, { form, sections, selectedStudents, csvState, version, activeStep, completedSteps, visitedSettingsGroups });
-      setAutoSaveStatus('Draft autosaved');
+      setAutoSaveStatus(isPublishedEdit ? 'Changes saved locally' : 'Draft autosaved');
     }, 600);
     return () => window.clearTimeout(timeout);
-  }, [activeStep, assessmentKey, completedSteps, csvState, dirty, form, sections, selectedStudents, version, visitedSettingsGroups]);
+  }, [activeStep, assessmentKey, completedSteps, csvState, dirty, form, isPublishedEdit, sections, selectedStudents, version, viewOnly, visitedSettingsGroups]);
 
   useEffect(() => {
     const warnBeforeBrowserExit = (event) => {
@@ -801,7 +812,7 @@ export default function CreateAssessment() {
   }, [dirty]);
 
   useEffect(() => {
-    if (id) return;
+    if (id || viewOnly) return;
     const problemSelections = consumeProblemSelections(assessmentKey);
     const librarySelections = consumeQuestionSelections(assessmentKey);
     if (!problemSelections.length && !librarySelections.length) return;
@@ -817,7 +828,7 @@ export default function CreateAssessment() {
       return next;
     });
     setDirty(true);
-  }, [assessmentKey]);
+  }, [assessmentKey, viewOnly]);
 
   const assignedSummary = useMemo(() => {
     return {
@@ -989,8 +1000,9 @@ export default function CreateAssessment() {
   const saveDraft = async (silent = false) => {
     if (isSavingRef.current) return false;
     isSavingRef.current = true;
-    setAutoSaveStatus('Saving draft...');
-    const payload = buildPayload('draft');
+    setAutoSaveStatus(isPublishedEdit ? 'Saving changes...' : 'Saving draft...');
+    const payload = buildPayload(isPublishedEdit ? 'published' : 'draft');
+    if (isPublishedEdit) payload.sendEmail = false;
     try {
       if (currentId) {
         await api.updateAssessment(currentId, payload);
@@ -999,10 +1011,10 @@ export default function CreateAssessment() {
           actionType: 'UPDATE',
           targetType: 'ASSESSMENT',
           targetId: currentId,
-          description: `Assessment draft updated: "${form.title || 'Untitled'}" (ID: ${form.assessmentId || currentId})`,
+          description: `Assessment ${isPublishedEdit ? 'updated' : 'draft updated'}: "${form.title || 'Untitled'}" (ID: ${form.assessmentId || currentId})`,
           metadata: { assessmentId: form.assessmentId, testType: form.testType, isVisible: form.isVisible },
         }).catch(() => { });
-        if (!silent) toast.success('Draft updated');
+        if (!silent) toast.success(isPublishedEdit ? 'Assessment updated' : 'Draft updated');
       } else {
         const response = await api.createAssessment(payload);
         const newId = response.assessmentId;
@@ -1018,13 +1030,13 @@ export default function CreateAssessment() {
         if (!silent) toast.success('Draft created');
       }
       setDirty(false);
-      setAutoSaveStatus('Draft saved');
+      setAutoSaveStatus(isPublishedEdit ? 'Changes saved' : 'Draft saved');
       clearAssessmentDraft(assessmentKey);
       sessionStorage.removeItem('peerprep_current_assessment_session');
       return true;
     } catch (err) {
-      setAutoSaveStatus('Draft save failed');
-      if (!silent) toast.error(err.message || 'Failed to save draft');
+      setAutoSaveStatus(isPublishedEdit ? 'Could not save changes' : 'Draft save failed');
+      if (!silent) toast.error(err.message || (isPublishedEdit ? 'Failed to save changes' : 'Failed to save draft'));
       return false;
     } finally {
       isSavingRef.current = false;
@@ -1135,6 +1147,10 @@ export default function CreateAssessment() {
   };
 
   const requestExit = (target = `${rolePrefix}/assessment`) => {
+    if (!dirty) {
+      navigate(target);
+      return;
+    }
     setExitTarget(target);
   };
 
@@ -1938,14 +1954,14 @@ export default function CreateAssessment() {
         </div>
         <aside className="space-y-3 lg:sticky lg:top-3">
           <section className={`rounded-xl border p-4 ${publishReady ? 'border-emerald-200 bg-emerald-50/70 dark:border-emerald-900/50 dark:bg-emerald-950/20' : 'border-amber-200 bg-amber-50/70 dark:border-amber-900/50 dark:bg-amber-950/20'}`}>
-            <div className="flex items-center gap-2"><span className={`flex h-7 w-7 items-center justify-center rounded-full text-white ${publishReady ? 'bg-emerald-500' : 'bg-amber-500'}`}>{publishReady ? <Check className="h-4 w-4" /> : <Clock className="h-4 w-4" />}</span><div><p className={`text-sm font-bold ${publishReady ? 'text-emerald-900 dark:text-emerald-200' : 'text-amber-900 dark:text-amber-200'}`}>{publishReady ? 'Ready to publish' : 'Review required'}</p><p className={`text-[10px] ${publishReady ? 'text-emerald-700/80 dark:text-emerald-300/70' : 'text-amber-700/80 dark:text-amber-300/70'}`}>{publishReady ? 'All required phases are complete' : 'Return to any incomplete phase before publishing'}</p></div></div>
+            <div className="flex items-center gap-2"><span className={`flex h-7 w-7 items-center justify-center rounded-full text-white ${publishReady ? 'bg-emerald-500' : 'bg-amber-500'}`}>{publishReady ? <Check className="h-4 w-4" /> : <Clock className="h-4 w-4" />}</span><div><p className={`text-sm font-bold ${publishReady ? 'text-emerald-900 dark:text-emerald-200' : 'text-amber-900 dark:text-amber-200'}`}>{isPublishedEdit ? 'Published assessment' : publishReady ? 'Ready to publish' : 'Review required'}</p><p className={`text-[10px] ${publishReady ? 'text-emerald-700/80 dark:text-emerald-300/70' : 'text-amber-700/80 dark:text-amber-300/70'}`}>{isPublishedEdit ? 'Changes to this assessment can be saved here' : publishReady ? 'All required phases are complete' : 'Return to any incomplete phase before publishing'}</p></div></div>
             <div className="mt-3 grid grid-cols-3 divide-x divide-emerald-200 text-center dark:divide-emerald-900">
               <div><strong className="block text-sm text-slate-900 dark:text-white">{assessmentValidation.totalQuestions}</strong><span className="text-[9px] uppercase text-slate-500">Questions</span></div>
               <div><strong className="block text-sm text-slate-900 dark:text-white">{assignedSummary.count}</strong><span className="text-[9px] uppercase text-slate-500">Candidates</span></div>
               <div><strong className="block text-sm text-slate-900 dark:text-white">{form.duration}m</strong><span className="text-[9px] uppercase text-slate-500">Duration</span></div>
             </div>
           </section>
-          <SectionCard compact title="Publish checklist" subtitle="Final configuration summary.">
+          <SectionCard compact title={isPublishedEdit ? 'Assessment checklist' : 'Publish checklist'} subtitle="Final configuration summary.">
             <div className="space-y-1.5">
               {steps.slice(0, -1).map((step) => {
                 const complete = completedSteps.includes(step.id) && phaseCompletion[step.id];
@@ -1964,6 +1980,10 @@ export default function CreateAssessment() {
   };
 
   const goNext = () => {
+    if (viewOnly) {
+      if (stepIndex < steps.length - 1) setActiveStep(steps[stepIndex + 1].id);
+      return;
+    }
     if (activeStep === 'settings') {
       const groupIndex = SETTINGS_GROUP_IDS.indexOf(activeSettingsGroup);
       const nextVisitedGroups = visitedSettingsGroups.includes(activeSettingsGroup)
@@ -1998,6 +2018,9 @@ export default function CreateAssessment() {
     if (stepIndex < steps.length - 1) setActiveStep(steps[stepIndex + 1].id);
   };
 
+  if (assessmentLoading) return <div className="flex min-h-[60vh] items-center justify-center text-sm text-slate-500 dark:text-gray-400">Loading assessment...</div>;
+  if (assessmentLoadError) return <div className="mx-auto max-w-3xl p-8"><p role="alert" className="text-sm text-rose-700">{assessmentLoadError}</p><button type="button" onClick={() => navigate(`${rolePrefix}/assessment`)} className="mt-4 text-sm font-semibold text-sky-700">Back to assessments</button></div>;
+
   return (
     <div className="min-h-screen bg-slate-50/70 dark:bg-gray-950">
       <motion.div
@@ -2010,18 +2033,16 @@ export default function CreateAssessment() {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={() => requestExit(`${rolePrefix}/assessment`)}
+              onClick={() => viewOnly ? navigate(`${rolePrefix}/assessment`) : requestExit(isEditMode ? `${rolePrefix}/assessment/${id}` : `${rolePrefix}/assessment`)}
               className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:hover:bg-gray-800"
             >
               <ArrowLeft className="h-4 w-4" />
             </button>
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Assessments / {isEditMode ? 'Edit' : 'Create'}</p>
-              <h1 className="mt-0.5 text-lg font-bold text-slate-950 dark:text-white">{isEditMode ? 'Edit Assessment' : 'Create Assessment'}</h1>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Assessments / {viewOnly ? 'View' : isEditMode ? 'Edit' : 'Create'}</p>
+              <h1 className="mt-0.5 text-lg font-bold text-slate-950 dark:text-white">{viewOnly ? form.title || 'Assessment' : isEditMode ? 'Edit Assessment' : 'Create Assessment'}</h1>
               <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500 dark:text-gray-400">
-                <span className={`h-1.5 w-1.5 rounded-full ${dirty ? 'bg-amber-400' : 'bg-emerald-500'}`} />
-                {autoSaveStatus || (dirty ? 'Unsaved changes' : 'All changes saved')}
-                <span aria-hidden="true">&middot;</span>
+                {!viewOnly && <><span className={`h-1.5 w-1.5 rounded-full ${dirty ? 'bg-amber-400' : 'bg-emerald-500'}`} />{autoSaveStatus || (dirty ? 'Unsaved changes' : 'All changes saved')}<span aria-hidden="true">&middot;</span></>}
                 {form.lifecycleStatus === 'published' ? 'Published' : 'Draft'}
                 <span aria-hidden="true">&middot;</span>
                 <span className="font-semibold text-sky-600 dark:text-sky-300">Students</span>
@@ -2030,20 +2051,21 @@ export default function CreateAssessment() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {currentId && (
-              <button type="button" onClick={openStudentPreview} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
+              <button type="button" onClick={viewOnly ? () => navigate(`${rolePrefix}/assessment/preview/${id}?return=${encodeURIComponent(`${rolePrefix}/assessment/${id}`)}`) : openStudentPreview} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
                 <Eye className="h-3.5 w-3.5" /> Preview
               </button>
             )}
-            <button
+            {viewOnly && hasPermission(user, 'coordinator.assessment.edit') && <button type="button" onClick={() => navigate(`${rolePrefix}/assessment/${id}/edit`)} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500">Edit assessment</button>}
+            {!viewOnly && <button
               type="button"
               onClick={() => saveDraft(false)}
               disabled={loading}
               className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
             >
               <Save className="h-3.5 w-3.5" />
-              Save Draft
-            </button>
-            <button
+              {isPublishedEdit ? 'Save Changes' : 'Save Draft'}
+            </button>}
+            {!viewOnly && !isPublishedEdit && <button
               type="button"
               onClick={() => setShowPublishModal(true)}
               disabled={loading || !publishReady}
@@ -2052,7 +2074,7 @@ export default function CreateAssessment() {
             >
               <Send className="h-3.5 w-3.5" />
               Publish Assessment
-            </button>
+            </button>}
           </div>
         </header>
 
@@ -2064,7 +2086,7 @@ export default function CreateAssessment() {
             {steps.map((step, index) => {
               const isActive = activeStep === step.id;
               const isComplete = completedSteps.includes(step.id) && Boolean(phaseCompletion[step.id]);
-              const isLocked = index > maxUnlockedStepIndex;
+              const isLocked = !isEditMode && index > maxUnlockedStepIndex;
               return (
                 <li key={step.id} className="relative z-10">
                   <button type="button" disabled={isLocked} onClick={() => setActiveStep(step.id)} aria-current={isActive ? 'step' : undefined} title={isLocked ? `Complete ${steps[maxUnlockedStepIndex]?.label || 'the previous phase'} first` : step.description} className={`flex w-full flex-col items-center gap-1.5 px-2 text-center transition ${isLocked ? 'cursor-not-allowed text-slate-300 dark:text-gray-600' : isActive ? 'text-sky-700 dark:text-sky-300' : 'text-slate-500 hover:text-slate-900 dark:text-gray-400 dark:hover:text-white'}`}>
@@ -2079,7 +2101,9 @@ export default function CreateAssessment() {
 
         <div className="mt-3 flex items-center gap-2 px-1 text-[11px] text-slate-500 dark:text-gray-400"><span className="font-bold text-sky-700 dark:text-sky-300">Phase {stepIndex + 1} of {steps.length}</span><span aria-hidden="true">&middot;</span><span>{steps[stepIndex]?.description}</span></div>
 
-        <div className="mt-3">{stepContent[activeStep]}</div>
+        <fieldset disabled={viewOnly} className="mt-3 min-w-0" onClickCapture={viewOnly ? (event) => { event.preventDefault(); event.stopPropagation(); } : undefined}>
+          {stepContent[activeStep]}
+        </fieldset>
 
         <div className="sticky bottom-0 z-30 -mx-4 mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white/95 px-4 py-2.5 shadow-[0_-6px_18px_rgba(15,23,42,0.05)] backdrop-blur sm:-mx-6 sm:px-6 dark:border-gray-800 dark:bg-gray-900/95">
           <button
@@ -2090,10 +2114,10 @@ export default function CreateAssessment() {
           >
             Previous
           </button>
-          {stepIndex < steps.length - 1 ? <button type="button" onClick={goNext} className="rounded-lg bg-sky-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500">{activeStep === 'settings' && SETTINGS_GROUP_IDS.indexOf(activeSettingsGroup) < SETTINGS_GROUP_IDS.length - 1 ? `Next: ${SETTINGS_GROUP_IDS[SETTINGS_GROUP_IDS.indexOf(activeSettingsGroup) + 1].charAt(0).toUpperCase()}${SETTINGS_GROUP_IDS[SETTINGS_GROUP_IDS.indexOf(activeSettingsGroup) + 1].slice(1)}` : 'Continue'}</button> : <button type="button" onClick={() => setShowPublishModal(true)} disabled={loading || !publishReady} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:opacity-60"><Send className="h-3.5 w-3.5" /> Publish Assessment</button>}
+          {stepIndex < steps.length - 1 ? <button type="button" onClick={goNext} className="rounded-lg bg-sky-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500">{viewOnly ? 'Next' : activeStep === 'settings' && SETTINGS_GROUP_IDS.indexOf(activeSettingsGroup) < SETTINGS_GROUP_IDS.length - 1 ? `Next: ${SETTINGS_GROUP_IDS[SETTINGS_GROUP_IDS.indexOf(activeSettingsGroup) + 1].charAt(0).toUpperCase()}${SETTINGS_GROUP_IDS[SETTINGS_GROUP_IDS.indexOf(activeSettingsGroup) + 1].slice(1)}` : 'Continue'}</button> : viewOnly ? <button type="button" onClick={() => navigate(`${rolePrefix}/assessment`)} className="rounded-lg border border-slate-200 px-5 py-2 text-xs font-semibold text-slate-700 dark:border-gray-700 dark:text-gray-200">Back to assessments</button> : isPublishedEdit ? <button type="button" onClick={() => saveDraft(false)} disabled={loading} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:opacity-60"><Save className="h-3.5 w-3.5" /> Save Changes</button> : <button type="button" onClick={() => setShowPublishModal(true)} disabled={loading || !publishReady} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:opacity-60"><Send className="h-3.5 w-3.5" /> Publish Assessment</button>}
         </div>
 
-        {showPublishModal && (
+        {showPublishModal && !isPublishedEdit && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4">
             <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-gray-700 dark:bg-gray-900">
               <div className="flex items-start justify-between gap-3">
@@ -2202,11 +2226,11 @@ export default function CreateAssessment() {
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-300"><Save className="h-4 w-4" /></div>
                 <button type="button" onClick={() => setExitTarget('')} disabled={exitSaving} aria-label="Close exit confirmation" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50 dark:hover:bg-gray-800 dark:hover:text-gray-200"><X className="h-4 w-4" /></button>
               </div>
-              <h2 id="assessment-exit-title" className="mt-4 text-base font-bold text-slate-950 dark:text-white">Exit assessment creation?</h2>
-              <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-gray-400">Save this assessment as a draft so you can continue later, or leave without saving your latest work.</p>
+              <h2 id="assessment-exit-title" className="mt-4 text-base font-bold text-slate-950 dark:text-white">{isPublishedEdit ? 'Leave assessment editor?' : 'Exit assessment creation?'}</h2>
+              <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-gray-400">{isPublishedEdit ? 'Save your changes to this published assessment before leaving.' : 'Save this assessment as a draft so you can continue later, or leave without saving your latest work.'}</p>
               <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <button type="button" onClick={discardAndExit} disabled={exitSaving} className="h-10 rounded-xl border border-rose-200 px-4 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900/60 dark:text-rose-300">Don&apos;t save</button>
-                <button type="button" onClick={saveAndExit} disabled={exitSaving} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-60"><Save className="h-3.5 w-3.5" />{exitSaving ? 'Saving...' : 'Save as draft'}</button>
+                <button type="button" onClick={saveAndExit} disabled={exitSaving} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-60"><Save className="h-3.5 w-3.5" />{exitSaving ? 'Saving...' : isPublishedEdit ? 'Save changes' : 'Save as draft'}</button>
               </div>
             </div>
           </div>

@@ -359,6 +359,7 @@ function AppContent() {
         <Route path="/admin/activity" element={<AdminShell><AdminActivity /></AdminShell>} />
         <Route path="/admin/assessment" element={<AdminShell><AssessmentDashboard /></AdminShell>} />
         <Route path="/admin/assessment/create" element={<AdminShell><CreateAssessment /></AdminShell>} />
+        <Route path="/admin/assessment/:id" element={<AdminShell><CreateAssessment viewOnly /></AdminShell>} />
         <Route path="/admin/assessment/:id/edit" element={<AdminShell><CreateAssessment /></AdminShell>} />
         <Route path="/admin/assessment/reports" element={<AdminShell><AssessmentReports /></AdminShell>} />
         <Route path="/admin/assessment-feedback" element={<AdminShell><AssessmentFeedback /></AdminShell>} />
@@ -412,6 +413,7 @@ function AppContent() {
         {/* Extended Coordinator Features */}
         <Route path="/coordinator/assessment" element={<CoordinatorShell permission="coordinator.assessment.view"><AssessmentDashboard /></CoordinatorShell>} />
         <Route path="/coordinator/assessment/create" element={<CoordinatorShell permission="coordinator.assessment.create"><CreateAssessment /></CoordinatorShell>} />
+        <Route path="/coordinator/assessment/:id" element={<CoordinatorShell permission="coordinator.assessment.view"><CreateAssessment viewOnly /></CoordinatorShell>} />
         <Route path="/coordinator/assessment/:id/edit" element={<CoordinatorShell permission="coordinator.assessment.edit"><CreateAssessment /></CoordinatorShell>} />
         <Route path="/coordinator/assessment/reports" element={<CoordinatorShell permission="coordinator.assessment.reports"><AssessmentReports /></CoordinatorShell>} />
         <Route path="/coordinator/assessment-feedback" element={<CoordinatorShell permission="coordinator.assessment.feedback"><AssessmentFeedback /></CoordinatorShell>} />

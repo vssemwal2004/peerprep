@@ -138,7 +138,7 @@ function ThreeDotsMenu({ assessment, onOpen, onPreview, onViewReport, onEdit, on
           style={menuStyle}
           className="fixed z-[1000] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-2xl ring-1 ring-slate-950/5 dark:border-gray-700 dark:bg-gray-900"
         >
-          {item(<ClipboardList className="h-3.5 w-3.5" />, assessment.lifecycleStatus === 'draft' ? 'Continue Assessment' : 'Open Assessment', onOpen)}
+          {item(<ClipboardList className="h-3.5 w-3.5" />, assessment.status === 'Completed' || assessment.manuallyCompletedAt ? 'View Report' : 'View Assessment', onOpen)}
           {item(<Eye className="h-3.5 w-3.5" />, 'Preview Assessment', onPreview)}
           {item(<BarChart3 className="h-3.5 w-3.5" />, 'View Report', onViewReport)}
           {item(<Copy className="h-3.5 w-3.5" />, 'Copy Assessment', onDuplicate)}
@@ -1209,9 +1209,8 @@ export default function AssessmentDashboard() {
               </div>
             ) : (
               <div role="list" className="space-y-2.5">
-                <div className="hidden grid-cols-[minmax(190px,1.5fr)_130px_105px_95px_95px_minmax(120px,1fr)_95px_80px_28px] items-center gap-x-3 px-4 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 xl:grid dark:text-gray-500">
+                <div className="hidden grid-cols-[minmax(190px,1.5fr)_105px_95px_95px_minmax(120px,1fr)_95px_80px_28px] items-center gap-x-3 px-4 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 xl:grid dark:text-gray-500">
                   <span>Assessment</span>
-                  <span>Audience</span>
                   <span>Date</span>
                   <span>Time</span>
                   <span>Content</span>
@@ -1231,6 +1230,9 @@ export default function AssessmentDashboard() {
                     : assessment.lifecycleStatus === 'archived' || assessment.isVisible === false
                       ? 'Archived'
                       : assessment.status;
+                  const openPath = assessment.lifecycleStatus !== 'draft' && (assessment.status === 'Completed' || assessment.manuallyCompletedAt)
+                    ? `${rolePrefix}/assessment/reports?assessmentId=${encodeURIComponent(assessment._id)}`
+                    : `${rolePrefix}/assessment/${assessment._id}`;
 
                   return (
                     <article
@@ -1239,15 +1241,15 @@ export default function AssessmentDashboard() {
                       tabIndex={0}
                       onClick={(event) => {
                         if (event.target.closest('button, a, input, select, textarea')) return;
-                        navigate(`${rolePrefix}/assessment/reports?assessmentId=${encodeURIComponent(assessment._id)}`);
+                        navigate(openPath);
                       }}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault();
-                          navigate(`${rolePrefix}/assessment/reports?assessmentId=${encodeURIComponent(assessment._id)}`);
+                          navigate(openPath);
                         }
                       }}
-                      className="group grid cursor-pointer grid-cols-1 items-center gap-x-3 gap-y-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition-all hover:-translate-y-px hover:border-sky-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-sky-800 md:grid-cols-2 xl:grid-cols-[minmax(190px,1.5fr)_130px_105px_95px_95px_minmax(120px,1fr)_95px_80px_28px]"
+                      className="group grid cursor-pointer grid-cols-1 items-center gap-x-3 gap-y-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition-all hover:-translate-y-px hover:border-sky-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-sky-800 md:grid-cols-2 xl:grid-cols-[minmax(190px,1.5fr)_105px_95px_95px_minmax(120px,1fr)_95px_80px_28px]"
                     >
                       <div className="min-w-0 md:col-span-2 xl:col-span-1">
                         <div className="flex min-w-0 items-center gap-1.5">
@@ -1267,12 +1269,6 @@ export default function AssessmentDashboard() {
                           <span className="h-1 w-1 shrink-0 rounded-full bg-slate-300" aria-hidden="true" />
                           <span className="shrink-0">ID {assessment.assessmentId || '—'}</span>
                         </div>
-                      </div>
-
-                      <div className="min-w-0">
-                        <span className={`inline-flex max-w-full items-center rounded-md border px-2 py-1 text-[10px] font-semibold ${assessment.audienceType === 'assessment_candidates' ? 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-300' : 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300'}`}>
-                          <span className="truncate">Students</span>
-                        </span>
                       </div>
 
                       <div className="min-w-0 text-xs">
@@ -1317,7 +1313,7 @@ export default function AssessmentDashboard() {
                       <div className="justify-self-start md:justify-self-end">
                         <ThreeDotsMenu
                             assessment={assessment}
-                            onOpen={() => navigate(`${rolePrefix}/assessment/${assessment._id}/edit`)}
+                            onOpen={() => navigate(openPath)}
                             onPreview={() => navigate(`${rolePrefix}/assessment/preview/${assessment._id}`)}
                             onViewReport={() => navigate(`${rolePrefix}/assessment/reports?assessmentId=${encodeURIComponent(assessment._id)}`)}
                             onEdit={() => navigate(`${rolePrefix}/assessment/${assessment._id}/edit`)}

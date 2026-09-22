@@ -11,7 +11,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
-  ExternalLink,
   Hash,
   Layers,
   Loader2,
@@ -2660,7 +2659,7 @@ export default function AssessmentAttempt() {
   };
 
   const handleFinalCheck = async () => {
-    const interference = detectBrowserInterference();
+    const interference = environmentRequired ? detectBrowserInterference() : [];
     setEnvironmentInterference(interference);
     const fullscreenOk = !fullscreenRequired || Boolean(document.fullscreenElement);
     const focusOk = document.hasFocus() && !document.hidden;
@@ -2683,6 +2682,11 @@ export default function AssessmentAttempt() {
         }
         syncCompletedSecuritySteps(result?.completedSecuritySteps || ['final']);
         setValidationMessage('');
+        if (isPaused) {
+          void startAssessment({ verifiedFinalStep: true });
+        } else {
+          setPhase('rules');
+        }
       } catch (err) {
         setValidationMessage(err.message || 'Final verification could not be completed.');
         setValidationState((prev) => ({ ...prev, final: false }));
@@ -2702,8 +2706,8 @@ export default function AssessmentAttempt() {
     }
   };
 
-  const startAssessment = async () => {
-    if (!setupStepIsDone('final')) {
+  const startAssessment = async ({ verifiedFinalStep = false } = {}) => {
+    if (!verifiedFinalStep && !setupStepIsDone('final')) {
       toast.error('Complete the final system check before starting.');
       setPhase('validation');
       return;
@@ -3668,9 +3672,7 @@ export default function AssessmentAttempt() {
                   </div>
                   <h2 className="mt-2 text-[1.35rem] font-bold tracking-tight text-slate-950 dark:text-white sm:text-[1.5rem]">Pre-Test Security Check</h2>
                   <p className="mt-1 max-w-2xl text-sm leading-5 text-slate-500 dark:text-slate-400">
-                    {securityRecheckActive
-                      ? 'Assessment timer is paused. Complete these checks before the security recheck timer expires.'
-                      : 'Complete all mandatory checks before moving forward.'}
+                    {securityRecheckActive ? 'Your timer is paused while you complete these checks.' : 'Complete each required check to continue.'}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-2">
@@ -3714,7 +3716,7 @@ export default function AssessmentAttempt() {
                         </div>
                         <div className="min-w-0">
                           <div className="truncate font-semibold">{step.title}</div>
-                          {isActive && !done && <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">Run check</div>}
+                          {isActive && !done && <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">Current step</div>}
                         </div>
                       </div>
                     );
@@ -3727,7 +3729,7 @@ export default function AssessmentAttempt() {
               {currentSetupStepKey === 'environment' && (
                 <div className="space-y-3">
                   <div className="text-sm font-semibold text-slate-800 dark:text-white">Step {currentSetupStepNumber}: Clean Environment Check</div>
-                  <p className="text-sm text-slate-600 dark:text-gray-300">Keep only this assessment tab active. Browser security prevents websites from listing every external tab, app, or extension, so PeerPrep verifies focus and detects duplicate assessment tabs within the platform.</p>
+                  <p className="text-sm text-slate-600 dark:text-gray-300">Keep this assessment tab open and close any other PeerPrep assessment tabs.</p>
                   <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
                     <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-gray-300">
                       <span>Detected PeerPrep assessment tabs</span>
@@ -3751,7 +3753,7 @@ export default function AssessmentAttempt() {
                       ['Current tab focused', document.hasFocus() && !document.hidden],
                       ['Assessment window visible', !document.hidden],
                       ['No duplicate assessment tabs', !preventMultipleTabs || detectedTabs.filter((tab) => !tab.current).length === 0],
-                      ['Extra apps/extensions closed by student', validationState.environment],
+                      ['Browser environment ready', validationState.environment],
                     ].map(([label, ok]) => (
                       <div key={label} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-1.5 dark:border-gray-700 dark:bg-gray-900">
                         <span>{label}</span>
@@ -3759,15 +3761,6 @@ export default function AssessmentAttempt() {
                       </div>
                     ))}
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleEnvironmentCheck}
-                    disabled={Boolean(setupCheckingStep)}
-                    className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {setupCheckingStep === 'environment' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Monitor className="h-4 w-4" />}
-                    Run Environment Check
-                  </button>
                   {validationState.environment && (
                     <div className="flex items-center gap-2 text-sm text-emerald-600">
                       <CheckCircle2 className="h-4 w-4" /> Environment confirmed.
@@ -3837,17 +3830,6 @@ export default function AssessmentAttempt() {
                       </div>
                     </div>
                   )}
-                  <div className="flex flex-wrap items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={handleCameraCheck}
-                      disabled={Boolean(setupCheckingStep)}
-                      className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-5 py-2.5 text-xs font-bold text-white shadow-md shadow-sky-200 dark:shadow-none disabled:cursor-not-allowed disabled:opacity-60 hover:bg-sky-500 transition-colors"
-                    >
-                      {setupCheckingStep === 'camera' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Video className="h-4 w-4" />}
-                      {cameraRequired ? 'Activate & Verify Camera' : 'Confirm Camera Step'}
-                    </button>
-                  </div>
                   {validationState.camera && validationState.face && (
                     <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 dark:bg-emerald-900/20 dark:border-emerald-700 dark:text-emerald-300">
                       <CheckCircle2 className="h-4 w-4" /> Live camera feed verified successfully.
@@ -3859,7 +3841,7 @@ export default function AssessmentAttempt() {
               {currentSetupStepKey === 'location' && (
                 <div className="space-y-4">
                   <div className="text-sm font-semibold text-slate-800 dark:text-white">Step {currentSetupStepNumber}: Location Permission</div>
-                  <p className="text-sm text-slate-600 dark:text-gray-300">Allow location access. Coordinates are stored for admin audit.</p>
+                  <p className="text-sm text-slate-600 dark:text-gray-300">Allow location access to complete this check.</p>
                   {locationData ? (
                     <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
                       <div>Latitude: {Number(locationData.latitude).toFixed(6)}</div>
@@ -3869,15 +3851,6 @@ export default function AssessmentAttempt() {
                   ) : (
                     <div className="text-xs text-slate-500 dark:text-gray-400">Location is not captured yet.</div>
                   )}
-                  <button
-                    type="button"
-                    onClick={handleLocationCheck}
-                    disabled={Boolean(setupCheckingStep)}
-                    className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {setupCheckingStep === 'location' ? <Loader2 className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}
-                    Allow & Verify Location
-                  </button>
                   {validationState.location && (
                     <div className="flex items-center gap-2 text-sm text-emerald-600">
                       <CheckCircle2 className="h-4 w-4" /> Location verified.
@@ -3889,31 +3862,12 @@ export default function AssessmentAttempt() {
               {currentSetupStepKey === 'fullscreen' && (
                 <div className="space-y-4">
                   <div className="text-sm font-semibold text-slate-800 dark:text-white">Step {currentSetupStepNumber}: Fullscreen Mode Activation</div>
-                  <p className="text-sm text-slate-600 dark:text-gray-300">
-                    {fullscreenRequired
-                      ? (isSecureAssessmentTab
-                        ? 'This dedicated assessment window is ready. Enable fullscreen to complete the security check.'
-                        : 'Open the assessment in a dedicated window first. The original assessment tab will close to avoid duplicate-tab violations.')
-                      : 'Fullscreen is not required by the admin settings for this assessment.'}
-                  </p>
+                  <p className="text-sm text-slate-600 dark:text-gray-300">{isSecureAssessmentTab ? 'Enable fullscreen to continue.' : 'Open the secure assessment window to continue.'}</p>
                   {!isSecureAssessmentTab && fullscreenRequired && (
                     <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
-                      Browsers cannot launch Incognito mode or disable extensions from a website. For extension isolation, open PeerPrep manually in an Incognito or Private window before starting this check.
+                      If browser extensions interfere with this assessment, open it in a private window and try again.
                     </div>
                   )}
-                  <button
-                    type="button"
-                    onClick={fullscreenRequired && !isSecureAssessmentTab ? handleOpenSecureAssessmentTab : handleEnableFullscreen}
-                    disabled={Boolean(setupCheckingStep)}
-                    className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {setupCheckingStep === 'fullscreen'
-                      ? <Loader2 className="h-4 w-4 animate-spin" />
-                      : (fullscreenRequired && !isSecureAssessmentTab ? <ExternalLink className="h-4 w-4" /> : <Maximize className="h-4 w-4" />)}
-                    {fullscreenRequired
-                      ? (isSecureAssessmentTab ? 'Enable Fullscreen' : 'Open Secure Assessment Tab')
-                      : 'Confirm Fullscreen Step'}
-                  </button>
                   {(!fullscreenRequired || validationState.fullscreen) && (
                     <div className="flex items-center gap-2 text-sm text-emerald-600">
                       <CheckCircle2 className="h-4 w-4" /> Fullscreen check complete.
@@ -3960,15 +3914,6 @@ export default function AssessmentAttempt() {
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={handleFinalCheck}
-                      disabled={Boolean(setupCheckingStep)}
-                      className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {setupCheckingStep === 'final' && <Loader2 className="h-4 w-4 animate-spin" />}
-                      Run Final Check
-                    </button>
                     {validationState.final && (
                       <div className="flex items-center gap-2 text-sm text-emerald-600">
                         <CheckCircle2 className="h-4 w-4" /> All Set
@@ -3985,43 +3930,35 @@ export default function AssessmentAttempt() {
                 </div>
               )}
 
-              <div className="mt-4 flex items-center justify-between">
+              <div className="sticky bottom-0 mt-5 grid grid-cols-[1fr_auto_1fr] items-center gap-2 border-t border-slate-200 bg-slate-50/95 pt-4 dark:border-slate-800 dark:bg-slate-950/95">
                 <button
                   type="button"
                   onClick={() => setValidationStep((prev) => Math.max(1, prev - 1))}
-                  disabled={validationStep === 1}
-                  className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                  disabled={validationStep === 1 || Boolean(setupCheckingStep)}
+                  className="justify-self-start rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
                 >
                   Back
+                </button>
+                <button
+                  type="button"
+                  onClick={{ environment: handleEnvironmentCheck, camera: handleCameraCheck, location: handleLocationCheck, fullscreen: fullscreenRequired && !isSecureAssessmentTab ? handleOpenSecureAssessmentTab : handleEnableFullscreen, final: handleFinalCheck }[currentSetupStepKey]}
+                  disabled={Boolean(setupCheckingStep)}
+                  className="inline-flex min-h-10 items-center justify-center gap-2 justify-self-center whitespace-nowrap rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {setupCheckingStep === currentSetupStepKey && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {{ environment: 'Run environment check', camera: 'Verify camera', location: 'Verify location', fullscreen: fullscreenRequired && !isSecureAssessmentTab ? 'Open secure tab' : 'Enable fullscreen', final: 'Run final check' }[currentSetupStepKey]}
                 </button>
                 {currentSetupStepKey !== 'final' ? (
                   <button
                     type="button"
                     onClick={() => setValidationStep((prev) => Math.min(setupSteps.length, prev + 1))}
-                    disabled={
-                      !setupStepIsDone(currentSetupStepKey)
-                    }
-                    className="rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                    disabled={!setupStepIsDone(currentSetupStepKey) || Boolean(setupCheckingStep)}
+                    className="justify-self-end rounded-xl border border-sky-600 px-4 py-2 text-xs font-semibold text-sky-700 transition-colors hover:bg-sky-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400 dark:disabled:border-slate-700"
                   >
                     Continue
                   </button>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (setupStepIsDone('final')) {
-                        if (isPaused) {
-                          void startAssessment();
-                        } else {
-                          setPhase('rules');
-                        }
-                      }
-                    }}
-                    disabled={!setupStepIsDone('final')}
-                    className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
-                  >
-                    {isPaused ? 'Resume Assessment' : 'Proceed'}
-                  </button>
+                  <span className="justify-self-end text-right text-xs text-slate-500 dark:text-slate-400">{isPaused ? 'Assessment resumes after verification' : 'Instructions open after verification'}</span>
                 )}
               </div>
             </div>
@@ -4144,7 +4081,7 @@ export default function AssessmentAttempt() {
                 </div>
                 <h2 className="mt-1.5 text-xl font-bold text-sky-700 dark:text-sky-300 sm:text-2xl">Assessment Instructions</h2>
                 <p className="mt-0.5 max-w-3xl text-xs leading-5 text-slate-500 dark:text-slate-400">
-                  Review the format, section structure, and monitoring rules before the timer begins.
+                  Review the assessment details before starting.
                 </p>
               </div>
 
@@ -4158,7 +4095,7 @@ export default function AssessmentAttempt() {
 
                 <button
                   type="button"
-                  onClick={startAssessment}
+                  onClick={() => { void startAssessment(); }}
                   disabled={!rulesReady}
                   className={`inline-flex min-w-[132px] items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors ${
                     rulesReady
@@ -4267,8 +4204,10 @@ export default function AssessmentAttempt() {
                       System Requirements
                     </div>
                     <ul className="mt-2 space-y-1 text-[11px] font-medium leading-4 text-slate-700 dark:text-gray-300">
-                      <li>Camera access enabled for monitoring only</li>
-                      <li>Keep only one assessment tab open</li>
+                      {cameraRequired && <li>Allow camera access for this assessment</li>}
+                      {preventMultipleTabs && <li>Keep only one assessment tab open</li>}
+                      {fullscreenRequired && <li>Keep the assessment in fullscreen</li>}
+                      {locationRequired && <li>Allow location access during setup</li>}
                       <li>Use a supported desktop browser</li>
                     </ul>
                   </div>
@@ -4280,7 +4219,7 @@ export default function AssessmentAttempt() {
                     </div>
                     <ul className="mt-2 space-y-1 text-[11px] font-medium leading-4 text-slate-700 dark:text-gray-300">
                       <li>Your progress is auto-saved continuously</li>
-                      <li>Camera and AI proctoring status appears during the test</li>
+                      {cameraRequired && <li>Camera status appears during the test</li>}
                       <li>Read every section carefully before the timer begins</li>
                     </ul>
                   </div>
@@ -4288,17 +4227,10 @@ export default function AssessmentAttempt() {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-950 sm:px-5">
+            <div className="flex items-center border-t border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950 sm:px-5">
               <div className={`text-xs font-semibold ${rulesReady ? 'text-sky-700 dark:text-sky-300' : 'text-slate-600 dark:text-slate-300'}`}>
                 {rulesReady ? 'Countdown complete. You may begin the assessment now.' : `Starting unlocks in ${rulesCountdown} seconds.`}
               </div>
-              <button
-                type="button"
-                onClick={() => navigate('/student/assessments')}
-                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-              >
-                Exit
-              </button>
             </div>
           </div>
         </div>
