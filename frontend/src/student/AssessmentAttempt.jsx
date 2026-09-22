@@ -562,6 +562,7 @@ export default function AssessmentAttempt() {
   const aiProctoringEnabled = Boolean(securitySettings.aiProctoring?.enabled);
   const cameraRequired = Boolean(securitySettings.cameraMonitoring || aiProctoringEnabled);
   const locationRequired = securitySettings.locationTracking !== false;
+  const environmentRequired = securitySettings.environmentCheck !== false;
   const audioMonitoringEnabled = Boolean(securitySettings.audioMonitoring);
   const tabGuardEnabled = Boolean(securitySettings.tabSwitchDetection);
   const copyBlockEnabled = Boolean(securitySettings.disableCopyPaste);
@@ -620,13 +621,13 @@ export default function AssessmentAttempt() {
   }, [fullscreenRequired, tabGuardEnabled, tabSwitchLimit, cameraRequired, copyBlockEnabled, preventMultipleTabs, securitySettings, allowSectionReview]);
   const setupSteps = useMemo(() => {
     const steps = [];
-    if (!securityRecheckActive) steps.push({ key: 'environment', title: 'Clean Environment Check', icon: <Monitor className="h-4 w-4" /> });
+    if (!securityRecheckActive && environmentRequired) steps.push({ key: 'environment', title: 'Clean Environment Check', icon: <Monitor className="h-4 w-4" /> });
     if (cameraRequired) steps.push({ key: 'camera', title: 'Camera Verification', icon: <Video className="h-4 w-4" /> });
     if (!securityRecheckActive && locationRequired) steps.push({ key: 'location', title: 'Location Permission', icon: <MapPin className="h-4 w-4" /> });
     if (fullscreenRequired) steps.push({ key: 'fullscreen', title: 'Enable Full Screen', icon: <Maximize className="h-4 w-4" /> });
     steps.push({ key: 'final', title: 'Final Verification', icon: <ShieldCheck className="h-4 w-4" /> });
     return steps.map((step, index) => ({ ...step, id: index + 1 }));
-  }, [cameraRequired, fullscreenRequired, locationRequired, securityRecheckActive]);
+  }, [cameraRequired, environmentRequired, fullscreenRequired, locationRequired, securityRecheckActive]);
   const completedSetupStepSet = useMemo(() => new Set(completedSetupSteps), [completedSetupSteps]);
   const setupStepIsDone = useCallback((key) => {
     return completedSetupStepSet.has(key);
@@ -2554,9 +2555,9 @@ export default function AssessmentAttempt() {
 
   const handleEnvironmentCheck = async () => {
     setSetupCheckingStep('environment');
-    const interference = detectBrowserInterference();
+    const interference = environmentRequired ? detectBrowserInterference() : [];
     setEnvironmentInterference(interference);
-    const focusOk = document.hasFocus() && !document.hidden;
+    const focusOk = !environmentRequired || (document.hasFocus() && !document.hidden);
     const duplicateAssessmentTabs = detectedTabs.filter((tab) => !tab.current);
     const tabsOk = !preventMultipleTabs || duplicateAssessmentTabs.length === 0;
     const ok = focusOk && tabsOk && interference.length === 0;

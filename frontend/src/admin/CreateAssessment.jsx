@@ -7,7 +7,7 @@ import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import { useAuth } from '../context/AuthContext';
 import { hasPermission } from './coordinatorPermissions';
-import { ArrowLeft, ClipboardList, Save, Send, Plus, Eye, EyeOff, Hash, Lock, Shield, Globe, Copy, Camera, Volume2, Monitor, Shuffle, Droplet, Navigation, Layers, Timer, RotateCcw, CheckSquare, Clock, BookOpen, FilePlus2, Check, X } from 'lucide-react';
+import { ArrowLeft, ClipboardList, Save, Send, Plus, Eye, EyeOff, Hash, Lock, Shield, Globe, Copy, Camera, Volume2, Monitor, Shuffle, Droplet, Navigation, Layers, Timer, RotateCcw, CheckSquare, Clock, BookOpen, FilePlus2, Check, X, Users, Upload } from 'lucide-react';
 import { SectionCard } from './compiler/CompilerUi';
 import RichTextEditor from './compiler/RichTextEditor';
 import { createDefaultProblemForm, createProblemFormFromProblem } from './compiler/compilerUtils';
@@ -272,7 +272,7 @@ export default function CreateAssessment() {
   const requestedAudience = 'platform_students';
 
   const [currentId, setCurrentId] = useState(id || null);
-  const [activeStep, setActiveStep] = useState('basic');
+  const [activeStep, setActiveStep] = useState(location.state?.editQuestion ? 'sections' : 'basic');
   const [completedSteps, setCompletedSteps] = useState([]);
   const [form, setForm] = useState({
     title: '',
@@ -300,6 +300,7 @@ export default function CreateAssessment() {
   });
   const [sections, setSections] = useState([]);
   const [selectedStudents, setSelectedStudents] = useState([]);
+  const [studentEntryMode, setStudentEntryMode] = useState('');
   const [csvState, setCsvState] = useState(emptyCsvState);
   const [loading, setLoading] = useState(false);
   const [sendingTestEmail, setSendingTestEmail] = useState(false);
@@ -333,6 +334,16 @@ export default function CreateAssessment() {
   }
   const assessmentKey = currentId || sessionIdRef.current || 'new';
   const isEditMode = Boolean(id);
+  const openStudentPreview = () => {
+    saveAssessmentDraft(assessmentKey, { form, sections, selectedStudents, csvState, version, activeStep, completedSteps, visitedSettingsGroups });
+    const returnTo = `${rolePrefix}/assessment/${currentId ? `${currentId}/edit` : 'create'}`;
+    const query = new URLSearchParams({ draftKey: assessmentKey, return: returnTo });
+    navigate(`${rolePrefix}/assessment/preview/${currentId || 'draft'}?${query.toString()}`);
+  };
+
+  useEffect(() => {
+    if (location.state?.editQuestion) setActiveStep('sections');
+  }, [location.state]);
 
   const updateForm = (updates) => {
     setForm((prev) => ({ ...prev, ...updates }));
@@ -620,7 +631,7 @@ export default function CreateAssessment() {
         if (draft.version) {
           setVersion(draft.version);
         }
-        if (draft.activeStep) setActiveStep(normalizeBuilderStep(draft.activeStep));
+        if (draft.activeStep) setActiveStep((previous) => previous === 'sections' ? previous : normalizeBuilderStep(draft.activeStep));
         if (Array.isArray(draft.completedSteps)) setCompletedSteps(draft.completedSteps.filter((step) => steps.some((item) => item.id === step)));
         if (Array.isArray(draft.visitedSettingsGroups)) setVisitedSettingsGroups(draft.visitedSettingsGroups.filter((group) => SETTINGS_GROUP_IDS.includes(group)));
       }
@@ -679,7 +690,7 @@ export default function CreateAssessment() {
         }
         setCsvState(draftCsvState ? { ...emptyCsvState, ...draftCsvState } : emptyCsvState);
 
-        if (draftStep) setActiveStep(normalizeBuilderStep(draftStep));
+        if (draftStep) setActiveStep((previous) => previous === 'sections' ? previous : normalizeBuilderStep(draftStep));
         if (Array.isArray(sessionDraft?.completedSteps)) setCompletedSteps(sessionDraft.completedSteps.filter((step) => steps.some((item) => item.id === step)));
         else if (assessment.lifecycleStatus === 'published') setCompletedSteps(steps.slice(0, -1).map((step) => step.id));
         if (Array.isArray(sessionDraft?.visitedSettingsGroups)) setVisitedSettingsGroups(sessionDraft.visitedSettingsGroups.filter((group) => SETTINGS_GROUP_IDS.includes(group)));
@@ -1381,10 +1392,27 @@ export default function CreateAssessment() {
     ),
     target: (
       <div className="space-y-4">
-        <SectionCard compact title="Students" subtitle="Add new students or select existing accounts.">
-          <div className="space-y-3">
-            {canCreateAssessmentCandidates && <AssessmentCandidateEditor selected={selectedStudents} onChange={updateSelectedStudents} />}
-            <StudentSelector selected={selectedStudents} onChange={updateSelectedStudents} />
+        <SectionCard compact title="Students" subtitle="Choose how to add students to this assessment.">
+          <div className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-3">
+              {[
+                { id: 'individual', title: 'Add individual student', description: 'Enter one student and check their details.', icon: Plus },
+                { id: 'bulk', title: 'Add bulk students', description: 'Upload a CSV and review every row.', icon: Upload },
+                { id: 'existing', title: 'Add existing students', description: 'Search or browse a saved Excel list.', icon: Users },
+              ].map(({ id: mode, title, description, icon: Icon }) => {
+                const unavailable = mode !== 'existing' && !canCreateAssessmentCandidates;
+                return <button key={mode} type="button" disabled={unavailable} onClick={() => setStudentEntryMode(mode)} aria-pressed={studentEntryMode === mode} className={`rounded-xl border p-4 text-left transition-colors ${studentEntryMode === mode ? 'border-sky-500 bg-sky-50 ring-1 ring-sky-500 dark:bg-sky-950/30' : 'border-slate-200 bg-white hover:border-sky-300 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800'} disabled:cursor-not-allowed disabled:opacity-50`}>
+                  <Icon className="mb-3 h-5 w-5 text-sky-700 dark:text-sky-300" />
+                  <span className="block text-sm font-semibold text-slate-900 dark:text-white">{title}</span>
+                  <span className="mt-1 block text-xs text-slate-500 dark:text-gray-400">{unavailable ? 'Permission required to create students.' : description}</span>
+                </button>;
+              })}
+            </div>
+            {studentEntryMode && <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-3 dark:border-gray-700 dark:bg-gray-950/30">
+              {canCreateAssessmentCandidates && <div className={studentEntryMode === 'existing' ? 'hidden' : ''}><AssessmentCandidateEditor mode={studentEntryMode} selected={selectedStudents} onChange={updateSelectedStudents} /></div>}
+              {studentEntryMode === 'existing' && <StudentSelector selected={selectedStudents} onChange={updateSelectedStudents} />}
+            </div>}
+            {selectedStudents.length > 0 && <p className="text-xs font-medium text-slate-600 dark:text-gray-300">{selectedStudents.length} student{selectedStudents.length === 1 ? '' : 's'} selected for this assessment</p>}
           </div>
         </SectionCard>
       </div>
@@ -1468,13 +1496,14 @@ export default function CreateAssessment() {
               <span><strong className="block text-sm text-sky-900 dark:text-sky-100">Add from library</strong><span className="mt-1 block text-[11px] leading-4 text-slate-500 dark:text-gray-400">Search, filter and select multiple published questions</span></span>
             </button>
           </div>
-          <div className="mt-4 text-[11px] font-medium text-slate-500 dark:text-gray-400">{sections.length} section{sections.length !== 1 ? 's' : ''} &middot; {assessmentValidation.totalQuestions} question{assessmentValidation.totalQuestions !== 1 ? 's' : ''}</div>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-[11px] font-medium text-slate-500 dark:text-gray-400"><span>{sections.length} section{sections.length !== 1 ? 's' : ''} &middot; {assessmentValidation.totalQuestions} question{assessmentValidation.totalQuestions !== 1 ? 's' : ''}</span>{assessmentValidation.totalQuestions > 0 && <button type="button" onClick={openStudentPreview} className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300"><Eye className="h-3.5 w-3.5" />Student view</button>}</div>
         </section>
 
         <SectionBuilder
           sections={sections}
           onChange={updateSections}
           onOpenCodingEditor={handleOpenCodingEditor}
+          focusQuestion={location.state?.editQuestion}
           onNotify={{
             success: (message) => toast.success(message),
             error: (message) => toast.error(message),
@@ -1644,6 +1673,9 @@ export default function CreateAssessment() {
               <Shield className="h-3.5 w-3.5" /> Proctoring & Anti-Cheating
             </h3>
             <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-sky-200 bg-sky-50/70 px-3 py-2.5 dark:border-sky-900 dark:bg-sky-950/20"><div><p className="text-sm font-semibold text-slate-800 dark:text-white">No-camera assessment</p><p className="text-[11px] text-slate-500 dark:text-gray-400">Turns off webcam monitoring and AI proctoring. Students can start without a camera.</p></div><Toggle value={!s.cameraMonitoring && !s.aiProctoring?.enabled} onChange={(enabled) => updateForm({ settings: withAiProctoringSettings({ ...s, cameraMonitoring: !enabled, aiProctoring: { ...s.aiProctoring, enabled: enabled ? false : Boolean(s.aiProctoring?.enabled) } }) })} /></div>
+              <Row {...rowProps} icon={<Monitor className="h-4 w-4" />} title="Environment check" desc="Require the initial browser and focus check before the student starts." enabledOverride={s.environmentCheck !== false} onToggle={(enabled) => upd('environmentCheck', enabled)} />
+              <Row {...rowProps} icon={<Globe className="h-4 w-4" />} title="Location permission" desc="Require location permission during the initial security setup." enabledOverride={s.locationTracking !== false} onToggle={(enabled) => upd('locationTracking', enabled)} />
               <Row {...rowProps} icon={<Monitor className="h-4 w-4" />} title="Fullscreen Mode" desc="Forces browser into fullscreen. Exiting fullscreen triggers a warning." badge="recommended" toggleKey="enableFullscreen">
                 <FieldRow label="Auto-exit if fullscreen abandoned for (seconds)">
                   <NumInput value={s.fullscreenTimeoutSec} onChange={(v) => upd('fullscreenTimeoutSec', v)} min={5} max={60} placeholder="30" unit="sec" />
@@ -1896,7 +1928,7 @@ export default function CreateAssessment() {
           {currentId && (
             <button
               type="button"
-              onClick={() => navigate(`${rolePrefix}/assessment/preview/${currentId}`)}
+              onClick={openStudentPreview}
               className="mb-3 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
             >
               Open Fullscreen Preview
@@ -1998,7 +2030,7 @@ export default function CreateAssessment() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {currentId && (
-              <button type="button" onClick={() => navigate(`${rolePrefix}/assessment/preview/${currentId}`)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
+              <button type="button" onClick={openStudentPreview} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
                 <Eye className="h-3.5 w-3.5" /> Preview
               </button>
             )}

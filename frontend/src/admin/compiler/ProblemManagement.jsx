@@ -249,7 +249,7 @@ export default function ProblemManagement() {
                       <div className="flex items-center justify-end gap-2">
                         <button
                           type="button"
-                          onClick={() => navigate(`${rolePrefix}/library/coding/${problem._id}/preview`)}
+                          onClick={() => navigate(`${rolePrefix}/library/coding/${problem._id}/preview`, { state: { returnTo: `${window.location.pathname}${window.location.search}` } })}
                           aria-label={`Preview ${problem.title}`}
                           title="Preview problem"
                           className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-sky-200 bg-sky-50 text-sky-700 transition-colors hover:border-sky-300 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300"

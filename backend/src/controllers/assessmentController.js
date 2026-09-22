@@ -306,7 +306,7 @@ function getRequiredSecuritySteps(settings = {}, submission = null) {
     return recheckSteps;
   }
 
-  const steps = ['environment'];
+  const steps = settings.environmentCheck === false ? [] : ['environment'];
   if (settings.cameraMonitoring || settings.aiProctoring?.enabled) steps.push('camera');
   if (settings.locationTracking !== false) steps.push('location');
   if (settings.enableFullscreen) steps.push('fullscreen');
@@ -468,6 +468,7 @@ function normalizeAssessmentSettings(settings = {}) {
   delete source.negativeCoding;
 
   return {
+    environmentCheck: source.environmentCheck !== false,
     enableFullscreen: Boolean(source.enableFullscreen),
     fullscreenTimeoutSec: clampSettingNumber(source.fullscreenTimeoutSec, 15, { min: 0, max: 120 }),
     fullscreenAction: actionSetting(source, ['fullscreenAction'], 'pause'),

@@ -99,11 +99,13 @@ const getQuestionPreview = (sectionType, question = {}) => {
   return 'Answer details pending';
 };
 
-export default function SectionBuilder({ sections, onChange, onOpenCodingEditor, onNotify }) {
+export default function SectionBuilder({ sections, onChange, onOpenCodingEditor, onNotify, focusQuestion }) {
   const [collapsedSections, setCollapsedSections] = useState({});
   const [collapsedQuestions, setCollapsedQuestions] = useState({});
   const fileInputRefs = useRef({});
   const sectionRefs = useRef({});
+  const questionRefs = useRef({});
+  const focusedQuestionRef = useRef('');
   const [importState, setImportState] = useState({});
 
   const sectionsWithIds = useMemo(() => {
@@ -132,6 +134,23 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
       return changed ? next : prev;
     });
   }, [sectionsWithIds]);
+
+  useEffect(() => {
+    if (!focusQuestion) return undefined;
+    const sectionIndex = Number(focusQuestion.sectionIndex);
+    const questionIndex = Number(focusQuestion.questionIndex);
+    const section = sectionsWithIds[sectionIndex];
+    const question = section?.questions?.[questionIndex];
+    if (!question) return undefined;
+    const token = `${sectionIndex}:${questionIndex}:${question.questionId || ''}`;
+    if (focusedQuestionRef.current === token) return undefined;
+    focusedQuestionRef.current = token;
+    const questionKey = question.questionId || `${section.__key}-${questionIndex}`;
+    setCollapsedSections((previous) => ({ ...previous, [section.__key]: false }));
+    setCollapsedQuestions((previous) => ({ ...previous, [section.__key]: { ...previous[section.__key], [questionKey]: false } }));
+    const timer = window.setTimeout(() => (questionRefs.current[questionKey] || sectionRefs.current[section.__key])?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
+    return () => window.clearTimeout(timer);
+  }, [focusQuestion, sectionsWithIds]);
 
   useEffect(() => {
     setCollapsedQuestions((prev) => {
@@ -855,7 +874,7 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
                     ) || `${typeLabelMap[section.type] || 'Question'} ${qIndex + 1}`;
 
                     return (
-                      <div key={questionKey} className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+                      <div key={questionKey} ref={(element) => { questionRefs.current[questionKey] = element; }} className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900">
                         <button
                           type="button"
                           onClick={() => toggleQuestion(section.__key, questionKey)}

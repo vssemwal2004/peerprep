@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ChevronLeft, ChevronRight, Clock, Code2, RotateCcw } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Clock, Code2, RotateCcw, Pencil } from 'lucide-react';
 import { api } from '../../utils/api';
 import { useToast } from '../../components/CustomToast';
 import MonacoCodeEditor from '../compiler/MonacoCodeEditor';
@@ -8,6 +8,7 @@ import { getLanguageLabel } from '../compiler/compilerUtils';
 import AssessmentCodingProblemPanel from '../../student/assessment/AssessmentCodingProblemPanel';
 import AssessmentMcqOptions from '../../student/assessment/AssessmentMcqOptions';
 import AssessmentQuestionPalette from '../../student/assessment/AssessmentQuestionPalette';
+import { loadAssessmentDraft } from './assessmentDraftStore';
 
 const getCodingData = (question) => (
   question?.problemDataSnapshot
@@ -42,6 +43,11 @@ export default function AdminAssessmentPreview() {
   const location = useLocation();
   const toast = useToast();
   const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
+  const previewParams = new URLSearchParams(location.search);
+  const draftKey = previewParams.get('draftKey');
+  const requestedReturnTo = previewParams.get('return');
+  const returnTo = requestedReturnTo?.startsWith(`${rolePrefix}/assessment/`)
+    ? requestedReturnTo : `${rolePrefix}/assessment/${id}/edit`;
   const [assessment, setAssessment] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState(0);
@@ -57,6 +63,13 @@ export default function AdminAssessmentPreview() {
     const loadAssessment = async () => {
       setLoading(true);
       try {
+        if (draftKey) {
+          const draft = loadAssessmentDraft(draftKey);
+          if (draft?.sections?.length) {
+            if (mounted) setAssessment({ ...draft.form, _id: id === 'draft' ? undefined : id, sections: draft.sections });
+            return;
+          }
+        }
         const data = await api.getAssessmentById(id);
         if (mounted) setAssessment(data.assessment);
       } catch (error) {
@@ -67,7 +80,7 @@ export default function AdminAssessmentPreview() {
     };
     loadAssessment();
     return () => { mounted = false; };
-  }, [id, toast]);
+  }, [draftKey, id, toast]);
 
   const flatQuestions = useMemo(() => {
     const items = [];
@@ -102,8 +115,11 @@ export default function AdminAssessmentPreview() {
   }, []);
   const canNavigate = useCallback(() => true, []);
   const exitPreview = useCallback(() => {
-    navigate(`${rolePrefix}/assessment/${assessment?._id || id}/edit`);
-  }, [assessment?._id, id, navigate, rolePrefix]);
+    navigate(returnTo);
+  }, [navigate, returnTo]);
+  const editCurrentQuestion = () => {
+    navigate(returnTo, { state: { editQuestion: { sectionIndex: activeSection, questionIndex: activeQuestion } } });
+  };
 
   const questionStatus = useCallback((sectionIndex, questionIndex) => {
     const response = previewAnswers[answerKey(sectionIndex, questionIndex)];
@@ -217,6 +233,7 @@ export default function AdminAssessmentPreview() {
             <button type="button" onClick={exitPreview} className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-bold text-slate-600 shadow-sm hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
               <ArrowLeft className="h-3.5 w-3.5" /> Exit Preview
             </button>
+            <button type="button" onClick={editCurrentQuestion} className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-sky-600 px-3 text-[11px] font-bold text-white hover:bg-sky-500"><Pencil className="h-3.5 w-3.5" /> Edit question</button>
           </div>
         </div>
       </header>

@@ -308,6 +308,7 @@ export default function LibraryWorkspace({ view = 'questions' }) {
         backTo={mode === 'assessment' ? editorRoute : (requestedReturnTo || `${libraryRoot}/coding/problems`)}
         editTo={mode === 'assessment' ? editorRoute : `${libraryRoot}/coding/${codingProblemId}/edit`}
         backLabel={mode === 'assessment' ? 'Back to editor' : 'Back to library'}
+        editLabel="Edit question"
       />;
     }
     return <CreateProblem mode={mode} assessmentContext={assessmentContext} />;

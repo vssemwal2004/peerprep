@@ -665,7 +665,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <button type="button" onClick={() => navigate(backTo || `${rolePrefix}/library/coding/problems`)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800">{backLabel}</button>
-        <button type="button" onClick={() => navigate(editTo || `${rolePrefix}/library/coding/${problem._id}/edit`)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:border-sky-300 hover:text-sky-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">{editLabel}</button>
+        <button type="button" onClick={() => navigate(editTo || `${rolePrefix}/library/coding/${problem._id}/edit`, { state: { returnTo: backTo } })} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:border-sky-300 hover:text-sky-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">{editLabel}</button>
         <button
           type="button"
           onClick={canApprovePublish ? handleApproveToPublish : undefined}

@@ -441,7 +441,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
         return;
       }
       navigate(`${rolePrefix}/library/coding/${question.sourceProblemId}/preview`, {
-        state: { returnTo: `${rolePrefix}/library?type=coding` },
+        state: { returnTo: `${location.pathname}${location.search}` },
       });
       return;
     }
@@ -1241,6 +1241,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="hidden rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-sky-700 sm:inline dark:bg-sky-950/30 dark:text-sky-300">Preview mode</span>
+                    {activeQuestion && <button type="button" onClick={() => { setActiveQuestion(null); startEditQuestion(activeQuestion); }} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 text-xs font-semibold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300"><Edit3 className="h-3.5 w-3.5" />Edit question</button>}
                   <button
                     type="button"
                     onClick={() => setActiveQuestion(null)}
