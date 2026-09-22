@@ -177,7 +177,7 @@ export default function ProblemsPage() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[820px] table-fixed text-left">
+                <table data-no-serial className="w-full min-w-[820px] table-fixed text-left">
                   <thead className="border-b border-slate-200 bg-sky-50/70 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:border-gray-800 dark:bg-sky-950/20 dark:text-gray-400">
                     <tr><th className="w-16 px-4 py-3">S.No.</th><th className="w-32 px-3 py-3">Status</th><th className="px-3 py-3">Problem</th><th className="w-32 px-3 py-3">Acceptance</th><th className="w-28 px-3 py-3">Difficulty</th><th className="w-48 px-3 py-3">Languages</th></tr>
                   </thead>
