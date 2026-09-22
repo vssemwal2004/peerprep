@@ -269,9 +269,7 @@ export default function CreateAssessment() {
 
   const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
   const canCreateAssessmentCandidates = hasPermission(user, 'coordinator.assessment.candidates');
-  const requestedAudience = new URLSearchParams(location.search).get('audience') === 'assessment_candidates' && canCreateAssessmentCandidates
-    ? 'assessment_candidates'
-    : 'platform_students';
+  const requestedAudience = 'platform_students';
 
   const [currentId, setCurrentId] = useState(id || null);
   const [activeStep, setActiveStep] = useState('basic');
@@ -1383,10 +1381,11 @@ export default function CreateAssessment() {
     ),
     target: (
       <div className="space-y-4">
-        <SectionCard compact title={form.audienceType === 'assessment_candidates' ? 'Add assessment candidates' : 'Select platform students'} subtitle={form.audienceType === 'assessment_candidates' ? 'Add candidates individually or upload the lightweight CSV template.' : 'Search and choose registered students who can take this assessment.'}>
-          {form.audienceType === 'assessment_candidates'
-            ? <AssessmentCandidateEditor selected={selectedStudents} onChange={updateSelectedStudents} />
-            : <StudentSelector selected={selectedStudents} onChange={updateSelectedStudents} />}
+        <SectionCard compact title="Students" subtitle="Add new students or select existing accounts.">
+          <div className="space-y-3">
+            {canCreateAssessmentCandidates && <AssessmentCandidateEditor selected={selectedStudents} onChange={updateSelectedStudents} />}
+            <StudentSelector selected={selectedStudents} onChange={updateSelectedStudents} />
+          </div>
         </SectionCard>
       </div>
     ),
@@ -1993,7 +1992,7 @@ export default function CreateAssessment() {
                 <span aria-hidden="true">&middot;</span>
                 {form.lifecycleStatus === 'published' ? 'Published' : 'Draft'}
                 <span aria-hidden="true">&middot;</span>
-                <span className={form.audienceType === 'assessment_candidates' ? 'font-semibold text-violet-600 dark:text-violet-300' : 'font-semibold text-sky-600 dark:text-sky-300'}>{form.audienceType === 'assessment_candidates' ? 'Assessment Candidates' : 'Platform Students'}</span>
+                <span className="font-semibold text-sky-600 dark:text-sky-300">Students</span>
               </p>
             </div>
           </div>
@@ -2114,9 +2113,7 @@ export default function CreateAssessment() {
                     <div>
                       <div className="text-sm font-semibold text-slate-900 dark:text-white">Email assessment access</div>
                       <div className="mt-0.5 text-[11px] text-slate-500 dark:text-gray-400">
-                        {form.audienceType === 'assessment_candidates'
-                          ? 'New candidates receive login credentials, schedule, assessment password and access link in one email.'
-                          : 'Selected platform students receive the schedule, assessment password and access link.'}
+                        New students receive login credentials, schedule, assessment password and access link in one email. Existing students receive assessment details.
                       </div>
                     </div>
                     <Toggle value={Boolean(form.sendEmail)} onChange={(value) => updateForm({ sendEmail: value })} />

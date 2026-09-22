@@ -67,6 +67,7 @@ function normalizeStudentRow(row) {
     name: row.name || map.name,
     email: row.email || map.email,
     studentid: row.studentid || row.studentId || map.studentid || map.student_id || map.sid,
+    accessScope: row.accessScope || map.accessscope,
     branch: row.branch || map.branch,
     teacherid: row.teacherid || row.teacherId || map.teacherid || map.teacher_id,
     semester: row.semester || map.semester,
@@ -1599,6 +1600,44 @@ async function validatePublishedAssessmentSections(sections = []) {
   }
 }
 
+export async function previewAssessmentStudents(req, res) {
+  const rows = Array.isArray(req.body?.students) ? req.body.students : [];
+  if (!rows.length || rows.length > 1000) return res.status(400).json({ error: 'Provide between 1 and 1000 students.' });
+  const normalized = rows.map(normalizeStudentRow);
+  const emails = normalized.map(row => String(row.email || '').toLowerCase()).filter(Boolean);
+  const studentIds = normalized.map(row => String(row.studentid || '')).filter(Boolean);
+  const existing = await User.find({ $or: [{ email: { $in: emails } }, { studentId: { $in: studentIds } }] })
+    .select('_id name email studentId role accessScope').lean();
+  const byEmail = new Map(existing.filter(user => user.email).map(user => [user.email.toLowerCase(), user]));
+  const byStudentId = new Map(existing.filter(user => user.studentId).map(user => [String(user.studentId), user]));
+  const seenEmails = new Set();
+  const seenIds = new Set();
+  const preview = normalized.map((row, index) => {
+    const email = String(row.email || '').trim().toLowerCase();
+    const studentId = String(row.studentid || '').trim();
+    const errors = [];
+    if (!row.name?.trim()) errors.push('Name is required');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push('Valid email is required');
+    if (!studentId) errors.push('Student ID is required');
+    else if (!/^[A-Za-z0-9_-]{1,64}$/.test(studentId)) errors.push('Student ID may use letters, numbers, underscores or hyphens');
+    if (email && seenEmails.has(email)) errors.push('Duplicate email in this file');
+    if (studentId && seenIds.has(studentId)) errors.push('Duplicate student ID in this file');
+    seenEmails.add(email);
+    seenIds.add(studentId);
+    const emailUser = byEmail.get(email);
+    const idUser = byStudentId.get(studentId);
+    if (emailUser && idUser && String(emailUser._id) !== String(idUser._id)) errors.push('Email and student ID belong to different accounts');
+    const user = emailUser || idUser;
+    if (user && user.role !== 'student') errors.push('This email or ID belongs to a non-student account');
+    if (user && emailUser && studentId !== String(user.studentId || '')) errors.push('Student ID does not match the existing account');
+    if (user && idUser && email !== String(user.email || '').toLowerCase()) errors.push('Email does not match the existing account');
+    return { row: index + 1, name: row.name, email, studentid: studentId,
+      status: errors.length ? 'error' : user ? 'existing' : 'new', errors,
+      existingStudent: user && !errors.length ? { _id: user._id, name: user.name, email: user.email, studentId: user.studentId, accessScope: user.accessScope } : null };
+  });
+  return res.json({ preview });
+}
+
 async function resolveAssignedStudents({ targetType, assignedStudents, audienceType = 'platform_students' }) {
   if (targetType === 'all') {
     const students = await User.find({ role: 'student', accessScope: { $ne: 'assessment_only' } }).select('_id email name studentId accessScope').lean();
@@ -1620,7 +1659,7 @@ async function resolveAssignedStudents({ targetType, assignedStudents, audienceT
       { studentId: { $in: studentIds } },
       { _id: { $in: normalizedRows.map(r => r._id).filter(Boolean) } },
     ],
-  }).select('_id email name studentId accessScope').lean();
+  }).select('_id email name studentId role accessScope').lean();
 
   const existingByEmail = new Map(existing.filter(u => u.email).map(u => [u.email.toLowerCase(), u]));
   const existingByStudentId = new Map(existing.filter(u => u.studentId).map(u => [u.studentId.toString(), u]));
@@ -1635,34 +1674,49 @@ async function resolveAssignedStudents({ targetType, assignedStudents, audienceT
 
   const created = [];
   const assignedIds = [];
+  const seenEmails = new Set();
+  const seenStudentIds = new Set();
 
   for (const row of normalizedRows) {
+    const emailKey = String(row.email || '').toLowerCase();
+    const studentIdKey = String(row.studentid || '');
+    if ((emailKey && seenEmails.has(emailKey)) || (studentIdKey && seenStudentIds.has(studentIdKey))) {
+      throw new Error('Duplicate email or student ID in the selected students.');
+    }
+    if (emailKey) seenEmails.add(emailKey);
+    if (studentIdKey) seenStudentIds.add(studentIdKey);
     if (row._id && existingById.has(row._id.toString())) {
       const matchedUser = existingById.get(row._id.toString());
-      const isAssessmentOnly = matchedUser.accessScope === 'assessment_only';
-      if ((audienceType === 'assessment_candidates') !== isAssessmentOnly) {
-        throw new Error(`“${matchedUser.email || matchedUser.name}” belongs to the other audience type. Select the matching assessment mode.`);
-      }
+      if (matchedUser.role && matchedUser.role !== 'student') throw new Error('Only student accounts can take assessments.');
       assignedIds.push(matchedUser._id);
       continue;
     }
 
     const byEmail = row.email ? existingByEmail.get(row.email.toLowerCase()) : null;
     const byStudentId = row.studentid ? existingByStudentId.get(row.studentid.toString()) : null;
+    if (byEmail && byStudentId && String(byEmail._id) !== String(byStudentId._id)) {
+      throw new Error(`Email and student ID belong to different accounts for ${row.email}.`);
+    }
     const existingUser = byEmail || byStudentId;
 
     if (existingUser) {
-      const isAssessmentOnly = existingUser.accessScope === 'assessment_only';
-      if ((audienceType === 'assessment_candidates') !== isAssessmentOnly) {
-        throw new Error(`“${existingUser.email || existingUser.name}” belongs to the other audience type. Select the matching assessment mode.`);
+      if (existingUser.role && existingUser.role !== 'student') throw new Error('Only student accounts can take assessments.');
+      if (existingUser.email?.toLowerCase() !== row.email?.toLowerCase() || String(existingUser.studentId || '') !== String(row.studentid || '')) {
+        throw new Error(`Email and student ID must match the existing account for ${row.email}.`);
       }
       assignedIds.push(existingUser._id);
       continue;
     }
 
-    const assessmentOnly = audienceType === 'assessment_candidates';
+    const assessmentOnly = audienceType === 'assessment_candidates' || row.accessScope === 'assessment_only';
+    if (assessmentOnly && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email || '')) {
+      throw new Error('A valid email is required for each new student.');
+    }
+    if (assessmentOnly && !/^[A-Za-z0-9_-]{1,64}$/.test(row.studentid || '')) {
+      throw new Error('Student ID must use letters, numbers, underscores or hyphens.');
+    }
     const required = assessmentOnly
-      ? ['name', 'email']
+      ? ['name', 'email', 'studentid']
       : ['name', 'email', 'studentid', 'branch', 'teacherid', 'semester', 'course', 'college'];
     const missing = required.filter((k) => !row[k] || row[k].toString().trim() === '');
     if (missing.length > 0) {
@@ -1718,7 +1772,7 @@ async function resolveAssignedStudents({ targetType, assignedStudents, audienceT
   return { ids: assignedIds, users, created };
 }
 
-async function queueAssessmentAudienceEmails({ assessment, users = [], created = [], requestedBy }) {
+async function queueAssessmentAudienceEmails({ assessment, users = [], created = [], requestedBy, newOnly = false }) {
   if (!users.length) return { queued: 0 };
   let assessmentPassword = '';
   if (assessment.passwordEnabled && assessment.passwordEncrypted) {
@@ -1726,7 +1780,7 @@ async function queueAssessmentAudienceEmails({ assessment, users = [], created =
   }
   const credentialsByUser = new Map(created.map((entry) => [String(entry.id), entry]));
   const batchId = crypto.randomUUID();
-  const jobs = users.filter((user) => user.email).map((user) => {
+  const jobs = users.filter((user) => user.email && (!newOnly || credentialsByUser.has(String(user._id)))).map((user) => {
     const credentials = credentialsByUser.get(String(user._id));
     let accountPassword = credentials?.password || '';
     if (!accountPassword && user.accessScope === 'assessment_only' && user.temporaryPasswordEncrypted) {
@@ -1812,6 +1866,13 @@ export async function createAssessment(req, res) {
       password,
       audienceType,
     } = req.body || {};
+
+    if (req.user?.role === 'coordinator'
+      && !hasCoordinatorPermission(req.user, 'coordinator.assessment.candidates')
+      && (audienceType === 'assessment_candidates' || (Array.isArray(assignedStudents)
+        && assignedStudents.some(row => row?.accessScope === 'assessment_only' && !row?._id)))) {
+      return res.status(403).json({ error: 'Adding new assessment students is not enabled for this coordinator.' });
+    }
 
     const normalizedSections = normalizeAssessmentSections(sections);
     const duplicateQuestionError = validateUniqueAssessmentQuestions(normalizedSections);
@@ -1924,8 +1985,8 @@ export async function createAssessment(req, res) {
 
     await assessment.save();
 
-    if (!isDraft && sendEmail) {
-      await queueAssessmentAudienceEmails({ assessment, users, created, requestedBy: req.user });
+    if (!isDraft && (sendEmail || created.length)) {
+      await queueAssessmentAudienceEmails({ assessment, users, created, requestedBy: req.user, newOnly: !sendEmail });
     }
 
     await syncAssessmentQuestionsToLibrary(assessment);
@@ -2101,6 +2162,12 @@ export async function updateAssessment(req, res) {
       audienceType,
     } = req.body || {};
 
+    if (req.user?.role === 'coordinator'
+      && !hasCoordinatorPermission(req.user, 'coordinator.assessment.candidates')
+      && Array.isArray(assignedStudents)
+      && assignedStudents.some(row => row?.accessScope === 'assessment_only' && !row?._id)) {
+      return res.status(403).json({ error: 'Adding new assessment students is not enabled for this coordinator.' });
+    }
     if (
       audienceType === 'assessment_candidates'
       && req.user?.role === 'coordinator'
@@ -2265,7 +2332,7 @@ export async function updateAssessment(req, res) {
     assessment.versionUpdatedAt = new Date();
 
     await assessment.save();
-    if (!isDraft && sendEmail) {
+    if (!isDraft && (sendEmail || newlyCreatedAudienceUsers.length)) {
       const mailUsers = resolvedAudienceUsers.length
         ? resolvedAudienceUsers
         : await User.find({ _id: { $in: assessment.assignedStudents || [] } }).select('_id email name studentId accessScope +temporaryPasswordEncrypted').lean();
@@ -2274,6 +2341,7 @@ export async function updateAssessment(req, res) {
         users: mailUsers,
         created: newlyCreatedAudienceUsers,
         requestedBy: req.user,
+        newOnly: !sendEmail,
       });
     }
     if ((assessment.passwordHash || '') !== previousPasswordHash) {

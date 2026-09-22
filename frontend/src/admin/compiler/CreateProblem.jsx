@@ -256,7 +256,7 @@ function HintEditor({ hints, onAdd, onRemove, onChange }) {
               onChange={(event) => onChange(index, event.target.value)}
               rows={4}
               placeholder="Guide the student without giving away the full solution."
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"
             />
           </div>
         ))
@@ -296,14 +296,14 @@ function FaqEditor({ faqs, onAdd, onRemove, onChange }) {
                 value={faq.question}
                 onChange={(event) => onChange(index, 'question', event.target.value)}
                 placeholder="Question students may ask"
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"
               />
               <textarea
                 value={faq.answer}
                 onChange={(event) => onChange(index, 'answer', event.target.value)}
                 rows={5}
                 placeholder="Solution or clarification shown to students"
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"
               />
             </div>
           </div>
@@ -1061,6 +1061,12 @@ if (!isValidated || publishedProblem.status !== 'published') {
     setActiveTab(nextTab.key);
     requestAnimationFrame(() => editorTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   };
+  const finalActionDisabled = isSaving || isDeleting || isApprovingPreview
+    || (isAssessment ? !canAddToAssessment : !previewValidated || !currentProblemId);
+  const finalAction = () => {
+    if (isAssessment) handleAddToAssessment();
+    else persistProblem('published');
+  };
   const selectTab = (key) => {
     setActiveTab(key);
     requestAnimationFrame(() => editorTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
@@ -1072,14 +1078,13 @@ if (!isValidated || publishedProblem.status !== 'published') {
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900 sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white">{isSqlProblem ? <Database className="h-5 w-5" /> : <Code2 className="h-5 w-5" />}</span>
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-600 text-white">{isSqlProblem ? <Database className="h-5 w-5" /> : <Code2 className="h-5 w-5" />}</span>
               <div className="min-w-0">
                 <p className="truncate text-sm font-bold text-slate-950 dark:text-white">{isAssessment ? `Assessment ${isSqlProblem ? 'SQL' : 'coding'} question` : (isEditMode ? `Edit ${isSqlProblem ? 'SQL' : 'coding'} problem` : `Create ${isSqlProblem ? 'SQL' : 'coding'} problem`)}</p>
                 <p className="text-xs text-slate-500 dark:text-gray-400">{currentStatus === 'published' ? 'Published' : 'Draft'} · {visibleSampleCount} sample · {hiddenCount} hidden · {isSqlProblem ? 'SQLite' : `${form.supportedLanguages.length} languages`}</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {isAssessmentCreate && <button type="button" onClick={handleAddToAssessment} disabled={isSaving || !canAddToAssessment} title={!canAddToAssessment ? 'Complete validation checks before adding.' : ''} className="inline-flex h-9 items-center gap-2 rounded-xl bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"><FilePlus2 className="h-4 w-4" />Add to assessment</button>}
               <button type="button" onClick={openPreview} disabled={isSaving || isApprovingPreview} title="Open solving preview" className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"><Eye className="h-4 w-4" />{isApprovingPreview ? 'Opening...' : 'Solve preview'}</button>
             </div>
           </div>
@@ -1096,45 +1101,45 @@ if (!isValidated || publishedProblem.status !== 'published') {
 
         {activeTab === 'details' ? (
           <>
-            <SectionCard title="Question type" subtitle="Choose the workspace and evaluation model before adding content.">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <button type="button" onClick={() => switchProblemCategory('DSA')} className={`flex items-start gap-3 rounded-2xl border p-4 text-left transition ${!isSqlProblem ? 'border-sky-300 bg-sky-50 ring-2 ring-sky-100 dark:border-sky-700 dark:bg-sky-950/30 dark:ring-sky-900/40' : 'border-slate-200 hover:border-slate-300 dark:border-gray-700'}`}>
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white dark:bg-gray-700"><Code2 className="h-5 w-5" /></span>
+            <SectionCard compact title="Question type" subtitle="Choose the workspace and evaluation model before adding content.">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button type="button" onClick={() => switchProblemCategory('DSA')} className={`flex items-start gap-3 rounded-xl border p-3 text-left transition ${!isSqlProblem ? 'border-sky-300 bg-sky-50 ring-2 ring-sky-100 dark:border-sky-700 dark:bg-sky-950/30 dark:ring-sky-900/40' : 'border-slate-200 hover:border-slate-300 dark:border-gray-700'}`}>
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-white dark:bg-gray-700"><Code2 className="h-5 w-5" /></span>
                   <span><span className="block text-sm font-bold text-slate-900 dark:text-white">Programming</span><span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-gray-400">Functions, stdin/output and language-specific solutions.</span></span>
                 </button>
-                <button type="button" onClick={() => switchProblemCategory('SQL')} className={`flex items-start gap-3 rounded-2xl border p-4 text-left transition ${isSqlProblem ? 'border-sky-300 bg-sky-50 ring-2 ring-sky-100 dark:border-sky-700 dark:bg-sky-950/30 dark:ring-sky-900/40' : 'border-slate-200 hover:border-slate-300 dark:border-gray-700'}`}>
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white"><Database className="h-5 w-5" /></span>
+                <button type="button" onClick={() => switchProblemCategory('SQL')} className={`flex items-start gap-3 rounded-xl border p-3 text-left transition ${isSqlProblem ? 'border-sky-300 bg-sky-50 ring-2 ring-sky-100 dark:border-sky-700 dark:bg-sky-950/30 dark:ring-sky-900/40' : 'border-slate-200 hover:border-slate-300 dark:border-gray-700'}`}>
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-600 text-white"><Database className="h-5 w-5" /></span>
                   <span><span className="block text-sm font-bold text-slate-900 dark:text-white">SQL query</span><span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-gray-400">LeetCode-style SQLite schema, datasets and result-table evaluation.</span></span>
                 </button>
               </div>
             </SectionCard>
-            <SectionCard title="Question Details" subtitle="Core metadata and public-facing problem statement.">
-              <div className="grid gap-4 md:grid-cols-2">
+            <SectionCard compact title="Question Details" subtitle="Core metadata and public-facing problem statement.">
+              <div className="grid gap-3 md:grid-cols-2">
                 <div className="md:col-span-2">
                   <RequiredFieldLabel>Problem name</RequiredFieldLabel>
-                  <input value={form.title} onChange={(event) => updateField('title', event.target.value)} placeholder="Example: Longest Increasing Subsequence" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
+                  <input value={form.title} onChange={(event) => updateField('title', event.target.value)} placeholder="Example: Longest Increasing Subsequence" className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
                 </div>
                 <div className="md:col-span-2">
                   <RequiredFieldLabel>Problem statement</RequiredFieldLabel>
-                  <RichTextEditor value={form.description} onChange={(value) => updateField('description', value)} rows={14} placeholder="Explain the problem clearly using headings, examples, and inline code." />
+                  <RichTextEditor value={form.description} onChange={(value) => updateField('description', value)} rows={9} placeholder="Explain the problem clearly using headings, examples, and inline code." />
                 </div>
                 <div>
                   <RequiredFieldLabel>Difficulty</RequiredFieldLabel>
-                  <select value={form.difficulty} onChange={(event) => updateField('difficulty', event.target.value)} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"><option>Easy</option><option>Medium</option><option>Hard</option></select>
+                  <select value={form.difficulty} onChange={(event) => updateField('difficulty', event.target.value)} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"><option>Easy</option><option>Medium</option><option>Hard</option></select>
                 </div>
                 <div>
                   <RequiredFieldLabel optional>Tags</RequiredFieldLabel>
-                  <input value={form.tags} onChange={(event) => updateField('tags', event.target.value)} placeholder="arrays, dp, greedy" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
+                  <input value={form.tags} onChange={(event) => updateField('tags', event.target.value)} placeholder="arrays, dp, greedy" className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
                 </div>
                 <div className="md:col-span-2">
                   <RequiredFieldLabel optional>Company tags</RequiredFieldLabel>
-                  <input value={form.companyTags} onChange={(event) => updateField('companyTags', event.target.value)} placeholder="Amazon, Google, Microsoft" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
+                  <input value={form.companyTags} onChange={(event) => updateField('companyTags', event.target.value)} placeholder="Amazon, Google, Microsoft" className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
                 </div>
               </div>
             </SectionCard>
 
             {isSqlProblem ? (
-              <SectionCard title="Database environment" subtitle="This shared schema and sample data are loaded before every student query.">
+              <SectionCard compact title="Database environment" subtitle="This shared schema and sample data are loaded before every student query.">
                 <div className="mb-4 rounded-xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-xs leading-5 text-slate-600 dark:border-sky-900/50 dark:bg-sky-950/20 dark:text-gray-300">
                   Use SQLite syntax. Keep the schema stable; add alternative rows for edge cases inside each sample or hidden dataset. Every run starts with a fresh isolated database.
                 </div>
@@ -1151,35 +1156,35 @@ if (!isValidated || publishedProblem.status !== 'published') {
               </SectionCard>
             ) : null}
 
-            <SectionCard title={isSqlProblem ? 'Query specification' : 'Input / Output Specification'} subtitle={isSqlProblem ? 'Explain the available tables and the required result columns.' : 'Public contract shown to problem solvers.'}>
-              <div className="grid gap-4 md:grid-cols-3">
+            <SectionCard compact title={isSqlProblem ? 'Query specification' : 'Input / Output Specification'} subtitle={isSqlProblem ? 'Explain the available tables and the required result columns.' : 'Public contract shown to problem solvers.'}>
+              <div className="grid gap-3 md:grid-cols-3">
                 {!isSqlProblem ? <div>
                   <RequiredFieldLabel>Input format</RequiredFieldLabel>
-                  <textarea value={form.inputFormat} onChange={(event) => updateField('inputFormat', event.target.value)} rows={5} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
+                  <textarea value={form.inputFormat} onChange={(event) => updateField('inputFormat', event.target.value)} rows={3} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
                 </div> : <div>
                   <RequiredFieldLabel optional>Schema notes</RequiredFieldLabel>
-                  <textarea value={form.inputFormat} onChange={(event) => updateField('inputFormat', event.target.value)} rows={5} placeholder="Explain table relationships or important columns." className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
+                  <textarea value={form.inputFormat} onChange={(event) => updateField('inputFormat', event.target.value)} rows={3} placeholder="Explain table relationships or important columns." className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
                 </div>}
                 <div>
                   <RequiredFieldLabel>{isSqlProblem ? 'Required result' : 'Output format'}</RequiredFieldLabel>
-                  <textarea value={form.outputFormat} onChange={(event) => updateField('outputFormat', event.target.value)} rows={5} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
+                  <textarea value={form.outputFormat} onChange={(event) => updateField('outputFormat', event.target.value)} rows={3} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
                 </div>
                 <div>
                   <RequiredFieldLabel>{isSqlProblem ? 'Query rules' : 'Constraints'}</RequiredFieldLabel>
-                  <RichTextEditor value={form.constraints} onChange={(value) => updateField('constraints', value)} rows={7} placeholder={isSqlProblem ? 'Example: return one row per employee; sort by salary descending.' : 'Add one constraint per line, then format lines with headings, bold, lists, quotes, or code.'} />
+                  <RichTextEditor value={form.constraints} onChange={(value) => updateField('constraints', value)} rows={5} placeholder={isSqlProblem ? 'Example: return one row per employee; sort by salary descending.' : 'Add one constraint per line, then format lines with headings, bold, lists, quotes, or code.'} />
                 </div>
               </div>
             </SectionCard>
 
-            <SectionCard title="Execution Limits" subtitle="Judge limits for submissions.">
-              <div className="grid gap-4 md:grid-cols-2">
+            <SectionCard compact title="Execution Limits" subtitle="Judge limits for submissions.">
+              <div className="grid gap-3 md:grid-cols-2">
                 <div>
                   <RequiredFieldLabel>Time limit (seconds)</RequiredFieldLabel>
-                  <input type="number" min="1" step="0.5" value={form.timeLimitSeconds} onChange={(event) => updateField('timeLimitSeconds', event.target.value)} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
+                  <input type="number" min="1" step="0.5" value={form.timeLimitSeconds} onChange={(event) => updateField('timeLimitSeconds', event.target.value)} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
                 </div>
                 <div>
                   <RequiredFieldLabel>Memory limit (MB)</RequiredFieldLabel>
-                  <input type="number" min="64" step="64" value={form.memoryLimitMb} onChange={(event) => updateField('memoryLimitMb', event.target.value)} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
+                  <input type="number" min="64" step="64" value={form.memoryLimitMb} onChange={(event) => updateField('memoryLimitMb', event.target.value)} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
                 </div>
               </div>
             </SectionCard>
@@ -1238,7 +1243,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
               <div className="mb-5 overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50/60 dark:border-emerald-900/60 dark:bg-emerald-950/20">
                 <div className="grid gap-4 p-4 sm:grid-cols-[minmax(0,1fr)_180px] sm:items-center">
                   <div className="flex items-start gap-3">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm"><Hash className="h-4.5 w-4.5" /></span>
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-sm"><Hash className="h-4.5 w-4.5" /></span>
                     <div><p className="text-sm font-bold text-slate-900 dark:text-white">{isSqlProblem ? 'SQL question marks' : 'Coding question marks'}</p><p className="mt-1 text-xs leading-5 text-slate-600 dark:text-gray-300">By default, the total is the sum of hidden test-case marks. Enter a custom total and it is distributed proportionally across every hidden case.</p></div>
                   </div>
                   <label>
@@ -1394,7 +1399,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-gray-300">Bulk Delimiter</label>
-                    <input value={form.hiddenBulkDelimiter || '###CASE###'} onChange={(event) => updateHiddenBulkDelimiter(event.target.value)} placeholder="###CASE###" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
+                    <input value={form.hiddenBulkDelimiter || '###CASE###'} onChange={(event) => updateHiddenBulkDelimiter(event.target.value)} placeholder="###CASE###" className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
                     {form.hiddenBulkInputFile && form.hiddenBulkOutputFile ? (
                       <p className={`mt-2 text-xs font-semibold ${bulkHiddenCount > 0 ? 'text-emerald-600 dark:text-emerald-300' : 'text-rose-600 dark:text-rose-300'}`}>
                         {bulkHiddenCount > 0 ? `${bulkHiddenCount} hidden test case(s) detected from bulk files.` : 'No matching bulk cases detected. Check delimiter and input/output counts.'}
@@ -1406,7 +1411,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
             </SectionCard>
 
             <SectionCard title="Validation Preview" subtitle="Quick view of what will be parsed into the judge.">
-              <div className="grid gap-4 md:grid-cols-3">
+              <div className="grid gap-3 md:grid-cols-3">
                 <div className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">Samples</p><p className="mt-2 text-2xl font-bold text-slate-900 dark:text-gray-100">{visibleSampleCount}</p></div>
                 <div className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">Hidden</p><p className="mt-2 text-2xl font-bold text-slate-900 dark:text-gray-100">{hiddenCount}</p></div>
                 <div className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">Entry Mode</p><p className="mt-2 text-lg font-semibold text-slate-900 dark:text-gray-100">{form.hiddenTestUploadMode === 'bulk' ? 'Bulk files' : form.hiddenTestUploadMode === 'pairs' ? 'File pairs' : 'Manual entry'}</p></div>
@@ -1524,7 +1529,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
 
         {activeTab === 'draft' ? (
           <SectionCard title="Draft Workspace" subtitle="Auto-save, validation, and readiness checks.">
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-3">
               <div className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700">
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">Status</p>
                 <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-gray-100">{validationStatus}</p>
@@ -1542,19 +1547,19 @@ if (!isValidated || publishedProblem.status !== 'published') {
             <div className="mt-4 space-y-2 text-xs text-slate-600 dark:text-gray-300">
               <div className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2 dark:border-gray-700">
                 <span>At least 1 sample test case</span>
-                <span className={visibleSampleCount > 0 ? 'text-emerald-600' : 'text-rose-500'}>{visibleSampleCount > 0 ? 'Ready' : 'Missing'}</span>
+                <span className={visibleSampleCount > 0 ? 'text-emerald-600' : 'text-amber-600'}>{visibleSampleCount > 0 ? 'Ready' : 'Missing'}</span>
               </div>
               <div className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2 dark:border-gray-700">
                 <span>At least 1 hidden test case</span>
-                <span className={hiddenCount > 0 ? 'text-emerald-600' : 'text-rose-500'}>{hiddenCount > 0 ? 'Ready' : 'Missing'}</span>
+                <span className={hiddenCount > 0 ? 'text-emerald-600' : 'text-amber-600'}>{hiddenCount > 0 ? 'Ready' : 'Missing'}</span>
               </div>
               <div className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2 dark:border-gray-700">
                 <span>Language template provided</span>
-                <span className={hasTemplate ? 'text-emerald-600' : 'text-rose-500'}>{hasTemplate ? 'Ready' : 'Missing'}</span>
+                <span className={hasTemplate ? 'text-emerald-600' : 'text-amber-600'}>{hasTemplate ? 'Ready' : 'Missing'}</span>
               </div>
               <div className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2 dark:border-gray-700">
                 <span>Preview validation run</span>
-                <span className={previewValidated ? 'text-emerald-600' : 'text-rose-500'}>{previewValidated ? 'Done' : 'Pending'}</span>
+                <span className={previewValidated ? 'text-emerald-600' : 'text-amber-600'}>{previewValidated ? 'Done' : 'Pending'}</span>
               </div>
             </div>
           </SectionCard>
@@ -1601,14 +1606,10 @@ if (!isValidated || publishedProblem.status !== 'published') {
             {isAssessment ? (
               <>
                 <button type="button" onClick={() => persistProblem('draft')} disabled={isSaving || isApprovingPreview} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"><Save className="h-4 w-4" />{isSaving ? 'Saving...' : 'Save Draft'}</button>
-                <button type="button" onClick={openPreview} disabled={isSaving || isApprovingPreview} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-sky-600 dark:hover:bg-sky-500 dark:disabled:bg-gray-700"><Eye className="h-4 w-4" />{isApprovingPreview ? 'Opening...' : 'Open Preview'}</button>
-                <button type="button" onClick={handleAddToAssessment} disabled={isSaving || !canAddToAssessment} title={!canAddToAssessment ? 'Complete validation checks before adding.' : ''} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"><FilePlus2 className="h-4 w-4" />Add to Assessment</button>
               </>
             ) : (
               <>
-                <button type="button" onClick={openPreview} disabled={isSaving || isDeleting || isApprovingPreview} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-sky-600 dark:hover:bg-sky-500 dark:disabled:bg-gray-700"><Eye className="h-4 w-4" />{isApprovingPreview ? 'Opening...' : 'Open Preview'}</button>
                 <button type="button" onClick={() => persistProblem('draft')} disabled={isSaving || isDeleting || isApprovingPreview} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"><Save className="h-4 w-4" />{isSaving ? 'Saving...' : 'Save Draft'}</button>
-                <button type="button" onClick={() => persistProblem('published')} disabled={isSaving || isDeleting || isApprovingPreview || !previewValidated || !currentProblemId} title={!previewValidated ? 'Preview validation is required before publishing.' : ''} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"><FilePlus2 className="h-4 w-4" />{isSaving ? (isEditMode ? 'Updating...' : 'Publishing...') : (isEditMode ? 'Update Problem' : 'Publish')}</button>
                 {canAddToAssessmentDynamic && (
                   <button type="button" onClick={handleAddToAssessment} disabled={isSaving} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"><FilePlus2 className="h-4 w-4" />Add to Assessment</button>
                 )}
@@ -1622,13 +1623,14 @@ if (!isValidated || publishedProblem.status !== 'published') {
           {!isAssessment && !previewValidated ? <p className="mt-3 text-xs text-amber-600 dark:text-amber-300">Publishing stays disabled until the preview IDE submits an Accepted solution and is approved.</p> : null}
         </SectionCard>}
 
-        <div className="sticky bottom-0 z-20 flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.06)] backdrop-blur dark:border-gray-700 dark:bg-gray-900/95">
-          <button type="button" onClick={() => goToTab(activeTabIndex - 1)} disabled={activeTabIndex === 0} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"><ChevronLeft className="h-4 w-4" /><span className="hidden sm:inline">Previous</span></button>
-          <span className="text-xs font-semibold text-slate-500 dark:text-gray-400">Step {activeTabIndex + 1} of {EDITOR_TABS.length}</span>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={openPreview} disabled={isSaving || isApprovingPreview} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"><Eye className="h-4 w-4" /><span className="hidden sm:inline">{isApprovingPreview ? 'Opening...' : 'Solve preview'}</span></button>
-            {!isFinalTab && <button type="button" onClick={() => goToTab(activeTabIndex + 1)} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 text-sm font-semibold text-white transition hover:bg-sky-500">Next<span className="hidden sm:inline">: {EDITOR_TABS[activeTabIndex + 1]?.label}</span><ChevronRight className="h-4 w-4" /></button>}
-          </div>
+        <div className="sticky bottom-0 z-20 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white/95 px-3 py-2 shadow-[0_-6px_18px_rgba(15,23,42,0.06)] backdrop-blur dark:border-gray-700 dark:bg-gray-900/95 sm:px-4">
+          <button type="button" onClick={() => goToTab(activeTabIndex - 1)} disabled={activeTabIndex === 0} className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"><ChevronLeft className="h-4 w-4" />Previous</button>
+          <span className="hidden text-xs font-medium text-slate-500 dark:text-gray-400 sm:inline">Step {activeTabIndex + 1} of {EDITOR_TABS.length}</span>
+          {isFinalTab ? (
+            <button type="button" onClick={finalAction} disabled={finalActionDisabled} title={finalActionDisabled ? 'Save and validate the coding question in Preview first' : undefined} className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-sky-600 px-3 text-xs font-semibold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"><FilePlus2 className="h-4 w-4" />{isAssessment ? 'Publish & add' : isEditMode ? 'Update problem' : 'Publish problem'}</button>
+          ) : (
+            <button type="button" onClick={() => goToTab(activeTabIndex + 1)} className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-sky-600 px-3 text-xs font-semibold text-white transition hover:bg-sky-500">Next<span className="hidden sm:inline">: {EDITOR_TABS[activeTabIndex + 1]?.shortLabel}</span><ChevronRight className="h-4 w-4" /></button>
+          )}
         </div>
       </div>
 

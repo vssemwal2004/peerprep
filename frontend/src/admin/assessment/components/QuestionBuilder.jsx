@@ -101,17 +101,25 @@ export default function QuestionBuilder({ type, value, onChange, onRemove, group
   const selectedAnswers = question.correctOptionIndexes?.length
     ? question.correctOptionIndexes
     : [question.correctOptionIndex !== null && question.correctOptionIndex !== undefined && Number.isInteger(Number(question.correctOptionIndex)) ? Number(question.correctOptionIndex) : null].filter((item) => item !== null);
+  const multipleAnswers = Boolean(question.allowMultipleAnswers || selectedAnswers.length > 1);
 
   const toggleCorrectAnswer = (index) => {
     const exists = selectedAnswers.includes(index);
-    const correctOptionIndexes = exists ? selectedAnswers.filter((item) => item !== index) : [...selectedAnswers, index].sort((a, b) => a - b);
-    const allowMultipleAnswers = correctOptionIndexes.length > 1;
+    const allowMultipleAnswers = multipleAnswers;
+    const correctOptionIndexes = allowMultipleAnswers
+      ? exists ? selectedAnswers.filter((item) => item !== index) : [...selectedAnswers, index].sort((a, b) => a - b)
+      : [index];
     update({
       correctOptionIndexes,
       correctOptionIndex: correctOptionIndexes[0] ?? null,
       allowMultipleAnswers,
       partialScoring: allowMultipleAnswers ? Boolean(question.partialScoring) : false,
     });
+  };
+  const setMultipleAnswers = (enabled) => {
+    const correctOptionIndexes = enabled ? selectedAnswers : selectedAnswers.slice(0, 1);
+    update({ allowMultipleAnswers: enabled, correctOptionIndexes,
+      correctOptionIndex: correctOptionIndexes[0] ?? null, partialScoring: enabled ? Boolean(question.partialScoring) : false });
   };
 
   const addOption = () => {
@@ -137,13 +145,13 @@ export default function QuestionBuilder({ type, value, onChange, onRemove, group
   }
 
   return (
-    <article onClick={onSelect} className={`rounded-2xl border bg-white p-5 shadow-sm transition dark:bg-gray-900 ${selected ? 'border-sky-300 ring-2 ring-sky-100 dark:border-sky-700 dark:ring-sky-900/30' : 'border-slate-200 dark:border-gray-700'}`}>
-      <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-4 dark:border-gray-800">
+    <article onClick={onSelect} className={`rounded-xl border bg-white p-4 shadow-sm transition dark:bg-gray-900 ${selected ? 'border-sky-300 ring-2 ring-sky-100 dark:border-sky-700 dark:ring-sky-900/30' : 'border-slate-200 dark:border-gray-700'}`}>
+      <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-3 dark:border-gray-800">
         <div className="flex items-center gap-3"><GripVertical className="h-4 w-4 text-slate-300" /><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-50 text-xs font-bold text-sky-700 dark:bg-sky-900/20 dark:text-sky-300">{questionNumber || 1}</span><div><p className="text-sm font-bold text-slate-900 dark:text-white">{stage === 'content' ? 'Write the question' : stage === 'answer' ? 'Set the correct answer' : stage === 'settings' ? 'Scoring and settings' : (type === 'mcq' ? 'Multiple-choice question' : type === 'one_line' ? 'One-word question' : 'Written-answer question')}</p><p className="text-[11px] text-slate-500 dark:text-gray-400">{type === 'mcq' ? 'MCQ' : type === 'one_line' ? 'One word' : 'Written answer'} · Question {questionNumber || 1}</p></div></div>
         {!hideRemove && <button type="button" onClick={(event) => { event.stopPropagation(); onRemove(); }} title="Remove question" aria-label="Remove question" className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-900/20"><Trash2 className="h-4 w-4" /></button>}
       </div>
 
-      <div className="mt-5 space-y-5">
+      <div className="mt-4 space-y-4">
         {showContent && <div>
           <RequiredLabel>Question statement</RequiredLabel>
           <textarea value={question.questionText || ''} onChange={(event) => update({ questionText: event.target.value })} rows="3" placeholder="Write a clear, unambiguous question" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700 shadow-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:focus:ring-sky-900/30" />
@@ -152,33 +160,30 @@ export default function QuestionBuilder({ type, value, onChange, onRemove, group
 
         {showAnswer && type === 'mcq' && (
           <>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-800/50">
-              <p className="text-xs font-bold text-slate-800 dark:text-gray-100">Question options</p>
-              <p className="mt-0.5 text-[11px] text-slate-500 dark:text-gray-400">Mark one or more correct options below. Selecting more than one automatically makes this a multiple-answer question.</p>
-              <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2 border-t border-slate-200 pt-3 dark:border-gray-700">
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 dark:bg-gray-800/50">
+              <p className="text-xs font-medium text-slate-600 dark:text-gray-300">{multipleAnswers ? 'Select every correct answer.' : 'Click an option to mark the correct answer.'}</p>
+              <div className="flex flex-wrap gap-x-4 gap-y-2">
+                <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-600 dark:text-gray-300"><input type="checkbox" checked={multipleAnswers} onChange={(event) => setMultipleAnswers(event.target.checked)} className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />Multiple correct answers</label>
                 <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-600 dark:text-gray-300"><input type="checkbox" checked={Boolean(question.shuffleOptions)} onChange={(event) => update({ shuffleOptions: event.target.checked })} className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500" /><Shuffle className="h-3.5 w-3.5" />Shuffle options</label>
-                {question.allowMultipleAnswers && <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-600 dark:text-gray-300"><input type="checkbox" checked={Boolean(question.partialScoring)} onChange={(event) => update({ partialScoring: event.target.checked })} className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />Allow partial scoring</label>}
+                {multipleAnswers && <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-600 dark:text-gray-300"><input type="checkbox" checked={Boolean(question.partialScoring)} onChange={(event) => update({ partialScoring: event.target.checked })} className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />Allow partial scoring</label>}
               </div>
             </div>
 
             <div>
-              <RequiredLabel>Answer options</RequiredLabel>
-              <p className="mb-3 text-[11px] text-slate-500 dark:text-gray-400">Click the box beside every correct answer. Text, an image, or both can be used.</p>
-              <div className="space-y-3">
+              <div className="mb-2 flex items-center justify-between"><RequiredLabel>Answer options</RequiredLabel><span className="text-[11px] text-slate-500">{selectedAnswers.length} selected</span></div>
+              <div className="space-y-2">
                 {options.map((option, index) => {
                   const checked = selectedAnswers.includes(index);
                   return (
-                    <div key={`option-${index}`} className={`rounded-xl border p-3 transition ${checked ? 'border-emerald-300 bg-emerald-50/50 dark:border-emerald-800 dark:bg-emerald-900/10' : 'border-slate-200 bg-slate-50/60 dark:border-gray-700 dark:bg-gray-800/50'}`}>
-                      <div className="flex items-start gap-3">
-                        <button type="button" aria-pressed={checked} onClick={() => toggleCorrectAnswer(index)} title={checked ? 'Correct answer selected' : 'Mark as correct'} className={`mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border text-xs font-bold ${checked ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 bg-white text-slate-500 dark:border-gray-600 dark:bg-gray-900'}`}>{checked ? <Check className="h-4 w-4" /> : String.fromCharCode(65 + index)}</button>
-                        <div className="min-w-0 flex-1">
-                          <div className="mb-1.5 flex items-center justify-between gap-2"><span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Option {String.fromCharCode(65 + index)}</span>{checked && <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">Correct answer</span>}</div>
-                          <input value={option} onChange={(event) => updateOption(index, event.target.value)} placeholder={`Option ${String.fromCharCode(65 + index)} text`} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-sky-400 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200" />
-                          {optionImages[index]?.url && <div className="mt-2 max-w-xs"><QuestionImageUploader compact value={optionImages[index]} onChange={(asset) => updateOptionImage(index, asset)} /></div>}
-                        </div>
-                        {enableMedia && !optionImages[index]?.url && <QuestionImageUploader compact value={null} onChange={(asset) => updateOptionImage(index, asset)} label={`Add image to option ${index + 1}`} />}
-                        {options.length > 2 && <button type="button" onClick={() => removeOption(index)} title="Remove option" aria-label={`Remove option ${index + 1}`} className="mt-1 rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600"><X className="h-4 w-4" /></button>}
+                    <div key={`option-${index}`} onClick={() => toggleCorrectAnswer(index)} className={`cursor-pointer rounded-lg border px-2.5 py-2 transition ${checked ? 'border-emerald-400 bg-emerald-50/70 dark:border-emerald-700 dark:bg-emerald-950/20' : 'border-slate-200 bg-white hover:border-sky-300 hover:bg-sky-50/40 dark:border-gray-700 dark:bg-gray-900'}`}>
+                      <div className="flex items-center gap-2.5">
+                        <button type="button" aria-label={`Mark option ${String.fromCharCode(65 + index)} as correct`} aria-pressed={checked} onClick={(event) => { event.stopPropagation(); toggleCorrectAnswer(index); }} className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md border text-xs font-bold ${checked ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 bg-slate-50 text-slate-600 dark:border-gray-600 dark:bg-gray-800'}`}>{checked ? <Check className="h-4 w-4" /> : String.fromCharCode(65 + index)}</button>
+                        <input aria-label={`Option ${String.fromCharCode(65 + index)} text`} value={option} onClick={(event) => event.stopPropagation()} onChange={(event) => updateOption(index, event.target.value)} placeholder={`Enter option ${String.fromCharCode(65 + index)}`} className="min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-sky-400 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200" />
+                        {checked && <span className="hidden text-[10px] font-bold text-emerald-700 dark:text-emerald-300 sm:inline">Correct</span>}
+                        {enableMedia && !optionImages[index]?.url && <span onClick={(event) => event.stopPropagation()}><QuestionImageUploader compact value={null} onChange={(asset) => updateOptionImage(index, asset)} label={`Add image to option ${index + 1}`} /></span>}
+                        {options.length > 2 && <button type="button" onClick={(event) => { event.stopPropagation(); removeOption(index); }} title="Remove option" aria-label={`Remove option ${index + 1}`} className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600"><X className="h-4 w-4" /></button>}
                       </div>
+                      {optionImages[index]?.url && <div onClick={(event) => event.stopPropagation()} className="mt-2 max-w-xs pl-10"><QuestionImageUploader compact value={optionImages[index]} onChange={(asset) => updateOptionImage(index, asset)} /></div>}
                     </div>
                   );
                 })}

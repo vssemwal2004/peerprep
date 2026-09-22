@@ -742,6 +742,8 @@ export const api = {
   getEventTemplateUrl: (eventId) => request(`/events/${eventId}/template-url`),
 
   // Assessments (Admin)
+  previewAssessmentStudents: (students) =>
+    request("/admin/assessment/students/preview", { method: "POST", body: { students } }),
   createAssessment: (body) =>
     request("/admin/assessment/create", { method: "POST", body }),
   sendAssessmentTestEmail: (assessment) =>

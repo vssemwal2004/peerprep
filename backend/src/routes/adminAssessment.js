@@ -4,6 +4,7 @@ import { requireAuth, requireCoordinatorPermission } from '../middleware/auth.js
 import { uploadLimiter } from '../middleware/rateLimiter.js';
 import {
   createAssessment,
+  previewAssessmentStudents,
   listAssessments,
   getAssessment,
   updateAssessment,
@@ -40,6 +41,7 @@ const questionAssetUpload = multer({
   limits: { fileSize: 5 * 1024 * 1024, files: 1 },
 });
 
+router.post('/assessment/students/preview', requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), previewAssessmentStudents);
 router.post('/assessment/create', requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), createAssessment);
 router.post('/assessment/test-email', requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), sendAssessmentTestEmail);
 router.get('/assessment/list', requireAuth, requireCoordinatorPermission('coordinator.assessment.view'), listAssessments);

@@ -20,9 +20,9 @@ export default function CodingQuestionEditorPage() {
   };
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900">
-      <div className="mx-auto max-w-7xl px-4 py-6">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+    <div className="min-h-screen bg-slate-50/70 dark:bg-gray-950">
+      <div className="mx-auto max-w-[1180px] px-3 py-3 sm:px-5">
+        <div className="mb-3 flex items-center gap-3 border-b border-slate-200 pb-3 dark:border-gray-800">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -31,13 +31,10 @@ export default function CodingQuestionEditorPage() {
             >
               <ArrowLeft className="h-4 w-4" />
             </button>
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-600 text-white">
-              <Code2 className="h-5 w-5" />
-            </div>
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sky-600 text-white"><Code2 className="h-4 w-4" /></div>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Assessment Coding Question</p>
-              <h1 className="mt-1 text-xl font-semibold text-slate-900 dark:text-gray-100">Compiler-Grade Authoring</h1>
-              <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Preview validation required before adding to assessment.</p>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">Assessment / Coding question</p>
+              <h1 className="text-base font-semibold text-slate-900 dark:text-gray-100">Create coding question</h1>
             </div>
           </div>
         </div>
