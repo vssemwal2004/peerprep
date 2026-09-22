@@ -776,6 +776,10 @@ export const api = {
       method: "POST",
       body: {},
     }),
+  getAssessmentInvitation: (id) => request(`/admin/assessment/${id}/invitation`, { skipCache: true }),
+  previewAssessmentInvitation: (id, body) => request(`/admin/assessment/${id}/invitation/preview`, { method: "POST", body }),
+  updateAssessmentInvitation: (id, body) => request(`/admin/assessment/${id}/invitation`, { method: "PUT", body }),
+  sendAssessmentInvitationTest: (id, body) => request(`/admin/assessment/${id}/invitation/test`, { method: "POST", body }),
   markAssessmentComplete: (id) =>
     request(`/admin/assessment/${id}/mark-complete`, { method: "POST" }),
   releaseAssessmentAnswers: (id) =>

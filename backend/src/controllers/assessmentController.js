@@ -11,7 +11,8 @@ import { removeAssessmentQuestionsFromLibrary, syncAssessmentQuestionsToLibrary 
 import { logActivity } from './adminActivityController.js';
 import { enqueueMailJobs } from '../services/mailQueueService.js';
 import { decryptAssessmentPassword, encryptAssessmentPassword } from '../services/assessmentPasswordService.js';
-import { sendAssessmentInvitationEmail } from '../utils/mailer.js';
+import { getAssessmentInvitationTemplate, renderAssessmentInvitationEmail, sendAssessmentInvitationEmail } from '../utils/mailer.js';
+import { validateAssessmentInvitationTemplate } from '../services/assessmentInvitationTemplate.js';
 import { hasCoordinatorPermission } from '../services/coordinatorPermissions.js';
 import {
   getCodingQuestionScore,
@@ -1780,6 +1781,7 @@ async function queueAssessmentAudienceEmails({ assessment, users = [], created =
     assessmentPassword = decryptAssessmentPassword(assessment.passwordEncrypted);
   }
   const credentialsByUser = new Map(created.map((entry) => [String(entry.id), entry]));
+  const invitationTemplate = await getAssessmentInvitationTemplate(assessment);
   const batchId = crypto.randomUUID();
   const jobs = users.filter((user) => user.email && (!newOnly || credentialsByUser.has(String(user._id)))).map((user) => {
     const credentials = credentialsByUser.get(String(user._id));
@@ -1801,6 +1803,10 @@ async function queueAssessmentAudienceEmails({ assessment, users = [], created =
         password: assessmentPassword,
         accountPassword,
         assessmentOnly: user.accessScope === 'assessment_only',
+        renderedEmail: renderAssessmentInvitationEmail({
+          to: user.email, assessment, student: user, password: assessmentPassword,
+          accountPassword, assessmentOnly: user.accessScope === 'assessment_only', template: invitationTemplate,
+        }),
       },
     };
   });
@@ -2834,6 +2840,70 @@ export async function releaseAssessmentAnswers(req, res) {
   }
 }
 
+async function loadInvitationAssessment(req) {
+  const assessment = await Assessment.findById(req.params.id).select('+passwordEncrypted');
+  if (!assessment) return null;
+  if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all' && String(assessment.createdBy) !== String(req.user._id)) {
+    const error = new Error('Not allowed to manage invitations for this assessment.');
+    error.status = 403;
+    throw error;
+  }
+  return assessment;
+}
+
+function invitationSample(assessment, template, to = 'student@example.com') {
+  return renderAssessmentInvitationEmail({
+    to, assessment, student: { name: 'Sample Student' },
+    password: assessment.passwordEnabled ? 'SAMPLE-ASSESSMENT-PASSWORD' : '',
+    accountPassword: 'SAMPLE-LOGIN-PASSWORD', assessmentOnly: true, template,
+  });
+}
+
+export async function getAssessmentInvitationEditor(req, res) {
+  try {
+    const assessment = await loadInvitationAssessment(req);
+    if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
+    const defaults = await getAssessmentInvitationTemplate({});
+    const template = await getAssessmentInvitationTemplate(assessment);
+    return res.json({ subject: template.subject, htmlContent: template.htmlContent,
+      isCustom: Boolean(assessment.invitationTemplate?.subject && assessment.invitationTemplate?.htmlContent),
+      defaultSubject: defaults.subject, defaultHtmlContent: defaults.htmlContent,
+      sample: invitationSample(assessment, template) });
+  } catch (err) { return res.status(err.status || 500).json({ error: err.message || 'Could not load invitation.' }); }
+}
+
+export async function previewAssessmentInvitation(req, res) {
+  try {
+    const assessment = await loadInvitationAssessment(req);
+    if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
+    const template = validateAssessmentInvitationTemplate(req.body);
+    return res.json({ sample: invitationSample(assessment, template) });
+  } catch (err) { return res.status(err.status || 400).json({ error: err.message || 'Could not preview invitation.' }); }
+}
+
+export async function updateAssessmentInvitation(req, res) {
+  try {
+    const assessment = await loadInvitationAssessment(req);
+    if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
+    assessment.invitationTemplate = req.body?.useDefault ? { subject: '', htmlContent: '' } : validateAssessmentInvitationTemplate(req.body);
+    await assessment.save();
+    return res.json({ ok: true, isCustom: !req.body?.useDefault });
+  } catch (err) { return res.status(err.status || 400).json({ error: err.message || 'Could not save invitation.' }); }
+}
+
+export async function sendAssessmentInvitationTest(req, res) {
+  try {
+    const assessment = await loadInvitationAssessment(req);
+    if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
+    const to = String(req.body?.to || '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to) || to.length > 254) return res.status(400).json({ error: 'Enter a valid test email address.' });
+    const template = validateAssessmentInvitationTemplate(req.body);
+    const sample = invitationSample(assessment, template, to);
+    await sendAssessmentInvitationEmail({ to, renderedEmail: { subject: `[TEST] ${sample.subject}`, html: sample.html } });
+    return res.json({ ok: true, to });
+  } catch (err) { return res.status(err.status || 400).json({ error: err.message || 'Could not send test email.' }); }
+}
+
 export async function sendAssessmentInvitations(req, res) {
   try {
     const { id } = req.params;
@@ -2861,7 +2931,11 @@ export async function sendAssessmentInvitations(req, res) {
     if (!students.length) return res.status(400).json({ error: 'No eligible students with email addresses were found.' });
 
     const batchId = crypto.randomUUID();
-    const queuedResult = await enqueueMailJobs(students.map((student) => ({
+    const invitationTemplate = await getAssessmentInvitationTemplate(assessment);
+    const queuedResult = await enqueueMailJobs(students.map((student) => {
+      const accountPassword = student.accessScope === 'assessment_only' && student.temporaryPasswordEncrypted
+        ? decryptAssessmentPassword(student.temporaryPasswordEncrypted) : '';
+      return ({
       type: 'assessment_invitation',
       to: student.email,
       recipientId: student._id,
@@ -2873,12 +2947,15 @@ export async function sendAssessmentInvitations(req, res) {
         assessment: assessment.toObject(),
         student,
         password: invitationPassword,
-        accountPassword: student.accessScope === 'assessment_only' && student.temporaryPasswordEncrypted
-          ? decryptAssessmentPassword(student.temporaryPasswordEncrypted)
-          : '',
+        accountPassword,
         assessmentOnly: student.accessScope === 'assessment_only',
+        renderedEmail: renderAssessmentInvitationEmail({
+          to: student.email, assessment, student, password: invitationPassword,
+          accountPassword,
+          assessmentOnly: student.accessScope === 'assessment_only', template: invitationTemplate,
+        }),
       },
-    })), {
+    }); }), {
       batchId,
       requestedBy: req.user._id,
       requestedByEmail: req.user.email,

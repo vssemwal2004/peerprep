@@ -181,46 +181,146 @@ function ThreeDotsMenu({ assessment, onOpen, onPreview, onViewReport, onEdit, on
 
 function InvitationModal({ assessment, onClose }) {
   const toast = useToast();
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState('');
+  const [editor, setEditor] = useState(null);
+  const [subject, setSubject] = useState('');
+  const [htmlContent, setHtmlContent] = useState('');
+  const [sample, setSample] = useState(null);
+  const [testEmail, setTestEmail] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState('');
+  const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState(null);
+  const dirty = editor && (subject !== editor.subject || htmlContent !== editor.htmlContent);
+
+  useEffect(() => {
+    let active = true;
+    api.getAssessmentInvitation(assessment._id).then((data) => {
+      if (!active) return;
+      setEditor(data);
+      setSubject(data.subject);
+      setHtmlContent(data.htmlContent);
+      setSample(data.sample);
+    }).catch((err) => { if (active) setError(err.message || 'Could not load the email template.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [assessment._id]);
+
+  useEffect(() => {
+    if (!editor || !dirty) return undefined;
+    let active = true;
+    const timeout = window.setTimeout(async () => {
+      setPreviewLoading(true);
+      try {
+        const data = await api.previewAssessmentInvitation(assessment._id, { subject, htmlContent });
+        if (active) { setSample(data.sample); setPreviewError(''); }
+      } catch (err) {
+        if (active) setPreviewError(err.message || 'Preview could not be generated.');
+      } finally {
+        if (active) setPreviewLoading(false);
+      }
+    }, 650);
+    return () => { active = false; window.clearTimeout(timeout); };
+  }, [assessment._id, editor, dirty, subject, htmlContent]);
+
+  const run = async (action, task) => {
+    setBusy(action);
+    setError('');
+    try { await task(); } catch (err) { setError(err.message || 'The email action failed.'); }
+    finally { setBusy(''); }
+  };
+
+  const preview = () => run('preview', async () => {
+    const data = await api.previewAssessmentInvitation(assessment._id, { subject, htmlContent });
+    setSample(data.sample);
+    setPreviewError('');
+  });
+
+  const save = () => run('save', async () => {
+    await api.updateAssessmentInvitation(assessment._id, { subject, htmlContent });
+    const data = await api.getAssessmentInvitation(assessment._id);
+    setEditor(data);
+    setSubject(data.subject);
+    setHtmlContent(data.htmlContent);
+    setSample(data.sample);
+    setPreviewError('');
+    toast.success('Email saved for this assessment.');
+  });
+
+  const reset = () => run('reset', async () => {
+    await api.updateAssessmentInvitation(assessment._id, { useDefault: true });
+    const data = await api.getAssessmentInvitation(assessment._id);
+    setEditor(data);
+    setSubject(data.subject);
+    setHtmlContent(data.htmlContent);
+    setSample(data.sample);
+    setPreviewError('');
+    toast.success('Global email template restored.');
+  });
+
+  const sendTest = () => run('test', async () => {
+    if (!testEmail.trim()) throw new Error('Enter a test email address.');
+    await api.sendAssessmentInvitationTest(assessment._id, { to: testEmail.trim(), subject, htmlContent });
+    toast.success(`Test email sent to ${testEmail.trim()}.`);
+  });
 
   const sendInvitations = async () => {
+    if (dirty) { setError('Save your changes before queueing invitations.'); return; }
     setSending(true);
+    setError('');
     setResult(null);
     try {
       const response = await api.sendAssessmentInvitations(assessment._id);
       setResult(response);
       toast.success(`${response.queued || 0} invitation${response.queued === 1 ? '' : 's'} queued. Delivery will continue in the background.`);
     } catch (error) {
-      toast.error(error.message || 'Failed to send invitations.');
+      setError(error.message || 'Failed to send invitations.');
     } finally {
       setSending(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-[75] flex items-center justify-center bg-slate-950/50 px-4 backdrop-blur-sm">
-      <motion.div initial={{ opacity: 0, scale: 0.96, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-600 dark:bg-sky-400/10 dark:text-sky-300"><Mail className="h-5 w-5" /></div>
-            <div><h3 className="text-base font-semibold text-slate-900 dark:text-white">Send assessment invitation</h3><p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Professional PeerPrep email for every eligible student.</p></div>
+    <div className="fixed inset-0 z-[75] flex items-center justify-center bg-slate-950/60 p-2 backdrop-blur-sm lg:p-5">
+      <motion.div role="dialog" aria-modal="true" aria-label="Assessment invitation email" initial={{ opacity: 0, scale: 0.98, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} className="flex h-[96vh] w-full max-w-[1500px] flex-col overflow-hidden rounded-xl bg-white shadow-2xl ring-1 ring-slate-950/10 dark:bg-gray-900 lg:h-[92vh]">
+        <header className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-200 px-4 py-3 dark:border-gray-700 lg:px-6">
+          <div className="flex min-w-0 items-center gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-600 text-white"><Mail className="h-[18px] w-[18px]" /></span><div className="min-w-0"><h3 className="truncate text-[15px] font-semibold tracking-tight text-slate-900 dark:text-white">Invitation email <span className="font-normal text-slate-400">/ {assessment.title}</span></h3><p className="truncate text-[11px] text-slate-500 dark:text-gray-400">{formatDateTime(assessment.startTime)} · {assessment.duration || '-'} min · {assessment.targetType === 'all' ? 'All eligible students' : `${assessment.assignedCount || 0} students`} · {assessment.passwordEnabled ? 'Password required' : 'No password'}</p></div></div>
+          <button type="button" onClick={onClose} aria-label="Close email editor" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-gray-800"><X className="h-4 w-4" /></button>
+        </header>
+
+        {loading && <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" />Loading invitation…</div>}
+        {editor && <main className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto bg-slate-200 dark:bg-gray-700 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:overflow-hidden">
+          <section aria-labelledby="invitation-editor-heading" className="flex min-h-0 min-w-0 flex-col bg-white dark:bg-gray-900">
+            <div className="flex h-10 shrink-0 items-center justify-between border-b border-slate-200 px-4 dark:border-gray-700 lg:px-5"><h4 id="invitation-editor-heading" className="text-[13px] font-semibold text-slate-800 dark:text-white">HTML editor</h4><span className="text-[11px] font-medium text-slate-500">{editor.isCustom ? 'Custom template' : 'Global default'}</span></div>
+            <div className="flex min-h-0 flex-1 flex-col px-4 py-3 lg:px-5">
+              <label htmlFor="assessment-invitation-subject" className="mb-1.5 text-xs font-semibold text-slate-600 dark:text-gray-300">Email subject</label>
+              <input id="assessment-invitation-subject" value={subject} onChange={(e) => setSubject(e.target.value)} maxLength={250} className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-[13px] text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
+              <div className="mt-3 flex items-center justify-between"><label htmlFor="assessment-invitation-html" className="text-xs font-semibold text-slate-600 dark:text-gray-300">Message HTML</label><span className="text-[10px] text-slate-400">Changes preview automatically</span></div>
+              <textarea id="assessment-invitation-html" value={htmlContent} onChange={(e) => setHtmlContent(e.target.value)} spellCheck={false} className="mt-1.5 h-64 w-full resize-none rounded-lg border border-slate-300 bg-[#f8fafc] p-3 font-mono text-[12px] leading-[1.5] text-slate-800 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 lg:min-h-0 lg:flex-1" />
+              <p className="mt-2 truncate text-[11px] text-slate-500" title="Keep {{credentialsSection}} and {{passwordSection}} in the HTML so students receive their access details.">Required: <code>{'{{credentialsSection}}'}</code> and <code>{'{{passwordSection}}'}</code></p>
+            </div>
+          </section>
+
+          <section aria-labelledby="invitation-preview-heading" className="flex min-h-0 min-w-0 flex-col border-t border-slate-200 bg-[#f8fafc] dark:border-gray-700 dark:bg-gray-950 lg:border-l lg:border-t-0">
+            <div className="flex h-10 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 dark:border-gray-700 dark:bg-gray-900 lg:px-5"><h4 id="invitation-preview-heading" className="text-[13px] font-semibold text-slate-800 dark:text-white">Email preview <span className="font-normal text-slate-400">· sample student</span></h4><button type="button" onClick={preview} disabled={Boolean(busy) || previewLoading} aria-label="Refresh preview" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-slate-500 hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-gray-800">{previewLoading || busy === 'preview' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}Refresh</button></div>
+            <div className="flex min-h-0 flex-1 flex-col gap-2 p-3 lg:p-4">
+              <div className="truncate rounded-md border border-slate-200 bg-white px-3 py-2 text-[12px] text-slate-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" title={sample?.subject || ''}><span className="font-semibold">Subject</span><span className="mx-2 text-slate-300">|</span>{sample?.subject || '—'}</div>
+              {previewError && <div role="alert" className="rounded-md border border-rose-200 bg-rose-50 p-2 text-xs text-rose-700">{previewError}</div>}
+              <iframe title="Sample assessment invitation" sandbox="" srcDoc={sample?.html || ''} className="h-72 w-full rounded-lg border border-slate-200 bg-white shadow-sm lg:min-h-0 lg:flex-1" />
+            </div>
+          </section>
+        </main>}
+
+        <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900 lg:px-6">
+          {(error || result) && <div role={error ? 'alert' : 'status'} className={`mb-2 rounded-md px-3 py-2 text-xs ${error ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>{error || `${result.queued} queued · ${result.eligible} eligible · Batch ${result.batchId}`}</div>}
+          <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap">
+            <div className="flex w-full min-w-0 items-center gap-2 lg:w-auto lg:flex-1"><span className="shrink-0 text-xs font-semibold text-slate-700 dark:text-gray-200">Test email</span><input id="assessment-test-email" aria-label="Test email address" type="email" placeholder="you@example.com" value={testEmail} onChange={(e) => setTestEmail(e.target.value)} className="h-9 min-w-0 max-w-xs flex-1 rounded-lg border border-slate-300 bg-white px-3 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-white" /><button type="button" onClick={sendTest} disabled={loading || !editor || Boolean(busy) || previewLoading || Boolean(previewError)} className="h-9 shrink-0 rounded-lg border border-slate-300 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200">{busy === 'test' ? 'Sending…' : 'Send test'}</button></div>
+            <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto"><button type="button" onClick={reset} disabled={!editor || Boolean(busy) || (!editor.isCustom && !dirty)} className="h-9 rounded-lg px-2 text-xs font-medium text-slate-500 hover:text-sky-700 disabled:opacity-40">Use default</button><button type="button" onClick={save} disabled={!editor || Boolean(busy) || !dirty} className="h-9 rounded-lg border border-sky-200 px-3 text-xs font-semibold text-sky-700 hover:bg-sky-50 disabled:opacity-40 dark:border-sky-900 dark:text-sky-300">{busy === 'save' ? 'Saving…' : 'Save changes'}</button><span className="hidden h-6 w-px bg-slate-200 lg:block" /><button type="button" onClick={sendInvitations} disabled={loading || !editor || Boolean(busy) || previewLoading || Boolean(previewError) || sending || Boolean(result) || dirty} className="inline-flex h-9 items-center gap-2 rounded-lg bg-sky-600 px-4 text-xs font-semibold text-white hover:bg-sky-700 disabled:opacity-50">{sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{sending ? 'Queueing…' : result ? 'Invitations queued' : 'Send to students'}</button></div>
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 p-1.5 text-slate-500 dark:border-gray-700"><X className="h-4 w-4" /></button>
+          <p className="mt-1.5 text-[10px] text-slate-500">{dirty ? 'Save changes before sending to students.' : 'Test emails use sample credentials. Student emails use their own login details.'}</p>
         </div>
-
-        <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div className="font-semibold text-slate-900 dark:text-white">{assessment.title}</div>
-          <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-500 dark:text-gray-400">
-            <span>Starts: {formatDateTime(assessment.startTime)}</span><span>Duration: {assessment.duration || '-'} min</span>
-            <span>Target: {assessment.targetType === 'all' ? 'All eligible students' : `${assessment.assignedCount || 0} selected`}</span><span>{assessment.passwordEnabled ? 'Password protected' : 'No password'}</span>
-          </div>
-        </div>
-
-        {assessment.passwordEnabled && <div className="mt-4 flex items-start gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-xs text-sky-800 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-200"><Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>The saved assessment password will be included automatically in every invitation.</span></div>}
-
-        {result && <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{result.queued} queued · {result.eligible} eligible · Batch {result.batchId}</div>}
-        <div className="mt-5 flex justify-end gap-2"><button type="button" onClick={onClose} disabled={sending} className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 dark:border-gray-700 dark:text-gray-300">Close</button><button type="button" onClick={sendInvitations} disabled={sending || Boolean(result)} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-60">{sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{sending ? 'Queueing...' : result ? 'Invitations queued' : 'Queue all eligible students'}</button></div>
       </motion.div>
     </div>
   );

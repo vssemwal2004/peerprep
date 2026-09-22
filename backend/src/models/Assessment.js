@@ -117,6 +117,10 @@ const assessmentSchema = new mongoose.Schema({
   testType: { type: String, trim: true },
   isVisible: { type: Boolean, default: true },
   customInstructions: { type: [String], default: [] },
+  invitationTemplate: {
+    subject: { type: String, default: '' },
+    htmlContent: { type: String, default: '' },
+  },
   settings: { type: assessmentSettingsSchema, default: () => ({}) },
   passwordEnabled: { type: Boolean, default: false },
   passwordHash: { type: String },

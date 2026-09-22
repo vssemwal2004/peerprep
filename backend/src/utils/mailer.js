@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import EmailTemplate from '../models/EmailTemplate.js';
 import { EMAIL_TEMPLATE_TYPES } from '../services/emailTemplateService.js';
+import { normalizeAssessmentInvitationHtml } from '../services/assessmentInvitationTemplate.js';
 
 const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
 const smtpPort = Number(process.env.SMTP_PORT) || 587;
@@ -247,10 +248,16 @@ function escapeHtml(value) {
     .replace(/'/g, '&#039;');
 }
 
-export async function sendAssessmentInvitationEmail({ to, assessment, student, password = '', accountPassword = '', assessmentOnly = false }) {
+export async function getAssessmentInvitationTemplate(assessment = {}) {
+  const override = assessment.invitationTemplate;
+  if (override?.subject && override?.htmlContent) return { subject: override.subject, htmlContent: normalizeAssessmentInvitationHtml(override.htmlContent) };
+  const template = await getTemplateByType(EMAIL_TEMPLATE_TYPES.ASSESSMENT_INVITATION);
+  return { ...template, htmlContent: normalizeAssessmentInvitationHtml(template.htmlContent) };
+}
+
+export function renderAssessmentInvitationEmail({ to, assessment, student, password = '', accountPassword = '', assessmentOnly = false, template }) {
   const start = assessment.startTime ? new Date(assessment.startTime) : null;
   const end = assessment.endTime ? new Date(assessment.endTime) : null;
-  const template = await getTemplateByType(EMAIL_TEMPLATE_TYPES.ASSESSMENT_INVITATION);
   const assessmentUrl = `${getDashboardUrl()}student/assessments`;
   const passwordSection = assessment.passwordEnabled
     ? `<div style="margin:20px 0;padding:16px;border:1px solid #fde68a;border-radius:10px;background:#fffbeb;color:#78350f;"><div style="font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;">Assessment password</div><div style="margin-top:7px;font-size:19px;font-weight:800;letter-spacing:.08em;">${escapeHtml(password)}</div><div style="margin-top:7px;font-size:12px;">Keep this password private.</div></div>`
@@ -277,11 +284,21 @@ export async function sendAssessmentInvitationEmail({ to, assessment, student, p
   const htmlTemplate = template.htmlContent.includes('{{credentialsSection}}')
     ? template.htmlContent
     : template.htmlContent.replace('{{passwordSection}}', '{{credentialsSection}}{{passwordSection}}');
-  return sendMail({
-    to,
+  return {
     subject: renderTemplate(template.subject, vars),
     html: renderTemplate(htmlTemplate, vars),
+  };
+}
+
+export async function sendAssessmentInvitationEmail({ to, assessment, student, password = '', accountPassword = '', assessmentOnly = false, renderedEmail }) {
+  const email = renderedEmail || renderAssessmentInvitationEmail({
+    to, assessment, student, password, accountPassword, assessmentOnly,
+    template: await getAssessmentInvitationTemplate(assessment),
   });
+  const html = /&lt;\s*\/?\s*(?:div|table|p|span|h[1-6]|a|img)\b/i.test(email.html)
+    ? normalizeAssessmentInvitationHtml(email.html)
+    : email.html;
+  return sendMail({ to, subject: email.subject, html });
 }
 
 export async function sendCoordinatorOnboardingEmail({ to, name, coordinatorId, password }) {

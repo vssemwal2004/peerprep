@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { Sparkline } from './reports/ReportCharts';
 import {
-  TrendBadge, StatusBadge, KpiCard, FilterChip, SortHeader,
+  TrendBadge, KpiCard, FilterChip, SortHeader,
   AssessmentListItem, TableEmpty, TableRow, SkeletonRow,
   formatDuration, formatDateTime,
 } from './reports/ReportComponents';
@@ -18,6 +18,25 @@ import ReportViolationModal from './reports/ReportViolationModal';
 import CompilerAnalytics from './compiler/CompilerAnalytics';
 
 const PAGE_SIZES = [25, 50, 100, 250];
+
+const reportAssessmentStatus = (assessment, now = Date.now()) => {
+  if (assessment.isVisible === false) return 'Archived';
+  if (assessment.lifecycleStatus === 'draft') return 'Draft';
+  if (assessment.manuallyCompletedAt) return 'Completed';
+  const start = assessment.startTime ? new Date(assessment.startTime).getTime() : NaN;
+  const end = assessment.endTime ? new Date(assessment.endTime).getTime() : NaN;
+  if (Number.isFinite(end) && now > end) return 'Completed';
+  if (Number.isFinite(start) && now < start) return 'Scheduled';
+  return Number.isFinite(start) && Number.isFinite(end) ? 'Live' : 'Scheduled';
+};
+
+const reportAssessmentStatusClass = {
+  Draft: 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300',
+  Scheduled: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300',
+  Live: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300',
+  Completed: 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-300',
+  Archived: 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900 dark:bg-violet-950/40 dark:text-violet-300',
+};
 
 const tabsConfig = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -426,6 +445,12 @@ export default function AssessmentReports() {
     assessmentWindow: 'all',
   });
   const [assessmentSearch, setAssessmentSearch] = useState('');
+  const [statusTime, setStatusTime] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setStatusTime(Date.now()), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   /* Data */
   const [assessments, setAssessments] = useState([]);
@@ -1118,15 +1143,13 @@ export default function AssessmentReports() {
   const mostFlaggedCandidate = summary?.topViolators?.[0] || null;
 
   const assessmentSidebarItems = useMemo(() => {
-    const now = Date.now();
+    const now = statusTime;
     const source = allAssessments.length ? allAssessments : assessments;
     const getBucket = (assessment) => {
-      if (assessment.lifecycleBucket) return assessment.lifecycleBucket;
-      const start = assessment.startTime ? new Date(assessment.startTime).getTime() : null;
-      const end = assessment.endTime ? new Date(assessment.endTime).getTime() : null;
-      if (start && start > now) return 'upcoming';
-      if (end && end < now) return 'completed';
-      return 'current';
+      const status = reportAssessmentStatus(assessment, now);
+      if (status === 'Scheduled') return 'upcoming';
+      if (status === 'Live') return 'current';
+      return status.toLowerCase();
     };
     const search = assessmentSearch.trim().toLowerCase();
     return source
@@ -1141,8 +1164,7 @@ export default function AssessmentReports() {
         const bTime = new Date(b.startTime || b.createdAt || 0).getTime();
         return bTime - aTime;
       })
-      .slice(0, 24);
-  }, [allAssessments, assessments, assessmentSearch, filters.assessmentWindow]);
+  }, [allAssessments, assessments, assessmentSearch, filters.assessmentWindow, statusTime]);
 
   const totalPages = Math.max(1, Math.ceil((pagination.total || 0) / pagination.limit));
 
@@ -1171,11 +1193,13 @@ export default function AssessmentReports() {
           ) : assessmentSidebarItems.length ? (
             assessmentSidebarItems.map((a) => {
               const active = String(a._id) === String(selectedAssessmentId);
+              const status = reportAssessmentStatus(a, statusTime);
               return (
                 <button
                   key={a._id}
                   type="button"
                   onClick={() => selectAssessmentReport(a, { openOverview: false })}
+                  aria-current={active ? 'true' : undefined}
                   className={`group flex w-full items-center gap-2.5 border-b border-slate-200/80 px-2.5 py-3 text-left transition-colors last:border-b-0 dark:border-gray-800 ${
                     active
                       ? 'rounded-lg bg-sky-50 text-sky-950 dark:bg-sky-900/20 dark:text-sky-100'
@@ -1186,14 +1210,13 @@ export default function AssessmentReports() {
                     <FileSpreadsheet className="h-3.5 w-3.5" />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-xs font-semibold">{a.title || 'Untitled'}</div>
+                    <div className="flex min-w-0 items-center gap-1.5"><span className="min-w-0 flex-1 truncate text-xs font-semibold" title={a.title || 'Untitled'}>{a.title || 'Untitled'}</span><span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${reportAssessmentStatusClass[status]}`}>{status}</span></div>
                     <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-gray-500">
                       <span className="truncate">{a.assessmentType || 'Mixed'}</span>
                       <span aria-hidden="true">·</span>
                       <span className="shrink-0">{a.submissionCount || 0} attempts</span>
                     </div>
                   </div>
-                  {active && <span className="h-2 w-2 shrink-0 rounded-full bg-sky-500" aria-label="Selected" />}
                 </button>
               );
             })
@@ -1333,7 +1356,7 @@ export default function AssessmentReports() {
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h2 className="truncate text-sm font-bold text-slate-900 dark:text-white">{selectedAssessment.title || 'Untitled assessment'}</h2>
-                <StatusBadge value={selectedAssessment.lifecycleStatus || 'draft'} type="assessment" />
+                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${reportAssessmentStatusClass[reportAssessmentStatus(selectedAssessment, statusTime)]}`}>{reportAssessmentStatus(selectedAssessment, statusTime)}</span>
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-400 dark:text-gray-500">
                 <span>{selectedAssessment.assessmentType || selectedAssessment.testType || 'Mixed'}</span>

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { requireAuth, requireCoordinatorPermission } from '../middleware/auth.js';
-import { uploadLimiter } from '../middleware/rateLimiter.js';
+import { bulkOperationLimiter, uploadLimiter } from '../middleware/rateLimiter.js';
 import {
   createAssessment,
   previewAssessmentStudents,
@@ -17,6 +17,10 @@ import {
   markAssessmentComplete,
   releaseAssessmentAnswers,
   sendAssessmentInvitations,
+  getAssessmentInvitationEditor,
+  previewAssessmentInvitation,
+  updateAssessmentInvitation,
+  sendAssessmentInvitationTest,
   sendAssessmentTestEmail,
   getAssessmentReports,
   getStudentAssessmentReport,
@@ -67,6 +71,10 @@ router.delete('/assessment/:id/students/:studentId', requireAuth, requireCoordin
 router.post('/assessment/:id/mark-complete', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), markAssessmentComplete);
 router.post('/assessment/:id/release-answers', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), releaseAssessmentAnswers);
 router.post('/assessment/:id/send-invitations', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), sendAssessmentInvitations);
+router.get('/assessment/:id/invitation', requireAuth, requireCoordinatorPermission('coordinator.assessment.view'), getAssessmentInvitationEditor);
+router.post('/assessment/:id/invitation/preview', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), previewAssessmentInvitation);
+router.put('/assessment/:id/invitation', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), updateAssessmentInvitation);
+router.post('/assessment/:id/invitation/test', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), bulkOperationLimiter, sendAssessmentInvitationTest);
 router.put('/assessment/:id', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), updateAssessment);
 router.delete('/assessment/:id', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), deleteAssessment);
 

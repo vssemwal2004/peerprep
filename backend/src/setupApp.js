@@ -122,8 +122,13 @@ app.use((req, res, next) => {
     return next();
   }
   const preservedCode = collectExecutableCodeFields(req.body);
+  const preserveInvitationHtml = /^(?:\/api)?\/admin\/assessment\/[0-9a-f]{24}\/invitation(?:\/(?:preview|test))?$/i.test(req.path)
+    && ['POST', 'PUT'].includes(req.method)
+    && typeof req.body?.htmlContent === 'string';
+  const invitationHtml = preserveInvitationHtml ? req.body.htmlContent : null;
   return xssProtectionMiddleware(req, res, () => {
     restoreExecutableCodeFields(req.body, preservedCode);
+    if (preserveInvitationHtml) req.body.htmlContent = invitationHtml;
     next();
   });
 });
