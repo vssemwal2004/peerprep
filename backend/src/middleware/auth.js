@@ -37,7 +37,7 @@ export function invalidateUserCache(userId) {
 }
 
 // Clean up expired cache entries every 5 minutes
-setInterval(() => {
+const cacheCleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [userId, cached] of userCache.entries()) {
     if (now - cached.timestamp > CACHE_TTL) {
@@ -48,6 +48,7 @@ setInterval(() => {
     if (now - cached.timestamp > SESSION_CACHE_TTL) sessionCache.delete(userId);
   }
 }, 5 * 60 * 1000);
+cacheCleanupTimer.unref?.();
 
 async function getSessionState(userId) {
   const key = String(userId);
@@ -172,6 +173,17 @@ export function requireCoordinator(req, res, next) {
 export function requireFullStudent(req, res, next) {
   if (req.user?.role === 'student' && req.user?.accessScope === 'assessment_only') {
     throw new HttpError(403, 'This account can access assessments only.');
+  }
+  next();
+}
+
+export function requireAssessmentCompilerStudent(req, res, next) {
+  if (!req.user || req.user.role !== 'student') throw new HttpError(403, 'Student only');
+  if (req.user.accessScope === 'assessment_only') {
+    const assessmentId = String(req.body?.assessmentId || req.query?.assessmentId || '').trim();
+    const problemId = String(req.params?.id || req.body?.problemId || '').trim();
+    if (!assessmentId) throw new HttpError(403, 'This account can run code only inside an assigned assessment.');
+    if (!problemId) throw new HttpError(403, 'An assigned assessment problem is required.');
   }
   next();
 }

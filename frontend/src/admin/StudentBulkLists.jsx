@@ -126,7 +126,7 @@ export default function StudentBulkLists() {
               <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
                 {loading ? <tr><td colSpan="7" className="px-5 py-16 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-sky-600" /></td></tr> : visible.map((batch) => (
                   <tr key={batch._id} onClick={() => viewStudents(batch)} className="cursor-pointer transition-colors hover:bg-sky-50/50 dark:hover:bg-sky-950/10">
-                    <td className="px-5 py-4"><div className="flex items-center gap-3"><span className="rounded-lg bg-sky-50 p-2 text-sky-600 dark:bg-sky-950/40"><FileSpreadsheet className="h-4 w-4" /></span><span className="font-semibold text-slate-900 dark:text-white">{batch.name}</span></div></td>
+                    <td className="px-5 py-4"><div className="flex items-center gap-3"><span className="rounded-lg bg-sky-50 p-2 text-sky-600 dark:bg-sky-950/40"><FileSpreadsheet className="h-4 w-4" /></span><span className="font-semibold text-slate-900 dark:text-white">{batch.name}{batch.sourceType === 'assessment' && <span className="ml-2 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700 dark:bg-violet-950/50 dark:text-violet-300">Assessment</span>}</span></div></td>
                     <td className="px-5 py-4 text-slate-600 dark:text-gray-300">{batch.originalFileName}</td>
                     <td className="px-5 py-4 text-slate-600 dark:text-gray-300"><span className="inline-flex items-center gap-1.5"><CalendarDays className="h-4 w-4" />{new Date(batch.createdAt).toLocaleString()}</span></td>
                     <td className="px-5 py-4 font-semibold text-slate-800 dark:text-gray-200"><span className="inline-flex items-center gap-1.5"><Users className="h-4 w-4" />{batch.studentIds?.length || 0}</span></td>
@@ -137,8 +137,8 @@ export default function StudentBulkLists() {
                       {activeMenu === batch._id && <div data-platform-action-menu className="absolute right-5 top-12 z-[80] w-52 rounded-xl border border-slate-200 bg-white py-1 text-left shadow-2xl dark:border-gray-700 dark:bg-gray-900">
                         <button onClick={() => viewStudents(batch)} className="flex w-full items-center gap-2 px-3 py-2 text-xs hover:bg-slate-50 dark:hover:bg-gray-800"><Users className="h-4 w-4 text-sky-600" />View students</button>
                         {!isCoordinator && <button onClick={() => sendCredentials(batch)} className="flex w-full items-center gap-2 px-3 py-2 text-xs hover:bg-slate-50 dark:hover:bg-gray-800"><Mail className="h-4 w-4 text-indigo-600" />Send credential mail</button>}
-                        {!isCoordinator && <button onClick={() => rename(batch)} className="flex w-full items-center gap-2 px-3 py-2 text-xs hover:bg-slate-50 dark:hover:bg-gray-800"><Pencil className="h-4 w-4" />Rename list</button>}
-                        {!isCoordinator && <button onClick={() => remove(batch)} className="flex w-full items-center gap-2 border-t border-slate-100 px-3 py-2 text-xs text-red-600 hover:bg-red-50 dark:border-gray-800 dark:hover:bg-red-950/30"><Trash2 className="h-4 w-4" />Remove bulk list</button>}
+                        {!isCoordinator && batch.sourceType !== 'assessment' && <button onClick={() => rename(batch)} className="flex w-full items-center gap-2 px-3 py-2 text-xs hover:bg-slate-50 dark:hover:bg-gray-800"><Pencil className="h-4 w-4" />Rename list</button>}
+                        {!isCoordinator && <button onClick={() => remove(batch)} className="flex w-full items-center gap-2 border-t border-slate-100 px-3 py-2 text-xs text-red-600 hover:bg-red-50 dark:border-gray-800 dark:hover:bg-red-950/30"><Trash2 className="h-4 w-4" />Delete list & students</button>}
                       </div>}
                     </td>
                   </tr>

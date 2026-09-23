@@ -10,8 +10,14 @@ const studentUploadBatchSchema = new mongoose.Schema({
   createdCount: { type: Number, default: 0 },
   updatedCount: { type: Number, default: 0 },
   failedCount: { type: Number, default: 0 },
+  sourceType: { type: String, enum: ['student_upload', 'assessment'], default: 'student_upload', index: true },
+  sourceAssessmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Assessment' },
 }, { timestamps: true });
 
 studentUploadBatchSchema.index({ createdAt: -1 });
+studentUploadBatchSchema.index(
+  { sourceAssessmentId: 1 },
+  { unique: true, partialFilterExpression: { sourceAssessmentId: { $type: 'objectId' } } },
+);
 
 export default mongoose.model('StudentUploadBatch', studentUploadBatchSchema);

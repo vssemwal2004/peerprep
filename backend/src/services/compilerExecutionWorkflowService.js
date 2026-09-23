@@ -77,7 +77,7 @@ function assessmentIncludesProblem(assessment, problemId) {
   });
 }
 
-export async function resolveActiveProblem(problemId, { userId, assessmentId } = {}) {
+export async function resolveActiveProblem(problemId, { userId, assessmentId, accessScope } = {}) {
   ensureObjectId(problemId, 'Problem ID');
   const problem = await Problem.findById(problemId);
   const normalizedStatus = String(problem?.status || '').toLowerCase();
@@ -87,11 +87,12 @@ export async function resolveActiveProblem(problemId, { userId, assessmentId } =
   }
 
   const visibility = problem.visibility || 'public';
-  if (visibility === 'public') {
+  const requiresAssessmentContext = accessScope === 'assessment_only';
+  if (visibility === 'public' && !requiresAssessmentContext) {
     return problem;
   }
 
-  if (visibility !== 'assessment') {
+  if (visibility !== 'assessment' && !requiresAssessmentContext) {
     throw new HttpError(404, 'Problem not found.');
   }
 
@@ -875,7 +876,7 @@ export async function enqueueCompilerRunJob({ user, body }) {
   let sourceCode = '';
 
   if (problemId) {
-    problem = await resolveActiveProblem(problemId, { userId: user?._id, assessmentId });
+    problem = await resolveActiveProblem(problemId, { userId: user?._id, assessmentId, accessScope: user?.accessScope });
     validateProblemLanguage(problem, languageKey);
     sourceCode = validateProblemSourceCode(problem, languageKey, body.source_code, { action: 'run' });
     const jobId = undefined;
@@ -925,7 +926,7 @@ export async function enqueueCompilerSubmitJob({ user, body }) {
   const problemId = String(body.problemId || '').trim();
   const assessmentId = String(body.assessmentId || '').trim();
   const { languageId, languageKey } = resolveLanguageRequest(body);
-  const problem = await resolveActiveProblem(problemId, { userId: user?._id, assessmentId });
+  const problem = await resolveActiveProblem(problemId, { userId: user?._id, assessmentId, accessScope: user?.accessScope });
   validateProblemLanguage(problem, languageKey);
   const sourceCode = validateProblemSourceCode(problem, languageKey, body.source_code, { action: 'submit' });
 

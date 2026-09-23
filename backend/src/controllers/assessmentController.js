@@ -5,6 +5,7 @@ import AssessmentSubmission from '../models/AssessmentSubmission.js';
 import Problem from '../models/Problem.js';
 import Submission from '../models/Submission.js';
 import User from '../models/User.js';
+import StudentUploadBatch from '../models/StudentUploadBatch.js';
 import { createNotification, createNotifications } from '../services/notificationService.js';
 import { enqueueAssessmentCodingEvaluationJobs } from '../services/compilerExecutionWorkflowService.js';
 import { removeAssessmentQuestionsFromLibrary, syncAssessmentQuestionsToLibrary } from '../services/questionLibraryService.js';
@@ -46,6 +47,55 @@ function generateRandomPassword() {
     password += charset.charAt(Math.floor(Math.random() * charset.length));
   }
   return password;
+}
+
+async function syncAssessmentCandidateBatch(assessment) {
+  const existingBatch = await StudentUploadBatch.findOne({ sourceAssessmentId: assessment._id });
+  const assignedIds = (assessment.assignedStudents || []).map(String);
+  const hasAssessmentOnlyStudents = assignedIds.length > 0 && Boolean(await User.exists({
+    _id: { $in: assignedIds },
+    accessScope: 'assessment_only',
+  }));
+  const shouldKeep = assessment.lifecycleStatus !== 'draft'
+    && assessment.targetType === 'selected'
+    && (assessment.audienceType === 'assessment_candidates' || hasAssessmentOnlyStudents);
+
+  if (!shouldKeep) {
+    if (existingBatch) {
+      await User.updateMany({ uploadBatchIds: existingBatch._id }, { $pull: { uploadBatchIds: existingBatch._id } });
+      await existingBatch.deleteOne();
+    }
+    return;
+  }
+
+  const studentIds = [...new Set(assignedIds)];
+  const previousIds = (existingBatch?.studentIds || []).map(String);
+  const batch = await StudentUploadBatch.findOneAndUpdate(
+    { sourceAssessmentId: assessment._id },
+    {
+      $set: {
+        name: `Assessment: ${String(assessment.title || 'Untitled assessment').slice(0, 108)}`,
+        originalFileName: 'assessment-candidates.csv',
+        uploadedBy: assessment.createdBy,
+        studentIds,
+        totalRows: studentIds.length,
+        createdCount: studentIds.length,
+        updatedCount: 0,
+        failedCount: 0,
+        sourceType: 'assessment',
+        sourceAssessmentId: assessment._id,
+      },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+
+  const removedIds = previousIds.filter((id) => !studentIds.includes(id));
+  if (removedIds.length) {
+    await User.updateMany({ _id: { $in: removedIds } }, { $pull: { uploadBatchIds: batch._id } });
+  }
+  if (studentIds.length) {
+    await User.updateMany({ _id: { $in: studentIds } }, { $addToSet: { uploadBatchIds: batch._id } });
+  }
 }
 
 function parseTeacherIds(teacheridField) {
@@ -1991,6 +2041,7 @@ export async function createAssessment(req, res) {
     }
 
     await assessment.save();
+    await syncAssessmentCandidateBatch(assessment);
 
     if (!isDraft && (sendEmail || created.length)) {
       await queueAssessmentAudienceEmails({ assessment, users, created, requestedBy: req.user, newOnly: !sendEmail });
@@ -2339,6 +2390,7 @@ export async function updateAssessment(req, res) {
     assessment.versionUpdatedAt = new Date();
 
     await assessment.save();
+    await syncAssessmentCandidateBatch(assessment);
     if (!isDraft && (sendEmail || newlyCreatedAudienceUsers.length)) {
       const mailUsers = resolvedAudienceUsers.length
         ? resolvedAudienceUsers

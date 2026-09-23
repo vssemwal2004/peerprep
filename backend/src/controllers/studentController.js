@@ -1,6 +1,7 @@
 import Papa from 'papaparse';
 import User from '../models/User.js';
 import Event from '../models/Event.js';
+import Assessment from '../models/Assessment.js';
 import { logActivity } from './adminActivityController.js';
 import { sanitizeCsvRow, sanitizeCsvField, validateObjectId, validateCsvImport, CSV_LIMITS } from '../utils/validators.js';
 import { createNotification, createNotifications } from '../services/notificationService.js';
@@ -1412,6 +1413,10 @@ export async function renameStudentUploadBatch(req, res) {
   if (!name || name.length > 120) return res.status(400).json({ error: 'Enter a list name up to 120 characters.' });
   const query = { _id: req.params.batchId };
   if (req.user.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') query.uploadedBy = req.user._id;
+  const existingBatch = await StudentUploadBatch.findOne(query).select('sourceType');
+  if (existingBatch?.sourceType === 'assessment') {
+    return res.status(400).json({ error: 'Assessment lists use the assessment title and cannot be renamed here.' });
+  }
   const batch = await StudentUploadBatch.findOneAndUpdate(query, { name }, { new: true });
   if (!batch) return res.status(404).json({ error: 'Bulk list not found.' });
   res.json({ batch });
@@ -1424,6 +1429,10 @@ export async function deleteStudentUploadBatch(req, res) {
   if (!batch) return res.status(404).json({ error: 'Bulk list not found.' });
   const studentIds = batch.studentIds || [];
   const deleteResult = await User.deleteMany({ _id: { $in: studentIds }, role: 'student' });
+  await Assessment.updateMany(
+    { assignedStudents: { $in: studentIds } },
+    { $pull: { assignedStudents: { $in: studentIds } } },
+  );
   await StudentUploadBatch.updateMany(
     { _id: { $ne: batch._id }, studentIds: { $in: studentIds } },
     { $pull: { studentIds: { $in: studentIds } } },

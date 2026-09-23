@@ -60,7 +60,11 @@ export async function submitCode(req, res) {
 export async function getExpectedOutput(req, res) {
   const problemId = String(req.params.id || req.body.problemId || '').trim();
   const assessmentId = String(req.body.assessmentId || req.query.assessmentId || '').trim();
-  const problem = await resolveActiveProblem(problemId, { userId: req.user?._id, assessmentId });
+  const problem = await resolveActiveProblem(problemId, {
+    userId: req.user?._id,
+    assessmentId,
+    accessScope: req.user?.accessScope,
+  });
 
   const standardInput = sanitizeExecutionText(
     req.body.stdin ?? req.body.customInput ?? '',

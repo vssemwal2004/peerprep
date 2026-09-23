@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { requireAdmin, requireAuth, requireStudent, requireAdminCoordinatorOrStudent, requireCoordinatorPermission } from '../middleware/auth.js';
+import { requireAdmin, requireAuth, requireStudent, requireFullStudent, requireAssessmentCompilerStudent, requireAdminCoordinatorOrStudent, requireCoordinatorPermission } from '../middleware/auth.js';
 import {
   compilerExecutionLimiter,
   compilerRunCooldown,
@@ -53,20 +53,20 @@ router.get('/student/:id', requireCoordinatorPermission('coordinator.compiler.an
 router.get('/problems/overview', requireCoordinatorPermission('coordinator.compiler.view'), getCompilerOverview);
 router.post('/problems/preview/run', requireCoordinatorPermission('coordinator.compiler.manage'), upload.none(), previewRunProblem);
 router.post('/problems/:id/preview/approve', requireCoordinatorPermission('coordinator.compiler.manage'), upload.none(), approveProblemPreview);
-router.get('/problems', requireAdminCoordinatorOrStudent, listProblems);
+router.get('/problems', requireAdminCoordinatorOrStudent, requireFullStudent, listProblems);
 router.post('/problems', requireCoordinatorPermission('coordinator.compiler.create'), upload.any(), createProblem);
-router.get('/problems/:id/submissions', requireStudent, listProblemSubmissions);
-router.get('/problems/:id', requireAdminCoordinatorOrStudent, getProblemDetail);
+router.get('/problems/:id/submissions', requireStudent, requireFullStudent, listProblemSubmissions);
+router.get('/problems/:id', requireAdminCoordinatorOrStudent, requireFullStudent, getProblemDetail);
 router.put('/problems/:id', requireCoordinatorPermission('coordinator.compiler.manage'), upload.any(), updateProblem);
 router.patch('/problems/:id/status', requireCoordinatorPermission('coordinator.compiler.manage'), upload.none(), updateProblemStatus);
 router.patch('/problems/:id/visibility', requireCoordinatorPermission('coordinator.compiler.manage'), upload.none(), updateProblemVisibility);
 router.delete('/problems/:id', requireCoordinatorPermission('coordinator.compiler.manage'), deleteProblem);
 router.post('/problems/:id/run', requireCoordinatorPermission('coordinator.compiler.manage'), upload.none(), runProblemCode);
 router.post('/problems/:id/submit', requireCoordinatorPermission('coordinator.compiler.manage'), upload.none(), submitProblemCode);
-router.post('/problems/:id/expected', requireStudent, compilerExecutionLimiter, getExpectedOutput);
+router.post('/problems/:id/expected', requireAssessmentCompilerStudent, compilerExecutionLimiter, getExpectedOutput);
 
-router.post('/run', requireStudent, compilerRunLimiter, compilerRunCooldown, runCode);
-router.post('/submit', requireStudent, compilerSubmitLimiter, compilerSubmitCooldown, submitCode);
+router.post('/run', requireAssessmentCompilerStudent, compilerRunLimiter, compilerRunCooldown, runCode);
+router.post('/submit', requireAssessmentCompilerStudent, compilerSubmitLimiter, compilerSubmitCooldown, submitCode);
 router.get('/health/judge0', requireAdmin, getJudge0Health);
 
 router.get('/submissions', requireCoordinatorPermission('coordinator.compiler.analytics'), listSubmissions);

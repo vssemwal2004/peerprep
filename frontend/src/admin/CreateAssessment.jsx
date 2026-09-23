@@ -113,9 +113,78 @@ const createQuestionId = () => {
   return `q-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 };
 
+// Keep the first render consistent with the values persisted by
+// normalizeAssessmentSettings on the API. Without these defaults, missing
+// booleans look disabled in the builder and then appear to switch after save.
+const DEFAULT_ASSESSMENT_SETTINGS = {
+  environmentCheck: true,
+  enableFullscreen: false,
+  fullscreenTimeoutSec: 15,
+  fullscreenAction: 'pause',
+  tabSwitchDetection: false,
+  tabSwitchLimit: 3,
+  tabSwitchWarnAt: 1,
+  tabSwitchAction: 'warn',
+  disableCopyPaste: false,
+  blockRightClick: true,
+  copyPasteAction: 'warn',
+  blockScreenshots: false,
+  questionWatermark: false,
+  watermarkOpacity: 12,
+  watermarkColor: '#cbd5e1',
+  watermarkAngle: -45,
+  watermarkSpacing: 220,
+  watermarkFontSize: 24,
+  watermarkTextType: 'platform',
+  watermarkCustomText: '',
+  randomShuffle: false,
+  shuffleOptions: false,
+  cameraMonitoring: false,
+  cameraSnapshotInterval: 120,
+  cameraFaceAlert: false,
+  cameraAction: 'warn',
+  audioMonitoring: false,
+  audioNoiseThreshold: 65,
+  audioEventCooldownSec: 20,
+  autoSubmitOnEnd: true,
+  autoSubmitWarnMin: 5,
+  securityRecheckTimeoutSec: 180,
+  preventMultipleTabs: false,
+  duplicateTabAction: 'pause',
+  restrictNavigation: false,
+  allowSectionReview: true,
+  sectionWiseLock: false,
+  sectionGraceSec: 10,
+  idleDetection: false,
+  idleThresholdMin: 5,
+  idleAction: 'warn',
+  showResultsAfterSubmit: false,
+  showCorrectAnswers: false,
+  showSectionBreakdown: false,
+  showPercentile: false,
+  resultDelayHours: 24,
+  allowRetake: false,
+  retakeGapHours: 0,
+  questionSelectionEnabled: false,
+  questionRequirements: {},
+  questionAttemptRequirements: {},
+  questionDistributionMode: 'random_per_student',
+  questionDistributionModes: {},
+  perMcqTimingEnabled: false,
+  perMcqTimeSec: 60,
+  locationTracking: true,
+  autoSubmitOnViolation: false,
+  maxWarnings: 0,
+  violationWarnScore: 0,
+  violationPauseScore: 0,
+  violationAutoSubmitScore: 0,
+  violationWeights: {},
+  aiProctoring: DEFAULT_AI_PROCTORING_SETTINGS,
+};
+
 const withAiProctoringSettings = (settings = {}) => {
   const source = settings && typeof settings === 'object' ? settings : {};
-  const normalized = { ...source };
+  const normalized = { ...DEFAULT_ASSESSMENT_SETTINGS, ...source };
   delete normalized.shiftSystemEnabled;
   if (normalized.questionDistributionMode === 'random_per_shift') {
     normalized.questionDistributionMode = 'random_per_student';
@@ -294,8 +363,7 @@ export default function CreateAssessment({ viewOnly = false }) {
     passwordEnabled: false,
     passwordValue: '',
     settings: {
-      securityRecheckTimeoutSec: 180,
-      aiProctoring: DEFAULT_AI_PROCTORING_SETTINGS,
+      ...DEFAULT_ASSESSMENT_SETTINGS,
     },
   });
   const [sections, setSections] = useState([]);

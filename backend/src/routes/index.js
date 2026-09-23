@@ -37,7 +37,9 @@ router.use('/coordinators', coordinatorRoutes);
 router.use('/subjects', requireAuth, requireFullStudent, subjectRoutes);
 router.use('/learning', requireAuth, requireFullStudent, learningRoutes);
 router.use('/activity', requireAuth, requireFullStudent, activityRoutes);
-router.use('/compiler', requireAuth, requireFullStudent, compilerRoutes);
+// Compiler routes perform their own student scope checks. Assessment-only
+// students must be able to execute coding questions inside an assigned test.
+router.use('/compiler', requireAuth, compilerRoutes);
 router.use('/admin', adminAssessmentRoutes);
 router.use('/student', studentAssessmentRoutes);
 router.use('/email-templates', emailTemplateRoutes);
