@@ -63,7 +63,7 @@ export function getValkeyClient() {
     clientPromise = client.connect()
       .then(() => {
         if (!loggedEnabled) {
-          console.log('[Valkey] Connected. Using distributed compiler rate limits/cooldowns.');
+          console.log('[Valkey] Connected. Using shared queues, distributed limits, and response caching.');
           loggedEnabled = true;
         }
         return client;
@@ -92,4 +92,12 @@ export function getValkeyClient() {
       return client.pTTL(...args);
     },
   };
+}
+
+export async function closeValkeyClient() {
+  const pendingClient = clientPromise;
+  clientPromise = null;
+  if (!pendingClient) return;
+  const client = await pendingClient.catch(() => null);
+  if (client?.isOpen) await client.quit();
 }

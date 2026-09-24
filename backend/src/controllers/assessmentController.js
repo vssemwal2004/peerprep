@@ -1807,7 +1807,7 @@ async function resolveAssignedStudents({ targetType, assignedStudents, audienceT
       group: row.group,
       passwordHash,
       temporaryPasswordEncrypted: assessmentOnly ? encryptAssessmentPassword(generatedPassword) : undefined,
-      mustChangePassword: true,
+      mustChangePassword: !assessmentOnly,
     });
 
     assignedIds.push(user._id);
@@ -2115,11 +2115,50 @@ export async function listAssessments(req, res) {
     if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') {
       query.createdBy = req.user._id;
     }
-    const assessments = await Assessment.find(query)
-      .sort({ createdAt: -1 })
-      .populate('createdBy', 'name email role coordinatorId')
-      .lean();
+    const requestedPage = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const requestedLimit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 25));
+    const paginated = req.query.page !== undefined || req.query.limit !== undefined;
+    const dashboardView = req.query.view === 'dashboard';
+    const assessmentsQuery = Assessment.find(query)
+      .sort({ createdAt: -1 });
+    if (dashboardView) {
+      assessmentsQuery.select('_id title assessmentType lifecycleStatus isVisible startTime endTime manuallyCompletedAt createdAt updatedAt');
+    } else {
+      assessmentsQuery.populate('createdBy', 'name email role coordinatorId');
+    }
+    if (paginated) assessmentsQuery.skip((requestedPage - 1) * requestedLimit).limit(requestedLimit);
+    const [assessments, total] = await Promise.all([
+      assessmentsQuery.lean(),
+      paginated ? Assessment.countDocuments(query) : Promise.resolve(null),
+    ]);
+    const assessmentIds = assessments.map((assessment) => assessment._id);
+    if (dashboardView) {
+      const now = new Date();
+      const data = assessments.map((assessment) => ({
+        ...assessment,
+        status: computeStatus(now, assessment),
+        lifecycleBucket: lifecycleBucketForAssessment(assessment, now),
+      }));
+      return res.json({
+        count: paginated ? total : data.length,
+        total: paginated ? total : data.length,
+        assessments: data,
+        ...(paginated ? {
+          pagination: {
+            page: requestedPage,
+            limit: requestedLimit,
+            total,
+            pages: Math.max(1, Math.ceil(total / requestedLimit)),
+          },
+        } : {}),
+      });
+    }
     const submissionCounts = await AssessmentSubmission.aggregate([
+      {
+        $match: {
+          assessmentId: { $in: assessmentIds },
+        },
+      },
       {
         $group: {
           _id: '$assessmentId',
@@ -2172,7 +2211,19 @@ export async function listAssessments(req, res) {
         ),
       };
     });
-    res.json({ count: data.length, assessments: data });
+    res.json({
+      count: paginated ? total : data.length,
+      total: paginated ? total : data.length,
+      assessments: data,
+      ...(paginated ? {
+        pagination: {
+          page: requestedPage,
+          limit: requestedLimit,
+          total,
+          pages: Math.max(1, Math.ceil(total / requestedLimit)),
+        },
+      } : {}),
+    });
   } catch (err) {
     console.error('Error listing assessments:', err);
     res.status(500).json({ error: 'Failed to load assessments' });
@@ -3830,6 +3881,80 @@ export async function getAssessmentReports(req, res) {
     }
     if (studentId && !mongoose.Types.ObjectId.isValid(studentId)) {
       return res.status(400).json({ error: 'Invalid studentId' });
+    }
+
+    // Dashboard callers only need headline metrics and five recent assessments.
+    // Keep the full reporting pipeline for the reports workspace.
+    if (req.query.view === 'dashboard') {
+      const assessmentScope = { lifecycleStatus: { $ne: 'draft' } };
+      if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') {
+        assessmentScope.createdBy = req.user._id;
+      }
+      const allowedAssessments = await Assessment.find(assessmentScope).select('_id').lean();
+      const assessmentIds = allowedAssessments.map((assessment) => assessment._id);
+      const emptySummary = { avgScore: 0, passCount: 0, failCount: 0, violationCount: 0, scoreDistribution: [0, 0, 0, 0, 0] };
+      if (!assessmentIds.length) {
+        return res.json({ assessments: [], students: [], summary: emptySummary, pagination: { page: 1, limit: 5, total: 0, pages: 1 } });
+      }
+
+      const scoreRatio = {
+        $cond: [
+          { $gt: [{ $ifNull: ['$maxMarks', 0] }, 0] },
+          { $multiply: [{ $divide: [{ $ifNull: ['$score', 0] }, '$maxMarks'] }, 100] },
+          0,
+        ],
+      };
+      const [summaryRows, recentAssessments] = await Promise.all([
+        AssessmentSubmission.aggregate([
+          { $match: { assessmentId: { $in: assessmentIds } } },
+          {
+            $group: {
+              _id: null,
+              total: { $sum: 1 },
+              avgScore: { $avg: { $ifNull: ['$score', 0] } },
+              passCount: { $sum: { $cond: [{ $gte: [scoreRatio, 40] }, 1, 0] } },
+              violations: { $sum: { $add: [{ $ifNull: ['$tabSwitches', 0] }, { $ifNull: ['$fullscreenExits', 0] }, { $ifNull: ['$cameraFlags', 0] }, { $ifNull: ['$copyPasteCount', 0] }] } },
+              score0_25: { $sum: { $cond: [{ $lte: [scoreRatio, 25] }, 1, 0] } },
+              score26_50: { $sum: { $cond: [{ $and: [{ $gt: [scoreRatio, 25] }, { $lte: [scoreRatio, 50] }] }, 1, 0] } },
+              score51_75: { $sum: { $cond: [{ $and: [{ $gt: [scoreRatio, 50] }, { $lte: [scoreRatio, 75] }] }, 1, 0] } },
+              score76_90: { $sum: { $cond: [{ $and: [{ $gt: [scoreRatio, 75] }, { $lte: [scoreRatio, 90] }] }, 1, 0] } },
+              score91_100: { $sum: { $cond: [{ $gt: [scoreRatio, 90] }, 1, 0] } },
+            },
+          },
+        ]),
+        Assessment.aggregate([
+          { $match: assessmentScope },
+          { $sort: { createdAt: -1 } },
+          { $limit: 5 },
+          {
+            $lookup: {
+              from: 'assessmentsubmissions',
+              let: { assessmentId: '$_id' },
+              pipeline: [
+                { $match: { $expr: { $eq: ['$assessmentId', '$$assessmentId'] } } },
+                { $group: { _id: null, submissionCount: { $sum: 1 }, avgScore: { $avg: { $ifNull: ['$score', 0] } } } },
+              ],
+              as: 'submissionSummary',
+            },
+          },
+          { $project: { title: 1, createdAt: 1, submissionCount: { $ifNull: [{ $first: '$submissionSummary.submissionCount' }, 0] }, avgScore: { $ifNull: [{ $first: '$submissionSummary.avgScore' }, 0] } } },
+        ]),
+      ]);
+      const row = summaryRows[0] || {};
+      const total = Number(row.total || 0);
+      const passCount = Number(row.passCount || 0);
+      return res.json({
+        assessments: recentAssessments,
+        students: [],
+        summary: {
+          avgScore: row.avgScore || 0,
+          passCount,
+          failCount: Math.max(0, total - passCount),
+          violationCount: row.violations || 0,
+          scoreDistribution: [row.score0_25 || 0, row.score26_50 || 0, row.score51_75 || 0, row.score76_90 || 0, row.score91_100 || 0],
+        },
+        pagination: { page: 1, limit: 5, total, pages: Math.max(1, Math.ceil(total / 5)) },
+      });
     }
 
     const match = {};

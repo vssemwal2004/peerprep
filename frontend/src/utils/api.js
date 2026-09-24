@@ -18,6 +18,7 @@ const API_BASE = getApiBase();
 const apiCache = new Map();
 const inFlightRequests = new Map();
 const requestQueue = [];
+const cacheGenerations = new Map();
 let activeRequests = 0;
 
 const CACHE_TTL = Number(
@@ -39,6 +40,30 @@ const REQUEST_QUEUE_TIMEOUT_MS = Number(
 
 function getCacheKey(path, method) {
   return `${method}:${path}`;
+}
+
+function getCacheGroup(path) {
+  if (path.startsWith("/admin/assessment") || path.startsWith("/student/assessment") || path.startsWith("/assessment-feedback")) return "assessments";
+  if (path.startsWith("/students")) return "students";
+  if (path.startsWith("/coordinators")) return "coordinators";
+  if (path.startsWith("/events") || path.startsWith("/pairing") || path.startsWith("/schedule")) return "events";
+  if (path.startsWith("/activity")) return "activity";
+  if (path.startsWith("/compiler") || path.startsWith("/execute") || path.startsWith("/results")) return "compiler";
+  return path.split("/").filter(Boolean)[0] || "root";
+}
+
+function invalidateApiCacheForPath(path) {
+  const group = getCacheGroup(path);
+  cacheGenerations.set(group, (cacheGenerations.get(group) || 0) + 1);
+  const patterns = {
+    assessments: ["/admin/assessment", "/student/assessment", "/assessment-feedback"],
+    students: ["/students"],
+    coordinators: ["/coordinators"],
+    events: ["/events", "/pairing", "/schedule"],
+    activity: ["/activity"],
+    compiler: ["/compiler", "/execute", "/results"],
+  }[group] || [`/${group}`];
+  patterns.forEach(clearApiCache);
 }
 
 function getCacheEntry(key) {
@@ -178,6 +203,8 @@ async function request(
 
   // Check cache for GET requests
   const cacheKey = getCacheKey(path, method);
+  const cacheGroup = getCacheGroup(path);
+  const requestCacheGeneration = cacheGenerations.get(cacheGroup) || 0;
   if (method === "GET" && !skipCache) {
     const cached = getCacheEntry(cacheKey);
     if (cached?.state === "fresh") {
@@ -269,13 +296,17 @@ async function request(
         : await res.text();
 
       // Cache GET requests
-      if (method === "GET" && !skipCache) {
+      if (
+        method === "GET"
+        && !skipCache
+        && requestCacheGeneration === (cacheGenerations.get(cacheGroup) || 0)
+      ) {
         setCache(cacheKey, result, cacheTtlMs);
       }
 
       // Clear relevant cache on mutations
       if (method !== "GET") {
-        clearApiCache(path.split("/")[1]); // Clear cache for the resource type
+        invalidateApiCacheForPath(path);
       }
 
       return result;
@@ -597,10 +628,15 @@ export const api = {
   },
 
   // Coordinators
-  listAllCoordinators: (search = "") =>
-    request(
-      `/coordinators/list${search ? "?search=" + encodeURIComponent(search) : ""}`,
-    ),
+  listAllCoordinators: (search = "") => {
+    const options = search && typeof search === "object" ? search : { search };
+    const params = new URLSearchParams();
+    if (options.search) params.set("search", options.search);
+    if (options.page) params.set("page", options.page);
+    if (options.limit) params.set("limit", options.limit);
+    const query = params.toString();
+    return request(`/coordinators/list${query ? `?${query}` : ""}`);
+  },
   createCoordinator: (body) =>
     request("/coordinators/create", { method: "POST", body }),
   bulkCreateCoordinators: (coordinators) =>
@@ -628,7 +664,14 @@ export const api = {
     }),
 
   // Events
-  listEvents: () => request("/events"),
+  listEvents: (options = {}) => {
+    const params = new URLSearchParams();
+    if (options.page) params.set("page", options.page);
+    if (options.limit) params.set("limit", options.limit);
+    if (options.view) params.set("view", options.view);
+    const query = params.toString();
+    return request(`/events${query ? `?${query}` : ""}`);
+  },
   createEvent: ({
     name,
     description,
@@ -748,7 +791,14 @@ export const api = {
     request("/admin/assessment/create", { method: "POST", body }),
   sendAssessmentTestEmail: (assessment) =>
     request("/admin/assessment/test-email", { method: "POST", body: { assessment } }),
-  listAssessments: () => request("/admin/assessment/list"),
+  listAssessments: (options = {}) => {
+    const params = new URLSearchParams();
+    if (options.page) params.set("page", options.page);
+    if (options.limit) params.set("limit", options.limit);
+    if (options.view) params.set("view", options.view);
+    const query = params.toString();
+    return request(`/admin/assessment/list${query ? `?${query}` : ""}`);
+  },
   getAssessmentById: (id) => request(`/admin/assessment/${id}`),
   updateAssessment: (id, body) =>
     request(`/admin/assessment/${id}`, { method: "PUT", body }),
@@ -1365,8 +1415,14 @@ export const api = {
   },
   getCompilerStudentAnalytics: (studentId) =>
     request(`/compiler/student/${studentId}`, { cacheTtlMs: 30 * 1000 }),
-  getCompilerAnalyticsOverview: () =>
-    request("/compiler/analytics/overview", { cacheTtlMs: 30 * 1000 }),
+  getCompilerAnalyticsOverview: (options = {}) => {
+    const params = new URLSearchParams();
+    if (options.view) params.append("view", options.view);
+    const query = params.toString();
+    return request(`/compiler/analytics/overview${query ? `?${query}` : ""}`, {
+      cacheTtlMs: 30 * 1000,
+    });
+  },
   getCompilerProblemAnalytics: (problemId) =>
     request(`/compiler/analytics/problem/${problemId}`, {
       cacheTtlMs: 30 * 1000,

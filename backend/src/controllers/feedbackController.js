@@ -6,6 +6,10 @@ import { HttpError } from '../utils/errors.js';
 import { logStudentActivity } from './activityController.js';
 import { createNotification } from '../services/notificationService.js';
 
+function escapeRegex(value = '') {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // Only interviewer can submit feedback about the interviewee.
 // Feedback allowed only after the meeting END (scheduledAt + duration) OR after event end.
 export async function submitFeedback(req, res) {
@@ -123,13 +127,18 @@ export async function listFeedback(req, res) {
   const filter = {};
   if (eventId) filter.event = eventId;
   if (college) {
-    const users = await User.find({ college: new RegExp(`^${college}$`, 'i') }, '_id');
+    const users = await User.find({ college: new RegExp(`^${escapeRegex(String(college).slice(0, 120))}$`, 'i') }, '_id');
     const ids = users.map(u => u._id);
     // Only match feedback whose receiver (interviewee) matches college
     filter.to = { $in: ids };
   }
   const list = await Feedback.find(filter)
-    .populate('from to event pair');
+    .select('event pair from to marks comments integrity communication preparedness problemSolving attitude totalMarks suggestions createdAt')
+    .populate('from', 'name email')
+    .populate('to', 'name email college')
+    .populate('event', 'name')
+    .populate('pair', '_id')
+    .sort({ createdAt: -1 });
   res.json(list.map(f => ({
     id: f._id,
     eventId: f.event?._id,
@@ -176,7 +185,7 @@ export async function exportFilteredFeedback(req, res) {
   const filter = {};
   if (eventId) filter.event = eventId;
   if (college) {
-    const users = await User.find({ college: new RegExp(`^${college}$`, 'i') }, '_id');
+    const users = await User.find({ college: new RegExp(`^${escapeRegex(String(college).slice(0, 120))}$`, 'i') }, '_id');
     const ids = users.map(u => u._id);
     filter.to = { $in: ids };
   }
@@ -254,15 +263,24 @@ export async function listCoordinatorFeedback(req, res) {
   if (eventId) filter.event = eventId;
   if (college) {
     const users = await User.find({ 
-      college: new RegExp(`^${college}$`, 'i'),
+      college: new RegExp(`^${escapeRegex(String(college).slice(0, 120))}$`, 'i'),
       _id: { $in: studentIds }
     }, '_id');
     const ids = users.map(u => u._id);
     filter.to = { $in: ids };
   }
   
+  if (req.query.view === 'dashboard') {
+    return res.json({ count: await Feedback.countDocuments(filter) });
+  }
+
   const list = await Feedback.find(filter)
-    .populate('from to event pair');
+    .select('event pair from to marks comments integrity communication preparedness problemSolving attitude totalMarks suggestions createdAt')
+    .populate('from', 'name email')
+    .populate('to', 'name email college')
+    .populate('event', 'name')
+    .populate('pair', '_id')
+    .sort({ createdAt: -1 });
   res.json(list.map(f => ({
     id: f._id,
     eventId: f.event?._id,
@@ -300,7 +318,7 @@ export async function exportCoordinatorFeedback(req, res) {
   if (eventId) filter.event = eventId;
   if (college) {
     const users = await User.find({ 
-      college: new RegExp(`^${college}$`, 'i'),
+      college: new RegExp(`^${escapeRegex(String(college).slice(0, 120))}$`, 'i'),
       _id: { $in: studentIds }
     }, '_id');
     const ids = users.map(u => u._id);

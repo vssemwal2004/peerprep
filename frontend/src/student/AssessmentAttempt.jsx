@@ -490,6 +490,7 @@ export default function AssessmentAttempt() {
   const monitoringCooldownRef = useRef({});
   const cameraViolationStreakRef = useRef({ type: '', count: 0, at: 0 });
   const proctoringManagerRef = useRef(null);
+  const aiSecurityNoticeRef = useRef('');
   const lastTabShortcutAtRef = useRef(0);
   const liveCodingCodeRef = useRef({});
   const liveCodingLanguageRef = useRef({});
@@ -889,7 +890,9 @@ export default function AssessmentAttempt() {
     if (!assessment?._id || !event?.type) return;
 
     const limitExceeded = Boolean(event.metadata?.limitExceeded);
-    setSecurityNotice(event.message || 'Camera attention needed. Please adjust and continue.');
+    const notice = event.message || 'Camera attention needed. Please adjust and continue.';
+    aiSecurityNoticeRef.current = notice;
+    setSecurityNotice(notice);
     setAiWarnings((prev) => prev + 1);
 
     try {
@@ -903,12 +906,15 @@ export default function AssessmentAttempt() {
     }
 
     if (limitExceeded) {
-      setSecurityNotice(`${event.message || 'Camera attention needed.'} Repeated AI violation detected.`);
+      const repeatedNotice = `${event.message || 'Camera attention needed.'} Repeated AI violation detected.`;
+      aiSecurityNoticeRef.current = repeatedNotice;
+      setSecurityNotice(repeatedNotice);
     }
   }, [assessment?._id, submission?._id]);
 
   const handleAiProctoringError = useCallback((error) => {
     const message = error?.message || 'AI proctoring could not start. Check the camera and network connection.';
+    aiSecurityNoticeRef.current = message;
     setSecurityNotice(message);
     console.warn('AI Proctoring error', error);
   }, []);
@@ -2026,6 +2032,22 @@ export default function AssessmentAttempt() {
   ]);
 
   useEffect(() => {
+    if (!aiSecurityNoticeRef.current || !proctoringStatus) return;
+    const aiIssueActive = Boolean(
+      proctoringStatus.error
+      || ['missing', 'out_of_frame', 'multiple'].includes(proctoringStatus.face)
+      || proctoringStatus.eye === 'looking_away'
+      || proctoringStatus.mobile === 'detected'
+      || ['multiple', 'missing'].includes(proctoringStatus.person)
+      || ['blocked', 'error'].includes(proctoringStatus.camera),
+    );
+    if (aiIssueActive) return;
+    const previousAiNotice = aiSecurityNoticeRef.current;
+    aiSecurityNoticeRef.current = '';
+    setSecurityNotice((current) => (current === previousAiNotice ? '' : current));
+  }, [proctoringStatus]);
+
+  useEffect(() => {
     if (!secureActive || !cameraRequired) {
       setCameraIndicator('idle');
       setSecurityStatus((prev) => ({ ...prev, cameraActive: !cameraRequired }));
@@ -2718,7 +2740,14 @@ export default function AssessmentAttempt() {
         toast.error('Fullscreen is required before the assessment can start.');
         return;
       }
-      if (cameraRequired) await ensureCamera();
+      if (cameraRequired) {
+        const cameraReady = await ensureCamera();
+        if (!cameraReady) {
+          toast.error('Camera access is required before this assessment and AI proctoring can start.');
+          setPhase('validation');
+          return;
+        }
+      }
       const data = await api.beginStudentAssessment(assessment._id, assessmentSessionIdRef.current);
       const serverTime = new Date(data.serverTime).getTime();
       const serverAllowedEnd = new Date(data.allowedEnd).getTime();
@@ -4399,10 +4428,10 @@ export default function AssessmentAttempt() {
               <canvas ref={monitorCanvasRef} className="fixed -left-[9999px] h-1 w-1 opacity-0" />
             </>
           )}
-          {aiProctoringEnabled && (
-            <video ref={aiProctoringVideoRef} className="fixed -left-[9999px] h-1 w-1 opacity-0" muted playsInline autoPlay />
-          )}
         </>
+      )}
+      {aiProctoringEnabled && (
+        <video ref={aiProctoringVideoRef} className="fixed -left-[9999px] h-1 w-1 opacity-0" muted playsInline autoPlay aria-hidden="true" />
       )}
     </div>
   );

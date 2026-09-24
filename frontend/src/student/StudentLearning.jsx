@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronDown, ChevronRight, BookOpen, Users, X, GraduationCap } from 'lucide-react';
 import { api } from '../utils/api';
@@ -14,9 +14,31 @@ export default function StudentLearning() {
   const [expandedSubjects, setExpandedSubjects] = useState({});
   const navigate = useNavigate();
 
+  const loadSemesters = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await api.getAllSemestersForStudent();
+
+      // Copy cached API data before sorting so other screens cannot observe a
+      // mutated cache entry.
+      const sortedSemesters = [...data].sort((a, b) => {
+        const numA = parseInt(a.semesterName.match(/\d+/)?.[0] || '999');
+        const numB = parseInt(b.semesterName.match(/\d+/)?.[0] || '999');
+        return numA - numB;
+      });
+
+      setSemesters(sortedSemesters);
+    } catch (error) {
+      console.error('Error loading semesters:', error);
+      toast.error('Failed to load semesters');
+    } finally {
+      setLoading(false);
+    }
+  }, [toast]);
+
   useEffect(() => {
     loadSemesters();
-  }, []);
+  }, [loadSemesters]);
 
   // Socket.IO real-time synchronization
   useEffect(() => {
@@ -31,28 +53,7 @@ export default function StudentLearning() {
     return () => {
       socketService.off('learning-updated', handleLearningUpdate);
     };
-  }, []);
-
-  const loadSemesters = async () => {
-    try {
-      setLoading(true);
-      const data = await api.getAllSemestersForStudent();
-      
-      // Sort semesters by number (Semester 1, Semester 2, etc.)
-      const sortedSemesters = data.sort((a, b) => {
-        const numA = parseInt(a.semesterName.match(/\d+/)?.[0] || '999');
-        const numB = parseInt(b.semesterName.match(/\d+/)?.[0] || '999');
-        return numA - numB;
-      });
-      
-      setSemesters(sortedSemesters);
-    } catch (error) {
-      console.error('Error loading semesters:', error);
-      toast.error('Failed to load semesters');
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [loadSemesters]);
 
   const handleSemesterClick = (semester) => {
     setSelectedSemester(semester);

@@ -183,6 +183,10 @@ export default function ProblemManagement() {
   };
 
   const menuItemClassName = 'flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm font-semibold transition-colors';
+  const openProblemPreview = (problem) => navigate(
+    `${rolePrefix}/library/coding/${problem._id}/preview`,
+    { state: { returnTo: `${window.location.pathname}${window.location.search}` } },
+  );
 
   return (
     <SectionCard
@@ -227,12 +231,24 @@ export default function ProblemManagement() {
               </thead>
               <tbody className="divide-y divide-slate-200 bg-white dark:divide-gray-700 dark:bg-gray-900">
                 {problems.map((problem) => (
-                  <tr key={problem._id} className="hover:bg-slate-50 dark:hover:bg-gray-800/60">
+                  <tr
+                    key={problem._id}
+                    role="link"
+                    tabIndex={0}
+                    onClick={() => openProblemPreview(problem)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        openProblemPreview(problem);
+                      }
+                    }}
+                    className="cursor-pointer hover:bg-sky-50/70 focus:bg-sky-50/70 focus:outline-none dark:hover:bg-gray-800/60 dark:focus:bg-gray-800/60"
+                  >
                     <td className="px-4 py-4">
                       <div className="min-w-[280px] max-w-md">
                         <div className="flex min-w-0 items-center gap-1.5">
                           <p className="min-w-0 max-w-[calc(100%-4rem)] truncate font-semibold text-slate-800 dark:text-gray-100">{problem.title}</p>
-                          <button type="button" onClick={() => setStatementDialog({ isOpen: true, problem })} className="inline-flex h-[22px] shrink-0 items-center rounded-full border border-sky-200 bg-sky-50 px-1.5 text-[11px] font-semibold leading-none text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300">+ More</button>
+                          <button type="button" onClick={(event) => { event.stopPropagation(); setStatementDialog({ isOpen: true, problem }); }} className="inline-flex h-[22px] shrink-0 items-center rounded-full border border-sky-200 bg-sky-50 px-1.5 text-[11px] font-semibold leading-none text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300">+ More</button>
                         </div>
                         <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">{problem.supportedLanguages.join(', ')}</p>
                       </div>
@@ -249,7 +265,7 @@ export default function ProblemManagement() {
                       <div className="flex items-center justify-end gap-2">
                         <button
                           type="button"
-                          onClick={() => navigate(`${rolePrefix}/library/coding/${problem._id}/preview`, { state: { returnTo: `${window.location.pathname}${window.location.search}` } })}
+                          onClick={(event) => { event.stopPropagation(); openProblemPreview(problem); }}
                           aria-label={`Preview ${problem.title}`}
                           title="Preview problem"
                           className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-sky-200 bg-sky-50 text-sky-700 transition-colors hover:border-sky-300 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300"

@@ -61,9 +61,16 @@ export default function AdminEmailQueue() {
   }, [debouncedSearch, filters.type, filters.status, filters.dateFrom, filters.dateTo, pagination.page, pagination.limit, toast]);
 
   useEffect(() => {
-    load();
-    const timer = setInterval(load, 10_000);
-    return () => clearInterval(timer);
+    const refreshWhenVisible = () => {
+      if (!document.hidden) void load();
+    };
+    refreshWhenVisible();
+    const timer = setInterval(refreshWhenVisible, 10_000);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
   }, [load]);
 
   const updateFilter = (key, value) => {

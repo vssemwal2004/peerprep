@@ -235,9 +235,9 @@ export default function AdminOverview() {
 
     const coreResults = await Promise.allSettled([
       api.listAllStudents({ page: 1, limit: 8, sortOrder: 'desc' }),
-      api.listEvents(),
-      api.listAssessments(),
-      api.listAllCoordinators(),
+      api.listEvents({ view: 'dashboard' }),
+      api.listAssessments({ view: 'dashboard' }),
+      api.listAllCoordinators({ page: 1, limit: 8 }),
     ]);
     const studentsRes = settledValue(coreResults, 0, {});
     const eventsRes = settledValue(coreResults, 1, {});
@@ -261,8 +261,8 @@ export default function AdminOverview() {
       api.getActivities('limit=5'),
       api.listAnnouncementsAdmin({}),
       api.getCompilerOverview(),
-      api.getAssessmentReports({ page: 1, limit: 5 }),
-      api.getCompilerAnalyticsOverview(),
+      api.getAssessmentReports({ page: 1, limit: 5, view: 'dashboard' }),
+      api.getCompilerAnalyticsOverview({ view: 'dashboard' }),
     ]);
     const activityStats = settledValue(secondaryResults, 0, {});
     const activityRes = settledValue(secondaryResults, 1, {});

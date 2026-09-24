@@ -4,6 +4,9 @@ import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './components/CustomToast';
 import AdminLayout from './admin/AdminLayout';
+import AdminProtectedRoute from './admin/AdminProtectedRoute';
+import CoordinatorProtectedRoute from './coordinator/CoordinatorProtectedRoute';
+import StudentProtectedRoute from './student/StudentProtectedRoute';
 import { LandingPageSkeleton, PageSkeleton, DashboardSkeleton } from './components/Skeletons';
 import { useAuth } from './context/AuthContext';
 import { hasPermission } from './admin/coordinatorPermissions';
@@ -24,7 +27,6 @@ const TermsAndConditions = lazy(() => import("./pages/TermsAndConditions"));
 const ContactUs = lazy(() => import("./pages/ContactUs"));
 
 // Student Pages
-const StudentProtectedRoute = lazy(() => import("./student/StudentProtectedRoute"));
 const StudentDashboard = lazy(() => import("./student/StudentDashboard"));
 const StudentInterview = lazy(() => import("./student/StudentInterview"));
 const ChangePassword = lazy(() => import("./student/ChangePassword"));
@@ -45,7 +47,6 @@ const StudentAnalytics = lazy(() => import("./student/StudentAnalytics"));
 const StudentResume = lazy(() => import("./student/StudentResume"));
 
 // Admin Pages
-const AdminProtectedRoute = lazy(() => import("./admin/AdminProtectedRoute"));
 const AdminOverview = lazy(() => import("./admin/AdminOverview"));
 const AdminLearning = lazy(() => import("./admin/AdminLearning"));
 const AdminLearningDetail = lazy(() => import("./admin/AdminLearningDetail"));
@@ -81,7 +82,6 @@ const CoordinatorAccessDetails = lazy(() => import("./admin/CoordinatorAccessDet
 const StudentResumeView = lazy(() => import("./admin/StudentResumeView"));
 
 // Coordinator Pages
-const CoordinatorProtectedRoute = lazy(() => import("./coordinator/CoordinatorProtectedRoute"));
 const CoordinatorStudents = lazy(() => import("./coordinator/CoordinatorStudents"));
 const CoordinatorChangePassword = lazy(() => import("./coordinator/CoordinatorChangePassword"));
 const CoordinatorEventDetail = lazy(() => import("./coordinator/CoordinatorEventDetail"));
@@ -127,7 +127,8 @@ function lazy(loader) {
  */
 function RoutePrefetcher() {
   const location = useLocation();
-  const prefetched = useRef({ student: false, admin: false, coordinator: false });
+  const { user } = useAuth();
+  const prefetched = useRef({ studentFull: false, studentAssessment: false, admin: false, coordinator: false });
 
   const canPrefetch = () => {
     const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
@@ -138,13 +139,15 @@ function RoutePrefetcher() {
   };
 
   const prefetchStudentRoutes = useCallback(() => {
-    import("./student/StudentDashboard");
-    import("./student/StudentInterview");
-    import("./student/ProblemsPage");
     import("./student/StudentAssessmentList");
     import("./student/AssessmentReportsPage");
     import("./student/AssessmentHistoryPage");
-  }, []);
+    if (user?.accessScope !== 'assessment_only') {
+      import("./student/StudentDashboard");
+      import("./student/StudentInterview");
+      import("./student/ProblemsPage");
+    }
+  }, [user?.accessScope]);
 
   const prefetchAdminRoutes = useCallback(() => {
     import("./admin/AssessmentDashboard");
@@ -162,8 +165,10 @@ function RoutePrefetcher() {
     const prefetch = () => {
       if (!canPrefetch()) return;
       if (location.pathname.startsWith('/student/') || location.pathname.startsWith('/problems')) {
-        if (prefetched.current.student) return;
-        prefetched.current.student = true;
+        if (!user || location.pathname === '/student/change-password') return;
+        const prefetchKey = user.accessScope === 'assessment_only' ? 'studentAssessment' : 'studentFull';
+        if (prefetched.current[prefetchKey]) return;
+        prefetched.current[prefetchKey] = true;
         prefetchStudentRoutes();
       } else if (location.pathname.startsWith('/admin/')) {
         if (prefetched.current.admin) return;
@@ -176,12 +181,18 @@ function RoutePrefetcher() {
       }
     };
 
-    if ('requestIdleCallback' in window) {
-      requestIdleCallback(prefetch);
-    } else {
-      setTimeout(prefetch, 200);
-    }
-  }, [location.pathname, prefetchStudentRoutes, prefetchAdminRoutes, prefetchCoordinatorRoutes]);
+    // Let the current page finish its data requests and first interactive
+    // paint before downloading likely next-route chunks.
+    let idleId;
+    const delayId = window.setTimeout(() => {
+      if ('requestIdleCallback' in window) idleId = window.requestIdleCallback(prefetch, { timeout: 3000 });
+      else prefetch();
+    }, 1500);
+    return () => {
+      window.clearTimeout(delayId);
+      if (idleId && 'cancelIdleCallback' in window) window.cancelIdleCallback(idleId);
+    };
+  }, [location.pathname, user, prefetchStudentRoutes, prefetchAdminRoutes, prefetchCoordinatorRoutes]);
 
   return null;
 }
@@ -212,6 +223,46 @@ function useHideGlobalLoader() {
   }, []);
 }
 
+function AdminShell({ children, layout = true }) {
+  return (
+    <AdminProtectedRoute>
+      <Suspense fallback={<DashboardSkeleton />}>
+        {layout ? <AdminLayout>{children}</AdminLayout> : children}
+      </Suspense>
+    </AdminProtectedRoute>
+  );
+}
+
+function CoordinatorAccessDenied() {
+  return (
+    <div className="min-h-screen bg-slate-50 dark:bg-gray-950">
+      <div className="mx-auto max-w-3xl px-4 py-10">
+        <div className="rounded-2xl border border-amber-200 bg-white p-6 shadow-sm dark:border-amber-400/20 dark:bg-gray-900">
+          <h1 className="text-xl font-bold text-slate-950 dark:text-white">Access not assigned</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">
+            Your admin has not enabled this coordinator feature for your account yet.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CoordinatorShell({ children, layout = true, permission }) {
+  const { user } = useAuth();
+  const content = permission && !hasPermission(user, permission)
+    ? <CoordinatorAccessDenied />
+    : children;
+
+  return (
+    <CoordinatorProtectedRoute>
+      <Suspense fallback={<DashboardSkeleton />}>
+        {layout ? <CoordinatorLayout>{content}</CoordinatorLayout> : content}
+      </Suspense>
+    </CoordinatorProtectedRoute>
+  );
+}
+
 function AppContent() {
   useHideGlobalLoader();
   const location = useLocation();
@@ -238,33 +289,6 @@ function AppContent() {
     && !isAssessmentAttempt
     && !isProblemSolver;
   const isLoginPage = isMain || isStudentLogin || isResetPassword;
-  const AdminShell = ({ children, layout = true }) => (
-    <AdminProtectedRoute>
-      {layout ? <AdminLayout>{children}</AdminLayout> : children}
-    </AdminProtectedRoute>
-  );
-
-  const CoordinatorAccessDenied = () => (
-    <div className="min-h-screen bg-slate-50 dark:bg-gray-950">
-      <div className="mx-auto max-w-3xl px-4 py-10">
-        <div className="rounded-2xl border border-amber-200 bg-white p-6 shadow-sm dark:border-amber-400/20 dark:bg-gray-900">
-          <h1 className="text-xl font-bold text-slate-950 dark:text-white">Access not assigned</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">
-            Your admin has not enabled this coordinator feature for your account yet.
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-
-  const CoordinatorShell = ({ children, layout = true, permission }) => (
-    <CoordinatorProtectedRoute>
-      {permission && !hasPermission(user, permission)
-        ? (layout ? <CoordinatorLayout><CoordinatorAccessDenied /></CoordinatorLayout> : <CoordinatorAccessDenied />)
-        : (layout ? <CoordinatorLayout>{children}</CoordinatorLayout> : children)}
-    </CoordinatorProtectedRoute>
-  );
-
   return (
     <div
       className="min-h-screen w-full flex flex-col"

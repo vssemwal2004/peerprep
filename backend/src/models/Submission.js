@@ -129,6 +129,9 @@ const submissionSchema = new mongoose.Schema({
 
 submissionSchema.index({ createdAt: -1 });
 submissionSchema.index({ problem: 1, createdAt: -1 });
+submissionSchema.index({ mode: 1, status: 1, createdAt: -1 });
+submissionSchema.index({ user: 1, mode: 1, createdAt: -1 });
+submissionSchema.index({ assessmentId: 1, mode: 1, createdAt: -1 });
 
 export default mongoose.model('Submission', submissionSchema);
 

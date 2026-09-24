@@ -25,16 +25,21 @@ const formatDateTime = (value) => {
   });
 };
 
-function RatingOption({ value, selected, onSelect }) {
+function RatingOption({ value, filled, selected, onSelect, onPreview, onPreviewEnd }) {
   return (
     <button
       type="button"
       onClick={() => onSelect(value)}
+      onMouseEnter={() => onPreview(value)}
+      onMouseLeave={onPreviewEnd}
+      onFocus={() => onPreview(value)}
+      onBlur={onPreviewEnd}
+      role="radio"
+      aria-checked={selected}
       aria-label={`Rate ${value} out of 5`}
-      aria-pressed={selected}
-      className={`group flex flex-1 flex-col items-center gap-2 rounded-2xl border px-2 py-3 transition-all sm:px-4 sm:py-4 ${selected ? 'border-amber-400 bg-amber-50 text-amber-700 shadow-sm shadow-amber-900/10 dark:border-amber-500 dark:bg-amber-900/20 dark:text-amber-300' : 'border-slate-200 bg-white text-slate-400 hover:border-amber-300 hover:bg-amber-50/50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-500 dark:hover:border-amber-700 dark:hover:bg-amber-900/10'}`}
+      className={`group flex flex-1 flex-col items-center gap-2 rounded-2xl border px-2 py-3 transition-all sm:px-4 sm:py-4 ${filled ? 'border-amber-400 bg-amber-50 text-amber-700 shadow-sm shadow-amber-900/10 dark:border-amber-500 dark:bg-amber-900/20 dark:text-amber-300' : 'border-slate-200 bg-white text-slate-400 hover:border-amber-300 hover:bg-amber-50/50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-500 dark:hover:border-amber-700 dark:hover:bg-amber-900/10'}`}
     >
-      <Star className={`h-6 w-6 transition-transform group-hover:scale-110 sm:h-7 sm:w-7 ${selected ? 'fill-amber-400 text-amber-400' : 'text-slate-300 dark:text-gray-600'}`} />
+      <Star className={`h-6 w-6 transition-transform group-hover:scale-110 sm:h-7 sm:w-7 ${filled ? 'fill-amber-400 text-amber-400' : 'text-slate-300 dark:text-gray-600'}`} />
       <span className="text-xs font-bold">{value}</span>
     </button>
   );
@@ -58,6 +63,7 @@ export default function AssessmentFeedbackPage() {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [rating, setRating] = useState(0);
+  const [previewRating, setPreviewRating] = useState(0);
   const [comments, setComments] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -87,6 +93,25 @@ export default function AssessmentFeedbackPage() {
     void load();
     return () => { mounted = false; };
   }, [id]);
+
+  useEffect(() => {
+    if (success) return undefined;
+    const preventExit = (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    const preventBack = () => {
+      window.history.pushState({ feedbackRequired: true }, '', window.location.href);
+      setError('Please submit your rating before leaving this page.');
+    };
+    window.history.pushState({ feedbackRequired: true }, '', window.location.href);
+    window.addEventListener('beforeunload', preventExit);
+    window.addEventListener('popstate', preventBack);
+    return () => {
+      window.removeEventListener('beforeunload', preventExit);
+      window.removeEventListener('popstate', preventBack);
+    };
+  }, [success]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -157,8 +182,8 @@ export default function AssessmentFeedbackPage() {
                     </div>
                     <span className="text-xs font-semibold text-rose-500">Required</span>
                   </div>
-                  <div className="mt-4 flex gap-2 sm:gap-3">
-                    {[1, 2, 3, 4, 5].map((value) => <RatingOption key={value} value={value} selected={rating === value} onSelect={setRating} />)}
+                  <div className="mt-4 flex gap-2 sm:gap-3" role="radiogroup" aria-label="Assessment experience rating">
+                    {[1, 2, 3, 4, 5].map((value) => <RatingOption key={value} value={value} filled={value <= (previewRating || rating)} selected={value === rating} onSelect={setRating} onPreview={setPreviewRating} onPreviewEnd={() => setPreviewRating(0)} />)}
                   </div>
                   <div className="mt-2 flex justify-between px-2 text-[10px] font-semibold text-slate-400 dark:text-gray-500"><span>Needs improvement</span><span>Excellent</span></div>
                 </div>

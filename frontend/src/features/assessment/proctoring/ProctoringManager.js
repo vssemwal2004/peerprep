@@ -154,9 +154,13 @@ function normalizeBrowserFaceResult(faces = [], videoElement) {
 const FOOTER_ISSUE_CONFIRM_MS = 600;
 const FOOTER_ISSUE_CONFIRM_COUNT = 1;
 const FOOTER_ISSUE_CONFIRM_MS_BY_TYPE = Object.freeze({
-  [AI_PROCTORING_EVENTS.LOOKING_AWAY]: 5100,
+  [AI_PROCTORING_EVENTS.NO_FACE]: 3000,
+  [AI_PROCTORING_EVENTS.FACE_OUT_OF_FRAME]: 10000,
+  [AI_PROCTORING_EVENTS.LOOKING_AWAY]: 10000,
 });
-const MOBILE_STATUS_HOLD_MS = 1800;
+// Keep a tiny debounce to avoid a single-frame flash, then recover the UI quickly
+// once the phone is no longer visible.
+const MOBILE_STATUS_HOLD_MS = 400;
 const MOBILE_CONFIRM_CONSECUTIVE_FRAMES = 2;
 const OBJECT_DETECTION_INTERVAL_MULTIPLIER = 4;
 const MOBILE_OBJECT_DETECTION_INTERVAL_MS = 2500;
@@ -180,8 +184,7 @@ function getFaceAbsenceGraceMs(settings = {}) {
 function isBufferedIssueVisible(buffer, type, timestamp = Date.now(), settings = {}) {
   const state = buffer?.getState?.(type);
   if (!state?.firstSeenAt) return false;
-  const usesFaceAbsenceGrace = type === AI_PROCTORING_EVENTS.NO_FACE
-    || type === AI_PROCTORING_EVENTS.FACE_OUT_OF_FRAME;
+  const usesFaceAbsenceGrace = type === AI_PROCTORING_EVENTS.FACE_OUT_OF_FRAME;
   const confirmMs = usesFaceAbsenceGrace
     ? getFaceAbsenceGraceMs(settings)
     : (FOOTER_ISSUE_CONFIRM_MS_BY_TYPE[type] ?? FOOTER_ISSUE_CONFIRM_MS);

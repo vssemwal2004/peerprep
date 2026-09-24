@@ -33,4 +33,8 @@ const eventSchema = new mongoose.Schema({
   coordinatorId: { type: String, index: true },
 }, { timestamps: true });
 
+eventSchema.index({ coordinatorId: 1, createdAt: -1 });
+eventSchema.index({ status: 1, createdAt: -1 });
+eventSchema.index({ allowedParticipants: 1, createdAt: -1 });
+
 export default mongoose.model('Event', eventSchema);

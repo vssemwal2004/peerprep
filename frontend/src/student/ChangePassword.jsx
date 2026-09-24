@@ -1,8 +1,19 @@
-import React, { useState } from 'react';
-import { api } from '../utils/api';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Lock, CheckCircle, AlertCircle, ArrowLeft } from 'lucide-react';
+import {
+  AlertCircle,
+  ArrowLeft,
+  Check,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  Loader2,
+  LockKeyhole,
+  LogIn,
+  ShieldCheck,
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../utils/api';
 
 export default function ChangePassword() {
   const [currentPassword, setCurrentPassword] = useState('');
@@ -12,286 +23,192 @@ export default function ChangePassword() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [passwordMatch, setPasswordMatch] = useState(null);
   const [passwordStrength, setPasswordStrength] = useState({
     hasMinLength: false,
-    hasSpecialChar: false
+    hasSpecialChar: false,
   });
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const homePath = user?.accessScope === 'assessment_only' ? '/student/assessments' : '/student/dashboard';
+  const { user, logout } = useAuth();
+  const isAssessmentOnly = user?.accessScope === 'assessment_only';
+  const homePath = isAssessmentOnly ? '/student/assessments' : '/student/dashboard';
 
-  // Real-time password validation
-  React.useEffect(() => {
-    if (newPassword) {
-      setPasswordStrength({
-        hasMinLength: newPassword.length >= 8,
-        hasSpecialChar: /[@#]/.test(newPassword)
-      });
-    } else {
-      setPasswordStrength({
-        hasMinLength: false,
-        hasSpecialChar: false
-      });
-    }
+  useEffect(() => {
+    setPasswordStrength({
+      hasMinLength: newPassword.length >= 8,
+      hasSpecialChar: /[@#]/.test(newPassword),
+    });
   }, [newPassword]);
 
-  // Real-time password matching
-  React.useEffect(() => {
-    if (confirmPassword) {
-      setPasswordMatch(newPassword === confirmPassword);
-    } else {
-      setPasswordMatch(null);
-    }
+  useEffect(() => {
+    setPasswordMatch(confirmPassword ? newPassword === confirmPassword : null);
   }, [newPassword, confirmPassword]);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
     setError('');
-    setSuccess('');
-    setIsLoading(true);
 
     if (!currentPassword || !newPassword || !confirmPassword) {
-      setError('All fields are required');
-      setIsLoading(false);
+      setError('Enter all three password fields.');
       return;
     }
     if (newPassword !== confirmPassword) {
-      setError('New passwords do not match');
-      setIsLoading(false);
+      setError('The new passwords do not match.');
       return;
     }
     if (newPassword.length < 8) {
-      setError('New password must be at least 8 characters');
-      setIsLoading(false);
+      setError('Your new password must be at least 8 characters.');
       return;
     }
     if (!/[@#]/.test(newPassword)) {
-      setError('New password must contain @ or #');
-      setIsLoading(false);
+      setError('Your new password must contain @ or #.');
       return;
     }
 
+    setIsLoading(true);
     try {
       await api.changeStudentPassword(currentPassword, newPassword, confirmPassword);
-      setSuccess('Password changed successfully!');
-      setTimeout(() => {
-        navigate(homePath, { replace: true });
-      }, 1500);
-    } catch (err) {
-      setSuccess('');
-      setError(err.message || 'Failed to change password');
+      setShowSuccessDialog(true);
+    } catch (requestError) {
+      setError(requestError.message || 'We could not update your password. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
+  const handleContinueToLogin = async () => {
+    if (isSigningOut) return;
+    setIsSigningOut(true);
+    await logout();
+    navigate('/student', { replace: true });
+  };
+
+  const visibilityButton = (visible, toggle, label) => (
+    <button
+      type="button"
+      onClick={toggle}
+      className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-slate-400 transition hover:text-sky-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500 dark:text-slate-400 dark:hover:text-sky-400"
+      aria-label={`${visible ? 'Hide' : 'Show'} ${label}`}
+      aria-pressed={visible}
+    >
+      {visible ? <EyeOff className="h-[18px] w-[18px]" /> : <Eye className="h-[18px] w-[18px]" />}
+    </button>
+  );
+
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 flex items-center justify-center px-4 py-12">
-      <div className="w-full max-w-2xl">
-        {/* Back Button */}
+    <div className="relative min-h-screen overflow-hidden bg-slate-50 px-4 py-8 font-sans dark:bg-slate-950 sm:py-10">
+      <div className="pointer-events-none absolute inset-0 opacity-70 dark:opacity-25" aria-hidden="true">
+        <div className="absolute -left-24 -top-24 h-72 w-72 rounded-full bg-sky-200/60 blur-3xl" />
+        <div className="absolute -bottom-28 -right-20 h-80 w-80 rounded-full bg-blue-200/50 blur-3xl" />
+      </div>
+
+      <main className="relative mx-auto w-full max-w-lg">
         <button
+          type="button"
           onClick={() => navigate(homePath)}
-          className="mb-6 flex items-center gap-2 text-slate-600 dark:text-gray-300 hover:text-sky-600 dark:hover:text-sky-400 transition-colors"
+          className="mb-4 inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-white hover:text-sky-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-sky-300"
         >
-          <ArrowLeft className="w-4 h-4" />
-          <span className="text-sm font-medium">Back to Dashboard</span>
+          <ArrowLeft className="h-4 w-4" />
+          {isAssessmentOnly ? 'Back to assessments' : 'Back to dashboard'}
         </button>
 
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border-2 border-sky-100 dark:border-gray-700 overflow-hidden">
-          {/* Header */}
-          <div className="bg-gradient-to-r from-sky-50 to-blue-100 dark:from-gray-700 dark:to-gray-700 px-8 py-8 border-b-2 border-sky-200 dark:border-gray-700">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-sky-500 rounded-xl shadow-md">
-                <Lock className="w-8 h-8 text-white" />
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_50px_-24px_rgba(15,23,42,0.35)] dark:border-slate-800 dark:bg-slate-900">
+          <header className="border-b border-slate-200 bg-gradient-to-r from-sky-50 to-blue-50 px-5 py-5 dark:border-slate-800 dark:from-slate-900 dark:to-slate-900 sm:px-6">
+            <div className="flex items-center gap-3.5">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-600 shadow-sm shadow-sky-200 dark:shadow-none">
+                <LockKeyhole className="h-5 w-5 text-white" />
               </div>
               <div>
-                <h1 className="text-3xl font-bold text-slate-800 dark:text-gray-100">Change Password</h1>
-                <p className="text-slate-600 dark:text-gray-300 mt-1">Update your student account credentials</p>
+                <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">Change password</h1>
+                <p className="mt-0.5 text-sm text-slate-600 dark:text-slate-400">Create a secure password for your PeerPrep account.</p>
               </div>
             </div>
-          </div>
+          </header>
 
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="p-8 space-y-6">
-        
-            {/* Current Password */}
+          <form onSubmit={handleSubmit} className="space-y-4 p-5 sm:p-6">
+            <div className="flex gap-3 rounded-xl border border-sky-100 bg-sky-50/80 p-3 text-sm text-slate-700 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-slate-300">
+              <ShieldCheck className="mt-0.5 h-[18px] w-[18px] shrink-0 text-sky-600 dark:text-sky-400" />
+              <p>After your password is updated, you will be signed out. Sign in again with your new password.</p>
+            </div>
+
             <div>
-              <label className="block text-sm font-bold text-slate-700 dark:text-gray-200 mb-2">
-                Current Password
-              </label>
+              <label htmlFor="current-password" className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">Current password</label>
               <div className="relative">
-                <input
-                  type={showCurrentPassword ? "text" : "password"}
-                  value={currentPassword}
-                  onChange={e => setCurrentPassword(e.target.value)}
-                  className="w-full px-4 py-3 border-2 border-sky-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-sky-400 focus:border-sky-400 transition-all pr-12 bg-sky-50/30 dark:bg-gray-700 dark:text-gray-100"
-                  placeholder="Enter current password"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                  className="absolute inset-y-0 right-0 pr-4 flex items-center text-sky-500 hover:text-sky-700 transition-colors"
-                >
-                  {showCurrentPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                </button>
+                <input id="current-password" type={showCurrentPassword ? 'text' : 'password'} value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3.5 pr-11 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:focus:border-sky-500 dark:focus:ring-sky-950" placeholder="Enter your current password" autoComplete="current-password" required />
+                {visibilityButton(showCurrentPassword, () => setShowCurrentPassword((value) => !value), 'current password')}
               </div>
             </div>
 
-            {/* New Password */}
             <div>
-              <label className="block text-sm font-bold text-slate-700 dark:text-gray-200 mb-2">
-                New Password
-              </label>
+              <label htmlFor="new-password" className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">New password</label>
               <div className="relative">
-                <input
-                  type={showNewPassword ? "text" : "password"}
-                  value={newPassword}
-                  onChange={e => setNewPassword(e.target.value)}
-                  className="w-full px-4 py-3 border-2 border-sky-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-sky-400 focus:border-sky-400 transition-all pr-12 bg-sky-50/30 dark:bg-gray-700 dark:text-gray-100"
-                  placeholder="Enter new password"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowNewPassword(!showNewPassword)}
-                  className="absolute inset-y-0 right-0 pr-4 flex items-center text-sky-500 hover:text-sky-700 transition-colors"
-                >
-                  {showNewPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                </button>
+                <input id="new-password" type={showNewPassword ? 'text' : 'password'} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3.5 pr-11 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:focus:border-sky-500 dark:focus:ring-sky-950" placeholder="Enter a new password" autoComplete="new-password" required />
+                {visibilityButton(showNewPassword, () => setShowNewPassword((value) => !value), 'new password')}
               </div>
-              {newPassword && (
-                <div className="mt-2 space-y-1">
-                  <div className="flex items-center gap-2 text-xs">
-                    {passwordStrength.hasMinLength ? (
-                      <CheckCircle size={14} className="text-green-500" />
-                    ) : (
-                      <AlertCircle size={14} className="text-red-500" />
-                    )}
-                    <span className={passwordStrength.hasMinLength ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                      At least 8 characters
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs">
-                    {passwordStrength.hasSpecialChar ? (
-                      <CheckCircle size={14} className="text-green-500" />
-                    ) : (
-                      <AlertCircle size={14} className="text-red-500" />
-                    )}
-                    <span className={passwordStrength.hasSpecialChar ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                      Contains @ or #
-                    </span>
-                  </div>
-                </div>
-              )}
+              <div className="mt-2 grid grid-cols-1 gap-1.5 text-xs sm:grid-cols-2">
+                <div className={`flex items-center gap-1.5 ${passwordStrength.hasMinLength ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`}><Check className="h-3.5 w-3.5" />At least 8 characters</div>
+                <div className={`flex items-center gap-1.5 ${passwordStrength.hasSpecialChar ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`}><Check className="h-3.5 w-3.5" />Includes @ or #</div>
+              </div>
             </div>
 
-            {/* Confirm New Password */}
             <div>
-              <label className="block text-sm font-bold text-slate-700 dark:text-gray-200 mb-2">
-                Confirm New Password
-              </label>
+              <label htmlFor="confirm-password" className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">Confirm new password</label>
               <div className="relative">
                 <input
-                  type={showConfirmPassword ? "text" : "password"}
+                  id="confirm-password"
+                  type={showConfirmPassword ? 'text' : 'password'}
                   value={confirmPassword}
-                  onChange={e => setConfirmPassword(e.target.value)}
-                  className={`w-full px-4 py-3 border-2 rounded-lg focus:ring-2 transition-all pr-12 bg-sky-50/30 dark:bg-gray-700 dark:text-gray-100 ${
-                    passwordMatch === null
-                      ? 'border-sky-200 dark:border-gray-600 focus:ring-sky-400 focus:border-sky-400'
-                      : passwordMatch
-                      ? 'border-green-500 focus:ring-green-500 focus:border-green-500'
-                      : 'border-red-500 focus:ring-red-500 focus:border-red-500'
-                  }`}
-                  placeholder="Confirm new password"
+                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  className={`h-11 w-full rounded-xl border bg-white px-3.5 pr-11 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:ring-2 dark:bg-slate-950 dark:text-white ${passwordMatch === false ? 'border-red-400 focus:border-red-500 focus:ring-red-100 dark:border-red-600 dark:focus:ring-red-950' : passwordMatch === true ? 'border-emerald-400 focus:border-emerald-500 focus:ring-emerald-100 dark:border-emerald-600 dark:focus:ring-emerald-950' : 'border-slate-300 focus:border-sky-500 focus:ring-sky-100 dark:border-slate-700 dark:focus:border-sky-500 dark:focus:ring-sky-950'}`}
+                  placeholder="Re-enter your new password"
+                  autoComplete="new-password"
+                  aria-describedby={passwordMatch !== null ? 'password-match-status' : undefined}
                   required
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute inset-y-0 right-0 pr-4 flex items-center text-sky-500 hover:text-sky-700 transition-colors"
-                >
-                  {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                </button>
+                {visibilityButton(showConfirmPassword, () => setShowConfirmPassword((value) => !value), 'confirmed password')}
               </div>
               {passwordMatch !== null && (
-                <div className={`mt-2 flex items-center gap-2 text-xs ${
-                  passwordMatch ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                }`}>
-                  {passwordMatch ? (
-                    <>
-                      <CheckCircle size={14} className="text-green-500" />
-                      <span>Passwords match!</span>
-                    </>
-                  ) : (
-                    <>
-                      <AlertCircle size={14} className="text-red-500" />
-                      <span>Passwords do not match</span>
-                    </>
-                  )}
-                </div>
+                <p id="password-match-status" className={`mt-1.5 flex items-center gap-1.5 text-xs font-medium ${passwordMatch ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                  {passwordMatch ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
+                  {passwordMatch ? 'Passwords match' : 'Passwords do not match'}
+                </p>
               )}
             </div>
 
-            {/* Error/Success Messages */}
             {error && (
-              <div className="flex items-start gap-3 p-4 bg-red-50 border-2 border-red-200 rounded-lg">
-                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <div className="font-semibold text-red-800 text-sm">Error</div>
-                  <div className="text-red-700 text-sm mt-0.5">{error}</div>
-                </div>
-              </div>
-            )}
-            {success && (
-              <div className="flex items-start gap-3 p-4 bg-green-50 border-2 border-green-200 rounded-lg">
-                <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <div className="font-semibold text-green-800 text-sm">Success</div>
-                  <div className="text-green-700 text-sm mt-0.5">{success}</div>
-                </div>
+              <div role="alert" className="flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-300">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>{error}</p>
               </div>
             )}
 
-            {/* Buttons */}
-            <div className="flex gap-4 pt-4">
-              {/* Cancel Button */}
-              <button
-                type="button"
-                onClick={() => navigate(homePath)}
-                className="flex-1 py-3 px-4 bg-slate-100 text-slate-700 rounded-lg font-semibold hover:bg-slate-200 transition-all border-2 border-slate-200"
-              >
-                Cancel
-              </button>
-
-              {/* Submit Button */}
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="flex-1 py-3 px-4 bg-gradient-to-r from-sky-500 to-sky-600 text-white rounded-lg font-semibold hover:from-sky-600 hover:to-sky-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
-              >
-                {isLoading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    Updating...
-                  </span>
-                ) : (
-                  <span className="flex items-center justify-center gap-2">
-                    <Lock className="w-4 h-4" />
-                    Update Password
-                  </span>
-                )}
+            <div className="flex flex-col-reverse gap-2.5 pt-1 sm:flex-row">
+              <button type="button" onClick={() => navigate(homePath)} className="inline-flex h-10 flex-1 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">Cancel</button>
+              <button type="submit" disabled={isLoading} className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus-visible:ring-offset-slate-900">
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LockKeyhole className="h-4 w-4" />}
+                {isLoading ? 'Updating password…' : 'Update password'}
               </button>
             </div>
           </form>
+        </section>
+      </main>
+
+      {showSuccessDialog && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 px-4 backdrop-blur-sm" role="presentation">
+          <section role="dialog" aria-modal="true" aria-labelledby="password-updated-title" aria-describedby="password-updated-description" className="w-full max-w-sm rounded-2xl border border-white/20 bg-white p-6 text-center shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-950/60"><CheckCircle2 className="h-6 w-6 text-emerald-600 dark:text-emerald-400" /></div>
+            <h2 id="password-updated-title" className="mt-4 text-xl font-bold tracking-tight text-slate-900 dark:text-white">Password updated</h2>
+            <p id="password-updated-description" className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">Your current session has expired for security. Continue to sign in with your new password.</p>
+            <button type="button" onClick={handleContinueToLogin} disabled={isSigningOut} autoFocus className="mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 text-sm font-semibold text-white transition hover:bg-sky-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-70 dark:focus-visible:ring-offset-slate-900">
+              {isSigningOut ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
+              {isSigningOut ? 'Signing out…' : 'Continue to sign in'}
+            </button>
+          </section>
         </div>
-      </div>
+      )}
     </div>
   );
 }

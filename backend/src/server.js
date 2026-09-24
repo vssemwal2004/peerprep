@@ -18,6 +18,7 @@ import User from './models/User.js';
 import { hasCoordinatorPermission } from './services/coordinatorPermissions.js';
 import { startMailQueueWorker } from './workers/mailQueue.worker.js';
 import { seedDefaultMasterData } from './services/masterDataService.js';
+import { closeValkeyClient } from './utils/valkey.js';
 //fufgv
 const PORT = process.env.PORT || 4000;
 //new file check
@@ -223,6 +224,13 @@ const shutdown = async (signal) => {
       console.log('Database connection closed');
     } catch (err) {
       console.error('Error closing database:', err);
+    }
+
+    try {
+      await closeValkeyClient();
+      console.log('Shared Valkey connection closed');
+    } catch (err) {
+      console.error('Error closing shared Valkey connection:', err);
     }
 
     process.exit(code);

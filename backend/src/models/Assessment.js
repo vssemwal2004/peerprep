@@ -130,6 +130,9 @@ const assessmentSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 assessmentSchema.index({ startTime: 1, endTime: 1 });
+assessmentSchema.index({ createdBy: 1, createdAt: -1 });
+assessmentSchema.index({ lifecycleStatus: 1, startTime: 1, endTime: 1 });
+assessmentSchema.index({ assignedStudents: 1, lifecycleStatus: 1, startTime: 1 });
 
 export default mongoose.model('Assessment', assessmentSchema);
 

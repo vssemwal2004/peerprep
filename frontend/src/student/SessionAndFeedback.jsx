@@ -32,30 +32,46 @@ export default function SessionAndFeedback() {
   const userId = typeof window !== 'undefined' ? localStorage.getItem('userId') : null;
 
   useEffect(() => {
+    let active = true;
+
     const loadData = async () => {
       try {
         const evs = await api.listEvents();
+        if (!active) return;
         setEvents(evs);
-        const allPairs = [];
-        const feedbackPairs = [];
+        const eventResults = await Promise.all(evs.map(async (event) => {
+          const [pairsResult, feedbackResult, receivedResult] = await Promise.allSettled([
+            api.listPairs(event._id),
+            api.myFeedback(event._id),
+            api.feedbackForMe(event._id),
+          ]);
+          return {
+            event,
+            pairs: pairsResult.status === 'fulfilled' ? pairsResult.value : [],
+            feedback: feedbackResult.status === 'fulfilled' ? feedbackResult.value : [],
+            received: receivedResult.status === 'fulfilled' ? receivedResult.value : [],
+          };
+        }));
+        if (!active) return;
+        const allPairs = eventResults.flatMap(({ event, pairs: eventPairs }) => (
+          eventPairs.filter((pair) => pair.scheduledAt).map((pair) => ({ ...pair, event }))
+        ));
+        const feedbackPairs = eventResults.flatMap(({ feedback }) => feedback.map((item) => item.pair));
         const receivedMap = {};
-        for (const ev of evs) {
-          const prs = await api.listPairs(ev._id);
-          allPairs.push(...prs.filter(p => p.scheduledAt).map(p => ({ ...p, event: ev })));
-          const feedback = await api.myFeedback(ev._id).catch(() => []);
-          feedbackPairs.push(...feedback.map(f => f.pair));
-          const aboutMe = await api.feedbackForMe(ev._id).catch(() => []);
-          aboutMe.forEach(f => { if (f.pair) receivedMap[f.pair] = f; });
-        }
+        eventResults.forEach(({ received }) => {
+          received.forEach((item) => { if (item.pair) receivedMap[item.pair] = item; });
+        });
         setPairs(allPairs);
         setMyFeedback(feedbackPairs);
         setReceivedFeedback(receivedMap);
       } catch (err) {
+        if (!active) return;
         console.error(err);
         setNotification("Failed to load sessions.");
       }
     };
     loadData();
+    return () => { active = false; };
   }, []);
 
   const filteredPairs = pairs.filter(p =>

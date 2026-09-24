@@ -1281,6 +1281,63 @@ export async function getCompilerStudentAnalytics(req, res) {
 }
 
 export async function getCompilerAnalyticsOverview(req, res) {
+  if (req.query.view === 'dashboard') {
+    const [students, problems] = await Promise.all([
+      getControlledStudents(req),
+      getControlledProblems(req),
+    ]);
+    const studentIds = students.map((student) => student._id);
+    const rows = studentIds.length
+      ? await Submission.aggregate([
+        { $match: { mode: 'submit', user: { $in: studentIds } } },
+        {
+          $facet: {
+            summary: [{
+              $group: {
+                _id: null,
+                totalAttempts: { $sum: 1 },
+                acceptedAttempts: { $sum: { $cond: [{ $eq: ['$status', 'AC'] }, 1, 0] } },
+                activeStudents: { $addToSet: '$user' },
+              },
+            }],
+            difficulty: [
+              {
+                $group: {
+                  _id: { $ifNull: ['$problemSnapshot.difficulty', 'Easy'] },
+                  attempts: { $sum: 1 },
+                  accepted: { $sum: { $cond: [{ $eq: ['$status', 'AC'] }, 1, 0] } },
+                },
+              },
+            ],
+          },
+        },
+      ])
+      : [];
+    const summary = rows[0]?.summary?.[0] || {};
+    const difficulty = rows[0]?.difficulty || [];
+    const totalAttempts = Number(summary.totalAttempts || 0);
+    const acceptedAttempts = Number(summary.acceptedAttempts || 0);
+
+    return res.json({
+      summary: {
+        cohortSize: students.length,
+        activeStudents: summary.activeStudents?.length || 0,
+        totalAttempts,
+        acceptedAttempts,
+        acceptanceRate: totalAttempts ? round((acceptedAttempts / totalAttempts) * 100) : 0,
+        problemsCovered: problems.length,
+      },
+      charts: {
+        difficultyVsSuccessRate: ['Easy', 'Medium', 'Hard'].map((name) => {
+          const row = difficulty.find((item) => String(item._id).toLowerCase() === name.toLowerCase());
+          return {
+            difficulty: name,
+            successRate: row?.attempts ? round((row.accepted / row.attempts) * 100) : 0,
+          };
+        }),
+      },
+    });
+  }
   return getAdminCompilerAnalytics(req, res);
 }
 

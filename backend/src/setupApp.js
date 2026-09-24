@@ -9,6 +9,7 @@ import { HttpError, notFound, errorHandler } from './utils/errors.js';
 import { mongoSanitizeMiddleware, xssProtectionMiddleware } from './middleware/sanitization.js';
 import { apiLimiter } from './middleware/rateLimiter.js';
 import { apiRequestTimeout } from './middleware/requestTimeout.js';
+import { requestPerformance } from './middleware/requestPerformance.js';
 
 const app = express();
 
@@ -60,6 +61,7 @@ app.use(cors({
     return callback(new HttpError(403, 'Origin not allowed by CORS'));
   },
   credentials: true,
+  exposedHeaders: ['Server-Timing', 'X-PeerPrep-Cache'],
 }));
 
 // SECURITY: Cookie parser for HttpOnly JWT cookies
@@ -142,6 +144,7 @@ if (process.env.NODE_ENV === 'production') {
 
 // Platform-wide request time budget. Slow endpoints fail fast instead of
 // tying up production workers and making dashboards wait indefinitely.
+app.use('/api', requestPerformance);
 app.use('/api', apiRequestTimeout);
 
 // General API rate limiting (generous limits)

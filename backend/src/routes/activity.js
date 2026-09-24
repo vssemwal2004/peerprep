@@ -5,6 +5,7 @@ import {
   getActivityStats,
   exportActivitiesCSV
 } from '../controllers/adminActivityController.js';
+import { cacheJsonResponse, invalidateResponseCache } from '../middleware/responseCache.js';
 
 const router = express.Router();
 
@@ -12,16 +13,16 @@ const router = express.Router();
 router.use(requireAuth);
 
 // Get activities (admin sees all, coordinator sees only their own)
-router.get('/', getActivities);
+router.get('/', cacheJsonResponse({ namespace: 'activity', ttlSeconds: Number(process.env.RESPONSE_CACHE_ACTIVITY_TTL_SECONDS || 15) }), getActivities);
 
 // Get activity statistics
-router.get('/stats', getActivityStats);
+router.get('/stats', cacheJsonResponse({ namespace: 'activity', ttlSeconds: Number(process.env.RESPONSE_CACHE_ACTIVITY_TTL_SECONDS || 15) }), getActivityStats);
 
 // Export activities as CSV
 router.get('/export', exportActivitiesCSV);
 
 // Log activity (for frontend tracking)
-router.post('/', async (req, res) => {
+router.post('/', invalidateResponseCache('activity'), async (req, res) => {
   const { logActivity } = await import('../controllers/adminActivityController.js');
   try {
     const { actionType, targetType, targetId, description, changes, metadata } = req.body;

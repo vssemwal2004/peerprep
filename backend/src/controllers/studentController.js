@@ -1173,7 +1173,7 @@ export async function listAllSpecialStudents(req, res) {
     
     // Add search filter if provided
     if (search && search.trim()) {
-      const searchRegex = new RegExp(search.trim(), 'i');
+      const searchRegex = new RegExp(escapeRegex(search.trim().slice(0, 120)), 'i');
       query = {
         ...query,
         $or: [

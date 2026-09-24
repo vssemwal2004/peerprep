@@ -57,6 +57,12 @@ export async function changePassword(req, res) {
   user.passwordHash = await User.hashPassword(newPassword);
   user.mustChangePassword = false;
   user.temporaryPasswordEncrypted = undefined;
+  if (user.role === 'student') {
+    // A password change ends the current student session. The client keeps the
+    // success dialog visible, then clears the cookie before returning to login.
+    user.activeSessionToken = undefined;
+    user.activeSessionCreatedAt = undefined;
+  }
   user.markModified('temporaryPasswordEncrypted');
   await user.save();
   invalidateUserCache(user._id);
@@ -520,7 +526,7 @@ function sanitizeUser(u) {
     name: u.name,
     email: u.email,
     studentId: u.studentId,
-    mustChangePassword: u.mustChangePassword,
+    mustChangePassword: u.accessScope === 'assessment_only' ? false : u.mustChangePassword,
     course: u.course,
     branch: u.branch,
     college: u.college,

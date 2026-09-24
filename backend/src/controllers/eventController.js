@@ -1473,17 +1473,7 @@ export async function sendEventInvitations(req, res) {
 export async function listEvents(req, res) {
   const userId = req.user?._id;
   const isAdmin = req.user?.role === 'admin';
-  const isSpecialStudent = req.user?.isSpecialStudent || false;
   const userCreatedAt = req.user?.createdAt;
-  
-  // Debug logging
-  console.log('[listEvents] User info:', {
-    userId: userId?.toString(),
-    role: req.user?.role,
-    isSpecialStudent,
-    userType: isSpecialStudent ? 'special' : 'regular',
-    userCreatedAt: userCreatedAt
-  });
   
     let query = {};
     // Coordinators see only their events; admins see all; students see coordinator-matching or unscoped events, or ones explicitly allowed
@@ -1502,11 +1492,26 @@ export async function listEvents(req, res) {
       // Explicitly allowed (special or otherwise)
       orClauses.push({ allowedParticipants: req.user._id });
       query.$or = orClauses;
+      query.status = { $nin: ['draft', 'cancelled', 'archived'] };
+      if (userCreatedAt) query.createdAt = { $gt: new Date(userCreatedAt) };
     }
-    const events = await Event.find(query)
-      .sort({ createdAt: -1 })
-      .populate('createdBy', 'name email role coordinatorId')
-      .lean();
+    const requestedPage = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const requestedLimit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 25));
+    const paginated = req.query.page !== undefined || req.query.limit !== undefined;
+    const dashboardView = req.query.view === 'dashboard' && req.user?.role !== 'student';
+    const databasePaginated = paginated && req.user?.role !== 'student';
+    const eventsQuery = Event.find(query)
+      .sort({ createdAt: -1 });
+    if (dashboardView) {
+      eventsQuery.select('_id name status startDate endDate isSpecial coordinatorId createdAt updatedAt');
+    } else {
+      eventsQuery.populate('createdBy', 'name email role coordinatorId');
+    }
+    if (databasePaginated) eventsQuery.skip((requestedPage - 1) * requestedLimit).limit(requestedLimit);
+    const [events, databaseTotal] = await Promise.all([
+      eventsQuery.lean(),
+      databasePaginated ? Event.countDocuments(query) : Promise.resolve(null),
+    ]);
     const assignedEventIds = req.user?.role === 'student'
       ? new Set((await EventParticipant.find({
         studentId: userId,
@@ -1517,24 +1522,17 @@ export async function listEvents(req, res) {
   // Resolve all coordinator names in one query. The previous per-event lookup
   // made this endpoint linearly slower as event history grew.
   const coordinatorIds = [...new Set(events.map((event) => event.coordinatorId).filter(Boolean))];
-  const coordinators = coordinatorIds.length
+  const coordinators = !dashboardView && coordinatorIds.length
     ? await User.find({ role: 'coordinator', coordinatorId: { $in: coordinatorIds } })
       .select('coordinatorId name')
       .lean()
     : [];
   const coordinatorNames = new Map(coordinators.map((item) => [item.coordinatorId, item.name]));
-  const eventsWithCoordinator = events.map((event) => event.coordinatorId ? {
+  const eventsWithCoordinator = dashboardView ? events : events.map((event) => event.coordinatorId ? {
     ...event,
     coordinatorName: coordinatorNames.get(event.coordinatorId) || 'Unknown Coordinator',
   } : event);
   
-  console.log('[listEvents] Total events:', eventsWithCoordinator.length);
-  console.log('[listEvents] Special events:', eventsWithCoordinator.filter(e => e.isSpecial).map(e => ({
-    id: e._id.toString(),
-    name: e.name,
-    allowedParticipants: e.allowedParticipants?.map(p => p.toString())
-  })));
-
   const visible = eventsWithCoordinator.filter(e => {
     // Admins and coordinators see all their events (no filtering needed)
     if (isAdmin || req.user?.role === 'coordinator') return true;
@@ -1549,21 +1547,7 @@ export async function listEvents(req, res) {
       
       // Compare timestamps (event must be created AFTER user registration)
       if (eventCreated <= userRegistered) {
-        console.log('[listEvents] ❌ Filtering out event created before/at registration:', {
-          eventName: e.name,
-          eventId: e._id.toString(),
-          eventCreatedAt: eventCreated.toISOString(),
-          userRegisteredAt: userRegistered.toISOString(),
-          difference: `${((eventCreated - userRegistered) / 1000 / 60 / 60).toFixed(2)} hours`
-        });
         return false;
-      } else {
-        console.log('[listEvents] ✅ Showing event created after registration:', {
-          eventName: e.name,
-          eventCreatedAt: eventCreated.toISOString(),
-          userRegisteredAt: userRegistered.toISOString(),
-          difference: `${((eventCreated - userRegistered) / 1000 / 60 / 60).toFixed(2)} hours`
-        });
       }
     }
     
@@ -1574,20 +1558,14 @@ export async function listEvents(req, res) {
     if (!userId) return false;
     const canSee = assignedEventIds.has(e._id.toString())
       || e.allowedParticipants?.some?.(p => p.toString() === userId.toString());
-    console.log('[listEvents] Special event visibility check:', {
-      eventName: e.name,
-      eventId: e._id.toString(),
-      userId: userId.toString(),
-      allowedParticipants: e.allowedParticipants?.map(p => p.toString()),
-      canSee
-    });
     return canSee;
   });
-  
-  console.log('[listEvents] Visible events:', visible.length);
 
   // For joined status, check current User ID against participants
-  const mapped = visible.map(e => {
+  const pagedVisible = paginated && !databasePaginated
+    ? visible.slice((requestedPage - 1) * requestedLimit, requestedPage * requestedLimit)
+    : visible;
+  const mapped = pagedVisible.map(e => {
     let joined = false;
     if (userId) {
       joined = e.participants?.some?.(p => p.toString() === userId.toString());
@@ -1595,7 +1573,19 @@ export async function listEvents(req, res) {
     return { ...e, joined };
   });
   
-  res.json(mapped);
+  if (!paginated) return res.json(mapped);
+  const total = databasePaginated ? databaseTotal : visible.length;
+  return res.json({
+    count: total,
+    total,
+    events: mapped,
+    pagination: {
+      page: requestedPage,
+      limit: requestedLimit,
+      total,
+      pages: Math.max(1, Math.ceil(total / requestedLimit)),
+    },
+  });
 }
 
 export async function joinEvent(req, res) {

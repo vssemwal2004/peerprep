@@ -4,24 +4,24 @@ import { getConfidenceForEvent, shouldAcceptDetection } from './confidenceRules'
 
 export const AI_PROCTORING_RULES = Object.freeze({
   [AI_PROCTORING_EVENTS.NO_FACE]: {
-    message: 'Face not detected',
-    severity: 'medium',
-    confirmAfterMs: 5000,
+    message: 'No person is visible in the camera',
+    severity: 'high',
+    confirmAfterMs: 3000,
     confirmCount: 1,
     confirmStrategy: 'all',
   },
   [AI_PROCTORING_EVENTS.FACE_OUT_OF_FRAME]: {
-    message: 'Face is out of frame',
-    severity: 'medium',
-    confirmAfterMs: 5000,
+    message: 'Please sit upright and move back into the camera frame',
+    severity: 'low',
+    confirmAfterMs: 10000,
     confirmCount: 1,
     confirmStrategy: 'all',
   },
   [AI_PROCTORING_EVENTS.LOOKING_AWAY]: {
-    message: 'Face or eyes were away from the screen for more than 5 seconds',
+    message: 'Please look back at the assessment screen',
     severity: 'low',
-    confirmAfterMs: 5100,
-    confirmCount: 3,
+    confirmAfterMs: 10000,
+    confirmCount: 4,
     confirmStrategy: 'all',
   },
   [AI_PROCTORING_EVENTS.MOBILE_DETECTED]: {
@@ -71,8 +71,7 @@ function getFaceAbsenceGraceMs(settings = {}) {
 
 function createCandidate(type, result = {}, settings = {}) {
   const rule = AI_PROCTORING_RULES[type];
-  const usesFaceAbsenceGrace = type === AI_PROCTORING_EVENTS.NO_FACE
-    || type === AI_PROCTORING_EVENTS.FACE_OUT_OF_FRAME;
+  const usesFaceAbsenceGrace = type === AI_PROCTORING_EVENTS.FACE_OUT_OF_FRAME;
   return {
     type,
     message: rule.message,

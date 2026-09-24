@@ -81,54 +81,34 @@ function SummaryTile({ icon: Icon, label, value, helper, tone = 'sky' }) {
   );
 }
 
-function AssessmentCard({ assessment, onOpen }) {
-  const isCompleted = assessment.endTime && new Date(assessment.endTime).getTime() < Date.now();
+function AssessmentTable({ assessments, onOpen }) {
   return (
-    <button
-      type="button"
-      onClick={() => onOpen(assessment)}
-      className="group flex h-full flex-col rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-sky-300 hover:shadow-lg hover:shadow-sky-900/5 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-sky-700 dark:focus:ring-offset-gray-950"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold text-sky-600 dark:text-sky-300">
-            <CalendarDays className="h-4 w-4" />
-            {formatDate(assessment.startTime)}
-          </div>
-          <h2 className="line-clamp-2 text-base font-bold leading-5 text-slate-950 dark:text-white">{assessment.title}</h2>
-        </div>
-        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${isCompleted ? 'bg-slate-100 text-slate-600 dark:bg-gray-800 dark:text-gray-300' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/25 dark:text-emerald-300'}`}>
-          {isCompleted ? 'Completed' : 'Open'}
-        </span>
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[900px] text-left text-sm">
+          <thead className="border-b border-slate-200 bg-slate-50 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:border-gray-800 dark:bg-gray-800/80 dark:text-gray-400">
+            <tr><th className="px-4 py-3">Assessment</th><th className="px-3 py-3">Date</th><th className="px-3 py-3">Status</th><th className="px-3 py-3 text-center">Completed</th><th className="px-3 py-3 text-center">Responses</th><th className="px-3 py-3">Average rating</th><th className="px-3 py-3 text-center">Pending</th><th className="px-4 py-3 text-right">Action</th></tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
+            {assessments.map((assessment) => {
+              const isCompleted = assessment.endTime && new Date(assessment.endTime).getTime() < Date.now();
+              return (
+                <tr key={assessment._id} tabIndex={0} role="button" onClick={() => onOpen(assessment)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(assessment); } }} className="group cursor-pointer transition-colors hover:bg-sky-50/60 focus:bg-sky-50/60 focus:outline-none dark:hover:bg-gray-800/50 dark:focus:bg-gray-800/50">
+                  <td className="px-4 py-3"><p className="max-w-sm truncate font-bold text-slate-900 dark:text-white">{assessment.title}</p><p className="mt-0.5 text-[11px] capitalize text-slate-500 dark:text-gray-400">{assessment.assessmentType || 'Mixed'} assessment</p></td>
+                  <td className="whitespace-nowrap px-3 py-3 text-xs text-slate-600 dark:text-gray-300">{formatDate(assessment.startTime)}</td>
+                  <td className="px-3 py-3"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${isCompleted ? 'bg-slate-100 text-slate-600 dark:bg-gray-800 dark:text-gray-300' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/25 dark:text-emerald-300'}`}>{isCompleted ? 'Completed' : 'Open'}</span></td>
+                  <td className="px-3 py-3 text-center font-bold text-slate-800 dark:text-gray-200">{assessment.completedStudents}</td>
+                  <td className="px-3 py-3 text-center font-bold text-slate-800 dark:text-gray-200">{assessment.feedbackCount}</td>
+                  <td className="px-3 py-3"><span className="inline-flex items-center gap-1.5 font-bold text-amber-700 dark:text-amber-300">{assessment.averageRating ?? '—'}{assessment.averageRating != null && <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />}</span></td>
+                  <td className="px-3 py-3 text-center font-bold text-sky-700 dark:text-sky-300">{assessment.pendingFeedback}</td>
+                  <td className="px-4 py-3 text-right"><span className="inline-flex rounded-lg border border-sky-200 px-2.5 py-1.5 text-[11px] font-bold text-sky-700 group-hover:bg-sky-50 dark:border-sky-800 dark:text-sky-300 dark:group-hover:bg-sky-900/30">View feedback</span></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
-
-      <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-100 pt-3 dark:border-gray-800">
-        <div className="rounded-lg bg-slate-50 p-2.5 dark:bg-gray-800/70">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 dark:text-gray-500">Completed</p>
-          <p className="mt-0.5 text-base font-bold text-slate-900 dark:text-white">{assessment.completedStudents}</p>
-        </div>
-        <div className="rounded-lg bg-slate-50 p-2.5 dark:bg-gray-800/70">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 dark:text-gray-500">Responses</p>
-          <p className="mt-0.5 text-base font-bold text-slate-900 dark:text-white">{assessment.feedbackCount}</p>
-        </div>
-        <div className="rounded-lg bg-amber-50/80 p-2.5 dark:bg-amber-900/15">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700/70 dark:text-amber-300/70">Average rating</p>
-          <div className="mt-0.5 flex items-center gap-1.5">
-            <p className="text-base font-bold text-amber-700 dark:text-amber-300">{assessment.averageRating ?? '—'}</p>
-            <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-          </div>
-        </div>
-        <div className="rounded-lg bg-sky-50/80 p-2.5 dark:bg-sky-900/15">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-sky-700/70 dark:text-sky-300/70">Pending</p>
-          <p className="mt-0.5 text-base font-bold text-sky-700 dark:text-sky-300">{assessment.pendingFeedback}</p>
-        </div>
-      </div>
-
-      <div className="mt-auto flex items-center justify-between pt-3 text-[11px] font-semibold text-slate-500 dark:text-gray-400">
-        <span>{assessment.assessmentType || 'Mixed'} assessment</span>
-        <span className="text-sky-600 transition-transform group-hover:translate-x-0.5 dark:text-sky-300">View feedback →</span>
-      </div>
-    </button>
+    </div>
   );
 }
 
@@ -503,8 +483,8 @@ export default function AssessmentFeedback() {
           </div>
 
           {loading ? (
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {[1, 2, 3].map((item) => <div key={item} className="h-64 animate-pulse rounded-2xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900" />)}
+            <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+              {[1, 2, 3, 4].map((item) => <div key={item} className="h-12 animate-pulse rounded-lg bg-slate-100 dark:bg-gray-800" />)}
             </div>
           ) : assessments.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center dark:border-gray-700 dark:bg-gray-900">
@@ -513,9 +493,7 @@ export default function AssessmentFeedback() {
               <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Try a different assessment name or date range.</p>
             </div>
           ) : (
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {assessments.map((assessment) => <AssessmentCard key={assessment._id} assessment={assessment} onOpen={setSelectedAssessment} />)}
-            </div>
+            <AssessmentTable assessments={assessments} onOpen={setSelectedAssessment} />
           )}
         </section>
       </div>

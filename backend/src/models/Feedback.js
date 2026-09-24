@@ -17,4 +17,8 @@ const feedbackSchema = new mongoose.Schema({
   suggestions: String,
 }, { timestamps: true });
 
+feedbackSchema.index({ event: 1, createdAt: -1 });
+feedbackSchema.index({ from: 1, createdAt: -1 });
+feedbackSchema.index({ to: 1, createdAt: -1 });
+
 export default mongoose.model('Feedback', feedbackSchema);

@@ -1,5 +1,9 @@
 import Activity from '../models/Activity.js';
 
+function escapeRegex(value = '') {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // Log activity helper function
 const logActivity = async ({
   userEmail,
@@ -87,19 +91,23 @@ const getActivities = async (req, res) => {
     if (startDate || endDate) {
       query.createdAt = {};
       if (startDate) {
-        query.createdAt.$gte = new Date(startDate);
+        const parsedStart = new Date(startDate);
+        if (!Number.isNaN(parsedStart.getTime())) query.createdAt.$gte = parsedStart;
       }
       if (endDate) {
-        query.createdAt.$lte = new Date(endDate);
+        const parsedEnd = new Date(endDate);
+        if (!Number.isNaN(parsedEnd.getTime())) query.createdAt.$lte = parsedEnd;
       }
+      if (!Object.keys(query.createdAt).length) delete query.createdAt;
     }
 
     // Search in description
     if (search) {
+      const safeSearch = escapeRegex(String(search).trim().slice(0, 120));
       const searchCondition = {
         $or: [
-          { description: { $regex: search, $options: 'i' } },
-          { userEmail: { $regex: search, $options: 'i' } }
+          { description: { $regex: safeSearch, $options: 'i' } },
+          { userEmail: { $regex: safeSearch, $options: 'i' } }
         ]
       };
       // If we already have a role-based $or, combine with $and
@@ -112,13 +120,15 @@ const getActivities = async (req, res) => {
       }
     }
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const pageNum = Math.max(1, Number.parseInt(page, 10) || 1);
+    const limitNum = Math.min(250, Math.max(1, Number.parseInt(limit, 10) || 50));
+    const skip = (pageNum - 1) * limitNum;
 
     const [activities, total] = await Promise.all([
       Activity.find(query)
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(parseInt(limit))
+        .limit(limitNum)
         .lean(),
       Activity.countDocuments(query)
     ]);
@@ -126,10 +136,10 @@ const getActivities = async (req, res) => {
     res.json({
       activities,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
+        page: pageNum,
+        limit: limitNum,
         total,
-        pages: Math.ceil(total / parseInt(limit))
+        pages: Math.max(1, Math.ceil(total / limitNum))
       }
     });
   } catch (error) {

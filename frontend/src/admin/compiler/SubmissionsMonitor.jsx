@@ -9,9 +9,15 @@ import { LoadingPanel, SectionCard, SubmissionStatusBadge } from './CompilerUi';
 export default function SubmissionsMonitor() {
   const toast = useToast();
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
   const [submissions, setSubmissions] = useState([]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearchQuery(searchQuery.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
 
   useEffect(() => {
     let isMounted = true;
@@ -20,7 +26,7 @@ export default function SubmissionsMonitor() {
       try {
         setLoading(true);
         const response = await api.listCompilerSubmissions({
-          search: searchQuery,
+          search: debouncedSearchQuery,
           status,
           limit: 15,
         });
@@ -40,7 +46,7 @@ export default function SubmissionsMonitor() {
     return () => {
       isMounted = false;
     };
-  }, [searchQuery, status, toast]);
+  }, [debouncedSearchQuery, status, toast]);
 
   useEffect(() => {
     socketService.connect();

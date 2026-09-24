@@ -99,7 +99,7 @@ export default function CoordinatorDashboard() {
   const [secondaryLoading, setSecondaryLoading] = useState(true);
   const [warning, setWarning] = useState('');
   const [data, setData] = useState({
-    students: [], studentCount: 0, events: [], assessments: [], feedback: [], compiler: null, activityStats: {}, activities: [],
+    students: [], studentCount: 0, events: [], assessments: [], feedback: [], feedbackCount: 0, compiler: null, activityStats: {}, activities: [],
   });
 
   const allowed = useCallback((permission) => hasPermission(user, permission), [user]);
@@ -110,14 +110,18 @@ export default function CoordinatorDashboard() {
     setWarning('');
     const coreSources = [
       allowed('coordinator.students.view') && ['students', () => api.listAllStudents({ page: 1, limit: 8, sortOrder: 'desc' })],
-      allowed('coordinator.interviews.view') && ['events', () => api.listEvents()],
-      allowed('coordinator.assessment.view') && ['assessments', () => api.listAssessments()],
+      allowed('coordinator.interviews.view') && ['events', () => api.listEvents({ view: 'dashboard' })],
+      allowed('coordinator.assessment.view') && ['assessments', () => api.listAssessments({ view: 'dashboard' })],
     ].filter(Boolean);
     const secondarySources = [
-      allowed('coordinator.feedback.view') && ['feedback', () => api.listCoordinatorFeedback()],
+      allowed('coordinator.feedback.view') && ['feedback', () => api.listCoordinatorFeedback('view=dashboard')],
       allowed('coordinator.compiler.view') && ['compiler', () => api.getCompilerOverview()],
       allowed('coordinator.activity.view') && ['activityStats', () => api.getActivityStats()],
-      allowed('coordinator.activity.view') && ['activities', () => api.getActivities('limit=250')],
+      allowed('coordinator.activity.view') && ['activities', () => {
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - 7);
+        return api.getActivities(`limit=250&startDate=${encodeURIComponent(startDate.toISOString())}`);
+      }],
     ].filter(Boolean);
 
     const applyResults = (sources, results) => setData((current) => {
@@ -130,7 +134,10 @@ export default function CoordinatorDashboard() {
           next.studentCount = countOf(result.value, ['total', 'count', 'students']);
         } else if (key === 'events') next.events = asArray(result.value, ['events', 'data']);
         else if (key === 'assessments') next.assessments = asArray(result.value, ['assessments', 'data']);
-        else if (key === 'feedback') next.feedback = asArray(result.value, ['feedback', 'data']);
+        else if (key === 'feedback') {
+          next.feedback = asArray(result.value, ['feedback', 'data']);
+          next.feedbackCount = countOf(result.value, ['count', 'total', 'feedback']);
+        }
         else if (key === 'compiler') next.compiler = result.value;
         else if (key === 'activityStats') next.activityStats = result.value || {};
         else next.activities = asArray(result.value, ['activities', 'data']);
@@ -168,7 +175,7 @@ export default function CoordinatorDashboard() {
       upcoming,
       assessments: data.assessments.length,
       activeAssessments,
-      feedback: data.feedback.length,
+      feedback: data.feedbackCount || data.feedback.length,
       problems: compilerSummary.totalProblems || 0,
       activeCoders: compilerSummary.activeStudentsLast7Days || 0,
       todayActions: data.activityStats?.todayActivities || 0,

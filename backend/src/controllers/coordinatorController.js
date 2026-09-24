@@ -58,11 +58,12 @@ function summarizePermissions(user) {
 
 export async function listAllCoordinators(req, res) {
   try {
-    const { search } = req.query;
+    const { search, page, limit } = req.query;
     let query = { role: 'coordinator' };
 
     if (search && search.trim()) {
-      const searchRegex = new RegExp(search.trim(), 'i');
+      const escapedSearch = search.trim().slice(0, 120).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const searchRegex = new RegExp(escapedSearch, 'i');
       query = {
         role: 'coordinator',
         $or: [
@@ -73,10 +74,17 @@ export async function listAllCoordinators(req, res) {
       };
     }
 
-    const users = await User.find(query)
+    const requestedPage = Math.max(1, Number.parseInt(page, 10) || 1);
+    const requestedLimit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 25));
+    const paginated = page !== undefined || limit !== undefined;
+    const usersQuery = User.find(query)
       .select('name email phone role coordinatorId department college createdAt updatedAt avatarUrl isActive coordinatorPermissions coordinatorDataScope coordinatorPermissionHistory activeSessionCreatedAt credentialEmailStatus credentialEmailSentAt credentialEmailLastAttemptAt')
-      .sort({ createdAt: -1 })
-      .lean();
+      .sort({ createdAt: -1 });
+    if (paginated) usersQuery.skip((requestedPage - 1) * requestedLimit).limit(requestedLimit);
+    const [users, total] = await Promise.all([
+      usersQuery.lean(),
+      paginated ? User.countDocuments(query) : Promise.resolve(null),
+    ]);
 
     // Compute dynamic student assignment counts per coordinator
     const coordinatorIds = users.map(u => (u.coordinatorId || '').trim()).filter(Boolean);
@@ -144,7 +152,20 @@ export async function listAllCoordinators(req, res) {
     ...summarizePermissions(u),
     studentsAssigned: countsMap.get(u.coordinatorId) || 0,
     eventsCreated: eventsMap.get(u.coordinatorId) || { regular: 0, special: 0, total: 0 }
-  }));    res.json({ count: enriched.length, coordinators: enriched });
+  }));
+  res.json({
+    count: paginated ? total : enriched.length,
+    total: paginated ? total : enriched.length,
+    coordinators: enriched,
+    ...(paginated ? {
+      pagination: {
+        page: requestedPage,
+        limit: requestedLimit,
+        total,
+        pages: Math.max(1, Math.ceil(total / requestedLimit)),
+      },
+    } : {}),
+  });
   } catch (err) {
     console.error('Error listing coordinators:', err);
     res.status(500).json({ error: 'Failed to fetch coordinators' });

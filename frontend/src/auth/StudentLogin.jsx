@@ -102,21 +102,6 @@ export default function StudentLoginPage() {
       await refreshUser();
 
       if (role === 'admin') {
-        import('../admin/EventManagement');
-        import('../admin/StudentDirectory');
-      } else if (role === 'coordinator') {
-        import('../coordinator/CoordinatorStudents');
-      } else {
-        if (res.user?.accessScope === 'assessment_only') {
-          import('../student/StudentAssessmentList');
-        } else {
-          import('../student/StudentDashboard');
-          import('../student/StudentInterview');
-          import('../student/SessionAndFeedback');
-        }
-      }
-
-      if (role === 'admin') {
         localStorage.setItem('isAdmin', 'true');
         if (res.user?.mustChangePassword) {
           navigate('/admin/change-password', { replace: true });
@@ -131,7 +116,7 @@ export default function StudentLoginPage() {
         }
       } else {
         localStorage.removeItem('isAdmin');
-        if (res.user?.mustChangePassword) {
+        if (res.user?.mustChangePassword && res.user?.accessScope !== 'assessment_only') {
           navigate('/student/change-password', { replace: true });
         } else {
           navigate(res.user?.accessScope === 'assessment_only' ? '/student/assessments' : '/student/dashboard', { replace: true });

@@ -10,10 +10,11 @@ import {
   Pin, PinOff
 } from "lucide-react";
 import DateTimePicker from "../components/DateTimePicker";
+import { useAuth } from "../context/AuthContext";
 
 export default function StudentInterview() {
   const navigate = useNavigate();
-  const [user, setUser] = useState(null);
+  const { user } = useAuth();
   const [events, setEvents] = useState([]);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [joinMsg, setJoinMsg] = useState("");
@@ -27,7 +28,12 @@ export default function StudentInterview() {
   const [selectedPair, setSelectedPair] = useState(null);
   const [slots, setSlots] = useState([""]);
   const [message, setMessage] = useState("");
-  const [me, setMe] = useState(null);
+  const me = useMemo(() => user ? {
+    id: user._id || user.id,
+    role: user.role,
+    email: user.email,
+    name: user.name,
+  } : null, [user]);
   const [currentProposals, setCurrentProposals] = useState({
     mine: [],
     partner: [],
@@ -87,25 +93,31 @@ export default function StudentInterview() {
   }, [navigate]);
 
   useEffect(() => {
+    let active = true;
+    let latestRequest = 0;
+
     const loadData = async () => {
+      const requestId = ++latestRequest;
       try {
         const eventsData = await api.listEvents();
+        if (!active || requestId !== latestRequest) return;
         setEvents(eventsData);
         
         // Fetch pairs for all joined events
         const joinedEvents = eventsData.filter(e => e.joined);
         if (joinedEvents.length > 0) {
-          const allPairs = [];
-          for (const event of joinedEvents) {
-            try {
-              const pairsData = await api.listPairs(event._id);
-              const pairsWithEvent = pairsData.map((p) => ({ ...p, event }));
-              allPairs.push(...pairsWithEvent);
-            } catch (err) {
-              console.error(`Failed to load pairs for event ${event._id}:`, err);
-            }
-          }
+          const pairResults = await Promise.allSettled(
+            joinedEvents.map((event) => api.listPairs(event._id)),
+          );
+          if (!active || requestId !== latestRequest) return;
+          const allPairs = pairResults.flatMap((result, index) => (
+            result.status === 'fulfilled'
+              ? result.value.map((pair) => ({ ...pair, event: joinedEvents[index] }))
+              : []
+          ));
           setPairs(allPairs);
+        } else {
+          setPairs([]);
         }
       } catch (err) {
         console.error("Failed to load events:", err);
@@ -120,22 +132,6 @@ export default function StudentInterview() {
     
     loadData();
     
-    // Fetch user profile from backend and set me state for pairing
-    api.me().then((userData) => {
-      setUser(userData);
-      
-      // SECURITY: Since we migrated to HttpOnly cookies, get user identity from API response
-      const meData = {
-        id: userData._id || userData.id,
-        role: userData.role,
-        email: userData.email,
-        name: userData.name,
-      };
-      setMe(meData);
-    }).catch((err) => {
-      console.error('[Dashboard] Failed to fetch user data:', err);
-    });
-    
     // Add event listener to refresh data when window regains focus
     // This ensures both interviewer and interviewee see updated status
     const handleFocus = () => {
@@ -146,6 +142,7 @@ export default function StudentInterview() {
     
     // Cleanup listener on unmount
     return () => {
+      active = false;
       window.removeEventListener('focus', handleFocus);
     };
   }, []);
