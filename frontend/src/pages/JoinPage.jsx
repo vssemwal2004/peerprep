@@ -282,11 +282,18 @@ export default function JoinPage() {
             <div className="hidden lg:flex items-center justify-center p-10">
               <div className="relative w-full h-full flex items-center justify-center">
                 <div className="relative w-full aspect-square max-w-md rounded-lg overflow-hidden bg-transparent">
-                  <img 
-                    src="/images/loginimg.webp" 
-                    alt="Student Registration" 
-                    className="w-full h-full object-cover"
-                  />
+                  <picture className="block h-full w-full">
+                    <source srcSet="/images/loginimg-896.avif" type="image/avif" />
+                    <img
+                      src="/images/loginimg-896.webp"
+                      alt="Student Registration"
+                      width="896"
+                      height="597"
+                      loading="eager"
+                      decoding="async"
+                      className="h-full w-full object-cover"
+                    />
+                  </picture>
                   <div className="absolute inset-0 bg-gradient-to-t from-sky-600/20 via-transparent to-sky-400/10"></div>
                 </div>
                 <div className="absolute -top-2 -left-2 w-14 h-14 bg-sky-400/10 rounded-full blur-xl animate-pulse"></div>

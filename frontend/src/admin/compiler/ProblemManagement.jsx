@@ -6,6 +6,18 @@ import { useToast } from '../../components/CustomToast';
 import { formatDate, formatPercent } from './compilerUtils';
 import { DifficultyBadge, EmptyState, LoadingPanel, SectionCard } from './CompilerUi';
 
+let previewModulePromise;
+function preloadProblemPreview() {
+  previewModulePromise ||= import('./AdminTestCompiler');
+  return previewModulePromise;
+}
+
+function preloadProblemEditor() {
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (connection?.saveData || ['slow-2g', '2g'].includes(connection?.effectiveType)) return;
+  void import('./MonacoCodeEditor');
+}
+
 function getProblemState(problem = {}) {
   const status = String(problem.status || '').toLowerCase();
   if (status === 'draft') return { label: 'Draft', className: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300' };
@@ -183,10 +195,14 @@ export default function ProblemManagement() {
   };
 
   const menuItemClassName = 'flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm font-semibold transition-colors';
-  const openProblemPreview = (problem) => navigate(
-    `${rolePrefix}/library/coding/${problem._id}/preview`,
-    { state: { returnTo: `${window.location.pathname}${window.location.search}` } },
-  );
+  const openProblemPreview = (problem) => {
+    void preloadProblemPreview();
+    preloadProblemEditor();
+    navigate(
+      `${rolePrefix}/library/coding/${problem._id}/preview`,
+      { state: { returnTo: `${window.location.pathname}${window.location.search}` } },
+    );
+  };
 
   return (
     <SectionCard
@@ -235,6 +251,8 @@ export default function ProblemManagement() {
                     key={problem._id}
                     role="link"
                     tabIndex={0}
+                    onPointerEnter={() => { void preloadProblemPreview(); }}
+                    onFocus={() => { void preloadProblemPreview(); }}
                     onClick={() => openProblemPreview(problem)}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' || event.key === ' ') {

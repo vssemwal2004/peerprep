@@ -1312,7 +1312,9 @@ export const api = {
   deleteCompilerProblem: (problemId) =>
     request(`/compiler/problems/${problemId}`, { method: "DELETE" }),
   getCompilerProblem: (problemId) =>
-    request(`/compiler/problems/${problemId}`, { skipCache: true }),
+    request(`/compiler/problems/${problemId}`, { cacheTtlMs: 60 * 1000 }),
+  getCompilerProblemPreview: (problemId) =>
+    request(`/compiler/problems/${problemId}?view=preview`, { cacheTtlMs: 60 * 1000 }),
   runCompilerPreview: (formData) =>
     request("/compiler/problems/preview/run", { method: "POST", formData }),
   approveCompilerProblemPreview: (problemId, formData) =>

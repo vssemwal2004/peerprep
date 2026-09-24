@@ -148,6 +148,7 @@ export default function LibraryWorkspace({ view = 'questions' }) {
   const canCreateCoding = hasPermission(user, 'coordinator.compiler.create');
   const canManageCoding = hasPermission(user, 'coordinator.compiler.manage');
   const canViewCodingAnalytics = hasPermission(user, 'coordinator.compiler.analytics');
+  const isDrawerView = ['create-question', 'edit-question', 'create-coding', 'edit-coding', 'preview-coding'].includes(view);
 
   const displayedQuestionCounts = useMemo(() => {
     if (compilerProblemCount === null) return questionCounts;
@@ -180,7 +181,7 @@ export default function LibraryWorkspace({ view = 'questions' }) {
   }, []);
 
   useEffect(() => {
-    if (!canViewQuestions || view === 'questions') return undefined;
+    if (!canViewQuestions || view === 'questions' || isDrawerView) return undefined;
     let active = true;
     api.listLibraryQuestions({ page: 1, limit: 1, skipCache: true })
       .then((data) => {
@@ -191,10 +192,10 @@ export default function LibraryWorkspace({ view = 'questions' }) {
       })
       .catch(() => {});
     return () => { active = false; };
-  }, [canViewQuestions, updateQuestionCounts, view]);
+  }, [canViewQuestions, isDrawerView, updateQuestionCounts, view]);
 
   useEffect(() => {
-    if (!canManageCoding) return undefined;
+    if (!canManageCoding || isDrawerView) return undefined;
     let active = true;
     api.listCompilerProblems({ page: 1, limit: 1, skipCache: true })
       .then((data) => {
@@ -202,7 +203,7 @@ export default function LibraryWorkspace({ view = 'questions' }) {
       })
       .catch(() => {});
     return () => { active = false; };
-  }, [canManageCoding, view]);
+  }, [canManageCoding, isDrawerView, view]);
 
   const assessmentContext = useMemo(() => {
     if (mode !== 'assessment' && mode !== 'assessment-create') return undefined;
@@ -261,8 +262,6 @@ export default function LibraryWorkspace({ view = 'questions' }) {
       setTypeDrawerOpen(true);
     }
   }, [assessmentCreationMode, searchParams, view]);
-
-  const isDrawerView = ['create-question', 'edit-question', 'create-coding', 'edit-coding', 'preview-coding'].includes(view);
 
   useEffect(() => {
     if (!typeDrawerOpen && !isDrawerView) return undefined;

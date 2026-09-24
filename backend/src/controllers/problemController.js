@@ -865,10 +865,11 @@ async function loadProblemShape(
     studentStatus = null,
     includeHiddenTestCases = false,
     includeReferenceSolutions = false,
+    problemDocument = null,
   } = {},
 ) {
   const [problem, sampleTestCases, hiddenTestCaseCount, hiddenTestCases, hiddenMarksResult] = await Promise.all([
-    Problem.findById(problemId).lean(),
+    problemDocument ? Promise.resolve(problemDocument) : Problem.findById(problemId).lean(),
     TestCase.find({ problem: problemId, kind: 'sample' })
       .sort({ position: 1 })
       .lean(),
@@ -1236,20 +1237,24 @@ export async function listProblems(req, res) {
 export async function getProblemDetail(req, res) {
   ensureObjectId(req.params.id, 'Problem ID');
 
-  const studentStatus = isStudentRequest(req)
-    ? await getStudentProblemStatus(req.user._id, req.params.id)
-    : null;
-  const problemDoc = await Problem.findById(req.params.id).select('createdBy');
+  const [studentStatus, problemDoc] = await Promise.all([
+    isStudentRequest(req)
+      ? getStudentProblemStatus(req.user._id, req.params.id)
+      : Promise.resolve(null),
+    Problem.findById(req.params.id).lean(),
+  ]);
   if (!problemDoc) {
     throw new HttpError(404, 'Problem not found.');
   }
 
   const isAuthor = isAdminRequest(req) || (isCoordinatorRequest(req) && (!coordinatorRequiresOwnership(req) || String(problemDoc.createdBy) === String(req.user._id)));
+  const previewOnly = req.query.view === 'preview';
 
   const { problem, serializedProblem } = await loadProblemShape(req.params.id, {
     studentStatus,
-    includeHiddenTestCases: !!isAuthor,
-    includeReferenceSolutions: !!isAuthor,
+    includeHiddenTestCases: !!isAuthor && !previewOnly,
+    includeReferenceSolutions: !!isAuthor && !previewOnly,
+    problemDocument: problemDoc,
   });
 
   const visibility = problem.visibility || 'public';

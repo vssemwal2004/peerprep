@@ -1,11 +1,26 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Play, RotateCcw, Send, TerminalSquare } from 'lucide-react';
-import MonacoCodeEditor from '../admin/compiler/MonacoCodeEditor';
 import { formatDuration, getLanguageLabel } from '../admin/compiler/compilerUtils';
 import {
   isRunExecutionResult,
   summarizeExecutionResult,
 } from './problemUtils';
+
+// Monaco and its language workers are the largest frontend assets. Keep them
+// behind their own boundary so the problem description and preview controls can
+// render while the editor downloads in parallel.
+const MonacoCodeEditor = lazy(() => import('../admin/compiler/MonacoCodeEditor'));
+
+function CodeEditorLoading() {
+  return (
+    <div className="flex h-full min-h-[360px] items-center justify-center bg-white text-sm text-slate-500 dark:bg-gray-950 dark:text-gray-400">
+      <span className="flex items-center gap-2">
+        <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-200 border-t-sky-500 dark:border-gray-700 dark:border-t-sky-400" />
+        Preparing code editor...
+      </span>
+    </div>
+  );
+}
 
 function LcBlock({ label, children }) {
   return (
@@ -662,18 +677,20 @@ function CodeEditor({
             {clipboardNotice}
           </div>
         ) : null}
-        <MonacoCodeEditor
-          language={language}
-          value={code}
-          onChange={handleEditorCodeChange}
-          height="100%"
-          internalClipboardOnly={internalClipboardOnly}
-          blockContextMenu={blockContextMenu}
-          clipboardScope={clipboardScope}
-          onClipboardStatus={handleClipboardStatus}
-          contentKey={`${editorKey || 'code-editor'}:${language || 'plain'}`}
-          valueVersion={`${valueVersion}:${localValueVersion}`}
-        />
+        <Suspense fallback={<CodeEditorLoading />}>
+          <MonacoCodeEditor
+            language={language}
+            value={code}
+            onChange={handleEditorCodeChange}
+            height="100%"
+            internalClipboardOnly={internalClipboardOnly}
+            blockContextMenu={blockContextMenu}
+            clipboardScope={clipboardScope}
+            onClipboardStatus={handleClipboardStatus}
+            contentKey={`${editorKey || 'code-editor'}:${language || 'plain'}`}
+            valueVersion={`${valueVersion}:${localValueVersion}`}
+          />
+        </Suspense>
       </div>
 
       <button

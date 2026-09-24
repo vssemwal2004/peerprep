@@ -378,7 +378,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
     const loadProblem = async () => {
       try {
         setLoading(true);
-        const response = await api.getCompilerProblem(id);
+        const response = await api.getCompilerProblemPreview(id);
         if (!isMounted) return;
 
         const nextCases = createPreviewTestCases(response);
@@ -555,7 +555,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
       }
 
       await api.updateCompilerProblemStatus(problem._id, 'published');
-      const refreshed = await api.getCompilerProblem(problem._id);
+      const refreshed = await api.getCompilerProblemPreview(problem._id);
       setProblem(refreshed);
 
       toast.success('Approved and published successfully.');

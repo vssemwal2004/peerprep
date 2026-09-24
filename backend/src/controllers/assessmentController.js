@@ -14,6 +14,7 @@ import { enqueueMailJobs } from '../services/mailQueueService.js';
 import { decryptAssessmentPassword, encryptAssessmentPassword } from '../services/assessmentPasswordService.js';
 import { getAssessmentInvitationTemplate, renderAssessmentInvitationEmail, sendAssessmentInvitationEmail } from '../utils/mailer.js';
 import { validateAssessmentInvitationTemplate } from '../services/assessmentInvitationTemplate.js';
+import { reconcileExpiredAssessmentSubmissions } from '../services/assessmentExpiryService.js';
 import { hasCoordinatorPermission } from '../services/coordinatorPermissions.js';
 import {
   getCodingQuestionScore,
@@ -2610,6 +2611,8 @@ export async function listAssessmentEligibleStudents(req, res) {
       return res.status(403).json({ error: 'Not allowed to view eligible students for this assessment.' });
     }
 
+    await reconcileExpiredAssessmentSubmissions({ assessmentId: assessment._id });
+
     const students = await resolveEligibleAssessmentStudents(assessment);
     const studentIds = students.map((student) => student._id);
     const submissions = await AssessmentSubmission.find({
@@ -3144,6 +3147,8 @@ export async function getStudentAssessmentDashboard(req, res) {
     const studentId = String(req.user?._id || '');
     const now = new Date();
 
+    await reconcileExpiredAssessmentSubmissions({ studentId: req.user._id });
+
     const [assessments, studentSubmissions] = await Promise.all([
       Assessment.find({
         lifecycleStatus: { $ne: 'draft' },
@@ -3291,6 +3296,7 @@ export async function getStudentAssessment(req, res) {
       return res.status(403).json({ error: 'Assessment has not started yet.', serverTime: now, startTime: assessment.startTime });
     }
 
+    await reconcileExpiredAssessmentSubmissions({ assessmentId: assessment._id, studentId });
     let submission = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId });
 
     const passwordCheck = await ensureAssessmentPasswordUnlocked(assessment, submission);
@@ -3475,6 +3481,7 @@ export async function beginStudentAssessment(req, res) {
     if (!isAssigned) return res.status(403).json({ error: 'Not assigned to this assessment.' });
     if (now < assessment.startTime) return res.status(403).json({ error: 'Assessment has not started yet.', serverTime: now, startTime: assessment.startTime });
 
+    await reconcileExpiredAssessmentSubmissions({ assessmentId: assessment._id, studentId });
     let submission = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId });
     const activeHeartbeatAt = submission?.activeSessionHeartbeatAt
       ? new Date(submission.activeSessionHeartbeatAt).getTime()
@@ -3882,6 +3889,8 @@ export async function getAssessmentReports(req, res) {
     if (studentId && !mongoose.Types.ObjectId.isValid(studentId)) {
       return res.status(400).json({ error: 'Invalid studentId' });
     }
+
+    await reconcileExpiredAssessmentSubmissions({ assessmentId, studentId });
 
     // Dashboard callers only need headline metrics and five recent assessments.
     // Keep the full reporting pipeline for the reports workspace.

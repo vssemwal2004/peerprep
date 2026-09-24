@@ -8,22 +8,6 @@ import ForgotPasswordModal from './ForgotPasswordModal';
 // Small delay to ensure cookie is set before navigation
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const DotLineBackground = () => (
-  <div
-    className="absolute inset-0"
-    style={{
-      backgroundColor: '#f8fafc',
-      backgroundImage: [
-        'radial-gradient(circle at 1px 1px, rgba(14,165,233,0.15) 1px, transparent 0)',
-        'linear-gradient(90deg, rgba(148,163,184,0.08) 1px, transparent 1px)',
-        'linear-gradient(rgba(148,163,184,0.08) 1px, transparent 1px)'
-      ].join(', '),
-      backgroundSize: '24px 24px, 120px 120px, 120px 120px',
-      backgroundPosition: '0 0, 12px 12px, 12px 12px',
-    }}
-  />
-);
-
 const LoadingScreen = () => (
   <div className="flex h-full w-full flex-col items-center justify-center gap-5 text-center">
     <img
@@ -135,19 +119,38 @@ export default function StudentLoginPage() {
   };
 
   return (
-    <div className="relative min-h-screen w-screen overflow-hidden">
-      <DotLineBackground />
+    <div className="relative min-h-screen w-screen overflow-hidden bg-slate-50">
+      <img
+        src="/images/login-background.svg"
+        alt=""
+        width="1920"
+        height="1080"
+        loading="eager"
+        decoding="async"
+        fetchPriority="high"
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 z-[1] h-full w-full object-cover opacity-100"
+        draggable="false"
+      />
 
       <div className="relative z-10 flex min-h-screen w-full items-center justify-center px-4 py-10">
         <div className="w-full max-w-5xl overflow-hidden rounded-3xl border border-slate-200 bg-white/70 shadow-2xl backdrop-blur">
           <div className="grid min-h-[560px] grid-cols-1 lg:grid-cols-2">
-            <div className="hidden items-center justify-center bg-transparent p-10 lg:flex">
-              <img
-                src="/images/loginimg.webp"
-                alt="Student Login"
-                className="w-full max-w-md object-contain"
-                draggable="false"
-              />
+            <div className="hidden items-center justify-center bg-transparent lg:flex">
+              <picture className="block w-full max-w-lg">
+                <source srcSet="/images/loginimg-896.avif" type="image/avif" />
+                <img
+                  src="/images/loginimg-896.webp"
+                  alt="Student Login"
+                  width="896"
+                  height="597"
+                  loading="eager"
+                  decoding="async"
+                  fetchPriority="high"
+                  className="h-auto w-full object-contain"
+                  draggable="false"
+                />
+              </picture>
             </div>
 
             <div className="flex items-center justify-center p-8 sm:p-12">

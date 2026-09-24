@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" fill="none" aria-label="Light PeerPrep preparation and placement background">
+  <defs>
+    <radialGradient id="washA"><stop stop-color="#DBF2FF" stop-opacity=".68"/><stop offset="1" stop-color="#DBF2FF" stop-opacity="0"/></radialGradient>
+    <radialGradient id="washB"><stop stop-color="#E7F5FD" stop-opacity=".65"/><stop offset="1" stop-color="#E7F5FD" stop-opacity="0"/></radialGradient>
+    <linearGradient id="line" x1="0" y1="0" x2="1920" y2="1080"><stop stop-color="#B8DDF2"/><stop offset=".55" stop-color="#D5EBF8"/><stop offset="1" stop-color="#B9DEF2"/></linearGradient>
+    <g id="spark" stroke="#B9DDF1" stroke-width="1.5" stroke-linecap="round"><path d="M0-7V7M-7 0H7"/></g>
+  </defs>
+  <!-- All decoration remains outside the white login card at x=300..1630, y=170..930. -->
+  <ellipse cx="72" cy="72" rx="460" ry="340" fill="url(#washA)"/>
+  <ellipse cx="1900" cy="80" rx="390" ry="315" fill="url(#washB)"/>
+  <ellipse cx="60" cy="1050" rx="420" ry="330" fill="url(#washB)"/>
+  <ellipse cx="1900" cy="1035" rx="420" ry="330" fill="url(#washA)"/>
+
+  <g stroke="url(#line)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity=".43">
+    <!-- A single quiet preparation path; its long center sections sit behind the login card. -->
+    <path d="M-48 230C86 229 164 112 282 105S497 158 616 113"/>
+    <path d="M1290 97c134-9 190 53 314 22s213-66 362-11"/>
+    <path d="M-20 852c112-52 229-28 335 41s194 92 315 42"/>
+    <path d="M1274 1020c156 1 209-105 350-72s201 105 322 27"/>
+  </g>
+
+  <!-- Small line symbols follow the student journey; none uses text or a heavy fill. -->
+  <g stroke="#A9D3EB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity=".48">
+    <!-- Learning: open book, upper left. -->
+    <path d="M76 80c28-8 50-6 72 7v59c-24-11-47-14-72-7V80Zm72 7c22-13 44-15 72-7v59c-25-7-48-4-72 7V87Zm0 0v59"/>
+    <path d="M91 101c13-2 25-1 38 3m-38 13c13-2 25-1 38 3m38-16c13-4 25-5 38-3m-38 19c13-4 25-5 38-3" opacity=".53"/>
+    <!-- Skill practice: minimal code window, upper right. -->
+    <rect x="1718" y="67" width="112" height="75" rx="12"/>
+    <path d="M1718 88h112m-76 20-11 10 11 10m39-20 11 10-11 10m-21 3 8-26"/>
+    <circle cx="1731" cy="78" r="2" fill="#A9D3EB" stroke="none"/><circle cx="1741" cy="78" r="2" fill="#A9D3EB" stroke="none"/>
+    <!-- Mock interview: two calm speech bubbles, left edge. -->
+    <path d="M81 496h91a21 21 0 0 1 21 21v30a21 21 0 0 1-21 21h-47l-21 18v-18H81a21 21 0 0 1-21-21v-30a21 21 0 0 1 21-21Z"/>
+    <path d="M98 524h55m-55 17h37" opacity=".55"/>
+    <!-- Feedback and progress: right edge. -->
+    <rect x="1745" y="476" width="93" height="114" rx="12"/>
+    <path d="M1766 505l7 7 12-15m12 12h20m-51 35 7 7 12-15m12 12h20"/>
+    <!-- Placement: offer letter, bottom right. -->
+    <path d="M1701 863h88l21 21v111h-109a12 12 0 0 1-12-12V875a12 12 0 0 1 12-12Zm88 0v21h21m-96 20h70m-70 16h48"/>
+    <circle cx="1750" cy="957" r="16"/><path d="m1743 957 5 5 10-11"/>
+    <!-- Career growth: graduation cap and rising line, bottom left. -->
+    <path d="m74 931 72-29 72 29-72 29-72-29Zm27 12v30c26 17 64 17 90 0v-30m27-12v37"/>
+    <path d="m229 989 22-16 19 5 27-29m-12 0h12v12" opacity=".72"/>
+  </g>
+
+  <g fill="#B8DDF1" opacity=".38">
+    <circle cx="294" cy="107" r="4"/><circle cx="1595" cy="121" r="4"/>
+    <circle cx="314" cy="894" r="4"/><circle cx="1623" cy="947" r="4"/>
+    <circle cx="60" cy="301" r="2.5"/><circle cx="1866" cy="333" r="2.5"/>
+    <circle cx="27" cy="679" r="2.5"/><circle cx="1881" cy="695" r="2.5"/>
+  </g>
+  <g opacity=".38"><use href="#spark" x="277" y="54"/><use href="#spark" x="1643" y="47"/><use href="#spark" x="45" y="752"/><use href="#spark" x="1872" y="798"/></g>
+</svg>
