@@ -1,7 +1,8 @@
-/* eslint-disable no-unused-vars */
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { api } from '../utils/api';
 import { motion, AnimatePresence } from 'framer-motion';
+import InterviewWorkspaceNav from '../components/interviews/InterviewWorkspaceNav';
+import InterviewSelector from '../components/interviews/InterviewSelector';
 import { 
   Filter, 
   RefreshCw, 
@@ -205,13 +206,12 @@ const FilterSection = ({
 export default function CoordinatorFeedback() {
   const [feedback, setFeedback] = useState([]);
   const [events, setEvents] = useState([]);
+  const [eventsLoading, setEventsLoading] = useState(true);
+  const [eventsError, setEventsError] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState('');
   const [college, setCollege] = useState('');
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
-  const [sidebarWidth, setSidebarWidth] = useState(280);
-  const [isResizing, setIsResizing] = useState(false);
-  const sidebarRef = useRef(null);
 
   const loadEvents = async () => {
     try { 
@@ -219,6 +219,9 @@ export default function CoordinatorFeedback() {
       setEvents(ev); 
     } catch (error) {
       console.error('Failed to load events:', error);
+      setEventsError(true);
+    } finally {
+      setEventsLoading(false);
     }
   };
 
@@ -281,38 +284,6 @@ export default function CoordinatorFeedback() {
     }
   };
 
-  // Resizable sidebar logic
-  const startResizing = useCallback(() => {
-    setIsResizing(true);
-  }, []);
-
-  const stopResizing = useCallback(() => {
-    setIsResizing(false);
-  }, []);
-
-  const resize = useCallback(
-    (e) => {
-      if (isResizing) {
-        const newWidth = e.clientX;
-        if (newWidth >= 200 && newWidth <= 500) {
-          setSidebarWidth(newWidth);
-        }
-      }
-    },
-    [isResizing]
-  );
-
-  useEffect(() => {
-    if (isResizing) {
-      window.addEventListener('mousemove', resize);
-      window.addEventListener('mouseup', stopResizing);
-      return () => {
-        window.removeEventListener('mousemove', resize);
-        window.removeEventListener('mouseup', stopResizing);
-      };
-    }
-  }, [isResizing, resize, stopResizing]);
-
   const stats = {
     total: feedback.length,
     averageScore: feedback.length > 0 
@@ -324,92 +295,12 @@ export default function CoordinatorFeedback() {
   const selectedEvent = events.find(e => e._id === selectedEventId);
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 flex">
-      {/* Left Sidebar - Events List */}
-      <div
-        ref={sidebarRef}
-        style={{ width: `${sidebarWidth}px`, height: 'calc(100vh - 3.5rem)' }}
-        className="bg-white dark:bg-gray-800 border-r border-slate-200 dark:border-gray-700 flex flex-col relative"
-      >
-        {/* Sidebar Header */}
-        <div className="p-4 border-b border-slate-200 dark:border-gray-700">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-8 h-8 bg-sky-500 dark:bg-sky-600 rounded-lg flex items-center justify-center">
-              <Calendar className="w-4 h-4 text-white" />
-            </div>
-            <h2 className="text-sm font-bold text-slate-800 dark:text-gray-100">Events</h2>
+    <InterviewWorkspaceNav events={events} loading={eventsLoading} error={eventsError}>
+      <div className="mx-auto w-full max-w-[1600px] min-w-0">
+        <div className="px-4 py-4 sm:px-6">
+          <div className="mb-5 border-b border-slate-200 pb-4 dark:border-gray-800">
+            <InterviewSelector events={events} value={selectedEventId} onChange={handleEventClick} />
           </div>
-          <p className="text-xs text-slate-500 dark:text-gray-400">Select an event to view feedback</p>
-        </div>
-
-        {/* Events List */}
-        <div className="flex-1 overflow-y-auto p-3 space-y-2">
-          {/* All Events Option */}
-          <motion.button
-            onClick={() => handleEventClick('')}
-            className={`w-full text-left p-3 rounded-lg border transition-all ${
-              selectedEventId === ''
-                ? 'bg-sky-50 dark:bg-sky-900/30 border-sky-300 dark:border-sky-700 shadow-sm'
-                : 'bg-white dark:bg-gray-700 border-slate-200 dark:border-gray-600 hover:border-sky-200 dark:hover:border-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/20'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex-1 min-w-0">
-                <h3 className="text-xs font-semibold text-slate-900 dark:text-gray-100 truncate">
-                  All Events
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-gray-400 mt-0.5">
-                  View all feedback
-                </p>
-              </div>
-              {selectedEventId === '' && (
-                <ChevronRight className="w-4 h-4 text-sky-500 flex-shrink-0" />
-              )}
-            </div>
-          </motion.button>
-
-          {/* Individual Events */}
-          {events.map((event, idx) => (
-            <motion.button
-              key={event._id}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: idx * 0.05 }}
-              onClick={() => handleEventClick(event._id)}
-              className={`w-full text-left p-3 rounded-lg border transition-all ${
-                selectedEventId === event._id
-                  ? 'bg-sky-50 dark:bg-sky-900/30 border-sky-300 dark:border-sky-700 shadow-sm'
-                  : 'bg-white dark:bg-gray-700 border-slate-200 dark:border-gray-600 hover:border-sky-200 dark:hover:border-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/20'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-xs font-semibold text-slate-900 dark:text-gray-100 truncate">
-                    {event.name}
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-gray-400 mt-0.5">
-                    {new Date(event.startDate).toLocaleDateString()}
-                  </p>
-                </div>
-                {selectedEventId === event._id && (
-                  <ChevronRight className="w-4 h-4 text-sky-500 flex-shrink-0" />
-                )}
-              </div>
-            </motion.button>
-          ))}
-        </div>
-
-        {/* Resize Handle */}
-        <div
-          className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-sky-400 dark:hover:bg-sky-600 transition-colors"
-          onMouseDown={startResizing}
-          style={{ cursor: isResizing ? 'col-resize' : 'ew-resize' }}
-        />
-      </div>
-
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col overflow-hidden" style={{ height: 'calc(100vh - 3.5rem)' }}>
-        <div className="flex-1 overflow-y-auto px-4 py-4">
           {/* Header */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -418,19 +309,10 @@ export default function CoordinatorFeedback() {
           >
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
               <div className="flex items-center gap-2">
-                <div className="w-10 h-10 bg-sky-600 dark:bg-sky-700 rounded-lg flex items-center justify-center">
-                  <GraduationCap className="w-5 h-5 text-white" />
-                </div>
                 <div>
-                  <h1 className="text-xl font-semibold text-slate-800 dark:text-gray-100">
+                  <h2 className="text-xl font-semibold text-slate-800 dark:text-gray-100">
                     {selectedEvent ? selectedEvent.name : 'All Student Feedback'}
-                  </h1>
-                  <p className="text-slate-600 dark:text-gray-400 text-sm">
-                    {selectedEvent 
-                      ? `Reviews for ${selectedEvent.name}`
-                      : 'Review feedback for your assigned students'
-                    }
-                  </p>
+                  </h2>
                 </div>
               </div>
             
@@ -645,6 +527,6 @@ export default function CoordinatorFeedback() {
           )}
         </div>
       </div>
-    </div>
+    </InterviewWorkspaceNav>
   );
 }

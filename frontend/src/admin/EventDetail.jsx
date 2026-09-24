@@ -1,19 +1,17 @@
-/* eslint-disable no-unused-vars */
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../utils/api';
-import { 
-  CheckCircle, 
-  AlertCircle, 
-  ArrowLeft, 
-  Download, 
-  Clock, 
-  Users, 
-  Search, 
-  Calendar, 
-  X, 
-  Menu,
+import InterviewWorkspaceNav from '../components/interviews/InterviewWorkspaceNav';
+import InterviewBrowser from '../components/interviews/InterviewBrowser';
+import { InterviewStat as StatCard, InterviewPair as PairCard } from '../components/interviews/InterviewSummary';
+import {
+  CheckCircle,
+  AlertCircle,
+  ArrowLeft,
+  Download,
+  Users,
+  Calendar,
   FileText,
   BarChart3,
   Link2,
@@ -25,160 +23,6 @@ import {
   Trash2
 } from 'lucide-react';
 
-// Event Card Component
-const EventCard = ({ event, isActive, onClick }) => (
-  <motion.div
-    initial={{ opacity: 0, y: 10 }}
-    animate={{ opacity: 1, y: 0 }}
-    whileHover={{ x: 6 }}
-    transition={{ type: "spring", stiffness: 420, damping: 30 }}
-    className={`p-3 rounded-lg bg-white dark:bg-gray-800 border transition-all duration-200 cursor-pointer ${
-      isActive 
-        ? "border-sky-500 dark:border-sky-400 ring-1 ring-sky-500 dark:ring-sky-400 bg-sky-50 dark:bg-sky-900/30" 
-        : "border-slate-200 dark:border-gray-700 hover:border-slate-300 dark:hover:border-gray-600 hover:bg-slate-50 dark:hover:bg-gray-700"
-    }`}
-    onClick={onClick}
-  >
-    <div className="flex items-start gap-2">
-      <Calendar className="w-4 h-4 text-indigo-600 dark:text-indigo-400 mt-0.5 flex-shrink-0" />
-      <div className="flex-1 min-w-0">
-        <h3 className="font-semibold text-slate-800 dark:text-white text-sm truncate">{event.name}</h3>
-        <div className="text-xs text-slate-600 dark:text-white mt-1">
-          <p>{new Date(event.startDate).toLocaleDateString()}</p>
-        </div>
-        {event.coordinatorName && (
-          <div className="mt-1 text-xs text-slate-500 dark:text-white">
-            <span className="font-medium">Coordinator:</span> {event.coordinatorName}
-          </div>
-        )}
-        {event.isSpecial && (
-          <span className="inline-block mt-1 text-xs bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded">
-            Special
-          </span>
-        )}
-      </div>
-    </div>
-  </motion.div>
-);
-
-// Stat Card Component
-const StatCard = ({ icon: Icon, label, value, color = "indigo" }) => (
-  <motion.div
-    initial={{ opacity: 0, scale: 0.8 }}
-    animate={{ opacity: 1, scale: 1 }}
-    className="p-3 bg-white dark:bg-gray-800 rounded-lg border border-slate-200 dark:border-gray-700"
-  >
-    <div className="flex items-center gap-2">
-      <div className={`p-1.5 rounded bg-${color}-50`}>
-        <Icon className={`w-3 h-3 text-${color}-600`} />
-      </div>
-      <div>
-        <div className="text-xs text-slate-500 dark:text-white">{label}</div>
-        <div className="font-semibold text-slate-800 dark:text-white text-sm">{value}</div>
-      </div>
-    </div>
-  </motion.div>
-);
-
-// Pair Card Component
-const PairCard = ({ pair, index }) => (
-  <motion.div
-    initial={{ opacity: 0, y: 10 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ delay: 0.5 + index * 0.1 }}
-    className="rounded-2xl border border-slate-200 bg-white p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-lg dark:border-gray-700 dark:bg-gray-800 dark:hover:border-sky-700"
-  >
-    <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-[minmax(0,1fr)_32px_minmax(0,1fr)] items-center gap-3">
-          <div className="min-w-0 rounded-xl bg-indigo-50 p-3 dark:bg-indigo-950/30">
-            <div className="truncate text-sm font-bold text-indigo-800 dark:text-indigo-300">
-              {pair.interviewer?.name || pair.interviewer?.email}
-            </div>
-            <div className="mt-1 truncate text-xs text-slate-500 dark:text-gray-400">{pair.interviewer?.studentId || pair.interviewer?.email || 'No details'}</div>
-            <div className="mt-2 text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">Mentor</div>
-          </div>
-          <div className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-400 dark:border-gray-600 dark:bg-gray-700">→</div>
-          <div className="min-w-0 rounded-xl bg-sky-50 p-3 dark:bg-sky-950/30">
-            <div className="truncate text-sm font-bold text-sky-800 dark:text-sky-300">
-              {pair.interviewee?.name || pair.interviewee?.email}
-            </div>
-            <div className="mt-1 truncate text-xs text-slate-500 dark:text-gray-400">{pair.interviewee?.studentId || pair.interviewee?.email || 'No details'}</div>
-            <div className="mt-2 text-[10px] font-bold uppercase tracking-wider text-sky-600 dark:text-sky-400">Candidate</div>
-          </div>
-      </div>
-      
-      <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 text-xs text-slate-600 dark:border-gray-700 dark:text-gray-300">
-        <span className={`rounded-full px-2.5 py-1 font-semibold ${
-          pair.status === 'completed' ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300' :
-          pair.status === 'scheduled' ? 'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300' :
-          'bg-slate-100 dark:bg-gray-700 text-slate-700 dark:text-gray-300'
-        }`}>
-          {pair.status || (pair.scheduledAt ? 'Scheduled' : 'Pending')}
-        </span>
-        
-        {pair.scheduledAt && (
-          <span className="flex items-center gap-0.5">
-            <Clock className="w-3 h-3" />
-            {new Date(pair.scheduledAt).toLocaleString()}
-          </span>
-        )}
-        
-        {pair.meetingLink && (
-          <a
-            href={pair.meetingLink}
-            className="flex items-center gap-0.5 text-sky-600 dark:text-sky-400 hover:text-sky-800 dark:hover:text-sky-300 underline"
-            target="_blank"
-            rel="noreferrer"
-          >
-            <Link2 className="w-3 h-3" />
-            Meeting
-          </a>
-        )}
-      </div>
-    </div>
-  </motion.div>
-);
-
-// Search and Filter Component
-const EventSearchFilter = ({ searchQuery, setSearchQuery, eventTab, setEventTab }) => (
-  <div className="space-y-3">
-    <div className="relative">
-      <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3 h-3 text-slate-500 dark:text-gray-400" />
-      <input
-        type="text"
-        value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
-        placeholder="Search interviews..."
-        className="w-full bg-slate-50 dark:bg-gray-700 border border-slate-300 dark:border-gray-600 pl-7 pr-7 py-2 rounded-lg focus:ring-1 focus:ring-sky-500 dark:focus:ring-sky-600 focus:border-sky-500 dark:focus:border-sky-600 text-slate-700 dark:text-white text-sm placeholder:text-gray-400 dark:placeholder:text-gray-400"
-      />
-      {searchQuery && (
-        <button
-          onClick={() => setSearchQuery("")}
-          className="absolute right-2 top-1/2 transform -translate-y-1/2 text-slate-500 dark:text-gray-400 hover:text-slate-700 dark:hover:text-gray-200"
-        >
-          <X className="w-3 h-3" />
-        </button>
-      )}
-    </div>
-    
-    <div className="flex gap-1 bg-slate-100 dark:bg-gray-700 p-1 rounded">
-      {['all', 'active', 'upcoming', 'previous'].map(tab => (
-        <button
-          key={tab}
-          onClick={() => setEventTab(tab)}
-          className={`flex-1 px-2 py-1 rounded text-xs font-medium transition-all duration-200 ${
-            eventTab === tab
-              ? 'bg-white dark:bg-gray-800 text-sky-600 dark:text-sky-400 shadow-sm'
-              : 'text-slate-600 dark:text-white hover:text-slate-800 dark:hover:text-white'
-          }`}
-        >
-          {tab.charAt(0).toUpperCase() + tab.slice(1)}
-        </button>
-      ))}
-    </div>
-  </div>
-);
-
 // Main Component
 export default function EventDetail() {
   const { id } = useParams();
@@ -187,13 +31,14 @@ export default function EventDetail() {
   const [eventCreatedMsg, setEventCreatedMsg] = useState("");
   const [event, setEvent] = useState(null);
   const [events, setEvents] = useState([]);
-  const [activeEventId, setActiveEventId] = useState(id);
+  const [eventsError, setEventsError] = useState(false);
+  const activeEventId = id;
+  const requestVersion = useRef(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [pairs, setPairs] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
-  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [eventTab, setEventTab] = useState('all');
   const [participants, setParticipants] = useState([]);
   const [actionBusy, setActionBusy] = useState(false);
@@ -203,31 +48,32 @@ export default function EventDetail() {
   const [activeDataView, setActiveDataView] = useState('students');
 
   const getBasePath = useCallback(() => {
+    if (location.pathname.startsWith('/admin/interviews/one-to-one/past')) return '/admin/interviews/one-to-one/past';
+    if (location.pathname.startsWith('/admin/interviews/one-to-one/scheduled')) return '/admin/interviews/one-to-one/scheduled';
+    if (location.pathname.startsWith('/admin/interviews/one-to-one')) return '/admin/interviews/one-to-one';
     if (location.pathname.startsWith('/admin/interviews/past')) return '/admin/interviews/past';
     if (location.pathname.startsWith('/admin/interviews/scheduled')) return '/admin/interviews/scheduled';
     if (location.pathname.startsWith('/admin/interviews')) return '/admin/interviews';
-    return '/admin/event';
+    return '/admin/interviews/one-to-one';
   }, [location.pathname]);
 
-  const load = useCallback(async (eventId) => {
+  const load = useCallback(async (eventId = id) => {
+    const version = ++requestVersion.current;
+    let eventsLoaded = false;
     try {
       setLoading(true);
       setMsg('');
+      setEventsError(false);
       const [allEvents] = await Promise.all([api.listEvents()]);
+      if (version !== requestVersion.current) return;
       setEvents(allEvents);
+      eventsLoaded = true;
 
-      let targetEventId = eventId || id;
+      let targetEventId = eventId;
       const isValidObjectId = (val) => /^[0-9a-fA-F]{24}$/.test(val || '');
-      
+
       if (!targetEventId || targetEventId.startsWith(':') || !isValidObjectId(targetEventId)) {
         targetEventId = '';
-      }
-
-      if (!targetEventId && allEvents.length > 0) {
-        targetEventId = allEvents[0]._id;
-        setActiveEventId(targetEventId);
-        const basePath = getBasePath();
-        navigate(`${basePath}/${targetEventId}`, { replace: true });
       }
 
       if (targetEventId) {
@@ -237,6 +83,7 @@ export default function EventDetail() {
           api.listPairs(targetEventId),
           api.listEventParticipants(targetEventId),
         ]);
+        if (version !== requestVersion.current) return;
         setEvent(ev);
         setAnalytics(an);
         setPairs(pr);
@@ -246,57 +93,51 @@ export default function EventDetail() {
         setEvent(null);
         setAnalytics(null);
         setPairs([]);
-        setMsg('No interviews available. Please create one first.');
+        setMsg('');
       }
     } catch (e) {
+      if (version !== requestVersion.current) return;
       setMsg(e.message || 'Failed to load event data');
+      setEventsError(!eventsLoaded);
       setEvent(null);
       setAnalytics(null);
       setPairs([]);
       setParticipants([]);
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
-  }, [getBasePath, id, navigate]);
+  }, [id]);
 
   useEffect(() => {
-    if (window.history.state && window.history.state.usr && window.history.state.usr.eventCreated) {
-      setEventCreatedMsg("Interview created successfully!");
-      setTimeout(() => setEventCreatedMsg(""), 4000);
-      // General interview assignment is finalized in the background immediately
-      // after creation; refresh once so the new participant roster appears.
-      setTimeout(() => load(activeEventId), 1800);
+    let noticeTimer;
+    let refreshTimer;
+    if (location.state?.eventCreated) {
+      setEventCreatedMsg('Interview created successfully!');
+      noticeTimer = window.setTimeout(() => setEventCreatedMsg(''), 4000);
+      refreshTimer = window.setTimeout(() => load(id), 1800);
     }
-    load(activeEventId);
-  }, [activeEventId, load]);
+    load(id);
+    return () => {
+      requestVersion.current += 1;
+      window.clearTimeout(noticeTimer);
+      window.clearTimeout(refreshTimer);
+    };
+  }, [id, load, location.state?.eventCreated]);
 
   useEffect(() => {
     const path = location.pathname;
-    if (path.startsWith('/admin/interviews/past')) {
+    if (path.startsWith('/admin/interviews/one-to-one/past') || path.startsWith('/admin/interviews/past')) {
       setEventTab('previous');
-    } else if (path.startsWith('/admin/interviews/scheduled')) {
+    } else if (path.startsWith('/admin/interviews/one-to-one/scheduled') || path.startsWith('/admin/interviews/scheduled')) {
       setEventTab('upcoming');
     } else if (path.startsWith('/admin/interviews')) {
-      setEventTab('all');
+      setEventTab(new URLSearchParams(location.search).get('status') === 'active' ? 'active' : 'all');
     } else if (path.startsWith('/admin/event')) {
       setEventTab('all');
     }
-  }, [location.pathname]);
+  }, [location.pathname, location.search]);
 
-  const listTitle = eventTab === 'previous' ? 'Past Interviews' : eventTab === 'upcoming' ? 'Scheduled Interviews' : 'Interviews';
   const backPath = getBasePath();
-
-  // Filter events based on tab and search
-  const now = new Date();
-  const filteredEvents = events.filter(e => {
-    const nameMatch = e.name.toLowerCase().includes(searchQuery.toLowerCase());
-    if (!nameMatch) return false;
-    if (eventTab === 'all') return true;
-    if (eventTab === 'active') return new Date(e.startDate) <= now && new Date(e.endDate) >= now;
-    if (eventTab === 'upcoming') return new Date(e.startDate) > now;
-    if (eventTab === 'previous') return new Date(e.endDate) < now;
-    return true;
-  });
 
   const handleExportCsv = async () => {
     try {
@@ -315,10 +156,8 @@ export default function EventDetail() {
   };
 
   const handleEventSelect = (eventId) => {
-    setActiveEventId(eventId);
     const basePath = getBasePath();
-    navigate(`${basePath}/${eventId}`);
-    setIsMobileSidebarOpen(false);
+    navigate(eventId ? `${basePath}/${eventId}` : basePath);
   };
 
   const handleStatusChange = async (status) => {
@@ -344,8 +183,8 @@ export default function EventDetail() {
         `Due to some reason, this interview has been cancelled by ${event?.createdBy?.name || 'admin'}.`,
       );
       setMsg(result.message || 'Interview deleted successfully');
-      setActiveEventId('');
-      await load('');
+
+      navigate(getBasePath(), { replace: true });
     } catch (error) {
       setMsg(error.message || 'Unable to delete interview');
     } finally {
@@ -389,88 +228,38 @@ export default function EventDetail() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white dark:bg-gray-900 flex items-center justify-center">
-        <div className="text-slate-600 dark:text-gray-400">Loading...</div>
-      </div>
+      <InterviewWorkspaceNav events={events} loading>
+        <div role="status" className="mx-auto max-w-[1600px] px-6 py-16 text-center text-sm text-slate-500 dark:text-gray-400">Loading interviews…</div>
+      </InterviewWorkspaceNav>
     );
   }
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 flex flex-col">
+    <InterviewWorkspaceNav events={events} error={eventsError}>
       {eventCreatedMsg && (
         <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-6 py-2 rounded-lg shadow-lg z-50 text-base font-semibold">
           {eventCreatedMsg}
         </div>
       )}
-      <div className="flex-1 w-full max-w-full mx-auto px-4 py-4">
-        <div className="flex flex-col lg:flex-row gap-4">
-          {/* Mobile Header */}
-          <div className="lg:hidden flex items-center justify-between bg-white dark:bg-gray-800 rounded-lg p-3 border border-slate-200 dark:border-gray-700">
-            <h1 className="text-lg font-semibold text-slate-800 dark:text-white">{listTitle}</h1>
-            <button
-              onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
-              className="p-1.5 rounded bg-slate-100 dark:bg-gray-700 hover:bg-slate-200 dark:hover:bg-gray-600"
-            >
-              {isMobileSidebarOpen ? <X className="w-4 h-4 dark:text-white" /> : <Menu className="w-4 h-4 dark:text-white" />}
-            </button>
-          </div>
-
-          {/* Sidebar */}
-          <AnimatePresence>
-                  {(isMobileSidebarOpen || window.innerWidth >= 1024) && (
-              <motion.div
-                initial={{ x: window.innerWidth < 1024 ? "-100%" : 0 }}
-                animate={{ x: 0 }}
-                exit={{ x: window.innerWidth < 1024 ? "-100%" : 0 }}
-                className={`lg:block lg:w-80 ${
-                  window.innerWidth < 1024 
-                    ? "fixed inset-0 top-0 z-30 bg-white p-4 overflow-y-auto"
-                    : "relative"
-                }`}
-              >
-                <motion.div
-                  whileHover={{ x: 8 }}
-                  transition={{ type: "spring", stiffness: 420, damping: 32 }}
-                  className="bg-white dark:bg-gray-800 rounded-lg border border-slate-200 dark:border-gray-700 p-4 h-[calc(100vh-8rem)] overflow-y-auto"
-                >
-                  <h2 className="text-lg font-semibold text-slate-800 dark:text-white mb-3">{listTitle}</h2>
-                  
-                  <EventSearchFilter 
-                    searchQuery={searchQuery}
-                    setSearchQuery={setSearchQuery}
-                    eventTab={eventTab}
-                    setEventTab={setEventTab}
-                  />
-
-                  <div className="mt-3 space-y-2">
-                    {filteredEvents.length === 0 ? (
-                      <div className="text-slate-500 dark:text-white text-sm text-center py-4">
-                        No interviews found
-                      </div>
-                    ) : (
-                      filteredEvents.map((e, idx) => (
-                        <EventCard
-                          key={e._id}
-                          event={e}
-                          isActive={activeEventId === e._id}
-                          onClick={() => handleEventSelect(e._id)}
-                        />
-                      ))
-                    )}
-                  </div>
-                </motion.div>
-              </motion.div>
-            )}
-          </AnimatePresence>          {/* Main Content */}
-          <div className="flex-1">
-            <div className="bg-white dark:bg-gray-800 rounded-lg border border-slate-200 dark:border-gray-700 p-3 sm:p-4 h-[calc(100vh-8rem)] overflow-y-auto">
-              {event ? (
+      <div className="flex-1 w-full max-w-[1600px] mx-auto px-4 py-4 sm:px-6">
+        <div className="flex min-w-0 flex-col gap-4">
+          <div className="min-w-0">
+            <div className={id ? "rounded-xl border border-slate-200 bg-white p-4 sm:p-5 dark:border-gray-800 dark:bg-gray-900" : ""}>
+              {!id && msg && !isSuccessMsg ? (
+                <div role="alert" className="flex justify-center py-8"><button type="button" onClick={() => load()} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-sky-600 dark:border-gray-700 dark:text-sky-400">Retry loading interviews</button></div>
+              ) : !id ? (
+                <InterviewBrowser events={events} search={searchQuery} onSearchChange={setSearchQuery} view={eventTab} onViewChange={(view) => {
+                  setEventTab(view);
+                  const root = '/admin/interviews/one-to-one';
+                  navigate(view === 'upcoming' ? root + '/scheduled' : view === 'previous' ? root + '/past' : view === 'active' ? root + '?status=active' : root);
+                }} onSelect={handleEventSelect} />
+              ) : event ? (
                 <div className="space-y-3 sm:space-y-4">
                   {/* Header */}
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div className="flex-1">
                         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-                          <h1 className="text-lg sm:text-xl font-semibold text-slate-800 dark:text-gray-100">{event.name}</h1>
+                          <h2 className="text-lg sm:text-xl font-semibold text-slate-800 dark:text-gray-100">{event.name}</h2>
                           <span className="w-fit rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">
                             {event.status || 'published'}
                           </span>
@@ -497,7 +286,7 @@ export default function EventDetail() {
                   </div>
 
                   {/* Event Controls */}
-                  
+
 
                   {/* Quick Actions */}
                   <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-900/40">
@@ -541,18 +330,18 @@ export default function EventDetail() {
 
                   {/* Analytics */}
                   {analytics && (
-                    <div className="p-3 bg-sky-50 dark:bg-sky-900/20 rounded-lg border border-sky-200 dark:border-sky-800">
+                    <div className="rounded-xl bg-slate-50 p-4 dark:bg-gray-950">
                       <h3 className="font-medium text-slate-800 dark:text-gray-100 mb-3 flex items-center gap-1.5 text-sm">
                         <BarChart3 className="w-4 h-4 text-sky-600 dark:text-sky-400" />
                         Interview Analytics
                       </h3>
                       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
-                        <StatCard icon={UserCheck} label="Assigned" value={participants.filter((item) => item.assignmentStatus === 'assigned').length} color="indigo" />
-                        <StatCard icon={Users} label="Joined" value={analytics.joined} color="sky" />
-                        <StatCard icon={Link2} label="Pairs" value={analytics.pairs} color="emerald" />
-                        <StatCard icon={Calendar} label="Scheduled" value={analytics.scheduled} color="indigo" />
-                        <StatCard icon={FileText} label="Feedback" value={analytics.feedbackSubmissions} color="amber" />
-                        <StatCard icon={BarChart3} label="Avg Score" value={analytics.averageScore} color="rose" />
+                        <StatCard icon={UserCheck} label="Assigned" value={participants.filter((item) => item.assignmentStatus === 'assigned').length} />
+                        <StatCard icon={Users} label="Joined" value={analytics.joined} />
+                        <StatCard icon={Link2} label="Pairs" value={analytics.pairs} />
+                        <StatCard icon={Calendar} label="Scheduled" value={analytics.scheduled} />
+                        <StatCard icon={FileText} label="Feedback" value={analytics.feedbackSubmissions} />
+                        <StatCard icon={BarChart3} label="Avg Score" value={analytics.averageScore} />
                       </div>
                     </div>
                   )}
@@ -656,17 +445,17 @@ export default function EventDetail() {
                   <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-5 dark:border-gray-700 dark:bg-gray-900/30">
                     <div className="mb-4">
                       <h3 className="text-base font-bold text-slate-900 dark:text-white">Interview Pairs</h3>
-                      <p className="mt-1 text-xs font-medium text-slate-500 dark:text-gray-400">Each card clearly maps the mentor to the candidate with scheduling status.</p>
+
                     </div>
                     {pairs.length === 0 ? (
                       <div className="text-center py-4 text-slate-500 dark:text-gray-400 bg-slate-50 dark:bg-gray-700 rounded border border-slate-300 dark:border-gray-600 text-sm">
                         No pairs available for this event.
                       </div>
                     ) : (
-                      <div className="max-h-[34rem] overflow-y-auto pr-1">
+                      <div className="space-y-3">
                         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                          {pairs.map((pair, idx) => (
-                            <PairCard key={pair._id} pair={pair} index={idx} />
+                          {pairs.map((pair) => (
+                            <PairCard key={pair._id} pair={pair} />
                           ))}
                         </div>
                       </div>
@@ -675,19 +464,7 @@ export default function EventDetail() {
                   )}
                 </div>
               ) : (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <Calendar className="w-12 h-12 text-indigo-600 dark:text-indigo-400 mb-3" />
-                  <h3 className="text-lg font-semibold text-slate-800 dark:text-gray-100 mb-1">No Interview Selected</h3>
-                  <p className="text-slate-600 dark:text-gray-400 text-sm max-w-md mb-3">
-                    {msg || 'Select an interview from the sidebar or create a new one to get started.'}
-                  </p>
-                  <Link
-                    to="/admin/event"
-                    className="px-4 py-2 bg-sky-500 dark:bg-sky-600 text-white rounded-lg font-medium hover:bg-sky-600 dark:hover:bg-sky-700 transition-colors text-sm"
-                  >
-                    Create New Interview
-                  </Link>
-                </div>
+                <div className="py-12 text-center text-sm text-slate-500 dark:text-gray-400">Interview could not be loaded.</div>
               )}
 
               {/* Message Alert */}
@@ -718,6 +495,6 @@ export default function EventDetail() {
           </div>
         </div>
       </div>
-    </div>
+    </InterviewWorkspaceNav>
   );
 }

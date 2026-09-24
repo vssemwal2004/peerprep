@@ -1,7 +1,8 @@
-/* eslint-disable no-unused-vars */
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { api } from '../utils/api';
 import { motion, AnimatePresence } from 'framer-motion';
+import InterviewWorkspaceNav from '../components/interviews/InterviewWorkspaceNav';
+import InterviewSelector from '../components/interviews/InterviewSelector';
 import { 
   Filter, 
   RefreshCw, 
@@ -91,13 +92,12 @@ const FeedbackCard = ({ feedback, onMarksClick, onCommentsClick }) => (
 export default function FeedbackReview() {
   const [feedback, setFeedback] = useState([]);
   const [events, setEvents] = useState([]);
+  const [eventsLoading, setEventsLoading] = useState(true);
+  const [eventsError, setEventsError] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState('');
   const [college, setCollege] = useState('');
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
-  const [sidebarWidth, setSidebarWidth] = useState(280);
-  const [isResizing, setIsResizing] = useState(false);
-  const sidebarRef = useRef(null);
 
   const [selectedFeedback, setSelectedFeedback] = useState(null);
   const [dialogMode, setDialogMode] = useState(null); // 'marks' | 'comments'
@@ -108,6 +108,9 @@ export default function FeedbackReview() {
       setEvents(ev); 
     } catch (error) {
       console.error('Failed to load events:', error);
+      setEventsError(true);
+    } finally {
+      setEventsLoading(false);
     }
   };
 
@@ -170,38 +173,6 @@ export default function FeedbackReview() {
     }
   };
 
-  // Resizable sidebar logic
-  const startResizing = useCallback(() => {
-    setIsResizing(true);
-  }, []);
-
-  const stopResizing = useCallback(() => {
-    setIsResizing(false);
-  }, []);
-
-  const resize = useCallback(
-    (e) => {
-      if (isResizing) {
-        const newWidth = e.clientX;
-        if (newWidth >= 200 && newWidth <= 500) {
-          setSidebarWidth(newWidth);
-        }
-      }
-    },
-    [isResizing]
-  );
-
-  useEffect(() => {
-    if (isResizing) {
-      window.addEventListener('mousemove', resize);
-      window.addEventListener('mouseup', stopResizing);
-      return () => {
-        window.removeEventListener('mousemove', resize);
-        window.removeEventListener('mouseup', stopResizing);
-      };
-    }
-  }, [isResizing, resize, stopResizing]);
-
   const stats = {
     total: feedback.length,
     averageScore: feedback.length > 0 
@@ -218,92 +189,12 @@ export default function FeedbackReview() {
   const selectedEvent = events.find(e => e._id === selectedEventId);
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 flex flex-col lg:flex-row">
-      {/* Left Sidebar - Events List (hidden on mobile by default) */}
-      <div
-        ref={sidebarRef}
-        style={{ width: typeof window !== 'undefined' && window.innerWidth >= 1024 ? `${sidebarWidth}px` : '100%', height: 'auto' }}
-        className="bg-white dark:bg-gray-800 border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-gray-700 flex flex-col relative lg:h-[calc(100vh-3.5rem)]"
-      >
-        {/* Sidebar Header */}
-        <div className="p-3 sm:p-4 border-b border-slate-200 dark:border-gray-700">
-          <div className="flex items-center gap-2 mb-1 sm:mb-2">
-            <div className="w-7 h-7 sm:w-8 sm:h-8 bg-sky-500 dark:bg-sky-600 rounded-lg flex items-center justify-center">
-              <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
-            </div>
-            <h2 className="text-xs sm:text-sm font-bold text-slate-800 dark:text-white">Events</h2>
+    <InterviewWorkspaceNav events={events} loading={eventsLoading} error={eventsError}>
+      <div className="mx-auto w-full max-w-[1600px] min-w-0">
+        <div className="px-4 py-4 sm:px-6">
+          <div className="mb-5 border-b border-slate-200 pb-4 dark:border-gray-800">
+            <InterviewSelector events={events} value={selectedEventId} onChange={handleEventClick} />
           </div>
-          <p className="text-xs text-slate-500 dark:text-white hidden sm:block">Select an event to view feedback</p>
-        </div>
-
-        {/* Events List */}
-        <div className="flex-1 overflow-y-auto lg:overflow-x-hidden p-2 sm:p-3 space-y-2 flex lg:flex-col gap-2 overflow-x-auto">
-          {/* All Events Option */}
-          <motion.button
-            onClick={() => handleEventClick('')}
-            className={`w-full min-w-[140px] lg:min-w-0 text-left p-2 sm:p-3 rounded-lg border transition-all ${
-              selectedEventId === ''
-                ? 'bg-sky-50 dark:bg-sky-900/30 border-sky-300 dark:border-sky-700 shadow-sm'
-                : 'bg-white dark:bg-gray-700 border-slate-200 dark:border-gray-600 hover:border-sky-200 dark:hover:border-sky-700 hover:bg-sky-50 dark:hover:bg-sky-900/30'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex-1 min-w-0">
-                <h3 className="text-xs font-semibold text-slate-900 dark:text-white truncate">
-                  All Events
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-white mt-0.5">
-                  View all feedback
-                </p>
-              </div>
-              {selectedEventId === '' && (
-                <ChevronRight className="w-4 h-4 text-sky-500 flex-shrink-0" />
-              )}
-            </div>
-          </motion.button>
-
-          {/* Individual Events */}
-          {events.map((event, idx) => (
-            <motion.button
-              key={event._id}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: idx * 0.05 }}
-              onClick={() => handleEventClick(event._id)}
-              className={`w-full min-w-[140px] lg:min-w-0 text-left p-2 sm:p-3 rounded-lg border transition-all ${
-                selectedEventId === event._id
-                  ? 'bg-sky-50 dark:bg-sky-900/30 border-sky-300 dark:border-sky-700 shadow-sm'
-                  : 'bg-white dark:bg-gray-700 border-slate-200 dark:border-gray-600 hover:border-sky-200 dark:hover:border-sky-700 hover:bg-sky-50 dark:hover:bg-sky-900/30'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-xs font-semibold text-slate-900 dark:text-white truncate">
-                    {event.name}
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-white mt-0.5">
-                    {new Date(event.startDate).toLocaleDateString()}
-                  </p>
-                </div>
-                {selectedEventId === event._id && (
-                  <ChevronRight className="w-4 h-4 text-sky-500 flex-shrink-0" />
-                )}
-              </div>
-            </motion.button>
-          ))}
-        </div>
-
-        {/* Resize Handle - only visible on desktop */}
-        <div
-          className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-sky-400 dark:hover:bg-sky-600 transition-colors hidden lg:block"
-          onMouseDown={startResizing}
-          style={{ cursor: isResizing ? 'col-resize' : 'ew-resize' }}
-        />
-      </div>
-
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col overflow-hidden lg:h-[calc(100vh-3.5rem)]">
-        <div className="flex-1 overflow-y-auto px-3 sm:px-4 py-3 sm:py-4">
           {/* Header */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -312,19 +203,10 @@ export default function FeedbackReview() {
           >
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-indigo-800 dark:bg-indigo-600 rounded-lg flex items-center justify-center">
-                  <GraduationCap className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-                </div>
                 <div>
-                  <h1 className="text-lg sm:text-xl font-semibold text-slate-800 dark:text-gray-100">
+                  <h2 className="text-lg sm:text-xl font-semibold text-slate-800 dark:text-gray-100">
                     {selectedEvent ? selectedEvent.name : 'All Feedback'}
-                  </h1>
-                  <p className="text-slate-600 dark:text-gray-400 text-xs sm:text-sm hidden sm:block">
-                    {selectedEvent 
-                      ? `Reviews for ${selectedEvent.name}`
-                      : 'Review and analyze all interview feedback'
-                    }
-                  </p>
+                  </h2>
                 </div>
               </div>
             
@@ -664,6 +546,6 @@ export default function FeedbackReview() {
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </InterviewWorkspaceNav>
   );
 }

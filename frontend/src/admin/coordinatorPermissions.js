@@ -52,11 +52,11 @@ export const coordinatorPermissionCategories = [
       },
       {
         key: 'coordinator.interviews.view',
-        name: 'Scheduled Interviews',
-        description: 'View coordinator interview events and event detail screens.',
+        name: 'One-to-One Interviews',
+        description: 'View the human-led interview workspace, schedules, history, and event detail screens.',
         accessType: 'View',
-        usage: 'Shows Scheduled Interviews and event detail screens.',
-        routes: ['/coordinator', '/coordinator/interviews', '/coordinator/event/:id'],
+        usage: 'Shows One-to-One Interviews and the planned AI Interviews entry point.',
+        routes: ['/coordinator/interviews/one-to-one', '/coordinator/interviews/one-to-one/scheduled', '/coordinator/interviews/one-to-one/past', '/coordinator/event/:id', '/coordinator/ai-interviews'],
       },
       {
         key: 'coordinator.interviews.edit',

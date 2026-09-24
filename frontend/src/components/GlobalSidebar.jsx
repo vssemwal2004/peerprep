@@ -6,6 +6,7 @@ import {
   CalendarPlus,
   CalendarClock,
   CalendarDays,
+  Bot,
   History,
   UserPlus,
   Users,
@@ -39,6 +40,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { hasPermission } from '../admin/coordinatorPermissions';
+import { getInterviewNavigation, getInterviewSection } from './interviews/interviewNavigation';
 
 const buildNavItems = (role = 'admin', accessScope = 'full') => {
   if (role === 'student') {
@@ -91,8 +93,21 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
         label: 'Interviews',
         icon: CalendarDays,
         items: [
-          { label: 'Create Interview', to: '/coordinator/event/create', icon: CalendarPlus, permissionKey: 'coordinator.interviews.create' },
-          { label: 'Scheduled Interviews', to: '/coordinator', icon: CalendarClock, permissionKey: 'coordinator.interviews.view' },
+          {
+            label: 'One-to-One Interviews',
+            to: '/coordinator/interviews/one-to-one',
+            icon: Users,
+            permissionKey: 'coordinator.interviews.view',
+            match: (loc) => loc.pathname.startsWith('/coordinator/interviews')
+              || loc.pathname.startsWith('/coordinator/event')
+              || loc.pathname === '/coordinator/feedback',
+            children: getInterviewNavigation('/coordinator').map((item) => ({
+              ...item,
+              icon: { all: CalendarDays, active: Activity, scheduled: CalendarClock, past: History, feedback: MessageSquare, create: CalendarPlus }[item.id],
+              match: (loc) => getInterviewSection(loc.pathname, loc.search) === item.id,
+            })),
+          },
+          { label: 'AI Interviews', to: '/coordinator/ai-interviews', icon: Bot, permissionKey: 'coordinator.interviews.view' },
         ],
       },
       {
@@ -108,7 +123,6 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
       },
       { type: 'link', label: 'Learning Modules', to: '/coordinator/subjects', icon: BookOpen, permissionKey: 'coordinator.learning.manage' },
       { type: 'link', label: 'Registered Courses', to: '/coordinator/database', icon: Building2, permissionKey: 'coordinator.courses.view' },
-      { type: 'link', label: 'Feedback', to: '/coordinator/feedback', icon: MessageSquare, permissionKey: 'coordinator.feedback.view' },
       {
         type: 'group',
         key: 'assessment',
@@ -186,10 +200,20 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
       label: 'Interviews',
       icon: CalendarDays,
       items: [
-        { label: 'Create Interview', to: '/admin/event', icon: CalendarPlus },
-        { label: 'Scheduled Interviews', to: '/admin/interviews/scheduled', icon: CalendarClock },
-        { label: 'Past Interview Details', to: '/admin/interviews/past', icon: History },
-        { label: 'Feedback', to: '/admin/feedback', icon: MessageSquare },
+        {
+          label: 'One-to-One Interviews',
+          to: '/admin/interviews/one-to-one',
+          icon: Users,
+          match: (loc) => loc.pathname.startsWith('/admin/interviews')
+            || loc.pathname.startsWith('/admin/event')
+            || loc.pathname === '/admin/feedback',
+          children: getInterviewNavigation('/admin').map((item) => ({
+            ...item,
+            icon: { all: CalendarDays, active: Activity, scheduled: CalendarClock, past: History, feedback: MessageSquare, create: CalendarPlus }[item.id],
+            match: (loc) => getInterviewSection(loc.pathname, loc.search) === item.id,
+          })),
+        },
+        { label: 'AI Interviews', to: '/admin/ai-interviews', icon: Bot },
       ],
     },
     {
@@ -297,7 +321,13 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
     return items
       .map((item) => {
         if (item.type === 'group') {
-          const children = item.items.filter((child) => hasPermission(user, child.permissionKey));
+          const children = item.items
+            .map((child) => {
+              if (!child.children) return hasPermission(user, child.permissionKey) ? child : null;
+              const nested = child.children.filter((entry) => hasPermission(user, entry.permissionKey));
+              return nested.length ? { ...child, children: nested, to: nested[0].to } : null;
+            })
+            .filter(Boolean);
           return children.length ? { ...item, items: children } : null;
         }
         return hasPermission(user, item.permissionKey) ? item : null;
@@ -305,6 +335,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
       .filter(Boolean);
   }, [role, user]);
   const [openGroup, setOpenGroup] = useState(null);
+  const [openNestedGroup, setOpenNestedGroup] = useState(null);
 
   const updateProfileOpen = (nextValue) => {
     const resolvedValue = typeof nextValue === 'function' ? nextValue(profileOpenRef.current) : nextValue;
@@ -328,11 +359,15 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
     }
   }, [storagePrefix, user]);
 
+  const previousNavigation = useRef(location.key);
   useEffect(() => {
-    if (!isExpanded) {
-      setOpenGroup(null);
+    if (previousNavigation.current === location.key) return;
+    previousNavigation.current = location.key;
+    if (getInterviewSection(location.pathname, location.search)) {
+      setOpenGroup('interviews');
+      setOpenNestedGroup('interviews:One-to-One Interviews');
     }
-  }, [isExpanded]);
+  }, [location.key, location.pathname, location.search]);
 
   const isRouteActive = (item) => {
     if (item.match) return item.match(location);
@@ -429,6 +464,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
                 type="button"
                 onClick={() => handleGroupToggle(item.key)}
                 title={item.label}
+                aria-expanded={isOpen && isExpanded}
                 className={`relative flex min-h-11 w-full items-center rounded-xl py-1.5 text-[13px] font-semibold transition-colors ${
                   groupActive
                     ? 'bg-sky-50 text-sky-700 shadow-sm dark:bg-sky-900/30 dark:text-sky-300'
@@ -451,14 +487,52 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
               </button>
 
               <div
+                inert={!(isOpen && isExpanded)}
                 className={`overflow-hidden transition-[max-height,opacity] duration-300 ${
-                  isOpen && isExpanded ? 'max-h-80 opacity-100' : 'max-h-0 opacity-0'
+                  isOpen && isExpanded ? 'max-h-[32rem] opacity-100' : 'max-h-0 opacity-0'
                 }`}
               >
                 <div className="space-y-0.5 pl-12 pr-2 pb-1">
                   {item.items.map((child) => {
                     const ChildIcon = child.icon;
                     const childActive = isRouteActive(child);
+                    if (child.children?.length) {
+                      const nestedKey = `${item.key}:${child.label}`;
+                      const nestedOpen = openNestedGroup === nestedKey;
+                      return (
+                        <div key={child.label} className="space-y-0.5">
+                          <div className={`flex items-center rounded-lg transition-colors ${childActive ? 'bg-sky-50 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300' : 'text-slate-600 hover:bg-slate-50 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
+                            <NavLink to={child.to} className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-[12px] font-semibold">
+                              <ChildIcon className="h-3.5 w-3.5 shrink-0" />
+                              <span className="whitespace-nowrap">{child.label}</span>
+                            </NavLink>
+                            <button
+                              type="button"
+                              aria-label={`${nestedOpen ? 'Collapse' : 'Expand'} ${child.label}`}
+                              aria-expanded={nestedOpen}
+                              onClick={() => setOpenNestedGroup(nestedOpen ? null : nestedKey)}
+                              className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-white hover:text-sky-700 dark:hover:bg-gray-700 dark:hover:text-sky-300"
+                            >
+                              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${nestedOpen ? 'rotate-180' : ''}`} />
+                            </button>
+                          </div>
+                          <div inert={!nestedOpen} className={`overflow-hidden transition-[max-height,opacity] duration-200 ${nestedOpen ? 'max-h-64 opacity-100' : 'max-h-0 opacity-0'}`}>
+                            <div className="ml-3 space-y-0.5 border-l border-slate-200 pl-2 dark:border-gray-700">
+                              {child.children.map((nestedChild) => {
+                                const NestedIcon = nestedChild.icon;
+                                const nestedActive = isRouteActive(nestedChild);
+                                return (
+                                  <Link key={nestedChild.label} to={nestedChild.to} aria-current={nestedActive ? 'page' : undefined} onClick={() => { setOpenGroup(item.key); setOpenNestedGroup(nestedKey); }} className={`flex min-h-8 items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12px] font-medium transition ${nestedActive ? 'bg-white text-sky-700 shadow-sm ring-1 ring-slate-100 dark:bg-gray-800 dark:text-sky-300 dark:ring-gray-700' : 'text-slate-500 hover:bg-white hover:text-slate-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white'}`}>
+                                    <NestedIcon className="h-3 w-3 shrink-0" />
+                                    <span className="whitespace-nowrap">{nestedChild.label}</span>
+                                  </Link>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
                     return (
                       <NavLink
                         key={child.label}
@@ -486,7 +560,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
             <div
               id={accountMenuId}
               className="pointer-events-auto fixed bottom-3 z-[9999] w-[18rem] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_55px_rgba(15,23,42,0.18)] transition-[left] duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)] dark:border-gray-700 dark:bg-gray-900 dark:shadow-black/50"
-              style={{ left: `calc(${isExpanded ? '13.6rem' : '4rem'} + 0.75rem)` }}
+              style={{ left: 'calc(var(--admin-sidebar-width, 4rem) + 0.75rem)' }}
               role="dialog"
               aria-label="Account menu"
             >

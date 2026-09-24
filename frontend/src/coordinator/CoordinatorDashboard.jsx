@@ -242,7 +242,7 @@ export default function CoordinatorDashboard() {
     allowed('coordinator.interviews.view') && {
       label: summary.upcoming ? 'Check interview readiness' : 'Build the next interview',
       detail: summary.upcoming ? `${summary.upcoming} interviews are upcoming` : 'The upcoming schedule is empty',
-      to: allowed('coordinator.interviews.create') && !summary.upcoming ? '/coordinator/event/create' : '/coordinator/interviews',
+      to: allowed('coordinator.interviews.create') && !summary.upcoming ? '/coordinator/event/create' : '/coordinator/interviews/one-to-one/scheduled',
       Icon: CalendarDays,
     },
     allowed('coordinator.students.view') && {
@@ -288,7 +288,7 @@ export default function CoordinatorDashboard() {
 
         <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
           {allowed('coordinator.students.view') && <Metric label="My students" value={summary.students} helper="Students assigned to you" Icon={Users} color="bg-sky-50 text-sky-700 dark:bg-sky-400/10 dark:text-sky-200" to="/coordinator/students" loading={coreLoading} />}
-          {allowed('coordinator.interviews.view') && <Metric label="Interviews" value={summary.interviews} helper={`${summary.upcoming} upcoming`} Icon={CalendarDays} color="bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200" to="/coordinator/interviews" loading={coreLoading} />}
+          {allowed('coordinator.interviews.view') && <Metric label="Interviews" value={summary.interviews} helper={`${summary.upcoming} upcoming`} Icon={CalendarDays} color="bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200" to="/coordinator/interviews/one-to-one" loading={coreLoading} />}
           {allowed('coordinator.assessment.view') && <Metric label="Assessments" value={summary.assessments} helper={`${summary.activeAssessments} active`} Icon={ClipboardList} color="bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-200" to="/coordinator/assessment" loading={coreLoading} />}
           {allowed('coordinator.feedback.view') && <Metric label="Feedback" value={summary.feedback} helper="Visible feedback records" Icon={MessageSquare} color="bg-violet-50 text-violet-700 dark:bg-violet-400/10 dark:text-violet-200" to="/coordinator/feedback" loading={secondaryLoading} />}
           {allowed('coordinator.compiler.view') && <Metric label="Coding problems" value={summary.problems} helper="Problems in workspace" Icon={Code2} color="bg-rose-50 text-rose-700 dark:bg-rose-400/10 dark:text-rose-200" to="/coordinator/library/coding/problems" loading={secondaryLoading} />}
@@ -299,7 +299,7 @@ export default function CoordinatorDashboard() {
             {allowed('coordinator.activity.view') ? <ActivityTrend data={activityTrend} loading={secondaryLoading} /> : <div className="flex h-28 items-center justify-center rounded-md bg-slate-50 text-xs text-slate-500 dark:bg-gray-800">Activity access is not enabled.</div>}
             <div className="mt-3 grid grid-cols-2 gap-x-5 gap-y-3 sm:grid-cols-4">
               {allowed('coordinator.assessment.view') && <Link to="/coordinator/assessment" className="border-l-2 border-emerald-500 pl-2"><span className="block text-lg font-bold text-slate-900 dark:text-white">{summary.activeAssessments}</span><span className="text-[10px] font-semibold text-slate-500">Active assessments</span></Link>}
-              {allowed('coordinator.interviews.view') && <Link to="/coordinator/interviews" className="border-l-2 border-sky-500 pl-2"><span className="block text-lg font-bold text-slate-900 dark:text-white">{summary.upcoming}</span><span className="text-[10px] font-semibold text-slate-500">Upcoming interviews</span></Link>}
+              {allowed('coordinator.interviews.view') && <Link to="/coordinator/interviews/one-to-one/scheduled" className="border-l-2 border-sky-500 pl-2"><span className="block text-lg font-bold text-slate-900 dark:text-white">{summary.upcoming}</span><span className="text-[10px] font-semibold text-slate-500">Upcoming interviews</span></Link>}
               {allowed('coordinator.compiler.view') && <Link to="/coordinator/library/coding/problems" className="border-l-2 border-indigo-500 pl-2"><span className="block text-lg font-bold text-slate-900 dark:text-white">{summary.activeCoders}</span><span className="text-[10px] font-semibold text-slate-500">Active coders · 7 days</span></Link>}
               {allowed('coordinator.feedback.view') && <Link to="/coordinator/feedback" className="border-l-2 border-violet-500 pl-2"><span className="block text-lg font-bold text-slate-900 dark:text-white">{summary.feedback}</span><span className="text-[10px] font-semibold text-slate-500">Feedback records</span></Link>}
             </div>
@@ -319,7 +319,7 @@ export default function CoordinatorDashboard() {
         </div>
 
         <div className="mt-3 grid items-start gap-3 xl:grid-cols-[minmax(300px,0.7fr)_minmax(0,1.3fr)]">
-          <Panel title="Upcoming schedule" subtitle="Next interview events." action={allowed('coordinator.interviews.view') && <Link to="/coordinator/interviews" className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">View all</Link>}>
+          <Panel title="Upcoming schedule" subtitle="Next interview events." action={allowed('coordinator.interviews.view') && <Link to="/coordinator/interviews/one-to-one/scheduled" className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">View all</Link>}>
             {coreLoading ? <div className="space-y-2">{[1, 2, 3].map((item) => <div key={item} className="h-10 animate-pulse rounded bg-slate-100 dark:bg-gray-800" />)}</div> : upcomingSchedule.length ? (
               <div className="divide-y divide-slate-100 dark:divide-gray-700">
                 {upcomingSchedule.map((event) => <Link key={event._id || event.id} to={`/coordinator/event/${event._id || event.id}`} className="flex items-center justify-between gap-3 py-2.5 hover:text-sky-700"><span className="min-w-0"><span className="block truncate text-xs font-bold text-slate-900 dark:text-white">{event.name || event.title || 'Interview event'}</span><span className="block text-[10px] text-slate-500">{formatDate(event.startDate || event.start)}</span></span><Clock3 className="h-3.5 w-3.5 shrink-0 text-slate-400" /></Link>)}

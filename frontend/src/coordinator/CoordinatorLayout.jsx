@@ -3,7 +3,7 @@ import GlobalSidebar from '../components/GlobalSidebar';
 
 export default function CoordinatorLayout({ children }) {
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
-  const sidebarWidth = isSidebarExpanded ? '13.6rem' : '4rem';
+  const sidebarWidth = isSidebarExpanded ? '17rem' : '4rem';
 
   return (
     <div

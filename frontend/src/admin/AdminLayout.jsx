@@ -5,7 +5,7 @@ import GlobalSidebar from '../components/GlobalSidebar';
 export default function AdminLayout({ children }) {
   const location = useLocation();
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
-  const sidebarWidth = isSidebarExpanded ? '13.6rem' : '4rem';
+  const sidebarWidth = isSidebarExpanded ? '17rem' : '4rem';
   const isCompilerPreview = location.pathname.includes('/admin/compiler') && location.pathname.includes('/preview');
 
   return (

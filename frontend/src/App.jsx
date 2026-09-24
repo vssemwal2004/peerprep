@@ -57,6 +57,7 @@ const AdminStudentProfile = lazy(() => import("./admin/AdminStudentProfile"));
 const EventManagement = lazy(() => import("./admin/EventManagement"));
 const EventDetail = lazy(() => import("./admin/EventDetail"));
 const FeedbackReview = lazy(() => import("./admin/FeedbackReview"));
+const AIInterviewsPlaceholder = lazy(() => import("./components/interviews/AIInterviewsPlaceholder"));
 const CoordinatorOnboarding = lazy(() => import("./admin/CoordinatorOnboarding"));
 const CoordinatorDirectory = lazy(() => import("./admin/CoordinatorDirectory"));
 const AdminChangePassword = lazy(() => import("./admin/AdminChangePassword"));
@@ -369,14 +370,22 @@ function AppContent() {
         <Route path="/admin/coordinator-access" element={<AdminShell><CoordinatorAccess /></AdminShell>} />
         <Route path="/admin/coordinator-access/:coordinatorId" element={<AdminShell><CoordinatorAccessDetails /></AdminShell>} />
         <Route path="/admin/event" element={<AdminShell><EventManagement /></AdminShell>} />
+        <Route path="/admin/event/create" element={<AdminShell><EventManagement /></AdminShell>} />
         <Route path="/admin/event/:id" element={<AdminShell><EventDetail /></AdminShell>} />
-        <Route path="/admin/interviews" element={<AdminShell><EventDetail /></AdminShell>} />
+        <Route path="/admin/interviews" element={<Navigate to="/admin/interviews/one-to-one" replace />} />
         <Route path="/admin/interviews/:id" element={<AdminShell><EventDetail /></AdminShell>} />
+        <Route path="/admin/interviews/one-to-one" element={<AdminShell><EventDetail /></AdminShell>} />
+        <Route path="/admin/interviews/one-to-one/:id" element={<AdminShell><EventDetail /></AdminShell>} />
+        <Route path="/admin/interviews/one-to-one/scheduled" element={<AdminShell><EventDetail /></AdminShell>} />
+        <Route path="/admin/interviews/one-to-one/scheduled/:id" element={<AdminShell><EventDetail /></AdminShell>} />
+        <Route path="/admin/interviews/one-to-one/past" element={<AdminShell><EventDetail /></AdminShell>} />
+        <Route path="/admin/interviews/one-to-one/past/:id" element={<AdminShell><EventDetail /></AdminShell>} />
         <Route path="/admin/interviews/scheduled" element={<AdminShell><EventDetail /></AdminShell>} />
         <Route path="/admin/interviews/scheduled/:id" element={<AdminShell><EventDetail /></AdminShell>} />
         <Route path="/admin/interviews/past" element={<AdminShell><EventDetail /></AdminShell>} />
         <Route path="/admin/interviews/past/:id" element={<AdminShell><EventDetail /></AdminShell>} />
         <Route path="/admin/feedback" element={<AdminShell><FeedbackReview /></AdminShell>} />
+        <Route path="/admin/ai-interviews" element={<AdminShell><AIInterviewsPlaceholder /></AdminShell>} />
         <Route path="/admin/change-password" element={<AdminShell><AdminChangePassword /></AdminShell>} />
         <Route path="/admin/learning" element={<AdminShell><AdminLearning /></AdminShell>} />
         <Route path="/admin/learning/:semester/:subject/:teacherId" element={<AdminShell><AdminLearningDetail /></AdminShell>} />
@@ -418,7 +427,18 @@ function AppContent() {
         {/* Coordinator Routes - Protected */}
         <Route path="/coordinator/overview" element={<CoordinatorShell permission="coordinator.dashboard.overview"><CoordinatorDashboard /></CoordinatorShell>} />
         <Route path="/coordinator" element={<Navigate to="/coordinator/overview" replace />} />
-        <Route path="/coordinator/interviews" element={<CoordinatorShell permission="coordinator.interviews.view"><CoordinatorEventDetail /></CoordinatorShell>} />
+        <Route path="/coordinator/interviews" element={<Navigate to="/coordinator/interviews/one-to-one" replace />} />
+        <Route path="/coordinator/interviews/:id" element={<CoordinatorShell permission="coordinator.interviews.view"><CoordinatorEventDetail /></CoordinatorShell>} />
+        <Route path="/coordinator/interviews/one-to-one" element={<CoordinatorShell permission="coordinator.interviews.view"><CoordinatorEventDetail /></CoordinatorShell>} />
+        <Route path="/coordinator/interviews/one-to-one/:id" element={<CoordinatorShell permission="coordinator.interviews.view"><CoordinatorEventDetail /></CoordinatorShell>} />
+        <Route path="/coordinator/interviews/one-to-one/scheduled" element={<CoordinatorShell permission="coordinator.interviews.view"><CoordinatorEventDetail /></CoordinatorShell>} />
+        <Route path="/coordinator/interviews/one-to-one/scheduled/:id" element={<CoordinatorShell permission="coordinator.interviews.view"><CoordinatorEventDetail /></CoordinatorShell>} />
+        <Route path="/coordinator/interviews/one-to-one/past" element={<CoordinatorShell permission="coordinator.interviews.view"><CoordinatorEventDetail /></CoordinatorShell>} />
+        <Route path="/coordinator/interviews/one-to-one/past/:id" element={<CoordinatorShell permission="coordinator.interviews.view"><CoordinatorEventDetail /></CoordinatorShell>} />
+        <Route path="/coordinator/interviews/scheduled" element={<CoordinatorShell permission="coordinator.interviews.view"><CoordinatorEventDetail /></CoordinatorShell>} />
+        <Route path="/coordinator/interviews/scheduled/:id" element={<CoordinatorShell permission="coordinator.interviews.view"><CoordinatorEventDetail /></CoordinatorShell>} />
+        <Route path="/coordinator/interviews/past" element={<CoordinatorShell permission="coordinator.interviews.view"><CoordinatorEventDetail /></CoordinatorShell>} />
+        <Route path="/coordinator/interviews/past/:id" element={<CoordinatorShell permission="coordinator.interviews.view"><CoordinatorEventDetail /></CoordinatorShell>} />
         <Route path="/coordinator/event/:id" element={<CoordinatorShell permission="coordinator.interviews.view"><CoordinatorEventDetail /></CoordinatorShell>} />
         <Route path="/coordinator/students" element={<CoordinatorShell permission="coordinator.students.view"><CoordinatorStudents /></CoordinatorShell>} />
         <Route path="/coordinator/onboarding" element={<CoordinatorShell permission="coordinator.students.create"><StudentOnboarding /></CoordinatorShell>} />
@@ -429,6 +449,7 @@ function AppContent() {
         <Route path="/coordinator/database" element={<CoordinatorShell permission="coordinator.courses.view"><CoordinatorDatabase /></CoordinatorShell>} />
         <Route path="/coordinator/feedback" element={<CoordinatorShell permission="coordinator.feedback.view"><CoordinatorFeedback /></CoordinatorShell>} />
         <Route path="/coordinator/event/create" element={<CoordinatorShell permission="coordinator.interviews.create"><EventManagement /></CoordinatorShell>} />
+        <Route path="/coordinator/ai-interviews" element={<CoordinatorShell permission="coordinator.interviews.view"><AIInterviewsPlaceholder /></CoordinatorShell>} />
         <Route path="/coordinator/profile" element={<CoordinatorShell permission="coordinator.profile.manage"><CoordinatorProfile /></CoordinatorShell>} />
         <Route path="/coordinator/change-password" element={<CoordinatorShell permission="coordinator.profile.manage"><CoordinatorChangePassword /></CoordinatorShell>} />
         <Route path="/coordinator/activity" element={<CoordinatorShell permission="coordinator.activity.view"><CoordinatorActivity /></CoordinatorShell>} />

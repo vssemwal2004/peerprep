@@ -7,8 +7,8 @@ export const COORDINATOR_PERMISSION_CATEGORIES = [
     ],
   },
   {
-    id: 'booking',
-    label: 'Booking Management',
+    id: 'interviews',
+    label: 'Interview Management',
     permissions: [
       'coordinator.interviews.create',
       'coordinator.interviews.view',

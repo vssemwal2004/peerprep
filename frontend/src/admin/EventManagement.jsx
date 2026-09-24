@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle, AlertCircle, ToggleRight, ToggleLeft, Calendar, FileText, Upload, X, Download, Search, Users } from "lucide-react";
 import { useToast } from '../components/CustomToast';
 import DateTimePicker from "../components/DateTimePicker";
+import InterviewWorkspaceNav from "../components/interviews/InterviewWorkspaceNav";
 
 export default function EventManagement() {
   const { logCreate, logUpload } = useActivityLogger();
@@ -400,57 +401,23 @@ export default function EventManagement() {
   };
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 flex flex-col">
+    <InterviewWorkspaceNav>
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: "easeOut" }}
-        className="flex-1 w-full max-w-2xl mx-auto px-3 sm:px-4 py-3 sm:py-4"
+        transition={{ duration: 0.15 }}
+        className="flex-1 w-full max-w-4xl mx-auto px-3 sm:px-6 py-5"
       >
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-slate-200 dark:border-gray-700 p-3 sm:p-4">
-          {/* Header Section */}
-          <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-indigo-800 dark:bg-indigo-600 rounded-lg flex items-center justify-center flex-shrink-0">
-              <Calendar className="text-white w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-            <div>
-              <h2 className="text-lg sm:text-xl font-semibold text-slate-800 dark:text-gray-100">Create Interview</h2>
-              <p className="text-slate-600 dark:text-gray-400 text-xs sm:text-sm hidden sm:block">Set up a new interview practice session</p>
-            </div>
-          </div>
-
-          {/* Modern Sliding Switch for Interview Type */}
-          <div className="flex justify-center mb-4 sm:mb-6">
-            <div className="relative inline-flex items-center bg-slate-200 dark:bg-gray-700 rounded-full p-1 sm:p-1.5 w-full max-w-[14rem] sm:max-w-[18rem]">
-              <div
-                className={`absolute top-1 sm:top-1.5 bottom-1 sm:bottom-1.5 w-[calc(50%-0.25rem)] sm:w-[calc(50%-0.375rem)] bg-gradient-to-r transition-all duration-300 ease-in-out rounded-full shadow-lg ${
-                  specialMode
-                    ? 'left-[calc(50%+0.25rem)] sm:left-[calc(50%+0.375rem)] from-purple-500 to-purple-600'
-                    : 'left-1 sm:left-1.5 from-sky-500 to-sky-600'
-                }`}
-              />
-              <button
-                type="button"
-                onClick={() => { setSpecialMode(false); setMsg(""); }}
-                className={`relative z-10 flex-1 px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold rounded-full transition-colors duration-300 ${
-                  !specialMode
-                    ? 'text-white'
-                    : 'text-slate-600 dark:text-gray-300 hover:text-slate-800 dark:hover:text-gray-100'
-                }`}
-              >
-                Regular
-              </button>
-              <button
-                type="button"
-                onClick={() => { setSpecialMode(true); setMsg(""); }}
-                className={`relative z-10 flex-1 px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold rounded-full transition-colors duration-300 ${
-                  specialMode
-                    ? 'text-white'
-                    : 'text-slate-600 dark:text-gray-300 hover:text-slate-800 dark:hover:text-gray-100'
-                }`}
-              >
-                Special
-              </button>
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4 dark:border-gray-700">
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Interview setup</h2>
+            <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-gray-700 dark:bg-gray-900" role="group" aria-label="Interview type">
+              {[{ label: 'Regular', value: false }, { label: 'Special', value: true }].map(({ label, value }) => (
+                <button key={label} type="button" aria-pressed={specialMode === value} onClick={() => { setSpecialMode(value); setMsg(''); }}
+                  className={`rounded-md px-4 py-1.5 text-xs font-semibold transition-colors ${specialMode === value ? 'bg-white text-sky-700 shadow-sm dark:bg-gray-800 dark:text-sky-300' : 'text-slate-500 hover:text-slate-900 dark:text-gray-400 dark:hover:text-white'}`}>
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -913,6 +880,6 @@ export default function EventManagement() {
       </AnimatePresence>
 
       {/* react-toastify handles toasts globally */}
-    </div>
+    </InterviewWorkspaceNav>
   );
 }
