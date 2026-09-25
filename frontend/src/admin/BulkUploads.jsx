@@ -164,7 +164,7 @@ export default function BulkUploads() {
   return (
     <div className="min-h-screen bg-slate-50/70 px-4 pb-12 pt-6 dark:bg-gray-950 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-[1500px]">
-        <section data-page-header className="relative overflow-hidden rounded-3xl border border-sky-100 bg-gradient-to-br from-white via-sky-50/70 to-indigo-50 p-6 shadow-sm dark:border-sky-900/40 dark:from-gray-900 dark:via-sky-950/20 dark:to-indigo-950/20">
+        <section data-page-header className="relative overflow-hidden rounded-3xl border border-sky-100 bg-gradient-to-br from-white via-sky-50 to-indigo-50 p-6 shadow-sm dark:border-sky-900/40 dark:from-gray-900 dark:via-slate-900 dark:to-indigo-950">
           <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full bg-sky-300/20 blur-3xl" />
           <div className="relative flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
             <div className="flex items-start gap-4"><span className="rounded-2xl bg-sky-600 p-3 text-white shadow-lg shadow-sky-600/20"><Database className="h-6 w-6" /></span><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-600 dark:text-sky-400">Main settings</p><h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 dark:text-white sm:text-3xl">Bulk uploads</h1><p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600 dark:text-gray-400">Track student, coordinator and question spreadsheets with record-level provenance, audit-safe downloads and guarded deletion.</p></div></div>

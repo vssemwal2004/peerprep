@@ -187,7 +187,7 @@ export default function SessionAndFeedback() {
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
-            className="lg:hidden sticky top-16 z-20 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm border-b border-gray-100 dark:border-gray-700 py-4 px-4 flex items-center justify-between"
+            className="lg:hidden sticky top-16 z-20 bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 py-4 px-4 flex items-center justify-between"
           >
             <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">Scheduled Sessions</h2>
             <motion.button

@@ -141,6 +141,11 @@ function getLinkedProblemId(question = {}) {
     || null;
 }
 
+export function shouldSyncAssessmentQuestionToLibrary(question = {}) {
+  if (question.saveToLibrary === false) return false;
+  return !String(question.librarySourceId || '').trim();
+}
+
 function buildAssessmentLibraryPayload({ assessment, section, question, sectionIndex, questionIndex }) {
   const questionType = normalizeType(question?.type || section?.type);
   const questionText = extractQuestionText(question, questionType);
@@ -300,6 +305,7 @@ export async function syncAssessmentQuestionsToLibrary(assessmentInput) {
   questionSets.forEach((questionSet, setIndex) => {
     (questionSet.sections || []).forEach((section, sectionIndex) => {
       (section?.questions || []).forEach((question, questionIndex) => {
+        if (!shouldSyncAssessmentQuestionToLibrary(question)) return;
         const payload = buildAssessmentLibraryPayload({
           assessment,
           section: {

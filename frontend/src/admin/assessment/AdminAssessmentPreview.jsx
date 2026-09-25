@@ -207,7 +207,7 @@ export default function AdminAssessmentPreview() {
 
   return (
     <div className="relative min-h-screen bg-[linear-gradient(180deg,#f8fbff_0%,#f8fafc_36%,#eef2ff_100%)] text-slate-900 dark:bg-none dark:bg-gray-950 dark:text-gray-100 lg:h-screen lg:overflow-hidden">
-      <header className="sticky top-0 z-40 border-b border-slate-200/90 bg-white/96 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.45)] backdrop-blur-xl dark:border-slate-700 dark:bg-gray-950/96">
+      <header className="sticky top-0 z-40 border-b border-slate-200/90 bg-white shadow-[0_10px_30px_-24px_rgba(15,23,42,0.45)] dark:border-slate-700 dark:bg-gray-950">
         <div className="flex min-h-[64px] w-full flex-wrap items-center gap-3 px-4 py-2.5">
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => moveBy(-1)} disabled={!hasPrevious} className="inline-flex h-9 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-bold text-slate-600 shadow-sm hover:bg-slate-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">

@@ -1014,7 +1014,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
 
         <div className={`${embedded ? 'mt-3 min-h-0 flex-1 overflow-y-auto overflow-x-hidden' : 'mt-5 overflow-hidden'} rounded-xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900`}>
           <div className="w-full min-w-0">
-          <div className={`grid min-w-0 gap-2 border-b border-slate-200 bg-slate-50/95 px-3 py-2.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500 backdrop-blur dark:border-gray-700 dark:bg-gray-800/95 dark:text-gray-400 ${embedded ? 'sticky top-0 z-20 shadow-[0_1px_0_rgba(148,163,184,0.18)]' : ''}`} style={{ gridTemplateColumns: columnTemplate }}>
+          <div className={`grid min-w-0 gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 ${embedded ? 'sticky top-0 z-20 shadow-[0_1px_0_rgba(148,163,184,0.18)]' : ''}`} style={{ gridTemplateColumns: columnTemplate }}>
             {rowSelectionActive ? <div className="flex items-center justify-center"><input type="checkbox" aria-label="Select all available questions on this page" checked={eligibleQuestions.length > 0 && eligibleQuestions.every((question) => selectedIds.has(question._id))} disabled={!eligibleQuestions.length} onChange={toggleSelectVisibleQuestions} className="h-4 w-4 rounded border-slate-300 text-sky-600 disabled:opacity-40" /></div> : null}
             <div className="min-w-0">Question</div>
             <div className="min-w-0">Question type</div>

@@ -3274,7 +3274,7 @@ export default function AssessmentAttempt() {
 
       {showAssessmentWorkspace && (
       <>
-      <header className="sticky top-0 z-40 border-b border-slate-200/90 bg-white/96 backdrop-blur-xl shadow-[0_10px_30px_-24px_rgba(15,23,42,0.45)] dark:border-slate-700 dark:bg-gray-950/96">
+      <header className="sticky top-0 z-40 border-b border-slate-200/90 bg-white shadow-[0_10px_30px_-24px_rgba(15,23,42,0.45)] dark:border-slate-700 dark:bg-gray-950">
         <div className="flex min-h-[64px] w-full flex-wrap items-center gap-3 px-4 py-2.5">
           <div className="flex items-center gap-2">
             <button
@@ -3876,7 +3876,7 @@ export default function AssessmentAttempt() {
                 </div>
               )}
 
-              <div className="sticky bottom-0 mt-5 grid grid-cols-[1fr_auto_1fr] items-center gap-2 border-t border-slate-200 bg-slate-50/95 pt-4 dark:border-slate-800 dark:bg-slate-950/95">
+              <div className="sticky bottom-0 mt-5 grid grid-cols-[1fr_auto_1fr] items-center gap-2 border-t border-slate-200 bg-slate-50 pt-4 dark:border-slate-800 dark:bg-slate-950">
                 <button
                   type="button"
                   onClick={() => setValidationStep((prev) => Math.max(1, prev - 1))}

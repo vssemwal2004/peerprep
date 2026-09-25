@@ -428,7 +428,7 @@ export default function AssessmentFeedback() {
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f8fbff_0%,#f8fafc_55%,#eef4ff_100%)] px-3 py-4 dark:bg-gray-950 sm:px-5 lg:px-6">
       <div className="mx-auto max-w-[1500px]">
-        <header data-page-header className="flex flex-col gap-3 bg-[#f8fbff]/95 py-2 backdrop-blur dark:bg-gray-950/95 lg:flex-row lg:items-end lg:justify-between">
+        <header data-page-header className="flex flex-col gap-3 bg-[#f8fbff] py-2 dark:bg-gray-950 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="mb-1.5 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em] text-sky-600 dark:text-sky-300">
               <MessageSquareText className="h-4 w-4" /> Admin workspace

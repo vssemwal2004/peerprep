@@ -1232,7 +1232,7 @@ export default function AssessmentReports() {
 
   return (
     <div className="h-screen overflow-hidden bg-[#f5fbff] text-slate-900 dark:bg-gray-950">
-      <div data-page-header className="shrink-0 border-b border-sky-100 bg-white/95 shadow-sm shadow-sky-950/5 backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
+      <div data-page-header className="shrink-0 border-b border-sky-100 bg-white shadow-sm shadow-sky-950/5 dark:border-gray-800 dark:bg-gray-900">
         <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
             <button

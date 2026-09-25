@@ -7,6 +7,7 @@ import { api } from '../utils/api';
 import AuthoringStepper from './library/AuthoringStepper';
 import { downloadQuestionCsvTemplate, downloadQuestionImportErrorCsv } from './library/questionImportTemplates';
 import { queueQuestionSelection } from './assessment/assessmentProblemSelectionStore';
+import { createAssessmentOnlyQuestionSelections } from './assessment/assessmentQuestionRetention';
 
 const QUESTION_TYPES = [
   { value: 'mcq', label: 'MCQ', description: 'Single, multiple or passage based', Icon: ListChecks },
@@ -248,26 +249,29 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingQuestion, setIsLoadingQuestion] = useState(Boolean(editQuestionId));
   const [libraryMeta, setLibraryMeta] = useState(storedDraft?.libraryMeta || { visibility: 'public', status: 'draft' });
+  const [saveToLibrary, setSaveToLibrary] = useState(() => (
+    assessmentCreateMode ? storedDraft?.saveToLibrary === true : true
+  ));
   const [importState, setImportState] = useState({ status: 'idle', message: '', imported: 0, errors: [] });
   const [importPreview, setImportPreview] = useState(null);
   const [dirty, setDirty] = useState(Boolean(storedDraft));
   const [draftStatus, setDraftStatus] = useState(storedDraft ? 'Draft restored' : '');
   const [exitTarget, setExitTarget] = useState('');
   const [exitSaving, setExitSaving] = useState(false);
-  const authoringBaselineRef = useRef(JSON.stringify({ questions, libraryMeta, activeStage }));
+  const authoringBaselineRef = useRef(JSON.stringify({ questions, libraryMeta, saveToLibrary, activeStage }));
 
   useEffect(() => {
     if (editQuestionId) return undefined;
-    const snapshot = JSON.stringify({ questions, libraryMeta, activeStage });
+    const snapshot = JSON.stringify({ questions, libraryMeta, saveToLibrary, activeStage });
     if (snapshot === authoringBaselineRef.current) return undefined;
     setDirty(true);
     setDraftStatus('Saving locally...');
     const timeout = window.setTimeout(() => {
-      localStorage.setItem(authoringDraftKey, JSON.stringify({ questions, libraryMeta, activeStage, updatedAt: Date.now() }));
+      localStorage.setItem(authoringDraftKey, JSON.stringify({ questions, libraryMeta, saveToLibrary, activeStage, updatedAt: Date.now() }));
       setDraftStatus('Draft autosaved');
     }, 500);
     return () => window.clearTimeout(timeout);
-  }, [activeStage, authoringDraftKey, editQuestionId, libraryMeta, questions]);
+  }, [activeStage, authoringDraftKey, editQuestionId, libraryMeta, questions, saveToLibrary]);
 
   useEffect(() => {
     const warnBeforeBrowserExit = (event) => {
@@ -752,6 +756,29 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
       }));
 
       const rolePrefix = window.location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
+      if (assessmentCreateMode && addToAssessment && !saveToLibrary) {
+        const assessmentOnlyQuestions = createAssessmentOnlyQuestionSelections(payload);
+        const grouped = new Map();
+        assessmentOnlyQuestions.forEach((createdQuestion) => {
+          const targetSet = Math.max(1, Number(createdQuestion.assessmentSetHint) || questionSet);
+          if (!grouped.has(targetSet)) grouped.set(targetSet, []);
+          grouped.get(targetSet).push(createdQuestion);
+        });
+        grouped.forEach((createdQuestions, targetSet) => queueQuestionSelection(assessmentKey, {
+          questions: createdQuestions,
+          createdForAssessment: true,
+          assessmentOnly: true,
+          questionSet: targetSet,
+        }));
+        localStorage.removeItem(authoringDraftKey);
+        authoringBaselineRef.current = JSON.stringify({ questions, libraryMeta, saveToLibrary, activeStage });
+        setDirty(false);
+        setDraftStatus('Added to assessment');
+        toast.success(`${validQuestions.length} assessment-only question${validQuestions.length === 1 ? '' : 's'} added. They will not appear in the library.`);
+        if (navigateAfterSave) navigate(assessmentReturnTo);
+        return true;
+      }
+
       if (editQuestionId) {
         const question = payload[0];
         await api.updateLibraryQuestion(editQuestionId, {
@@ -765,7 +792,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
         });
         toast.success(targetStatus === 'draft' ? 'Draft updated successfully.' : 'Question updated successfully.');
         localStorage.removeItem(authoringDraftKey);
-        authoringBaselineRef.current = JSON.stringify({ questions, libraryMeta, activeStage });
+        authoringBaselineRef.current = JSON.stringify({ questions, libraryMeta, saveToLibrary, activeStage });
         setDirty(false);
         setDraftStatus('Draft saved');
         const requestedReturn = location.state?.returnTo;
@@ -784,7 +811,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
         errors: importState.errors || [],
       } : undefined);
       localStorage.removeItem(authoringDraftKey);
-      authoringBaselineRef.current = JSON.stringify({ questions, libraryMeta, activeStage });
+      authoringBaselineRef.current = JSON.stringify({ questions, libraryMeta, saveToLibrary, activeStage });
       setDirty(false);
       setDraftStatus('Draft saved');
       const passageSetCount = payload.filter((item) => item.libraryItemKind === 'passage_set').length;
@@ -836,6 +863,13 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
   };
 
   const saveQuestionDraftAndExit = async () => {
+    if (assessmentCreateMode && !saveToLibrary) {
+      setDirty(false);
+      const target = exitTarget;
+      setExitTarget('');
+      navigate(target);
+      return;
+    }
     setExitSaving(true);
     const saved = await handleSaveAll('draft', { navigateAfterSave: false });
     setExitSaving(false);
@@ -1001,6 +1035,31 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
             </div>
           </div>
 
+          {assessmentCreateMode && !editQuestionId && (
+            <section className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3.5 dark:border-gray-700 dark:bg-gray-800/70 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-slate-900 dark:text-white">Save these questions to the library?</p>
+                <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-gray-400">
+                  {saveToLibrary
+                    ? 'Yes — keep a reusable library copy even if this assessment is deleted.'
+                    : 'No — use only in this assessment. Deleting the assessment also removes these questions.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={saveToLibrary}
+                onClick={() => setSaveToLibrary((enabled) => !enabled)}
+                className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-full border px-3 text-xs font-semibold transition ${saveToLibrary ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' : 'border-slate-300 bg-white text-slate-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300'}`}
+              >
+                <span className={`relative h-5 w-9 rounded-full transition ${saveToLibrary ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-gray-600'}`}>
+                  <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${saveToLibrary ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
+                </span>
+                {saveToLibrary ? 'Library copy on' : 'Assessment only'}
+              </button>
+            </section>
+          )}
+
           <div className="mx-auto w-full max-w-3xl border-y border-slate-100 py-1 dark:border-gray-800">
             <AuthoringStepper steps={AUTHORING_STEPS} activeKey={activeStage} completed={stageCompletion} onChange={changeStage} />
           </div>
@@ -1130,7 +1189,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
           )}
 
           <div className={`grid items-start gap-4 ${showNavigator ? 'lg:grid-cols-[260px_minmax(0,1fr)]' : 'grid-cols-1'}`}>
-            {showNavigator && <aside className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-800/50 lg:sticky lg:top-0">
+            {showNavigator && <aside className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-gray-700 dark:bg-gray-800 lg:sticky lg:top-0">
               <div className="flex items-center justify-between gap-2 px-1">
                 <div><p className="text-xs font-bold text-slate-800 dark:text-gray-100">Questions</p><p className="mt-0.5 text-[10px] text-slate-500 dark:text-gray-400">{type === 'mcq' ? `${independentQuestionCount} independent · ${passageGroupIds.length} passage` : `${questions.length} in this set`}</p></div>
                 <span className="rounded-full bg-white px-2 py-1 text-[10px] font-bold text-slate-600 shadow-sm dark:bg-gray-900 dark:text-gray-300">{completedQuestions}/{questions.length}</span>
@@ -1211,14 +1270,14 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
             </section>
           )}
 
-          <div className="sticky bottom-0 z-20 -mx-4 -mb-4 flex items-center justify-between gap-3 border-t border-slate-200 bg-white/95 px-4 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.05)] backdrop-blur dark:border-gray-800 dark:bg-gray-900/95 sm:-mx-5 sm:-mb-5 sm:px-5">
+          <div className="sticky bottom-0 z-20 -mx-4 -mb-4 flex items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.05)] dark:border-gray-800 dark:bg-gray-900 sm:-mx-5 sm:-mb-5 sm:px-5">
             <button type="button" onClick={() => moveStage(-1)} disabled={activeStageIndex === 0} className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
               <ChevronLeft className="h-4 w-4" /><span className="hidden sm:inline">Previous</span>
             </button>
             <span className="text-xs font-semibold text-slate-500 dark:text-gray-400">Step {activeStageIndex + 1} of {AUTHORING_STEPS.length}</span>
             <div className="flex items-center gap-2">
               <button type="button" onClick={() => setPreviewOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"><Eye className="h-4 w-4" /><span className="hidden sm:inline">Preview</span></button>
-              {!editQuestionId && <button type="button" onClick={() => handleSaveAll('draft')} disabled={isSubmitting || !questions.length} className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:border-sky-300 hover:bg-sky-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"><Save className="h-4 w-4" /><span className="hidden sm:inline">Save draft</span></button>}
+              {!editQuestionId && !assessmentCreateMode && <button type="button" onClick={() => handleSaveAll('draft')} disabled={isSubmitting || !questions.length} className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:border-sky-300 hover:bg-sky-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"><Save className="h-4 w-4" /><span className="hidden sm:inline">Save draft</span></button>}
               {isFinalStage ? (
                 <button type="button" onClick={() => assessmentCreateMode ? handleSaveAll('published', { addToAssessment: true }) : handleSaveAll(libraryMeta.status)} disabled={isSubmitting || !questions.length} className="inline-flex h-10 items-center gap-2 rounded-xl bg-sky-600 px-4 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-50">{assessmentCreateMode ? <Plus className="h-4 w-4" /> : <Save className="h-4 w-4" />}{isSubmitting ? (assessmentCreateMode ? 'Adding...' : 'Saving...') : assessmentCreateMode ? 'Add to assessment' : editQuestionId ? 'Save changes' : libraryMeta.status === 'draft' ? 'Save draft' : 'Publish'}</button>
               ) : (
@@ -1256,11 +1315,11 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
           <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-300"><Save className="h-4 w-4" /></div>
             <h2 id="question-exit-title" className="mt-4 text-base font-bold text-slate-950 dark:text-white">Continue creating this question?</h2>
-            <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-gray-400">Your changes are autosaved locally. Save an incomplete question as a Library draft, continue editing, or leave without keeping it.</p>
+            <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-gray-400">{assessmentCreateMode && !saveToLibrary ? 'Your changes are autosaved locally. Keep this local draft, continue editing, or discard it.' : 'Your changes are autosaved locally. Save an incomplete question as a Library draft, continue editing, or leave without keeping it.'}</p>
             <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button type="button" onClick={discardQuestionDraftAndExit} disabled={exitSaving} className="h-10 rounded-xl border border-rose-200 px-4 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900/60 dark:text-rose-300">Don&apos;t save</button>
               <button type="button" onClick={() => setExitTarget('')} disabled={exitSaving} className="h-10 rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Continue working</button>
-              <button type="button" onClick={saveQuestionDraftAndExit} disabled={exitSaving} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-60"><Save className="h-3.5 w-3.5" />{exitSaving ? 'Saving...' : 'Save as draft'}</button>
+              <button type="button" onClick={saveQuestionDraftAndExit} disabled={exitSaving} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-60"><Save className="h-3.5 w-3.5" />{exitSaving ? 'Saving...' : assessmentCreateMode && !saveToLibrary ? 'Keep local draft' : 'Save as draft'}</button>
             </div>
           </div>
         </div>

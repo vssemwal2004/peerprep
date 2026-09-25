@@ -65,7 +65,7 @@ export function WorkspaceHeader({ activeSection, onSectionChange, refreshing, on
   };
 
   return (
-    <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/92 backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/90">
+    <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white dark:border-white/10 dark:bg-slate-950">
       <div className="mx-auto max-w-7xl px-4 pb-0 pt-5 sm:px-6 lg:px-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>

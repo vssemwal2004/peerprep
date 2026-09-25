@@ -39,6 +39,7 @@ const questionSchema = new mongoose.Schema({
   librarySourceId: { type: String, default: '' },
   librarySourceQuestionId: { type: String, default: '' },
   librarySourceChildId: { type: String, default: '' },
+  saveToLibrary: { type: Boolean, default: true },
   type: { type: String, enum: ['mcq', 'short', 'one_line', 'coding'] },
   questionText: { type: String },
   options: { type: [String], default: [] },

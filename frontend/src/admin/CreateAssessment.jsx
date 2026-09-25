@@ -2283,7 +2283,7 @@ export default function CreateAssessment({ viewOnly = false }) {
         transition={{ duration: 0.24 }}
         className="mx-auto max-w-[1180px] px-3 py-3 sm:px-5"
       >
-        <header data-page-header className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/95 pb-3 backdrop-blur dark:border-gray-800 dark:bg-gray-950/95 lg:flex-row lg:items-center lg:justify-between">
+        <header data-page-header className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 pb-3 dark:border-gray-800 dark:bg-gray-950 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -2359,7 +2359,7 @@ export default function CreateAssessment({ viewOnly = false }) {
           {stepContent[activeStep]}
         </fieldset>
 
-        <div className="sticky bottom-0 z-30 -mx-4 mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white/95 px-4 py-2.5 shadow-[0_-6px_18px_rgba(15,23,42,0.05)] backdrop-blur sm:-mx-6 sm:px-6 dark:border-gray-800 dark:bg-gray-900/95">
+        <div className="sticky bottom-0 z-30 -mx-4 mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-2.5 shadow-[0_-6px_18px_rgba(15,23,42,0.05)] sm:-mx-6 sm:px-6 dark:border-gray-800 dark:bg-gray-900">
           <button
             type="button"
             onClick={goPrev}

@@ -1309,7 +1309,7 @@ export default function AssessmentDashboard() {
               </div>
             ) : (
               <div role="list" className="space-y-2.5">
-                <div className="sticky top-0 z-20 -mx-1 hidden grid-cols-[minmax(190px,1.5fr)_105px_95px_95px_minmax(120px,1fr)_95px_80px_28px] items-center gap-x-3 bg-slate-50 px-5 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 xl:grid dark:bg-gray-950 dark:text-gray-500">
+                <div className="sticky top-0 z-20 -mx-1 isolate hidden grid-cols-[minmax(190px,1.5fr)_105px_95px_95px_minmax(120px,1fr)_95px_80px_28px] items-center gap-x-3 bg-slate-50 px-5 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 shadow-[0_1px_0_0_rgb(226,232,240)] xl:grid dark:bg-gray-950 dark:text-gray-500 dark:shadow-[0_1px_0_0_rgb(31,41,55)]">
                   <span>Assessment</span>
                   <span>Date</span>
                   <span>Time</span>

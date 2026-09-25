@@ -118,7 +118,7 @@ export default function ProblemsPage() {
   return (
     <div className="min-h-screen bg-slate-50/70 px-3 pb-10 pt-4 font-['Manrope'] dark:bg-gray-950 sm:px-5">
       <main className="mx-auto w-full max-w-[1380px]">
-        <header data-page-header className="border-b border-slate-200 bg-slate-50/95 pb-4 backdrop-blur dark:border-gray-800 dark:bg-gray-950/95">
+        <header data-page-header className="border-b border-slate-200 bg-slate-50 pb-4 dark:border-gray-800 dark:bg-gray-950">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-600 text-white shadow-sm"><Code2 className="h-5 w-5" /></span>
             <div>

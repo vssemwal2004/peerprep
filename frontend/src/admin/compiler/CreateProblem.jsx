@@ -1625,7 +1625,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
           {!isAssessment && !previewValidated ? <p className="mt-3 text-xs text-amber-600 dark:text-amber-300">Publishing stays disabled until the preview IDE submits an Accepted solution and is approved.</p> : null}
         </SectionCard>}
 
-        <div className="sticky bottom-0 z-20 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white/95 px-3 py-2 shadow-[0_-6px_18px_rgba(15,23,42,0.06)] backdrop-blur dark:border-gray-700 dark:bg-gray-900/95 sm:px-4">
+        <div className="sticky bottom-0 z-20 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-[0_-6px_18px_rgba(15,23,42,0.06)] dark:border-gray-700 dark:bg-gray-900 sm:px-4">
           <button type="button" onClick={() => goToTab(activeTabIndex - 1)} disabled={activeTabIndex === 0} className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"><ChevronLeft className="h-4 w-4" />Previous</button>
           <span className="hidden text-xs font-medium text-slate-500 dark:text-gray-400 sm:inline">Step {activeTabIndex + 1} of {EDITOR_TABS.length}</span>
           {isFinalTab ? (
