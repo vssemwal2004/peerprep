@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildCandidateSetAssignments,
+  appendCandidateSetAssignments,
+  compareCandidatesForSetAllocation,
   buildDeliverySections,
   sanitizeStudentAssessmentForResponse,
 } from '../src/controllers/assessmentController.js';
@@ -35,6 +37,29 @@ test('manual assignment mode leaves unassigned candidates for publish validation
   });
   assert.equal(assignments.length, 1);
   assert.equal(assignments[0].setNumber, 2);
+});
+
+test('set allocation supports name sorting and descending direction', () => {
+  const users = [
+    { _id: 'u1', name: 'Asha', studentId: '20' },
+    { _id: 'u2', name: 'Zoya', studentId: '10' },
+  ];
+  const ordered = [...users].sort((left, right) => compareCandidatesForSetAllocation(left, right, {
+    setAllocationSortBy: 'name',
+    setAllocationSortDirection: 'desc',
+  }));
+  assert.deepEqual(ordered.map((student) => student.name), ['Zoya', 'Asha']);
+});
+
+test('new students receive the next modulo set without changing frozen assignments', () => {
+  const existingAssignments = [{ student: 'u1', studentIdSnapshot: '1', setNumber: 1, source: 'automatic' }];
+  const result = appendCandidateSetAssignments({
+    existingAssignments,
+    newUsers: [{ _id: 'u2', studentId: '2' }, { _id: 'u3', studentId: '3' }],
+    settings: { questionSetEnabled: true, questionSetCount: 4, setStartingNumber: 1 },
+  });
+  assert.equal(result[0], existingAssignments[0]);
+  assert.deepEqual(result.slice(1).map((entry) => entry.setNumber), [2, 3]);
 });
 
 test('delivery uses the candidate assigned set and returns its frozen set number', () => {

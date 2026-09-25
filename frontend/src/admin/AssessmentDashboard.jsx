@@ -145,7 +145,7 @@ function ThreeDotsMenu({ assessment, onOpen, onPreview, onViewReport, onEdit, on
           <div className="my-1 h-px bg-slate-100 dark:bg-gray-700" />
           {item(<Pencil className="h-3.5 w-3.5" />, 'Edit Assessment', onEdit)}
           {item(<Lock className="h-3.5 w-3.5" />, 'Edit Password', onEditPassword)}
-          {assessment.lifecycleStatus !== 'draft' && item(<Users className="h-3.5 w-3.5" />, 'Eligible Students', onEligibleStudents)}
+          {assessment.lifecycleStatus !== 'draft' && item(<Users className="h-3.5 w-3.5" />, 'View Students & Sets', onEligibleStudents)}
           {assessment.lifecycleStatus !== 'draft' && item(<UserPlus className="h-3.5 w-3.5" />, 'Add Student', onAddStudents)}
           {assessment.lifecycleStatus !== 'draft' && item(<Mail className="h-3.5 w-3.5" />, 'Send Mail to Eligible Students', onSendInvitations)}
           {item(
@@ -437,7 +437,11 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
   const [loading, setLoading] = useState(true);
   const [students, setStudents] = useState([]);
   const [summary, setSummary] = useState(null);
+  const [assessmentDetails, setAssessmentDetails] = useState(null);
   const [search, setSearch] = useState('');
+  const [setFilter, setSetFilter] = useState('all');
+  const [selectedStudentIds, setSelectedStudentIds] = useState([]);
+  const [bulkRemoving, setBulkRemoving] = useState(false);
   const [busyId, setBusyId] = useState('');
   const [addMode, setAddMode] = useState(Boolean(assessment.startInAddMode));
   const [candidateSearch, setCandidateSearch] = useState('');
@@ -458,6 +462,8 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
       const data = await api.listAssessmentEligibleStudents(assessment._id);
       setStudents(data.students || []);
       setSummary(data.summary || null);
+      setAssessmentDetails(data.assessment || null);
+      setSelectedStudentIds([]);
     } catch (error) {
       toast.error(error.message || 'Failed to load eligible students.');
     } finally {
@@ -555,9 +561,15 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
       student.branch,
       student.college,
       student.group,
+      student.assessmentSet,
       student.submission?.status,
-    ].some((value) => String(value || '').toLowerCase().includes(query)));
-  }, [students, search]);
+    ].some((value) => String(value || '').toLowerCase().includes(query))
+      && (setFilter === 'all' || String(student.assessmentSet || 'unassigned') === setFilter));
+  }, [students, search, setFilter]);
+
+  const selectedStudentIdSet = useMemo(() => new Set(selectedStudentIds), [selectedStudentIds]);
+  const questionSetCount = Number(assessmentDetails?.questionSetCount || 1);
+  const questionSetEnabled = Boolean(assessmentDetails?.questionSetEnabled);
 
   const openProfile = (student) => {
     onClose();
@@ -591,6 +603,39 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
       toast.error(error.message || 'Failed to remove student from assessment.');
     } finally {
       setBusyId('');
+    }
+  };
+
+  const updateStudentSet = async (student, setNumber) => {
+    setBusyId(student._id);
+    try {
+      await api.updateAssessmentStudentSet(assessment._id, student._id, Number(setNumber));
+      setStudents((current) => current.map((entry) => String(entry._id) === String(student._id)
+        ? { ...entry, assessmentSet: Number(setNumber), assessmentSetSource: 'manual' }
+        : entry));
+      toast.success(`${student.name || student.studentId || 'Student'} assigned to Set ${setNumber}.`);
+      onChanged?.();
+    } catch (error) {
+      toast.error(error.message || 'Failed to update set allocation.');
+    } finally {
+      setBusyId('');
+    }
+  };
+
+  const removeSelectedStudents = async () => {
+    if (!selectedStudentIds.length) return;
+    if (!confirm(`Remove ${selectedStudentIds.length} selected student${selectedStudentIds.length === 1 ? '' : 's'} from this assessment? Their existing submissions will also be removed.`)) return;
+    setBulkRemoving(true);
+    try {
+      await Promise.all(selectedStudentIds.map((studentId) => api.removeAssessmentEligibleStudent(assessment._id, studentId)));
+      toast.success(`${selectedStudentIds.length} student${selectedStudentIds.length === 1 ? '' : 's'} removed.`);
+      await loadStudents();
+      onChanged?.();
+    } catch (error) {
+      toast.error(error.message || 'Some students could not be removed. Refreshing the list.');
+      await loadStudents();
+    } finally {
+      setBulkRemoving(false);
     }
   };
 
@@ -633,11 +678,11 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
           <div className="min-w-0">
             <div className="inline-flex items-center gap-2 rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-sky-700 dark:border-sky-400/20 dark:bg-sky-900/20 dark:text-sky-200">
               <Users className="h-3.5 w-3.5" />
-              Eligible Students
+              Students & Set Allocation
             </div>
             <h3 className="mt-2 text-xl font-bold text-slate-950 dark:text-white">{assessment.title || 'Assessment'}</h3>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500 dark:text-gray-400">
-              View assigned students, add recent platform students, reset individual submissions, or remove students from this assessment.
+              View every assigned student, verify their paper set, update allocation before they start, and manage access or submissions.
             </p>
           </div>
           <div className="flex items-center gap-2 self-start">
@@ -670,14 +715,16 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
               </div>
             ))}
           </div>
-          <div className="relative mt-4 max-w-lg">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search students, email, ID, course..."
-              className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-950 dark:text-white dark:focus:ring-sky-500/10"
-            />
+          {questionSetEnabled && <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{Array.from({ length: questionSetCount }, (_, index) => { const count = students.filter((student) => Number(student.assessmentSet) === index + 1).length; return <button key={index + 1} type="button" onClick={() => setSetFilter(String(index + 1))} className={`rounded-lg border px-3 py-2 text-left ${setFilter === String(index + 1) ? 'border-sky-400 bg-sky-50 dark:border-sky-700 dark:bg-sky-950/30' : 'border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-800'}`}><span className="text-[10px] font-bold uppercase text-slate-400">Set {index + 1}</span><span className="ml-2 text-sm font-bold text-slate-900 dark:text-white">{count}</span></button>; })}</div>}
+          <div className="mt-4 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+            <div className="relative w-full max-w-lg">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search students, email, ID, course..." className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-950 dark:text-white dark:focus:ring-sky-500/10" />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {questionSetEnabled && <select aria-label="Filter students by assigned set" value={setFilter} onChange={(event) => setSetFilter(event.target.value)} className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200"><option value="all">All sets</option>{Array.from({ length: questionSetCount }, (_, index) => <option key={index + 1} value={index + 1}>Set {index + 1}</option>)}<option value="unassigned">Unassigned</option></select>}
+              {selectedStudentIds.length > 0 && <button type="button" onClick={removeSelectedStudents} disabled={bulkRemoving} className="inline-flex h-10 items-center gap-2 rounded-lg border border-rose-200 bg-white px-3 text-xs font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900 dark:bg-gray-950 dark:text-rose-300"><UserMinus className="h-4 w-4" />{bulkRemoving ? 'Removing…' : `Remove ${selectedStudentIds.length} selected`}</button>}
+            </div>
           </div>
         </div>
 
@@ -831,11 +878,13 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
           ) : filteredStudents.length === 0 ? (
             <div className="p-10 text-center text-sm text-slate-500">No eligible students found.</div>
           ) : (
-            <table className="min-w-[1120px] w-full text-left text-sm">
+            <table className="min-w-[1240px] w-full text-left text-sm">
               <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-xs font-bold uppercase tracking-wider text-slate-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
                 <tr>
+                  <th className="w-12 px-4 py-3"><input type="checkbox" aria-label="Select all visible students" checked={filteredStudents.length > 0 && filteredStudents.every((student) => selectedStudentIdSet.has(String(student._id)))} onChange={(event) => { const visibleIds = filteredStudents.map((student) => String(student._id)); setSelectedStudentIds((current) => event.target.checked ? Array.from(new Set([...current, ...visibleIds])) : current.filter((id) => !visibleIds.includes(id))); }} /></th>
                   <th className="px-6 py-3">Student</th>
                   <th className="px-4 py-3">Student ID</th>
+                  {questionSetEnabled && <th className="px-4 py-3">Assigned Set</th>}
                   <th className="px-4 py-3">Course</th>
                   <th className="px-4 py-3">Branch</th>
                   <th className="px-4 py-3">Semester</th>
@@ -857,6 +906,7 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
                     + Number(student.submission?.copyPasteCount || 0);
                   return (
                     <tr key={student._id} className={busyId === student._id ? 'opacity-60' : 'hover:bg-slate-50 dark:hover:bg-sky-400/5'}>
+                      <td className="px-4 py-4"><input type="checkbox" aria-label={`Select ${student.name || student.email || student.studentId}`} checked={selectedStudentIdSet.has(String(student._id))} onChange={() => setSelectedStudentIds((current) => current.includes(String(student._id)) ? current.filter((id) => id !== String(student._id)) : [...current, String(student._id)])} /></td>
                       <td className="px-6 py-4">
                         <button type="button" onClick={() => openProfile(student)} className="text-left font-bold text-slate-950 hover:text-sky-700 hover:underline dark:text-white dark:hover:text-sky-300">
                           {student.name || 'Unnamed Student'}
@@ -864,6 +914,7 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
                         <div className="mt-0.5 text-xs text-slate-500">{student.email || '-'}</div>
                       </td>
                       <td className="px-4 py-4 font-mono text-xs text-slate-600 dark:text-slate-300">{student.studentId || '-'}</td>
+                      {questionSetEnabled && <td className="px-4 py-4"><select aria-label={`Assigned set for ${student.name || student.studentId}`} value={student.assessmentSet || ''} disabled={busyId === student._id || ['in_progress', 'submitted'].includes(student.submission?.status)} onChange={(event) => updateStudentSet(student, event.target.value)} title={['in_progress', 'submitted'].includes(student.submission?.status) ? 'Set is locked after the student starts' : 'Change assigned question set'} className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold text-sky-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-950 dark:text-sky-300"><option value="" disabled>Unassigned</option>{Array.from({ length: questionSetCount }, (_, index) => <option key={index + 1} value={index + 1}>Set {index + 1}</option>)}</select><div className="mt-1 text-[9px] font-semibold uppercase tracking-wide text-slate-400">{student.assessmentSetSource || 'not assigned'}</div></td>}
                       <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{student.course || '-'}</td>
                       <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{student.branch || '-'}</td>
                       <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{student.semester || '-'}</td>
