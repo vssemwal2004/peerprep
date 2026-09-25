@@ -341,6 +341,7 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
     sectionIndex: urlParams.get('section') ? parseInt(urlParams.get('section')) : 0,
     questionIndex: urlParams.get('question') ? parseInt(urlParams.get('question')) : 0,
     returnTo: urlParams.get('return'),
+    questionSet: Math.max(1, Number(urlParams.get('questionSet')) || 1),
   } : {};
   
   const finalAssessmentContext = assessmentContext || assessmentContextFromUrl;
@@ -933,6 +934,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
         sectionIndex: 0,
         problems: [publishedProblem],
         createdForAssessment: true,
+        questionSet: finalAssessmentContext?.questionSet || 1,
       });
       toast.success('Coding question published and added to the assessment.');
       navigate(assessmentReturnTo);

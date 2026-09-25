@@ -266,7 +266,7 @@ export default function CoordinatorDashboard() {
   return (
     <div className="min-h-screen bg-slate-100/70 font-sans text-slate-950 dark:bg-gray-950 dark:text-white">
       <main className="mx-auto w-full max-w-[1680px] px-4 py-4 xl:px-6">
-        <header className="mb-3 flex flex-col gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between">
+        <header data-page-header className="mb-3 flex flex-col gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-emerald-100 dark:bg-emerald-900/50">
               <Sparkles className="h-4 w-4 text-sky-700" />

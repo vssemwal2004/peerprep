@@ -933,7 +933,7 @@ export default function CompilerAnalytics({ assessmentId = "", assessmentTitle =
 
   return (
     <div className={`flex flex-col gap-3 ${embedded ? 'min-h-0' : 'min-h-[calc(100vh-var(--app-navbar-height,5rem)-2rem)]'}`}>
-      <header className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-gray-800 dark:bg-gray-900">
+      <header data-page-header className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-gray-800 dark:bg-gray-900">
         <div className="flex min-w-0 items-center gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-sky-50 ring-1 ring-sky-100 dark:bg-sky-950/40 dark:ring-sky-900">
             <img

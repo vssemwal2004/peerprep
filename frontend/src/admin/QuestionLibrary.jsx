@@ -168,6 +168,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   const selectionMode = params.get('mode') === 'select';
   const assessmentKey = params.get('assessment') || 'new';
   const assessmentTitle = params.get('assessmentTitle') || 'this assessment';
+  const questionSet = Math.max(1, Number(params.get('questionSet')) || 1);
   const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
   const returnTo = params.get('return') || `${rolePrefix}/assessment/create`;
   const initialType = params.get('type') || 'all';
@@ -181,6 +182,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
     difficulty: '',
     status: initialStatus,
     visibility: '',
+    sourceAssessmentId: '',
     sortBy: 'updatedAt',
     sortOrder: 'desc',
   });
@@ -190,6 +192,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   const [statusCounts, setStatusCounts] = useState([]);
   const [availableTags, setAvailableTags] = useState([]);
   const [availableDifficulties, setAvailableDifficulties] = useState([]);
+  const [availableAssessments, setAvailableAssessments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
@@ -271,6 +274,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
           difficulty: filters.difficulty,
           status: filters.status,
           visibility: filters.visibility,
+          sourceAssessmentId: filters.sourceAssessmentId,
           sortBy: filters.sortBy,
           sortOrder: filters.sortOrder,
           page,
@@ -283,6 +287,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
         setStatusCounts(data.filters?.statuses || []);
         setAvailableTags(data.filters?.tags || []);
         setAvailableDifficulties(data.filters?.difficulties || []);
+        setAvailableAssessments(data.filters?.assessments || []);
         setPages(data.pagination?.pages || 1);
         setTotal(data.pagination?.total || 0);
       } catch (error) {
@@ -325,7 +330,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
     }, {});
   }, [selectedMeta]);
 
-  const activeFilterCount = [filters.tag, filters.difficulty, filters.status, filters.visibility].filter(Boolean).length;
+  const activeFilterCount = [filters.tag, filters.difficulty, filters.status, filters.visibility, filters.sourceAssessmentId].filter(Boolean).length;
   const columnTemplate = useMemo(() => {
     const columns = [];
     if (rowSelectionActive) columns.push('32px');
@@ -340,7 +345,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   }, [rowSelectionActive, visibleColumns]);
 
   const resetFilters = () => {
-    setFilters((prev) => ({ ...prev, tag: '', difficulty: '', status: '', visibility: '' }));
+    setFilters((prev) => ({ ...prev, tag: '', difficulty: '', status: '', visibility: '', sourceAssessmentId: '' }));
     setPage(1);
   };
 
@@ -401,6 +406,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
         difficulty: filters.difficulty,
         status: filters.status,
         visibility: filters.visibility,
+        sourceAssessmentId: filters.sourceAssessmentId,
         sortBy: filters.sortBy,
         sortOrder: filters.sortOrder,
         selectAll: true,
@@ -463,7 +469,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
         return;
       }
       const data = await api.resolveLibraryQuestions(selectableIds);
-      queueQuestionSelection(assessmentKey, { questions: data.questions || [], lockType });
+      queueQuestionSelection(assessmentKey, { questions: data.questions || [], lockType, questionSet });
       toast.success('Selected library questions added to the assessment draft.');
       navigate(returnTo);
     } catch (error) {
@@ -964,6 +970,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                 <div className="absolute right-0 top-12 z-40 w-[min(92vw,390px)] rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
                   <div className="flex items-center justify-between"><div><p className="text-sm font-bold text-slate-900 dark:text-white">Filter questions</p><p className="mt-0.5 text-[11px] text-slate-500 dark:text-gray-400">Narrow the current question bank.</p></div>{activeFilterCount > 0 && <button type="button" onClick={resetFilters} className="text-xs font-semibold text-sky-600 hover:text-sky-700">Clear all</button>}</div>
                   <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <label className="grid gap-1.5 text-xs font-semibold text-slate-600 dark:text-gray-300 sm:col-span-2">Assessment question list<select value={filters.sourceAssessmentId} onChange={(event) => { setFilters((prev) => ({ ...prev, sourceAssessmentId: event.target.value })); setPage(1); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal dark:border-gray-700 dark:bg-gray-800"><option value="">All assessment lists</option>{availableAssessments.map((assessment) => <option key={assessment.id} value={assessment.id}>{assessment.title}</option>)}</select></label>
                     <label className="grid gap-1.5 text-xs font-semibold text-slate-600 dark:text-gray-300">Difficulty<select value={filters.difficulty} onChange={(event) => { setFilters((prev) => ({ ...prev, difficulty: event.target.value })); setPage(1); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal dark:border-gray-700 dark:bg-gray-800"><option value="">All levels</option>{availableDifficulties.map((level) => <option key={level} value={level}>{level}</option>)}</select></label>
                     <label className="grid gap-1.5 text-xs font-semibold text-slate-600 dark:text-gray-300">Tag or topic<select value={filters.tag} onChange={(event) => { setFilters((prev) => ({ ...prev, tag: event.target.value })); setPage(1); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal dark:border-gray-700 dark:bg-gray-800"><option value="">All tags</option>{availableTags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}</select></label>
                     <label className="grid gap-1.5 text-xs font-semibold text-slate-600 dark:text-gray-300">Status<select value={filters.status} onChange={(event) => { setFilters((prev) => ({ ...prev, status: event.target.value })); setPage(1); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal dark:border-gray-700 dark:bg-gray-800"><option value="">All statuses</option><option value="published">Published</option><option value="draft">Draft</option><option value="hidden">Hidden</option><option value="archived">Archived</option></select></label>
@@ -1000,7 +1007,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
 
         {activeFilterCount > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            {[['difficulty', filters.difficulty], ['tag', filters.tag], ['status', filters.status], ['visibility', filters.visibility]].filter(([, value]) => value).map(([key, value]) => <button key={key} type="button" onClick={() => { setFilters((prev) => ({ ...prev, [key]: '' })); setPage(1); }} className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300">{value}<X className="h-3 w-3" /></button>)}
+            {[['difficulty', filters.difficulty], ['tag', filters.tag], ['status', filters.status], ['visibility', filters.visibility], ['sourceAssessmentId', availableAssessments.find((item) => item.id === filters.sourceAssessmentId)?.title]].filter(([, value]) => value).map(([key, value]) => <button key={key} type="button" onClick={() => { setFilters((prev) => ({ ...prev, [key]: '' })); setPage(1); }} className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300">{value}<X className="h-3 w-3" /></button>)}
             <button type="button" onClick={resetFilters} className="text-[11px] font-semibold text-slate-500 hover:text-slate-900 dark:hover:text-white">Clear filters</button>
           </div>
         )}

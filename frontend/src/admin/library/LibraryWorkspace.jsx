@@ -385,7 +385,7 @@ export default function LibraryWorkspace({ view = 'questions' }) {
               </Link>
             ))}
           </nav>}
-          {view !== 'coding-analytics' && <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 px-4 backdrop-blur sm:px-5 lg:px-6 dark:border-gray-800 dark:bg-gray-900/95">
+          {view !== 'coding-analytics' && <header data-page-header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 px-4 backdrop-blur sm:px-5 lg:px-6 dark:border-gray-800 dark:bg-gray-900/95">
             <div className="flex min-h-16 items-center justify-between gap-4">
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400"><BookOpenCheck className="h-3.5 w-3.5" /> Library <ChevronRight className="h-3 w-3" /> <span className="truncate text-slate-600 dark:text-gray-300">{title}</span></div>

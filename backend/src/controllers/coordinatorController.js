@@ -10,6 +10,7 @@ import { enqueueMailJobs } from '../services/mailQueueService.js';
 import crypto from 'crypto';
 import MasterData from '../models/MasterData.js';
 import { invalidateUserCache } from '../middleware/auth.js';
+import StudentUploadBatch from '../models/StudentUploadBatch.js';
 
 const MIN_COORDINATOR_ID = 10000;
 const MAX_COORDINATOR_ID_EXCLUSIVE = 100000;
@@ -417,6 +418,26 @@ export async function bulkCreateCoordinators(req, res) {
 
     const emailSent = 0;
     const emailFailed = 0;
+    const createdIds = created.map(({ user }) => user._id);
+    const originalFileName = String(req.body?.originalFileName || 'coordinators.csv').trim().slice(0, 255);
+    const requestedBatchName = String(req.body?.batchName || '').trim().slice(0, 120);
+    const batch = await StudentUploadBatch.create({
+      name: requestedBatchName || originalFileName.replace(/\.(csv|xlsx?)$/i, '') || 'Coordinator upload',
+      originalFileName,
+      uploadedBy: req.user._id,
+      uploadedByEmail: req.user.email,
+      entityType: 'coordinator',
+      sourceType: 'coordinator_upload',
+      recordIds: createdIds,
+      createdRecordIds: createdIds,
+      updatedRecordIds: [],
+      totalRows: rows.length,
+      createdCount: createdIds.length,
+      failedCount: Math.max(0, rows.length - createdIds.length),
+      errorRows: results.filter((result) => result.status !== 'created').slice(0, 500),
+      originalRows: normalizedRows.slice(0, 500).map(({ password, ...row }) => row),
+    });
+    if (createdIds.length) await User.updateMany({ _id: { $in: createdIds } }, { $addToSet: { uploadBatchIds: batch._id } });
 
     logActivity({
       userEmail: req.user.email,
@@ -435,6 +456,7 @@ export async function bulkCreateCoordinators(req, res) {
       failed: rows.length - created.length,
       emailSent,
       emailFailed,
+      batch,
       results: results.sort((a, b) => a.row - b.row),
     });
   } catch (err) {

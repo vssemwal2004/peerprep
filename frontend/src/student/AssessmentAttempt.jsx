@@ -251,76 +251,6 @@ const formatSectionTypeLabel = (type = 'mixed') => {
   return normalized.replace(/\b\w/g, (char) => char.toUpperCase());
 };
 
-const createSeededRandom = (seedInput = '') => {
-  let seed = 0;
-  const text = String(seedInput || 'peerprep');
-  for (let i = 0; i < text.length; i += 1) {
-    seed = ((seed << 5) - seed + text.charCodeAt(i)) >>> 0;
-  }
-  return () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 4294967296;
-  };
-};
-
-const seededShuffle = (items = [], random) => {
-  const next = [...items];
-  for (let index = next.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(random() * (index + 1));
-    [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
-  }
-  return next;
-};
-
-const transformAssessmentForAttempt = (assessment, submissionId = '') => {
-  if (!assessment) return null;
-  const settings = assessment.settings || {};
-  const hasQuestionShuffle = (assessment.sections || []).some((section) => (section.questions || []).some((question) => question.shuffleOptions));
-  if (!settings.randomShuffle && !settings.shuffleOptions && !hasQuestionShuffle) return assessment;
-
-  const random = createSeededRandom(`${assessment._id || 'assessment'}:${submissionId || 'attempt'}`);
-  const sections = (assessment.sections || []).map((section, sectionIndex) => {
-    let questions = (section.questions || []).map((question, questionIndex) => ({
-      ...question,
-      __originSectionIndex: sectionIndex,
-      __originQuestionIndex: questionIndex,
-    }));
-
-    if (settings.randomShuffle) {
-      questions = seededShuffle(questions, random);
-    }
-
-    questions = questions.map((question) => {
-      if ((settings.shuffleOptions || question.shuffleOptions) && (question.type || section.type) === 'mcq' && Array.isArray(question.options) && question.options.length > 1) {
-        const shuffledOptions = seededShuffle(
-          question.options.map((option, optionIndex) => ({ option, image: question.optionImages?.[optionIndex] || null, optionIndex })),
-          random,
-        );
-        const originalCorrectIndexes = question.allowMultipleAnswers
-          ? (question.correctOptionIndexes || [])
-          : [question.correctOptionIndex];
-        const correctOptionIndexes = originalCorrectIndexes
-          .map((correctIndex) => shuffledOptions.findIndex((entry) => entry.optionIndex === Number(correctIndex)))
-          .filter((index) => index >= 0)
-          .sort((a, b) => a - b);
-        return {
-          ...question,
-          options: shuffledOptions.map((entry) => entry.option),
-          optionImages: shuffledOptions.map((entry) => entry.image),
-          correctOptionIndex: correctOptionIndexes[0] ?? null,
-          correctOptionIndexes,
-          __optionOrder: shuffledOptions.map((entry) => entry.optionIndex),
-        };
-      }
-      return question;
-    });
-
-    return { ...section, questions };
-  });
-
-  return { ...assessment, sections };
-};
-
 const getCodingDataFromQuestion = (question = {}) => (
   question?.problemDataSnapshot
   || question?.problemData
@@ -704,11 +634,6 @@ export default function AssessmentAttempt() {
         payload.code = decodeLegacyCodeEntities(liveCode);
       } else if (typeof payload.code === 'string') {
         payload.code = decodeLegacyCodeEntities(payload.code);
-      }
-      if (typeof value?.answer === 'number' && Array.isArray(displayQuestion?.__optionOrder)) {
-        payload.answer = displayQuestion.__optionOrder[value.answer] ?? value.answer;
-      } else if (Array.isArray(value?.answer) && Array.isArray(displayQuestion?.__optionOrder)) {
-        payload.answer = value.answer.map((index) => displayQuestion.__optionOrder[index] ?? index).sort((a, b) => a - b);
       }
       return { sectionIndex: originSectionIndex, questionIndex: originQuestionIndex, ...payload };
     })
@@ -1271,7 +1196,7 @@ export default function AssessmentAttempt() {
       setOffset(serverTime - localNow);
       setTimeLeft(allowedEnd - serverTime);
       setAllowedEndTime(allowedEnd);
-      const attemptAssessment = transformAssessmentForAttempt(data.assessment, data.submission?._id || `${id}:preview`);
+      const attemptAssessment = data.assessment;
       setAssessment(attemptAssessment);
       setSubmission(data.submission);
       setCandidate(data.candidate || null);
@@ -1291,14 +1216,6 @@ export default function AssessmentAttempt() {
         const mapped = displayIndexLookup.get(`${ans.sectionIndex}-${ans.questionIndex}`);
         if (!mapped) return;
         const displayAnswer = { answer: ans.answer, language: ans.language, code: ans.code };
-        if (typeof ans.answer === 'number' && Array.isArray(mapped.questionItem?.__optionOrder)) {
-          displayAnswer.answer = mapped.questionItem.__optionOrder.findIndex((optionIndex) => optionIndex === ans.answer);
-        } else if (Array.isArray(ans.answer) && Array.isArray(mapped.questionItem?.__optionOrder)) {
-          displayAnswer.answer = ans.answer
-            .map((originalIndex) => mapped.questionItem.__optionOrder.findIndex((optionIndex) => optionIndex === originalIndex))
-            .filter((index) => index >= 0)
-            .sort((a, b) => a - b);
-        }
         initialAnswers[answerKey(mapped.displaySectionIndex, mapped.displayQuestionIndex)] = {
           ...displayAnswer,
         };

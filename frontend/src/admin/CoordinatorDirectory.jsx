@@ -306,7 +306,7 @@ export default function CoordinatorDirectory() {
     <div className="flex min-h-screen flex-col bg-slate-50/60 dark:bg-gray-950">
       <div className="mx-auto w-full flex-1 px-3 py-3">
         <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-          <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div data-page-header className="mb-3 flex flex-col gap-3 bg-white py-1 dark:bg-gray-900 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex items-center gap-2.5">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-emerald-100 dark:bg-emerald-900">
                 <Users className="h-4 w-4 text-emerald-600" />

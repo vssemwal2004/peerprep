@@ -29,7 +29,7 @@ export default function AssessmentLifecycleSidebar({
   onTestTypeChange,
 }) {
   return (
-    <aside className="border-b border-slate-200 bg-white px-4 py-5 dark:border-gray-800 dark:bg-gray-950 lg:sticky lg:top-0 lg:min-h-screen lg:border-b-0 lg:border-r lg:px-5">
+    <aside className="border-b border-slate-200 bg-white px-4 py-5 dark:border-gray-800 dark:bg-gray-950 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-r lg:px-5">
       <section>
         <h2 className="text-sm font-bold text-slate-900 dark:text-white">Test status</h2>
         <nav className="mt-3 grid gap-1 sm:grid-cols-2 lg:grid-cols-1" aria-label="Assessment status">

@@ -75,6 +75,21 @@ const sectionSchema = new mongoose.Schema({
   questions: { type: [questionSchema], default: [] },
 }, { _id: false });
 
+const questionSetSchema = new mongoose.Schema({
+  setNumber: { type: Number, required: true, min: 1, max: 8 },
+  label: { type: String, trim: true, default: '' },
+  sections: { type: [sectionSchema], default: [] },
+  totalMarks: { type: Number, default: 0 },
+}, { _id: false });
+
+const candidateSetAssignmentSchema = new mongoose.Schema({
+  student: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  studentIdSnapshot: { type: String, trim: true, default: '' },
+  setNumber: { type: Number, required: true, min: 1, max: 8 },
+  source: { type: String, enum: ['automatic', 'csv', 'manual'], default: 'automatic' },
+  frozenAt: { type: Date, default: Date.now },
+}, { _id: false });
+
 const aiProctoringSettingsSchema = new mongoose.Schema({
   enabled: { type: Boolean, default: false },
   detectMobile: { type: Boolean, default: true },
@@ -126,6 +141,8 @@ const assessmentSchema = new mongoose.Schema({
   passwordHash: { type: String },
   passwordEncrypted: { type: String, select: false },
   sections: { type: [sectionSchema], default: [] },
+  questionSets: { type: [questionSetSchema], default: [] },
+  candidateSetAssignments: { type: [candidateSetAssignmentSchema], default: [] },
   totalMarks: { type: Number, default: 0 },
 }, { timestamps: true });
 

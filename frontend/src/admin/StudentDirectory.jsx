@@ -830,7 +830,7 @@ export default function StudentDirectory() {
         <div className="bg-white dark:bg-gray-900 rounded-lg border border-slate-200 dark:border-gray-700 p-3 shadow-sm">
           
           {/* Header Section with Search and Sort */}
-          <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 mb-3">
+          <div data-page-header className="mb-3 flex flex-col gap-3 bg-white py-1 dark:bg-gray-900 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex items-center gap-2.5">
               <div className={`w-9 h-9 rounded-md flex items-center justify-center flex-shrink-0 ${
                 activeTab === "students" ? "bg-emerald-100 dark:bg-emerald-900" : "bg-indigo-100 dark:bg-indigo-900"

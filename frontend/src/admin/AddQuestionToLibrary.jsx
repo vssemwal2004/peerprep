@@ -5,6 +5,7 @@ import QuestionBuilder, { QuestionImageUploader, RequiredLabel } from './assessm
 import { useToast } from '../components/CustomToast';
 import { api } from '../utils/api';
 import AuthoringStepper from './library/AuthoringStepper';
+import { downloadQuestionCsvTemplate, downloadQuestionImportErrorCsv } from './library/questionImportTemplates';
 import { queueQuestionSelection } from './assessment/assessmentProblemSelectionStore';
 
 const QUESTION_TYPES = [
@@ -132,6 +133,7 @@ const buildLibraryItems = (questions = []) => {
     const tags = Array.from(new Set(childQuestions.flatMap((question) => question.tags || [])));
     const keywords = Array.from(new Set(childQuestions.flatMap((question) => question.keywords || [])));
     const difficulties = Array.from(new Set(childQuestions.map((question) => question.difficulty).filter(Boolean)));
+    const assessmentSetHints = Array.from(new Set(childQuestions.map((question) => Number(question.assessmentSetHint)).filter(Boolean)));
     const title = item.passage.title?.trim() || 'Passage MCQ set';
     return {
       ...item,
@@ -141,6 +143,7 @@ const buildLibraryItems = (questions = []) => {
       tags,
       keywords,
       difficulty: difficulties.length === 1 ? difficulties[0] : 'Mixed',
+      assessmentSetHint: assessmentSetHints.length === 1 ? assessmentSetHints[0] : undefined,
       points: childQuestions.reduce((total, question) => total + (Number(question.points) || 0), 0),
     };
   });
@@ -217,6 +220,8 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
   const activeQuestionItemRef = useRef(null);
   const assessmentCreateMode = searchParams.get('mode') === 'assessment-create';
   const assessmentKey = searchParams.get('assessment') || 'new';
+  const questionSet = Math.max(1, Number(searchParams.get('questionSet')) || 1);
+  const assessmentQuestionSetCount = Math.min(8, Math.max(1, Number(searchParams.get('questionSetCount')) || 1));
   const assessmentReturnTo = searchParams.get('return') || (location.pathname.startsWith('/coordinator') ? '/coordinator/assessment/create' : '/admin/assessment/create');
 
   const initialType = ['mcq', 'short', 'one_line'].includes(searchParams.get('type')) ? searchParams.get('type') : 'mcq';
@@ -244,6 +249,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
   const [isLoadingQuestion, setIsLoadingQuestion] = useState(Boolean(editQuestionId));
   const [libraryMeta, setLibraryMeta] = useState(storedDraft?.libraryMeta || { visibility: 'public', status: 'draft' });
   const [importState, setImportState] = useState({ status: 'idle', message: '', imported: 0, errors: [] });
+  const [importPreview, setImportPreview] = useState(null);
   const [dirty, setDirty] = useState(Boolean(storedDraft));
   const [draftStatus, setDraftStatus] = useState(storedDraft ? 'Draft restored' : '');
   const [exitTarget, setExitTarget] = useState('');
@@ -433,41 +439,12 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
     setQuestionMenuId('');
   };
 
-  const downloadTemplate = async () => {
-    const isMcq = type === 'mcq';
-    const filename = isMcq ? 'mcq-import-template.xlsx' : 'short-answer-import-template.xlsx';
-    const rows = isMcq
-      ? [
-        ['Passage Title (optional)', 'Passage (optional)', 'Question', 'Question Image URL (optional)', 'Option 1', 'Option 1 Image URL', 'Option 2', 'Option 2 Image URL', 'Option 3', 'Option 3 Image URL', 'Option 4', 'Option 4 Image URL', 'Correct Answers', 'Multiple Answers', 'Partial Scoring', 'Shuffle Options', 'Positive Score', 'Negative Score', 'Difficulty', 'Time in Seconds', 'Tags', 'Answer Explanation'],
-        ['', '', 'What is 2 + 2?', '', '3', '', '4', '', '5', '', '6', '', '2', 'NO', 'NO', 'YES', '1', '0', 'Easy', '30', 'Arithmetic, Basics', '2 + 2 equals 4.'],
-        ['Read the passage', 'Peer review improves software quality by detecting defects early.', 'What does peer review improve?', '', 'Software quality', '', 'Network speed', '', 'Battery life', '', 'Screen size', '', '1', 'NO', 'NO', 'NO', '2', '0.5', 'Medium', '45', 'Comprehension', 'The passage directly states software quality.'],
-      ]
-      : [
-        ['Heading (optional)', 'Question', 'Question Image URL (optional)', 'Answer', 'Keywords (optional)', 'Positive Score', 'Negative Score', 'Difficulty', 'Time in Seconds', 'Tags'],
-        ['Arrays', 'Explain what an array is.', '', 'An array is a collection of elements stored contiguously.', 'contiguous, elements', '2', '0', 'Easy', '120', 'Arrays, DSA'],
-      ];
-
-    try {
-      const XLSX = await import('xlsx');
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.aoa_to_sheet(rows);
-      ws['!cols'] = rows[0].map((header) => ({ wch: Math.min(Math.max(String(header).length + 3, 14), 42) }));
-      XLSX.utils.book_append_sheet(wb, ws, 'Questions');
-      const instructions = XLSX.utils.aoa_to_sheet([
-        ['PeerPrep question import guide'],
-        ['Required columns are Question, at least two options, and Correct Answers for MCQ; Question and Answer for written questions.'],
-        ['Correct Answers accepts option numbers separated by commas, for example 1 or 1,3.'],
-        ['Option 5 to Option 8 columns may be added using the same naming pattern.'],
-        ['Image URLs must be HTTPS URLs. Images uploaded in the authoring UI are stored in Supabase automatically.'],
-      ]);
-      XLSX.utils.book_append_sheet(wb, instructions, 'Instructions');
-      XLSX.writeFile(wb, filename);
-    } catch (err) {
-      console.error(err);
-    }
-  };
+  const downloadTemplate = () => downloadQuestionCsvTemplate(type, { includeSet: type === 'mcq' && assessmentCreateMode });
 
   const parseImportFile = async (file) => {
+    if (file.size > 5 * 1024 * 1024) {
+      throw new Error('The spreadsheet is larger than 5 MB. Split it into smaller files and try again.');
+    }
     const XLSX = await import('xlsx');
     const buffer = await file.arrayBuffer();
     const wb = XLSX.read(buffer, { type: 'array' });
@@ -476,10 +453,18 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
     const ws = wb.Sheets[sheetName];
     const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
     if (!Array.isArray(aoa) || aoa.length < 2) throw new Error('The uploaded file is empty or missing rows.');
+    const populatedRows = aoa.slice(1).filter((row) => (row || []).some((cell) => String(cell ?? '').trim()));
+    if (populatedRows.length > 1000) throw new Error('A single import can contain up to 1,000 questions. Split this file and try again.');
 
     const headerRow = aoa[0] || [];
     const normalizedHeaders = headerRow.map(normalizeHeader);
     const questionIdx = getHeaderIndex(normalizedHeaders, ['question', 'questiontext']);
+    const buildRowError = (row, rowNumber, message) => ({
+      rowNumber,
+      message,
+      questionText: questionIdx >= 0 ? String(row[questionIdx] || '').trim() : '',
+      rawValues: headerRow.map((_, index) => row[index] ?? ''),
+    });
 
     if (questionIdx === -1) {
       throw new Error('Invalid format: missing required column “Question”. Download the template to see the expected format.');
@@ -487,8 +472,11 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
 
     if (type === 'mcq') {
       const optionColumns = normalizedHeaders.map((header, index) => {
-        const match = header.match(/^option([1-8])$/);
-        return match ? { optionNumber: Number(match[1]), index } : null;
+        const match = header.match(/^option([1-8a-h])(?:text)?$/);
+        if (!match) return null;
+        const token = match[1];
+        const optionNumber = /^[a-h]$/.test(token) ? token.charCodeAt(0) - 96 : Number(token);
+        return { optionNumber, index };
       }).filter(Boolean).sort((a, b) => a.optionNumber - b.optionNumber);
       const optionImageColumns = normalizedHeaders.map((header, index) => {
         const match = header.match(/^option([1-8])image(?:url)?$/);
@@ -507,6 +495,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
       const timeIdx = getHeaderIndex(normalizedHeaders, ['timeinseconds', 'timelimit', 'time']);
       const tagsIdx = getHeaderIndex(normalizedHeaders, ['tags', 'skills', 'topics']);
       const explanationIdx = getHeaderIndex(normalizedHeaders, ['answerexplanation', 'explanation']);
+      const setIdx = getHeaderIndex(normalizedHeaders, ['set', 'assessmentset', 'questionset']);
 
       if (optionColumns.length < 2 || correctIdx === -1) {
         throw new Error('Invalid format: at least Option 1, Option 2, and Correct Answers are required. Download the template for the exact format.');
@@ -523,11 +512,17 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
           return imageColumn ? assetFromUrl(row[imageColumn.index]) : null;
         });
         const correctRaw = String(row[correctIdx] || '').trim();
+        const setRaw = setIdx >= 0 ? String(row[setIdx] || '').trim() : '';
 
         if (!questionText && !options.some(Boolean) && !correctRaw) continue;
 
         if (!questionText || options.filter(Boolean).length < 2) {
-          errors.push(`Row ${r + 1}: Question and at least two options are required.`);
+          errors.push(buildRowError(row, r + 1, 'Question and at least two options are required.'));
+          continue;
+        }
+        const maximumSetNumber = assessmentCreateMode ? assessmentQuestionSetCount : 8;
+        if (setRaw && (!/^\d+$/.test(setRaw) || Number(setRaw) < 1 || Number(setRaw) > maximumSetNumber)) {
+          errors.push(buildRowError(row, r + 1, `Set must be between 1 and ${maximumSetNumber}${assessmentCreateMode ? ' for this assessment' : ''}.`));
           continue;
         }
 
@@ -537,9 +532,9 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
           if (/^[A-H]$/.test(normalized)) return normalized.charCodeAt(0) - 65;
           if (/^[1-8]$/.test(normalized)) return Number(normalized) - 1;
           return options.findIndex((option) => option.toLowerCase() === token.toLowerCase());
-        }).filter((index) => index >= 0 && index < options.length))];
+        }).filter((index) => index >= 0 && index < options.length && (options[index] || optionImages[index])))];
         if (!correctOptionIndexes.length) {
-          errors.push(`Row ${r + 1}: Correct Answers must reference valid option numbers, letters, or exact option text.`);
+          errors.push(buildRowError(row, r + 1, 'Correct Answer must reference an option letter, number, or exact option text.'));
           continue;
         }
 
@@ -556,14 +551,19 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
           shuffleOptions: shuffleIdx >= 0 && parseYesNo(row[shuffleIdx]),
           points: pointsIdx >= 0 ? parseOptionalNumber(row[pointsIdx], 1) : 1,
           negativePoints: negativeIdx >= 0 ? parseOptionalNumber(row[negativeIdx], 0) : 0,
-          difficulty: difficultyIdx >= 0 && ['Easy', 'Medium', 'Hard'].includes(String(row[difficultyIdx])) ? String(row[difficultyIdx]) : 'Easy',
+          difficulty: difficultyIdx >= 0 && ['easy', 'medium', 'hard'].includes(String(row[difficultyIdx]).trim().toLowerCase())
+            ? `${String(row[difficultyIdx]).trim().charAt(0).toUpperCase()}${String(row[difficultyIdx]).trim().slice(1).toLowerCase()}`
+            : 'Easy',
           timeLimitSeconds: timeIdx >= 0 ? parseOptionalNumber(row[timeIdx], '') : '',
           tags: tagsIdx >= 0 ? String(row[tagsIdx] || '').split(',').map((tag) => tag.trim()).filter(Boolean) : [],
           answerExplanation: explanationIdx >= 0 ? String(row[explanationIdx] || '').trim() : '',
+          assessmentSetHint: setRaw ? Number(setRaw) : undefined,
           passage: passageText ? { passageId: createQuestionId(), title: passageTitleIdx >= 0 ? String(row[passageTitleIdx] || '').trim() : '', text: passageText, image: null } : null,
+          __importRow: r + 1,
+          __importAnswer: correctRaw,
         });
       }
-      return { rows: results, errors };
+      return { rows: results, errors, headers: headerRow, totalRows: populatedRows.length };
     }
 
     const headingIdx = getHeaderIndex(normalizedHeaders, ['heading', 'category', 'title']);
@@ -590,7 +590,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
       if (!heading && !questionText && !answer) continue;
 
       if (!questionText || !answer) {
-        errors.push(`Row ${r + 1}: Question and Answer are required.`);
+        errors.push(buildRowError(row, r + 1, 'Question and Answer are required.'));
         continue;
       }
 
@@ -605,45 +605,60 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
         difficulty: difficultyIdx >= 0 && ['Easy', 'Medium', 'Hard'].includes(String(row[difficultyIdx])) ? String(row[difficultyIdx]) : 'Easy',
         timeLimitSeconds: timeIdx >= 0 ? parseOptionalNumber(row[timeIdx], '') : '',
         tags: tagsIdx >= 0 ? String(row[tagsIdx] || '').split(',').map((tag) => tag.trim()).filter(Boolean) : [],
+        __importRow: r + 1,
+        __importAnswer: answer,
       });
     }
 
-    return { rows: results, errors };
+    return { rows: results, errors, headers: headerRow, totalRows: populatedRows.length };
   };
 
   const handleImportFile = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setImportState({ status: 'importing', message: 'Uploading…', imported: 0, errors: [] });
+    setImportPreview(null);
+    setImportState({ status: 'importing', message: 'Checking spreadsheet…', imported: 0, errors: [], fileName: file.name });
 
     try {
-      const { rows, errors } = await parseImportFile(file);
-      if (errors.length) {
-        setImportState({ status: 'error', message: 'Some rows could not be imported.', imported: rows.length, errors: errors.slice(0, 8) });
-      }
-
-      if (!rows.length) {
+      const { rows, errors, headers, totalRows } = await parseImportFile(file);
+      if (!rows.length && !errors.length) {
         throw new Error('No valid questions found in the uploaded file.');
       }
 
+      setImportPreview({ rows, errors, headers, totalRows, fileName: file.name });
+      setImportState({
+        status: errors.length ? 'warning' : 'success',
+        message: errors.length ? 'Review the rows that need attention.' : 'All rows passed validation. Review before importing.',
+        imported: 0,
+        errors: [],
+        fileName: file.name,
+      });
+      if (errors.length) toast.error(`${errors.length} row${errors.length === 1 ? '' : 's'} need to be fixed.`);
+      else toast.success(`${rows.length} question${rows.length === 1 ? '' : 's'} ready to review.`);
+    } catch (err) {
+      setImportPreview(null);
+      setImportState({ status: 'error', message: err?.message || 'Import failed.', imported: 0, errors: [], fileName: file.name });
+      toast.error(err?.message || 'Import failed.');
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const confirmQuestionImport = () => {
+    const rows = importPreview?.rows || [];
+    if (!rows.length) return;
+
       let importedQuestions = rows.map((row) => {
+        const { __importRow: _importRow, __importAnswer: _importAnswer, ...questionRow } = row;
         const prefixedQuestion = (type !== 'mcq' && row.heading)
           ? `${row.heading}\n${row.questionText}`
           : row.questionText;
 
-        if (type === 'mcq') {
-          return {
-            questionId: createQuestionId(),
-            type,
-            ...row,
-            questionText: prefixedQuestion,
-          };
-        }
         return {
+          ...questionRow,
           questionId: createQuestionId(),
           type,
-          ...row,
           questionText: prefixedQuestion,
         };
       });
@@ -666,23 +681,19 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
       setQuestions([...currentValid, ...importedQuestions]);
 
       setImportState({
-        status: errors.length ? 'warning' : 'success',
+        status: 'success',
         message: `Imported ${importedQuestions.length} questions.`,
         imported: importedQuestions.length,
-        errors: errors.slice(0, 8),
+        errors: [],
+        fileName: importPreview.fileName,
       });
+      setImportPreview(null);
+      toast.success(`Imported ${importedQuestions.length} questions successfully!`);
+  };
 
-      if (errors.length) {
-        toast.error(`Imported ${importedQuestions.length} questions with some errors.`);
-      } else {
-        toast.success(`Imported ${importedQuestions.length} questions successfully!`);
-      }
-    } catch (err) {
-      setImportState({ status: 'error', message: err?.message || 'Import failed.', imported: 0, errors: [] });
-      toast.error(err?.message || 'Import failed.');
-    } finally {
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
+  const downloadImportErrors = () => {
+    if (!importPreview?.errors?.length) return;
+    downloadQuestionImportErrorCsv(importPreview);
   };
 
   const handleSaveAll = async (requestedStatus = '', { addToAssessment = false, navigateAfterSave = true } = {}) => {
@@ -765,14 +776,26 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
         return true;
       }
 
-      const response = await api.createLibraryQuestionsBulk(payload);
+      const response = await api.createLibraryQuestionsBulk(payload, importState.fileName ? {
+        originalFileName: importState.fileName,
+        batchName: importState.fileName.replace(/\.(csv|xlsx?)$/i, ''),
+        totalRows: importState.imported + (importState.errors?.length || 0),
+        failedCount: importState.errors?.length || 0,
+        errors: importState.errors || [],
+      } : undefined);
       localStorage.removeItem(authoringDraftKey);
       authoringBaselineRef.current = JSON.stringify({ questions, libraryMeta, activeStage });
       setDirty(false);
       setDraftStatus('Draft saved');
       const passageSetCount = payload.filter((item) => item.libraryItemKind === 'passage_set').length;
       if (assessmentCreateMode && addToAssessment) {
-        queueQuestionSelection(assessmentKey, { questions: response.questions || [], createdForAssessment: true });
+        const grouped = new Map();
+        (response.questions || []).forEach((createdQuestion) => {
+          const targetSet = Math.max(1, Number(createdQuestion.assessmentSetHint) || questionSet);
+          if (!grouped.has(targetSet)) grouped.set(targetSet, []);
+          grouped.get(targetSet).push(createdQuestion);
+        });
+        grouped.forEach((createdQuestions, targetSet) => queueQuestionSelection(assessmentKey, { questions: createdQuestions, createdForAssessment: true, questionSet: targetSet }));
         toast.success(`${validQuestions.length} question${validQuestions.length === 1 ? '' : 's'} published and added to the assessment.`);
         if (navigateAfterSave) navigate(assessmentReturnTo);
         return true;
@@ -849,6 +872,26 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
       || question.passage?.title?.toLowerCase().includes(normalizedNavigatorSearch)
       || question.passage?.text?.toLowerCase().includes(normalizedNavigatorSearch)
       || String(index + 1) === normalizedNavigatorSearch);
+  const importReviewRows = importPreview
+    ? [
+      ...(importPreview.rows || []).map((row) => ({
+        rowNumber: row.__importRow,
+        status: 'valid',
+        questionText: row.questionText,
+        optionCount: type === 'mcq' ? (row.options || []).filter(Boolean).length : null,
+        answer: row.__importAnswer || row.expectedAnswer || '',
+        message: 'Ready to import',
+      })),
+      ...(importPreview.errors || []).map((error) => ({
+        rowNumber: error.rowNumber,
+        status: 'error',
+        questionText: error.questionText || '—',
+        optionCount: null,
+        answer: '',
+        message: error.message,
+      })),
+    ].sort((left, right) => Number(left.rowNumber) - Number(right.rowNumber))
+    : [];
   const selectedQuestionType = QUESTION_TYPES.find((questionType) => questionType.value === type) || QUESTION_TYPES[0];
   const editorTopRef = useRef(null);
   const contentComplete = questions.every((question) => question.questionText?.trim()
@@ -975,38 +1018,49 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
             </section>
           )}
 
-          <div className={!editQuestionId && importOpen ? 'flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800' : 'hidden'}>
-            <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-gray-200">
-              <FileSpreadsheet className="h-4 w-4 text-slate-500" />
-              Bulk Import
-              <span className="text-[11px] font-normal text-slate-500 dark:text-gray-400">(Excel)</span>
+          <section className={!editQuestionId && importOpen ? 'overflow-hidden rounded-2xl border border-sky-200 bg-white shadow-sm dark:border-sky-900/60 dark:bg-gray-900' : 'hidden'}>
+            <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 bg-gradient-to-r from-sky-50 to-white px-5 py-4 dark:border-gray-800 dark:from-sky-950/30 dark:to-gray-900">
+              <div className="flex min-w-0 items-start gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white shadow-sm"><FileSpreadsheet className="h-5 w-5" /></span>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2"><h2 className="text-sm font-bold text-slate-950 dark:text-white">Import {type === 'mcq' ? 'MCQs' : 'questions'} in bulk</h2><span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">Simple template</span></div>
+                  <p className="mt-1 max-w-xl text-xs leading-5 text-slate-500 dark:text-gray-400">{type === 'mcq' ? 'Add the question, at least two options and the correct answer. Scoring and difficulty have sensible defaults.' : 'Use the ready-made sheet to add several questions and answers at once.'}</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setImportOpen(false)} title="Close import panel" className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-slate-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"><X className="h-4 w-4" /></button>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={downloadTemplate}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
-              >
-                <Download className="h-3.5 w-3.5" />
-                Download Template
-              </button>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-3 py-2 text-xs font-semibold text-white hover:bg-sky-500"
-              >
-                <Upload className="h-3.5 w-3.5" />
-                Import via Excel
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls"
-                className="hidden"
-                onChange={handleImportFile}
-              />
+
+            <div className="grid gap-4 px-5 py-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+              <div>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {[['1', 'Download', 'Open the simple CSV'], ['2', 'Fill rows', type === 'mcq' ? 'Use A or A,C for answers' : 'One question per row'], ['3', 'Upload', 'Review before saving']].map(([step, title, description]) => (
+                    <div key={step} className="flex items-center gap-2.5 rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-2.5 dark:border-gray-800 dark:bg-gray-800/60">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-[10px] font-bold text-sky-700 shadow-sm dark:bg-gray-900 dark:text-sky-300">{step}</span>
+                      <span className="min-w-0"><span className="block text-[11px] font-bold text-slate-800 dark:text-gray-100">{title}</span><span className="block truncate text-[10px] text-slate-500 dark:text-gray-400">{description}</span></span>
+                    </div>
+                  ))}
+                </div>
+                {type === 'mcq' && (
+                  <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500 dark:text-gray-400">
+                    <span className="font-semibold text-slate-600 dark:text-gray-300">Required:</span>
+                    {['Question', 'Option A', 'Option B', 'Correct Answer'].map((label) => <span key={label} className="rounded-md border border-slate-200 bg-white px-2 py-1 dark:border-gray-700 dark:bg-gray-900">{label}</span>)}
+                    <span className="ml-1">Optional columns may be removed.</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-2 lg:justify-end">
+                <button type="button" onClick={downloadTemplate} className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-xs font-semibold text-slate-700 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
+                  <Download className="h-3.5 w-3.5" />Download simple CSV
+                </button>
+                <button type="button" onClick={() => fileInputRef.current?.click()} disabled={importState.status === 'importing'} className="inline-flex h-10 items-center gap-2 rounded-xl bg-sky-600 px-4 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60">
+                  <Upload className="h-3.5 w-3.5" />Choose CSV or Excel
+                </button>
+                <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleImportFile} />
+              </div>
             </div>
-          </div>
+            <div className="border-t border-slate-100 bg-slate-50/70 px-5 py-2 text-[10px] text-slate-500 dark:border-gray-800 dark:bg-gray-800/40 dark:text-gray-400">Up to 1,000 questions · Maximum file size 5 MB · Existing advanced-format spreadsheets remain supported{assessmentCreateMode && type === 'mcq' ? ' · Set is optional' : ''}</div>
+          </section>
 
           {importState.status !== 'idle' && (
             <div className={`rounded-2xl border px-4 py-3 text-xs ${
@@ -1019,7 +1073,7 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
                     : 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200'
             }`}>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="font-semibold">{importState.status === 'importing' ? 'Importing…' : importState.message}</div>
+                <div className="font-semibold">{importState.message}</div>
                 {importState.status === 'importing' && <div className="h-4 w-4 animate-spin rounded-full border-2 border-sky-300 border-t-transparent" />}
               </div>
               {!!importState.errors?.length && (
@@ -1028,6 +1082,51 @@ export default function AddQuestionToLibrary({ embedded = false, editQuestionId 
                 </div>
               )}
             </div>
+          )}
+
+          {importPreview && (
+            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-5 py-4 dark:border-gray-800">
+                <div><h2 className="text-sm font-bold text-slate-950 dark:text-white">Review import</h2><p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Nothing is added until you confirm the valid rows.</p></div>
+                <span className="max-w-64 truncate rounded-lg bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600 dark:bg-gray-800 dark:text-gray-300" title={importPreview.fileName}>{importPreview.fileName}</span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 bg-slate-50/70 px-5 py-4 dark:bg-gray-800/30">
+                <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900"><p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Rows checked</p><p className="mt-1 text-xl font-bold text-slate-900 dark:text-white">{importPreview.totalRows}</p></div>
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-900/50 dark:bg-emerald-950/20"><p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Ready</p><p className="mt-1 text-xl font-bold text-emerald-700 dark:text-emerald-300">{importPreview.rows.length}</p></div>
+                <div className={`rounded-xl border p-3 ${importPreview.errors.length ? 'border-rose-200 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-950/20' : 'border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900'}`}><p className={`text-[10px] font-bold uppercase tracking-wider ${importPreview.errors.length ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400'}`}>Needs fixing</p><p className={`mt-1 text-xl font-bold ${importPreview.errors.length ? 'text-rose-700 dark:text-rose-300' : 'text-slate-900 dark:text-white'}`}>{importPreview.errors.length}</p></div>
+              </div>
+
+              <div className="max-h-80 overflow-auto border-y border-slate-100 dark:border-gray-800">
+                <table className="min-w-full text-left text-xs">
+                  <thead className="sticky top-0 z-10 bg-slate-100 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:bg-gray-800 dark:text-gray-400">
+                    <tr><th className="w-16 px-4 py-2.5">Row</th><th className="w-24 px-3 py-2.5">Status</th><th className="min-w-64 px-3 py-2.5">Question</th>{type === 'mcq' && <th className="w-20 px-3 py-2.5">Options</th>}<th className="w-28 px-3 py-2.5">Answer</th><th className="min-w-56 px-3 py-2.5">Check result</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-gray-800">
+                    {importReviewRows.slice(0, 100).map((row) => (
+                      <tr key={`${row.rowNumber}-${row.status}`} className={row.status === 'error' ? 'bg-rose-50/50 dark:bg-rose-950/10' : 'hover:bg-slate-50 dark:hover:bg-gray-800/40'}>
+                        <td className="px-4 py-3 font-mono text-[11px] text-slate-500">{row.rowNumber}</td>
+                        <td className="px-3 py-3"><span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-bold ${row.status === 'valid' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300'}`}>{row.status === 'valid' ? <CheckCircle2 className="h-3 w-3" /> : <X className="h-3 w-3" />}{row.status === 'valid' ? 'Ready' : 'Error'}</span></td>
+                        <td className="max-w-md px-3 py-3 font-medium text-slate-800 dark:text-gray-200"><span className="line-clamp-2">{row.questionText || '—'}</span></td>
+                        {type === 'mcq' && <td className="px-3 py-3 text-slate-500">{row.optionCount ?? '—'}</td>}
+                        <td className="max-w-28 truncate px-3 py-3 font-semibold text-slate-600 dark:text-gray-300" title={row.answer}>{row.answer || '—'}</td>
+                        <td className={`px-3 py-3 ${row.status === 'error' ? 'text-rose-700 dark:text-rose-300' : 'text-slate-500 dark:text-gray-400'}`}>{row.message}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {importReviewRows.length > 100 && <div className="border-b border-slate-100 px-5 py-2 text-[10px] text-slate-500 dark:border-gray-800 dark:text-gray-400">Showing the first 100 of {importReviewRows.length} rows. All valid rows will be imported.</div>}
+
+              <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+                <p className="text-[11px] text-slate-500 dark:text-gray-400">{importPreview.errors.length ? 'Download the error sheet, correct those rows, then upload it again.' : 'All rows are ready. Confirm to add them to the question list.'}</p>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => { setImportPreview(null); setImportState({ status: 'idle', message: '', imported: 0, errors: [] }); }} className="h-9 rounded-xl border border-slate-200 px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Cancel</button>
+                  {!!importPreview.errors.length && <button type="button" onClick={downloadImportErrors} className="inline-flex h-9 items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-900/50 dark:bg-rose-950/20 dark:text-rose-300"><Download className="h-3.5 w-3.5" />Download error CSV</button>}
+                  <button type="button" onClick={confirmQuestionImport} disabled={!importPreview.rows.length} className="inline-flex h-9 items-center gap-2 rounded-xl bg-sky-600 px-4 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"><CheckCircle2 className="h-3.5 w-3.5" />Import {importPreview.rows.length} valid question{importPreview.rows.length === 1 ? '' : 's'}</button>
+                </div>
+              </div>
+            </section>
           )}
 
           <div className={`grid items-start gap-4 ${showNavigator ? 'lg:grid-cols-[260px_minmax(0,1fr)]' : 'grid-cols-1'}`}>

@@ -126,6 +126,8 @@ function normalizeStudentRow(row) {
     course: row.course || map.course,
     college: row.college || map.college,
     group: row.group || map.group,
+    assessmentSet: row.assessmentSet || row.assessmentset || map.assessmentset || map.set,
+    assessmentSetSource: row.assessmentSetSource || row.assessmentsetsource || map.assessmentsetsource,
   };
 }
 
@@ -269,9 +271,90 @@ function selectDeliveryQuestions(pool = [], count = 0, seed = '') {
     .map(({ item }) => item);
 }
 
-function buildDeliverySections(assessment = {}, studentId = '') {
+function stableShuffle(items = [], seed = '', identity = (_item, index) => index) {
+  return [...items]
+    .map((item, index) => ({
+      item,
+      index,
+      rank: stableDeliveryHash(`${seed}:${identity(item, index)}:${index}`),
+    }))
+    .sort((left, right) => left.rank - right.rank || left.index - right.index)
+    .map(({ item }) => item);
+}
+
+function shuffleDeliveryQuestionOptions(question = {}, seed = '') {
+  const options = Array.isArray(question.options) ? question.options : [];
+  if (options.length < 2) return question;
+
+  const shuffled = stableShuffle(
+    options.map((option, originalIndex) => ({
+      option,
+      image: question.optionImages?.[originalIndex] ?? null,
+      originalIndex,
+    })),
+    seed,
+    (entry) => entry.originalIndex,
+  );
+  const displayedIndexByOriginal = new Map(
+    shuffled.map((entry, displayedIndex) => [entry.originalIndex, displayedIndex]),
+  );
+  const mapCorrectIndex = (value) => {
+    const originalIndex = Number(value);
+    return Number.isInteger(originalIndex) && displayedIndexByOriginal.has(originalIndex)
+      ? displayedIndexByOriginal.get(originalIndex)
+      : undefined;
+  };
+  const correctOptionIndex = mapCorrectIndex(question.correctOptionIndex);
+  const correctOptionIndexes = [...new Set((question.correctOptionIndexes || [])
+    .map(mapCorrectIndex)
+    .filter(Number.isInteger))]
+    .sort((left, right) => left - right);
+
+  return {
+    ...question,
+    options: shuffled.map((entry) => entry.option),
+    optionImages: shuffled.map((entry) => entry.image),
+    ...(correctOptionIndex === undefined ? {} : { correctOptionIndex }),
+    correctOptionIndexes,
+  };
+}
+
+function applyServerDeliveryShuffle(sections = [], settings = {}, seed = '') {
+  return sections.map((section, sectionIndex) => {
+    const sectionSeed = `${seed}:section-${sectionIndex}`;
+    let questions = (section.questions || []).map((question, questionIndex) => {
+      const questionSeed = `${sectionSeed}:question-${question.questionId || question.problemId || questionIndex}`;
+      const shouldShuffleOptions = (settings.shuffleOptions || question.shuffleOptions)
+        && (question.type || section.type) === 'mcq';
+      return shouldShuffleOptions
+        ? shuffleDeliveryQuestionOptions(question, `${questionSeed}:options`)
+        : question;
+    });
+
+    if (settings.randomShuffle) {
+      questions = stableShuffle(
+        questions,
+        `${sectionSeed}:questions`,
+        (question, questionIndex) => question.questionId || question.problemId || questionIndex,
+      );
+    }
+    return { ...section, questions };
+  });
+}
+
+export function buildDeliverySections(assessment = {}, studentId = '') {
   const source = typeof assessment.toObject === 'function' ? assessment.toObject() : assessment;
   const settings = source.settings || {};
+  const assignment = (source.candidateSetAssignments || []).find((entry) => (
+    String(entry?.student?._id || entry?.student || '') === String(studentId || '')
+  ));
+  const assignedSetNumber = Math.max(1, Number(assignment?.setNumber) || 1);
+  const selectedSet = settings.questionSetEnabled
+    ? (source.questionSets || []).find((entry) => Number(entry?.setNumber) === assignedSetNumber)
+    : null;
+  const deliverySource = selectedSet
+    ? { ...source, sections: selectedSet.sections || [] }
+    : source;
   const requirements = (settings.questionSelectionEnabled ? settings.questionRequirements : {}) || {};
   const fallbackDistributionMode = ['random_per_student', 'same_for_all'].includes(settings.questionDistributionMode)
     ? settings.questionDistributionMode
@@ -279,7 +362,7 @@ function buildDeliverySections(assessment = {}, studentId = '') {
   const selectedByType = new Map();
   Object.keys(requirements).forEach((type) => {
     const pool = [];
-    (source.sections || []).forEach((section, sectionIndex) => {
+    (deliverySource.sections || []).forEach((section, sectionIndex) => {
       if (section.type !== type) return;
       (section.questions || []).forEach((question, questionIndex) => pool.push({ sectionIndex, questionIndex, question }));
     });
@@ -290,16 +373,18 @@ function buildDeliverySections(assessment = {}, studentId = '') {
     const distributionKey = distributionMode === 'same_for_all'
       ? 'all-candidates'
       : `student:${studentId || 'anonymous'}`;
-    const selected = selectDeliveryQuestions(pool, required, `${source._id || source.assessmentId || 'assessment'}:${distributionKey}:${type}`);
+    const selected = selectDeliveryQuestions(pool, required, `${source._id || source.assessmentId || 'assessment'}:set-${assignedSetNumber}:${distributionKey}:${type}`);
     selectedByType.set(type, new Set(selected.map((item) => `${item.sectionIndex}:${item.questionIndex}`)));
   });
-  const sections = (source.sections || []).map((section, sectionIndex) => ({
+  const selectedSections = (deliverySource.sections || []).map((section, sectionIndex) => ({
     ...section,
     questions: (section.questions || []).filter((_, questionIndex) => (
       !selectedByType.has(section.type) || selectedByType.get(section.type).has(`${sectionIndex}:${questionIndex}`)
     )),
   })).filter((section) => section.questions.length > 0);
-  return { sections };
+  const deliverySeed = `${source._id || source.assessmentId || 'assessment'}:set-${assignedSetNumber}:student-${studentId || 'anonymous'}`;
+  const sections = applyServerDeliveryShuffle(selectedSections, settings, deliverySeed);
+  return { sections, assignedSetNumber };
 }
 
 function assessmentForSubmission(assessment = {}, submission = {}) {
@@ -310,6 +395,8 @@ function assessmentForSubmission(assessment = {}, submission = {}) {
   const delivery = applyMarksAndTotals(stored);
   return {
     ...source,
+    questionSets: undefined,
+    candidateSetAssignments: undefined,
     sections: delivery.sections,
     totalMarks: delivery.totalMarks,
     assessmentType: delivery.assessmentType,
@@ -403,7 +490,52 @@ function sanitizeAssessmentForResponse(assessment) {
   delete source.passwordHash;
   delete source.passwordEncrypted;
   delete source.shifts;
+  delete source.candidateSetAssignments;
   source.settings = normalizeAssessmentSettings(source.settings || {});
+  return source;
+}
+
+function redactCodingAnswerData(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const redacted = { ...value };
+  if (Array.isArray(redacted.testCases)) {
+    redacted.testCases = redacted.testCases.filter((testCase) => !testCase?.hidden);
+  }
+  if (redacted.problemData && typeof redacted.problemData === 'object') {
+    redacted.problemData = redactCodingAnswerData(redacted.problemData);
+  }
+  return redacted;
+}
+
+export function sanitizeStudentAssessmentForResponse(assessment) {
+  const source = sanitizeAssessmentForResponse(assessment);
+  if (!source) return source;
+  return {
+    ...source,
+    sections: (source.sections || []).map((section) => ({
+      ...section,
+      questions: (section.questions || []).map((question) => {
+        const redacted = { ...question };
+        delete redacted.correctOptionIndex;
+        delete redacted.correctOptionIndexes;
+        delete redacted.expectedAnswer;
+        delete redacted.keywords;
+        delete redacted.answerExplanation;
+        delete redacted.explanation;
+        delete redacted.correctAnswer;
+        redacted.coding = redactCodingAnswerData(redacted.coding);
+        redacted.problemData = redactCodingAnswerData(redacted.problemData);
+        redacted.problemDataSnapshot = redactCodingAnswerData(redacted.problemDataSnapshot);
+        return redacted;
+      }),
+    })),
+  };
+}
+
+function sanitizeStudentSubmissionForResponse(submission) {
+  if (!submission) return submission;
+  const source = typeof submission.toObject === 'function' ? submission.toObject() : { ...submission };
+  delete source.deliverySections;
   return source;
 }
 
@@ -542,6 +674,12 @@ function normalizeAssessmentSettings(settings = {}) {
     watermarkCustomText: String(source.watermarkCustomText || '').trim(),
     randomShuffle: Boolean(source.randomShuffle),
     shuffleOptions: Boolean(source.shuffleOptions),
+    questionSetEnabled: Boolean(source.questionSetEnabled),
+    questionSetCount: Math.min(8, Math.max(1, Number(source.questionSetCount) || 1)),
+    automaticSetAssignment: source.automaticSetAssignment !== false,
+    setAssignmentStrategy: 'roll_number',
+    setStartingNumber: Math.min(8, Math.max(1, Number(source.setStartingNumber) || 1)),
+    candidateCredentialMode: source.candidateCredentialMode === 'student_id' ? 'student_id' : 'secure_generated',
     cameraMonitoring: Boolean(source.cameraMonitoring),
     cameraSnapshotInterval: clampSettingNumber(source.cameraSnapshotInterval, 120, { min: 15, max: 600 }),
     cameraFaceAlert: Boolean(source.cameraFaceAlert),
@@ -1199,8 +1337,9 @@ function formatStudentSubmissionStatus(submission = {}) {
 }
 
 function buildStudentReportRow(assessment = {}, submission = {}, { rankInfo = null, now = new Date() } = {}) {
-  const analytics = buildAssessmentAttemptAnalytics(assessment, submission);
-  const totalMarks = Number(assessment.totalMarks || computeTotalMarksFromSections(assessment.sections || []));
+  const deliveredAssessment = assessmentForSubmission(assessment, submission);
+  const analytics = buildAssessmentAttemptAnalytics(deliveredAssessment, submission);
+  const totalMarks = Number(deliveredAssessment.totalMarks || computeTotalMarksFromSections(deliveredAssessment.sections || []));
   const score = Number(submission.score || 0);
   const accuracy = Number.isFinite(Number(submission.accuracy))
     ? Number(submission.accuracy)
@@ -1210,7 +1349,7 @@ function buildStudentReportRow(assessment = {}, submission = {}, { rankInfo = nu
   const permissions = buildStudentResultPermissions(assessment, submission, now);
   const sectionBreakdown = permissions.canViewSectionAnalytics ? analytics.sectionBreakdown : [];
   const questionWise = permissions.canViewQuestionReview
-    ? buildQuestionWiseReport(assessment, submission, permissions)
+    ? buildQuestionWiseReport(deliveredAssessment, submission, permissions)
     : [];
 
   return {
@@ -1384,6 +1523,58 @@ function normalizeAssessmentSections(sections = []) {
       questions: normalizedQuestions,
     };
   });
+}
+
+function normalizeAssessmentQuestionSets(questionSets = [], fallbackSections = []) {
+  const source = Array.isArray(questionSets) && questionSets.length
+    ? questionSets
+    : [{ setNumber: 1, label: 'Set 1', sections: fallbackSections }];
+  return source.slice(0, 8).map((entry, index) => {
+    const setNumber = index + 1;
+    const marksPayload = applyMarksAndTotals(normalizeAssessmentSections(entry?.sections || []));
+    return {
+      setNumber,
+      label: String(entry?.label || `Set ${setNumber}`).trim() || `Set ${setNumber}`,
+      sections: marksPayload.sections,
+      totalMarks: marksPayload.totalMarks,
+    };
+  });
+}
+
+function naturalStudentIdCompare(left = {}, right = {}) {
+  return String(left?.studentId || '').localeCompare(String(right?.studentId || ''), undefined, {
+    numeric: true,
+    sensitivity: 'base',
+  });
+}
+
+export function buildCandidateSetAssignments({ users = [], inputRows = [], settings = {} } = {}) {
+  if (!settings.questionSetEnabled) return [];
+  const setCount = Math.min(8, Math.max(2, Number(settings.questionSetCount) || 2));
+  const startingSet = Math.min(setCount, Math.max(1, Number(settings.setStartingNumber) || 1));
+  const rows = Array.isArray(inputRows) ? inputRows.map(normalizeStudentRow) : [];
+  const rowById = new Map();
+  rows.forEach((row) => {
+    if (row._id) rowById.set(`id:${String(row._id)}`, row);
+    if (row.studentid) rowById.set(`student:${String(row.studentid).toLowerCase()}`, row);
+  });
+  const ordered = [...users].sort(naturalStudentIdCompare);
+  return ordered.map((student, index) => {
+    const row = rowById.get(`id:${String(student._id)}`)
+      || rowById.get(`student:${String(student.studentId || '').toLowerCase()}`)
+      || {};
+    const requested = Number(row.assessmentSet);
+    const hasOverride = Number.isInteger(requested) && requested >= 1 && requested <= setCount;
+    if (!hasOverride && settings.automaticSetAssignment === false) return null;
+    const automaticNumber = ((startingSet - 1 + index) % setCount) + 1;
+    return {
+      student: student._id,
+      studentIdSnapshot: String(student.studentId || ''),
+      setNumber: hasOverride ? requested : automaticNumber,
+      source: hasOverride ? (row.assessmentSetSource === 'manual' ? 'manual' : 'csv') : 'automatic',
+      frozenAt: new Date(),
+    };
+  }).filter(Boolean);
 }
 
 function computeAssessmentType(sections = []) {
@@ -1684,14 +1875,18 @@ export async function previewAssessmentStudents(req, res) {
     if (user && user.role !== 'student') errors.push('This email or ID belongs to a non-student account');
     if (user && emailUser && studentId !== String(user.studentId || '')) errors.push('Student ID does not match the existing account');
     if (user && idUser && email !== String(user.email || '').toLowerCase()) errors.push('Email does not match the existing account');
-    return { row: index + 1, name: row.name, email, studentid: studentId,
+    const assessmentSet = row.assessmentSet ? Number(row.assessmentSet) : '';
+    if (assessmentSet !== '' && (!Number.isInteger(assessmentSet) || assessmentSet < 1 || assessmentSet > 8)) {
+      errors.push('Assessment Set must be a whole number between 1 and 8');
+    }
+    return { row: index + 1, name: row.name, email, studentid: studentId, assessmentSet,
       status: errors.length ? 'error' : user ? 'existing' : 'new', errors,
       existingStudent: user && !errors.length ? { _id: user._id, name: user.name, email: user.email, studentId: user.studentId, accessScope: user.accessScope } : null };
   });
   return res.json({ preview });
 }
 
-async function resolveAssignedStudents({ targetType, assignedStudents, audienceType = 'platform_students' }) {
+async function resolveAssignedStudents({ targetType, assignedStudents, audienceType = 'platform_students', candidateCredentialMode = 'secure_generated' }) {
   if (targetType === 'all') {
     const students = await User.find({ role: 'student', accessScope: { $ne: 'assessment_only' } }).select('_id email name studentId accessScope').lean();
     return { ids: students.map(s => s._id), users: students, created: [] };
@@ -1791,7 +1986,9 @@ async function resolveAssignedStudents({ targetType, assignedStudents, audienceT
       throw new Error('Semester must be between 1 and 8 for new students.');
     }
 
-    const generatedPassword = generateRandomPassword();
+    const generatedPassword = candidateCredentialMode === 'student_id'
+      ? String(row.studentid || '')
+      : generateRandomPassword();
     const passwordHash = await User.hashPassword(generatedPassword);
 
     const user = await User.create({
@@ -1910,6 +2107,7 @@ export async function createAssessment(req, res) {
       targetType,
       assignedStudents,
       sections,
+      questionSets,
       lifecycleStatus,
       draftTargetMode,
       allowLateSubmission,
@@ -1932,8 +2130,24 @@ export async function createAssessment(req, res) {
       return res.status(403).json({ error: 'Adding new assessment students is not enabled for this coordinator.' });
     }
 
+    const normalizedSettings = normalizeAssessmentSettings(settings);
     const normalizedSections = normalizeAssessmentSections(sections);
-    const duplicateQuestionError = validateUniqueAssessmentQuestions(normalizedSections);
+    const normalizedQuestionSets = normalizeAssessmentQuestionSets(questionSets, normalizedSections);
+    if (lifecycleStatus !== 'draft' && normalizedSettings.questionSetEnabled && normalizedQuestionSets.length < normalizedSettings.questionSetCount) {
+      return res.status(400).json({ error: `Configure all ${normalizedSettings.questionSetCount} question sets before publishing.` });
+    }
+    const effectiveQuestionSets = normalizedSettings.questionSetEnabled
+      ? normalizedQuestionSets.slice(0, normalizedSettings.questionSetCount)
+      : normalizedQuestionSets.slice(0, 1);
+    if (lifecycleStatus !== 'draft' && normalizedSettings.questionSetEnabled) {
+      const totals = effectiveQuestionSets.map((entry) => Number(entry.totalMarks) || 0);
+      if (!totals.length || totals.some((total) => total <= 0 || total !== totals[0])) {
+        return res.status(400).json({ error: 'All question sets must have the same total marks.' });
+      }
+    }
+    const duplicateQuestionError = effectiveQuestionSets
+      .map((entry) => validateUniqueAssessmentQuestions(entry.sections))
+      .find(Boolean);
     if (duplicateQuestionError) return res.status(400).json({ error: duplicateQuestionError });
     const marksPayload = applyMarksAndTotals(normalizedSections);
     const normalizedLifecycle = lifecycleStatus === 'draft' ? 'draft' : 'published';
@@ -1989,6 +2203,7 @@ export async function createAssessment(req, res) {
         targetType: normalizedTarget,
         assignedStudents,
         audienceType,
+        candidateCredentialMode: normalizedSettings.candidateCredentialMode,
       });
       ids = resolved.ids;
       users = resolved.users;
@@ -2001,7 +2216,9 @@ export async function createAssessment(req, res) {
     }
 
     if (!isDraft) {
-      await validatePublishedAssessmentSections(normalizedSections);
+      for (const questionSet of effectiveQuestionSets) {
+        await validatePublishedAssessmentSections(questionSet.sections);
+      }
     }
 
     const assessment = new Assessment({
@@ -2017,9 +2234,10 @@ export async function createAssessment(req, res) {
       audienceType: audienceType === 'assessment_candidates' ? 'assessment_candidates' : 'platform_students',
       draftTargetMode: isDraft ? normalizedDraftTarget : 'all',
       draftAssignedStudents: isDraft ? draftAssigned : [],
-      sections: marksPayload.sections,
-      totalMarks: marksPayload.totalMarks,
-      assessmentType: marksPayload.assessmentType,
+      sections: effectiveQuestionSets[0]?.sections || marksPayload.sections,
+      questionSets: effectiveQuestionSets,
+      totalMarks: effectiveQuestionSets[0]?.totalMarks ?? marksPayload.totalMarks,
+      assessmentType: computeAssessmentType(effectiveQuestionSets[0]?.sections || marksPayload.sections),
       lifecycleStatus: normalizedLifecycle,
       allowLateSubmission: Boolean(allowLateSubmission),
       attemptLimit: attemptLimitNum || 1,
@@ -2027,12 +2245,23 @@ export async function createAssessment(req, res) {
       testType: testType || '',
       isVisible: isVisible !== false,
       customInstructions: Array.isArray(customInstructions) ? customInstructions : [],
-      settings: normalizeAssessmentSettings(settings),
+      settings: normalizedSettings,
       version: 1,
       versionUpdatedAt: new Date(),
     });
 
     await applyAssessmentPassword(assessment, { passwordEnabled, password });
+    if (!isDraft) {
+      const candidateSetAssignments = buildCandidateSetAssignments({
+        users,
+        inputRows: assignedStudents,
+        settings: normalizedSettings,
+      });
+      if (normalizedSettings.questionSetEnabled && candidateSetAssignments.length !== users.length) {
+        return res.status(400).json({ error: 'Assign every candidate to a question set or enable automatic set assignment.' });
+      }
+      assessment.candidateSetAssignments = candidateSetAssignments;
+    }
     if (!isDraft && assessment.passwordEnabled && !assessment.passwordHash) {
       return res.status(400).json({ error: 'Password is required when password protection is enabled.' });
     }
@@ -2237,7 +2466,22 @@ export async function getAssessment(req, res) {
     const assessment = await Assessment.findById(id).populate('assignedStudents', 'name email studentId accessScope').lean();
     if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
     const status = computeStatus(new Date(), assessment);
-    res.json({ assessment: { ...sanitizeAssessmentForResponse(assessment), status } });
+    const assignmentByStudent = new Map((assessment.candidateSetAssignments || []).map((entry) => [
+      String(entry?.student?._id || entry?.student || ''),
+      entry,
+    ]));
+    const sanitized = sanitizeAssessmentForResponse(assessment);
+    sanitized.assignedStudents = (assessment.assignedStudents || []).map((student) => {
+      const assignment = assignmentByStudent.get(String(student?._id || student || ''));
+      return {
+        ...student,
+        ...(assignment ? {
+          assessmentSet: assignment.setNumber,
+          assessmentSetSource: assignment.source,
+        } : {}),
+      };
+    });
+    res.json({ assessment: { ...sanitized, status } });
   } catch (err) {
     console.error('Error fetching assessment:', err);
     res.status(500).json({ error: 'Failed to load assessment' });
@@ -2257,6 +2501,7 @@ export async function updateAssessment(req, res) {
       targetType,
       assignedStudents,
       sections,
+      questionSets,
       lifecycleStatus,
       draftTargetMode,
       allowLateSubmission,
@@ -2367,10 +2612,6 @@ export async function updateAssessment(req, res) {
       return res.status(400).json({ error: 'End time must be after start time.' });
     }
 
-    if (!isDraft) {
-      await validatePublishedAssessmentSections(assessment.sections || []);
-    }
-
     if (duration !== undefined) {
       const durationNum = Number(duration);
       if (Number.isNaN(durationNum) || durationNum <= 0) {
@@ -2385,15 +2626,40 @@ export async function updateAssessment(req, res) {
       assessment.duration = durationNum;
     }
 
-    if (sections) {
-      const normalized = normalizeAssessmentSections(sections);
-      const marksPayload = applyMarksAndTotals(normalized);
-      assessment.sections = marksPayload.sections;
-      assessment.totalMarks = marksPayload.totalMarks;
-      assessment.assessmentType = marksPayload.assessmentType;
+    if (sections || questionSets) {
+      const normalized = normalizeAssessmentSections(sections || assessment.sections || []);
+      const normalizedSets = normalizeAssessmentQuestionSets(questionSets || assessment.questionSets, normalized);
+      const setCount = assessment.settings?.questionSetEnabled
+        ? Math.min(normalizedSets.length, Number(assessment.settings.questionSetCount) || normalizedSets.length)
+        : 1;
+      const effectiveSets = normalizedSets.slice(0, Math.max(1, setCount));
+      assessment.questionSets = effectiveSets;
+      assessment.sections = effectiveSets[0]?.sections || normalized;
+      assessment.totalMarks = effectiveSets[0]?.totalMarks || 0;
+      assessment.assessmentType = computeAssessmentType(assessment.sections);
     }
-    const duplicateQuestionError = validateUniqueAssessmentQuestions(assessment.sections || []);
+    const assessmentQuestionSets = assessment.settings?.questionSetEnabled
+      ? (assessment.questionSets || [])
+      : [{ setNumber: 1, sections: assessment.sections || [] }];
+    if (!isDraft && assessment.settings?.questionSetEnabled
+      && assessmentQuestionSets.length < Number(assessment.settings.questionSetCount || 1)) {
+      return res.status(400).json({ error: `Configure all ${assessment.settings.questionSetCount} question sets before publishing.` });
+    }
+    if (!isDraft && assessment.settings?.questionSetEnabled) {
+      const totals = assessmentQuestionSets.map((entry) => Number(entry.totalMarks) || computeTotalMarksFromSections(entry.sections));
+      if (!totals.length || totals.some((total) => total <= 0 || total !== totals[0])) {
+        return res.status(400).json({ error: 'All question sets must have the same total marks.' });
+      }
+    }
+    const duplicateQuestionError = assessmentQuestionSets
+      .map((entry) => validateUniqueAssessmentQuestions(entry.sections || []))
+      .find(Boolean);
     if (duplicateQuestionError) return res.status(400).json({ error: duplicateQuestionError });
+    if (!isDraft) {
+      for (const questionSet of assessmentQuestionSets) {
+        await validatePublishedAssessmentSections(questionSet.sections || []);
+      }
+    }
 
     let resolvedAudienceUsers = [];
     let newlyCreatedAudienceUsers = [];
@@ -2414,10 +2680,20 @@ export async function updateAssessment(req, res) {
           targetType: normalizedTarget,
           assignedStudents,
           audienceType: assessment.audienceType,
+          candidateCredentialMode: assessment.settings?.candidateCredentialMode,
         });
         assessment.assignedStudents = ids;
         resolvedAudienceUsers = users;
         newlyCreatedAudienceUsers = created;
+        const candidateSetAssignments = buildCandidateSetAssignments({
+          users,
+          inputRows: assignedStudents,
+          settings: assessment.settings || {},
+        });
+        if (assessment.settings?.questionSetEnabled && candidateSetAssignments.length !== users.length) {
+          return res.status(400).json({ error: 'Assign every candidate to a question set or enable automatic set assignment.' });
+        }
+        assessment.candidateSetAssignments = candidateSetAssignments;
         assessment.draftAssignedStudents = [];
         assessment.draftTargetMode = 'all';
       }
@@ -3318,6 +3594,7 @@ export async function getStudentAssessment(req, res) {
         studentId,
         deliverySections: delivery.sections,
         deliveryPreparedAt: now,
+        assignedSetNumber: delivery.assignedSetNumber,
         status: 'not_started',
         attemptCount: 0,
       });
@@ -3327,6 +3604,7 @@ export async function getStudentAssessment(req, res) {
       const delivery = buildDeliverySections(assessment, studentId);
       submission.deliverySections = delivery.sections;
       submission.deliveryPreparedAt = now;
+      submission.assignedSetNumber = delivery.assignedSetNumber;
       await submission.save();
     }
 
@@ -3365,8 +3643,8 @@ export async function getStudentAssessment(req, res) {
 
     const attemptAssessment = await hydrateAssessmentCodingRuntime(deliveryAssessment);
     res.json({
-      assessment: sanitizeAssessmentForResponse(attemptAssessment),
-      submission,
+      assessment: sanitizeStudentAssessmentForResponse(attemptAssessment),
+      submission: sanitizeStudentSubmissionForResponse(submission),
       candidate: buildCandidateIdentity(student),
       serverTime: now,
       allowedEnd,
@@ -3426,6 +3704,7 @@ export async function startStudentAssessment(req, res) {
         studentId,
         deliverySections: delivery.sections,
         deliveryPreparedAt: now,
+        assignedSetNumber: delivery.assignedSetNumber,
         passwordVerifiedAt: assessment.passwordEnabled ? now : undefined,
         securitySetup: {},
         status: 'not_started',
@@ -3438,6 +3717,7 @@ export async function startStudentAssessment(req, res) {
       const delivery = buildDeliverySections(assessment, studentId);
       submission.deliverySections = delivery.sections;
       submission.deliveryPreparedAt = now;
+      submission.assignedSetNumber = delivery.assignedSetNumber;
     }
     if (!(submission.status === 'in_progress' && submission.startedAt && submission.securityCompletedAt)) {
       submission.securitySetup = {};
@@ -3449,8 +3729,8 @@ export async function startStudentAssessment(req, res) {
     const attemptAssessment = await hydrateAssessmentCodingRuntime(deliveryAssessment);
     res.json({
       message: 'Assessment unlocked',
-      assessment: sanitizeAssessmentForResponse(attemptAssessment),
-      submission,
+      assessment: sanitizeStudentAssessmentForResponse(attemptAssessment),
+      submission: sanitizeStudentSubmissionForResponse(submission),
       candidate: buildCandidateIdentity(student),
       serverTime: now,
       allowedEnd: computeAllowedEnd(deliveryAssessment, submission.startedAt || now, submission.pausedDurationMs),
@@ -3550,6 +3830,7 @@ export async function beginStudentAssessment(req, res) {
         studentId,
         deliverySections: delivery.sections,
         deliveryPreparedAt: now,
+        assignedSetNumber: delivery.assignedSetNumber,
         startedAt: now,
         securityCompletedAt: now,
         status: 'in_progress',
@@ -3579,7 +3860,7 @@ export async function beginStudentAssessment(req, res) {
     const allowedEnd = computeAllowedEnd(assessmentForSubmission(assessment, submission), submission.startedAt || now, submission.pausedDurationMs);
     return res.json({
       message: 'Assessment started',
-      submission,
+      submission: sanitizeStudentSubmissionForResponse(submission),
       candidate: buildCandidateIdentity(student),
       serverTime: now,
       allowedEnd,
@@ -3663,6 +3944,7 @@ export async function submitAssessment(req, res) {
         studentId,
         deliverySections: delivery.sections,
         deliveryPreparedAt: now,
+        assignedSetNumber: delivery.assignedSetNumber,
         startedAt: now,
         status: 'in_progress',
         attemptCount: 0,
@@ -4612,13 +4894,14 @@ export async function getStudentAssessmentReport(req, res) {
       return res.status(403).json({ error: 'Not authorized to view this report.' });
     }
 
-    submission = await reconcileAssessmentCodingAnswers(assessmentForSubmission(assessment, submission), submission);
+    const deliveredAssessment = assessmentForSubmission(assessment, submission);
+    submission = await reconcileAssessmentCodingAnswers(deliveredAssessment, submission);
 
-    const analytics = buildAssessmentAttemptAnalytics(assessment, submission);
-    const sectionBreakdown = buildSectionBreakdownWithScores(assessment, submission);
-    const questionWise = buildQuestionWiseReport(assessment, submission);
+    const analytics = buildAssessmentAttemptAnalytics(deliveredAssessment, submission);
+    const sectionBreakdown = buildSectionBreakdownWithScores(deliveredAssessment, submission);
+    const questionWise = buildQuestionWiseReport(deliveredAssessment, submission);
 
-    const totalMarks = Number(assessment.totalMarks || computeTotalMarksFromSections(assessment.sections || []));
+    const totalMarks = Number(deliveredAssessment.totalMarks || computeTotalMarksFromSections(deliveredAssessment.sections || []));
     const score = Number(submission.score || 0);
     const accuracy = Number.isFinite(Number(submission.accuracy))
       ? Number(submission.accuracy)
@@ -4811,10 +5094,11 @@ export async function getAssessmentReportsExportData(req, res) {
           assessmentId: row.assessmentId,
           studentId: row.studentId,
         };
-        const analytics = buildAssessmentAttemptAnalytics(assessmentDoc, submissionDoc);
-        const sectionBreakdown = buildSectionBreakdownWithScores(assessmentDoc, submissionDoc);
-        const questionWise = buildQuestionWiseReport(assessmentDoc, submissionDoc);
-        const totalMarks = Number(assessmentDoc.totalMarks || computeTotalMarksFromSections(assessmentDoc.sections || []));
+        const deliveredAssessment = assessmentForSubmission(assessmentDoc, submissionDoc);
+        const analytics = buildAssessmentAttemptAnalytics(deliveredAssessment, submissionDoc);
+        const sectionBreakdown = buildSectionBreakdownWithScores(deliveredAssessment, submissionDoc);
+        const questionWise = buildQuestionWiseReport(deliveredAssessment, submissionDoc);
+        const totalMarks = Number(deliveredAssessment.totalMarks || computeTotalMarksFromSections(deliveredAssessment.sections || []));
         const score = Number(row.score || 0);
         const accuracy = Number.isFinite(Number(row.accuracy))
           ? Number(row.accuracy)

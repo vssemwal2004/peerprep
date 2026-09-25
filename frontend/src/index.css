@@ -64,6 +64,18 @@
   }
 }
 
+/* Dashboard workspaces own the viewport. Page title/tool bars opt into this
+   shared contract while the content area below remains the only scroller. */
+[data-app-scroll-container] {
+  scrollbar-gutter: stable;
+}
+
+[data-app-scroll-container] [data-page-header] {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+
 @layer utilities {
   /* Custom animations */
   .animate-pulse-slow {

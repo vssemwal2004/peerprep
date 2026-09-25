@@ -1241,9 +1241,9 @@ export default function AssessmentDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-gray-950">
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
-        <header className="border-b border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-950">
+    <div className="h-screen overflow-hidden bg-slate-50 dark:bg-gray-950">
+      <motion.div className="flex h-full min-h-0 flex-col" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
+        <header data-page-header className="shrink-0 border-b border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-950">
           <div className="mx-auto flex min-h-16 max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Assessments</p>
@@ -1255,7 +1255,7 @@ export default function AssessmentDashboard() {
           </div>
         </header>
 
-        <div className="mx-auto grid max-w-[1600px] lg:grid-cols-[228px_minmax(0,1fr)]">
+        <div className="mx-auto grid min-h-0 w-full max-w-[1600px] flex-1 overflow-y-auto lg:grid-cols-[228px_minmax(0,1fr)] lg:overflow-hidden">
           <AssessmentLifecycleSidebar
             active={activeTab}
             counts={summary}
@@ -1270,8 +1270,8 @@ export default function AssessmentDashboard() {
             testTypes={testTypes}
             onTestTypeChange={(value) => setFilters((current) => ({ ...current, testType: value }))}
           />
-          <main className="min-w-0 px-4 py-4 sm:px-6">
-            <div className="flex flex-col gap-3 border-b border-slate-200 pb-3 dark:border-gray-800 xl:flex-row xl:items-center">
+          <main className="min-w-0 px-4 py-4 sm:px-6 lg:flex lg:min-h-0 lg:flex-col lg:overflow-hidden">
+            <div className="shrink-0 flex flex-col gap-3 border-b border-slate-200 pb-3 dark:border-gray-800 xl:flex-row xl:items-center">
               <div className="relative min-w-0 flex-1">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
@@ -1295,7 +1295,7 @@ export default function AssessmentDashboard() {
               </div>
             </div>
 
-          <section className="pt-3" aria-label="Assessment list">
+          <section className="pt-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain lg:pb-4" aria-label="Assessment list">
             {loading ? (
               <div className="flex min-h-56 items-center justify-center rounded-lg border border-slate-200 bg-white text-sm text-slate-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading assessments...</div>
             ) : error ? (
@@ -1309,7 +1309,7 @@ export default function AssessmentDashboard() {
               </div>
             ) : (
               <div role="list" className="space-y-2.5">
-                <div className="hidden grid-cols-[minmax(190px,1.5fr)_105px_95px_95px_minmax(120px,1fr)_95px_80px_28px] items-center gap-x-3 px-4 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 xl:grid dark:text-gray-500">
+                <div className="sticky top-0 z-20 -mx-1 hidden grid-cols-[minmax(190px,1.5fr)_105px_95px_95px_minmax(120px,1fr)_95px_80px_28px] items-center gap-x-3 bg-slate-50 px-5 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 xl:grid dark:bg-gray-950 dark:text-gray-500">
                   <span>Assessment</span>
                   <span>Date</span>
                   <span>Time</span>

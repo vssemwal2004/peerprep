@@ -997,19 +997,31 @@ export async function uploadStudentsCsv(req, res) {
     .map((result) => String(result.id)))];
   const createdCount = results.filter((result) => result.status === 'created').length;
   const updatedCount = results.filter((result) => ['updated', 'linked_from_special'].includes(result.status)).length;
+  const createdRecordIds = [...new Set(results
+    .filter((result) => result.status === 'created' && result.id)
+    .map((result) => String(result.id)))];
+  const updatedRecordIds = [...new Set(results
+    .filter((result) => ['updated', 'linked_from_special'].includes(result.status) && result.id)
+    .map((result) => String(result.id)))];
   const requestedBatchName = String(req.body?.batchName || '').trim().slice(0, 120);
-  const batch = batchStudentIds.length > 0 ? await StudentUploadBatch.create({
+  const batch = await StudentUploadBatch.create({
     name: requestedBatchName || (req.file?.originalname || 'Student upload').replace(/\.csv$/i, ''),
     originalFileName: req.file?.originalname || 'students.csv',
     uploadedBy: req.user._id,
     uploadedByEmail: req.user.email,
     studentIds: batchStudentIds,
+    entityType: 'student',
+    recordIds: batchStudentIds,
+    createdRecordIds,
+    updatedRecordIds,
     totalRows: rows.length,
     createdCount,
     updatedCount,
     failedCount: Math.max(0, rows.length - batchStudentIds.length),
-  }) : null;
-  if (batch) {
+    errorRows: results.filter((result) => !['created', 'updated', 'linked_from_special'].includes(result.status)).slice(0, 500),
+    originalRows: normalizedRows.slice(0, 500),
+  });
+  if (batchStudentIds.length) {
     await User.updateMany(
       { _id: { $in: batchStudentIds } },
       { $addToSet: { uploadBatchIds: batch._id } },
@@ -1398,6 +1410,10 @@ export async function createStudentUploadBatch(req, res) {
       uploadedBy: req.user._id,
       uploadedByEmail: req.user.email,
       studentIds,
+      entityType: 'student',
+      recordIds: studentIds,
+      createdRecordIds: [],
+      updatedRecordIds: studentIds,
       totalRows: studentIds.length,
       createdCount: studentIds.length,
     });
@@ -1423,34 +1439,8 @@ export async function renameStudentUploadBatch(req, res) {
 }
 
 export async function deleteStudentUploadBatch(req, res) {
-  const query = { _id: req.params.batchId };
-  if (req.user.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') query.uploadedBy = req.user._id;
-  const batch = await StudentUploadBatch.findOne(query);
-  if (!batch) return res.status(404).json({ error: 'Bulk list not found.' });
-  const studentIds = batch.studentIds || [];
-  const deleteResult = await User.deleteMany({ _id: { $in: studentIds }, role: 'student' });
-  await Assessment.updateMany(
-    { assignedStudents: { $in: studentIds } },
-    { $pull: { assignedStudents: { $in: studentIds } } },
-  );
-  await StudentUploadBatch.updateMany(
-    { _id: { $ne: batch._id }, studentIds: { $in: studentIds } },
-    { $pull: { studentIds: { $in: studentIds } } },
-  );
-  await batch.deleteOne();
-  logActivity({
-    userEmail: req.user.email,
-    userRole: req.user.role,
-    actionType: 'BULK_DELETE',
-    targetType: 'STUDENT',
-    targetId: String(batch._id),
-    description: `Deleted bulk list “${batch.name}” and ${deleteResult.deletedCount || 0} registered students`,
-    metadata: { batchName: batch.name, originalFileName: batch.originalFileName, deletedStudents: deleteResult.deletedCount || 0 },
-    req,
-  });
-  res.json({
-    message: `Bulk list and ${deleteResult.deletedCount || 0} registered student${deleteResult.deletedCount === 1 ? '' : 's'} deleted permanently.`,
-    deletedStudents: deleteResult.deletedCount || 0,
+  return res.status(409).json({
+    error: 'Student-list deletion has moved to Settings → Bulk Uploads, where dependencies and record provenance are checked before deletion.',
   });
 }
 

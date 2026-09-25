@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { randomUUID } from 'node:crypto';
 import QuestionLibrary from '../models/QuestionLibrary.js';
+import StudentUploadBatch from '../models/StudentUploadBatch.js';
 import { supabase } from '../utils/supabase.js';
 import {
   buildLibrarySearchMatch,
@@ -222,6 +223,7 @@ export async function listLibraryQuestions(req, res) {
       status = '',
       visibility = '',
       sourceType = '',
+      sourceAssessmentId = '',
       sortBy = 'updatedAt',
       sortOrder = 'desc',
       page = 1,
@@ -252,6 +254,9 @@ export async function listLibraryQuestions(req, res) {
     if (sourceType) {
       baseMatch.sourceType = String(sourceType).trim().toLowerCase();
     }
+    if (sourceAssessmentId && mongoose.Types.ObjectId.isValid(sourceAssessmentId)) {
+      baseMatch.sourceAssessmentId = sourceAssessmentId;
+    }
     if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') {
       baseMatch.createdBy = req.user._id;
     }
@@ -265,7 +270,7 @@ export async function listLibraryQuestions(req, res) {
         .populate('createdBy', 'name email role coordinatorId')
         .lean(),
       QuestionLibrary.find(scopeMatch)
-        .select('sourceKey questionType questionData status sourceType sourceProblemId sourceQuestionId sourceAssessmentTitle createdBy createdAt updatedAt')
+        .select('sourceKey questionType questionData status sourceType sourceProblemId sourceQuestionId sourceAssessmentId sourceAssessmentTitle createdBy createdAt updatedAt')
         .populate('createdBy', 'name email role coordinatorId')
         .lean(),
       QuestionLibrary.distinct('tags', baseMatch),
@@ -317,6 +322,12 @@ export async function listLibraryQuestions(req, res) {
         statuses,
         tags: tags.filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
         difficulties: difficulties.filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+        assessments: Array.from(new Map(scopeQuestions
+          .filter((question) => question.sourceAssessmentId && question.sourceAssessmentTitle)
+          .map((question) => [String(question.sourceAssessmentId), {
+            id: String(question.sourceAssessmentId),
+            title: String(question.sourceAssessmentTitle),
+          }])).values()).sort((a, b) => a.title.localeCompare(b.title)),
       },
     });
   } catch (err) {
@@ -578,18 +589,28 @@ export async function createLibraryQuestion(req, res) {
 
 export async function createLibraryQuestionsBulk(req, res) {
   try {
-    const { questions } = req.body;
+    const { questions, uploadMetadata } = req.body;
     if (!Array.isArray(questions) || !questions.length) {
       return res.status(400).json({ error: 'Questions must be a non-empty array' });
     }
 
     const createdBy = req.user?._id || req.admin?._id;
+    const assessmentSetHints = questions.map((question) => Number(question?.assessmentSetHint) || undefined);
     const itemsToInsert = questions.map((question, index) => {
-      const type = normalizeType(question.type);
-      const tags = Array.isArray(question.tags) ? question.tags : [];
-      const keywords = Array.isArray(question.keywords) ? question.keywords : [];
-      const status = normalizeLibraryStatus(question.status);
-      const questionText = String(question.questionText || '').trim();
+      const libraryQuestion = { ...question };
+      delete libraryQuestion.assessmentSetHint;
+      if (Array.isArray(libraryQuestion.questions)) {
+        libraryQuestion.questions = libraryQuestion.questions.map((child) => {
+          const libraryChild = { ...(child || {}) };
+          delete libraryChild.assessmentSetHint;
+          return libraryChild;
+        });
+      }
+      const type = normalizeType(libraryQuestion.type);
+      const tags = Array.isArray(libraryQuestion.tags) ? libraryQuestion.tags : [];
+      const keywords = Array.isArray(libraryQuestion.keywords) ? libraryQuestion.keywords : [];
+      const status = normalizeLibraryStatus(libraryQuestion.status);
+      const questionText = String(libraryQuestion.questionText || '').trim();
       if (!questionText && status !== 'draft') {
         const validationError = new Error(`Question ${index + 1} needs question text`);
         validationError.statusCode = 400;
@@ -597,7 +618,7 @@ export async function createLibraryQuestionsBulk(req, res) {
       }
       const sourceKey = `direct_${new mongoose.Types.ObjectId()}`;
 
-      const searchPrefixes = buildSearchPrefixes(getQuestionSearchValues({ ...question, questionText, tags, keywords }));
+      const searchPrefixes = buildSearchPrefixes(getQuestionSearchValues({ ...libraryQuestion, questionText, tags, keywords }));
 
       return {
         sourceKey,
@@ -608,12 +629,12 @@ export async function createLibraryQuestionsBulk(req, res) {
         questionText,
         tags,
         keywords,
-        difficulty: String(question.difficulty || '').trim(),
+        difficulty: String(libraryQuestion.difficulty || '').trim(),
         status,
-        visibility: normalizeLibraryVisibility(question.visibility),
+        visibility: normalizeLibraryVisibility(libraryQuestion.visibility),
         searchPrefixes,
         questionData: {
-          ...question,
+          ...libraryQuestion,
           questionId: sourceKey,
         },
         createdBy,
@@ -624,11 +645,44 @@ export async function createLibraryQuestionsBulk(req, res) {
     });
 
     const result = await QuestionLibrary.insertMany(itemsToInsert);
+    let batch = null;
+    if (uploadMetadata?.originalFileName && result.length) {
+      const types = [...new Set(result.map((question) => question.questionType))];
+      const entityType = types.length === 1 && ['mcq', 'short', 'one_line', 'coding'].includes(types[0])
+        ? `question_${types[0]}`
+        : 'question_mixed';
+      const recordIds = result.map((question) => question._id);
+      const originalFileName = String(uploadMetadata.originalFileName).trim().slice(0, 255);
+      batch = await StudentUploadBatch.create({
+        name: String(uploadMetadata.batchName || originalFileName.replace(/\.(csv|xlsx?)$/i, '') || 'Question upload').trim().slice(0, 120),
+        originalFileName,
+        uploadedBy: createdBy,
+        uploadedByEmail: req.user?.email || req.admin?.email || '',
+        entityType,
+        sourceType: 'question_upload',
+        recordIds,
+        createdRecordIds: recordIds,
+        updatedRecordIds: [],
+        totalRows: Number(uploadMetadata.totalRows) || questions.length,
+        createdCount: result.length,
+        failedCount: Math.max(0, Number(uploadMetadata.failedCount) || 0),
+        errorRows: Array.isArray(uploadMetadata.errors) ? uploadMetadata.errors.slice(0, 500) : [],
+        originalRows: questions.slice(0, 500).map((question) => ({
+          type: question.type,
+          questionText: question.questionText,
+          difficulty: question.difficulty,
+          points: question.points,
+          tags: question.tags,
+        })),
+      });
+    }
 
     res.json({
-      questions: result.map((q) => ({
+      batch,
+      questions: result.map((q, index) => ({
         ...formatLibraryQuestionSummary(q),
         questionData: q.questionData,
+        assessmentSetHint: assessmentSetHints[index],
       })),
     });
   } catch (err) {

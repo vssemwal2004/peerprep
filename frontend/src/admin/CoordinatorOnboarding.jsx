@@ -209,7 +209,10 @@ export default function CoordinatorOnboarding() {
     setBulkLoading(true);
     setBulkResult(null);
     try {
-      const response = await api.bulkCreateCoordinators(bulkRows);
+      const response = await api.bulkCreateCoordinators(bulkRows, {
+        originalFileName: bulkFile?.name || 'coordinators.csv',
+        batchName: bulkFile?.name?.replace(/\.(csv|xlsx?)$/i, '') || 'Coordinator upload',
+      });
       setBulkResult(response);
       toast.success(`${response.created} coordinator${response.created === 1 ? '' : 's'} created.`);
     } catch (error) {

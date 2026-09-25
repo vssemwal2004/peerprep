@@ -139,6 +139,12 @@ const DEFAULT_ASSESSMENT_SETTINGS = {
   watermarkCustomText: '',
   randomShuffle: false,
   shuffleOptions: false,
+  questionSetEnabled: false,
+  questionSetCount: 1,
+  automaticSetAssignment: true,
+  setAssignmentStrategy: 'roll_number',
+  setStartingNumber: 1,
+  candidateCredentialMode: 'secure_generated',
   cameraMonitoring: false,
   cameraSnapshotInterval: 120,
   cameraFaceAlert: false,
@@ -366,7 +372,19 @@ export default function CreateAssessment({ viewOnly = false }) {
       ...DEFAULT_ASSESSMENT_SETTINGS,
     },
   });
-  const [sections, setSections] = useState([]);
+  const [questionSets, setQuestionSets] = useState([{ setNumber: 1, label: 'Set 1', sections: [] }]);
+  const [activeQuestionSet, setActiveQuestionSet] = useState(0);
+  const sections = questionSets[activeQuestionSet]?.sections || [];
+  const setSections = (nextSections) => {
+    setQuestionSets((previous) => previous.map((entry, index) => {
+      if (index !== activeQuestionSet) return entry;
+      const currentSections = Array.isArray(entry.sections) ? entry.sections : [];
+      return {
+        ...entry,
+        sections: typeof nextSections === 'function' ? nextSections(currentSections) : nextSections,
+      };
+    }));
+  };
   const [selectedStudents, setSelectedStudents] = useState([]);
   const [studentEntryMode, setStudentEntryMode] = useState('');
   const [csvState, setCsvState] = useState(emptyCsvState);
@@ -406,7 +424,7 @@ export default function CreateAssessment({ viewOnly = false }) {
   const isEditMode = Boolean(id);
   const isPublishedEdit = isEditMode && form.lifecycleStatus === 'published';
   const openStudentPreview = () => {
-    saveAssessmentDraft(assessmentKey, { form, sections, selectedStudents, csvState, version, activeStep, completedSteps, visitedSettingsGroups });
+    saveAssessmentDraft(assessmentKey, { form, sections, questionSets, activeQuestionSet, selectedStudents, csvState, version, activeStep, completedSteps, visitedSettingsGroups });
     const returnTo = `${rolePrefix}/assessment/${currentId ? `${currentId}/edit` : 'create'}`;
     const query = new URLSearchParams({ draftKey: assessmentKey, return: returnTo });
     navigate(`${rolePrefix}/assessment/preview/${currentId || 'draft'}?${query.toString()}`);
@@ -587,7 +605,7 @@ export default function CreateAssessment({ viewOnly = false }) {
     if (!question) return;
 
     if (dirty) {
-      saveAssessmentDraft(assessmentKey, { form, sections, selectedStudents, csvState, version, activeStep, completedSteps, visitedSettingsGroups });
+      saveAssessmentDraft(assessmentKey, { form, sections, questionSets, activeQuestionSet, selectedStudents, csvState, version, activeStep, completedSteps, visitedSettingsGroups });
     }
 
     let editorId = question.codingEditorId
@@ -639,19 +657,23 @@ export default function CreateAssessment({ viewOnly = false }) {
       section: String(sectionIndex),
       question: String(questionIndex),
       return: returnTo,
+      questionSet: String(activeQuestionSet + 1),
+      questionSetCount: String(configuredSetCount),
     });
     navigate(`${rolePrefix}/library/coding/create?${query.toString()}`);
   };
 
   const handleOpenProblemLibrary = async (sectionType = '') => {
     // Save current draft before navigating to library so data is preserved when returning
-    await saveAssessmentDraft(assessmentKey, { form, sections, selectedStudents, csvState, version, activeStep, completedSteps, visitedSettingsGroups });
+    await saveAssessmentDraft(assessmentKey, { form, sections, questionSets, activeQuestionSet, selectedStudents, csvState, version, activeStep, completedSteps, visitedSettingsGroups });
     const returnTo = currentId ? `${rolePrefix}/assessment/${currentId}/edit` : `${rolePrefix}/assessment/create`;
     const query = new URLSearchParams({
       mode: 'select',
       assessment: assessmentKey,
       assessmentTitle: form.title || 'Untitled assessment',
       return: returnTo,
+      questionSet: String(activeQuestionSet + 1),
+      questionSetCount: String(configuredSetCount),
     });
     if (sectionType) {
       query.set('type', sectionType);
@@ -661,7 +683,7 @@ export default function CreateAssessment({ viewOnly = false }) {
   };
 
   const handleCreateQuestion = async () => {
-    await saveAssessmentDraft(assessmentKey, { form, sections, selectedStudents, csvState, version, activeStep, completedSteps, visitedSettingsGroups });
+    await saveAssessmentDraft(assessmentKey, { form, sections, questionSets, activeQuestionSet, selectedStudents, csvState, version, activeStep, completedSteps, visitedSettingsGroups });
     const returnTo = currentId ? `${rolePrefix}/assessment/${currentId}/edit` : `${rolePrefix}/assessment/create`;
     const query = new URLSearchParams({
       mode: 'assessment-create',
@@ -670,6 +692,8 @@ export default function CreateAssessment({ viewOnly = false }) {
       return: returnTo,
       openCreate: '1',
       tempId: createEditorId(),
+      questionSet: String(activeQuestionSet + 1),
+      questionSetCount: String(configuredSetCount),
     });
     navigate(`${rolePrefix}/library?${query.toString()}`);
   };
@@ -690,7 +714,10 @@ export default function CreateAssessment({ viewOnly = false }) {
             settings: withAiProctoringSettings(draft.form.settings || prev.settings),
           }));
         }
-        if (draft.sections && draft.sections.length > 0) {
+        if (Array.isArray(draft.questionSets) && draft.questionSets.length > 0) {
+          setQuestionSets(draft.questionSets);
+          setActiveQuestionSet(Math.min(draft.questionSets.length - 1, Math.max(0, Number(draft.activeQuestionSet) || 0)));
+        } else if (draft.sections && draft.sections.length > 0) {
           setSections(draft.sections);
         }
         if (draft.selectedStudents && draft.selectedStudents.length > 0) {
@@ -720,6 +747,7 @@ export default function CreateAssessment({ viewOnly = false }) {
         const sessionDraft = !viewOnly && savedSessionDraft?.updatedAt > new Date(assessment.updatedAt || 0).getTime() ? savedSessionDraft : null;
         const draftForm = sessionDraft?.form && typeof sessionDraft.form === 'object' ? sessionDraft.form : null;
         const draftSections = Array.isArray(sessionDraft?.sections) ? sessionDraft.sections : null;
+        const draftQuestionSets = Array.isArray(sessionDraft?.questionSets) ? sessionDraft.questionSets : null;
         const draftSelectedStudents = Array.isArray(sessionDraft?.selectedStudents) ? sessionDraft.selectedStudents : null;
         const draftCsvState = sessionDraft?.csvState && typeof sessionDraft.csvState === 'object' ? sessionDraft.csvState : null;
         const draftVersion = sessionDraft?.version;
@@ -815,17 +843,30 @@ export default function CreateAssessment({ viewOnly = false }) {
         });
         const problemSelections = viewOnly ? [] : consumeProblemSelections(assessmentKey);
         const librarySelections = viewOnly ? [] : consumeQuestionSelections(assessmentKey);
-        const sectionSource = draftSections && draftSections.length ? draftSections : mappedSections;
-        let mergedSections = problemSelections.length
-          ? problemSelections.reduce((acc, selection) => addProblemsToSection(acc, selection.sectionIndex, selection.problems || []), sectionSource)
-          : sectionSource;
-        if (librarySelections.length) {
-          mergedSections = librarySelections.reduce(
-            (acc, selection) => addLibraryQuestionsToSections(acc, selection.questions || []),
-            mergedSections,
-          );
-        }
-        setSections(mergedSections);
+        const loadedSets = draftQuestionSets?.length
+          ? draftQuestionSets
+          : Array.isArray(assessment.questionSets) && assessment.questionSets.length
+            ? assessment.questionSets.map((entry, setIndex) => ({
+              ...entry,
+              setNumber: setIndex + 1,
+              label: entry.label || `Set ${setIndex + 1}`,
+              sections: setIndex === 0 ? mappedSections : (entry.sections || []).map((section) => ({
+                ...section,
+                questions: (section.questions || []).map((question) => ensureQuestionMeta(question, section.type)),
+              })),
+            }))
+            : [{ setNumber: 1, label: 'Set 1', sections: draftSections?.length ? draftSections : mappedSections }];
+        const mergedSets = loadedSets.map((entry) => ({ ...entry, sections: [...(entry.sections || [])] }));
+        problemSelections.forEach((selection) => {
+          const target = Math.min(mergedSets.length - 1, Math.max(0, Number(selection.questionSet || 1) - 1));
+          mergedSets[target].sections = addProblemsToSection(mergedSets[target].sections, selection.sectionIndex, selection.problems || []);
+        });
+        librarySelections.forEach((selection) => {
+          const target = Math.min(mergedSets.length - 1, Math.max(0, Number(selection.questionSet || 1) - 1));
+          mergedSets[target].sections = addLibraryQuestionsToSections(mergedSets[target].sections, selection.questions || []);
+        });
+        setQuestionSets(mergedSets);
+        setActiveQuestionSet(Math.min(mergedSets.length - 1, Math.max(0, Number(sessionDraft?.activeQuestionSet) || 0)));
         setCurrentId(id);
       } catch (err) {
         setAssessmentLoadError(err.message || 'Failed to load assessment');
@@ -848,11 +889,11 @@ export default function CreateAssessment({ viewOnly = false }) {
     if (viewOnly || !dirty) return undefined;
     setAutoSaveStatus('Saving locally...');
     const timeout = window.setTimeout(() => {
-      saveAssessmentDraft(assessmentKey, { form, sections, selectedStudents, csvState, version, activeStep, completedSteps, visitedSettingsGroups });
+      saveAssessmentDraft(assessmentKey, { form, sections, questionSets, activeQuestionSet, selectedStudents, csvState, version, activeStep, completedSteps, visitedSettingsGroups });
       setAutoSaveStatus(isPublishedEdit ? 'Changes saved locally' : 'Draft autosaved');
     }, 600);
     return () => window.clearTimeout(timeout);
-  }, [activeStep, assessmentKey, completedSteps, csvState, dirty, form, isPublishedEdit, sections, selectedStudents, version, viewOnly, visitedSettingsGroups]);
+  }, [activeQuestionSet, activeStep, assessmentKey, completedSteps, csvState, dirty, form, isPublishedEdit, questionSets, sections, selectedStudents, version, viewOnly, visitedSettingsGroups]);
 
   useEffect(() => {
     const warnBeforeBrowserExit = (event) => {
@@ -884,15 +925,16 @@ export default function CreateAssessment({ viewOnly = false }) {
     const problemSelections = consumeProblemSelections(assessmentKey);
     const librarySelections = consumeQuestionSelections(assessmentKey);
     if (!problemSelections.length && !librarySelections.length) return;
-    setSections((prev) => {
-      let next = prev;
+    setQuestionSets((previous) => {
+      const next = previous.map((entry) => ({ ...entry, sections: [...(entry.sections || [])] }));
       problemSelections.forEach((selection) => {
-        next = addProblemsToSection(next, selection.sectionIndex, selection.problems || []);
+        const target = Math.min(next.length - 1, Math.max(0, Number(selection.questionSet || 1) - 1));
+        next[target].sections = addProblemsToSection(next[target].sections, selection.sectionIndex, selection.problems || []);
       });
       librarySelections.forEach((selection) => {
-        next = addLibraryQuestionsToSections(next, selection.questions || []);
+        const target = Math.min(next.length - 1, Math.max(0, Number(selection.questionSet || 1) - 1));
+        next[target].sections = addLibraryQuestionsToSections(next[target].sections, selection.questions || []);
       });
-
       return next;
     });
     setDirty(true);
@@ -906,9 +948,10 @@ export default function CreateAssessment({ viewOnly = false }) {
   }, [selectedStudents]);
 
   const assessmentValidation = useMemo(() => {
-    const sectionsArray = Array.isArray(sections) ? sections : [];
+    const configuredSets = form.settings?.questionSetEnabled ? questionSets : questionSets.slice(0, 1);
+    const sectionsArray = configuredSets.flatMap((entry) => Array.isArray(entry.sections) ? entry.sections : []);
     const totalQuestions = sectionsArray.reduce((total, section) => total + (section.questions?.length || 0), 0);
-    const emptySection = sectionsArray.find((section) => !section.questions || section.questions.length === 0);
+    const emptySection = configuredSets.some((entry) => !entry.sections?.length || entry.sections.some((section) => !section.questions?.length));
     const codingQuestions = sectionsArray.flatMap((section) => {
       if (section.type !== 'coding') return [];
       return (section.questions || []);
@@ -925,8 +968,9 @@ export default function CreateAssessment({ viewOnly = false }) {
       emptySection: Boolean(emptySection),
       codingQuestions: codingQuestions.length,
       invalidCodingCount: invalidCoding.length,
+      incompleteSets: configuredSets.filter((entry) => !entry.sections?.some((section) => section.questions?.length)).length,
     };
-  }, [sections]);
+  }, [form.settings?.questionSetEnabled, questionSets]);
 
   const questionTypeCounts = useMemo(() => (
     (sections || []).reduce((counts, section) => {
@@ -994,9 +1038,9 @@ export default function CreateAssessment({ viewOnly = false }) {
   const buildPayload = (statusOverride) => {
     const lifecycleStatus = statusOverride || form.lifecycleStatus || 'draft';
     const normalizedTargetType = 'selected';
-    const assignedStudents = selectedStudents;
+    const assignedStudents = candidateAssignments;
 
-    const normalizedSections = (sections || []).map((section) => {
+    const normalizeSectionsForPayload = (sourceSections = []) => (sourceSections || []).map((section) => {
       const questions = (section.questions || []).map((question) => {
         const questionType = question.type || section.type;
         if (questionType !== 'coding') {
@@ -1015,6 +1059,12 @@ export default function CreateAssessment({ viewOnly = false }) {
       });
       return { ...section, questions };
     });
+    const normalizedQuestionSets = questionSets.map((entry, index) => ({
+      setNumber: index + 1,
+      label: entry.label || `Set ${index + 1}`,
+      sections: normalizeSectionsForPayload(entry.sections || []),
+    }));
+    const normalizedSections = normalizedQuestionSets[0]?.sections || [];
     const normalizedSettings = withAiProctoringSettings(form.settings);
     if (normalizedSettings.questionSelectionEnabled) {
       normalizedSettings.questionRequirements = Object.fromEntries(Object.entries(questionTypeCounts)
@@ -1052,6 +1102,9 @@ export default function CreateAssessment({ viewOnly = false }) {
       draftTargetMode: 'individual',
       assignedStudents,
       sections: normalizedSections,
+      questionSets: normalizedSettings.questionSetEnabled
+        ? normalizedQuestionSets.slice(0, normalizedSettings.questionSetCount)
+        : normalizedQuestionSets.slice(0, 1),
       lifecycleStatus,
       sendEmail: lifecycleStatus === 'published' && Boolean(form.sendEmail),
       audienceType: form.audienceType || 'platform_students',
@@ -1248,7 +1301,14 @@ export default function CreateAssessment({ viewOnly = false }) {
     && Number(form.duration) > 0
     && new Date(form.endTime).getTime() > new Date(form.startTime).getTime(),
   );
-  const candidateSelectionValid = selectedStudents.length > 0;
+  const candidateSelectionValid = selectedStudents.length > 0 && (
+    !form.settings?.questionSetEnabled
+    || form.settings?.automaticSetAssignment !== false
+    || selectedStudents.every((student) => {
+      const requested = Number(student.assessmentSet);
+      return Number.isInteger(requested) && requested >= 1 && requested <= Number(form.settings?.questionSetCount || 1);
+    })
+  );
   const questionDeliveryValid = !form.settings?.questionSelectionEnabled || Object.entries(questionTypeCounts)
     .filter(([, count]) => count > 0)
     .every(([type, count]) => {
@@ -1285,9 +1345,17 @@ export default function CreateAssessment({ viewOnly = false }) {
   const activeDistributionMode = form.settings?.questionDistributionModes?.[activeDeliveryDefinition.id]
     || form.settings?.questionDistributionMode
     || 'random_per_student';
+  const multiSetParityValid = !form.settings?.questionSetEnabled || (() => {
+    const totals = questionSets.slice(0, Number(form.settings?.questionSetCount) || 1).map((entry) => (
+      (entry.sections || []).reduce((total, section) => total + (section.questions || []).reduce(
+        (sum, question) => sum + (Number(question.points ?? question.marks ?? section.marksPerQuestion ?? 1) || 1), 0,
+      ), 0)
+    ));
+    return totals.length > 1 && totals.every((total) => total > 0 && total === totals[0]);
+  })();
   const phaseCompletion = {
     basic: Boolean(form.title.trim() && form.testType),
-    sections: assessmentValidation.totalQuestions > 0 && !assessmentValidation.emptySection && questionDeliveryValid,
+    sections: assessmentValidation.totalQuestions > 0 && !assessmentValidation.emptySection && questionDeliveryValid && multiSetParityValid,
     schedule: singleScheduleValid,
     target: candidateSelectionValid,
     settings: SETTINGS_GROUP_IDS.every((group) => visitedSettingsGroups.includes(group)),
@@ -1302,6 +1370,73 @@ export default function CreateAssessment({ viewOnly = false }) {
     completedSteps.includes(step.id) && phaseCompletion[step.id]
   ));
   const allTestTypes = [...PREDEFINED_TEST_TYPES.filter((t) => t !== 'Other'), ...customTestTypes, 'Other'];
+
+  const configuredSetCount = form.settings?.questionSetEnabled
+    ? Math.max(2, Number(form.settings?.questionSetCount) || 2)
+    : 1;
+  const questionSetStats = questionSets.map((entry) => ({
+    questions: (entry.sections || []).reduce((total, section) => total + (section.questions?.length || 0), 0),
+    marks: (entry.sections || []).reduce((total, section) => total + (section.questions || []).reduce(
+      (sum, question) => sum + (Number(question.points ?? question.marks ?? section.marksPerQuestion ?? 1) || 1), 0,
+    ), 0),
+  }));
+
+  const configureQuestionSetCount = (countValue) => {
+    const count = Math.min(8, Math.max(1, Number(countValue) || 1));
+    setQuestionSets((previous) => Array.from({ length: count }, (_, index) => previous[index] || {
+      setNumber: index + 1,
+      label: `Set ${index + 1}`,
+      sections: [],
+    }).map((entry, index) => ({ ...entry, setNumber: index + 1, label: entry.label || `Set ${index + 1}` })));
+    setActiveQuestionSet((current) => Math.min(current, count - 1));
+    updateQuestionDeliverySettings({
+      questionSetEnabled: count > 1,
+      questionSetCount: count,
+      questionSelectionEnabled: count > 1 ? false : Boolean(form.settings?.questionSelectionEnabled),
+    });
+  };
+
+  const copyPreviousQuestionSet = () => {
+    if (activeQuestionSet < 1) return;
+    setQuestionSets((previous) => previous.map((entry, index) => index === activeQuestionSet
+      ? {
+        ...entry,
+        sections: structuredClone(previous[activeQuestionSet - 1]?.sections || []).map((section) => ({
+          ...section,
+          questions: (section.questions || []).map((question) => ({ ...question, questionId: createQuestionId() })),
+        })),
+      }
+      : entry));
+    setDirty(true);
+    toast.success(`Set ${activeQuestionSet} copied into Set ${activeQuestionSet + 1}.`);
+  };
+
+  const candidateAssignments = useMemo(() => {
+    const ordered = [...selectedStudents].sort((left, right) => String(left.studentId || left.studentid || '').localeCompare(
+      String(right.studentId || right.studentid || ''), undefined, { numeric: true, sensitivity: 'base' },
+    ));
+    const start = Math.min(configuredSetCount, Math.max(1, Number(form.settings?.setStartingNumber) || 1));
+    return ordered.map((student, index) => {
+      const requested = Number(student.assessmentSet);
+      const validOverride = Number.isInteger(requested) && requested >= 1 && requested <= configuredSetCount;
+      const automaticEnabled = form.settings?.automaticSetAssignment !== false;
+      return {
+        ...student,
+        assessmentSet: configuredSetCount === 1 ? 1 : validOverride ? requested : automaticEnabled ? ((start - 1 + index) % configuredSetCount) + 1 : '',
+        assessmentSetSource: configuredSetCount === 1 ? 'automatic' : validOverride ? (student.assessmentSetSource || 'manual') : automaticEnabled ? 'automatic' : '',
+      };
+    });
+  }, [configuredSetCount, form.settings?.automaticSetAssignment, form.settings?.setStartingNumber, selectedStudents]);
+
+  const overrideCandidateSet = (candidate, setNumber) => {
+    const candidateKey = String(candidate._id || candidate.studentId || candidate.studentid || candidate.email || '');
+    updateSelectedStudents(selectedStudents.map((student) => {
+      const key = String(student._id || student.studentId || student.studentid || student.email || '');
+      return key === candidateKey
+        ? { ...student, assessmentSet: Number(setNumber), assessmentSetSource: 'manual' }
+        : student;
+    }));
+  };
 
   const handleTestTypeChange = (value) => {
     if (value === 'Other') {
@@ -1499,6 +1634,12 @@ export default function CreateAssessment({ viewOnly = false }) {
             {selectedStudents.length > 0 && <p className="text-xs font-medium text-slate-600 dark:text-gray-300">{selectedStudents.length} student{selectedStudents.length === 1 ? '' : 's'} selected for this assessment</p>}
           </div>
         </SectionCard>
+        {selectedStudents.length > 0 && form.settings?.questionSetEnabled && <SectionCard compact title="Candidate set allocation" subtitle={form.settings?.automaticSetAssignment !== false ? 'Balanced automatically by natural Student ID / roll-number order. You can override any candidate.' : 'Automatic assignment is off. Assign every candidate before publishing.'}>
+          <div className="space-y-4">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{Array.from({ length: configuredSetCount }, (_, index) => { const count = candidateAssignments.filter((candidate) => Number(candidate.assessmentSet) === index + 1).length; return <div key={index + 1} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-gray-700 dark:bg-gray-800"><p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Set {index + 1}</p><p className="mt-1 text-xl font-bold text-slate-900 dark:text-white">{count}</p><p className="text-[10px] text-slate-500">candidate{count === 1 ? '' : 's'}</p></div>; })}</div>
+            <div className="max-h-80 overflow-auto rounded-xl border border-slate-200 dark:border-gray-700"><table className="w-full min-w-[620px] text-left text-xs"><thead className="sticky top-0 bg-slate-50 text-slate-500 dark:bg-gray-800 dark:text-gray-300"><tr><th className="px-3 py-2.5">Student ID</th><th className="px-3 py-2.5">Candidate</th><th className="px-3 py-2.5">Assigned set</th><th className="px-3 py-2.5">Source</th></tr></thead><tbody>{candidateAssignments.map((candidate) => <tr key={candidate._id || candidate.studentId || candidate.studentid || candidate.email} className="border-t border-slate-100 dark:border-gray-800"><td className="px-3 py-2 font-semibold text-slate-700 dark:text-gray-200">{candidate.studentId || candidate.studentid || '—'}</td><td className="px-3 py-2"><span className="block font-medium text-slate-800 dark:text-white">{candidate.name || 'Candidate'}</span><span className="text-[10px] text-slate-400">{candidate.email}</span></td><td className="px-3 py-2"><select value={candidate.assessmentSet || ''} onChange={(event) => overrideCandidateSet(candidate, event.target.value)} className="h-8 rounded-lg border border-slate-200 bg-white px-2 font-semibold text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"><option value="">Select set</option>{Array.from({ length: configuredSetCount }, (_, index) => <option key={index + 1} value={index + 1}>Set {index + 1}</option>)}</select></td><td className="px-3 py-2"><span className={`rounded-full px-2 py-1 text-[10px] font-bold ${candidate.assessmentSetSource === 'automatic' ? 'bg-sky-50 text-sky-700' : candidate.assessmentSetSource ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700'}`}>{candidate.assessmentSetSource || 'Required'}</span></td></tr>)}</tbody></table></div>
+          </div>
+        </SectionCard>}
       </div>
     ),
     schedule: (
@@ -1567,9 +1708,28 @@ export default function CreateAssessment({ viewOnly = false }) {
     ),
     sections: (
       <div className="space-y-4">
-        <section className="rounded-2xl border border-slate-200 bg-white px-4 py-5 text-center shadow-sm dark:border-gray-800 dark:bg-gray-900">
-          <h2 className="text-base font-bold text-slate-950 dark:text-white">Build your question set</h2>
-          <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Create new questions or reuse validated questions from the library.</p>
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          <div className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-sky-50/70 px-5 py-5 dark:border-gray-800 dark:from-gray-900 dark:to-sky-950/20">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-600">Paper configuration</p><h2 className="mt-1 text-lg font-bold text-slate-950 dark:text-white">Build your question sets</h2><p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Choose the number of papers first. Questions remain reusable in the library.</p></div>
+              <label className="block min-w-52"><span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Number of sets</span><select value={configuredSetCount} onChange={(event) => configureQuestionSetCount(event.target.value)} disabled={viewOnly} className="mt-1 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-800 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-950 dark:text-white">{[1, 2, 3, 4, 5, 6, 7, 8].map((count) => <option key={count} value={count} disabled={questionSets.some((entry, index) => index >= count && entry.sections?.length)}>{count === 1 ? '1 set (single paper)' : `${count} sets`}</option>)}</select></label>
+            </div>
+          </div>
+
+          <div className="border-b border-slate-100 px-4 py-4 dark:border-gray-800">
+            <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Question sets">
+              {questionSets.slice(0, configuredSetCount).map((entry, index) => {
+                const stats = questionSetStats[index] || { questions: 0, marks: 0 };
+                const active = index === activeQuestionSet;
+                const complete = stats.questions > 0;
+                return <button key={entry.setNumber || index} type="button" role="tab" aria-selected={active} onClick={() => setActiveQuestionSet(index)} className={`min-w-36 rounded-xl border px-3 py-3 text-left transition ${active ? 'border-sky-500 bg-sky-50 ring-1 ring-sky-200 dark:bg-sky-950/30' : 'border-slate-200 bg-white hover:border-sky-300 dark:border-gray-700 dark:bg-gray-900'}`}><span className="flex items-center justify-between"><strong className={`text-xs ${active ? 'text-sky-800 dark:text-sky-200' : 'text-slate-700 dark:text-gray-200'}`}>Set {index + 1}</strong><span className={`flex h-5 w-5 items-center justify-center rounded-full ${complete ? 'bg-emerald-500 text-white' : active ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-400 dark:bg-gray-800'}`}>{complete ? <Check className="h-3 w-3" /> : index + 1}</span></span><span className="mt-1.5 block text-[10px] text-slate-500">{stats.questions} questions · {stats.marks} marks</span></button>;
+              })}
+            </div>
+            {form.settings?.questionSetEnabled && questionSetStats.every((entry) => entry.questions > 0) && !multiSetParityValid && <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-left text-[11px] font-medium text-amber-800 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-200">All sets must carry the same total marks before this assessment can be published.</p>}
+          </div>
+
+          <div className="px-4 py-5 text-center">
+            <div><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-600">Set {activeQuestionSet + 1} of {configuredSetCount}</p><h3 className="mt-1 text-base font-bold text-slate-950 dark:text-white">Add questions to Set {activeQuestionSet + 1}</h3><p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Create new questions or select reusable questions from the library.</p></div>
           <div className="mx-auto mt-4 grid max-w-2xl gap-3 sm:grid-cols-2">
             <button type="button" onClick={handleCreateQuestion} className="group flex min-h-24 items-center gap-4 rounded-xl border border-sky-200 bg-sky-50/70 px-5 py-4 text-left transition hover:border-sky-400 hover:bg-sky-100/70 hover:shadow-sm dark:border-sky-900 dark:bg-sky-950/25 dark:hover:border-sky-700">
               <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white shadow-sm"><FilePlus2 className="h-5 w-5" /></span>
@@ -1580,7 +1740,8 @@ export default function CreateAssessment({ viewOnly = false }) {
               <span><strong className="block text-sm text-sky-900 dark:text-sky-100">Add from library</strong><span className="mt-1 block text-[11px] leading-4 text-slate-500 dark:text-gray-400">Search, filter and select multiple published questions</span></span>
             </button>
           </div>
-          <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-[11px] font-medium text-slate-500 dark:text-gray-400"><span>{sections.length} section{sections.length !== 1 ? 's' : ''} &middot; {assessmentValidation.totalQuestions} question{assessmentValidation.totalQuestions !== 1 ? 's' : ''}</span>{assessmentValidation.totalQuestions > 0 && <button type="button" onClick={openStudentPreview} className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300"><Eye className="h-3.5 w-3.5" />Student view</button>}</div>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-[11px] font-medium text-slate-500 dark:text-gray-400"><span>{sections.length} section{sections.length !== 1 ? 's' : ''} &middot; {questionSetStats[activeQuestionSet]?.questions || 0} question{questionSetStats[activeQuestionSet]?.questions !== 1 ? 's' : ''}</span>{(questionSetStats[activeQuestionSet]?.questions || 0) > 0 && <button type="button" onClick={openStudentPreview} className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300"><Eye className="h-3.5 w-3.5" />Student view</button>}{activeQuestionSet > 0 && sections.length === 0 && <button type="button" onClick={copyPreviousQuestionSet} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300"><Copy className="h-3.5 w-3.5" />Copy Set {activeQuestionSet}</button>}</div>
+          </div>
         </section>
 
         <SectionBuilder
@@ -1594,7 +1755,9 @@ export default function CreateAssessment({ viewOnly = false }) {
           }}
         />
 
-        {assessmentValidation.totalQuestions > 0 && (
+        {configuredSetCount > 1 && <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-gray-800 dark:bg-gray-900"><button type="button" disabled={activeQuestionSet === 0} onClick={() => setActiveQuestionSet((current) => Math.max(0, current - 1))} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300">Previous set</button><div className="text-center"><p className="text-xs font-bold text-slate-800 dark:text-white">Set {activeQuestionSet + 1}</p><p className="text-[10px] text-slate-500">{questionSetStats.filter((entry) => entry.questions > 0).length} of {configuredSetCount} sets have questions</p></div>{activeQuestionSet < configuredSetCount - 1 ? <button type="button" disabled={!questionSetStats[activeQuestionSet]?.questions} onClick={() => setActiveQuestionSet((current) => Math.min(configuredSetCount - 1, current + 1))} className="rounded-lg bg-sky-600 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">Continue to Set {activeQuestionSet + 2}</button> : <span className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">All sets reviewed</span>}</div>}
+
+        {(questionSetStats[activeQuestionSet]?.questions || 0) > 0 && !form.settings?.questionSetEnabled && (
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 px-4 py-4 dark:border-gray-800">
               <div>
@@ -1739,6 +1902,19 @@ export default function CreateAssessment({ viewOnly = false }) {
                   </div>
                 )}
               </div>
+              {s.questionSetEnabled && <Row {...rowProps} icon={<Layers className="h-4 w-4" />} title="Automatic set assignment" desc={`Distribute candidates evenly across ${s.questionSetCount} sets using Student ID / roll-number order.`} enabledOverride={s.automaticSetAssignment !== false} onToggle={(enabled) => upd('automaticSetAssignment', enabled)} badge="recommended">
+                <div className="space-y-3">
+                  <FieldRow label="Assignment order"><div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">Student ID / roll number</div></FieldRow>
+                  <FieldRow label="Start rotation from"><select value={Math.min(s.questionSetCount, s.setStartingNumber || 1)} onChange={(event) => upd('setStartingNumber', Number(event.target.value))} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">{Array.from({ length: s.questionSetCount }, (_, index) => <option key={index + 1} value={index + 1}>Set {index + 1}</option>)}</select></FieldRow>
+                  <p className="rounded-lg bg-sky-50 px-3 py-2 text-[11px] leading-5 text-sky-800 dark:bg-sky-950/30 dark:text-sky-200">Assignments are previewed in Candidates and frozen when published. Manual overrides are preserved.</p>
+                </div>
+              </Row>}
+              <Row {...rowProps} icon={<Hash className="h-4 w-4" />} title="New candidate credentials" desc="Choose the initial password only for new assessment-only accounts created by this assessment.">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {[{ id: 'secure_generated', title: 'Secure generated password', help: 'Recommended. A unique credential is generated.' }, { id: 'student_id', title: 'Student ID as password', help: 'Convenient for managed exam PCs, but easier to guess.' }].map((option) => <button key={option.id} type="button" onClick={() => upd('candidateCredentialMode', option.id)} className={`rounded-lg border px-3 py-2 text-left ${s.candidateCredentialMode === option.id ? 'border-sky-400 bg-sky-50 dark:bg-sky-950/30' : 'border-slate-200 dark:border-gray-700'}`}><span className="block text-xs font-bold text-slate-800 dark:text-white">{option.title}</span><span className="mt-1 block text-[10px] leading-4 text-slate-500">{option.help}</span></button>)}
+                </div>
+                {s.candidateCredentialMode === 'student_id' && <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-200">Existing accounts are never overwritten. Use this only in a controlled lab and keep one-active-session protection enabled.</p>}
+              </Row>
               <Row {...rowProps} icon={<Globe className="h-4 w-4" />} iconBg="bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-gray-300"
                 title="Test Visibility" desc={form.isVisible ? 'Test is visible to students on their dashboard.' : 'Test is hidden — only admins can see it.'}>
                 <FieldRow label="Current Status">
@@ -2009,6 +2185,7 @@ export default function CreateAssessment({ viewOnly = false }) {
     preview: (
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="min-w-0">
+          {form.settings?.questionSetEnabled && <section className="mb-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900"><div className="flex items-center justify-between"><div><p className="text-sm font-bold text-slate-900 dark:text-white">Question-set summary</p><p className="mt-1 text-[11px] text-slate-500">{configuredSetCount} papers · {form.settings?.automaticSetAssignment !== false ? 'automatic roll-number allocation' : 'manual allocation'}</p></div><Layers className="h-5 w-5 text-sky-600" /></div><div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">{questionSetStats.slice(0, configuredSetCount).map((stats, index) => <div key={index} className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-gray-800"><span className="text-[10px] font-bold uppercase text-slate-400">Set {index + 1}</span><p className="mt-1 text-xs font-semibold text-slate-800 dark:text-white">{stats.questions} questions · {stats.marks} marks</p></div>)}</div></section>}
           {currentId && (
             <button
               type="button"
@@ -2018,7 +2195,7 @@ export default function CreateAssessment({ viewOnly = false }) {
               Open Fullscreen Preview
             </button>
           )}
-          <AssessmentPreview assessment={{ ...form, sections }} />
+          <AssessmentPreview assessment={{ ...form, sections: questionSets[0]?.sections || sections }} />
         </div>
         <aside className="space-y-3 lg:sticky lg:top-3">
           <section className={`rounded-xl border p-4 ${publishReady ? 'border-emerald-200 bg-emerald-50/70 dark:border-emerald-900/50 dark:bg-emerald-950/20' : 'border-amber-200 bg-amber-50/70 dark:border-amber-900/50 dark:bg-amber-950/20'}`}>
@@ -2050,6 +2227,15 @@ export default function CreateAssessment({ viewOnly = false }) {
   const goNext = () => {
     if (viewOnly) {
       if (stepIndex < steps.length - 1) setActiveStep(steps[stepIndex + 1].id);
+      return;
+    }
+    if (activeStep === 'sections' && configuredSetCount > 1 && activeQuestionSet < configuredSetCount - 1) {
+      if (!questionSetStats[activeQuestionSet]?.questions) {
+        toast.error(`Add at least one question to Set ${activeQuestionSet + 1} before continuing.`);
+        return;
+      }
+      setActiveQuestionSet((current) => current + 1);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (activeStep === 'settings') {
@@ -2097,7 +2283,7 @@ export default function CreateAssessment({ viewOnly = false }) {
         transition={{ duration: 0.24 }}
         className="mx-auto max-w-[1180px] px-3 py-3 sm:px-5"
       >
-        <header className="flex flex-col gap-3 border-b border-slate-200 pb-3 dark:border-gray-800 lg:flex-row lg:items-center lg:justify-between">
+        <header data-page-header className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/95 pb-3 backdrop-blur dark:border-gray-800 dark:bg-gray-950/95 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
             <button
               type="button"

@@ -181,7 +181,7 @@ export default function MasterData() {
   return (
     <div className="min-h-screen bg-slate-50 p-4 sm:p-6 dark:bg-gray-950">
       <div className="mx-auto max-w-7xl">
-        <header className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <header data-page-header className="mb-5 flex flex-col gap-4 bg-slate-50/95 py-2 backdrop-blur dark:bg-gray-950/95 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-sky-700">
               Settings · Master data

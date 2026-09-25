@@ -294,22 +294,32 @@ export async function syncAssessmentQuestionsToLibrary(assessmentInput) {
   const operations = [];
   const sourceKeys = [];
 
-  (assessment.sections || []).forEach((section, sectionIndex) => {
-    (section?.questions || []).forEach((question, questionIndex) => {
-      const payload = buildAssessmentLibraryPayload({
-        assessment,
-        section,
-        question,
-        sectionIndex,
-        questionIndex,
-      });
-      sourceKeys.push(payload.sourceKey);
-      operations.push({
-        updateOne: {
-          filter: { sourceKey: payload.sourceKey },
-          update: { $set: payload, $setOnInsert: { createdAt: new Date() } },
-          upsert: true,
-        },
+  const questionSets = assessment.settings?.questionSetEnabled && Array.isArray(assessment.questionSets) && assessment.questionSets.length
+    ? assessment.questionSets
+    : [{ setNumber: 1, sections: assessment.sections || [] }];
+  questionSets.forEach((questionSet, setIndex) => {
+    (questionSet.sections || []).forEach((section, sectionIndex) => {
+      (section?.questions || []).forEach((question, questionIndex) => {
+        const payload = buildAssessmentLibraryPayload({
+          assessment,
+          section: {
+            ...section,
+            sectionName: questionSets.length > 1
+              ? `Set ${questionSet.setNumber || setIndex + 1} · ${section.sectionName || `Section ${sectionIndex + 1}`}`
+              : section.sectionName,
+          },
+          question,
+          sectionIndex,
+          questionIndex,
+        });
+        sourceKeys.push(payload.sourceKey);
+        operations.push({
+          updateOne: {
+            filter: { sourceKey: payload.sourceKey },
+            update: { $set: payload, $setOnInsert: { createdAt: new Date() } },
+            upsert: true,
+          },
+        });
       });
     });
   });

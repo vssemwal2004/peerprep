@@ -94,7 +94,8 @@ export default function AssessmentCandidateEditor({ mode, selected = [], onChang
       const emailIndex = headers.findIndex((header) => ['email', 'emailid', 'emailaddress'].includes(header));
       const idIndex = headers.findIndex((header) => ['studentid', 'stdid'].includes(header));
       if ([nameIndex, emailIndex, idIndex].some((index) => index < 0)) throw new Error('CSV headers must include Name, Email ID, Student ID.');
-      const values = records.slice(1).map((cells) => ({ name: cells[nameIndex] || '', email: cells[emailIndex] || '', studentid: cells[idIndex] || '' }));
+      const setIndex = headers.findIndex((header) => ['assessmentset', 'set'].includes(header));
+      const values = records.slice(1).map((cells) => ({ name: cells[nameIndex] || '', email: cells[emailIndex] || '', studentid: cells[idIndex] || '', assessmentSet: setIndex >= 0 ? cells[setIndex] || '' : '' }));
       if (values.length > 1000) throw new Error('Upload up to 1,000 students at a time.');
       setRows(values); setFileName(file.name); setNeedsReview(true);
       await reviewRows(values);
@@ -106,9 +107,9 @@ export default function AssessmentCandidateEditor({ mode, selected = [], onChang
   };
   const addReviewed = () => {
     if (busy || needsReview || !preview.length || preview.some((row) => row.status === 'error')) return;
-    const additions = preview.filter((row) => row.status !== 'selected').map((row) => row.existingStudent || {
-      name: row.name, email: row.email, studentid: row.studentid, accessScope: 'assessment_only',
-    });
+    const additions = preview.filter((row) => row.status !== 'selected').map((row) => row.existingStudent
+      ? { ...row.existingStudent, assessmentSet: row.assessmentSet || '', assessmentSetSource: row.assessmentSet ? 'csv' : '' }
+      : { name: row.name, email: row.email, studentid: row.studentid, assessmentSet: row.assessmentSet || '', assessmentSetSource: row.assessmentSet ? 'csv' : '', accessScope: 'assessment_only' });
     if (!additions.length) return;
     onChange([...selected, ...additions]);
     setRows([]); setPreview([]); setFileName(''); setError('');
@@ -128,7 +129,7 @@ export default function AssessmentCandidateEditor({ mode, selected = [], onChang
     finally { setBusy(false); }
   };
   const downloadTemplate = () => {
-    const url = URL.createObjectURL(new Blob(['Name,Email ID,Student ID\nAarav Sharma,aarav@example.com,STD-001\n'], { type: 'text/csv' }));
+    const url = URL.createObjectURL(new Blob(['Name,Email ID,Student ID,Assessment Set\nAarav Sharma,aarav@example.com,STD-001,1\n'], { type: 'text/csv' }));
     const link = document.createElement('a'); link.href = url; link.download = 'assessment-students.csv'; link.click();
     URL.revokeObjectURL(url);
   };
@@ -155,7 +156,7 @@ export default function AssessmentCandidateEditor({ mode, selected = [], onChang
       {rows.length > 0 && <div className="mt-5 border-t border-slate-100 pt-4 dark:border-gray-700"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><h4 className="text-sm font-semibold text-slate-900 dark:text-white">Review {fileName}</h4><p className="text-xs text-slate-500">{rows.length} rows · Edit any cell, then recheck before adding.</p></div><div className="flex gap-2"><button type="button" onClick={() => { setRows([]); setPreview([]); setFileName(''); }} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium dark:border-gray-700">Cancel</button>{needsReview ? <button type="button" disabled={busy} onClick={() => reviewRows()} className="rounded-lg bg-sky-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{busy ? 'Checking...' : 'Recheck rows'}</button> : <button type="button" disabled={busy || counts.error > 0 || addCount === 0} onClick={addReviewed} className="rounded-lg bg-sky-600 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Add {addCount} student{addCount === 1 ? '' : 's'}</button>}</div></div>
         <div className="mb-3 grid grid-cols-3 gap-2">{[['New', counts.new, 'text-emerald-700 bg-emerald-50'], ['Already exist', counts.existing, 'text-amber-700 bg-amber-50'], ['Errors', counts.error, 'text-rose-700 bg-rose-50']].map(([label, count, style]) => <div key={label} className={`rounded-lg p-3 ${style}`}><span className="block text-lg font-bold">{needsReview ? '—' : count}</span><span className="text-xs font-medium">{label}</span></div>)}</div>
         {needsReview && <p role="status" className="mb-2 text-xs font-medium text-amber-700">Rows changed. Recheck to refresh the results.</p>}
-        <div className="max-h-80 overflow-auto rounded-lg border border-slate-200 dark:border-gray-700"><table className="w-full min-w-[760px] text-left text-xs"><thead className="sticky top-0 bg-slate-50 text-slate-600 dark:bg-gray-800 dark:text-gray-300"><tr><th className="p-2">Row</th><th className="p-2">Name</th><th className="p-2">Email ID</th><th className="p-2">Student ID</th><th className="p-2">Result</th></tr></thead><tbody>{rows.map((row, index) => { const result = preview[index]; return <tr key={index} className="border-t border-slate-100 dark:border-gray-800"><td className="p-2 text-slate-500">{index + 2}</td>{['name', 'email', 'studentid'].map((key) => <td key={key} className="p-1"><input aria-label={`Row ${index + 2} ${key}`} type={key === 'email' ? 'email' : 'text'} value={row[key]} onChange={(event) => changeRow(index, key, event.target.value)} className={`${inputClass} !px-2 !py-1.5`} /></td>)}<td className="max-w-52 p-2">{needsReview ? <span className="text-slate-500">Needs check</span> : result?.status === 'error' ? <span className="text-rose-700">{result.errors.join('; ')}</span> : result?.status === 'selected' ? <span className="text-amber-700">Already selected</span> : result?.status === 'existing' ? <span className="text-amber-700">Existing account</span> : <span className="text-emerald-700">New student</span>}</td></tr>; })}</tbody></table></div>
+        <div className="max-h-80 overflow-auto rounded-lg border border-slate-200 dark:border-gray-700"><table className="w-full min-w-[840px] text-left text-xs"><thead className="sticky top-0 bg-slate-50 text-slate-600 dark:bg-gray-800 dark:text-gray-300"><tr><th className="p-2">Row</th><th className="p-2">Name</th><th className="p-2">Email ID</th><th className="p-2">Student ID</th><th className="p-2">Set (optional)</th><th className="p-2">Result</th></tr></thead><tbody>{rows.map((row, index) => { const result = preview[index]; return <tr key={index} className="border-t border-slate-100 dark:border-gray-800"><td className="p-2 text-slate-500">{index + 2}</td>{['name', 'email', 'studentid', 'assessmentSet'].map((key) => <td key={key} className="p-1"><input aria-label={`Row ${index + 2} ${key}`} type={key === 'email' ? 'email' : key === 'assessmentSet' ? 'number' : 'text'} min={key === 'assessmentSet' ? 1 : undefined} max={key === 'assessmentSet' ? 8 : undefined} value={row[key] || ''} onChange={(event) => changeRow(index, key, event.target.value)} className={`${inputClass} !px-2 !py-1.5`} /></td>)}<td className="max-w-52 p-2">{needsReview ? <span className="text-slate-500">Needs check</span> : result?.status === 'error' ? <span className="text-rose-700">{result.errors.join('; ')}</span> : result?.status === 'selected' ? <span className="text-amber-700">Already selected</span> : result?.status === 'existing' ? <span className="text-amber-700">Existing account</span> : <span className="text-emerald-700">New student</span>}</td></tr>; })}</tbody></table></div>
         {counts.error > 0 && !needsReview && <p role="alert" className="mt-2 text-xs text-rose-700">Fix the errors and recheck before adding students.</p>}
       </div>}
     </div>}
