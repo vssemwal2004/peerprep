@@ -25,6 +25,7 @@ import {
   UserCog,
   ShieldCheck,
   ListChecks,
+  FileSpreadsheet,
   Database,
   Activity,
   ChevronUp,
@@ -41,6 +42,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { hasPermission } from '../admin/coordinatorPermissions';
 import { getInterviewNavigation, getInterviewSection } from './interviews/interviewNavigation';
+import { getSidebarWidth } from './sidebarLayout';
 
 const buildNavItems = (role = 'admin', accessScope = 'full') => {
   if (role === 'student') {
@@ -213,7 +215,16 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
             match: (loc) => getInterviewSection(loc.pathname, loc.search) === item.id,
           })),
         },
-        { label: 'AI Interviews', to: '/admin/ai-interviews', icon: Bot },
+        {
+          label: 'AI Interviews',
+          to: '/admin/ai-interviews',
+          icon: Bot,
+          children: [
+            { label: 'All AI Interviews', to: '/admin/ai-interviews', icon: ClipboardList, match: (loc) => loc.pathname === '/admin/ai-interviews' },
+            { label: 'Create AI Interview', to: '/admin/ai-interviews/new', icon: CalendarPlus },
+            { label: 'Reports', to: '/admin/ai-interviews/reports', icon: BarChart3 },
+          ],
+        },
       ],
     },
     {
@@ -235,7 +246,6 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
       icon: GraduationCap,
       items: [
         { label: 'Student List', to: '/admin/students', icon: Users, match: (currentLocation) => currentLocation.pathname === '/admin/students' },
-        { label: 'View Bulk Lists', to: '/admin/students/bulk-lists', icon: ListChecks },
         { label: 'Add Student', to: '/admin/onboarding', icon: UserPlus },
       ],
     },
@@ -288,6 +298,7 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
       label: 'Settings',
       icon: Settings,
       items: [
+        { label: 'Bulk Uploads', to: '/admin/settings/bulk-uploads', icon: FileSpreadsheet },
         { label: 'Master Data', to: '/admin/settings/master-data', icon: Database },
         { label: 'Email Templates', to: '/admin/settings/email-templates', icon: Mail },
         { label: 'Email Queue', to: '/admin/email-queue', icon: Mail },
@@ -366,6 +377,9 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
     if (getInterviewSection(location.pathname, location.search)) {
       setOpenGroup('interviews');
       setOpenNestedGroup('interviews:One-to-One Interviews');
+    } else if (location.pathname === '/admin/ai-interviews' || location.pathname.startsWith('/admin/ai-interviews/')) {
+      setOpenGroup('interviews');
+      setOpenNestedGroup('interviews:AI Interviews');
     }
   }, [location.key, location.pathname, location.search]);
 
@@ -447,7 +461,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
                 }`}>
                   <Icon className="h-[18px] w-[18px]" />
                 </span>
-                <span className={`ml-[52px] whitespace-nowrap leading-tight ${isExpanded ? 'visible' : 'pointer-events-none invisible'}`}>
+                <span className={`ml-[52px] min-w-0 pr-2 text-left leading-tight ${isExpanded ? 'visible' : 'pointer-events-none invisible'}`}>
                   {item.label}
                 </span>
               </NavLink>
@@ -457,6 +471,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
           const GroupIcon = item.icon;
           const isOpen = openGroup === item.key;
           const groupActive = isGroupActive(item);
+          const groupPanelId = `${storagePrefix}-nav-${item.key}`;
 
           return (
             <div key={item.key} className="space-y-0.5">
@@ -465,6 +480,8 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
                 onClick={() => handleGroupToggle(item.key)}
                 title={item.label}
                 aria-expanded={isOpen && isExpanded}
+                aria-controls={groupPanelId}
+                data-platform-disclosure="navigation"
                 className={`relative flex min-h-11 w-full items-center rounded-xl py-1.5 text-[13px] font-semibold transition-colors ${
                   groupActive
                     ? 'bg-sky-50 text-sky-700 shadow-sm dark:bg-sky-900/30 dark:text-sky-300'
@@ -478,7 +495,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
                 }`}>
                   <GroupIcon className="h-[18px] w-[18px]" />
                 </span>
-                <span className={`ml-[52px] flex-1 whitespace-nowrap text-left leading-tight ${isExpanded ? 'visible' : 'pointer-events-none invisible'}`}>
+                <span className={`ml-[52px] min-w-0 flex-1 pr-8 text-left leading-tight ${isExpanded ? 'visible' : 'pointer-events-none invisible'}`}>
                   {item.label}
                 </span>
                 {isExpanded && (
@@ -487,36 +504,40 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
               </button>
 
               <div
+                id={groupPanelId}
                 inert={!(isOpen && isExpanded)}
                 className={`overflow-hidden transition-[max-height,opacity] duration-300 ${
                   isOpen && isExpanded ? 'max-h-[32rem] opacity-100' : 'max-h-0 opacity-0'
                 }`}
               >
-                <div className="space-y-0.5 pl-12 pr-2 pb-1">
+                <div className="space-y-0.5 pl-7 pr-2 pb-1">
                   {item.items.map((child) => {
                     const ChildIcon = child.icon;
                     const childActive = isRouteActive(child);
                     if (child.children?.length) {
                       const nestedKey = `${item.key}:${child.label}`;
                       const nestedOpen = openNestedGroup === nestedKey;
+                      const nestedPanelId = `${groupPanelId}-${child.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
                       return (
                         <div key={child.label} className="space-y-0.5">
                           <div className={`flex items-center rounded-lg transition-colors ${childActive ? 'bg-sky-50 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300' : 'text-slate-600 hover:bg-slate-50 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
-                            <NavLink to={child.to} className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-[12px] font-semibold">
+                            <NavLink to={child.to} onClick={() => setOpenNestedGroup(nestedKey)} className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-[12px] font-semibold">
                               <ChildIcon className="h-3.5 w-3.5 shrink-0" />
-                              <span className="whitespace-nowrap">{child.label}</span>
+                              <span className="min-w-0 leading-tight">{child.label}</span>
                             </NavLink>
                             <button
                               type="button"
                               aria-label={`${nestedOpen ? 'Collapse' : 'Expand'} ${child.label}`}
                               aria-expanded={nestedOpen}
+                              aria-controls={nestedPanelId}
+                              data-platform-disclosure="navigation"
                               onClick={() => setOpenNestedGroup(nestedOpen ? null : nestedKey)}
                               className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-white hover:text-sky-700 dark:hover:bg-gray-700 dark:hover:text-sky-300"
                             >
                               <ChevronDown className={`h-3.5 w-3.5 transition-transform ${nestedOpen ? 'rotate-180' : ''}`} />
                             </button>
                           </div>
-                          <div inert={!nestedOpen} className={`overflow-hidden transition-[max-height,opacity] duration-200 ${nestedOpen ? 'max-h-64 opacity-100' : 'max-h-0 opacity-0'}`}>
+                          <div id={nestedPanelId} inert={!nestedOpen} className={`overflow-hidden transition-[max-height,opacity] duration-200 ${nestedOpen ? 'max-h-64 opacity-100' : 'max-h-0 opacity-0'}`}>
                             <div className="ml-3 space-y-0.5 border-l border-slate-200 pl-2 dark:border-gray-700">
                               {child.children.map((nestedChild) => {
                                 const NestedIcon = nestedChild.icon;
@@ -524,7 +545,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
                                 return (
                                   <Link key={nestedChild.label} to={nestedChild.to} aria-current={nestedActive ? 'page' : undefined} onClick={() => { setOpenGroup(item.key); setOpenNestedGroup(nestedKey); }} className={`flex min-h-8 items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12px] font-medium transition ${nestedActive ? 'bg-white text-sky-700 shadow-sm ring-1 ring-slate-100 dark:bg-gray-800 dark:text-sky-300 dark:ring-gray-700' : 'text-slate-500 hover:bg-white hover:text-slate-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white'}`}>
                                     <NestedIcon className="h-3 w-3 shrink-0" />
-                                    <span className="whitespace-nowrap">{nestedChild.label}</span>
+                                    <span className="min-w-0 leading-tight">{nestedChild.label}</span>
                                   </Link>
                                 );
                               })}
@@ -543,8 +564,8 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
                             : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100'
                         }`}
                       >
-                        <ChildIcon className="h-3.5 w-3.5" />
-                        <span className="truncate">{child.label}</span>
+                        <ChildIcon className="h-3.5 w-3.5 shrink-0" />
+                        <span className="min-w-0 leading-tight">{child.label}</span>
                       </NavLink>
                     );
                   })}
@@ -560,7 +581,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
             <div
               id={accountMenuId}
               className="pointer-events-auto fixed bottom-3 z-[9999] w-[18rem] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_55px_rgba(15,23,42,0.18)] transition-[left] duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)] dark:border-gray-700 dark:bg-gray-900 dark:shadow-black/50"
-              style={{ left: 'calc(var(--admin-sidebar-width, 4rem) + 0.75rem)' }}
+              style={{ left: `calc(${getSidebarWidth(isExpanded)} + 0.75rem)` }}
               role="dialog"
               aria-label="Account menu"
             >
@@ -643,7 +664,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
                 {initials || (isCoordinator ? 'CO' : isStudent ? 'ST' : 'AD')}
               </span>
             )}
-            <span className={`ml-16 min-w-0 flex-1 ${isExpanded ? 'visible' : 'pointer-events-none invisible'}`}>
+            <span className={`ml-16 min-w-0 flex-1 pr-8 ${isExpanded ? 'visible' : 'pointer-events-none invisible'}`}>
               <span className="block truncate text-sm font-bold text-slate-800 dark:text-gray-100">{displayName}</span>
               <span className="block text-[11px] font-medium text-slate-500 dark:text-gray-400">{roleLabel}</span>
             </span>
