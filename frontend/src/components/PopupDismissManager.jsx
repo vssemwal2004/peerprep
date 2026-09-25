@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 
-const OPEN_POPUP_TRIGGER = 'button[aria-expanded="true"]';
+// Persistent navigation disclosures are not popups. Closing them on pointerdown
+// makes their child links/toggles inert before the click can reach its target.
+const OPEN_POPUP_TRIGGER = 'button[aria-expanded="true"]:not([data-platform-disclosure])';
 
 function getPopupBoundary(trigger) {
   return trigger.closest('[data-platform-popup-root]')

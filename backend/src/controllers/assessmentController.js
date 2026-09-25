@@ -677,7 +677,9 @@ function normalizeAssessmentSettings(settings = {}) {
     questionSetEnabled: Boolean(source.questionSetEnabled),
     questionSetCount: Math.min(8, Math.max(1, Number(source.questionSetCount) || 1)),
     automaticSetAssignment: source.automaticSetAssignment !== false,
-    setAssignmentStrategy: 'roll_number',
+    setAssignmentStrategy: 'modulo',
+    setAllocationSortBy: source.setAllocationSortBy === 'name' ? 'name' : 'student_id',
+    setAllocationSortDirection: source.setAllocationSortDirection === 'desc' ? 'desc' : 'asc',
     setStartingNumber: Math.min(8, Math.max(1, Number(source.setStartingNumber) || 1)),
     candidateCredentialMode: source.candidateCredentialMode === 'student_id' ? 'student_id' : 'secure_generated',
     cameraMonitoring: Boolean(source.cameraMonitoring),
@@ -1541,11 +1543,21 @@ function normalizeAssessmentQuestionSets(questionSets = [], fallbackSections = [
   });
 }
 
-function naturalStudentIdCompare(left = {}, right = {}) {
-  return String(left?.studentId || '').localeCompare(String(right?.studentId || ''), undefined, {
+function naturalValueCompare(left = '', right = '') {
+  return String(left || '').localeCompare(String(right || ''), undefined, {
     numeric: true,
     sensitivity: 'base',
   });
+}
+
+export function compareCandidatesForSetAllocation(left = {}, right = {}, settings = {}) {
+  const sortBy = settings.setAllocationSortBy === 'name' ? 'name' : 'student_id';
+  const direction = settings.setAllocationSortDirection === 'desc' ? -1 : 1;
+  const primary = sortBy === 'name'
+    ? naturalValueCompare(left?.name, right?.name)
+    : naturalValueCompare(left?.studentId, right?.studentId);
+  if (primary !== 0) return primary * direction;
+  return naturalValueCompare(left?.studentId, right?.studentId) || naturalValueCompare(left?.email, right?.email);
 }
 
 export function buildCandidateSetAssignments({ users = [], inputRows = [], settings = {} } = {}) {
@@ -1558,7 +1570,7 @@ export function buildCandidateSetAssignments({ users = [], inputRows = [], setti
     if (row._id) rowById.set(`id:${String(row._id)}`, row);
     if (row.studentid) rowById.set(`student:${String(row.studentid).toLowerCase()}`, row);
   });
-  const ordered = [...users].sort(naturalStudentIdCompare);
+  const ordered = [...users].sort((left, right) => compareCandidatesForSetAllocation(left, right, settings));
   return ordered.map((student, index) => {
     const row = rowById.get(`id:${String(student._id)}`)
       || rowById.get(`student:${String(student.studentId || '').toLowerCase()}`)
@@ -1575,6 +1587,21 @@ export function buildCandidateSetAssignments({ users = [], inputRows = [], setti
       frozenAt: new Date(),
     };
   }).filter(Boolean);
+}
+
+export function appendCandidateSetAssignments({ existingAssignments = [], newUsers = [], settings = {} } = {}) {
+  if (!settings.questionSetEnabled) return [];
+  const setCount = Math.min(8, Math.max(2, Number(settings.questionSetCount) || 2));
+  const startingSet = Math.min(setCount, Math.max(1, Number(settings.setStartingNumber) || 1));
+  const orderedNewUsers = [...newUsers].sort((left, right) => compareCandidatesForSetAllocation(left, right, settings));
+  const appended = orderedNewUsers.map((student, index) => ({
+    student: student._id,
+    studentIdSnapshot: student.studentId || '',
+    setNumber: ((startingSet - 1 + existingAssignments.length + index) % setCount) + 1,
+    source: 'automatic',
+    frozenAt: new Date(),
+  }));
+  return [...existingAssignments, ...appended];
 }
 
 function computeAssessmentType(sections = []) {
@@ -2896,13 +2923,20 @@ export async function listAssessmentEligibleStudents(req, res) {
       studentId: { $in: studentIds },
     }).select('_id studentId status startedAt submittedAt score maxMarks accuracy tabSwitches fullscreenExits copyPasteCount cameraFlags violationScore pauseCount updatedAt createdAt').lean();
     const submissionsByStudent = new Map(submissions.map((submission) => [String(submission.studentId), submission]));
+    const assignmentsByStudent = new Map((assessment.candidateSetAssignments || []).map((assignment) => [
+      String(assignment.student),
+      assignment,
+    ]));
 
     const rows = students.map((student) => {
       const submission = submissionsByStudent.get(String(student._id)) || null;
+      const assignment = assignmentsByStudent.get(String(student._id));
       return {
         ...student,
         submission,
         hasSubmission: Boolean(submission),
+        assessmentSet: assignment?.setNumber || null,
+        assessmentSetSource: assignment?.source || '',
       };
     });
 
@@ -2921,6 +2955,8 @@ export async function listAssessmentEligibleStudents(req, res) {
         title: assessment.title,
         targetType: assessment.targetType,
         lifecycleStatus: assessment.lifecycleStatus,
+        questionSetEnabled: Boolean(assessment.settings?.questionSetEnabled),
+        questionSetCount: Number(assessment.settings?.questionSetCount) || 1,
       },
       students: rows,
       summary,
@@ -2999,6 +3035,14 @@ export async function addAssessmentEligibleStudents(req, res) {
 
     assessment.targetType = 'selected';
     assessment.assignedStudents = [...currentIdSet, ...addIds].map((studentId) => new mongoose.Types.ObjectId(studentId));
+    if (assessment.settings?.questionSetEnabled) {
+      const newUsers = students.filter((student) => addIds.includes(String(student._id)));
+      assessment.candidateSetAssignments = appendCandidateSetAssignments({
+        existingAssignments: Array.from(assessment.candidateSetAssignments || []),
+        newUsers,
+        settings: assessment.settings,
+      });
+    }
     assessment.version = (assessment.version || 1) + 1;
     assessment.versionUpdatedAt = new Date();
     await assessment.save();
@@ -3097,6 +3141,8 @@ export async function removeAssessmentEligibleStudent(req, res) {
     assessment.assignedStudents = currentIds
       .filter((idValue) => idValue !== String(student._id))
       .map((idValue) => new mongoose.Types.ObjectId(idValue));
+    assessment.candidateSetAssignments = (assessment.candidateSetAssignments || [])
+      .filter((assignment) => String(assignment.student) !== String(student._id));
     assessment.version = (assessment.version || 1) + 1;
     assessment.versionUpdatedAt = new Date();
     await assessment.save();
@@ -3128,6 +3174,57 @@ export async function removeAssessmentEligibleStudent(req, res) {
   } catch (err) {
     console.error('Error removing assessment eligible student:', err);
     return res.status(500).json({ error: 'Failed to remove student from assessment.' });
+  }
+}
+
+export async function updateAssessmentStudentSet(req, res) {
+  try {
+    const { id, studentId } = req.params;
+    const setNumber = Number(req.body?.setNumber);
+    const assessment = await Assessment.findById(id);
+    if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
+    if (!canManageAssessmentForRequest(assessment, req.user)) {
+      return res.status(403).json({ error: 'Not allowed to change set allocation for this assessment.' });
+    }
+    if (!assessment.settings?.questionSetEnabled) {
+      return res.status(400).json({ error: 'Question sets are not enabled for this assessment.' });
+    }
+    const setCount = Math.min(8, Math.max(2, Number(assessment.settings.questionSetCount) || 2));
+    if (!Number.isInteger(setNumber) || setNumber < 1 || setNumber > setCount) {
+      return res.status(400).json({ error: `Set must be between 1 and ${setCount}.` });
+    }
+    if (!(assessment.assignedStudents || []).some((entry) => String(entry) === String(studentId))) {
+      return res.status(400).json({ error: 'Student is not assigned to this assessment.' });
+    }
+    const activeSubmission = await AssessmentSubmission.exists({
+      assessmentId: assessment._id,
+      studentId,
+      status: { $in: ['in_progress', 'submitted'] },
+    });
+    if (activeSubmission) {
+      return res.status(409).json({ error: 'Set cannot be changed after the student has started the assessment.' });
+    }
+    const student = await User.findById(studentId).select('_id studentId').lean();
+    if (!student) return res.status(404).json({ error: 'Student not found.' });
+    const existingIndex = (assessment.candidateSetAssignments || [])
+      .findIndex((assignment) => String(assignment.student) === String(studentId));
+    const assignment = {
+      student: student._id,
+      studentIdSnapshot: student.studentId || '',
+      setNumber,
+      source: 'manual',
+      frozenAt: new Date(),
+    };
+    if (existingIndex >= 0) assessment.candidateSetAssignments[existingIndex] = assignment;
+    else assessment.candidateSetAssignments.push(assignment);
+    assessment.markModified('candidateSetAssignments');
+    assessment.version = (assessment.version || 1) + 1;
+    assessment.versionUpdatedAt = new Date();
+    await assessment.save();
+    return res.json({ ok: true, studentId: String(student._id), setNumber, source: 'manual' });
+  } catch (err) {
+    console.error('Error updating assessment student set:', err);
+    return res.status(500).json({ error: 'Failed to update student set allocation.' });
   }
 }
 

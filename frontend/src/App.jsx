@@ -12,6 +12,7 @@ import { useAuth } from './context/AuthContext';
 import { hasPermission } from './admin/coordinatorPermissions';
 import PopupDismissManager from './components/PopupDismissManager';
 import GlobalSidebar from './components/GlobalSidebar';
+import { getSidebarWidth } from './components/sidebarLayout';
 
 // Lazy-load navbars to keep them out of the main bundle
 const CoordinatorLayout = lazy(() => import('./coordinator/CoordinatorLayout'));
@@ -53,11 +54,13 @@ const AdminLearningDetail = lazy(() => import("./admin/AdminLearningDetail"));
 const StudentOnboarding = lazy(() => import("./admin/StudentOnboarding"));
 const StudentDirectory = lazy(() => import("./admin/StudentDirectory"));
 const StudentBulkLists = lazy(() => import("./admin/StudentBulkLists"));
+const BulkUploads = lazy(() => import("./admin/BulkUploads"));
 const AdminStudentProfile = lazy(() => import("./admin/AdminStudentProfile"));
 const EventManagement = lazy(() => import("./admin/EventManagement"));
 const EventDetail = lazy(() => import("./admin/EventDetail"));
 const FeedbackReview = lazy(() => import("./admin/FeedbackReview"));
 const AIInterviewsPlaceholder = lazy(() => import("./components/interviews/AIInterviewsPlaceholder"));
+const AIInterviewWorkspace = lazy(() => import('./admin/ai-interviews/AIInterviewWorkspace'));
 const CoordinatorOnboarding = lazy(() => import("./admin/CoordinatorOnboarding"));
 const CoordinatorDirectory = lazy(() => import("./admin/CoordinatorDirectory"));
 const AdminChangePassword = lazy(() => import("./admin/AdminChangePassword"));
@@ -292,8 +295,8 @@ function AppContent() {
   const isLoginPage = isMain || isStudentLogin || isResetPassword;
   return (
     <div
-      className="min-h-screen w-full flex flex-col"
-      style={isStudentShell ? { '--admin-sidebar-width': isStudentSidebarExpanded ? '13.6rem' : '4rem', '--app-navbar-height': '0rem' } : undefined}
+      className={`${isStudentShell ? 'h-screen overflow-hidden' : 'min-h-screen'} w-full flex flex-col`}
+      style={isStudentShell ? { '--admin-sidebar-width': getSidebarWidth(isStudentSidebarExpanded), '--app-navbar-height': '0rem' } : undefined}
     >
       <RoutePrefetcher />
       <ScrollToTop />
@@ -313,7 +316,7 @@ function AppContent() {
       {/* Main content: Each route section gets a role-appropriate skeleton.
           This is the "streaming rendering" pattern - the page structure appears 
           immediately as skeleton shapes, then real content swaps in when loaded */}
-      <main tabIndex="-1" className={gradientBg + " dark:bg-gray-900 flex-grow outline-none transition-[padding] duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)]"} style={isStudentShell ? { paddingLeft: 'var(--admin-sidebar-width)' } : undefined}>
+      <main data-app-scroll-container={isStudentShell ? true : undefined} tabIndex="-1" className={gradientBg + ` dark:bg-gray-900 flex-grow outline-none transition-[padding] duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${isStudentShell ? 'h-screen min-h-0 overflow-y-auto overscroll-contain' : ''}`} style={isStudentShell ? { paddingLeft: 'var(--admin-sidebar-width)' } : undefined}>
         <Suspense fallback={
           isMain ? <LandingPageSkeleton /> :
           isAdmin ? <DashboardSkeleton /> :
@@ -385,7 +388,7 @@ function AppContent() {
         <Route path="/admin/interviews/past" element={<AdminShell><EventDetail /></AdminShell>} />
         <Route path="/admin/interviews/past/:id" element={<AdminShell><EventDetail /></AdminShell>} />
         <Route path="/admin/feedback" element={<AdminShell><FeedbackReview /></AdminShell>} />
-        <Route path="/admin/ai-interviews" element={<AdminShell><AIInterviewsPlaceholder /></AdminShell>} />
+        <Route path="/admin/ai-interviews/*" element={<AdminShell><AIInterviewWorkspace /></AdminShell>} />
         <Route path="/admin/change-password" element={<AdminShell><AdminChangePassword /></AdminShell>} />
         <Route path="/admin/learning" element={<AdminShell><AdminLearning /></AdminShell>} />
         <Route path="/admin/learning/:semester/:subject/:teacherId" element={<AdminShell><AdminLearningDetail /></AdminShell>} />
@@ -419,6 +422,7 @@ function AppContent() {
         <Route path="/admin/settings/email-templates" element={<AdminShell><AdminEmailTemplates /></AdminShell>} />
         <Route path="/admin/settings/master-data" element={<AdminShell><MasterData /></AdminShell>} />
         <Route path="/admin/settings/master-data/:category" element={<AdminShell><MasterData /></AdminShell>} />
+        <Route path="/admin/settings/bulk-uploads" element={<AdminShell><BulkUploads /></AdminShell>} />
         <Route path="/admin/email-queue" element={<AdminShell><AdminEmailQueue /></AdminShell>} />
         <Route path="/admin/settings/promote-students" element={<AdminShell><StudentPromotion /></AdminShell>} />
         <Route path="/admin/announcements/add" element={<AdminShell><AnnouncementCreate /></AdminShell>} />

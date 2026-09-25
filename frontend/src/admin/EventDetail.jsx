@@ -3,7 +3,7 @@ import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../utils/api';
 import InterviewWorkspaceNav from '../components/interviews/InterviewWorkspaceNav';
-import InterviewBrowser from '../components/interviews/InterviewBrowser';
+import InterviewDirectory from '../components/interviews/InterviewDirectory';
 import { InterviewStat as StatCard, InterviewPair as PairCard } from '../components/interviews/InterviewSummary';
 import {
   CheckCircle,
@@ -64,9 +64,9 @@ export default function EventDetail() {
       setLoading(true);
       setMsg('');
       setEventsError(false);
-      const [allEvents] = await Promise.all([api.listEvents()]);
+      const allEvents = await api.listEvents({ view: 'dashboard', page: 1, limit: 50 });
       if (version !== requestVersion.current) return;
-      setEvents(allEvents);
+      setEvents(allEvents.events || []);
       eventsLoaded = true;
 
       let targetEventId = eventId;
@@ -228,14 +228,14 @@ export default function EventDetail() {
 
   if (loading) {
     return (
-      <InterviewWorkspaceNav events={events} loading>
+      <InterviewWorkspaceNav limited events={events} loading>
         <div role="status" className="mx-auto max-w-[1600px] px-6 py-16 text-center text-sm text-slate-500 dark:text-gray-400">Loading interviews…</div>
       </InterviewWorkspaceNav>
     );
   }
 
   return (
-    <InterviewWorkspaceNav events={events} error={eventsError}>
+    <InterviewWorkspaceNav limited events={events} error={eventsError}>
       {eventCreatedMsg && (
         <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-6 py-2 rounded-lg shadow-lg z-50 text-base font-semibold">
           {eventCreatedMsg}
@@ -248,7 +248,7 @@ export default function EventDetail() {
               {!id && msg && !isSuccessMsg ? (
                 <div role="alert" className="flex justify-center py-8"><button type="button" onClick={() => load()} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-sky-600 dark:border-gray-700 dark:text-sky-400">Retry loading interviews</button></div>
               ) : !id ? (
-                <InterviewBrowser events={events} search={searchQuery} onSearchChange={setSearchQuery} view={eventTab} onViewChange={(view) => {
+                <InterviewDirectory onChanged={() => { api.listEvents({ view: 'dashboard', page: 1, limit: 50 }).then((data) => setEvents(data.events || [])).catch(() => setEventsError(true)); }} search={searchQuery} onSearchChange={setSearchQuery} view={eventTab} onViewChange={(view) => {
                   setEventTab(view);
                   const root = '/admin/interviews/one-to-one';
                   navigate(view === 'upcoming' ? root + '/scheduled' : view === 'previous' ? root + '/past' : view === 'active' ? root + '?status=active' : root);

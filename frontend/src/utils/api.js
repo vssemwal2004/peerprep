@@ -343,6 +343,7 @@ async function request(
 }
 
 export const api = {
+  aiInterviewRequest: (path = '', options = {}) => request(`/ai-interviews${path}`, { ...options, skipCache: true, skipDedupe: true }),
   updateEventJoinDisable: (eventId, joinDisabled, joinDisableTime) =>
     request(`/events/${eventId}/join-disable`, {
       method: "PATCH",
@@ -627,6 +628,39 @@ export const api = {
     return { count: Number(res.headers.get("X-Exported-Count")) || 0 };
   },
 
+  listBulkUploads: (options = {}) => {
+    const params = new URLSearchParams();
+    Object.entries(options).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") params.set(key, String(value));
+    });
+    return request(`/bulk-uploads${params.toString() ? `?${params.toString()}` : ""}`, { skipCache: true });
+  },
+  getBulkUploadDeletePreview: (batchId) =>
+    request(`/bulk-uploads/${batchId}/delete-preview`, { skipCache: true }),
+  renameBulkUpload: (batchId, name) =>
+    request(`/bulk-uploads/${batchId}`, { method: "PATCH", body: { name } }),
+  updateBulkUploadStatus: (batchId, status) =>
+    request(`/bulk-uploads/${batchId}/status`, { method: "PATCH", body: { status } }),
+  deleteBulkUpload: (batchId, confirmation) =>
+    request(`/bulk-uploads/${batchId}`, { method: "DELETE", body: { confirmation } }),
+  downloadBulkUpload: async (batchId, kind = "data") => {
+    const res = await fetch(`${API_BASE}/bulk-uploads/${batchId}/download?kind=${encodeURIComponent(kind)}`, { credentials: "include" });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      throw new Error(payload.error || "Download failed");
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const disposition = res.headers.get("Content-Disposition") || "";
+    a.download = disposition.match(/filename="?([^";]+)"?/i)?.[1] || "bulk-upload.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
+
   // Coordinators
   listAllCoordinators: (search = "") => {
     const options = search && typeof search === "object" ? search : { search };
@@ -639,10 +673,10 @@ export const api = {
   },
   createCoordinator: (body) =>
     request("/coordinators/create", { method: "POST", body }),
-  bulkCreateCoordinators: (coordinators) =>
+  bulkCreateCoordinators: (coordinators, metadata = {}) =>
     request("/coordinators/bulk-create", {
       method: "POST",
-      body: { coordinators },
+      body: { coordinators, ...metadata },
     }),
   updateCoordinator: (coordinatorId, body) =>
     request(`/coordinators/${coordinatorId}`, { method: "PUT", body }),
@@ -669,6 +703,9 @@ export const api = {
     if (options.page) params.set("page", options.page);
     if (options.limit) params.set("limit", options.limit);
     if (options.view) params.set("view", options.view);
+    for (const key of ['search', 'period', 'type', 'sort', 'lifecycle']) {
+      if (options[key]) params.set(key, options[key]);
+    }
     const query = params.toString();
     return request(`/events${query ? `?${query}` : ""}`);
   },
@@ -821,6 +858,11 @@ export const api = {
     request(`/admin/assessment/${id}/students/${studentId}`, {
       method: "DELETE",
     }),
+  updateAssessmentStudentSet: (id, studentId, setNumber) =>
+    request(`/admin/assessment/${id}/students/${studentId}/set`, {
+      method: "PATCH",
+      body: { setNumber },
+    }),
   sendAssessmentInvitations: (id) =>
     request(`/admin/assessment/${id}/send-invitations`, {
       method: "POST",
@@ -923,10 +965,10 @@ export const api = {
   },
   createLibraryQuestion: (question) =>
     request("/admin/library/questions", { method: "POST", body: { question } }),
-  createLibraryQuestionsBulk: (questions) =>
+  createLibraryQuestionsBulk: (questions, uploadMetadata) =>
     request("/admin/library/questions/bulk", {
       method: "POST",
-      body: { questions },
+      body: { questions, uploadMetadata },
     }),
   uploadLibraryQuestionAsset: (file) => {
     const fd = new FormData();

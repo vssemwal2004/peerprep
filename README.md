@@ -19,6 +19,9 @@ The repository contains:
 - [What PeerPrep does](#what-peerprep-does)
 - [Roles and permissions](#roles-and-permissions)
 - [Main capabilities](#main-capabilities)
+- [Using PeerPrep: admin and coordinator](#using-peerprep-admin-and-coordinator)
+- [Using PeerPrep: student](#using-peerprep-student)
+- [Assessment walkthrough](#assessment-walkthrough)
 - [Repository layout](#repository-layout)
 - [Architecture](#architecture)
 - [Prerequisites](#prerequisites)
@@ -49,6 +52,8 @@ Students get a single preparation workspace. Coordinators receive scoped operati
 ### Student
 
 Students can sign in with an email or student ID, change a temporary password on first login, browse semester/subject/chapter/topic learning content, track watch time and completion, solve coding problems, take assigned assessments, participate in mock interviews, submit feedback, and view activity, coding, assessment, and readiness analytics.
+
+New students created directly while assigning an assessment receive **assessment-only** access. They can open their assigned assessments, assessment reports and history, and change their password. They do not receive the full learning, interview, coding-practice, or resume workspace. Selecting an existing student keeps that student's current account access.
 
 ### Coordinator
 
@@ -95,6 +100,10 @@ The execution service applies CPU, wall-time, memory, and request limits. Verdic
 ### Assessments
 
 Assessments support MCQ, short-answer, one-line, coding, and mixed assessments; sections with per-question marks and negative marking; draft/published lifecycle; all-student or selected-student assignment; start/end windows, duration, attempt limits, late-submission policy, optional password, question-library reuse, coding-problem snapshots, invitations, autosave, heartbeat, timed submission, expiry, objective scoring, queued coding evaluation, reports, violation review, exports, result release, completion marking, and submission reset.
+
+The assessment builder has six phases: **Basics, Question set, Schedule, Candidates, Settings, Review**. Candidate entry starts with three choices: add one new student, upload a new CSV, or select an existing student. A CSV is reviewed before any student is added; new, existing, and invalid rows are counted and rows can be corrected and checked again. Newly selected assessment-only students can be edited or removed before saving or publishing.
+
+From the assessment list, completed assessments open their reports. Draft, scheduled, and ongoing assessments open the builder layout in read-only mode. **Edit Assessment** opens writable fields. Saving changes to an already published assessment preserves its published status.
 
 Assessment coding jobs run through the assessment queue and worker rather than blocking the request that saves the student attempt.
 
@@ -144,6 +153,98 @@ Students can create a placement-ready resume through a guided builder at `/stude
 - PDF downloads use a dedicated document renderer with selectable text, clickable links, A4 pages, and a classic professional layout.
 - PDF generation reports save, renderer-loading, typesetting, and completion states so students receive clear feedback during large downloads.
 - Admins and coordinators with student-profile permission can open a read-only resume view from the student profile; coordinators remain limited to assigned students.
+
+## Using PeerPrep: admin and coordinator
+
+Use the sign-in options on the landing page (`/`) for an administrator or coordinator account. Coordinators see only features granted in **Coordinator Access**; an administrator can assign or revoke those permissions. The paths below use `/admin`; authorized coordinator pages use the corresponding `/coordinator` path when available.
+
+| Area | What you can do |
+|---|---|
+| Overview and activity | Review institution activity, operational summaries, and recent actions. |
+| Students | Add one student or upload a CSV, validate records, inspect student profiles, manage saved upload batches, send or retry credentials, and promote students where authorized. |
+| Coordinators | Create coordinators, review their records, assign feature permissions and data scope, and manage access. |
+| Learning | Organize semesters, subjects, chapters, topics, and learning content; review student progress. |
+| Question library | Create and maintain reusable MCQ and other assessment questions; use library questions in assessments. |
+| Coding problems | Create problems, set languages, starter code and test cases, preview solutions, publish problems, and inspect submissions and analytics. |
+| Assessments | Create, preview, publish, view, edit, assign students, review candidate attempts and security events, download reports, and manage completion or result release. |
+| Interviews | Create events, choose participants, manage pairing and scheduling, add meeting details, and review feedback. |
+| Communication | Manage announcements, email templates, mail queue status, invitations, and notifications. |
+| Reporting and settings | Review assessment and company insights, manage master data, and export supported reports. |
+
+### Add students to an assessment
+
+1. Open **Assessments → Create Assessment** or **Edit Assessment**, then go to **Candidates**.
+2. Choose one of the three entry methods:
+
+   | Choice | Use it for | What happens |
+   |---|---|---|
+   | **Add individual student** | One person who is not registered | Enter name, student ID, and email. **Add student** checks for an existing account and shows an error or existing-student message before adding. |
+   | **Add bulk students** | Many new people | Download the CSV template, upload a CSV with `Name`, `Email ID`, and `Student ID`, inspect the new/existing/error counts, edit rows, then recheck and add. Uploading the file alone does not add students. |
+   | **Add existing students** | Students already registered on PeerPrep | Search, filter by semester and other available fields, or browse a saved Excel upload list; then select students. |
+
+3. Review the selected students. Newly added assessment-only students can be edited or removed before the assessment is saved or published.
+4. Publish when the assessment is ready. New assessment-only accounts are created with generated credentials. Their invitation email includes the login information and assessment details; mail delivery requires a working email configuration. Existing students keep their normal account and receive the assessment information according to the invitation settings.
+
+If a CSV row is invalid or duplicates another record, fix the displayed row and choose **Recheck rows**. The final add action stays unavailable while errors remain.
+
+### View, edit, and report on assessments
+
+- Click a **completed** assessment in the list to open its report. The report header has **Back to Assessments**.
+- Click a **draft, scheduled, or ongoing** assessment to inspect its six phases without changing fields. Use the phase navigation to move through the saved configuration.
+- Choose **Edit Assessment** to change fields. New assessments use **Save Draft** until publication; published assessments use **Save Changes** and remain published.
+- Use **Preview** to see the student question interface. Reports include overview metrics, candidates, analysis, violations, filters, and Excel export.
+- For a published assessment, open its **⋮ → Send Mail to Eligible Students** dialog to preview the rendered invitation, customize its subject and HTML for that assessment, and send a test to any email address. Save changes before queueing student invitations. **Use global default** restores the template configured in admin email settings. Test emails use sample credentials; student invitations use each student's actual details. Queued emails keep the rendered version from the time they were queued.
+
+### Other common admin tasks
+
+| Task | Where to start |
+|---|---|
+| Onboard regular platform students | **Students**; use individual entry or the onboarding CSV workflow. This is separate from adding an assessment-only student. |
+| Manage reusable questions and coding problems | **Library**; validate a coding problem before using it in a published assessment. |
+| Create an interview | **Events / Interviews**; select participants, arrange pairs and slots, then review feedback. |
+| Change coordinator access | **Coordinator Access**; grant only the permissions and data scope required. |
+| Review delivery problems | **Email Queue** and relevant student or assessment records. |
+
+## Using PeerPrep: student
+
+Sign in at `/student` with the credentials provided by the institution. A student with a temporary password may be asked to change it before continuing.
+
+| Area | What a full-access student can do |
+|---|---|
+| Dashboard and profile | See assigned work and personal progress, maintain profile details, and review notifications. |
+| Learning | Browse available semester subjects and topics, watch learning material, and track completion and watch time. |
+| Coding practice | Open problems, choose a supported language, run or submit code, and review verdicts and past submissions. |
+| Assessments | See assigned upcoming, live, and completed assessments; complete required security setup; read instructions; answer and submit; review available reports and history. |
+| Interviews | See assigned interview events, respond to scheduling proposals, join confirmed sessions, and submit feedback. |
+| Analytics | Review assessment, coding, activity, and readiness information available to the account. |
+| Resume | Build a resume, preview the A4 document, save it, and download a PDF. |
+| Help | Open available support and guidance pages. |
+
+An **assessment-only student** lands on **Available Tests** after login. The sidebar contains assessment pages only: Available Tests, Reports, and History. The student can also change their password. Other student pages are blocked by frontend route checks and backend access controls. This is the access given to a new person added directly through an assessment; the assessment's camera setting does not change account access.
+
+### Take an assessment
+
+1. Open **Available Tests** and choose an assigned assessment when it becomes available.
+2. Complete the security checks required by that assessment. Depending on admin settings, these can include browser environment, camera, location, and fullscreen checks. Each phase has **Back**, a centered check action, and **Continue** after successful verification.
+3. Run the final check. Successful verification opens the instructions automatically; a paused attempt resumes after its recheck.
+4. Read the instructions and start the timed attempt. Answer the available question types, use the question navigation, and submit when finished. Work is saved during the attempt; server timing and submission rules still apply.
+5. Return to **Reports** or **History** for results when they are available. Some answers or results may depend on an administrator releasing them.
+
+For a **no-camera assessment**, the admin disables camera monitoring in assessment settings. The student setup then omits the camera step; other enabled checks still apply. A browser cannot inspect every external application or extension, so students should also follow the written exam rules.
+
+## Assessment walkthrough
+
+```text
+Admin creates a draft
+  → adds questions, schedule, students, and settings
+  → reviews and publishes
+  → new assessment-only students receive credentials by email
+  → student signs in and completes required checks
+  → student takes and submits the assessment
+  → admin opens the completed report and reviews results
+```
+
+**Draft** means the assessment is still being prepared. **Scheduled** means a published assessment has not started. **Ongoing** means its time window is active. **Completed** means the time window ended or an admin marked it complete. A published assessment can be edited and saved without returning it to draft.
 
 ## Repository layout
 
@@ -291,7 +392,7 @@ The server uses `backend/.env`; Vite-prefixed variables configure the browser. T
 
 | Variable | Purpose |
 |---|---|
-| `VALKEY_URL` / `REDIS_URL` | Queue connection URL. |
+| `VALKEY_URL` / `REDIS_URL` | Shared Valkey/Redis connection for execution queues, distributed limits, and response caching. |
 | `VALKEY_HOST`, `VALKEY_PORT`, `VALKEY_PASSWORD` | Alternative queue settings. |
 | `START_EXECUTION_WORKERS` | Set `false` when workers run as separate processes. |
 | `COMPILER_WORKER_CONCURRENCY` | Compiler worker concurrency; source default `5`. |
@@ -303,6 +404,13 @@ The server uses `backend/.env`; Vite-prefixed variables configure the browser. T
 | `JUDGE0_MAX_WALL_TIME_LIMIT_SECONDS` | Maximum wall-clock time. |
 | `JUDGE0_MAX_MEMORY_LIMIT_KB` | Maximum memory. |
 | `COMPILER_RUN_*`, `COMPILER_SUBMIT_*` | Run/submit windows, maximums, and cooldowns. |
+| `RESPONSE_CACHE_ENABLED` | Enables authenticated server-side response caching; defaults to `true`. |
+| `RESPONSE_CACHE_ASSESSMENTS_TTL_SECONDS`, `RESPONSE_CACHE_EVENTS_TTL_SECONDS`, `RESPONSE_CACHE_STUDENTS_TTL_SECONDS`, `RESPONSE_CACHE_COORDINATORS_TTL_SECONDS` | Short cache lifetimes for high-traffic authenticated reads; each defaults to `30`. |
+| `RESPONSE_CACHE_ACTIVITY_TTL_SECONDS` | Short activity-list/statistics cache lifetime; defaults to `15`. |
+| `RESPONSE_CACHE_COMPILER_TTL_SECONDS` | Compiler overview and analytics cache lifetime; defaults to `30`. |
+| `RESPONSE_CACHE_ASSESSMENT_REPORTS_TTL_SECONDS` | Assessment report cache lifetime; defaults to `15`. |
+| `RESPONSE_CACHE_MEMORY_MAX_ENTRIES`, `RESPONSE_CACHE_MAX_VALUE_BYTES` | Bounds the development fallback cache and maximum cached JSON payload; defaults to `500` entries and `2097152` bytes. |
+| `SLOW_REQUEST_THRESHOLD_MS` | Logs completed API requests slower than this duration and exposes `Server-Timing`; defaults to `750`. |
 
 ### Email
 
@@ -377,6 +485,13 @@ npm run worker:compiler
 npm run worker:assessment
 ```
 
+Production disables automatic Mongoose index creation. After deploying the performance-index definitions, run the controlled migration once against the target database:
+
+```powershell
+cd backend
+npm run migrate:performance-indexes
+```
+
 The mail queue worker is started by `server.js` in the current implementation. If separated for deployment, preserve a locking strategy so jobs are not duplicated.
 
 ## Important workflows
@@ -384,10 +499,10 @@ The mail queue worker is started by `server.js` in the current implementation. I
 ### Bulk onboarding
 
 ```text
-Admin selects CSV
- -> server validates fields and duplicates
+Admin selects onboarding CSV
+ -> fields and duplicates are validated
  -> upload batch is recorded
- -> users are created
+ -> regular platform student accounts are created
  -> credential mail jobs are queued
  -> worker sends/retries messages
  -> UI exposes per-target and batch status
@@ -396,8 +511,8 @@ Admin selects CSV
 ### Assessment lifecycle
 
 ```text
-Draft -> configure sections/questions/settings -> publish
- -> assign students -> send invitations -> student setup
+Draft -> configure sections/questions/schedule/students/settings -> publish
+ -> create new assessment-only accounts when needed -> send invitations -> student setup
  -> timed attempt + autosave + heartbeat/monitoring
  -> submit/expire -> objective score + coding worker
  -> report -> optional result release
@@ -416,9 +531,9 @@ Create event -> select participants -> pair students
 
 Public routes include `/`, `/student`, `/reset-password`, `/privacy`, `/terms`, and `/contact`.
 
-Student routes include `/student/dashboard`, `/student/learning`, `/student/interview`, `/student/session`, `/student/assessments`, `/student/assessment/:id`, `/student/assessment-reports`, `/student/assessment-history`, `/student/analytics`, `/problems`, and `/problems/:id`.
+Full-access student routes include `/student/dashboard`, `/student/learning`, `/student/interview`, `/student/session`, `/student/resume`, `/student/assessments`, `/student/assessment/:id`, `/student/assessment-reports`, `/student/assessment-history`, `/student/analytics`, `/problems`, and `/problems/:id`. Assessment-only accounts can use the assessment routes and password change, but not the other student features.
 
-Admin routes include `/admin`, `/admin/students`, `/admin/coordinators`, `/admin/event`, `/admin/feedback`, `/admin/learning`, `/admin/assessment`, `/admin/assessment/create`, `/admin/assessment/reports`, `/admin/library`, `/admin/compiler`, `/admin/company-insights`, `/admin/activity`, `/admin/settings/email-templates`, `/admin/settings/promote-students`, and announcement management routes.
+Admin routes include `/admin`, `/admin/students`, `/admin/coordinators`, `/admin/event`, `/admin/feedback`, `/admin/learning`, `/admin/assessment`, `/admin/assessment/create`, `/admin/assessment/:id` (read-only), `/admin/assessment/:id/edit`, `/admin/assessment/reports`, `/admin/library`, `/admin/compiler`, `/admin/company-insights`, `/admin/activity`, `/admin/settings/email-templates`, `/admin/settings/promote-students`, and announcement management routes.
 
 Coordinator routes mirror the relevant operational areas under `/coordinator`, but each feature is additionally checked against the coordinator permission assigned by an admin.
 

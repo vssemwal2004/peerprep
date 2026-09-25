@@ -7,7 +7,7 @@ import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import { useAuth } from '../context/AuthContext';
 import { hasPermission } from './coordinatorPermissions';
-import { ArrowLeft, ClipboardList, Save, Send, Plus, Eye, EyeOff, Hash, Lock, Shield, Globe, Copy, Camera, Volume2, Monitor, Shuffle, Droplet, Navigation, Layers, Timer, RotateCcw, CheckSquare, Clock, BookOpen, FilePlus2, Check, X, Users, Upload } from 'lucide-react';
+import { ArrowLeft, ClipboardList, Save, Send, Plus, Eye, EyeOff, Hash, Lock, Shield, Globe, Copy, Camera, Volume2, Monitor, Shuffle, Droplet, Navigation, Layers, Timer, RotateCcw, CheckSquare, Clock, BookOpen, FilePlus2, Check, X, Users, Upload, Search } from 'lucide-react';
 import { SectionCard } from './compiler/CompilerUi';
 import RichTextEditor from './compiler/RichTextEditor';
 import { createDefaultProblemForm, createProblemFormFromProblem } from './compiler/compilerUtils';
@@ -86,7 +86,7 @@ const steps = [
   { id: 'settings', label: 'Settings', description: 'Configure access, proctoring, behavior and results.' },
   { id: 'preview', label: 'Review', description: 'Validate the complete assessment before publishing.' },
 ];
-const SETTINGS_GROUP_IDS = ['access', 'proctoring', 'behavior', 'results'];
+const SETTINGS_GROUP_IDS = ['access', 'allocation', 'proctoring', 'behavior', 'results'];
 
 const normalizeBuilderStep = (step) => {
   return steps.some((item) => item.id === step) ? step : 'basic';
@@ -142,7 +142,9 @@ const DEFAULT_ASSESSMENT_SETTINGS = {
   questionSetEnabled: false,
   questionSetCount: 1,
   automaticSetAssignment: true,
-  setAssignmentStrategy: 'roll_number',
+  setAssignmentStrategy: 'modulo',
+  setAllocationSortBy: 'student_id',
+  setAllocationSortDirection: 'asc',
   setStartingNumber: 1,
   candidateCredentialMode: 'secure_generated',
   cameraMonitoring: false,
@@ -405,6 +407,9 @@ export default function CreateAssessment({ viewOnly = false }) {
   const [activeSettingsGroup, setActiveSettingsGroup] = useState('access');
   const [visitedSettingsGroups, setVisitedSettingsGroups] = useState([]);
   const [activeDeliveryType, setActiveDeliveryType] = useState('mcq');
+  const [allocationSearch, setAllocationSearch] = useState('');
+  const [allocationSetFilter, setAllocationSetFilter] = useState('all');
+  const [selectedAllocationKeys, setSelectedAllocationKeys] = useState([]);
 
   const draftLoadedRef = useRef(false);
   const isSavingRef = useRef(false);
@@ -1412,9 +1417,16 @@ export default function CreateAssessment({ viewOnly = false }) {
   };
 
   const candidateAssignments = useMemo(() => {
-    const ordered = [...selectedStudents].sort((left, right) => String(left.studentId || left.studentid || '').localeCompare(
-      String(right.studentId || right.studentid || ''), undefined, { numeric: true, sensitivity: 'base' },
-    ));
+    const sortBy = form.settings?.setAllocationSortBy === 'name' ? 'name' : 'student_id';
+    const direction = form.settings?.setAllocationSortDirection === 'desc' ? -1 : 1;
+    const naturalCompare = (left, right) => String(left || '').localeCompare(String(right || ''), undefined, { numeric: true, sensitivity: 'base' });
+    const ordered = [...selectedStudents].sort((left, right) => {
+      const primary = sortBy === 'name'
+        ? naturalCompare(left.name, right.name)
+        : naturalCompare(left.studentId || left.studentid, right.studentId || right.studentid);
+      if (primary !== 0) return primary * direction;
+      return naturalCompare(left.studentId || left.studentid, right.studentId || right.studentid) || naturalCompare(left.email, right.email);
+    });
     const start = Math.min(configuredSetCount, Math.max(1, Number(form.settings?.setStartingNumber) || 1));
     return ordered.map((student, index) => {
       const requested = Number(student.assessmentSet);
@@ -1426,16 +1438,40 @@ export default function CreateAssessment({ viewOnly = false }) {
         assessmentSetSource: configuredSetCount === 1 ? 'automatic' : validOverride ? (student.assessmentSetSource || 'manual') : automaticEnabled ? 'automatic' : '',
       };
     });
-  }, [configuredSetCount, form.settings?.automaticSetAssignment, form.settings?.setStartingNumber, selectedStudents]);
+  }, [configuredSetCount, form.settings?.automaticSetAssignment, form.settings?.setAllocationSortBy, form.settings?.setAllocationSortDirection, form.settings?.setStartingNumber, selectedStudents]);
+
+  const candidateAllocationKey = (candidate) => String(candidate._id || candidate.studentId || candidate.studentid || candidate.email || '');
+  const visibleCandidateAssignments = useMemo(() => {
+    const query = allocationSearch.trim().toLowerCase();
+    return candidateAssignments.filter((candidate) => {
+      const matchesSearch = !query || [candidate.name, candidate.email, candidate.studentId, candidate.studentid]
+        .some((value) => String(value || '').toLowerCase().includes(query));
+      const matchesSet = allocationSetFilter === 'all'
+        || String(candidate.assessmentSet || 'unassigned') === allocationSetFilter;
+      return matchesSearch && matchesSet;
+    });
+  }, [allocationSearch, allocationSetFilter, candidateAssignments]);
 
   const overrideCandidateSet = (candidate, setNumber) => {
     const candidateKey = String(candidate._id || candidate.studentId || candidate.studentid || candidate.email || '');
     updateSelectedStudents(selectedStudents.map((student) => {
       const key = String(student._id || student.studentId || student.studentid || student.email || '');
       return key === candidateKey
-        ? { ...student, assessmentSet: Number(setNumber), assessmentSetSource: 'manual' }
+        ? setNumber
+          ? { ...student, assessmentSet: Number(setNumber), assessmentSetSource: 'manual' }
+          : { ...student, assessmentSet: '', assessmentSetSource: '' }
         : student;
     }));
+  };
+
+  const applySetToSelectedCandidates = (setNumber) => {
+    const selected = new Set(selectedAllocationKeys);
+    updateSelectedStudents(selectedStudents.map((student) => selected.has(candidateAllocationKey(student))
+      ? setNumber
+        ? { ...student, assessmentSet: Number(setNumber), assessmentSetSource: 'manual' }
+        : { ...student, assessmentSet: '', assessmentSetSource: '' }
+      : student));
+    setSelectedAllocationKeys([]);
   };
 
   const handleTestTypeChange = (value) => {
@@ -1842,6 +1878,7 @@ export default function CreateAssessment({ viewOnly = false }) {
       const rowProps = { settings: s, onSettingChange: upd };
       const settingsGroups = [
         { id: 'access', label: 'Access', description: 'Visibility and entry', Icon: Lock },
+        { id: 'allocation', label: 'Set allocation', description: 'Assign papers to students', Icon: Layers },
         { id: 'proctoring', label: 'Proctoring', description: 'Integrity controls', Icon: Shield },
         { id: 'behavior', label: 'Behavior', description: 'Navigation and timing', Icon: Navigation },
         { id: 'results', label: 'Results', description: 'Scores and retakes', Icon: CheckSquare },
@@ -1850,7 +1887,7 @@ export default function CreateAssessment({ viewOnly = false }) {
 
       return (
         <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm sm:grid-cols-4 dark:border-gray-800 dark:bg-gray-900" role="tablist" aria-label="Assessment setting categories">
+          <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm sm:grid-cols-5 dark:border-gray-800 dark:bg-gray-900" role="tablist" aria-label="Assessment setting categories">
             {settingsGroups.map(({ id: groupId, label, description, Icon }, groupIndex) => {
               const locked = groupIndex > maxSettingsGroupIndex;
               const visited = visitedSettingsGroups.includes(groupId);
@@ -1902,13 +1939,6 @@ export default function CreateAssessment({ viewOnly = false }) {
                   </div>
                 )}
               </div>
-              {s.questionSetEnabled && <Row {...rowProps} icon={<Layers className="h-4 w-4" />} title="Automatic set assignment" desc={`Distribute candidates evenly across ${s.questionSetCount} sets using Student ID / roll-number order.`} enabledOverride={s.automaticSetAssignment !== false} onToggle={(enabled) => upd('automaticSetAssignment', enabled)} badge="recommended">
-                <div className="space-y-3">
-                  <FieldRow label="Assignment order"><div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">Student ID / roll number</div></FieldRow>
-                  <FieldRow label="Start rotation from"><select value={Math.min(s.questionSetCount, s.setStartingNumber || 1)} onChange={(event) => upd('setStartingNumber', Number(event.target.value))} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">{Array.from({ length: s.questionSetCount }, (_, index) => <option key={index + 1} value={index + 1}>Set {index + 1}</option>)}</select></FieldRow>
-                  <p className="rounded-lg bg-sky-50 px-3 py-2 text-[11px] leading-5 text-sky-800 dark:bg-sky-950/30 dark:text-sky-200">Assignments are previewed in Candidates and frozen when published. Manual overrides are preserved.</p>
-                </div>
-              </Row>}
               <Row {...rowProps} icon={<Hash className="h-4 w-4" />} title="New candidate credentials" desc="Choose the initial password only for new assessment-only accounts created by this assessment.">
                 <div className="grid gap-2 sm:grid-cols-2">
                   {[{ id: 'secure_generated', title: 'Secure generated password', help: 'Recommended. A unique credential is generated.' }, { id: 'student_id', title: 'Student ID as password', help: 'Convenient for managed exam PCs, but easier to guess.' }].map((option) => <button key={option.id} type="button" onClick={() => upd('candidateCredentialMode', option.id)} className={`rounded-lg border px-3 py-2 text-left ${s.candidateCredentialMode === option.id ? 'border-sky-400 bg-sky-50 dark:bg-sky-950/30' : 'border-slate-200 dark:border-gray-700'}`}><span className="block text-xs font-bold text-slate-800 dark:text-white">{option.title}</span><span className="mt-1 block text-[10px] leading-4 text-slate-500">{option.help}</span></button>)}
@@ -1925,6 +1955,52 @@ export default function CreateAssessment({ viewOnly = false }) {
                 </FieldRow>
               </Row>
             </div>
+          </div>
+
+          {/* ── SET ALLOCATION ── */}
+          <div id="assessment-settings-allocation" className={activeSettingsGroup === 'allocation' ? 'block' : 'hidden'}>
+            <h3 className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-gray-500">
+              <Layers className="h-3.5 w-3.5" /> Student Set Allocation
+            </h3>
+            {!s.questionSetEnabled ? (
+              <div className="rounded-xl border border-dashed border-sky-300 bg-sky-50/70 p-6 text-center dark:border-sky-800 dark:bg-sky-950/20">
+                <Layers className="mx-auto h-7 w-7 text-sky-600" />
+                <p className="mt-2 text-sm font-bold text-slate-900 dark:text-white">Choose how many question sets you need</p>
+                <p className="mx-auto mt-1 max-w-xl text-xs leading-5 text-slate-500 dark:text-gray-400">Create multiple papers first. Students are then allocated using a predictable modulo formula, with manual overrides available below.</p>
+                <div className="mt-4 flex flex-wrap justify-center gap-2">
+                  {[2, 3, 4, 5, 6, 7, 8].map((count) => <button key={count} type="button" onClick={() => configureQuestionSetCount(count)} className="h-9 min-w-12 rounded-lg border border-sky-200 bg-white px-3 text-xs font-bold text-sky-700 hover:border-sky-400 hover:bg-sky-100 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300">{count} sets</button>)}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div><p className="text-sm font-bold text-slate-900 dark:text-white">Allocation formula</p><p className="mt-1 text-xs leading-5 text-slate-500 dark:text-gray-400">Sort students, then allocate them round-robin: <code className="rounded bg-slate-100 px-1.5 py-0.5 font-bold text-sky-700 dark:bg-gray-800 dark:text-sky-300">((position + start - 1) % {configuredSetCount}) + 1</code></p></div>
+                    <div className="flex items-center gap-2"><span className="text-xs font-semibold text-slate-600 dark:text-gray-300">Automatic allocation</span><Toggle value={s.automaticSetAssignment !== false} onChange={(enabled) => upd('automaticSetAssignment', enabled)} /></div>
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <label className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Number of sets<select value={configuredSetCount} onChange={(event) => configureQuestionSetCount(event.target.value)} className="mt-1 block h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold normal-case text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">{Array.from({ length: 7 }, (_, index) => index + 2).map((count) => <option key={count} value={count}>{count} sets</option>)}</select></label>
+                    <label className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Sort students by<select value={s.setAllocationSortBy || 'student_id'} onChange={(event) => upd('setAllocationSortBy', event.target.value)} className="mt-1 block h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold normal-case text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"><option value="student_id">Student ID / roll number</option><option value="name">Student name</option></select></label>
+                    <label className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Sort direction<select value={s.setAllocationSortDirection || 'asc'} onChange={(event) => upd('setAllocationSortDirection', event.target.value)} className="mt-1 block h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold normal-case text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"><option value="asc">Ascending (A → Z / 1 → 9)</option><option value="desc">Descending (Z → A / 9 → 1)</option></select></label>
+                    <label className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Start rotation from<select value={Math.min(configuredSetCount, s.setStartingNumber || 1)} onChange={(event) => upd('setStartingNumber', Number(event.target.value))} className="mt-1 block h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold normal-case text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">{Array.from({ length: configuredSetCount }, (_, index) => <option key={index + 1} value={index + 1}>Set {index + 1}</option>)}</select></label>
+                  </div>
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{Array.from({ length: configuredSetCount }, (_, index) => { const count = candidateAssignments.filter((candidate) => Number(candidate.assessmentSet) === index + 1).length; return <button key={index + 1} type="button" onClick={() => setAllocationSetFilter(String(index + 1))} className={`rounded-xl border px-3 py-3 text-left transition ${allocationSetFilter === String(index + 1) ? 'border-sky-400 bg-sky-50 ring-1 ring-sky-100 dark:bg-sky-950/30' : 'border-slate-200 bg-white hover:border-sky-300 dark:border-gray-700 dark:bg-gray-900'}`}><p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Set {index + 1}</p><p className="mt-1 text-xl font-bold text-slate-900 dark:text-white">{count}</p><p className="text-[10px] text-slate-500">student{count === 1 ? '' : 's'}</p></button>; })}</div>
+
+                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+                  <div className="flex flex-col gap-3 border-b border-slate-200 p-3 dark:border-gray-700 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="relative min-w-0 flex-1 lg:max-w-sm"><Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" /><input value={allocationSearch} onChange={(event) => setAllocationSearch(event.target.value)} placeholder="Search name, email or student ID" className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-xs outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-white" /></div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select aria-label="Filter allocation by set" value={allocationSetFilter} onChange={(event) => setAllocationSetFilter(event.target.value)} className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"><option value="all">All sets</option>{Array.from({ length: configuredSetCount }, (_, index) => <option key={index + 1} value={index + 1}>Set {index + 1}</option>)}<option value="unassigned">Unassigned</option></select>
+                      {selectedAllocationKeys.length > 0 && <><select defaultValue="" onChange={(event) => { if (event.target.value) applySetToSelectedCandidates(event.target.value); event.target.value = ''; }} className="h-9 rounded-lg border border-sky-200 bg-sky-50 px-3 text-xs font-bold text-sky-700 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300"><option value="" disabled>Assign {selectedAllocationKeys.length} selected…</option>{Array.from({ length: configuredSetCount }, (_, index) => <option key={index + 1} value={index + 1}>Set {index + 1}</option>)}</select><button type="button" onClick={() => applySetToSelectedCandidates('')} className="h-9 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-600 dark:border-gray-700 dark:text-gray-300">Reset to formula</button></>}
+                    </div>
+                  </div>
+                  {selectedStudents.length === 0 ? <div className="p-8 text-center text-sm text-slate-500">Add students in the Candidates step to preview and manage their set allocation.</div> : <div className="max-h-96 overflow-auto"><table className="w-full min-w-[760px] text-left text-xs"><thead className="sticky top-0 z-10 bg-slate-50 text-slate-500 dark:bg-gray-800 dark:text-gray-300"><tr><th className="w-12 px-3 py-2.5"><input type="checkbox" aria-label="Select all visible students" checked={visibleCandidateAssignments.length > 0 && visibleCandidateAssignments.every((candidate) => selectedAllocationKeys.includes(candidateAllocationKey(candidate)))} onChange={(event) => { const visibleKeys = visibleCandidateAssignments.map(candidateAllocationKey); setSelectedAllocationKeys((current) => event.target.checked ? Array.from(new Set([...current, ...visibleKeys])) : current.filter((key) => !visibleKeys.includes(key))); }} /></th><th className="px-3 py-2.5">Student ID</th><th className="px-3 py-2.5">Student</th><th className="px-3 py-2.5">Assigned set</th><th className="px-3 py-2.5">Source</th></tr></thead><tbody>{visibleCandidateAssignments.map((candidate) => { const key = candidateAllocationKey(candidate); return <tr key={key} className="border-t border-slate-100 hover:bg-slate-50 dark:border-gray-800 dark:hover:bg-gray-800/50"><td className="px-3 py-2"><input type="checkbox" aria-label={`Select ${candidate.name || candidate.email || key}`} checked={selectedAllocationKeys.includes(key)} onChange={() => setSelectedAllocationKeys((current) => current.includes(key) ? current.filter((value) => value !== key) : [...current, key])} /></td><td className="px-3 py-2 font-mono font-semibold text-slate-700 dark:text-gray-200">{candidate.studentId || candidate.studentid || '—'}</td><td className="px-3 py-2"><span className="block font-medium text-slate-800 dark:text-white">{candidate.name || 'Candidate'}</span><span className="text-[10px] text-slate-400">{candidate.email}</span></td><td className="px-3 py-2"><select value={candidate.assessmentSet || ''} onChange={(event) => overrideCandidateSet(candidate, event.target.value)} className="h-8 rounded-lg border border-slate-200 bg-white px-2 font-semibold text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"><option value="">Unassigned</option>{Array.from({ length: configuredSetCount }, (_, index) => <option key={index + 1} value={index + 1}>Set {index + 1}</option>)}</select></td><td className="px-3 py-2"><span className={`rounded-full px-2 py-1 text-[10px] font-bold ${candidate.assessmentSetSource === 'automatic' ? 'bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300' : candidate.assessmentSetSource ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-300'}`}>{candidate.assessmentSetSource || 'Required'}</span></td></tr>; })}</tbody></table></div>}
+                </div>
+                <p className="rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-[11px] leading-5 text-sky-800 dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-200">Assignments are frozen when the assessment is published. Manual overrides remain fixed; changing sort or formula only recalculates automatic rows.</p>
+              </div>
+            )}
           </div>
 
           {/* ── PROCTORING ── */}

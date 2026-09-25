@@ -14,6 +14,7 @@ import User from '../models/User.js';
 import { createNotifications } from '../services/notificationService.js';
 import { enqueueMailJobs } from '../services/mailQueueService.js';
 import crypto from 'crypto';
+import { interviewListFilter, interviewListSort } from '../utils/interviewListQuery.js';
 
 // Fisher-Yates shuffle algorithm for random array shuffling
 function shuffleArray(array) {
@@ -798,7 +799,7 @@ export async function checkInterviewParticipantCsv(req, res) {
     $or: [{ email: { $in: emails } }, { studentId: { $in: studentIds } }],
   };
   if (req.user.role === 'coordinator') query.teacherIds = req.user.coordinatorId;
-  const students = await User.find(query).select('_id name email studentId semester branch course college group').lean();
+  const students = await User.find(query).select('_id name email studentId semester branch course college group teacherIds').lean();
   const byEmail = new Map(students.map((student) => [student.email?.toLowerCase(), student]));
   const byStudentId = new Map(students.map((student) => [String(student.studentId), student]));
   const seen = new Set();
@@ -1495,9 +1496,11 @@ export async function listEvents(req, res) {
       query.status = { $nin: ['draft', 'cancelled', 'archived'] };
       if (userCreatedAt) query.createdAt = { $gt: new Date(userCreatedAt) };
     }
+    const interviewView = req.query.view === 'interviews' && req.user?.role !== 'student';
+    if (interviewView) query = { $and: [query, ...interviewListFilter(req.query)] };
     const requestedPage = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
     const requestedLimit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 25));
-    const paginated = req.query.page !== undefined || req.query.limit !== undefined;
+    const paginated = interviewView || req.query.page !== undefined || req.query.limit !== undefined;
     const dashboardView = req.query.view === 'dashboard' && req.user?.role !== 'student';
     const databasePaginated = paginated && req.user?.role !== 'student';
     const eventsQuery = Event.find(query)
@@ -1509,7 +1512,19 @@ export async function listEvents(req, res) {
     }
     if (databasePaginated) eventsQuery.skip((requestedPage - 1) * requestedLimit).limit(requestedLimit);
     const [events, databaseTotal] = await Promise.all([
-      eventsQuery.lean(),
+      interviewView ? Event.aggregate([
+        { $match: query },
+        { $sort: interviewListSort(req.query.sort) },
+        { $skip: (requestedPage - 1) * requestedLimit },
+        { $limit: requestedLimit },
+        { $project: {
+          name: 1, status: 1, startDate: 1, endDate: 1, isSpecial: 1,
+          coordinatorId: 1, createdAt: 1, selectionMode: 1,
+          participantCount: { $size: { $ifNull: ['$participants', []] } },
+          selectedCount: { $size: { $ifNull: ['$allowedParticipants', []] } },
+          hasTemplate: { $or: [{ $gt: [{ $ifNull: ['$templateUrl', ''] }, ''] }, { $gt: [{ $ifNull: ['$templateKey', ''] }, ''] }] },
+        } },
+      ]) : eventsQuery.lean(),
       databasePaginated ? Event.countDocuments(query) : Promise.resolve(null),
     ]);
     const assignedEventIds = req.user?.role === 'student'

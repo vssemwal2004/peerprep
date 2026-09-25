@@ -24,9 +24,13 @@ import mailQueueRoutes from './mailQueue.js';
 import resumeRoutes from './resume.js';
 import assessmentFeedbackRoutes from './assessmentFeedback.js';
 import masterDataRoutes from './masterData.js';
+import aiInterviewRoutes from './aiInterviews.js';
+import bulkUploadRoutes from './bulkUploads.js';
 import { requireAuth, requireFullStudent } from '../middleware/auth.js';
 
 const router = Router();
+router.use('/ai-interviews', aiInterviewRoutes);
+router.use('/bulk-uploads', bulkUploadRoutes);
 router.use('/auth', authRoutes);
 router.use('/students', requireAuth, requireFullStudent, studentRoutes);
 router.use('/events', requireAuth, requireFullStudent, eventRoutes);

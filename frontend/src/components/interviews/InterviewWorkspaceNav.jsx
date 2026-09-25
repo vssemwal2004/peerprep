@@ -5,19 +5,20 @@ import { useAuth } from '../../context/AuthContext';
 import { hasPermission } from '../../admin/coordinatorPermissions';
 import { api } from '../../utils/api';
 import { getInterviewNavigation, getInterviewSection } from './interviewNavigation';
+import { interviewStatus } from './interviewSetup';
 
 const icons = { all: CalendarDays, active: CircleDot, scheduled: CalendarClock, past: History, feedback: MessageSquareText, create: Plus };
 
-function WorkspaceSidebar({ items, section, events, loading, error, root, selectedId, canView }) {
+function WorkspaceSidebar({ items, section, events, loading, error, root, selectedId, canView, limited }) {
   const [search, setSearch] = useState('');
   const inputId = useId();
   const filtered = events.filter((event) => (event.name || '').toLowerCase().includes(search.toLowerCase()));
   const now = new Date();
   const counts = {
     all: events.length,
-    active: events.filter((event) => new Date(event.startDate) <= now && new Date(event.endDate) >= now).length,
-    scheduled: events.filter((event) => new Date(event.startDate) > now).length,
-    past: events.filter((event) => new Date(event.endDate) < now).length,
+    active: events.filter((event) => interviewStatus(event, now.getTime()) === 'live').length,
+    scheduled: events.filter((event) => interviewStatus(event, now.getTime()) === 'scheduled').length,
+    past: events.filter((event) => interviewStatus(event, now.getTime()) === 'completed').length,
   };
   return (
     <div className="px-3 py-4">
@@ -30,17 +31,17 @@ function WorkspaceSidebar({ items, section, events, loading, error, root, select
             <Link key={id} to={to} aria-current={active ? 'page' : undefined}
               className={`flex min-h-9 items-center gap-2 rounded-lg px-2 py-2 text-xs transition-colors focus-visible:outline-sky-500 ${active ? 'bg-sky-50 font-semibold text-sky-700 dark:bg-sky-900/25 dark:text-sky-300' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950 dark:text-gray-300 dark:hover:bg-gray-900 dark:hover:text-white'}`}>
               <Icon className="h-4 w-4 shrink-0" /><span className="min-w-0 flex-1">{label}</span>
-              {canView && !loading && !error && counts[id] !== undefined && <span className="text-[11px] tabular-nums text-slate-400">{counts[id]}</span>}
+              {canView && !limited && !loading && !error && counts[id] !== undefined && <span className="text-[11px] tabular-nums text-slate-400">{counts[id]}</span>}
             </Link>
           );
         })}
       </nav>
       {canView && (
         <section className="mt-5 border-t border-slate-200 pt-4 dark:border-gray-800" aria-label="All interview rounds">
-          <label htmlFor={inputId} className="px-2 text-xs font-semibold text-slate-700 dark:text-gray-200">All interviews</label>
+          <label htmlFor={inputId} className="px-2 text-xs font-semibold text-slate-700 dark:text-gray-200">{limited ? 'Recent interviews' : 'All interviews'}</label>
           <div className="relative mt-2">
             <Search className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
-            <input id={inputId} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Find an interview" className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-2 text-xs text-slate-800 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:focus:ring-sky-900" />
+            <input id={inputId} value={search} onChange={(event) => setSearch(event.target.value)} placeholder={limited ? 'Search recent interviews' : 'Find an interview'} className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-2 text-xs text-slate-800 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:focus:ring-sky-900" />
           </div>
           <div className="mt-2 max-h-72 space-y-1 overflow-y-auto [scrollbar-width:thin] lg:max-h-[calc(100dvh-27rem)] lg:min-h-24">
             {loading ? <p role="status" className="px-2 py-3 text-xs text-slate-400">Loading interviews…</p>
@@ -49,17 +50,18 @@ function WorkspaceSidebar({ items, section, events, loading, error, root, select
                 <Link key={event._id} to={`${root}/interviews/one-to-one/${event._id}`} aria-current={selectedId === event._id ? 'true' : undefined}
                   className={`block rounded-lg px-2 py-2 text-xs focus-visible:outline-sky-500 ${selectedId === event._id ? 'bg-sky-50 font-semibold text-sky-700 dark:bg-sky-900/25 dark:text-sky-300' : 'text-slate-600 hover:bg-slate-50 dark:text-gray-300 dark:hover:bg-gray-900'}`}>
                   <span className="block break-words">{event.name}</span>
-                  <span className="mt-1 block text-[10px] font-normal capitalize text-slate-400">{event.status || 'published'}</span>
+                  <span className="mt-1 block text-[10px] font-normal capitalize text-slate-400">{interviewStatus(event) === 'live' ? 'Active' : interviewStatus(event)}</span>
                 </Link>
               )) : <p className="px-2 py-3 text-xs text-slate-400">{search ? 'No matching interviews' : 'No interviews yet'}</p>}
           </div>
+          {limited && <Link to={`${root}/interviews/one-to-one`} className="mt-3 block px-2 text-xs font-semibold text-sky-600 dark:text-sky-400">Browse all interviews →</Link>}
         </section>
       )}
     </div>
   );
 }
 
-export default function InterviewWorkspaceNav({ children, events: providedEvents, loading: providedLoading = false, error: providedError = false }) {
+export default function InterviewWorkspaceNav({ children, events: providedEvents, loading: providedLoading = false, error: providedError = false, limited = false }) {
   const location = useLocation();
   const { user } = useAuth();
   const root = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
@@ -78,7 +80,7 @@ export default function InterviewWorkspaceNav({ children, events: providedEvents
     let active = true;
     setFetching(true);
     setFetchError(false);
-    api.listEvents().then((data) => { if (active) setFetchedEvents(data); })
+    api.listEvents({ view: 'dashboard', page: 1, limit: 50 }).then((data) => { if (active) setFetchedEvents(data.events || []); })
       .catch(() => { if (active) setFetchError(true); })
       .finally(() => { if (active) setFetching(false); });
     return () => { active = false; };
@@ -86,7 +88,7 @@ export default function InterviewWorkspaceNav({ children, events: providedEvents
 
   const events = providedEvents ?? fetchedEvents;
   const selectedId = location.pathname.split('/').at(-1);
-  const sidebarProps = { items, section, events, root, selectedId, canView,
+  const sidebarProps = { items, section, events, root, selectedId, canView, limited: limited || needsEvents,
     loading: needsEvents ? fetching : providedLoading, error: needsEvents ? fetchError : providedError };
 
   return (

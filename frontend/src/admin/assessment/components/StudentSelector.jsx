@@ -32,7 +32,7 @@ const EMPTY_FILTERS = {
   accountStatus: '',
 };
 
-export default function StudentSelector({ selected = [], onChange }) {
+export default function StudentSelector({ selected = [], onChange, onBusyChange }) {
   const [students, setStudents] = useState([]);
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -45,6 +45,8 @@ export default function StudentSelector({ selected = [], onChange }) {
   const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 });
   const [loading, setLoading] = useState(true);
   const [bulkSelecting, setBulkSelecting] = useState(false);
+  useEffect(() => { onBusyChange?.(bulkSelecting); }, [bulkSelecting, onBusyChange]);
+  useEffect(() => () => { onBusyChange?.(false); }, [onBusyChange]);
   const [error, setError] = useState('');
   const requestRef = useRef(0);
   const filterPanelRef = useRef(null);
