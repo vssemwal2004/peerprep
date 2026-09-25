@@ -21,6 +21,7 @@ import { listCodingDrafts, loadCodingDraft, saveCodingDraft } from './assessment
 import { loadAssessmentDraft, saveAssessmentDraft, clearAssessmentDraft, isAssessmentDraftCompatible } from './assessment/assessmentDraftStore';
 import { consumeProblemSelections, consumeQuestionSelections } from './assessment/assessmentProblemSelectionStore';
 import { buildAssessmentQuestionIdentitySet, getLibraryQuestionIdentityKeys, isLibraryQuestionAlreadyAdded } from './assessment/assessmentQuestionIdentity';
+import { buildCandidateAllocationPreview } from './assessment/setAllocation';
 import DateTimePicker from '../components/DateTimePicker';
 
 const PREDEFINED_TEST_TYPES = [
@@ -1430,28 +1431,8 @@ export default function CreateAssessment({ viewOnly = false }) {
   };
 
   const candidateAssignments = useMemo(() => {
-    const sortBy = form.settings?.setAllocationSortBy === 'name' ? 'name' : 'student_id';
-    const direction = form.settings?.setAllocationSortDirection === 'desc' ? -1 : 1;
-    const naturalCompare = (left, right) => String(left || '').localeCompare(String(right || ''), undefined, { numeric: true, sensitivity: 'base' });
-    const ordered = [...selectedStudents].sort((left, right) => {
-      const primary = sortBy === 'name'
-        ? naturalCompare(left.name, right.name)
-        : naturalCompare(left.studentId || left.studentid, right.studentId || right.studentid);
-      if (primary !== 0) return primary * direction;
-      return naturalCompare(left.studentId || left.studentid, right.studentId || right.studentid) || naturalCompare(left.email, right.email);
-    });
-    const start = Math.min(configuredSetCount, Math.max(1, Number(form.settings?.setStartingNumber) || 1));
-    return ordered.map((student, index) => {
-      const requested = Number(student.assessmentSet);
-      const validOverride = Number.isInteger(requested) && requested >= 1 && requested <= configuredSetCount;
-      const automaticEnabled = form.settings?.automaticSetAssignment !== false;
-      return {
-        ...student,
-        assessmentSet: configuredSetCount === 1 ? 1 : validOverride ? requested : automaticEnabled ? ((start - 1 + index) % configuredSetCount) + 1 : '',
-        assessmentSetSource: configuredSetCount === 1 ? 'automatic' : validOverride ? (student.assessmentSetSource || 'manual') : automaticEnabled ? 'automatic' : '',
-      };
-    });
-  }, [configuredSetCount, form.settings?.automaticSetAssignment, form.settings?.setAllocationSortBy, form.settings?.setAllocationSortDirection, form.settings?.setStartingNumber, selectedStudents]);
+    return buildCandidateAllocationPreview(selectedStudents, form.settings, configuredSetCount);
+  }, [configuredSetCount, form.settings, selectedStudents]);
 
   const candidateAllocationKey = (candidate) => String(candidate._id || candidate.studentId || candidate.studentid || candidate.email || '');
   const visibleCandidateAssignments = useMemo(() => {
@@ -1485,6 +1466,17 @@ export default function CreateAssessment({ viewOnly = false }) {
         : { ...student, assessmentSet: '', assessmentSetSource: '' }
       : student));
     setSelectedAllocationKeys([]);
+  };
+
+  const redistributeAllCandidates = () => {
+    updateSelectedStudents(selectedStudents.map((student) => ({
+      ...student,
+      assessmentSet: '',
+      assessmentSetSource: '',
+    })));
+    setSelectedAllocationKeys([]);
+    setAllocationSetFilter('all');
+    toast.success(`Redistributed ${selectedStudents.length} students across ${configuredSetCount} sets.`);
   };
 
   const handleTestTypeChange = (value) => {
@@ -1915,7 +1907,7 @@ export default function CreateAssessment({ viewOnly = false }) {
               <p className="mt-0.5 text-[11px] text-slate-500 dark:text-gray-400">Access, proctoring, candidate behavior and results.</p>
             </div>
             <span className="whitespace-nowrap rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-sky-700 shadow-sm dark:bg-gray-900 dark:text-sky-300">
-              {[form.passwordEnabled, s.enableFullscreen, s.tabSwitchDetection, s.cameraMonitoring, s.disableCopyPaste, s.blockScreenshots, s.aiProctoring?.enabled, s.randomShuffle, s.autoSubmitOnEnd].filter(Boolean).length} enabled
+              {[form.passwordEnabled, s.enableFullscreen, s.tabSwitchDetection, s.cameraMonitoring, s.disableCopyPaste, s.blockScreenshots, s.aiProctoring?.enabled, s.randomShuffle, s.shuffleOptions, s.autoSubmitOnEnd].filter(Boolean).length} enabled
             </span>
           </div>
 
@@ -1984,7 +1976,7 @@ export default function CreateAssessment({ viewOnly = false }) {
                 <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div><p className="text-sm font-bold text-slate-900 dark:text-white">Allocation formula</p><p className="mt-1 text-xs leading-5 text-slate-500 dark:text-gray-400">Sort students, then allocate them round-robin: <code className="rounded bg-slate-100 px-1.5 py-0.5 font-bold text-sky-700 dark:bg-gray-800 dark:text-sky-300">((position + start - 1) % {configuredSetCount}) + 1</code></p></div>
-                    <div className="flex items-center gap-2"><span className="text-xs font-semibold text-slate-600 dark:text-gray-300">Automatic allocation</span><Toggle value={s.automaticSetAssignment !== false} onChange={(enabled) => upd('automaticSetAssignment', enabled)} /></div>
+                    <div className="flex flex-wrap items-center justify-end gap-2"><button type="button" disabled={!selectedStudents.length || s.automaticSetAssignment === false} onClick={redistributeAllCandidates} className="h-8 rounded-lg border border-sky-200 bg-white px-3 text-[11px] font-bold text-sky-700 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300">Redistribute all</button><span className="text-xs font-semibold text-slate-600 dark:text-gray-300">Automatic allocation</span><Toggle value={s.automaticSetAssignment !== false} onChange={(enabled) => upd('automaticSetAssignment', enabled)} /></div>
                   </div>
                   <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     <label className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Number of sets<select value={configuredSetCount} onChange={(event) => configureQuestionSetCount(event.target.value)} className="mt-1 block h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold normal-case text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">{Array.from({ length: 7 }, (_, index) => index + 2).map((count) => <option key={count} value={count}>{count} sets</option>)}</select></label>
@@ -2112,11 +2104,8 @@ export default function CreateAssessment({ viewOnly = false }) {
                 </div>
               </Row>
 
-              <Row {...rowProps} icon={<Shuffle className="h-4 w-4" />} title="Random Question Shuffle" desc="Randomizes question order uniquely per candidate on test start." toggleKey="randomShuffle">
-                <FieldRow label="Also shuffle answer options (MCQ)">
-                  <Toggle value={Boolean(s.shuffleOptions)} onChange={(v) => upd('shuffleOptions', v)} />
-                </FieldRow>
-              </Row>
+              <Row {...rowProps} icon={<Shuffle className="h-4 w-4" />} title="Random Question Shuffle" desc="Shuffles questions inside each section of the candidate's assigned set (or the single common paper). The order is fixed for that candidate after delivery." toggleKey="randomShuffle" />
+              <Row {...rowProps} icon={<Shuffle className="h-4 w-4" />} title="Shuffle MCQ Answer Options" desc="Moves MCQ choices up or down independently for each candidate while keeping the correct answer and option images aligned." toggleKey="shuffleOptions" />
 
               <Row {...rowProps} icon={<Camera className="h-4 w-4" />} iconBg="bg-indigo-50 text-indigo-600 dark:bg-indigo-900/20 dark:text-indigo-400"
                 title="Camera Monitoring" desc="Captures periodic snapshots via webcam for proctoring review." toggleKey="cameraMonitoring">

@@ -687,9 +687,11 @@ Settings:
 
 Behavior:
 
-- The student receives a deterministic candidate-specific display order
-- Original section and question indexes are preserved internally
-- When options are shuffled, the selected displayed option is translated back to the original option index before submission
+- The server creates a deterministic candidate-specific display order from the assigned question set, or from the single common paper when multiple sets are disabled
+- Question order is shuffled independently inside each section; section order is preserved
+- MCQ options can be shuffled globally or for an individual question
+- Option text, option images, and single/multiple correct-answer indexes move together
+- The generated delivery is frozen in the submission so refresh and resume keep the same order
 
 This preserves correct backend scoring.
 
@@ -1908,8 +1910,8 @@ The following points are important when using PeerPrep as the design base for a 
 7. **Section time is proportional.**
    There is no explicit per-section duration entered by the administrator.
 
-8. **Question shuffle is client-generated.**
-   The mapping is handled carefully, but a stronger platform should issue a server-signed question order per attempt.
+8. **Question and MCQ-option shuffle are server-generated.**
+   Candidate-specific delivery is prepared by the server and frozen on the submission. Refreshing or resuming does not generate a different order.
 
 9. **Multiple-tab detection is local to a browser profile.**
    It does not provide reliable cross-device detection.

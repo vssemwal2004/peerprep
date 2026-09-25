@@ -53,6 +53,26 @@ test('candidate sets follow natural roll-number order and preserve overrides', (
   ]);
 });
 
+test('automatic candidate values are recalculated when the set formula changes', () => {
+  const users = Array.from({ length: 8 }, (_, index) => ({
+    _id: `u${index + 1}`,
+    studentId: String(index + 1),
+  }));
+  const inputRows = users.map((student) => ({
+    _id: student._id,
+    studentid: student.studentId,
+    assessmentSet: student.studentId <= 4 ? 1 : 2,
+    assessmentSetSource: 'automatic',
+  }));
+  const assignments = buildCandidateSetAssignments({
+    users,
+    inputRows,
+    settings: { questionSetEnabled: true, questionSetCount: 4, automaticSetAssignment: true, setStartingNumber: 1 },
+  });
+  assert.deepEqual(assignments.map((entry) => entry.setNumber), [1, 2, 3, 4, 1, 2, 3, 4]);
+  assert.ok(assignments.every((entry) => entry.source === 'automatic'));
+});
+
 test('manual assignment mode leaves unassigned candidates for publish validation', () => {
   const assignments = buildCandidateSetAssignments({
     users: [{ _id: 'u1', studentId: '1' }, { _id: 'u2', studentId: '2' }],
@@ -123,6 +143,28 @@ test('common-set delivery shuffles questions deterministically on the server', (
   assert.deepEqual([...ids(first)].sort(), assessment.sections[0].questions.map((question) => question.questionId).sort());
 });
 
+test('multi-set delivery shuffles only the assigned set and keeps it fixed for the candidate', () => {
+  const makeQuestions = (prefix) => Array.from({ length: 8 }, (_, index) => ({
+    questionId: `${prefix}${index + 1}`,
+    type: 'mcq',
+  }));
+  const assessment = {
+    _id: 'multi-set-shuffle',
+    settings: { questionSetEnabled: true, randomShuffle: true },
+    candidateSetAssignments: [{ student: 'student-2', setNumber: 2 }],
+    questionSets: [
+      { setNumber: 1, sections: [{ sectionName: 'Set 1', type: 'mcq', questions: makeQuestions('a') }] },
+      { setNumber: 2, sections: [{ sectionName: 'Set 2', type: 'mcq', questions: makeQuestions('b') }] },
+    ],
+  };
+  const first = buildDeliverySections(assessment, 'student-2');
+  const resumed = buildDeliverySections(assessment, 'student-2');
+  const ids = first.sections[0].questions.map((question) => question.questionId);
+  assert.equal(first.assignedSetNumber, 2);
+  assert.ok(ids.every((id) => id.startsWith('b')));
+  assert.deepEqual(first.sections, resumed.sections);
+});
+
 test('server-side MCQ option shuffle keeps images and correct answers aligned', () => {
   const assessment = {
     _id: 'option-assessment',
@@ -154,6 +196,26 @@ test('server-side MCQ option shuffle keeps images and correct answers aligned', 
     assert.equal(single.optionImages[index], `img-${option.toLowerCase()}`);
   });
   assert.deepEqual(multiple.correctOptionIndexes.map((index) => multiple.options[index]).sort(), ['Four', 'One']);
+});
+
+test('question-level option shuffle works when global option shuffle is disabled', () => {
+  const assessment = {
+    _id: 'per-question-option-shuffle',
+    settings: { shuffleOptions: false },
+    sections: [{
+      sectionName: 'MCQ',
+      type: 'mcq',
+      questions: [{
+        questionId: 'local-shuffle',
+        type: 'mcq',
+        shuffleOptions: true,
+        options: ['North', 'South', 'East', 'West'],
+        correctOptionIndex: 1,
+      }],
+    }],
+  };
+  const question = buildDeliverySections(assessment, 'student-1').sections[0].questions[0];
+  assert.equal(question.options[question.correctOptionIndex], 'South');
 });
 
 test('student assessment response removes answer keys and hidden coding cases', () => {

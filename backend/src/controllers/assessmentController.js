@@ -1579,14 +1579,20 @@ export function buildCandidateSetAssignments({ users = [], inputRows = [], setti
       || rowById.get(`student:${String(student.studentId || '').toLowerCase()}`)
       || {};
     const requested = Number(row.assessmentSet);
-    const hasOverride = Number.isInteger(requested) && requested >= 1 && requested <= setCount;
+    const requestedSource = String(row.assessmentSetSource || '').toLowerCase();
+    const overrideSource = ['manual', 'csv'].includes(requestedSource)
+      ? requestedSource
+      : settings.automaticSetAssignment === false && !requestedSource
+        ? 'manual'
+        : '';
+    const hasOverride = Boolean(overrideSource) && Number.isInteger(requested) && requested >= 1 && requested <= setCount;
     if (!hasOverride && settings.automaticSetAssignment === false) return null;
     const automaticNumber = ((startingSet - 1 + index) % setCount) + 1;
     return {
       student: student._id,
       studentIdSnapshot: String(student.studentId || ''),
       setNumber: hasOverride ? requested : automaticNumber,
-      source: hasOverride ? (row.assessmentSetSource === 'manual' ? 'manual' : 'csv') : 'automatic',
+      source: hasOverride ? overrideSource : 'automatic',
       frozenAt: new Date(),
     };
   }).filter(Boolean);
