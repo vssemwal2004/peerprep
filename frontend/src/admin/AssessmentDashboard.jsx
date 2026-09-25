@@ -627,13 +627,32 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
     if (!confirm(`Remove ${selectedStudentIds.length} selected student${selectedStudentIds.length === 1 ? '' : 's'} from this assessment? Their existing submissions will also be removed.`)) return;
     setBulkRemoving(true);
     try {
-      await Promise.all(selectedStudentIds.map((studentId) => api.removeAssessmentEligibleStudent(assessment._id, studentId)));
+      await api.removeAssessmentEligibleStudents(assessment._id, selectedStudentIds);
       toast.success(`${selectedStudentIds.length} student${selectedStudentIds.length === 1 ? '' : 's'} removed.`);
       await loadStudents();
       onChanged?.();
     } catch (error) {
       toast.error(error.message || 'Some students could not be removed. Refreshing the list.');
       await loadStudents();
+    } finally {
+      setBulkRemoving(false);
+    }
+  };
+
+  const assignSelectedStudentsToSet = async (setNumber) => {
+    if (!selectedStudentIds.length || !setNumber) return;
+    setBulkRemoving(true);
+    try {
+      await api.updateAssessmentStudentSets(assessment._id, selectedStudentIds, Number(setNumber));
+      const selected = new Set(selectedStudentIds);
+      setStudents((current) => current.map((student) => selected.has(String(student._id))
+        ? { ...student, assessmentSet: Number(setNumber), assessmentSetSource: 'manual' }
+        : student));
+      toast.success(`${selectedStudentIds.length} student${selectedStudentIds.length === 1 ? '' : 's'} assigned to Set ${setNumber}.`);
+      setSelectedStudentIds([]);
+      onChanged?.();
+    } catch (error) {
+      toast.error(error.message || 'Failed to update selected students.');
     } finally {
       setBulkRemoving(false);
     }
@@ -723,7 +742,7 @@ function EligibleStudentsModal({ assessment, rolePrefix, onClose, onChanged }) {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {questionSetEnabled && <select aria-label="Filter students by assigned set" value={setFilter} onChange={(event) => setSetFilter(event.target.value)} className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200"><option value="all">All sets</option>{Array.from({ length: questionSetCount }, (_, index) => <option key={index + 1} value={index + 1}>Set {index + 1}</option>)}<option value="unassigned">Unassigned</option></select>}
-              {selectedStudentIds.length > 0 && <button type="button" onClick={removeSelectedStudents} disabled={bulkRemoving} className="inline-flex h-10 items-center gap-2 rounded-lg border border-rose-200 bg-white px-3 text-xs font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900 dark:bg-gray-950 dark:text-rose-300"><UserMinus className="h-4 w-4" />{bulkRemoving ? 'Removing…' : `Remove ${selectedStudentIds.length} selected`}</button>}
+              {selectedStudentIds.length > 0 && <>{questionSetEnabled && <select defaultValue="" disabled={bulkRemoving} onChange={(event) => { if (event.target.value) assignSelectedStudentsToSet(event.target.value); event.target.value = ''; }} className="h-10 rounded-lg border border-sky-200 bg-sky-50 px-3 text-xs font-bold text-sky-700 disabled:opacity-50 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300"><option value="" disabled>Assign {selectedStudentIds.length} selected…</option>{Array.from({ length: questionSetCount }, (_, index) => <option key={index + 1} value={index + 1}>Set {index + 1}</option>)}</select>}<button type="button" onClick={removeSelectedStudents} disabled={bulkRemoving} className="inline-flex h-10 items-center gap-2 rounded-lg border border-rose-200 bg-white px-3 text-xs font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900 dark:bg-gray-950 dark:text-rose-300"><UserMinus className="h-4 w-4" />{bulkRemoving ? 'Working…' : `Remove ${selectedStudentIds.length} selected`}</button></>}
             </div>
           </div>
         </div>

@@ -3228,6 +3228,78 @@ export async function updateAssessmentStudentSet(req, res) {
   }
 }
 
+export async function updateAssessmentStudentSets(req, res) {
+  try {
+    const { id } = req.params;
+    const studentIds = [...new Set((req.body?.studentIds || []).map(String).filter(Boolean))];
+    const setNumber = Number(req.body?.setNumber);
+    if (!studentIds.length) return res.status(400).json({ error: 'Select at least one student.' });
+    const assessment = await Assessment.findById(id);
+    if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
+    if (!canManageAssessmentForRequest(assessment, req.user)) return res.status(403).json({ error: 'Not allowed to change set allocation.' });
+    const setCount = Math.min(8, Math.max(2, Number(assessment.settings?.questionSetCount) || 2));
+    if (!assessment.settings?.questionSetEnabled || !Number.isInteger(setNumber) || setNumber < 1 || setNumber > setCount) {
+      return res.status(400).json({ error: `Set must be between 1 and ${setCount}.` });
+    }
+    const assignedIds = new Set((assessment.assignedStudents || []).map(String));
+    if (studentIds.some((studentId) => !assignedIds.has(studentId))) return res.status(400).json({ error: 'One or more students are not assigned to this assessment.' });
+    const activeSubmission = await AssessmentSubmission.exists({ assessmentId: assessment._id, studentId: { $in: studentIds }, status: { $in: ['in_progress', 'submitted'] } });
+    if (activeSubmission) return res.status(409).json({ error: 'Students who already started cannot be moved to another set.' });
+    const users = await User.find({ _id: { $in: studentIds }, role: 'student' }).select('_id studentId').lean();
+    const assignmentByStudent = new Map((assessment.candidateSetAssignments || []).map((entry) => [String(entry.student), entry]));
+    users.forEach((student) => assignmentByStudent.set(String(student._id), {
+      student: student._id,
+      studentIdSnapshot: student.studentId || '',
+      setNumber,
+      source: 'manual',
+      frozenAt: new Date(),
+    }));
+    assessment.candidateSetAssignments = Array.from(assignmentByStudent.values());
+    assessment.markModified('candidateSetAssignments');
+    assessment.version = (assessment.version || 1) + 1;
+    assessment.versionUpdatedAt = new Date();
+    await assessment.save();
+    return res.json({ ok: true, updatedCount: users.length, setNumber });
+  } catch (err) {
+    console.error('Error bulk updating assessment student sets:', err);
+    return res.status(500).json({ error: 'Failed to update student set allocations.' });
+  }
+}
+
+export async function removeAssessmentEligibleStudents(req, res) {
+  try {
+    const { id } = req.params;
+    const studentIds = [...new Set((req.body?.studentIds || []).map(String).filter(Boolean))];
+    if (!studentIds.length) return res.status(400).json({ error: 'Select at least one student to remove.' });
+    const assessment = await Assessment.findById(id);
+    if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
+    if (!canManageAssessmentForRequest(assessment, req.user)) return res.status(403).json({ error: 'Not allowed to remove students from this assessment.' });
+    if (assessment.lifecycleStatus === 'draft') return res.status(400).json({ error: 'Edit the draft target list before publishing.' });
+    const removeIds = new Set(studentIds);
+    const eligibleStudents = await resolveEligibleAssessmentStudents(assessment);
+    const currentIds = eligibleStudents.map((student) => String(student._id));
+    const previousCount = currentIds.length;
+    assessment.targetType = 'selected';
+    assessment.assignedStudents = currentIds
+      .filter((studentId) => !removeIds.has(studentId))
+      .map((studentId) => new mongoose.Types.ObjectId(studentId));
+    assessment.candidateSetAssignments = (assessment.candidateSetAssignments || []).filter((entry) => !removeIds.has(String(entry.student)));
+    assessment.version = (assessment.version || 1) + 1;
+    assessment.versionUpdatedAt = new Date();
+    await assessment.save();
+    const result = await AssessmentSubmission.deleteMany({ assessmentId: assessment._id, studentId: { $in: studentIds } });
+    return res.json({
+      ok: true,
+      removedCount: previousCount - assessment.assignedStudents.length,
+      deletedSubmissions: result.deletedCount || 0,
+      assignedStudentsCount: assessment.assignedStudents.length,
+    });
+  } catch (err) {
+    console.error('Error bulk removing assessment students:', err);
+    return res.status(500).json({ error: 'Failed to remove selected students.' });
+  }
+}
+
 export async function markAssessmentComplete(req, res) {
   try {
     const { id } = req.params;

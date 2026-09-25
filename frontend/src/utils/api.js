@@ -863,6 +863,16 @@ export const api = {
       method: "PATCH",
       body: { setNumber },
     }),
+  updateAssessmentStudentSets: (id, studentIds, setNumber) =>
+    request(`/admin/assessment/${id}/students/sets`, {
+      method: "PATCH",
+      body: { studentIds, setNumber },
+    }),
+  removeAssessmentEligibleStudents: (id, studentIds) =>
+    request(`/admin/assessment/${id}/students/remove`, {
+      method: "POST",
+      body: { studentIds },
+    }),
   sendAssessmentInvitations: (id) =>
     request(`/admin/assessment/${id}/send-invitations`, {
       method: "POST",

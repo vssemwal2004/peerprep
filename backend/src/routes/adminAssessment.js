@@ -16,6 +16,8 @@ import {
   resetAssessmentStudentSubmission,
   removeAssessmentEligibleStudent,
   updateAssessmentStudentSet,
+  updateAssessmentStudentSets,
+  removeAssessmentEligibleStudents,
   markAssessmentComplete,
   releaseAssessmentAnswers,
   sendAssessmentInvitations,
@@ -68,6 +70,8 @@ router.get('/assessment/:id', requireAuth, requireCoordinatorPermission('coordin
 router.get('/assessment/:id/eligible-students', requireAuth, requireCoordinatorPermission('coordinator.assessment.view'), listAssessmentEligibleStudents);
 router.post('/assessment/:id/reset-submissions', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), invalidateResponseCache('assessments'), resetAssessmentSubmissions);
 router.post('/assessment/:id/students', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), invalidateResponseCache('assessments'), addAssessmentEligibleStudents);
+router.patch('/assessment/:id/students/sets', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), invalidateResponseCache('assessments'), updateAssessmentStudentSets);
+router.post('/assessment/:id/students/remove', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), invalidateResponseCache('assessments'), removeAssessmentEligibleStudents);
 router.post('/assessment/:id/students/:studentId/reset-submission', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), invalidateResponseCache('assessments'), resetAssessmentStudentSubmission);
 router.delete('/assessment/:id/students/:studentId', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), invalidateResponseCache('assessments'), removeAssessmentEligibleStudent);
 router.patch('/assessment/:id/students/:studentId/set', requireAuth, requireCoordinatorPermission('coordinator.assessment.edit'), invalidateResponseCache('assessments'), updateAssessmentStudentSet);
