@@ -54,6 +54,7 @@ const getStudentAddedBadgeClass = (createdAt) => {
 function ThreeDotsMenu({ assessment, onOpen, onPreview, onViewReport, onEdit, onDuplicate, onDelete, onToggleVisibility, onEditPassword, onSendInvitations, onEligibleStudents, onAddStudents, onResetSubmissions, onMarkComplete, onReleaseAnswers }) {
   const [open, setOpen] = useState(false);
   const [menuStyle, setMenuStyle] = useState(null);
+  const [menuDirection, setMenuDirection] = useState('down');
   const ref = useRef(null);
   const buttonRef = useRef(null);
   const menuRef = useRef(null);
@@ -81,19 +82,30 @@ function ThreeDotsMenu({ assessment, onOpen, onPreview, onViewReport, onEdit, on
       const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
       const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
       const left = Math.max(8, Math.min(rect.right - menuWidth, viewportWidth - menuWidth - 8));
+      const measuredHeight = menuRef.current?.scrollHeight || 480;
+      const availableViewportHeight = Math.max(180, viewportHeight - 16);
+      const renderedHeight = Math.min(measuredHeight, availableViewportHeight);
+      const shouldOpenUp = rect.bottom + measuredHeight + 8 > viewportHeight;
+      const preferredTop = shouldOpenUp
+        ? rect.top - renderedHeight - 8
+        : rect.bottom + 8;
+      const top = Math.max(8, Math.min(preferredTop, viewportHeight - renderedHeight - 8));
+      setMenuDirection(shouldOpenUp ? 'up' : 'down');
       setMenuStyle({
         left,
-        top: rect.bottom + 8,
+        top,
         width: menuWidth,
-        maxHeight: Math.max(160, viewportHeight - rect.bottom - 16),
-        transformOrigin: 'top right',
+        maxHeight: availableViewportHeight,
+        transformOrigin: shouldOpenUp ? 'bottom right' : 'top right',
       });
     };
 
     updatePosition();
+    const frame = window.requestAnimationFrame(updatePosition);
     window.addEventListener('resize', updatePosition);
     window.addEventListener('scroll', updatePosition, true);
     return () => {
+      window.cancelAnimationFrame(frame);
       window.removeEventListener('resize', updatePosition);
       window.removeEventListener('scroll', updatePosition, true);
     };
@@ -126,12 +138,12 @@ function ThreeDotsMenu({ assessment, onOpen, onPreview, onViewReport, onEdit, on
         <motion.div
           ref={menuRef}
           data-platform-action-menu
-          data-dropdown-direction="down"
+          data-dropdown-direction={menuDirection}
           role="menu"
           onPointerDown={(event) => event.stopPropagation()}
           onMouseDown={(event) => event.stopPropagation()}
           onClick={(event) => event.stopPropagation()}
-          initial={{ opacity: 0, scale: 0.95, y: -4 }}
+          initial={{ opacity: 0, scale: 0.95, y: menuDirection === 'up' ? 4 : -4 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: -4 }}
           transition={{ duration: 0.12 }}
@@ -170,6 +182,10 @@ function ThreeDotsMenu({ assessment, onOpen, onPreview, onViewReport, onEdit, on
         ref={buttonRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
+        data-platform-menu-trigger
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-label="Open assessment actions"
         className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
       >
         <MoreVertical className="h-3.5 w-3.5" />

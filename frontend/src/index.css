@@ -166,9 +166,10 @@ a {
   touch-action: manipulation;
 }
 
-/* Three-dot action menus consistently open below their trigger. Long menus
-   stay usable through internal scrolling instead of flipping over the row. */
-[data-platform-action-menu][data-dropdown-direction="down"] {
+/* Action menus flip above cards near the viewport edge. Internal scrolling is
+   only needed when the complete menu is physically taller than the viewport. */
+[data-platform-action-menu][data-dropdown-direction="down"],
+[data-platform-action-menu][data-dropdown-direction="up"] {
   overscroll-behavior: contain;
   scrollbar-width: thin;
 }
