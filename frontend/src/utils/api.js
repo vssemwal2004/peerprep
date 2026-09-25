@@ -247,6 +247,10 @@ async function request(
     credentials: "include", // This sends HttpOnly cookies
   };
 
+  if (method === "GET" && skipCache) {
+    opts.headers["Cache-Control"] = "no-cache";
+  }
+
   if (formData) {
     opts.body = formData;
   } else if (body !== undefined) {
@@ -836,7 +840,9 @@ export const api = {
     const query = params.toString();
     return request(`/admin/assessment/list${query ? `?${query}` : ""}`);
   },
-  getAssessmentById: (id) => request(`/admin/assessment/${id}`),
+  // Editing must always hydrate from the latest persisted assessment. A stale
+  // settings response can make toggles appear to change between edit sessions.
+  getAssessmentById: (id) => request(`/admin/assessment/${id}`, { skipCache: true }),
   updateAssessment: (id, body) =>
     request(`/admin/assessment/${id}`, { method: "PUT", body }),
   deleteAssessment: (id) =>

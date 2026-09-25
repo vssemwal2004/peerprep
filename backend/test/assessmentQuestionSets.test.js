@@ -5,8 +5,32 @@ import {
   appendCandidateSetAssignments,
   compareCandidatesForSetAllocation,
   buildDeliverySections,
+  normalizeAssessmentSettings,
   sanitizeStudentAssessmentForResponse,
 } from '../src/controllers/assessmentController.js';
+import Assessment from '../src/models/Assessment.js';
+
+test('settings normalization preserves toggles from a mongoose assessment subdocument', () => {
+  const assessment = new Assessment({
+    createdBy: '507f1f77bcf86cd799439011',
+    settings: {
+      enableFullscreen: true,
+      tabSwitchDetection: true,
+      disableCopyPaste: true,
+      locationTracking: false,
+      showResultsAfterSubmit: true,
+      aiProctoring: { enabled: true, detectMobile: false },
+    },
+  });
+  const normalized = normalizeAssessmentSettings(assessment.settings);
+  assert.equal(normalized.enableFullscreen, true);
+  assert.equal(normalized.tabSwitchDetection, true);
+  assert.equal(normalized.disableCopyPaste, true);
+  assert.equal(normalized.locationTracking, false);
+  assert.equal(normalized.showResultsAfterSubmit, true);
+  assert.equal(normalized.aiProctoring.enabled, true);
+  assert.equal(normalized.aiProctoring.detectMobile, false);
+});
 
 test('candidate sets follow natural roll-number order and preserve overrides', () => {
   const users = [

@@ -19,6 +19,18 @@ export function loadAssessmentDraft(assessmentKey) {
   return store[assessmentKey] || null;
 }
 
+export function isAssessmentDraftCompatible(draft, assessment) {
+  if (!draft || !assessment || typeof draft !== 'object') return false;
+  const draftVersion = Number(draft.version);
+  const serverVersion = Number(assessment.version);
+  if (!Number.isFinite(draftVersion) || !Number.isFinite(serverVersion) || draftVersion !== serverVersion) {
+    return false;
+  }
+  const draftUpdatedAt = Number(draft.updatedAt);
+  const serverUpdatedAt = new Date(assessment.updatedAt || 0).getTime();
+  return Number.isFinite(draftUpdatedAt) && draftUpdatedAt > serverUpdatedAt;
+}
+
 export function saveAssessmentDraft(assessmentKey, payload) {
   const store = readStore();
   store[assessmentKey] = {

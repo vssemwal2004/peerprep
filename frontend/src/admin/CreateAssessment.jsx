@@ -18,7 +18,7 @@ import SectionBuilder from './assessment/components/SectionBuilder';
 import AssessmentPreview from './assessment/components/AssessmentPreview';
 import AIProctoringSettings, { DEFAULT_AI_PROCTORING_SETTINGS, normalizeAiProctoringSettings } from '../features/assessment/admin/components/AIProctoringSettings';
 import { listCodingDrafts, loadCodingDraft, saveCodingDraft } from './assessment/assessmentCodingStore';
-import { loadAssessmentDraft, saveAssessmentDraft, clearAssessmentDraft } from './assessment/assessmentDraftStore';
+import { loadAssessmentDraft, saveAssessmentDraft, clearAssessmentDraft, isAssessmentDraftCompatible } from './assessment/assessmentDraftStore';
 import { consumeProblemSelections, consumeQuestionSelections } from './assessment/assessmentProblemSelectionStore';
 import { buildAssessmentQuestionIdentitySet, getLibraryQuestionIdentityKeys, isLibraryQuestionAlreadyAdded } from './assessment/assessmentQuestionIdentity';
 import DateTimePicker from '../components/DateTimePicker';
@@ -751,7 +751,8 @@ export default function CreateAssessment({ viewOnly = false }) {
         const isDraft = assessment.lifecycleStatus === 'draft';
         const draftAssigned = Array.isArray(assessment.draftAssignedStudents) ? assessment.draftAssignedStudents : [];
         const savedSessionDraft = loadAssessmentDraft(id);
-        const sessionDraft = !viewOnly && savedSessionDraft?.updatedAt > new Date(assessment.updatedAt || 0).getTime() ? savedSessionDraft : null;
+        const sessionDraft = !viewOnly && isAssessmentDraftCompatible(savedSessionDraft, assessment) ? savedSessionDraft : null;
+        if (savedSessionDraft && !sessionDraft) clearAssessmentDraft(id);
         const draftForm = sessionDraft?.form && typeof sessionDraft.form === 'object' ? sessionDraft.form : null;
         const draftSections = Array.isArray(sessionDraft?.sections) ? sessionDraft.sections : null;
         const draftQuestionSets = Array.isArray(sessionDraft?.questionSets) ? sessionDraft.questionSets : null;
@@ -893,14 +894,17 @@ export default function CreateAssessment({ viewOnly = false }) {
   }, [assessmentKey, viewOnly]);
 
   useEffect(() => {
-    if (viewOnly || !dirty) return undefined;
+    // Never persist the initial/default form while an existing assessment is
+    // still being hydrated. Otherwise that local draft can override the real
+    // server settings on the next edit.
+    if (viewOnly || !dirty || assessmentLoading) return undefined;
     setAutoSaveStatus('Saving locally...');
     const timeout = window.setTimeout(() => {
       saveAssessmentDraft(assessmentKey, { form, sections, questionSets, activeQuestionSet, selectedStudents, csvState, version, activeStep, completedSteps, visitedSettingsGroups });
       setAutoSaveStatus(isPublishedEdit ? 'Changes saved locally' : 'Draft autosaved');
     }, 600);
     return () => window.clearTimeout(timeout);
-  }, [activeQuestionSet, activeStep, assessmentKey, completedSteps, csvState, dirty, form, isPublishedEdit, questionSets, sections, selectedStudents, version, viewOnly, visitedSettingsGroups]);
+  }, [activeQuestionSet, activeStep, assessmentKey, assessmentLoading, completedSteps, csvState, dirty, form, isPublishedEdit, questionSets, sections, selectedStudents, version, viewOnly, visitedSettingsGroups]);
 
   useEffect(() => {
     const warnBeforeBrowserExit = (event) => {
@@ -1133,7 +1137,8 @@ export default function CreateAssessment({ viewOnly = false }) {
     if (isPublishedEdit) payload.sendEmail = false;
     try {
       if (currentId) {
-        await api.updateAssessment(currentId, payload);
+        const response = await api.updateAssessment(currentId, payload);
+        if (Number.isFinite(Number(response?.version))) setVersion(Number(response.version));
         // Log update activity
         api.logActivity({
           actionType: 'UPDATE',

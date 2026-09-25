@@ -645,8 +645,11 @@ function normalizeAiProctoringSettings(settings = {}) {
   };
 }
 
-function normalizeAssessmentSettings(settings = {}) {
-  const source = settings && typeof settings === 'object' ? { ...settings } : {};
+export function normalizeAssessmentSettings(settings = {}) {
+  const plainSettings = settings && typeof settings?.toObject === 'function'
+    ? settings.toObject({ getters: false, virtuals: false })
+    : settings;
+  const source = plainSettings && typeof plainSettings === 'object' ? { ...plainSettings } : {};
   delete source.negativeMarking;
   delete source.negativeMarkValue;
   delete source.negativeCoding;
@@ -2817,7 +2820,12 @@ export async function updateAssessment(req, res) {
       req,
     });
 
-    res.json({ message: 'Assessment updated', assessmentId: assessment._id });
+    res.json({
+      message: 'Assessment updated',
+      assessmentId: assessment._id,
+      version: assessment.version,
+      updatedAt: assessment.updatedAt,
+    });
 
     if (assessment.lifecycleStatus === 'published') {
       const assignedUsers = await User.find({ _id: { $in: assessment.assignedStudents || [] } }).select('_id').lean();
@@ -3351,7 +3359,7 @@ export async function releaseAssessmentAnswers(req, res) {
     }
 
     const nextSettings = normalizeAssessmentSettings({
-      ...(assessment.settings && typeof assessment.settings === 'object' ? assessment.settings : {}),
+      ...normalizeAssessmentSettings(assessment.settings),
       showResultsAfterSubmit: true,
       showCorrectAnswers: true,
       showSectionBreakdown: true,
