@@ -58,6 +58,7 @@ function ThreeDotsMenu({ assessment, onOpen, onPreview, onViewReport, onEdit, on
   const ref = useRef(null);
   const buttonRef = useRef(null);
   const menuRef = useRef(null);
+  const menuId = `assessment-actions-${assessment._id}`;
 
   useEffect(() => {
     const handler = (e) => {
@@ -123,6 +124,7 @@ function ThreeDotsMenu({ assessment, onOpen, onPreview, onViewReport, onEdit, on
   const item = (icon, label, onClick, danger = false) => (
     <button
       type="button"
+      role="menuitem"
       onClick={(event) => { event.preventDefault(); event.stopPropagation(); onClick(); setOpen(false); }}
       className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs font-medium transition-colors hover:bg-slate-50 dark:hover:bg-gray-700 ${danger ? 'text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-gray-200'}`}
     >
@@ -137,6 +139,7 @@ function ThreeDotsMenu({ assessment, onOpen, onPreview, onViewReport, onEdit, on
       {open && menuStyle && (
         <motion.div
           ref={menuRef}
+          id={menuId}
           data-platform-action-menu
           data-dropdown-direction={menuDirection}
           role="menu"
@@ -185,6 +188,7 @@ function ThreeDotsMenu({ assessment, onOpen, onPreview, onViewReport, onEdit, on
         data-platform-menu-trigger
         aria-expanded={open}
         aria-haspopup="menu"
+        aria-controls={menuId}
         aria-label="Open assessment actions"
         className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
       >

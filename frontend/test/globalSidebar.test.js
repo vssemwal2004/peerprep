@@ -168,6 +168,31 @@ test('account popup still supports theme switching, outside dismissal and Escape
   assert.equal(group.getAttribute('aria-expanded'), 'true');
 });
 
+test('portaled action menu survives capture pointerdown and executes its item click', async () => {
+  await act(async () => root.render(h(Dismiss)));
+  const boundary = document.createElement('div');
+  boundary.className = 'relative';
+  const trigger = document.createElement('button');
+  trigger.setAttribute('aria-expanded', 'true');
+  trigger.addEventListener('click', () => trigger.setAttribute('aria-expanded', 'false'));
+  boundary.appendChild(trigger);
+  document.body.appendChild(boundary);
+
+  const menu = document.createElement('div');
+  menu.setAttribute('data-platform-action-menu', '');
+  const action = document.createElement('button');
+  let actionCount = 0;
+  action.addEventListener('click', () => { actionCount += 1; });
+  menu.appendChild(action);
+  document.body.appendChild(menu);
+
+  await act(async () => action.dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true })));
+  assert.equal(trigger.getAttribute('aria-expanded'), 'true', 'global dismiss must not close a portaled action menu before click');
+  assert.equal(action.isConnected, true);
+  await act(async () => action.click());
+  assert.equal(actionCount, 1);
+});
+
 test('switching groups keeps just the selected section open', async () => {
   await mount();
   for (const label of ['Assessments', 'Library', 'Interviews', 'Settings']) {

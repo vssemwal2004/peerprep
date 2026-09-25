@@ -23,9 +23,19 @@ function eventIsInsideControlledPopup(trigger, event) {
   });
 }
 
+function eventIsInsidePlatformPopup(event) {
+  const selector = '[data-platform-action-menu], [data-platform-popup-root]';
+  const eventPath = typeof event.composedPath === 'function' ? event.composedPath() : [];
+  return eventPath.some((node) => typeof node?.matches === 'function' && node.matches(selector))
+    || Boolean(event.target?.closest?.(selector));
+}
+
 export default function PopupDismissManager() {
   useEffect(() => {
     const closeOpenPopups = (event) => {
+      // Portaled action menus live outside their trigger's DOM boundary. They
+      // must survive pointerdown so their button can receive the following click.
+      if (eventIsInsidePlatformPopup(event)) return;
       document.querySelectorAll(OPEN_POPUP_TRIGGER).forEach((trigger) => {
         const boundary = getPopupBoundary(trigger);
         if (boundary?.contains(event.target) || eventIsInsideControlledPopup(trigger, event)) return;

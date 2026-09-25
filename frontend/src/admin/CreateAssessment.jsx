@@ -7,7 +7,7 @@ import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import { useAuth } from '../context/AuthContext';
 import { hasPermission } from './coordinatorPermissions';
-import { ArrowLeft, ClipboardList, Save, Send, Plus, Eye, EyeOff, Hash, Lock, Shield, Globe, Copy, Camera, Volume2, Monitor, Shuffle, Droplet, Navigation, Layers, Timer, RotateCcw, CheckSquare, Clock, BookOpen, FilePlus2, Check, X, Users, Upload, Search } from 'lucide-react';
+import { ArrowLeft, ClipboardList, Save, Send, Plus, Eye, EyeOff, Hash, Lock, Shield, Globe, Copy, Camera, Volume2, Monitor, Shuffle, Droplet, Navigation, Layers, Timer, RotateCcw, CheckSquare, Clock, BookOpen, FilePlus2, Check, X, Users, Upload, Search, Loader2 } from 'lucide-react';
 import { SectionCard } from './compiler/CompilerUi';
 import RichTextEditor from './compiler/RichTextEditor';
 import { createDefaultProblemForm, createProblemFormFromProblem } from './compiler/compilerUtils';
@@ -264,12 +264,13 @@ const toUtcISOString = (value) => {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 };
 
-function Toggle({ value, onChange }) {
+function Toggle({ value, onChange, disabled = false }) {
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={() => onChange(!value)}
-      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none ${value ? 'bg-sky-600' : 'bg-slate-300 dark:bg-gray-600'}`}
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${value ? 'bg-sky-600' : 'bg-slate-300 dark:bg-gray-600'}`}
     >
       <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${value ? 'translate-x-6' : 'translate-x-1'}`} />
     </button>
@@ -413,6 +414,7 @@ export default function CreateAssessment({ viewOnly = false }) {
 
   const draftLoadedRef = useRef(false);
   const isSavingRef = useRef(false);
+  const publishRequestRef = useRef(false);
 
   // Generate a unique session key for new assessments so drafts don't leak across sessions
   const sessionIdRef = useRef(null);
@@ -1204,7 +1206,6 @@ export default function CreateAssessment({ viewOnly = false }) {
       return false;
     }
     isSavingRef.current = true;
-    setLoading(true);
     try {
       const payload = buildPayload('published');
       let publishedId = currentId;
@@ -1238,15 +1239,22 @@ export default function CreateAssessment({ viewOnly = false }) {
       toast.error(err.message || 'Failed to publish assessment');
       return false;
     } finally {
-      setLoading(false);
       isSavingRef.current = false;
     }
   };
 
   const handlePublishConfirm = async () => {
-    const success = await publishAssessment();
-    if (success) {
-      setShowPublishModal(false);
+    if (publishRequestRef.current) return;
+    publishRequestRef.current = true;
+    setLoading(true);
+    try {
+      const success = await publishAssessment();
+      if (success) {
+        setShowPublishModal(false);
+      }
+    } finally {
+      publishRequestRef.current = false;
+      setLoading(false);
     }
   };
 
@@ -2444,7 +2452,7 @@ export default function CreateAssessment({ viewOnly = false }) {
 
         {showPublishModal && !isPublishedEdit && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4">
-            <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-gray-700 dark:bg-gray-900">
+            <div aria-busy={loading} className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-gray-700 dark:bg-gray-900">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Publish Assessment</h2>
@@ -2453,7 +2461,8 @@ export default function CreateAssessment({ viewOnly = false }) {
                 <button
                   type="button"
                   onClick={() => setShowPublishModal(false)}
-                  className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                  disabled={loading}
+                  className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
                 >
                   Close
                 </button>
@@ -2497,11 +2506,11 @@ export default function CreateAssessment({ viewOnly = false }) {
                         New students receive login credentials, schedule, assessment password and access link in one email. Existing students receive assessment details.
                       </div>
                     </div>
-                    <Toggle value={Boolean(form.sendEmail)} onChange={(value) => updateForm({ sendEmail: value })} />
+                    <Toggle value={Boolean(form.sendEmail)} disabled={loading} onChange={(value) => updateForm({ sendEmail: value })} />
                   </div>
                   <div className="mt-3 flex items-center justify-between border-t border-sky-100 pt-3 dark:border-sky-900/40">
                     <span className="text-[11px] text-slate-500 dark:text-gray-400">Send a preview to your administrator email before publishing.</span>
-                    <button type="button" onClick={handleSendTestEmail} disabled={sendingTestEmail} className="rounded-lg border border-sky-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300">
+                    <button type="button" onClick={handleSendTestEmail} disabled={sendingTestEmail || loading} className="rounded-lg border border-sky-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-sky-700 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300">
                       {sendingTestEmail ? 'Sending…' : 'Send test email'}
                     </button>
                   </div>
@@ -2517,27 +2526,37 @@ export default function CreateAssessment({ viewOnly = false }) {
                 </div>
               </div>
 
+              {loading && (
+                <div role="status" aria-live="polite" className="mt-4 flex items-center gap-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-800 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-200">
+                  <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
+                  <div><p className="font-semibold">Publishing assessment…</p><p className="mt-0.5 text-[11px] opacity-80">Creating student access and saving assessment settings. Please keep this window open.</p></div>
+                </div>
+              )}
+
               <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setShowPublishModal(false)}
-                  className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                  disabled={loading}
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   onClick={handleDraftConfirm}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                  disabled={loading}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
                 >
                   Save Draft
                 </button>
                 <button
                   type="button"
                   onClick={handlePublishConfirm}
-                  className="rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-500"
+                  disabled={loading}
+                  className="inline-flex min-w-[106px] items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-500 disabled:cursor-wait disabled:bg-sky-500 disabled:opacity-90"
                 >
-                  Publish
+                  {loading ? <><Loader2 className="h-4 w-4 animate-spin" />Publishing…</> : 'Publish'}
                 </button>
               </div>
             </div>
