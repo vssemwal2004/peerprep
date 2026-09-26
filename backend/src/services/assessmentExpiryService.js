@@ -1,62 +1,36 @@
 import Assessment from '../models/Assessment.js';
 import AssessmentSubmission from '../models/AssessmentSubmission.js';
-import { scoreAssessmentWithTestCases } from './assessmentScoringService.js';
-import { enqueueAssessmentCodingEvaluationJobs } from './compilerExecutionWorkflowService.js';
+import { finishAssessmentSubmission, mutateAssessmentSubmission } from './assessmentPersistenceService.js';
 import {
   getAssessmentAttemptDeadline,
   getAssessmentAttemptTimeTakenSec,
   isAssessmentAttemptExpired,
 } from './assessmentExpiryPolicy.js';
 
-function assessmentForStoredSubmission(assessment, submission) {
-  const source = typeof assessment?.toObject === 'function' ? assessment.toObject() : assessment;
-  const storedSections = submission.deliveryPreparedAt && Array.isArray(submission.deliverySections)
-    ? submission.deliverySections
-    : source.sections || [];
-  return { ...source, sections: storedSections };
-}
+let globalSweepCursor = null;
 
 async function finalizeExpiredSubmission(submission, assessment, now) {
   if (!isAssessmentAttemptExpired(assessment, submission, now)) return false;
 
-  const deadline = getAssessmentAttemptDeadline(assessment, submission);
-  const deliveredAssessment = assessmentForStoredSubmission(assessment, submission);
-  const scoring = scoreAssessmentWithTestCases(deliveredAssessment, submission.answers || []);
-  const updated = await AssessmentSubmission.findOneAndUpdate(
-    { _id: submission._id, status: 'in_progress' },
-    {
-      $set: {
-        status: 'submitted',
-        submittedAt: deadline,
-        lastSavedAt: now,
-        score: scoring.score,
-        maxMarks: scoring.maxMarks,
-        accuracy: scoring.accuracy,
-        timeTakenSec: getAssessmentAttemptTimeTakenSec(submission, deadline),
-        isLate: false,
-        activeSessionId: '',
-      },
-      $unset: {
-        activeSessionHeartbeatAt: 1,
-        pauseStartedAt: 1,
-        securityPauseReason: 1,
-      },
-      $max: { attemptCount: 1 },
+  const updated = await mutateAssessmentSubmission({
+    filter: { _id: submission._id, status: 'in_progress' },
+    mutate(current) {
+      // Re-evaluate after every CAS conflict: a concurrently accepted pause or
+      // save must not leave a final score based on an earlier answer snapshot.
+      if (!isAssessmentAttemptExpired(assessment, current, now)) return false;
+      const deadline = getAssessmentAttemptDeadline(assessment, current);
+      const changed = finishAssessmentSubmission(current, {
+        now, submittedAt: deadline,
+        timeTakenSec: getAssessmentAttemptTimeTakenSec(current, deadline),
+      });
+      if (changed) {
+        current.pauseStartedAt = undefined;
+        current.securityPauseReason = undefined;
+      }
+      return changed;
     },
-    { new: true },
-  );
-
-  if (!updated) return false;
-  try {
-    await enqueueAssessmentCodingEvaluationJobs({
-      assessment: deliveredAssessment,
-      submission: updated,
-      studentId: updated.studentId,
-    });
-  } catch (error) {
-    console.error(`[AssessmentExpiry] Coding evaluation queue failed for ${updated._id}:`, error.message);
-  }
-  return true;
+  });
+  return Boolean(updated.result);
 }
 
 /**
@@ -73,9 +47,16 @@ export async function reconcileExpiredAssessmentSubmissions({
   if (assessmentId) query.assessmentId = assessmentId;
   if (studentId) query.studentId = studentId;
 
+  const globalSweep = !assessmentId && !studentId;
+  if (globalSweep && globalSweepCursor) query._id = { $gt: globalSweepCursor };
+  const batchLimit = Math.min(5000, Math.max(1, Number(limit) || 1000));
   const submissions = await AssessmentSubmission.find(query)
-    .sort({ startedAt: 1 })
-    .limit(Math.min(5000, Math.max(1, Number(limit) || 1000)));
+    .select('assessmentId status startedAt pausedDurationMs pauseStartedAt')
+    .sort({ _id: 1 })
+    .limit(batchLimit);
+  // Keyset pagination prevents older, long-running attempts from starving
+  // later attempts that expire sooner. It wraps after completing each pass.
+  if (globalSweep) globalSweepCursor = submissions.length === batchLimit ? submissions.at(-1)._id : null;
   if (!submissions.length) return { checked: 0, completed: 0 };
 
   const assessmentIds = [...new Set(submissions.map((item) => String(item.assessmentId)))];

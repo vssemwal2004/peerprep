@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { api } from '../../utils/api';
 import {
   Activity, AlertTriangle, Camera, Clipboard, Clock, Copy, Eye, Mic, Monitor,
   MousePointer, ShieldAlert, Smartphone, Volume2, Wifi, X,
@@ -38,14 +40,53 @@ const toneClassMap = {
   emerald: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-300',
 };
 
-export default function ReportViolationModal({ report, loading, onClose }) {
-  if (!report) return null;
+function EvidencePreview({ eventId }) {
+  const [url, setUrl] = useState('');
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState('');
+  async function reveal() {
+    setPending(true);
+    setError('');
+    try {
+      const data = await api.getAssessmentEvidence(eventId);
+      if (!data.url || !/^(https:\/\/|data:image\/(jpeg|png|webp);base64,)/.test(data.url)) throw new Error('Evidence is unavailable.');
+      setUrl(data.url);
+    } catch (err) { setError(err.message || 'Unable to load evidence.'); }
+    finally { setPending(false); }
+  }
+  return <div className="mt-2">
+    <button type="button" className="text-xs font-semibold underline" onClick={reveal} disabled={pending}>{pending ? 'Loading...' : url ? 'Refresh evidence link' : 'View evidence'}</button>
+    {error && <p role="alert" className="mt-1 text-xs">{error}</p>}
+    {url && <img src={url} alt="Assessment monitoring evidence" referrerPolicy="no-referrer" className="mt-2 max-h-64 max-w-full rounded-lg" onError={() => { setUrl(''); setError('Link expired or evidence unavailable. Request a new link.'); }} />}
+  </div>;
+}
+
+function ViolationModalContent({ report, loading, onClose }) {
+  const [olderEvents, setOlderEvents] = useState([]);
+  const [cursor, setCursor] = useState(report.nextEventCursor);
+  const [pageLoading, setPageLoading] = useState(false);
+  const [pageError, setPageError] = useState('');
+  async function loadOlder() {
+    if (!cursor || pageLoading) return;
+    setPageLoading(true);
+    setPageError('');
+    try {
+      const page = await api.getSubmissionViolations(report.submission.id, { before: cursor });
+      setOlderEvents((previous) => [...previous, ...(page.timeline || [])]);
+      setCursor(page.nextEventCursor);
+    } catch (err) { setPageError(err.message || 'Unable to load older events.'); }
+    finally { setPageLoading(false); }
+  }
 
   const counters = report?.counters || {};
   const totalViolations = Number(counters.totalViolations || 0);
   const startedAt = report?.submission?.startedAt;
   const submittedAt = report?.submission?.submittedAt;
-  const timeline = report?.timeline || [];
+  const uniqueEvents = new Map();
+  for (const event of [...(report.timeline || []), ...olderEvents]) {
+    uniqueEvents.set(event.eventId || `${event.type}:${event.at}:${event.source}`, event);
+  }
+  const timeline = [...uniqueEvents.values()].sort((a, b) => new Date(a.at) - new Date(b.at));
   const heatmapRows = [
     { label: 'Tab', values: timeline.slice(0, 7).map((item) => item.type === 'tab_switch' ? 1 : 0) },
     { label: 'Camera', values: timeline.slice(0, 7).map((item) => String(item.type || '').includes('camera') || String(item.type || '').includes('face') ? 1 : 0) },
@@ -184,10 +225,10 @@ export default function ReportViolationModal({ report, loading, onClose }) {
                   ) : (
                     <div className="max-h-[420px] overflow-y-auto px-5 py-4">
                       <div className="relative space-y-3 before:absolute before:left-4 before:top-2 before:h-[calc(100%-1rem)] before:w-px before:bg-slate-200 dark:before:bg-gray-700">
-                        {timeline.map((item, index) => {
+                        {timeline.map((item) => {
                           const Icon = violationIcons[item.type] || violationIcons.default;
                           return (
-                            <div key={`${item.type}-${item.at}-${index}`} className="relative flex gap-3">
+                            <div key={item.eventId || `${item.type}:${item.at}:${item.source}`} className="relative flex gap-3">
                               <div className="z-10 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-white text-rose-600 ring-4 ring-rose-50 dark:bg-gray-900 dark:text-rose-300 dark:ring-rose-900/20">
                                 <Icon className="h-4 w-4" />
                               </div>
@@ -198,10 +239,13 @@ export default function ReportViolationModal({ report, loading, onClose }) {
                                 </div>
                                 <p className="mt-1 text-xs opacity-90">{item.message || 'Violation recorded.'}</p>
                                 {item.source && <p className="mt-2 text-[10px] uppercase tracking-wider opacity-60">Source: {item.source}</p>}
+                                {item.meta?.evidenceId && <EvidencePreview eventId={item.meta.evidenceId} />}
                               </div>
                             </div>
                           );
                         })}
+                        {cursor && report.submission?.id && <button type="button" className="relative rounded-lg border px-3 py-2 text-xs font-semibold" onClick={loadOlder} disabled={pageLoading}>{pageLoading ? 'Loading older events...' : 'Load older events'}</button>}
+                        {pageError && <p role="alert" className="text-xs text-rose-600">{pageError}</p>}
                       </div>
                     </div>
                   )}
@@ -213,4 +257,8 @@ export default function ReportViolationModal({ report, loading, onClose }) {
       </div>
     </div>
   );
+}
+
+export default function ReportViolationModal(props) {
+  return props.report ? <ViolationModalContent key={props.report.submission?.id || props.report.submission?.studentRollNo} {...props} /> : null;
 }

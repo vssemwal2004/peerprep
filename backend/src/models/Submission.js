@@ -74,6 +74,7 @@ const submissionSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Assessment',
   },
+  assessmentAttemptGeneration: { type: Number, min: 1 },
   output: {
     type: String,
     default: '',

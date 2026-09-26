@@ -2,12 +2,20 @@ import mongoose from 'mongoose';
 import bcrypt from 'bcrypt';
 import Assessment from '../models/Assessment.js';
 import AssessmentSubmission from '../models/AssessmentSubmission.js';
+import { evaluatedAssessmentExpression, evaluatedScoreExpression } from '../services/assessmentReportSummaryService.js';
+import { acquireAssessmentReportSlot, createBoundedReportAggregate, assertAssessmentExportSize, MAX_ASSESSMENT_EXPORT_ROWS } from '../services/assessmentReportLimits.js';
+import AssessmentAttemptArchive from '../models/AssessmentAttemptArchive.js';
+import AssessmentEvent from '../models/AssessmentEvent.js';
+import { deleteAssessmentAttemptData } from '../services/assessmentDataCleanupService.js';
+import { loadAssessmentDefinition } from '../services/assessmentDefinitionService.js';
+import { readPresenceCheckpoint, writePresenceCheckpoint } from '../services/assessmentPresenceService.js';
+import { networkPauseCreditFields } from '../services/assessmentHeartbeatPolicy.js';
+import { createAssessmentEvidenceUpload, verifyAssessmentEvidenceUpload, normalizeLegacyEvidence, signAssessmentEvidenceRead } from '../services/assessmentEvidenceService.js';
 import Problem from '../models/Problem.js';
 import Submission from '../models/Submission.js';
 import User from '../models/User.js';
 import StudentUploadBatch from '../models/StudentUploadBatch.js';
 import { createNotification, createNotifications } from '../services/notificationService.js';
-import { enqueueAssessmentCodingEvaluationJobs } from '../services/compilerExecutionWorkflowService.js';
 import { removeAssessmentQuestionsFromLibrary, syncAssessmentQuestionsToLibrary } from '../services/questionLibraryService.js';
 import { logActivity } from './adminActivityController.js';
 import { enqueueMailJobs } from '../services/mailQueueService.js';
@@ -21,6 +29,12 @@ import {
   scoreAssessmentWithTestCases,
 } from '../services/assessmentScoringService.js';
 import { mergeAssessmentAnswers } from '../services/assessmentAnswerService.js';
+import {
+  AssessmentWriteError, mutateAssessmentSubmission, finishAssessmentSubmission,
+  isTerminalAssessmentSubmission, assertAssessmentSession, assessmentWriteAcknowledgement,
+  normalizeAssessmentAnswerChanges, acceptAssessmentBatch, assessmentBatchMatches, assertAssessmentWriteProtocol,
+} from '../services/assessmentPersistenceService.js';
+import { getAssessmentAttemptDeadline } from '../services/assessmentExpiryPolicy.js';
 import crypto from 'crypto';
 import {
   AI_PROCTORING_VIOLATION_TYPES,
@@ -234,6 +248,7 @@ function assessmentRouteQuery(id) {
 async function findAssessmentForStudentRoute(id, { lean = false, select = '' } = {}) {
   const query = assessmentRouteQuery(id);
   if (!query) return null;
+  if (lean && !select) return loadAssessmentDefinition(query);
   let request = Assessment.findOne(query);
   if (select) request = request.select(select);
   if (lean) request = request.lean();
@@ -543,6 +558,10 @@ function sanitizeStudentSubmissionForResponse(submission) {
   if (!submission) return submission;
   const source = typeof submission.toObject === 'function' ? submission.toObject() : { ...submission };
   delete source.deliverySections;
+  delete source.pendingWork;
+  delete source.proctoringSnapshots;
+  delete source.monitoringEvents;
+  Object.assign(source, assessmentWriteAcknowledgement(submission));
   return source;
 }
 
@@ -990,6 +1009,9 @@ function getAssessmentQuestionProblemId(question = {}) {
 }
 
 async function reconcileAssessmentCodingAnswers(assessment = {}, submission = {}) {
+  // Modern attempts are graded only by their versioned evaluation workers.
+  // Legacy report reconstruction below is read-only and never rewrites answers.
+  if (submission.schemaVersion >= 2 || submission.evaluationVersion > 0 || submission.pendingWork?.version) return submission;
   const codingQuestions = [];
   (assessment.sections || []).forEach((section, sectionIndex) => {
     (section.questions || []).forEach((question, questionIndex) => {
@@ -1007,7 +1029,7 @@ async function reconcileAssessmentCodingAnswers(assessment = {}, submission = {}
     problem: { $in: codingQuestions.map((item) => item.problemId) },
     mode: 'submit',
     status: { $in: ['AC', 'WA', 'TLE', 'RE', 'CE'] },
-  }).sort({ createdAt: -1, completedAt: -1 }).lean();
+  }).sort({ createdAt: -1, completedAt: -1 }).limit(1000).maxTimeMS(2000).lean();
 
   const latestByProblem = new Map();
   verifiedSubmissions.forEach((entry) => {
@@ -1028,6 +1050,8 @@ async function reconcileAssessmentCodingAnswers(assessment = {}, submission = {}
     if (answerIndex < 0) return;
 
     const answer = answers[answerIndex];
+    if (String(answer.code || '') !== String(verified.sourceCode || '')
+      || String(answer.language || '') !== String(verified.language || '')) return;
     if (answer?.submissionId && String(answer.submissionId) !== String(verified._id)) return;
     if (!answer?.submissionId && answer?.jobId && String(answer.jobId) !== String(verified.jobId || '')) return;
     const currentVerdict = getCodingAnswerVerdict(answer);
@@ -1062,17 +1086,6 @@ async function reconcileAssessmentCodingAnswers(assessment = {}, submission = {}
   if (!changed) return submission;
 
   const scoring = scoreAssessment(assessment, answers);
-  await AssessmentSubmission.updateOne(
-    { _id: submission._id },
-    {
-      $set: {
-        answers,
-        score: scoring.score,
-        maxMarks: scoring.maxMarks,
-        accuracy: scoring.accuracy,
-      },
-    },
-  );
   return { ...submission, answers, ...scoring };
 }
 
@@ -1240,12 +1253,13 @@ function buildProctoringFlags(submission = {}) {
 
 function buildMonitoringTimeline(submission = {}) {
   const normalizeEvent = (event = {}, source = 'monitoring') => ({
+    eventId: event.eventId || String(event._id || ''),
     type: event.type || event.eventType || event.kind || 'activity',
     message: event.message || event.reason || event.label || 'Monitoring event recorded.',
-    at: event.at || event.timestamp || event.createdAt || event.time || null,
+    at: event.at || event.capturedAt || event.timestamp || event.createdAt || event.time || null,
     severity: event.severity || event.level || event.meta?.severity || 'medium',
     source,
-    meta: event.meta || event.details || {},
+    meta: { ...(event.meta || event.details || {}), ...(event.evidenceId ? { evidenceId: event.evidenceId } : {}) },
   });
 
   const events = [
@@ -1255,7 +1269,13 @@ function buildMonitoringTimeline(submission = {}) {
     ...(Array.isArray(submission.proctoringSnapshots) ? submission.proctoringSnapshots.map((event) => normalizeEvent(event, 'snapshot')) : []),
   ].filter((event) => event.at);
 
-  return events.sort((a, b) => new Date(a.at) - new Date(b.at));
+  const seen = new Set();
+  return events.filter((event) => {
+    if (!event.eventId) return true;
+    if (seen.has(event.eventId)) return false;
+    seen.add(event.eventId);
+    return true;
+  }).sort((a, b) => new Date(a.at) - new Date(b.at));
 }
 
 const AI_PROCTORING_SUMMARY_DEFAULTS = Object.freeze({
@@ -1349,18 +1369,19 @@ function formatStudentSubmissionStatus(submission = {}) {
 }
 
 function buildStudentReportRow(assessment = {}, submission = {}, { rankInfo = null, now = new Date() } = {}) {
+  const evaluationUnavailable = ['processing', 'failed'].includes(submission.evaluationStatus);
   const deliveredAssessment = assessmentForSubmission(assessment, submission);
   const analytics = buildAssessmentAttemptAnalytics(deliveredAssessment, submission);
   const totalMarks = Number(deliveredAssessment.totalMarks || computeTotalMarksFromSections(deliveredAssessment.sections || []));
-  const score = Number(submission.score || 0);
-  const accuracy = Number.isFinite(Number(submission.accuracy))
+  const score = evaluationUnavailable ? null : Number(submission.score || 0);
+  const accuracy = evaluationUnavailable ? null : Number.isFinite(Number(submission.accuracy))
     ? Number(submission.accuracy)
     : totalMarks > 0
       ? Number(((score / totalMarks) * 100).toFixed(2))
       : 0;
   const permissions = buildStudentResultPermissions(assessment, submission, now);
-  const sectionBreakdown = permissions.canViewSectionAnalytics ? analytics.sectionBreakdown : [];
-  const questionWise = permissions.canViewQuestionReview
+  const sectionBreakdown = permissions.canViewSectionAnalytics && !evaluationUnavailable ? analytics.sectionBreakdown : [];
+  const questionWise = permissions.canViewQuestionReview && !evaluationUnavailable
     ? buildQuestionWiseReport(deliveredAssessment, submission, permissions)
     : [];
 
@@ -1372,13 +1393,14 @@ function buildStudentReportRow(assessment = {}, submission = {}, { rankInfo = nu
     duration: assessment.duration || 0,
     dateAttempted: submission.submittedAt || submission.startedAt || submission.updatedAt || submission.createdAt,
     status: formatStudentSubmissionStatus(submission),
+    evaluationStatus: submission.evaluationStatus || 'completed',
     score: permissions.canViewScore ? score : null,
     totalMarks: permissions.canViewScore ? totalMarks : null,
     rawScore: permissions.canViewScore ? score : null,
     totalQuestions: analytics.totalQuestions,
-    correctAnswers: permissions.canViewScore ? analytics.correctAnswers : null,
-    wrongAnswers: permissions.canViewScore ? analytics.wrongAnswers : null,
-    partialAnswers: permissions.canViewScore ? analytics.partialAnswers : null,
+    correctAnswers: permissions.canViewScore && !evaluationUnavailable ? analytics.correctAnswers : null,
+    wrongAnswers: permissions.canViewScore && !evaluationUnavailable ? analytics.wrongAnswers : null,
+    partialAnswers: permissions.canViewScore && !evaluationUnavailable ? analytics.partialAnswers : null,
     skippedQuestions: permissions.canViewScore ? analytics.skippedQuestions : null,
     pendingEvaluationQuestions: permissions.canViewScore ? analytics.pendingEvaluationQuestions : null,
     accuracy: permissions.canViewPercentage ? accuracy : null,
@@ -1388,8 +1410,8 @@ function buildStudentReportRow(assessment = {}, submission = {}, { rankInfo = nu
     sectionBreakdown,
     questionWise,
     permissions,
-    rank: permissions.canViewRank ? rankInfo?.rank || null : null,
-    percentile: permissions.canViewRank ? rankInfo?.percentile || null : null,
+    rank: permissions.canViewRank && !evaluationUnavailable ? rankInfo?.rank || null : null,
+    percentile: permissions.canViewRank && !evaluationUnavailable ? rankInfo?.percentile || null : null,
     participants: permissions.canViewRank ? rankInfo?.participants || null : null,
   };
 }
@@ -1424,9 +1446,12 @@ async function buildStudentRankInfoByAssessment(assessmentIds = [], studentId) {
 
   const submittedRows = await AssessmentSubmission.find({
     status: 'submitted',
+    evaluationStatus: { $nin: ['processing', 'failed'] },
+    score: { $type: 'number' },
     assessmentId: { $in: uniqueAssessmentIds },
   })
     .select('assessmentId studentId score timeTakenSec submittedAt startedAt updatedAt createdAt')
+    .maxTimeMS(3000)
     .lean();
 
   const rowsByAssessment = new Map();
@@ -2745,7 +2770,7 @@ export async function updateAssessment(req, res) {
           assessmentId: assessment._id,
           status: { $in: ['not_started', 'incomplete'] },
         },
-        { $unset: { passwordVerifiedAt: '' } },
+        { $unset: { passwordVerifiedAt: '' }, $inc: { __v: 1 } },
       );
     }
     await syncAssessmentQuestionsToLibrary(assessment);
@@ -2837,7 +2862,7 @@ export async function deleteAssessment(req, res) {
     if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
     await removeAssessmentQuestionsFromLibrary(id);
 
-    await AssessmentSubmission.deleteMany({ assessmentId: id });
+    await deleteAssessmentAttemptData({ assessmentId: id });
 
     logActivity({
       userEmail: req.user?.email,
@@ -2866,7 +2891,7 @@ export async function resetAssessmentSubmissions(req, res) {
       return res.status(403).json({ error: 'Not allowed to reset this assessment.' });
     }
 
-    const result = await AssessmentSubmission.deleteMany({ assessmentId: assessment._id });
+    const result = await deleteAssessmentAttemptData({ assessmentId: assessment._id });
     assessment.manuallyCompletedAt = undefined;
     await assessment.save();
 
@@ -3074,7 +3099,7 @@ export async function resetAssessmentStudentSubmission(req, res) {
       return res.status(400).json({ error: 'Student is not eligible for this assessment.' });
     }
 
-    const result = await AssessmentSubmission.deleteOne({ assessmentId: assessment._id, studentId: student._id });
+    const result = await deleteAssessmentAttemptData({ assessmentId: assessment._id, studentId: student._id });
 
     logActivity({
       userEmail: req.user?.email,
@@ -3133,7 +3158,7 @@ export async function removeAssessmentEligibleStudent(req, res) {
     assessment.versionUpdatedAt = new Date();
     await assessment.save();
 
-    const result = await AssessmentSubmission.deleteOne({ assessmentId: assessment._id, studentId: student._id });
+    const result = await deleteAssessmentAttemptData({ assessmentId: assessment._id, studentId: student._id });
 
     logActivity({
       userEmail: req.user?.email,
@@ -3273,7 +3298,7 @@ export async function removeAssessmentEligibleStudents(req, res) {
     assessment.version = (assessment.version || 1) + 1;
     assessment.versionUpdatedAt = new Date();
     await assessment.save();
-    const result = await AssessmentSubmission.deleteMany({ assessmentId: assessment._id, studentId: { $in: studentIds } });
+    const result = await deleteAssessmentAttemptData({ assessmentId: assessment._id, studentId: { $in: studentIds } });
     return res.json({
       ok: true,
       removedCount: previousCount - assessment.assignedStudents.length,
@@ -3704,541 +3729,334 @@ export async function getStudentAssessmentDashboard(req, res) {
   }
 }
 
+async function requireStudentAssessment(id, student, { metadataOnly = false } = {}) {
+  const assessment = await findAssessmentForStudentRoute(id, { lean: true,
+    ...(metadataOnly ? { select: 'settings duration startTime endTime lifecycleStatus targetType assignedStudents passwordEnabled passwordHash manuallyCompletedAt' } : {}),
+  });
+  if (!assessment) throw new AssessmentWriteError(404, 'ASSESSMENT_NOT_FOUND', 'Assessment not found.');
+  if (assessment.lifecycleStatus === 'draft') throw new AssessmentWriteError(403, 'ASSESSMENT_DRAFT', 'Assessment is not published yet.');
+  if (!assessment.startTime || !assessment.endTime || !assessment.duration) throw new AssessmentWriteError(400, 'INVALID_SCHEDULE', 'Assessment schedule is incomplete.');
+  if (!isStudentAssignedToAssessment(assessment, student)) throw new AssessmentWriteError(403, 'NOT_ASSIGNED', 'Not assigned to this assessment.');
+  return assessment;
+}
+
+async function ensureStudentAttempt(assessment, studentId, { passwordVerified = false } = {}) {
+  const filter = { assessmentId: assessment._id, studentId };
+  let doc = await AssessmentSubmission.findOne(filter).select('-proctoringSnapshots -monitoringEvents');
+  if (doc) return doc;
+  const now = new Date();
+  if (now > assessment.endTime || assessment.manuallyCompletedAt) throw new AssessmentWriteError(403, 'ASSESSMENT_CLOSED', 'Assessment has closed.');
+  const delivery = buildDeliverySections(assessment, studentId);
+  try {
+    return await AssessmentSubmission.create({
+      ...filter,
+      deliverySections: delivery.sections,
+      deliveryPreparedAt: now,
+      assignedSetNumber: delivery.assignedSetNumber,
+      passwordVerifiedAt: passwordVerified ? now : undefined,
+      status: 'not_started',
+      attemptCount: 0,
+    });
+  } catch (error) {
+    if (error.code !== 11000) throw error;
+    // Two simultaneous unlock requests share the unique student/assessment key.
+    doc = await AssessmentSubmission.findOne(filter);
+    if (!doc) throw error;
+    return doc;
+  }
+}
+
+function prepareAttemptDelivery(doc, assessment, studentId, now) {
+  if (doc.deliveryPreparedAt) return;
+  const delivery = buildDeliverySections(assessment, studentId);
+  doc.deliverySections = delivery.sections;
+  doc.deliveryPreparedAt = now;
+  doc.assignedSetNumber = delivery.assignedSetNumber;
+}
+
+function finalizeIfDeadlinePassed(doc, assessment, now) {
+  if (doc.status !== 'in_progress') return false;
+  const delivered = assessmentForSubmission(assessment, doc);
+  const settings = normalizeAssessmentSettings(assessment.settings || {});
+  const allowedEnd = computeAllowedEnd(delivered, doc.startedAt || now, doc.pausedDurationMs);
+  const expired = ((now > allowedEnd || hasSecurityPauseExpired(doc, settings, now))
+    && !isSecurityPauseWithinLimit(doc, settings, now)) || Boolean(assessment.manuallyCompletedAt);
+  if (!expired) return false;
+  const timeTakenSec = computeEffectiveTimeTakenSec(doc, now);
+  if (doc.pauseStartedAt) finishSubmissionSecurityPause(doc, now);
+  return finishAssessmentSubmission(doc, { now, timeTakenSec });
+}
+
+async function studentAttemptResponse(assessment, submission, student, now, message) {
+  const delivered = assessmentForSubmission(assessment, submission);
+  const attemptAssessment = await hydrateAssessmentCodingRuntime(delivered);
+  return {
+    ...(message ? { message } : {}),
+    assessment: sanitizeStudentAssessmentForResponse(attemptAssessment),
+    submission: sanitizeStudentSubmissionForResponse(submission),
+    candidate: buildCandidateIdentity(student),
+    serverTime: now,
+    allowedEnd: computeAllowedEnd(delivered, submission.startedAt || now, submission.pausedDurationMs),
+    securityRecheckTimeoutSec: getSecurityRecheckTimeoutSec(assessment.settings || {}),
+    requiresSecuritySetup: !isTerminalAssessmentSubmission(submission) && !submission.securityCompletedAt,
+    requiredSecuritySteps: getRequiredSecuritySteps(assessment.settings || {}, submission),
+    completedSecuritySteps: getCompletedSecuritySteps(submission),
+  };
+}
+
 export async function getStudentAssessment(req, res) {
   try {
-    const { id } = req.params;
-    const student = req.user;
-    const studentId = student._id;
-
-    const assessment = await findAssessmentForStudentRoute(id, { lean: true });
-    if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
-    if (assessment.lifecycleStatus === 'draft') {
-      return res.status(403).json({ error: 'Assessment is not published yet.' });
-    }
-    if (!assessment.startTime || !assessment.endTime || !assessment.duration) {
-      return res.status(400).json({ error: 'Assessment schedule is incomplete.' });
-    }
-
-    const isAssigned = isStudentAssignedToAssessment(assessment, student);
-    if (!isAssigned) return res.status(403).json({ error: 'Not assigned to this assessment.' });
-
+    const assessment = await requireStudentAssessment(req.params.id, req.user);
     const now = new Date();
-    if (now < assessment.startTime) {
-      return res.status(403).json({ error: 'Assessment has not started yet.', serverTime: now, startTime: assessment.startTime });
-    }
-
-    await reconcileExpiredAssessmentSubmissions({ assessmentId: assessment._id, studentId });
-    let submission = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId });
-
-    const passwordCheck = await ensureAssessmentPasswordUnlocked(assessment, submission);
-    if (!passwordCheck.ok) {
-      return res.status(passwordCheck.status).json({ error: passwordCheck.error });
-    }
-
-    if (now > assessment.endTime && !submission) {
-      return res.status(403).json({ error: 'Assessment has closed.', serverTime: now, endTime: assessment.endTime });
-    }
-    if (assessment.manuallyCompletedAt && submission?.status !== 'submitted') {
-      return res.status(403).json({ error: 'Assessment has been marked complete by the administrator.', serverTime: now });
-    }
-
-    if (!submission) {
-      const delivery = buildDeliverySections(assessment, studentId);
-      submission = await AssessmentSubmission.create({
-        assessmentId: assessment._id,
-        studentId,
-        deliverySections: delivery.sections,
-        deliveryPreparedAt: now,
-        assignedSetNumber: delivery.assignedSetNumber,
-        status: 'not_started',
-        attemptCount: 0,
-      });
-    }
-
-    if (!submission.deliveryPreparedAt) {
-      const delivery = buildDeliverySections(assessment, studentId);
-      submission.deliverySections = delivery.sections;
-      submission.deliveryPreparedAt = now;
-      submission.assignedSetNumber = delivery.assignedSetNumber;
-      await submission.save();
-    }
-
-    const deliveryAssessment = assessmentForSubmission(assessment, submission);
-    const settings = normalizeAssessmentSettings(assessment.settings || {});
-    let repairedSubmissionState = false;
-    if (submission.pauseStartedAt && submission.securityPauseReason !== 'tab_switch') {
-      finishSubmissionSecurityPause(submission, now);
-      submission.securityCompletedAt = submission.securityCompletedAt || submission.startedAt || now;
-      repairedSubmissionState = true;
-    }
-    if (submission.status === 'in_progress' && submission.startedAt && !submission.securityCompletedAt) {
-      // Legacy/incomplete metadata must not create an unconfirmed security
-      // breach. The assessment was already started, so repair its setup state.
-      submission.securityCompletedAt = submission.startedAt;
-      repairedSubmissionState = true;
-    }
-    if (repairedSubmissionState) {
-      await submission.save();
-    }
-    const securityPauseOk = isSecurityPauseWithinLimit(submission, settings, now);
-    const allowedEnd = computeAllowedEnd(deliveryAssessment, submission.startedAt || now, submission.pausedDurationMs);
-    if ((now > allowedEnd || hasSecurityPauseExpired(submission, settings, now)) && !securityPauseOk && submission.status !== 'submitted') {
-      submission.status = 'submitted';
-      submission.submittedAt = now;
-      submission.attemptCount = Math.max(submission.attemptCount || 0, 1);
-      submission.isLate = assessment.allowLateSubmission ? false : true;
-      if (submission.pauseStartedAt) finishSubmissionSecurityPause(submission, now);
-      const scoring = scoreAssessment(deliveryAssessment, submission.answers);
-      submission.score = scoring.score;
-      submission.maxMarks = scoring.maxMarks;
-      submission.accuracy = scoring.accuracy;
-      submission.timeTakenSec = computeEffectiveTimeTakenSec(submission, now);
-      await submission.save();
-    }
-
-    const attemptAssessment = await hydrateAssessmentCodingRuntime(deliveryAssessment);
-    res.json({
-      assessment: sanitizeStudentAssessmentForResponse(attemptAssessment),
-      submission: sanitizeStudentSubmissionForResponse(submission),
-      candidate: buildCandidateIdentity(student),
-      serverTime: now,
-      allowedEnd,
-      securityRecheckTimeoutSec: getSecurityRecheckTimeoutSec(settings),
-      requiresSecuritySetup: Boolean(submission && submission.status !== 'submitted' && !submission.securityCompletedAt),
-      requiredSecuritySteps: getRequiredSecuritySteps(assessment.settings || {}, submission),
-      completedSecuritySteps: getCompletedSecuritySteps(submission),
+    if (now < assessment.startTime) throw new AssessmentWriteError(403, 'NOT_STARTED', 'Assessment has not started yet.');
+    const existing = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId: req.user._id });
+    const check = await ensureAssessmentPasswordUnlocked(assessment, existing);
+    if (!check.ok) throw new AssessmentWriteError(check.status, 'ASSESSMENT_LOCKED', check.error);
+    await ensureStudentAttempt(assessment, req.user._id);
+    const { submission } = await mutateAssessmentSubmission({
+      filter: { assessmentId: assessment._id, studentId: req.user._id },
+      mutate: (doc) => {
+        if (isTerminalAssessmentSubmission(doc)) return;
+        prepareAttemptDelivery(doc, assessment, req.user._id, now);
+        if (doc.pauseStartedAt && doc.securityPauseReason !== 'tab_switch') {
+          finishSubmissionSecurityPause(doc, now);
+          doc.securityCompletedAt = doc.securityCompletedAt || doc.startedAt || now;
+        }
+        if (doc.status === 'in_progress' && doc.startedAt && !doc.securityCompletedAt) doc.securityCompletedAt = doc.startedAt;
+        finalizeIfDeadlinePassed(doc, assessment, now);
+      },
     });
-  } catch (err) {
-    console.error('Error fetching student assessment:', err);
-    res.status(500).json({ error: 'Failed to load assessment' });
-  }
+    return res.json(await studentAttemptResponse(assessment, submission, req.user, now));
+  } catch (error) { return respondAssessmentWriteError(res, error); }
 }
 
 export async function startStudentAssessment(req, res) {
   try {
-    const { id } = req.params;
-    const { password } = req.body || {};
-    const student = req.user;
-    const studentId = student._id;
-
-    const assessment = await findAssessmentForStudentRoute(id);
-    if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
-    if (assessment.lifecycleStatus === 'draft') {
-      return res.status(403).json({ error: 'Assessment is not published yet.' });
-    }
-    if (!assessment.startTime || !assessment.endTime || !assessment.duration) {
-      return res.status(400).json({ error: 'Assessment schedule is incomplete.' });
-    }
-
-    const isAssigned = isStudentAssignedToAssessment(assessment, student);
-    if (!isAssigned) return res.status(403).json({ error: 'Not assigned to this assessment.' });
-
+    const assessment = await requireStudentAssessment(req.params.id, req.user);
     const now = new Date();
-    if (now < assessment.startTime) {
-      return res.status(403).json({ error: 'Assessment has not started yet.', serverTime: now, startTime: assessment.startTime });
+    if (now < assessment.startTime || now > assessment.endTime || assessment.manuallyCompletedAt) {
+      throw new AssessmentWriteError(403, 'ASSESSMENT_CLOSED', 'Assessment is outside the active time window.');
     }
-    if (now > assessment.endTime) {
-      return res.status(403).json({ error: 'Assessment has closed.', serverTime: now, endTime: assessment.endTime });
+    let existing = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId: req.user._id });
+    const check = await ensureAssessmentPasswordUnlocked(assessment, existing, req.body?.password);
+    if (!check.ok) throw new AssessmentWriteError(check.status, 'ASSESSMENT_LOCKED', check.error);
+    existing = await ensureStudentAttempt(assessment, req.user._id, { passwordVerified: assessment.passwordEnabled });
+    let archivedGeneration = null;
+    if (isTerminalAssessmentSubmission(existing)) {
+      if (existing.attemptCount >= (assessment.attemptLimit || 1)) throw new AssessmentWriteError(403, 'ATTEMPT_LIMIT', 'No attempts remaining for this assessment.');
+      if (existing.evaluationStatus === 'processing') throw new AssessmentWriteError(409, 'EVALUATION_PENDING', 'Wait for the previous attempt evaluation before starting a retake.');
+      archivedGeneration = Number(existing.attemptGeneration || 1);
+      await AssessmentAttemptArchive.updateOne(
+        { submissionId: existing._id, attemptGeneration: archivedGeneration },
+        { $setOnInsert: { assessmentId: assessment._id, studentId: req.user._id, snapshot: existing.toObject() } },
+        { upsert: true },
+      );
     }
-
-    let submission = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId });
-    const attemptLimit = assessment.attemptLimit || 1;
-    if (submission?.status === 'submitted' && submission.attemptCount >= attemptLimit) {
-      return res.status(403).json({ error: 'No attempts remaining for this assessment.' });
-    }
-
-    const passwordCheck = await ensureAssessmentPasswordUnlocked(assessment, submission, password);
-    if (!passwordCheck.ok) {
-      return res.status(passwordCheck.status).json({ error: passwordCheck.error });
-    }
-
-    if (!submission) {
-      const delivery = buildDeliverySections(assessment, studentId);
-      submission = new AssessmentSubmission({
-        assessmentId: assessment._id,
-        studentId,
-        deliverySections: delivery.sections,
-        deliveryPreparedAt: now,
-        assignedSetNumber: delivery.assignedSetNumber,
-        passwordVerifiedAt: assessment.passwordEnabled ? now : undefined,
-        securitySetup: {},
-        status: 'not_started',
-        attemptCount: 0,
-      });
-    } else if (assessment.passwordEnabled && !submission.passwordVerifiedAt) {
-      submission.passwordVerifiedAt = now;
-    }
-    if (!submission.deliveryPreparedAt) {
-      const delivery = buildDeliverySections(assessment, studentId);
-      submission.deliverySections = delivery.sections;
-      submission.deliveryPreparedAt = now;
-      submission.assignedSetNumber = delivery.assignedSetNumber;
-    }
-    if (!(submission.status === 'in_progress' && submission.startedAt && submission.securityCompletedAt)) {
-      submission.securitySetup = {};
-      submission.securityCompletedAt = undefined;
-    }
-    await submission.save();
-
-    const deliveryAssessment = assessmentForSubmission(assessment, submission);
-    const attemptAssessment = await hydrateAssessmentCodingRuntime(deliveryAssessment);
-    res.json({
-      message: 'Assessment unlocked',
-      assessment: sanitizeStudentAssessmentForResponse(attemptAssessment),
-      submission: sanitizeStudentSubmissionForResponse(submission),
-      candidate: buildCandidateIdentity(student),
-      serverTime: now,
-      allowedEnd: computeAllowedEnd(deliveryAssessment, submission.startedAt || now, submission.pausedDurationMs),
-      securityRecheckTimeoutSec: getSecurityRecheckTimeoutSec(assessment.settings || {}),
+    const { submission } = await mutateAssessmentSubmission({
+      filter: { _id: existing._id, studentId: req.user._id },
+      mutate: (doc) => {
+        if (isTerminalAssessmentSubmission(doc)) {
+          if (archivedGeneration !== Number(doc.attemptGeneration || 1)) throw new AssessmentWriteError(409, 'ATTEMPT_CHANGED', 'Reload the attempt before starting a retake.');
+          if (doc.attemptCount >= (assessment.attemptLimit || 1)) throw new AssessmentWriteError(403, 'ATTEMPT_LIMIT', 'No attempts remaining for this assessment.');
+          doc.attemptGeneration = archivedGeneration + 1;
+          doc.status = 'not_started';
+          doc.answers = [];
+          doc.answerRevision = 0;
+          doc.lastAcceptedBatch = { id: '', sequence: 0, hash: '' };
+          doc.submissionReceipt = '';
+          doc.startedAt = undefined;
+          doc.submittedAt = undefined;
+          doc.pendingWork = undefined;
+          doc.evaluationStatus = 'completed';
+          doc.score = undefined;
+          doc.accuracy = undefined;
+          doc.pausedDurationMs = 0;
+          doc.deadlineAt = undefined;
+          doc.lastNetworkPauseAt = undefined;
+          doc.lastPauseAt = undefined;
+          doc.lastSavedAt = undefined;
+          doc.securityHeartbeat = {};
+          doc.timeTakenSec = undefined;
+          doc.isLate = false;
+          doc.codingJobsPending = 0;
+          doc.codingJobsCompleted = 0;
+          doc.pauseStartedAt = undefined;
+          doc.securityPauseReason = undefined;
+          doc.activeSessionId = '';
+          doc.activeSessionHeartbeatAt = undefined;
+          doc.securityCompletedAt = undefined;
+          doc.securitySetup = {};
+          doc.violationLog = [];
+          doc.violations = [];
+          doc.aiProctoringSummary = {};
+          for (const field of ['tabSwitches', 'fullscreenExits', 'copyPasteCount', 'cameraFlags', 'violationScore', 'pauseCount']) doc[field] = 0;
+        }
+        if (assessment.passwordEnabled && !doc.passwordVerifiedAt) doc.passwordVerifiedAt = now;
+        prepareAttemptDelivery(doc, assessment, req.user._id, now);
+        // Repeated start requests cannot clear completed setup or an active exam.
+      },
     });
-  } catch (err) {
-    console.error('Error starting student assessment:', err);
-    res.status(500).json({ error: 'Failed to start assessment' });
-  }
+    return res.json(await studentAttemptResponse(assessment, submission, req.user, now, 'Assessment unlocked'));
+  } catch (error) { return respondAssessmentWriteError(res, error); }
 }
 
 export async function beginStudentAssessment(req, res) {
   try {
-    const { id } = req.params;
-    const student = req.user;
-    const studentId = student._id;
+    const assessment = await requireStudentAssessment(req.params.id, req.user);
     const now = new Date();
     const sessionId = String(req.body?.sessionId || '').trim().slice(0, 160);
-    if (!sessionId) return res.status(400).json({ error: 'Assessment session identifier is required.' });
+    if (!sessionId) throw new AssessmentWriteError(400, 'SESSION_REQUIRED', 'Assessment session identifier is required.');
+    const otherActive = await AssessmentSubmission.findOne({
+      studentId: req.user._id, assessmentId: { $ne: assessment._id }, status: 'in_progress',
+      activeSessionHeartbeatAt: { $gte: new Date(now.getTime() - ACTIVE_SESSION_FRESH_MS) },
+      activeSessionId: { $nin: ['', null] },
+    }).select('_id');
+    if (otherActive) throw new AssessmentWriteError(409, 'ACTIVE_ASSESSMENT_SESSION', 'This account already has another assessment in progress.');
+    const { submission } = await mutateAssessmentSubmission({
+      filter: { assessmentId: assessment._id, studentId: req.user._id },
+      mutate: async (doc) => {
+        if (req.body?.submissionId !== undefined && String(req.body.submissionId) !== String(doc._id)) {
+          throw new AssessmentWriteError(409, 'ATTEMPT_IDENTITY_CONFLICT', 'This request belongs to a different assessment attempt.');
+        }
+        if (isTerminalAssessmentSubmission(doc)) return;
+        if (req.body?.attemptGeneration !== undefined && Number(req.body.attemptGeneration) !== Number(doc.attemptGeneration || 1)) {
+          throw new AssessmentWriteError(409, 'ATTEMPT_GENERATION_CONFLICT', 'This request belongs to an earlier attempt.');
+        }
+        const fresh = doc.activeSessionId && now - new Date(doc.activeSessionHeartbeatAt || 0) < ACTIVE_SESSION_FRESH_MS;
+        if (fresh && doc.activeSessionId !== sessionId) throw new AssessmentWriteError(409, 'ACTIVE_ASSESSMENT_SESSION', 'This assessment is already active in another tab, browser, or device.');
+        if (finalizeIfDeadlinePassed(doc, assessment, now)) return;
+        const settings = normalizeAssessmentSettings(assessment.settings || {});
+        if (now < assessment.startTime || (now > assessment.endTime && !isSecurityPauseWithinLimit(doc, settings, now)) || assessment.manuallyCompletedAt) {
+          throw new AssessmentWriteError(403, 'ASSESSMENT_CLOSED', 'Assessment is outside the active time window.');
+        }
+        const check = await ensureAssessmentPasswordUnlocked(assessment, doc);
+        if (!check.ok) throw new AssessmentWriteError(check.status, 'ASSESSMENT_LOCKED', check.error);
+        const required = getRequiredSecuritySteps(assessment.settings || {}, doc);
+        if (!hasCompletedRequiredSecuritySteps(doc, required)) throw new AssessmentWriteError(403, 'SETUP_REQUIRED', 'Complete all required security setup steps before starting the assessment.', { requiredSecuritySteps: required, completedSecuritySteps: getCompletedSecuritySteps(doc) });
+        prepareAttemptDelivery(doc, assessment, req.user._id, now);
+        if (!doc.startedAt || doc.status === 'not_started') {
+          doc.startedAt = now;
+          doc.status = 'in_progress';
+        }
+        doc.securityCompletedAt = doc.securityCompletedAt || now;
+        if (doc.pauseStartedAt) finishSubmissionSecurityPause(doc, now);
+        doc.activeSessionId = sessionId;
+        doc.activeSessionHeartbeatAt = now;
+        doc.lastIp = req.ip;
+        doc.lastUserAgent = String(req.headers['user-agent'] || '').slice(0, 1024);
+        doc.deadlineAt = getAssessmentAttemptDeadline(assessmentForSubmission(assessment, doc), doc);
+      },
+    });
+    if (!submission) throw new AssessmentWriteError(404, 'ATTEMPT_NOT_FOUND', 'Unlock the assessment first.');
+    return res.json(await studentAttemptResponse(assessment, submission, req.user, now, isTerminalAssessmentSubmission(submission) ? 'Assessment already submitted' : 'Assessment started'));
+  } catch (error) { return respondAssessmentWriteError(res, error); }
+}
 
-    const assessment = await findAssessmentForStudentRoute(id);
-    if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
+function respondAssessmentWriteError(res, error) {
+  if (error.status) return res.status(error.status).json({ error: error.message, code: error.code, ...(error.details || {}) });
+  if (error.name === 'CastError') return res.status(400).json({ error: 'Invalid assessment identifier.' });
+  console.error('Assessment write failed:', error);
+  return res.status(500).json({ error: 'Failed to save assessment. Retry the same request.' });
+}
+
+async function persistStudentAnswers(req, res, { autosave = false } = {}) {
+  try {
+    const input = req.body || {};
+    assertAssessmentWriteProtocol(input);
+    const assessmentId = autosave ? req.params.id : input.assessmentId;
+    if (!assessmentId) return res.status(400).json({ error: 'assessmentId is required.' });
+    const assessment = await loadAssessmentDefinition({ _id: assessmentId });
+    if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
     if (assessment.lifecycleStatus === 'draft') return res.status(403).json({ error: 'Assessment is not published yet.' });
     if (!assessment.startTime || !assessment.endTime || !assessment.duration) {
       return res.status(400).json({ error: 'Assessment schedule is incomplete.' });
     }
-    const isAssigned = isStudentAssignedToAssessment(assessment, student);
-    if (!isAssigned) return res.status(403).json({ error: 'Not assigned to this assessment.' });
-    if (now < assessment.startTime) return res.status(403).json({ error: 'Assessment has not started yet.', serverTime: now, startTime: assessment.startTime });
-
-    await reconcileExpiredAssessmentSubmissions({ assessmentId: assessment._id, studentId });
-    let submission = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId });
-    const activeHeartbeatAt = submission?.activeSessionHeartbeatAt
-      ? new Date(submission.activeSessionHeartbeatAt).getTime()
-      : 0;
-    const activeSessionIsFresh = Boolean(
-      submission?.activeSessionId
-      && activeHeartbeatAt
-      && now.getTime() - activeHeartbeatAt < ACTIVE_SESSION_FRESH_MS,
-    );
-    if (activeSessionIsFresh && submission.activeSessionId !== sessionId) {
-      return res.status(409).json({
-        error: 'This assessment is already active in another tab, browser, or device.',
-        code: 'ACTIVE_ASSESSMENT_SESSION',
-        lastSeenAt: submission.activeSessionHeartbeatAt,
-      });
-    }
-    const otherActiveSubmission = await AssessmentSubmission.findOne({
-      studentId,
-      assessmentId: { $ne: assessment._id },
-      status: 'in_progress',
-      activeSessionHeartbeatAt: { $gte: new Date(now.getTime() - ACTIVE_SESSION_FRESH_MS) },
-      activeSessionId: { $nin: ['', null] },
-    }).select('assessmentId activeSessionHeartbeatAt').lean();
-    if (otherActiveSubmission) {
-      return res.status(409).json({
-        error: 'This account already has another assessment in progress.',
-        code: 'ACTIVE_ASSESSMENT_SESSION',
-        activeAssessmentId: otherActiveSubmission.assessmentId,
-        lastSeenAt: otherActiveSubmission.activeSessionHeartbeatAt,
-      });
-    }
-    const settings = normalizeAssessmentSettings(assessment.settings || {});
-    const allowPausedRecheck = isSecurityPauseWithinLimit(submission, settings, now);
-    if (now > assessment.endTime && !allowPausedRecheck) {
-      return res.status(403).json({ error: 'Assessment has closed.', serverTime: now, endTime: assessment.endTime });
-    }
-    if (hasSecurityPauseExpired(submission, settings, now)) {
-      submission.status = 'submitted';
-      submission.submittedAt = now;
-      submission.attemptCount = Math.max(submission.attemptCount || 0, 1);
-      submission.isLate = false;
-      if (submission.pauseStartedAt) finishSubmissionSecurityPause(submission, now);
-      const scoring = scoreAssessment(assessmentForSubmission(assessment, submission), submission.answers);
-      submission.score = scoring.score;
-      submission.maxMarks = scoring.maxMarks;
-      submission.accuracy = scoring.accuracy;
-      submission.timeTakenSec = computeEffectiveTimeTakenSec(submission, now);
-      await submission.save();
-      return res.status(409).json({ error: 'Security recheck time expired. Assessment was auto-submitted.', status: submission.status, serverTime: now });
-    }
-    const passwordCheck = await ensureAssessmentPasswordUnlocked(assessment, submission);
-    if (!passwordCheck.ok) return res.status(passwordCheck.status).json({ error: passwordCheck.error });
-    const requiredSecuritySteps = getRequiredSecuritySteps(assessment.settings || {}, submission);
-    if (!hasCompletedRequiredSecuritySteps(submission, requiredSecuritySteps)) {
-      return res.status(403).json({
-        error: 'Complete all required security setup steps before starting the assessment.',
-        requiredSecuritySteps,
-        completedSecuritySteps: getCompletedSecuritySteps(submission),
-      });
-    }
-
-    if (!submission) {
-      const delivery = buildDeliverySections(assessment, studentId);
-      submission = new AssessmentSubmission({
-        assessmentId: assessment._id,
-        studentId,
-        deliverySections: delivery.sections,
-        deliveryPreparedAt: now,
-        assignedSetNumber: delivery.assignedSetNumber,
-        startedAt: now,
-        securityCompletedAt: now,
-        status: 'in_progress',
-        attemptCount: 0,
-      });
-    } else if (!submission.startedAt || submission.status === 'not_started') {
-      submission.startedAt = now;
-      submission.securityCompletedAt = submission.securityCompletedAt || now;
-      submission.status = 'in_progress';
-    } else if (!submission.securityCompletedAt) {
-      submission.securityCompletedAt = now;
-    }
-
-    if (submission.pauseStartedAt) {
-      finishSubmissionSecurityPause(submission, now);
-    }
-
-    submission.activeSessionId = sessionId;
-    submission.activeSessionHeartbeatAt = now;
-    submission.lastIp = req.ip;
-    submission.lastUserAgent = req.headers['user-agent'];
-    await submission.save();
-
-    const allowedEnd = computeAllowedEnd(assessmentForSubmission(assessment, submission), submission.startedAt || now, submission.pausedDurationMs);
-    return res.json({
-      message: 'Assessment started',
-      submission: sanitizeStudentSubmissionForResponse(submission),
-      candidate: buildCandidateIdentity(student),
-      serverTime: now,
-      allowedEnd,
-      securityRecheckTimeoutSec: getSecurityRecheckTimeoutSec(settings),
+    if (!isStudentAssignedToAssessment(assessment, req.user)) return res.status(403).json({ error: 'Not assigned to this assessment.' });
+    // The old POST endpoint remains compatible with existing autosave clients.
+    const final = !autosave && ['submitted', 'violation'].includes(input.status);
+    const now = new Date();
+    if (now < assessment.startTime) return res.status(403).json({ error: 'Assessment has not started yet.' });
+    const { submission, result } = await mutateAssessmentSubmission({
+      filter: { assessmentId: assessment._id, studentId: req.user._id },
+      mutate: async (doc) => {
+        assertAssessmentSession(doc, input);
+        if (isTerminalAssessmentSubmission(doc)) {
+          // A saved terminal attempt is immutable, even if retakes are allowed.
+          // Starting a retake is an explicit start transition with a new generation.
+          if (!doc.submissionReceipt) doc.submissionReceipt = crypto.randomUUID();
+          const incoming = normalizeAssessmentAnswerChanges(input.answers ?? [], assessmentForSubmission(assessment, doc).sections);
+          return { alreadySubmitted: true, answersAccepted: doc.lastAcceptedBatch?.answersAccepted !== false
+            && assessmentBatchMatches(doc, { mutationId: input.mutationId, saveSequence: input.saveSequence, answers: incoming, final }) };
+        }
+        if (doc.status !== 'in_progress' || !doc.startedAt || !doc.securityCompletedAt) {
+          throw new AssessmentWriteError(409, 'ASSESSMENT_NOT_STARTED', 'Complete setup and begin the assessment before saving.');
+        }
+        const passwordCheck = await ensureAssessmentPasswordUnlocked(assessment, doc);
+        if (!passwordCheck.ok) throw new AssessmentWriteError(passwordCheck.status, 'ASSESSMENT_LOCKED', passwordCheck.error);
+        const delivered = assessmentForSubmission(assessment, doc);
+        const settings = normalizeAssessmentSettings(assessment.settings || {});
+        const allowedEnd = computeAllowedEnd(delivered, doc.startedAt, doc.pausedDurationMs);
+        const expired = ((now > allowedEnd && !isSecurityPauseWithinLimit(doc, settings, now))
+          || hasSecurityPauseExpired(doc, settings, now) || Boolean(assessment.manuallyCompletedAt));
+        const incoming = normalizeAssessmentAnswerChanges(input.answers ?? [], delivered.sections);
+        if (!acceptAssessmentBatch(doc, { mutationId: input.mutationId, saveSequence: input.saveSequence, answers: incoming, final })) {
+          return { duplicate: true, answersAccepted: doc.lastAcceptedBatch?.answersAccepted !== false };
+        }
+        // A terminal transition caused by the deadline grades the last accepted
+        // answer set. Offline edits do not silently extend the exam deadline.
+        const acceptAnswers = !expired || assessment.allowLateSubmission;
+        if (input.mutationId && !acceptAnswers) doc.lastAcceptedBatch.answersAccepted = false;
+        if (acceptAnswers) {
+          const merged = mergeAssessmentAnswers(doc.answers, incoming);
+          const error = validateQuestionAttemptCounts(delivered, merged, final && !expired);
+          if (error) throw new AssessmentWriteError(400, 'QUESTION_ATTEMPT_LIMIT', error);
+          doc.answers = merged;
+          doc.answerRevision = Number(doc.answerRevision || 0) + 1;
+        }
+        // Counters may only increase. Pause timestamps/deadline and grading
+        // fields can only be modified by their server-side services.
+        for (const field of ['tabSwitches', 'fullscreenExits', 'copyPasteCount', 'cameraFlags', 'violationScore']) {
+          const value = input[field];
+          if (Number.isFinite(value) && value >= 0 && value <= 1000000) doc[field] = Math.max(Number(doc[field] || 0), value);
+        }
+        doc.lastSavedAt = now;
+        doc.lastIp = req.ip;
+        doc.lastUserAgent = String(req.headers['user-agent'] || '').slice(0, 1024);
+        if (final || (expired && !assessment.allowLateSubmission)) {
+          if (doc.pauseStartedAt) finishSubmissionSecurityPause(doc, now);
+          finishAssessmentSubmission(doc, {
+            now,
+            finalStatus: input.status === 'violation' ? 'violation' : 'submitted',
+            isLate: expired && Boolean(assessment.allowLateSubmission),
+            timeTakenSec: computeEffectiveTimeTakenSec(doc, now),
+          });
+        }
+        doc.deadlineAt = getAssessmentAttemptDeadline(delivered, doc);
+        return { expired, answersAccepted: acceptAnswers };
+      },
     });
-  } catch (err) {
-    console.error('Error beginning student assessment:', err);
-    return res.status(500).json({ error: 'Failed to begin assessment' });
+    if (!submission) return res.status(404).json({ error: 'Submission not found. Start the assessment first.' });
+    return res.json({
+      message: result?.alreadySubmitted ? 'Assessment already submitted' : 'Saved',
+      status: submission.status,
+      submittedAt: submission.submittedAt,
+      serverTime: now,
+      allowedEnd: computeAllowedEnd(assessmentForSubmission(assessment, submission), submission.startedAt || now, submission.pausedDurationMs),
+      evaluationStatus: submission.evaluationStatus,
+      answersAccepted: result?.answersAccepted !== false,
+      ...assessmentWriteAcknowledgement(submission),
+    });
+  } catch (error) {
+    return respondAssessmentWriteError(res, error);
   }
 }
 
 export async function submitAssessment(req, res) {
-  try {
-    const studentId = req.user._id;
-    const {
-      assessmentId,
-      answers,
-      status,
-      tabSwitches,
-      fullscreenExits,
-      copyPasteCount,
-      cameraFlags,
-      violationScore,
-      pauseCount,
-      lastPauseAt,
-      securityHeartbeat,
-      violations,
-      sessionId,
-    } = req.body || {};
-
-    if (!assessmentId) return res.status(400).json({ error: 'assessmentId is required.' });
-
-    const assessment = await Assessment.findById(assessmentId).lean();
-    if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
-    if (assessment.lifecycleStatus === 'draft') {
-      return res.status(403).json({ error: 'Assessment is not published yet.' });
-    }
-    if (!assessment.startTime || !assessment.endTime || !assessment.duration) {
-      return res.status(400).json({ error: 'Assessment schedule is incomplete.' });
-    }
-
-    const isAssigned = isStudentAssignedToAssessment(assessment, req.user);
-    if (!isAssigned) return res.status(403).json({ error: 'Not assigned to this assessment.' });
-
-    const now = new Date();
-    if (now < assessment.startTime) {
-      return res.status(403).json({ error: 'Assessment has not started yet.' });
-    }
-
-    let submission = await AssessmentSubmission.findOne({ assessmentId, studentId });
-
-    if (
-      submission?.status === 'in_progress'
-      && submission.activeSessionId
-      && String(sessionId || '') !== submission.activeSessionId
-    ) {
-      return res.status(409).json({
-        error: 'This assessment is active in another tab, browser, or device.',
-        code: 'ACTIVE_ASSESSMENT_SESSION',
-      });
-    }
-
-    const passwordCheck = await ensureAssessmentPasswordUnlocked(assessment, submission);
-    if (!passwordCheck.ok) {
-      return res.status(passwordCheck.status).json({ error: passwordCheck.error });
-    }
-
-    if (now > assessment.endTime && !submission) {
-      return res.status(403).json({ error: 'Assessment has closed.' });
-    }
-
-    const attemptLimit = assessment.attemptLimit || 1;
-    if (submission?.status === 'submitted' && submission.attemptCount >= attemptLimit) {
-      // Submission is idempotent: a retry after the original response was lost
-      // should return the already-accepted result, not trigger another retry.
-      return res.json({
-        message: 'Assessment already submitted',
-        status: submission.status,
-        submittedAt: submission.submittedAt,
-        serverTime: now,
-      });
-    }
-
-    if (!submission) {
-      const delivery = buildDeliverySections(assessment, studentId);
-      submission = await AssessmentSubmission.create({
-        assessmentId,
-        studentId,
-        deliverySections: delivery.sections,
-        deliveryPreparedAt: now,
-        assignedSetNumber: delivery.assignedSetNumber,
-        startedAt: now,
-        status: 'in_progress',
-        attemptCount: 0,
-      });
-    }
-
-    const settings = normalizeAssessmentSettings(assessment.settings || {});
-    const securityPauseOk = isSecurityPauseWithinLimit(submission, settings, now);
-    const deliveredAssessment = assessmentForSubmission(assessment, submission);
-    const allowedEnd = computeAllowedEnd(deliveredAssessment, submission.startedAt || now, submission.pausedDurationMs);
-
-    const isExpired = (now > allowedEnd && !securityPauseOk) || hasSecurityPauseExpired(submission, settings, now);
-    if (isExpired && !assessment.allowLateSubmission && status !== 'submitted') {
-      submission.status = 'submitted';
-      submission.submittedAt = now;
-      submission.attemptCount = Math.max(submission.attemptCount || 0, 1);
-      submission.isLate = false;
-      if (submission.pauseStartedAt) finishSubmissionSecurityPause(submission, now);
-      const scoring = scoreAssessment(deliveredAssessment, submission.answers);
-      submission.score = scoring.score;
-      submission.maxMarks = scoring.maxMarks;
-      submission.accuracy = scoring.accuracy;
-      submission.timeTakenSec = computeEffectiveTimeTakenSec(submission, now);
-      await submission.save();
-      return res.json({ message: 'Saved', status: submission.status, submittedAt: submission.submittedAt, allowedEnd, serverTime: now });
-    }
-
-    let finalStatus = isExpired && !assessment.allowLateSubmission
-      ? 'submitted'
-      : (status === 'submitted' ? 'submitted' : 'in_progress');
-
-    if (status === 'violation') {
-      finalStatus = 'violation';
-    }
-
-    const mergedAnswers = mergeAssessmentAnswers(submission.answers, answers);
-    const attemptCountError = validateQuestionAttemptCounts(
-      deliveredAssessment,
-      mergedAnswers,
-      status === 'submitted' && !isExpired,
-    );
-    if (attemptCountError) {
-      return res.status(400).json({ error: attemptCountError, code: 'QUESTION_ATTEMPT_LIMIT' });
-    }
-    submission.answers = mergedAnswers;
-    submission.status = finalStatus;
-    submission.lastSavedAt = now;
-    submission.tabSwitches = typeof tabSwitches === 'number' ? tabSwitches : submission.tabSwitches;
-    submission.fullscreenExits = typeof fullscreenExits === 'number' ? fullscreenExits : submission.fullscreenExits;
-    submission.copyPasteCount = typeof copyPasteCount === 'number' ? copyPasteCount : submission.copyPasteCount;
-    submission.cameraFlags = typeof cameraFlags === 'number' ? cameraFlags : submission.cameraFlags;
-    submission.violationScore = typeof violationScore === 'number' ? Math.max(submission.violationScore || 0, violationScore) : submission.violationScore;
-    submission.pauseCount = typeof pauseCount === 'number' ? Math.max(submission.pauseCount || 0, pauseCount) : submission.pauseCount;
-    if (lastPauseAt) {
-      const parsedLastPauseAt = new Date(lastPauseAt);
-      if (!Number.isNaN(parsedLastPauseAt.getTime())) submission.lastPauseAt = parsedLastPauseAt;
-    }
-    if (securityHeartbeat && typeof securityHeartbeat === 'object') {
-      submission.securityHeartbeat = securityHeartbeat;
-    }
-    if (Array.isArray(violations) && violations.length > 0) {
-      submission.violations = violations;
-    }
-    submission.lastIp = req.ip;
-    submission.lastUserAgent = req.headers['user-agent'];
-
-    if (finalStatus === 'submitted' && !submission.submittedAt) {
-      submission.submittedAt = now;
-      submission.attemptCount = (submission.attemptCount || 0) + 1;
-      submission.isLate = isExpired && assessment.allowLateSubmission;
-    }
-
-    if (finalStatus === 'submitted' || finalStatus === 'violation') {
-      submission.activeSessionId = '';
-      submission.activeSessionHeartbeatAt = undefined;
-      if (submission.pauseStartedAt) {
-        finishSubmissionSecurityPause(submission, now);
-      }
-      const scoring = scoreAssessment(deliveredAssessment, submission.answers);
-      submission.score = scoring.score;
-      submission.maxMarks = scoring.maxMarks;
-      submission.accuracy = scoring.accuracy;
-      const endTime = submission.submittedAt || now;
-      submission.timeTakenSec = computeEffectiveTimeTakenSec(submission, endTime);
-    }
-
-    await submission.save();
-
-    let queuedCodingJobIds = [];
-    if (finalStatus === 'submitted') {
-      queuedCodingJobIds = await enqueueAssessmentCodingEvaluationJobs({
-        assessment: deliveredAssessment,
-        submission,
-        studentId,
-      });
-    }
-
-    if (finalStatus === 'submitted') {
-      try {
-        await createNotification({
-          userId: studentId,
-          title: 'Assessment Submitted',
-          message: 'Assessment submitted successfully',
-          type: 'ASSESSMENT',
-          referenceId: assessment._id,
-          actionUrl: '/student/assessments',
-          dedupeKey: `assessment-submitted:${assessment._id}:${studentId}`
-        });
-      } catch (e) {
-        console.error('[Assessment] Submit notification failed:', e.message);
-      }
-    }
-
-    res.json({
-      message: 'Saved',
-      status: submission.status,
-      submittedAt: submission.submittedAt,
-      allowedEnd,
-      serverTime: now,
-      evaluationStatus: submission.evaluationStatus,
-      queuedCodingJobIds,
-    });
-  } catch (err) {
-    console.error('Error submitting assessment:', err);
-    res.status(500).json({ error: 'Failed to submit assessment' });
-  }
+  return persistStudentAnswers(req, res);
 }
 
 export async function saveAssessmentProgress(req, res) {
-  req.body = {
-    ...(req.body || {}),
-    assessmentId: req.params.id,
-    status: 'in_progress',
-  };
-  return submitAssessment(req, res);
+  return persistStudentAnswers(req, res, { autosave: true });
 }
 
 function parseReportDate(value) {
@@ -4308,7 +4126,10 @@ function matchesDateRange(value, from, to) {
 }
 
 export async function getAssessmentReports(req, res) {
+  let releaseReportSlot;
   try {
+    releaseReportSlot = acquireAssessmentReportSlot();
+    const reportAggregate = createBoundedReportAggregate();
     const {
       assessmentId,
       assessmentType,
@@ -4335,77 +4156,56 @@ export async function getAssessmentReports(req, res) {
       return res.status(400).json({ error: 'Invalid studentId' });
     }
 
-    await reconcileExpiredAssessmentSubmissions({ assessmentId, studentId });
-
     // Dashboard callers only need headline metrics and five recent assessments.
     // Keep the full reporting pipeline for the reports workspace.
     if (req.query.view === 'dashboard') {
-      const assessmentScope = { lifecycleStatus: { $ne: 'draft' } };
+      const assessmentScope = { lifecycleStatus: { $ne: 'draft' }, ...buildAssessmentCollectionWindowMatch(assessmentWindow) };
+      if (assessmentId) assessmentScope._id = new mongoose.Types.ObjectId(assessmentId);
+      if (assessmentType) assessmentScope.assessmentType = assessmentType;
       if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') {
         assessmentScope.createdBy = req.user._id;
       }
-      const allowedAssessments = await Assessment.find(assessmentScope).select('_id').lean();
-      const assessmentIds = allowedAssessments.map((assessment) => assessment._id);
-      const emptySummary = { avgScore: 0, passCount: 0, failCount: 0, violationCount: 0, scoreDistribution: [0, 0, 0, 0, 0] };
-      if (!assessmentIds.length) {
-        return res.json({ assessments: [], students: [], summary: emptySummary, pagination: { page: 1, limit: 5, total: 0, pages: 1 } });
-      }
-
-      const scoreRatio = {
-        $cond: [
-          { $gt: [{ $ifNull: ['$maxMarks', 0] }, 0] },
-          { $multiply: [{ $divide: [{ $ifNull: ['$score', 0] }, '$maxMarks'] }, 100] },
-          0,
-        ],
-      };
-      const [summaryRows, recentAssessments] = await Promise.all([
-        AssessmentSubmission.aggregate([
-          { $match: { assessmentId: { $in: assessmentIds } } },
-          {
-            $group: {
-              _id: null,
-              total: { $sum: 1 },
-              avgScore: { $avg: { $ifNull: ['$score', 0] } },
-              passCount: { $sum: { $cond: [{ $gte: [scoreRatio, 40] }, 1, 0] } },
-              violations: { $sum: { $add: [{ $ifNull: ['$tabSwitches', 0] }, { $ifNull: ['$fullscreenExits', 0] }, { $ifNull: ['$cameraFlags', 0] }, { $ifNull: ['$copyPasteCount', 0] }] } },
-              score0_25: { $sum: { $cond: [{ $lte: [scoreRatio, 25] }, 1, 0] } },
-              score26_50: { $sum: { $cond: [{ $and: [{ $gt: [scoreRatio, 25] }, { $lte: [scoreRatio, 50] }] }, 1, 0] } },
-              score51_75: { $sum: { $cond: [{ $and: [{ $gt: [scoreRatio, 50] }, { $lte: [scoreRatio, 75] }] }, 1, 0] } },
-              score76_90: { $sum: { $cond: [{ $and: [{ $gt: [scoreRatio, 75] }, { $lte: [scoreRatio, 90] }] }, 1, 0] } },
-              score91_100: { $sum: { $cond: [{ $gt: [scoreRatio, 90] }, 1, 0] } },
-            },
-          },
-        ]),
-        Assessment.aggregate([
-          { $match: assessmentScope },
-          { $sort: { createdAt: -1 } },
-          { $limit: 5 },
-          {
-            $lookup: {
-              from: 'assessmentsubmissions',
-              let: { assessmentId: '$_id' },
-              pipeline: [
-                { $match: { $expr: { $eq: ['$assessmentId', '$$assessmentId'] } } },
-                { $group: { _id: null, submissionCount: { $sum: 1 }, avgScore: { $avg: { $ifNull: ['$score', 0] } } } },
-              ],
-              as: 'submissionSummary',
-            },
-          },
-          { $project: { title: 1, createdAt: 1, submissionCount: { $ifNull: [{ $first: '$submissionSummary.submissionCount' }, 0] }, avgScore: { $ifNull: [{ $first: '$submissionSummary.avgScore' }, 0] } } },
-        ]),
+      const [snapshot = {}] = await reportAggregate(Assessment, [
+        { $match: assessmentScope },
+        { $lookup: { from: 'assessmentreportsummaries', localField: '_id', foreignField: '_id', as: 'summaryRow' } },
+        { $set: { summaryRow: { $first: '$summaryRow' } } },
+        { $facet: {
+          summary: [{ $group: {
+            _id: null,
+            total: { $sum: '$summaryRow.submissionCount' },
+            gradedCount: { $sum: '$summaryRow.gradedCount' },
+            scoreSum: { $sum: '$summaryRow.scoreSum' },
+            passCount: { $sum: '$summaryRow.passCount' },
+            pendingEvaluationCount: { $sum: '$summaryRow.pendingEvaluationCount' },
+            failedEvaluationCount: { $sum: '$summaryRow.failedEvaluationCount' },
+            pendingSummaries: { $sum: { $cond: [{ $ifNull: ['$summaryRow.computedAt', false] }, 0, 1] } },
+            violations: { $sum: '$summaryRow.violationCount' },
+            asOf: { $min: '$summaryRow.computedAt' },
+            ...Object.fromEntries([0, 1, 2, 3, 4].map((index) => [`bucket${index}`, { $sum: { $arrayElemAt: ['$summaryRow.scoreDistribution', index] } }])),
+          } }],
+          recent: [
+            { $sort: { createdAt: -1 } }, { $limit: 5 },
+            { $project: { title: 1, createdAt: 1, submissionCount: '$summaryRow.submissionCount', avgScore: '$summaryRow.avgScore', summaryAsOf: '$summaryRow.computedAt', pendingEvaluationCount: '$summaryRow.pendingEvaluationCount' } },
+          ],
+        } },
       ]);
-      const row = summaryRows[0] || {};
+      const row = snapshot.summary?.[0] || {};
       const total = Number(row.total || 0);
       const passCount = Number(row.passCount || 0);
       return res.json({
-        assessments: recentAssessments,
+        assessments: snapshot.recent || [],
         students: [],
         summary: {
-          avgScore: row.avgScore || 0,
+          avgScore: row.gradedCount ? row.scoreSum / row.gradedCount : null,
           passCount,
-          failCount: Math.max(0, total - passCount),
+          failCount: Math.max(0, Number(row.gradedCount || 0) - passCount),
+          gradedCount: row.gradedCount || 0,
+          pendingEvaluationCount: row.pendingEvaluationCount || 0,
+          failedEvaluationCount: row.failedEvaluationCount || 0,
+          summaryPending: Number(row.pendingSummaries || 0) > 0,
+          summaryAsOf: row.asOf || null,
           violationCount: row.violations || 0,
-          scoreDistribution: [row.score0_25 || 0, row.score26_50 || 0, row.score51_75 || 0, row.score76_90 || 0, row.score91_100 || 0],
+          scoreDistribution: [0, 1, 2, 3, 4].map((index) => row[`bucket${index}`] || 0),
         },
         pagination: { page: 1, limit: 5, total, pages: Math.max(1, Math.ceil(total / 5)) },
       });
@@ -4449,6 +4249,7 @@ export async function getAssessmentReports(req, res) {
 
     const baseLookup = [
       { $match: match },
+      { $project: { assessmentId: 1, studentId: 1, status: 1, evaluationStatus: 1, startedAt: 1, attemptCount: 1, score: 1, maxMarks: 1, accuracy: 1, timeTakenSec: 1, tabSwitches: 1, fullscreenExits: 1, cameraFlags: 1, copyPasteCount: 1 } },
       { $lookup: { from: 'assessments', localField: 'assessmentId', foreignField: '_id', as: 'assessment' } },
       { $unwind: '$assessment' },
       { $lookup: { from: 'users', localField: 'studentId', foreignField: '_id', as: 'student' } },
@@ -4483,6 +4284,8 @@ export async function getAssessmentReports(req, res) {
     delete summaryMatch.status; // Remove status filter for summary
     const summaryBaseLookup = [
       { $match: summaryMatch },
+      { $project: { assessmentId: 1, studentId: 1, status: 1, evaluationStatus: 1, startedAt: 1, score: 1, maxMarks: 1, accuracy: 1, timeTakenSec: 1, tabSwitches: 1, fullscreenExits: 1, cameraFlags: 1, copyPasteCount: 1 } },
+      { $set: { isGraded: evaluatedAssessmentExpression, score: evaluatedScoreExpression } },
       { $lookup: { from: 'assessments', localField: 'assessmentId', foreignField: '_id', as: 'assessment' } },
       { $unwind: '$assessment' },
       { $lookup: { from: 'users', localField: 'studentId', foreignField: '_id', as: 'student' } },
@@ -4509,7 +4312,7 @@ export async function getAssessmentReports(req, res) {
       summaryBaseLookup.push({ $match: summaryPostMatch });
     }
 
-    const totalStudents = await AssessmentSubmission.aggregate([
+    const totalStudents = await reportAggregate(AssessmentSubmission, [
       ...baseLookup,
       { $count: 'count' },
     ]);
@@ -4530,7 +4333,7 @@ export async function getAssessmentReports(req, res) {
     const resolvedSortKey = sortFieldMap[sortKey] || 'attemptDate';
     const resolvedSortDir = String(sortDir).toLowerCase() === 'asc' ? 1 : -1;
 
-    const studentRows = await AssessmentSubmission.aggregate([
+    const studentRows = await reportAggregate(AssessmentSubmission, [
       ...baseLookup,
       {
         $project: {
@@ -4552,8 +4355,9 @@ export async function getAssessmentReports(req, res) {
           studentId: '$student.studentId',
           attemptDate: '$startedAt',
           attempts: '$attemptCount',
-          score: '$score',
-          accuracy: '$accuracy',
+          score: evaluatedScoreExpression,
+          accuracy: { $cond: [evaluatedAssessmentExpression, '$accuracy', null] },
+          evaluationStatus: { $ifNull: ['$evaluationStatus', 'completed'] },
           timeTakenSec: '$timeTakenSec',
           status: '$status',
           violationCount: {
@@ -4575,19 +4379,22 @@ export async function getAssessmentReports(req, res) {
       { $limit: limitNum },
     ]);
 
-    const summaryRows = await AssessmentSubmission.aggregate([
+    const summaryRows = await reportAggregate(AssessmentSubmission, [
       ...summaryBaseLookup,
       {
         $group: {
           _id: null,
-          avgScore: { $avg: { $ifNull: ['$score', 0] } },
-          maxScore: { $max: { $ifNull: ['$score', 0] } },
-          minScore: { $min: { $ifNull: ['$score', 0] } },
+          avgScore: { $avg: '$score' },
+          maxScore: { $max: '$score' },
+          minScore: { $min: '$score' },
           total: { $sum: 1 },
+          gradedCount: { $sum: { $cond: ['$isGraded', 1, 0] } },
+          pendingEvaluationCount: { $sum: { $cond: [{ $eq: ['$evaluationStatus', 'processing'] }, 1, 0] } },
+          failedEvaluationCount: { $sum: { $cond: [{ $eq: ['$evaluationStatus', 'failed'] }, 1, 0] } },
           passCount: {
             $sum: {
               $cond: [
-                { $gte: ['$score', { $multiply: [{ $ifNull: ['$maxMarks', '$assessment.totalMarks'] }, Number(passMark) || 0.4] }] },
+                { $and: ['$isGraded', { $gte: ['$score', { $multiply: [{ $ifNull: ['$maxMarks', '$assessment.totalMarks'] }, Number(passMark) || 0.4] }] }] },
                 1,
                 0,
               ],
@@ -4629,7 +4436,7 @@ export async function getAssessmentReports(req, res) {
     ]);
 
     // Compute top violators separately
-    const topViolatorsRows = await AssessmentSubmission.aggregate([
+    const topViolatorsRows = await reportAggregate(AssessmentSubmission, [
       ...summaryBaseLookup,
       {
         $group: {
@@ -4653,7 +4460,7 @@ export async function getAssessmentReports(req, res) {
     ]);
 
     // Compute violation trend (last 10 days)
-    const violationTrendRows = await AssessmentSubmission.aggregate([
+    const violationTrendRows = await reportAggregate(AssessmentSubmission, [
       ...summaryBaseLookup,
       {
         $match: {
@@ -4681,21 +4488,21 @@ export async function getAssessmentReports(req, res) {
       { $limit: 10 },
     ]);
 
-    const attemptTrendRows = await AssessmentSubmission.aggregate([
+    const attemptTrendRows = await reportAggregate(AssessmentSubmission, [
       ...summaryBaseLookup,
       { $match: { startedAt: { $exists: true, $ne: null } } },
       {
         $group: {
           _id: { $dateToString: { format: '%Y-%m-%d', date: '$startedAt' } },
           count: { $sum: 1 },
-          avgScore: { $avg: { $ifNull: ['$score', 0] } },
+          avgScore: { $avg: '$score' },
         },
       },
       { $sort: { _id: 1 } },
       { $limit: 30 },
     ]);
 
-    const monthlyActivityRows = await AssessmentSubmission.aggregate([
+    const monthlyActivityRows = await reportAggregate(AssessmentSubmission, [
       ...summaryBaseLookup,
       { $match: { startedAt: { $exists: true, $ne: null } } },
       {
@@ -4713,14 +4520,14 @@ export async function getAssessmentReports(req, res) {
               ],
             },
           },
-          avgScore: { $avg: { $ifNull: ['$score', 0] } },
+          avgScore: { $avg: '$score' },
         },
       },
       { $sort: { _id: 1 } },
       { $limit: 12 },
     ]);
 
-    const activityCalendarRows = await AssessmentSubmission.aggregate([
+    const activityCalendarRows = await reportAggregate(AssessmentSubmission, [
       ...summaryBaseLookup,
       { $match: { startedAt: { $exists: true, $ne: null } } },
       {
@@ -4737,7 +4544,7 @@ export async function getAssessmentReports(req, res) {
               ],
             },
           },
-          avgScore: { $avg: { $ifNull: ['$score', 0] } },
+          avgScore: { $avg: '$score' },
         },
       },
       { $sort: { _id: 1 } },
@@ -4745,7 +4552,7 @@ export async function getAssessmentReports(req, res) {
     ]);
 
     const summary = summaryRows?.[0] || { avgScore: 0, maxScore: 0, minScore: 0, total: 0, passCount: 0 };
-    const failCount = Math.max(0, (summary.total || 0) - (summary.passCount || 0));
+    const failCount = Math.max(0, (summary.gradedCount || 0) - (summary.passCount || 0));
 
     const assessmentSummariesMatch = {
       lifecycleStatus: { $ne: 'draft' },
@@ -4762,7 +4569,7 @@ export async function getAssessmentReports(req, res) {
     if (assessmentType) assessmentCalendarMatch.assessmentType = assessmentType;
     if (req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') assessmentCalendarMatch.createdBy = req.user._id;
 
-    const assessmentCreatedTrendRows = await Assessment.aggregate([
+    const assessmentCreatedTrendRows = await reportAggregate(Assessment, [
       { $match: assessmentCalendarMatch },
       {
         $group: {
@@ -4776,37 +4583,14 @@ export async function getAssessmentReports(req, res) {
 
     const assessmentSubmissionSummaryLookup = {
       $lookup: {
-        from: 'assessmentsubmissions',
-        let: { assessmentId: '$_id' },
-        pipeline: [
-          { $match: { $expr: { $eq: ['$assessmentId', '$$assessmentId'] } } },
-          {
-            $group: {
-              _id: null,
-              submissionCount: { $sum: 1 },
-              completedCount: { $sum: { $cond: [{ $eq: ['$status', 'submitted'] }, 1, 0] } },
-              lastAttemptAt: { $max: '$startedAt' },
-              avgScore: { $avg: { $ifNull: ['$score', 0] } },
-              maxScore: { $max: { $ifNull: ['$score', 0] } },
-              minScore: { $min: { $ifNull: ['$score', 0] } },
-              violationCount: {
-                $sum: {
-                  $add: [
-                    { $ifNull: ['$tabSwitches', 0] },
-                    { $ifNull: ['$fullscreenExits', 0] },
-                    { $ifNull: ['$cameraFlags', 0] },
-                    { $ifNull: ['$copyPasteCount', 0] },
-                  ],
-                },
-              },
-            },
-          },
-        ],
+        from: 'assessmentreportsummaries',
+        localField: '_id',
+        foreignField: '_id',
         as: 'submissionSummary',
       },
     };
 
-    const assessmentSummaries = await Assessment.aggregate([
+    const assessmentSummaries = await reportAggregate(Assessment, [
       { $match: assessmentSummariesMatch },
       assessmentSubmissionSummaryLookup,
       {
@@ -4831,9 +4615,12 @@ export async function getAssessmentReports(req, res) {
           totalMarks: 1,
           attempted: { $ifNull: [{ $first: '$submissionSummary.submissionCount' }, 0] },
           lastAttemptAt: { $first: '$submissionSummary.lastAttemptAt' },
-          avgScore: { $ifNull: [{ $first: '$submissionSummary.avgScore' }, 0] },
-          maxScore: { $ifNull: [{ $first: '$submissionSummary.maxScore' }, 0] },
-          minScore: { $ifNull: [{ $first: '$submissionSummary.minScore' }, 0] },
+          avgScore: { $first: '$submissionSummary.avgScore' },
+          maxScore: { $first: '$submissionSummary.maxScore' },
+          minScore: { $first: '$submissionSummary.minScore' },
+          summaryAsOf: { $first: '$submissionSummary.computedAt' },
+          summaryPending: { $not: [{ $ifNull: [{ $first: '$submissionSummary.computedAt' }, false] }] },
+          pendingEvaluationCount: { $ifNull: [{ $first: '$submissionSummary.pendingEvaluationCount' }, 0] },
           submissionCount: { $ifNull: [{ $first: '$submissionSummary.submissionCount' }, 0] },
           completedCount: { $ifNull: [{ $first: '$submissionSummary.completedCount' }, 0] },
           violationCount: { $ifNull: [{ $first: '$submissionSummary.violationCount' }, 0] },
@@ -4843,7 +4630,7 @@ export async function getAssessmentReports(req, res) {
     ]);
 
     const assessmentCalendarSummaries = assessmentId
-      ? await Assessment.aggregate([
+      ? await reportAggregate(Assessment, [
         { $match: assessmentCalendarMatch },
         assessmentSubmissionSummaryLookup,
         {
@@ -4953,9 +4740,12 @@ export async function getAssessmentReports(req, res) {
       assessments: assessmentSummaries,
       students: studentRows,
       summary: {
-        avgScore: summary.avgScore || 0,
-        maxScore: summary.maxScore || 0,
-        minScore: summary.minScore || 0,
+        avgScore: summary.avgScore ?? null,
+        maxScore: summary.maxScore ?? null,
+        minScore: summary.minScore ?? null,
+        pendingEvaluationCount: summary.pendingEvaluationCount || 0,
+        failedEvaluationCount: summary.failedEvaluationCount || 0,
+        gradedCount: summary.gradedCount || 0,
         passCount: summary.passCount || 0,
         failCount,
         avgTimeSec: summary.avgTimeSec || 0,
@@ -5003,8 +4793,14 @@ export async function getAssessmentReports(req, res) {
       },
     });
   } catch (err) {
+    if (err.status === 503 || err.code === 50) {
+      res.setHeader?.('Retry-After', '10');
+      return res.status(503).json({ error: 'Reports are busy. Select a narrower assessment/date range and retry.', code: err.code || 'REPORT_BUSY' });
+    }
     console.error('Error generating assessment reports:', err);
     res.status(500).json({ error: 'Failed to generate reports' });
+  } finally {
+    releaseReportSlot?.();
   }
 }
 
@@ -5015,7 +4811,7 @@ export async function getStudentAssessmentReport(req, res) {
       return res.status(400).json({ error: 'Invalid submissionId' });
     }
 
-    let submission = await AssessmentSubmission.findById(submissionId).lean();
+    let submission = await AssessmentSubmission.findById(submissionId).select('-proctoringSnapshots -monitoringEvents').lean();
     if (!submission) {
       return res.status(404).json({ error: 'Submission not found' });
     }
@@ -5032,13 +4828,15 @@ export async function getStudentAssessmentReport(req, res) {
     const deliveredAssessment = assessmentForSubmission(assessment, submission);
     submission = await reconcileAssessmentCodingAnswers(deliveredAssessment, submission);
 
+    const evaluationUnavailable = ['processing', 'failed'].includes(submission.evaluationStatus);
+
     const analytics = buildAssessmentAttemptAnalytics(deliveredAssessment, submission);
     const sectionBreakdown = buildSectionBreakdownWithScores(deliveredAssessment, submission);
     const questionWise = buildQuestionWiseReport(deliveredAssessment, submission);
 
     const totalMarks = Number(deliveredAssessment.totalMarks || computeTotalMarksFromSections(deliveredAssessment.sections || []));
-    const score = Number(submission.score || 0);
-    const accuracy = Number.isFinite(Number(submission.accuracy))
+    const score = evaluationUnavailable ? null : Number(submission.score || 0);
+    const accuracy = evaluationUnavailable ? null : Number.isFinite(Number(submission.accuracy))
       ? Number(submission.accuracy)
       : totalMarks > 0
         ? Number(((score / totalMarks) * 100).toFixed(2))
@@ -5048,16 +4846,17 @@ export async function getStudentAssessmentReport(req, res) {
       submissionId: submission._id,
       assessmentId: assessment._id,
       assessmentTitle: assessment.title || 'Untitled Assessment',
+      evaluationStatus: submission.evaluationStatus || 'completed',
       score,
       totalMarks,
       accuracy,
       timeTakenSec: computeSubmissionTimeTakenSec(submission),
-      correctAnswers: analytics.correctAnswers,
-      wrongAnswers: analytics.wrongAnswers,
+      correctAnswers: evaluationUnavailable ? null : analytics.correctAnswers,
+      wrongAnswers: evaluationUnavailable ? null : analytics.wrongAnswers,
       skippedQuestions: analytics.skippedQuestions,
       pendingEvaluationQuestions: analytics.pendingEvaluationQuestions,
-      sectionBreakdown,
-      questionWise,
+      sectionBreakdown: evaluationUnavailable ? [] : sectionBreakdown,
+      questionWise: evaluationUnavailable ? [] : questionWise,
       securityInfo: {
         tabSwitches: submission.tabSwitches || 0,
         fullscreenExits: submission.fullscreenExits || 0,
@@ -5075,7 +4874,10 @@ export async function getStudentAssessmentReport(req, res) {
 }
 
 export async function getAssessmentReportsExportData(req, res) {
+  let releaseExportSlot;
   try {
+    releaseExportSlot = acquireAssessmentReportSlot('export');
+    const reportAggregate = createBoundedReportAggregate();
     const {
       assessmentId,
       assessmentType,
@@ -5148,6 +4950,9 @@ export async function getAssessmentReportsExportData(req, res) {
         assessmentId: 1,
         studentId: 1,
         answers: 1,
+        deliverySections: 1,
+        deliveryPreparedAt: 1,
+        evaluationStatus: 1,
         score: 1,
         maxMarks: 1,
         accuracy: 1,
@@ -5215,7 +5020,14 @@ export async function getAssessmentReportsExportData(req, res) {
     });
 
     const selectedColumnKeys = parseCsvList(columns);
-    const rawRows = await AssessmentSubmission.aggregate(pipeline);
+    const rawRows = [];
+    let rawBytes = 0;
+    const cursor = reportAggregate(AssessmentSubmission, [...pipeline, { $limit: MAX_ASSESSMENT_EXPORT_ROWS + 1 }]).cursor({ batchSize: 10 });
+    for await (const row of cursor) {
+      rawBytes += Buffer.byteLength(JSON.stringify(row));
+      assertAssessmentExportSize(rawRows.length + 1, null, rawBytes);
+      rawRows.push(row);
+    }
     const groupedByAssessment = new Map();
     rawRows.forEach((row) => {
       const key = String(row.assessment?._id || row.assessmentId);
@@ -5228,7 +5040,7 @@ export async function getAssessmentReportsExportData(req, res) {
     const sectionRows = [];
 
     groupedByAssessment.forEach((rows) => {
-      const rankedRows = [...rows].sort((a, b) => {
+      const rankedRows = rows.filter((row) => !['processing', 'failed'].includes(row.evaluationStatus) && row.status === 'submitted').sort((a, b) => {
         const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
         if (scoreDiff !== 0) return scoreDiff;
         return computeSubmissionTimeTakenSec(a) - computeSubmissionTimeTakenSec(b);
@@ -5237,6 +5049,8 @@ export async function getAssessmentReportsExportData(req, res) {
       const totalInAssessment = rankedRows.length || 1;
 
       rows.forEach((row) => {
+        const evaluationPending = row.evaluationStatus === 'processing';
+        const evaluationUnavailable = evaluationPending || row.evaluationStatus === 'failed';
         const assessmentDoc = row.assessment || {};
         const submissionDoc = {
           ...row,
@@ -5248,8 +5062,8 @@ export async function getAssessmentReportsExportData(req, res) {
         const sectionBreakdown = buildSectionBreakdownWithScores(deliveredAssessment, submissionDoc);
         const questionWise = buildQuestionWiseReport(deliveredAssessment, submissionDoc);
         const totalMarks = Number(deliveredAssessment.totalMarks || computeTotalMarksFromSections(deliveredAssessment.sections || []));
-        const score = Number(row.score || 0);
-        const accuracy = Number.isFinite(Number(row.accuracy))
+        const score = evaluationUnavailable ? null : Number(row.score || 0);
+        const accuracy = evaluationUnavailable ? null : Number.isFinite(Number(row.accuracy))
           ? Number(row.accuracy)
           : totalMarks > 0
             ? Number(((score / totalMarks) * 100).toFixed(2))
@@ -5289,7 +5103,8 @@ export async function getAssessmentReportsExportData(req, res) {
           candidateGroup: row.student?.group || '',
           attemptDate: row.startedAt || row.createdAt || null,
           submittedAt: row.submittedAt || null,
-          completionStatus: row.status || 'incomplete',
+          completionStatus: evaluationPending ? 'Submitted - evaluation pending' : row.evaluationStatus === 'failed' ? 'Submitted - evaluation failed' : row.status || 'incomplete',
+          evaluationStatus: row.evaluationStatus || 'completed',
           attempts: row.attemptCount || 0,
           attemptHistory: row.attemptCount || 0,
           score,
@@ -5299,8 +5114,8 @@ export async function getAssessmentReportsExportData(req, res) {
           rank,
           percentile,
           totalQuestions: analytics.totalQuestions,
-          correctAnswers: analytics.correctAnswers,
-          wrongAnswers: analytics.wrongAnswers,
+          correctAnswers: evaluationUnavailable ? null : analytics.correctAnswers,
+          wrongAnswers: evaluationUnavailable ? null : analytics.wrongAnswers,
           partialAnswers: analytics.partialAnswers,
           skippedQuestions: analytics.skippedQuestions,
           pendingEvaluationQuestions: analytics.pendingEvaluationQuestions,
@@ -5316,8 +5131,8 @@ export async function getAssessmentReportsExportData(req, res) {
           copyPasteCount: Number(row.copyPasteCount || 0),
           pauseCount: Number(row.pauseCount || 0),
           lastPauseAt: row.lastPauseAt || null,
-          sectionScores: sectionScoresText,
-          sectionPerformance: sectionPerformanceText,
+          sectionScores: evaluationUnavailable ? 'Evaluation pending or unavailable' : sectionScoresText,
+          sectionPerformance: evaluationUnavailable ? '' : sectionPerformanceText,
           deviceBrowser: userAgentDetails.browser,
           deviceOs: userAgentDetails.os,
           deviceInfo: `${userAgentDetails.browser} / ${userAgentDetails.os}`,
@@ -5339,7 +5154,7 @@ export async function getAssessmentReportsExportData(req, res) {
             sectionName: section.sectionName,
             sectionType: section.type,
             totalQuestions: section.totalQuestions,
-            score: section.score,
+            score: evaluationUnavailable ? null : section.score,
             totalMarks: section.totalMarks,
             correctAnswers: section.correctAnswers,
             wrongAnswers: section.wrongAnswers,
@@ -5351,14 +5166,17 @@ export async function getAssessmentReportsExportData(req, res) {
       });
     });
 
+    const gradedExportRows = exportRows.filter((row) => row.score !== null && row.completionStatus === 'submitted');
     const summary = {
       totalAssessments: new Set(exportRows.map((row) => row.assessmentId)).size,
       totalCandidates: exportRows.length,
-      avgScore: exportRows.length ? Number((exportRows.reduce((sum, row) => sum + Number(row.score || 0), 0) / exportRows.length).toFixed(2)) : 0,
-      maxScore: exportRows.length ? Math.max(...exportRows.map((row) => Number(row.score || 0))) : 0,
-      minScore: exportRows.length ? Math.min(...exportRows.map((row) => Number(row.score || 0))) : 0,
-      passCount: exportRows.filter((row) => row.totalMarks > 0 && row.score >= row.totalMarks * (Number(passMark) || 0.4)).length,
-      failCount: exportRows.filter((row) => !(row.totalMarks > 0 && row.score >= row.totalMarks * (Number(passMark) || 0.4))).length,
+      pendingEvaluationCount: exportRows.filter((row) => row.evaluationStatus === 'processing').length,
+      failedEvaluationCount: exportRows.filter((row) => row.evaluationStatus === 'failed').length,
+      avgScore: gradedExportRows.length ? Number((gradedExportRows.reduce((sum, row) => sum + Number(row.score || 0), 0) / gradedExportRows.length).toFixed(2)) : null,
+      maxScore: gradedExportRows.length ? Math.max(...gradedExportRows.map((row) => Number(row.score || 0))) : null,
+      minScore: gradedExportRows.length ? Math.min(...gradedExportRows.map((row) => Number(row.score || 0))) : null,
+      passCount: gradedExportRows.filter((row) => row.totalMarks > 0 && row.score >= row.totalMarks * (Number(passMark) || 0.4)).length,
+      failCount: gradedExportRows.filter((row) => !(row.totalMarks > 0 && row.score >= row.totalMarks * (Number(passMark) || 0.4))).length,
       violationCount: exportRows.reduce((sum, row) => sum + Number(row.violationCount || 0), 0),
     };
 
@@ -5385,29 +5203,36 @@ export async function getAssessmentReportsExportData(req, res) {
       });
     }
 
-    return res.json({
+    const exportPayload = {
       generatedAt: new Date().toISOString(),
       filters: req.query || {},
       summary,
       rows: filteredRows,
       sectionRows,
       availableColumns: Array.from(availableColumns),
-    });
+    };
+    assertAssessmentExportSize(filteredRows.length, exportPayload);
+    return res.json(exportPayload);
   } catch (err) {
+    if (err.status === 503 || err.code === 50 || err.status === 413) {
+      res.setHeader?.('Retry-After', '10');
+      return res.status(err.status === 413 ? 413 : 503).json({ error: err.status === 413 ? err.message : 'Report export is busy. Narrow filters and retry.', code: err.code || 'REPORT_BUSY' });
+    }
     console.error('Error generating assessment report export data:', err);
     return res.status(500).json({ error: 'Failed to generate assessment report export data' });
+  } finally {
+    releaseExportSlot?.();
   }
 }
 
 export async function exportAssessmentReports(req, res) {
   try {
-    const { students = [], summary } = await (async () => {
-      const mockReq = { ...req, query: { ...req.query, page: 1, limit: 10000 } };
-      const mockRes = {};
+    const { rows: students = [] } = await (async () => {
+      const mockReq = { ...req, query: { ...req.query, columns: 'assessmentName,assessmentType,candidateName,candidateStudentId,attemptDate,attempts,score,accuracy,timeSpentSec,violationCount,completionStatus' } };
       const payload = await new Promise((resolve, reject) => {
-        getAssessmentReports(mockReq, {
+        getAssessmentReportsExportData(mockReq, {
           json: (data) => resolve(data),
-          status: () => ({ json: (data) => reject(data) }),
+          status: (status) => ({ json: (data) => reject(Object.assign(new Error(data.error), { status, code: data.code })) }),
         });
       });
       return payload || {};
@@ -5428,17 +5253,17 @@ export async function exportAssessmentReports(req, res) {
     ];
 
     const rows = (students || []).map((row) => ([
-      row.assessmentTitle || '',
+      row.assessmentName || '',
       row.assessmentType || '',
-      row.studentName || '',
-      row.studentId || '',
+      row.candidateName || '',
+      row.candidateStudentId || '',
       row.attemptDate ? new Date(row.attemptDate).toISOString() : '',
       row.attempts || 0,
       row.score ?? '',
       row.accuracy ?? '',
-      row.timeTakenSec ?? '',
+      row.timeSpentSec ?? '',
       row.violationCount ?? 0,
-      row.status || '',
+      row.completionStatus || '',
     ]));
 
     const csv = [header, ...rows].map((r) => r.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
@@ -5447,7 +5272,7 @@ export async function exportAssessmentReports(req, res) {
     res.send(csv);
   } catch (err) {
     console.error('Error exporting assessment reports:', err);
-    res.status(500).json({ error: 'Failed to export reports' });
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'Failed to export reports', code: err.code });
   }
 }
 
@@ -5593,84 +5418,73 @@ function decideViolationAction({ settings = {}, type, meta = {}, submission }) {
 
 export async function logStudentViolation(req, res) {
   try {
-    const { id } = req.params;
-    const studentId = req.user._id;
     const { type, message, meta, metadata, severity, confidence } = req.body || {};
-    if (!type || !VALID_VIOLATION_TYPES.includes(type)) return res.status(400).json({ error: 'Valid violation type required.' });
-
+    if (!type || !VALID_VIOLATION_TYPES.includes(type)) throw new AssessmentWriteError(400, 'INVALID_VIOLATION', 'Valid violation type required.');
     const normalizedMeta = normalizeViolationMetadata(meta, metadata);
-    if (!normalizedMeta.ok) return res.status(400).json({ error: normalizedMeta.error });
-
     const normalizedSeverity = normalizeViolationSeverity(severity);
-    if (!normalizedSeverity.ok) return res.status(400).json({ error: normalizedSeverity.error });
-
     const normalizedConfidence = normalizeViolationConfidence(confidence);
-    if (!normalizedConfidence.ok) return res.status(400).json({ error: normalizedConfidence.error });
-
-    const assessment = await findAssessmentForStudentRoute(id, { lean: true, select: 'settings' });
-    if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
-    const submission = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId });
-    if (!submission) return res.status(404).json({ error: 'Submission not found.' });
-    if (submission.status === 'submitted') return res.json({ ok: true });
-    const settings = assessment.settings || {};
+    for (const item of [normalizedMeta, normalizedSeverity, normalizedConfidence]) {
+      if (!item.ok) throw new AssessmentWriteError(400, 'INVALID_VIOLATION', item.error);
+    }
+    const assessment = await requireStudentAssessment(req.params.id, req.user);
     const now = new Date();
-    const isAiViolation = isAiProctoringViolation(type);
-    const isDetectionOnlyViolation = isNonBlockingDetectionViolation(type, normalizedMeta.value);
-    const weight = isDetectionOnlyViolation ? 0 : violationWeight(settings, type);
+    const eventId = String(req.body?.eventId || crypto.randomUUID()).slice(0, 160);
+    const settings = assessment.settings || {};
+    const ai = isAiProctoringViolation(type);
+    const detectionOnly = isNonBlockingDetectionViolation(type, normalizedMeta.value);
+    const weight = detectionOnly ? 0 : violationWeight(settings, type);
     const cleanMessage = sanitizeViolationMessage(message);
-    const logMeta = {
-      ...normalizedMeta.value,
-      weight,
-      ...(normalizedSeverity.value ? { severity: normalizedSeverity.value } : {}),
-      ...(normalizedConfidence.value !== undefined ? { confidence: normalizedConfidence.value } : {}),
-    };
-    if (isAiViolation) logMeta.source = logMeta.source || 'ai_proctoring';
-
-    submission.violationLog = submission.violationLog || [];
-    submission.violationLog.push({ type, message: cleanMessage, at: now, meta: logMeta });
-    if (type === 'tab_switch') submission.tabSwitches = (submission.tabSwitches || 0) + 1;
-    if (type === 'fullscreen_exit') submission.fullscreenExits = (submission.fullscreenExits || 0) + 1;
-    if (['camera_loss', 'camera_no_face', 'multiple_faces', 'face_out_of_frame'].includes(type)) submission.cameraFlags = (submission.cameraFlags || 0) + 1;
-    if (type === 'copy_paste' || type === 'context_menu') submission.copyPasteCount = (submission.copyPasteCount || 0) + 1;
-    if (isAiViolation) {
-      submission.aiProctoringSummary = applyAiProctoringViolationToSummary(submission.aiProctoringSummary || {}, type, now);
-      submission.markModified('aiProctoringSummary');
-    }
-    submission.violationScore = (submission.violationScore || 0) + weight;
-    const action = decideViolationAction({ settings, type, meta: logMeta, submission });
-    if (action === 'pause') {
-      startSubmissionSecurityPause(submission, now, type);
-      resetSubmissionSecuritySetup(submission);
-    }
-    if (action === 'autosubmit') {
-      submission.violationLog.push({
-        type: 'auto_submit',
-        message: 'Assessment auto-submitted after violation limit was reached.',
-        at: now,
-        meta: { trigger: type, score: submission.violationScore },
-      });
-    }
-    await submission.save();
-    return res.json({
-      ok: true,
-      tabSwitches: submission.tabSwitches,
-      fullscreenExits: submission.fullscreenExits,
-      cameraFlags: submission.cameraFlags,
-      copyPasteCount: submission.copyPasteCount,
-      violationScore: submission.violationScore,
-      pauseCount: submission.pauseCount,
-      lastPauseAt: submission.lastPauseAt,
-      pauseStartedAt: submission.pauseStartedAt,
-      securityRecheckTimeoutSec: getSecurityRecheckTimeoutSec(settings),
-      action,
-      autoSubmit: action === 'autosubmit',
-      riskLevel: submission.aiProctoringSummary?.riskLevel,
-      aiProctoringSummary: submission.aiProctoringSummary || undefined,
+    const logMeta = { ...normalizedMeta.value, weight, ...(normalizedSeverity.value ? { severity: normalizedSeverity.value } : {}),
+      ...(normalizedConfidence.value !== undefined ? { confidence: normalizedConfidence.value } : {}) };
+    if (ai) logMeta.source = logMeta.source || 'ai_proctoring';
+    const { submission, result } = await mutateAssessmentSubmission({
+      filter: { assessmentId: assessment._id, studentId: req.user._id },
+      mutate: (doc) => {
+        assertAssessmentSession(doc, req.body);
+        if (isTerminalAssessmentSubmission(doc)) return { action: 'warn', ignored: true };
+        const duplicate = (doc.violationLog || []).find((entry) => entry.eventId === eventId);
+        if (duplicate) return { action: duplicate.action || 'warn' };
+        if (type === 'tab_switch') doc.tabSwitches += 1;
+        if (type === 'fullscreen_exit') doc.fullscreenExits += 1;
+        if (['camera_loss', 'camera_no_face', 'multiple_faces', 'face_out_of_frame'].includes(type)) doc.cameraFlags += 1;
+        if (['copy_paste', 'context_menu'].includes(type)) doc.copyPasteCount += 1;
+        if (ai) {
+          doc.aiProctoringSummary = applyAiProctoringViolationToSummary(doc.aiProctoringSummary || {}, type, now);
+          doc.markModified('aiProctoringSummary');
+        }
+        doc.violationScore += weight;
+        const action = decideViolationAction({ settings, type, meta: logMeta, submission: doc });
+        if (action === 'pause') {
+          startSubmissionSecurityPause(doc, now, type);
+          resetSubmissionSecuritySetup(doc);
+        }
+        doc.violationLog = [...(doc.violationLog || []), { eventId, type, message: cleanMessage, at: now, meta: logMeta, action }].slice(-250);
+        doc.deadlineAt = getAssessmentAttemptDeadline(assessmentForSubmission(assessment, doc), doc);
+        if (action === 'autosubmit') {
+          const timeTakenSec = computeEffectiveTimeTakenSec(doc, now);
+          if (doc.pauseStartedAt) finishSubmissionSecurityPause(doc, now);
+          finishAssessmentSubmission(doc, { now, timeTakenSec });
+        }
+        return { action };
+      },
     });
-  } catch (err) {
-    console.error('Error logging violation:', err);
-    return res.status(500).json({ error: 'Failed to log violation.' });
-  }
+    if (!submission) throw new AssessmentWriteError(404, 'ATTEMPT_NOT_FOUND', 'Submission not found.');
+    if (!result?.ignored) await AssessmentEvent.updateOne(
+      { submissionId: submission._id, attemptGeneration: submission.attemptGeneration || 1, eventId },
+      { $setOnInsert: { assessmentId: assessment._id, studentId: req.user._id, kind: 'violation', type, message: cleanMessage, at: now, meta: logMeta } },
+      { upsert: true },
+    );
+    return res.json({
+      ok: true, tabSwitches: submission.tabSwitches, fullscreenExits: submission.fullscreenExits,
+      cameraFlags: submission.cameraFlags, copyPasteCount: submission.copyPasteCount,
+      violationScore: submission.violationScore, pauseCount: submission.pauseCount,
+      lastPauseAt: submission.lastPauseAt, pauseStartedAt: submission.pauseStartedAt,
+      securityRecheckTimeoutSec: getSecurityRecheckTimeoutSec(settings),
+      action: result?.action || 'warn', autoSubmit: result?.action === 'autosubmit',
+      riskLevel: submission.aiProctoringSummary?.riskLevel, aiProctoringSummary: submission.aiProctoringSummary,
+      ...assessmentWriteAcknowledgement(submission),
+    });
+  } catch (error) { return respondAssessmentWriteError(res, error); }
 }
 
 export async function logStudentHeartbeat(req, res) {
@@ -5678,10 +5492,18 @@ export async function logStudentHeartbeat(req, res) {
     const { id } = req.params;
     const studentId = req.user._id;
     const { status = {}, violationScore, pauseCount, cameraFlags, networkPauseStartedAt, sessionId } = req.body || {};
-    const assessment = await findAssessmentForStudentRoute(id, { lean: true, select: 'settings duration endTime' });
+    if (req.body?.submissionId !== undefined && !mongoose.isValidObjectId(req.body.submissionId)) {
+      return res.status(409).json({ error: 'This request belongs to a different assessment attempt.', code: 'ATTEMPT_IDENTITY_CONFLICT' });
+    }
+    const assessment = await findAssessmentForStudentRoute(id, { lean: true, select: 'settings duration startTime endTime targetType assignedStudents lifecycleStatus manuallyCompletedAt' });
     if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
+    if (!isStudentAssignedToAssessment(assessment, req.user)) return res.status(403).json({ error: 'Not assigned to this assessment.' });
     const settings = assessment.settings || {};
     const now = new Date();
+    const checkpoint = await readPresenceCheckpoint(studentId, assessment._id, req.body || {});
+    if (checkpoint && !assessment.manuallyCompletedAt && new Date(checkpoint.allowedEnd).getTime() > now.getTime()) {
+      return res.json({ ok: true, action: 'warn', checkpointOnly: true, serverTime: now });
+    }
     const normalizedSessionId = String(sessionId || '').slice(0, 160);
     const normalizedStatus = {
       fullscreen: Boolean(status.fullscreen),
@@ -5696,67 +5518,19 @@ export async function logStudentHeartbeat(req, res) {
       securityHeartbeat: normalizedStatus,
       activeSessionHeartbeatAt: now,
       updatedAt: now,
+      __v: { $add: [{ $ifNull: ['$__v', 0] }, 1] },
     };
-    if (normalizedSessionId) heartbeatSet.activeSessionId = normalizedSessionId;
-    if (typeof cameraFlags === 'number') heartbeatSet.cameraFlags = cameraFlags;
+    if (normalizedSessionId) heartbeatSet.activeSessionId = { $literal: normalizedSessionId };
+    if (Number.isFinite(cameraFlags) && cameraFlags >= 0 && cameraFlags <= 1000000) heartbeatSet.cameraFlags = { $max: [{ $ifNull: ['$cameraFlags', 0] }, cameraFlags] };
 
     const heartbeatMax = {};
-    if (typeof violationScore === 'number') heartbeatMax.violationScore = violationScore;
-    if (typeof pauseCount === 'number') heartbeatMax.pauseCount = pauseCount;
+    if (Number.isFinite(violationScore) && violationScore >= 0 && violationScore <= 1000000) heartbeatMax.violationScore = violationScore;
+    if (Number.isFinite(pauseCount) && pauseCount >= 0 && pauseCount <= 1000000) heartbeatMax.pauseCount = pauseCount;
 
-    const requestedNetworkPauseAtMs = networkPauseStartedAt ? new Date(networkPauseStartedAt).getTime() : null;
-    const hasValidNetworkPause = Number.isFinite(requestedNetworkPauseAtMs)
-      && requestedNetworkPauseAtMs <= now.getTime();
     const updatePipeline = [];
-
-    if (hasValidNetworkPause) {
-      const requestedNetworkPauseAtDate = new Date(requestedNetworkPauseAtMs);
-      const MAX_NETWORK_PAUSE_MS = 5 * 60 * 1000;
-      const pausedMs = Math.min(MAX_NETWORK_PAUSE_MS, Math.max(0, now.getTime() - requestedNetworkPauseAtMs));
-      const previousHeartbeatDate = {
-        $convert: { input: '$securityHeartbeat.at', to: 'date', onError: null, onNull: null },
-      };
-      const lastNetworkPauseDate = {
-        $convert: { input: '$lastNetworkPauseAt', to: 'date', onError: null, onNull: null },
-      };
-      const shouldRecordNetworkPause = {
-        $and: [
-          {
-            $or: [
-              { $eq: [lastNetworkPauseDate, null] },
-              { $gt: [requestedNetworkPauseAtDate, lastNetworkPauseDate] },
-            ],
-          },
-          {
-            $or: [
-              { $eq: [previousHeartbeatDate, null] },
-              { $gte: [requestedNetworkPauseAtDate, { $subtract: [previousHeartbeatDate, 15000] }] },
-            ],
-          },
-        ],
-      };
-      const shouldCreditNetworkPause = pausedMs >= 1000 ? shouldRecordNetworkPause : false;
-      const currentPauseCount = { $ifNull: ['$pauseCount', 0] };
-      const requestedPauseCount = typeof pauseCount === 'number'
-        ? { $max: [currentPauseCount, pauseCount] }
-        : currentPauseCount;
-
-      heartbeatSet.lastNetworkPauseAt = {
-        $cond: [shouldRecordNetworkPause, requestedNetworkPauseAtDate, '$lastNetworkPauseAt'],
-      };
-      heartbeatSet.pausedDurationMs = {
-        $cond: [
-          shouldCreditNetworkPause,
-          { $add: [{ $ifNull: ['$pausedDurationMs', 0] }, pausedMs] },
-          { $ifNull: ['$pausedDurationMs', 0] },
-        ],
-      };
-      heartbeatSet.pauseCount = {
-        $cond: [shouldCreditNetworkPause, { $add: [requestedPauseCount, 1] }, requestedPauseCount],
-      };
-      heartbeatSet.lastPauseAt = {
-        $cond: [shouldCreditNetworkPause, now, '$lastPauseAt'],
-      };
+    const networkFields = networkPauseCreditFields(assessment, now, networkPauseStartedAt);
+    if (Object.keys(networkFields).length) {
+      Object.assign(heartbeatSet, networkFields);
       delete heartbeatMax.pauseCount;
     }
 
@@ -5803,7 +5577,9 @@ export async function logStudentHeartbeat(req, res) {
       {
         assessmentId: assessment._id,
         studentId,
-        status: { $ne: 'submitted' },
+        status: 'in_progress',
+        ...(req.body?.submissionId !== undefined ? { _id: req.body.submissionId } : {}),
+        ...(req.body?.attemptGeneration !== undefined ? { attemptGeneration: Number(req.body.attemptGeneration) } : {}),
         $or: sessionFilter,
       },
       updatePipeline,
@@ -5815,7 +5591,10 @@ export async function logStudentHeartbeat(req, res) {
         .select('status activeSessionId')
         .lean();
       if (!existingSubmission) return res.status(404).json({ error: 'Submission not found.' });
-      if (existingSubmission.status === 'submitted') return res.json({ ok: true, action: 'warn' });
+      if (req.body?.submissionId !== undefined && String(req.body.submissionId) !== String(existingSubmission._id)) {
+        return res.status(409).json({ error: 'This request belongs to a different assessment attempt.', code: 'ATTEMPT_IDENTITY_CONFLICT' });
+      }
+      if (isTerminalAssessmentSubmission(existingSubmission)) return res.json({ ok: true, action: 'warn', ignored: true });
       return res.status(409).json({
         error: 'This assessment is already active in another tab, browser, or device.',
         code: 'ACTIVE_ASSESSMENT_SESSION',
@@ -5823,7 +5602,7 @@ export async function logStudentHeartbeat(req, res) {
     }
 
     const allowedEnd = computeAllowedEnd(assessment, submission.startedAt || now, submission.pausedDurationMs);
-    return res.json({
+    const response = {
       ok: true,
       action,
       inconsistent,
@@ -5834,7 +5613,9 @@ export async function logStudentHeartbeat(req, res) {
       securityRecheckTimeoutSec: getSecurityRecheckTimeoutSec(settings),
       allowedEnd,
       serverTime: now,
-    });
+    };
+    await writePresenceCheckpoint(studentId, assessment._id, req.body || {}, response);
+    return res.json(response);
   } catch (err) {
     console.error('Error logging heartbeat:', err);
     return res.status(500).json({ error: 'Failed to log heartbeat.' });
@@ -5843,145 +5624,113 @@ export async function logStudentHeartbeat(req, res) {
 
 export async function markStudentAssessmentSetupStep(req, res) {
   try {
-    const { id } = req.params;
-    const student = req.user;
-    const studentId = student._id;
     const { step, meta } = req.body || {};
-    const allowedSteps = new Set(['environment', 'camera', 'fullscreen', 'location', 'final']);
-    if (!step || !allowedSteps.has(step)) {
-      return res.status(400).json({ error: 'Valid setup step is required.' });
-    }
-
-    const assessment = await findAssessmentForStudentRoute(id, {
-      lean: true,
-      select: 'lifecycleStatus startTime endTime duration settings targetType assignedStudents manuallyCompletedAt',
-    });
-    if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
-    if (assessment.lifecycleStatus === 'draft') return res.status(403).json({ error: 'Assessment is not published yet.' });
-    if (!assessment.startTime || !assessment.endTime || !assessment.duration) {
-      return res.status(400).json({ error: 'Assessment schedule is incomplete.' });
-    }
+    if (!['environment', 'camera', 'fullscreen', 'location', 'final'].includes(step)) throw new AssessmentWriteError(400, 'INVALID_SETUP_STEP', 'Invalid security setup step.');
+    const assessment = await requireStudentAssessment(req.params.id, req.user, { metadataOnly: true });
     const now = new Date();
-    const isAssigned = isStudentAssignedToAssessment(assessment, student);
-    if (!isAssigned) return res.status(403).json({ error: 'Not assigned to this assessment.' });
-
-    const submission = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId });
-    if (!submission) return res.status(404).json({ error: 'Submission not found. Unlock assessment first.' });
-    const settings = normalizeAssessmentSettings(assessment.settings || {});
-    const deliveryAssessment = assessmentForSubmission(assessment, submission);
-    if (now < new Date(deliveryAssessment.startTime) || (isAssessmentClosedForStudents(deliveryAssessment, now) && !isSecurityPauseWithinLimit(submission, settings, now))) {
-      return res.status(403).json({ error: 'Assessment is outside the active time window.' });
-    }
-    if (hasSecurityPauseExpired(submission, settings, now)) {
-      submission.status = 'submitted';
-      submission.submittedAt = now;
-      submission.attemptCount = Math.max(submission.attemptCount || 0, 1);
-      submission.isLate = false;
-      if (submission.pauseStartedAt) finishSubmissionSecurityPause(submission, now);
-      const scoring = scoreAssessment(deliveryAssessment, submission.answers);
-      submission.score = scoring.score;
-      submission.maxMarks = scoring.maxMarks;
-      submission.accuracy = scoring.accuracy;
-      submission.timeTakenSec = computeEffectiveTimeTakenSec(submission, now);
-      await submission.save();
-      return res.status(409).json({ error: 'Security recheck time expired. Assessment was auto-submitted.', status: submission.status });
-    }
-    const passwordCheck = await ensureAssessmentPasswordUnlocked(assessment, submission);
-    if (!passwordCheck.ok) return res.status(passwordCheck.status).json({ error: passwordCheck.error });
-
-    const requiredSecuritySteps = getRequiredSecuritySteps(assessment.settings || {}, submission);
-    if (!canRecordSecurityStep(step, submission, requiredSecuritySteps)) {
-      return res.status(409).json({
-        error: 'Complete previous setup steps before continuing.',
-        requiredSecuritySteps,
-        completedSecuritySteps: getCompletedSecuritySteps(submission),
-      });
-    }
-
-    const currentSetup = {
-      ...(submission.securitySetup && typeof submission.securitySetup === 'object' ? submission.securitySetup : {}),
-    };
-    currentSetup[`${step}At`] = currentSetup[`${step}At`] || now;
-    if (step === 'location' && meta && typeof meta === 'object') {
-      currentSetup.location = {
-        latitude: Number(meta.latitude),
-        longitude: Number(meta.longitude),
-        accuracy: Number(meta.accuracy),
-        capturedAt: now,
-      };
-    }
-    submission.set('securitySetup', currentSetup);
-    submission.markModified('securitySetup');
-
-    if (step === 'final' && hasCompletedRequiredSecuritySteps(submission, requiredSecuritySteps)) {
-      submission.securityCompletedAt = submission.securityCompletedAt || now;
-    }
-    await submission.save();
-
-    return res.json({
-      ok: true,
-      requiredSecuritySteps,
-      completedSecuritySteps: getCompletedSecuritySteps(submission),
-      canBeginAssessment: hasCompletedRequiredSecuritySteps(submission, requiredSecuritySteps),
-      location: submission.securitySetup?.location || null,
-      securityRecheckTimeoutSec: getSecurityRecheckTimeoutSec(settings),
+    const { submission, result } = await mutateAssessmentSubmission({
+      filter: { assessmentId: assessment._id, studentId: req.user._id },
+      mutate: async (doc) => {
+        assertAssessmentSession(doc, req.body);
+        if (isTerminalAssessmentSubmission(doc)) return { terminal: true };
+        if (finalizeIfDeadlinePassed(doc, assessment, now)) return { terminal: true };
+        const settings = normalizeAssessmentSettings(assessment.settings || {});
+        if (now < assessment.startTime || (isAssessmentClosedForStudents(assessment, now) && !isSecurityPauseWithinLimit(doc, settings, now))) {
+          throw new AssessmentWriteError(403, 'ASSESSMENT_CLOSED', 'Assessment is outside the active time window.');
+        }
+        const check = await ensureAssessmentPasswordUnlocked(assessment, doc);
+        if (!check.ok) throw new AssessmentWriteError(check.status, 'ASSESSMENT_LOCKED', check.error);
+        const required = getRequiredSecuritySteps(assessment.settings || {}, doc);
+        if (!canRecordSecurityStep(step, doc, required)) throw new AssessmentWriteError(409, 'SETUP_ORDER', 'Complete previous setup steps before continuing.', { requiredSecuritySteps: required, completedSecuritySteps: getCompletedSecuritySteps(doc) });
+        const setup = { ...(doc.securitySetup || {}) };
+        setup[step + 'At'] = setup[step + 'At'] || now;
+        if (step === 'location' && meta && typeof meta === 'object') {
+          const latitude = Number(meta.latitude), longitude = Number(meta.longitude), accuracy = Number(meta.accuracy);
+          if (!Number.isFinite(latitude) || Math.abs(latitude) > 90 || !Number.isFinite(longitude) || Math.abs(longitude) > 180 || !Number.isFinite(accuracy) || accuracy < 0) {
+            throw new AssessmentWriteError(400, 'INVALID_LOCATION', 'Invalid location coordinates.');
+          }
+          setup.location = { latitude, longitude, accuracy, capturedAt: now };
+        }
+        doc.set('securitySetup', setup);
+        doc.markModified('securitySetup');
+        if (step === 'final' && hasCompletedRequiredSecuritySteps(doc, required)) doc.securityCompletedAt = doc.securityCompletedAt || now;
+        return { required };
+      },
     });
-  } catch (err) {
-    console.error('Error marking setup step:', err);
-    return res.status(500).json({ error: 'Failed to mark setup step.' });
-  }
+    if (!submission) throw new AssessmentWriteError(404, 'ATTEMPT_NOT_FOUND', 'Unlock the assessment first.');
+    if (result?.terminal) return res.status(409).json({ error: 'Assessment was already submitted.', status: submission.status, ...assessmentWriteAcknowledgement(submission) });
+    const required = result?.required || getRequiredSecuritySteps(assessment.settings || {}, submission);
+    return res.json({ ok: true, requiredSecuritySteps: required, completedSecuritySteps: getCompletedSecuritySteps(submission),
+      canBeginAssessment: hasCompletedRequiredSecuritySteps(submission, required), location: submission.securitySetup?.location || null,
+      securityRecheckTimeoutSec: getSecurityRecheckTimeoutSec(assessment.settings || {}), ...assessmentWriteAcknowledgement(submission) });
+  } catch (error) { return respondAssessmentWriteError(res, error); }
+}
+
+async function requireMonitoringAttempt(req) {
+  const assessment = await requireStudentAssessment(req.params.id, req.user, { metadataOnly: true });
+  const doc = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId: req.user._id })
+    .select('assessmentId studentId status activeSessionId attemptGeneration');
+  if (!doc) throw new AssessmentWriteError(404, 'ATTEMPT_NOT_FOUND', 'Submission not found.');
+  assertAssessmentSession(doc, req.body);
+  return doc;
+}
+
+export async function createStudentEvidenceUpload(req, res) {
+  try {
+    const doc = await requireMonitoringAttempt(req);
+    if (isTerminalAssessmentSubmission(doc)) throw new AssessmentWriteError(409, 'ATTEMPT_CLOSED', 'The attempt is already submitted.');
+    return res.json(await createAssessmentEvidenceUpload(doc, req.body || {}));
+  } catch (error) { return respondAssessmentWriteError(res, error); }
 }
 
 export async function logStudentMonitoring(req, res) {
   try {
-    const { id } = req.params;
-    const studentId = req.user._id;
+    const doc = await requireMonitoringAttempt(req);
+    if (isTerminalAssessmentSubmission(doc)) return res.json({ ok: true, ignored: true });
     const { snapshot, event } = req.body || {};
-    const assessment = await findAssessmentForStudentRoute(id, { lean: true, select: '_id' });
-    if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
-    const push = {};
-
+    const base = { submissionId: doc._id, assessmentId: doc.assessmentId, studentId: req.user._id, attemptGeneration: doc.attemptGeneration || 1 };
+    const rows = [];
+    const validEventDate = (value) => {
+      const parsed = new Date(value || Date.now());
+      if (Number.isNaN(parsed.getTime())) throw new AssessmentWriteError(400, 'INVALID_EVENT_TIME', 'Invalid monitoring timestamp.');
+      return parsed;
+    };
     if (snapshot && typeof snapshot === 'object') {
-      push.proctoringSnapshots = {
-        $each: [{
-          type: String(snapshot.type || 'camera'),
-          capturedAt: snapshot.capturedAt ? new Date(snapshot.capturedAt) : new Date(),
-          dataUrl: String(snapshot.dataUrl || ''),
-          width: Number(snapshot.width || 0),
-          height: Number(snapshot.height || 0),
-        }],
-        $slice: -60,
-      };
+      const objectKey = snapshot.objectKey ? await verifyAssessmentEvidenceUpload(doc, snapshot) : '';
+      const legacyDataUrl = objectKey ? undefined : normalizeLegacyEvidence(snapshot.dataUrl);
+      rows.push({ ...base, eventId: String(snapshot.eventId || objectKey || crypto.randomUUID()).slice(0, 240),
+        kind: 'snapshot', type: String(snapshot.type || 'camera').slice(0, 64), at: validEventDate(snapshot.capturedAt),
+        objectKey: objectKey || undefined, legacyDataUrl,
+        width: Math.min(8192, Math.max(0, Number(snapshot.width) || 0)), height: Math.min(8192, Math.max(0, Number(snapshot.height) || 0)) });
     }
-
     if (event && typeof event === 'object') {
-      push.monitoringEvents = {
-        $each: [{
-          type: String(event.type || 'info'),
-          at: event.at ? new Date(event.at) : new Date(),
-          message: String(event.message || ''),
-          meta: event.meta && typeof event.meta === 'object' ? event.meta : {},
-        }],
-        $slice: -250,
-      };
+      const eventMeta = event.meta && typeof event.meta === 'object' ? event.meta : {};
+      if (Buffer.byteLength(JSON.stringify(eventMeta)) > 8192) throw new AssessmentWriteError(413, 'EVENT_TOO_LARGE', 'Monitoring metadata is too large.');
+      rows.push({ ...base, eventId: String(event.eventId || crypto.randomUUID()).slice(0, 160),
+        kind: 'monitoring', type: String(event.type || 'info').slice(0, 64), message: String(event.message || '').slice(0, 1000),
+        at: validEventDate(event.at), meta: eventMeta });
     }
-
-    const update = { $set: { updatedAt: new Date() } };
-    if (Object.keys(push).length > 0) update.$push = push;
-    const updateResult = await AssessmentSubmission.updateOne(
-      { assessmentId: assessment._id, studentId, status: { $ne: 'submitted' } },
-      update,
-    );
-
-    if (updateResult.matchedCount === 0) {
-      const existingSubmission = await AssessmentSubmission.exists({ assessmentId: assessment._id, studentId });
-      if (!existingSubmission) return res.status(404).json({ error: 'Submission not found.' });
-    }
+    if (rows.length) await AssessmentEvent.bulkWrite(rows.map((row) => ({ updateOne: {
+      filter: { submissionId: row.submissionId, attemptGeneration: row.attemptGeneration, eventId: row.eventId },
+      update: { $setOnInsert: row }, upsert: true,
+    } })));
     return res.json({ ok: true });
-  } catch (err) {
-    console.error('Error logging monitoring payload:', err);
-    return res.status(500).json({ error: 'Failed to log monitoring payload.' });
-  }
+  } catch (error) { return respondAssessmentWriteError(res, error); }
+}
+
+export async function getAssessmentEvidence(req, res) {
+  try {
+    const event = await AssessmentEvent.findOne({ _id: req.params.eventId, kind: 'snapshot' }).select('+legacyDataUrl').lean();
+    if (!event) throw new AssessmentWriteError(404, 'EVIDENCE_NOT_FOUND', 'Evidence not found.');
+    if (req.user.role !== 'admin') {
+      const assessment = await Assessment.findById(event.assessmentId).select('createdBy').lean();
+      if (!assessment || (req.user.coordinatorDataScope !== 'all' && String(assessment.createdBy) !== String(req.user._id))) {
+        throw new AssessmentWriteError(403, 'FORBIDDEN', 'Access denied.');
+      }
+    }
+    res.set('Cache-Control', 'private, no-store');
+    return res.json({ url: event.objectKey ? await signAssessmentEvidenceRead(event.objectKey) : event.legacyDataUrl, expiresIn: 120 });
+  } catch (error) { return respondAssessmentWriteError(res, error); }
 }
 
 export async function getSubmissionViolations(req, res) {
@@ -5989,7 +5738,7 @@ export async function getSubmissionViolations(req, res) {
     const { submissionId } = req.params;
     const submission = await AssessmentSubmission.findById(submissionId)
       .populate('studentId', 'name email studentId')
-      .select('violationLog violations monitoringEvents proctoringSnapshots.type proctoringSnapshots.capturedAt proctoringSnapshots.width proctoringSnapshots.height aiProctoringSummary tabSwitches fullscreenExits copyPasteCount cameraFlags violationScore pauseCount lastPauseAt status startedAt submittedAt studentId assessmentId securitySetup securityHeartbeat lastIp lastUserAgent')
+      .select('attemptGeneration violationLog violations monitoringEvents proctoringSnapshots.type proctoringSnapshots.capturedAt proctoringSnapshots.width proctoringSnapshots.height aiProctoringSummary tabSwitches fullscreenExits copyPasteCount cameraFlags violationScore pauseCount lastPauseAt status startedAt submittedAt studentId assessmentId securitySetup securityHeartbeat lastIp lastUserAgent')
       .lean();
     if (!submission) return res.status(404).json({ error: 'Submission not found.' });
     if (req.user && req.user.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') {
@@ -6002,11 +5751,24 @@ export async function getSubmissionViolations(req, res) {
       .select('title startTime endTime duration settings')
       .lean();
     const userAgentDetails = parseUserAgentDetails(submission.lastUserAgent || '');
+    const eventFilter = { submissionId: submission._id, attemptGeneration: submission.attemptGeneration || 1 };
+    if (req.query.before && mongoose.Types.ObjectId.isValid(req.query.before)) eventFilter._id = { $lt: new mongoose.Types.ObjectId(req.query.before) };
+    const records = await AssessmentEvent.find(eventFilter).sort({ _id: -1 }).limit(251).lean();
+    const hasMoreEvents = records.length > 250;
+    const page = records.slice(0, 250);
+    for (const record of page) {
+      if (record.kind === 'snapshot') {
+        (submission.proctoringSnapshots ||= []).push({ ...record, evidenceId: String(record._id) });
+      } else {
+        (submission[record.kind === 'violation' ? 'violationLog' : 'monitoringEvents'] ||= []).push(record);
+      }
+    }
     const timeline = buildMonitoringTimeline(submission);
     const aiProctoringSummary = normalizeAiProctoringSummaryForReport(submission.aiProctoringSummary);
     const aiViolationLog = timeline.filter((entry) => isAiProctoringViolation(entry?.type));
     return res.json({
       submission: {
+        id: String(submission._id),
         studentName: (submission.studentId && submission.studentId.name) || 'Unknown',
         studentEmail: (submission.studentId && submission.studentId.email) || '',
         studentRollNo: (submission.studentId && submission.studentId.studentId) || '',
@@ -6030,6 +5792,7 @@ export async function getSubmissionViolations(req, res) {
       aiProctoringSummary,
       aiViolationLog,
       timeline,
+      nextEventCursor: hasMoreEvents ? String(page.at(-1)._id) : null,
       securitySetup: submission.securitySetup || {},
       securityHeartbeat: submission.securityHeartbeat || {},
       device: {

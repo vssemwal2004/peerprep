@@ -20,6 +20,7 @@ import AssessmentModuleLayout from './assessment-dashboard/AssessmentModuleLayou
 import { useStudentAssessmentDashboardData } from './assessment-dashboard/useStudentAssessmentDashboardData';
 import { formatDateTime, formatDurationMinutes, formatScore, formatSeconds, formatShortDate } from './assessment-dashboard/assessmentDashboardUtils';
 import { useToast } from '../components/CustomToast';
+import { assessmentEvaluationLabel } from '../utils/assessmentEvaluation';
 
 const STORAGE_KEY = 'peerprep_student_report_workspace_v1';
 
@@ -46,8 +47,9 @@ function percent(value, total) {
 }
 
 function scorePercent(report) {
+  if (assessmentEvaluationLabel(report)) return null;
   if (!permission(report, 'canViewPercentage')) return null;
-  if (Number.isFinite(Number(report?.accuracy))) return Number(report.accuracy);
+  if (hasValue(report?.accuracy) && Number.isFinite(Number(report?.accuracy))) return Number(report.accuracy);
   return percent(report?.score, report?.totalMarks);
 }
 
@@ -72,7 +74,7 @@ async function exportStudentReportExcel(report) {
     ['Assessment type', displayValue(report.assessmentType)],
     ['Submitted', formatDateTime(report.submittedAt)],
     ['Started', formatDateTime(report.startedAt)],
-    ['Score', scoreVisible ? `${formatScore(report.score)} / ${formatScore(report.totalMarks)}` : 'Hidden'],
+    ['Score', assessmentEvaluationLabel(report) || (scoreVisible ? `${formatScore(report.score)} / ${formatScore(report.totalMarks)}` : 'Hidden')],
     ['Percentage', pct !== null ? `${Math.round(pct)}%` : 'Hidden'],
     ['Time spent', permission(report, 'canViewTimeAnalysis') ? formatSeconds(report.timeTakenSec) : 'Hidden'],
     ['Rank', permission(report, 'canViewRank') && report.rank ? `#${report.rank} of ${report.participants || '-'}` : 'Hidden'],
@@ -313,7 +315,7 @@ function ReportNavigation({ reports, selectedId, query, setQuery, status, setSta
                   </div>
                 </div>
                 <span className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${stateStyle(availability)}`}>
-                  {scoreVisible && pct !== null ? `${Math.round(pct)}%` : <EyeOff className="h-3.5 w-3.5" />}
+                  {assessmentEvaluationLabel(report) || (scoreVisible && pct !== null ? `${Math.round(pct)}%` : <EyeOff className="h-3.5 w-3.5" />)}
                 </span>
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5">
@@ -391,7 +393,7 @@ function WorkspaceHeader({ report, onExport, search, setSearch, filterOpen, setF
       </div>
       {report.permissions?.resultReleased ? (
         <div className="grid grid-cols-2 gap-2 p-3 lg:grid-cols-4">
-          <ReportMetric label="Score" value={hasValue(report.score) && hasValue(report.totalMarks) ? `${formatScore(report.score)} / ${formatScore(report.totalMarks)}` : 'Not available'} hidden={!scoreVisible} tone="text-sky-700 dark:text-sky-300" />
+          <ReportMetric label="Score" value={assessmentEvaluationLabel(report) || (hasValue(report.score) && hasValue(report.totalMarks) ? `${formatScore(report.score)} / ${formatScore(report.totalMarks)}` : 'Not available')} hidden={!scoreVisible} tone="text-sky-700 dark:text-sky-300" />
           <ReportMetric label="Percentage" value={pct !== null ? `${Math.round(pct)}%` : 'Not available'} hidden={!percentageVisible} />
           <ReportMetric label="Attempts" value={report.attempts ?? report.attemptCount} />
           <ReportMetric label="Time spent" value={formatSeconds(report.timeTakenSec)} hidden={!permission(report, 'canViewTimeAnalysis')} />
@@ -444,7 +446,7 @@ function OverviewPanel({ report }) {
     <div className="space-y-3">
       <SectionShell id="summary" title="Result overview">
         <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
-          <ReportMetric label="Score" value={hasValue(report.score) && hasValue(report.totalMarks) ? `${formatScore(report.score)} / ${formatScore(report.totalMarks)}` : 'Not available'} hidden={!scoreVisible} />
+          <ReportMetric label="Score" value={assessmentEvaluationLabel(report) || (hasValue(report.score) && hasValue(report.totalMarks) ? `${formatScore(report.score)} / ${formatScore(report.totalMarks)}` : 'Not available')} hidden={!scoreVisible} />
           <ReportMetric label="Rank" value={hasValue(report.rank) ? `#${report.rank}${hasValue(report.participants) ? ` of ${report.participants}` : ''}` : 'Not available'} hidden={!permission(report, 'canViewRank')} />
           <ReportMetric label="Accuracy" value={pct !== null ? `${Math.round(pct)}%` : 'Not available'} hidden={!permission(report, 'canViewPercentage')} />
           <ReportMetric label="Time taken" value={formatSeconds(report.timeTakenSec)} hidden={!permission(report, 'canViewTimeAnalysis')} />

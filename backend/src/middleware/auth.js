@@ -102,7 +102,7 @@ async function getSessionState(userId) {
     }
   }
 
-  if (!sharedCacheAvailable) {
+  if (!sharedCacheAvailable && !isValkeyEnabled()) {
     const cached = sessionCache.get(key);
     if (cached && Date.now() - cached.timestamp < SESSION_CACHE_TTL) return cached.value;
   }
@@ -110,6 +110,7 @@ async function getSessionState(userId) {
 
   const load = User.findById(userId)
     .select('_id activeSessionToken passwordChangedAt isActive')
+    .maxTimeMS(2000)
     .lean()
     .then(async (value) => {
       const normalized = normalizeSessionState(value);

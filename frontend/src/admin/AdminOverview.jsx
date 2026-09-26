@@ -326,7 +326,7 @@ export default function AdminOverview() {
       activeCoders,
       acceptanceRate,
       announcements,
-      averageAssessmentScore: Number(reportSummary.avgScore || 0),
+      averageAssessmentScore: reportSummary.avgScore == null ? null : Number(reportSummary.avgScore),
       assessmentAttempts: Number(dashboard.assessmentReports?.pagination?.total || 0),
       assessmentPasses: Number(reportSummary.passCount || 0),
       assessmentFails: Number(reportSummary.failCount || 0),
@@ -341,7 +341,7 @@ export default function AdminOverview() {
   const metrics = [
     { label: 'Students', value: formatNumber(model.totalStudents), helper: `${formatNumber(model.totalCoordinators)} coordinators`, Icon: Users, tone: 'sky', to: '/admin/students' },
     { label: 'Assessments', value: formatNumber(model.publishedAssessments), helper: `${model.draftAssessments} drafts`, Icon: ClipboardList, tone: 'amber', to: '/admin/assessment' },
-    { label: 'Submissions', value: formatNumber(model.assessmentAttempts), helper: `${Math.round(model.averageAssessmentScore)}% average`, Icon: BarChart3, tone: 'indigo', to: '/admin/assessment/reports' },
+    { label: 'Submissions', value: formatNumber(model.assessmentAttempts), helper: model.averageAssessmentScore == null ? 'Awaiting results' : `${Math.round(model.averageAssessmentScore)}% average`, Icon: BarChart3, tone: 'indigo', to: '/admin/assessment/reports' },
     { label: 'Interviews', value: formatNumber(model.upcomingEvents), helper: `${model.liveEvents} live now`, Icon: CalendarDays, tone: 'emerald', to: '/admin/interviews/scheduled' },
     { label: 'Active coders', value: formatNumber(model.activeCoders), helper: `${model.codingProblemsCovered} problems`, Icon: Code2, tone: 'rose', to: '/admin/library/coding/analytics' },
     { label: 'Code acceptance', value: `${Math.round(model.codingAcceptance)}%`, helper: `${formatNumber(model.codingAttempts)} attempts`, Icon: FileCode2, tone: 'sky', to: '/admin/library/coding/analytics' },
@@ -440,7 +440,7 @@ export default function AdminOverview() {
             <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_180px]">
               <DistributionChart values={model.scoreDistribution} loading={secondaryLoading} />
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-1">
-                <div className="rounded-md bg-sky-50 p-3 dark:bg-sky-400/10"><span className="text-2xl font-semibold text-sky-800 dark:text-sky-200">{Math.round(model.averageAssessmentScore)}%</span><p className="text-[10px] font-medium text-sky-700 dark:text-sky-300">Average score</p></div>
+                <div className="rounded-md bg-sky-50 p-3 dark:bg-sky-400/10"><span className="text-2xl font-semibold text-sky-800 dark:text-sky-200">{model.averageAssessmentScore == null ? 'Awaiting results' : `${Math.round(model.averageAssessmentScore)}%`}</span><p className="text-[10px] font-medium text-sky-700 dark:text-sky-300">Average score</p></div>
                 <div className="rounded-md bg-emerald-50 p-3 dark:bg-emerald-400/10"><span className="text-2xl font-semibold text-emerald-800 dark:text-emerald-200">{model.assessmentPasses}</span><p className="text-[10px] font-medium text-emerald-700 dark:text-emerald-300">Passed submissions</p></div>
               </div>
             </div>

@@ -31,6 +31,7 @@ import {
   getAssessmentReportsExportData,
   exportAssessmentReports,
   getSubmissionViolations,
+  getAssessmentEvidence,
 } from '../controllers/assessmentController.js';
 import {
   getLibraryQuestion,
@@ -58,6 +59,7 @@ router.get('/assessment/reports/submissions/:submissionId', requireAuth, require
 router.get('/assessment/reports/export-data', requireAuth, requireCoordinatorPermission('coordinator.assessment.reports'), getAssessmentReportsExportData);
 router.get('/assessment/reports/export', requireAuth, requireCoordinatorPermission('coordinator.assessment.reports'), exportAssessmentReports);
 router.get('/assessment/submissions/:submissionId/violations', requireAuth, requireCoordinatorPermission('coordinator.assessment.reports'), getSubmissionViolations);
+router.get('/assessment/evidence/:eventId', requireAuth, requireCoordinatorPermission('coordinator.assessment.reports'), getAssessmentEvidence);
 router.get('/library/questions', requireAuth, requireCoordinatorPermission('coordinator.library.view'), listLibraryQuestions);
 router.post('/library/questions', requireAuth, requireCoordinatorPermission('coordinator.library.create'), createLibraryQuestion);
 router.post('/library/questions/bulk', requireAuth, requireCoordinatorPermission('coordinator.library.create'), createLibraryQuestionsBulk);

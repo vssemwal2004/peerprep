@@ -1,5 +1,5 @@
 ﻿import rateLimit from 'express-rate-limit';
-import { RedisStore } from 'rate-limit-redis';
+import { ResilientRateLimitStore } from './resilientRateLimitStore.js';
 import { getValkeyClient, isValkeyEnabled } from '../utils/valkey.js';
 import { verifyToken } from '../utils/jwt.js';
 
@@ -105,7 +105,7 @@ setInterval(() => {
   if (cleaned > 0) {
     console.log(`[Rate Limiter] Cleaned ${cleaned} expired email entries. Current size: ${emailResetAttempts.size}`);
   }
-}, 15 * 60 * 1000); // Clean up every 15 minutes
+}, 15 * 60 * 1000).unref(); // Clean up every 15 minutes
 
 /**
  * Check if email has exceeded reset request limit
@@ -380,19 +380,7 @@ function createCooldownMiddleware({ tracker, cooldownMs, label, redisPrefix }) {
 }
 
 function buildRateLimitStore(prefix) {
-  if (!isValkeyEnabled()) {
-    return undefined;
-  }
-
-  const client = getValkeyClient();
-  if (!client) {
-    return undefined;
-  }
-
-  return new RedisStore({
-    prefix,
-    sendCommand: async (...args) => client.sendCommand(args),
-  });
+  return new ResilientRateLimitStore(prefix);
 }
 
 export const compilerRunLimiter = rateLimit({

@@ -59,7 +59,7 @@ export default function Directory() {
       },
       { replace: true },
     );
-  const open = (item, division = "basics") =>
+  const open = (item, division = "sections") =>
     navigate(`${ROOT}/${item._id}/${division}`, {
       state: { returnTo: `${ROOT}?${params}` },
     });
@@ -69,7 +69,7 @@ export default function Directory() {
     if (type === "copy") {
       try {
         await navigator.clipboard.writeText(
-          `${window.location.origin}${ROOT}/${item._id}/basics`,
+          `${window.location.origin}${ROOT}/${item._id}/sections`,
         );
         setMessage("Admin link copied. Sign-in is required.");
       } catch {

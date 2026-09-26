@@ -1,5 +1,6 @@
 import Assessment from '../models/Assessment.js';
 import AssessmentSubmission from '../models/AssessmentSubmission.js';
+import ExecutionJob from '../models/ExecutionJob.js';
 import Problem from '../models/Problem.js';
 import Submission from '../models/Submission.js';
 import TestCase from '../models/TestCase.js';
@@ -38,10 +39,15 @@ import {
   sanitizeExecutionText,
   secondsToMilliseconds,
 } from './executionService.js';
+import { getCodingQuestionScore } from './assessmentScoringService.js';
+import { mutateAssessmentSubmission } from './assessmentPersistenceService.js';
 import {
-  getCodingQuestionScore,
-  scoreAssessmentWithTestCases,
-} from './assessmentScoringService.js';
+  applyAssessmentExecutionResult,
+  assessmentSourceHash,
+  deliveredAssessmentForEvaluation,
+  isCurrentAssessmentEvaluation,
+  refreshAssessmentEvaluationSummary,
+} from './assessmentEvaluationState.js';
 
 const SUBMIT_CASE_DELAY_MS = Math.max(0, Number(process.env.SUBMIT_CASE_DELAY_MS || 0));
 const DEFAULT_LANGUAGE = 'python';
@@ -204,6 +210,7 @@ async function createTrackedSubmission({
   sourceCode,
   customInput = '',
   assessmentId = null,
+  assessmentAttemptGeneration,
 }) {
   const submission = await Submission.create({
     jobId,
@@ -224,6 +231,7 @@ async function createTrackedSubmission({
     sourceCode,
     customInput,
     assessmentId: assessmentId || undefined,
+    assessmentAttemptGeneration,
     status: 'PENDING',
     provider: 'judge0-ce',
     queuedAt: new Date(),
@@ -930,6 +938,11 @@ export async function enqueueCompilerSubmitJob({ user, body }) {
   validateProblemLanguage(problem, languageKey);
   const sourceCode = validateProblemSourceCode(problem, languageKey, body.source_code, { action: 'submit' });
 
+  const activeAttempt = assessmentId ? await AssessmentSubmission.findOne({
+    assessmentId, studentId: user._id, status: 'in_progress',
+  }).select('attemptGeneration').lean() : null;
+  if (assessmentId && !activeAttempt) throw new HttpError(409, 'This assessment attempt is not active.');
+
   const submission = await createTrackedSubmission({
     user,
     problem,
@@ -937,6 +950,7 @@ export async function enqueueCompilerSubmitJob({ user, body }) {
     language: languageKey,
     sourceCode,
     assessmentId: assessmentId || null,
+    assessmentAttemptGeneration: activeAttempt ? Number(activeAttempt.attemptGeneration || 1) : undefined,
   });
   submission.jobId = submission._id.toString();
   await submission.save();
@@ -1007,113 +1021,75 @@ async function isNewerTrackedSubmission(currentSubmissionId, trackedSubmission) 
 
 async function persistAssessmentCodingDraft({ assessment, userId, trackedSubmission }) {
   if (!assessment?._id || !trackedSubmission?.problem || !userId) return null;
-
-  const assessmentSubmission = await AssessmentSubmission.findOne({
-    assessmentId: assessment._id,
-    studentId: userId,
+  const updated = await mutateAssessmentSubmission({
+    filter: { assessmentId: assessment._id, studentId: userId, status: 'in_progress' },
+    async mutate(current) {
+      if (Number(current.attemptGeneration || 1) !== Number(trackedSubmission.assessmentAttemptGeneration || 1)) return false;
+      const delivered = deliveredAssessmentForEvaluation(assessment, current);
+      const matches = findAssessmentCodingQuestions(delivered, trackedSubmission.problem);
+      const answers = (current.answers || []).map((answer) => answer.toObject?.() || { ...answer });
+      let changed = false;
+      for (const match of matches) {
+        const answerIndex = answers.findIndex((answer) => (
+          Number(answer.sectionIndex) === match.sectionIndex && Number(answer.questionIndex) === match.questionIndex
+        ));
+        const previous = answerIndex >= 0 ? answers[answerIndex] : {};
+        if (await isNewerTrackedSubmission(previous.submissionId, trackedSubmission)) continue;
+        // A draft request can spend time validating/enqueuing while autosave
+        // accepts newer editing. Do not replace that newer durable source.
+        if (current.lastSavedAt && trackedSubmission.createdAt
+          && new Date(current.lastSavedAt) > new Date(trackedSubmission.createdAt)
+          && assessmentSourceHash(previous.code, previous.language) !== assessmentSourceHash(trackedSubmission.sourceCode, trackedSubmission.language)) continue;
+        const nextAnswer = {
+          ...previous, sectionIndex: match.sectionIndex, questionIndex: match.questionIndex,
+          language: trackedSubmission.language, code: trackedSubmission.sourceCode,
+          jobId: String(trackedSubmission._id), submissionId: trackedSubmission._id,
+          executionStatus: 'queued', executionVerdict: 'PENDING', executionResult: null,
+          lastEvaluatedAt: undefined,
+        };
+        if (answerIndex >= 0) answers[answerIndex] = nextAnswer;
+        else answers.push(nextAnswer);
+        changed = true;
+      }
+      if (changed) {
+        current.answers = answers;
+        refreshAssessmentEvaluationSummary(current, assessment);
+      }
+      return changed;
+    },
   });
-  if (!assessmentSubmission) return null;
-
-  const matches = findAssessmentCodingQuestions(assessment, trackedSubmission.problem);
-  if (!matches.length) return null;
-
-  const answers = (assessmentSubmission.answers || []).map((answer) => (
-    typeof answer.toObject === 'function' ? answer.toObject() : { ...answer }
-  ));
-
-  for (const match of matches) {
-    const answerIndex = answers.findIndex((answer) => (
-      Number(answer.sectionIndex) === match.sectionIndex
-      && Number(answer.questionIndex) === match.questionIndex
-    ));
-    const previous = answerIndex >= 0 ? answers[answerIndex] : {};
-    if (await isNewerTrackedSubmission(previous.submissionId, trackedSubmission)) continue;
-
-    const nextAnswer = {
-      ...previous,
-      sectionIndex: match.sectionIndex,
-      questionIndex: match.questionIndex,
-      language: trackedSubmission.language,
-      code: trackedSubmission.sourceCode,
-      jobId: String(trackedSubmission._id),
-      submissionId: trackedSubmission._id,
-      executionStatus: 'queued',
-      executionVerdict: 'PENDING',
-      executionResult: null,
-      lastEvaluatedAt: undefined,
-    };
-    if (answerIndex >= 0) answers[answerIndex] = nextAnswer;
-    else answers.push(nextAnswer);
-  }
-
-  assessmentSubmission.answers = answers;
-  assessmentSubmission.evaluationStatus = 'processing';
-  const scoring = scoreAssessmentWithTestCases(assessment, answers);
-  assessmentSubmission.score = scoring.score;
-  assessmentSubmission.maxMarks = scoring.maxMarks;
-  assessmentSubmission.accuracy = scoring.accuracy;
-  await assessmentSubmission.save();
-  return assessmentSubmission;
+  return updated.result ? updated.submission : null;
 }
 
 async function syncAssessmentAnswerFromTrackedSubmission(trackedSubmission) {
   if (!trackedSubmission?.assessmentId || !trackedSubmission?.problem) return null;
 
-  const [assessment, assessmentSubmission] = await Promise.all([
-    Assessment.findById(trackedSubmission.assessmentId).lean(),
-    AssessmentSubmission.findOne({
-      assessmentId: trackedSubmission.assessmentId,
-      studentId: trackedSubmission.user,
-    }),
-  ]);
-  if (!assessment || !assessmentSubmission) return null;
-
-  const matches = findAssessmentCodingQuestions(assessment, trackedSubmission.problem);
-  if (!matches.length) return null;
-
-  const answers = (assessmentSubmission.answers || []).map((answer) => (
-    typeof answer.toObject === 'function' ? answer.toObject() : { ...answer }
-  ));
+  const assessment = await Assessment.findById(trackedSubmission.assessmentId).lean();
+  if (!assessment) return null;
   const executionResult = buildSubmitApiResponse(trackedSubmission);
-  let firstScore = null;
-
-  for (const match of matches) {
-    const answerIndex = answers.findIndex((answer) => (
-      Number(answer.sectionIndex) === match.sectionIndex
-      && Number(answer.questionIndex) === match.questionIndex
-    ));
-    if (answerIndex < 0) continue;
-
-    const current = answers[answerIndex];
-    if (current.submissionId && String(current.submissionId) !== String(trackedSubmission._id)) continue;
-    if (!current.submissionId && current.jobId && String(current.jobId) !== String(trackedSubmission._id)) continue;
-
-    answers[answerIndex] = {
-      ...current,
-      language: trackedSubmission.language,
-      code: trackedSubmission.sourceCode,
-      jobId: String(trackedSubmission._id),
-      submissionId: trackedSubmission._id,
-      executionStatus: ['RE'].includes(trackedSubmission.status) ? 'failed' : 'completed',
-      executionVerdict: trackedSubmission.status,
-      executionResult,
-      lastEvaluatedAt: trackedSubmission.completedAt || new Date(),
-    };
-
-    if (!firstScore) {
-      firstScore = getCodingQuestionScore(match.question, answers[answerIndex], match.section);
-    }
-  }
-
+  const updated = await mutateAssessmentSubmission({
+    filter: { assessmentId: trackedSubmission.assessmentId, studentId: trackedSubmission.user, status: 'in_progress' },
+    mutate(current) {
+      if (Number(current.attemptGeneration || 1) !== Number(trackedSubmission.assessmentAttemptGeneration || 1)) return null;
+      const delivered = deliveredAssessmentForEvaluation(assessment, current);
+      const matches = findAssessmentCodingQuestions(delivered, trackedSubmission.problem);
+      let firstScore = null;
+      for (const match of matches) {
+        const answer = extractStoredAnswer(current.answers, match.sectionIndex, match.questionIndex);
+        if (!answer || String(answer.jobId || '') !== String(trackedSubmission._id)) continue;
+        if (assessmentSourceHash(answer.code, answer.language) !== assessmentSourceHash(trackedSubmission.sourceCode, trackedSubmission.language)) continue;
+        answer.executionStatus = trackedSubmission.status === 'RE' ? 'failed' : 'completed';
+        answer.executionVerdict = trackedSubmission.status;
+        answer.executionResult = executionResult;
+        answer.lastEvaluatedAt = trackedSubmission.completedAt || new Date();
+        if (!firstScore) firstScore = getCodingQuestionScore(match.question, answer, match.section);
+      }
+      if (firstScore) refreshAssessmentEvaluationSummary(current, assessment);
+      return firstScore;
+    },
+  });
+  const firstScore = updated.result;
   if (!firstScore) return null;
-
-  assessmentSubmission.answers = answers;
-  const scoring = scoreAssessmentWithTestCases(assessment, answers);
-  assessmentSubmission.score = scoring.score;
-  assessmentSubmission.maxMarks = scoring.maxMarks;
-  assessmentSubmission.accuracy = scoring.accuracy;
-  assessmentSubmission.evaluationStatus = 'completed';
-  await assessmentSubmission.save();
 
   return {
     earnedMarks: firstScore.earnedMarks,
@@ -1125,73 +1101,57 @@ async function syncAssessmentAnswerFromTrackedSubmission(trackedSubmission) {
   };
 }
 
-function scoreAssessmentWithCoding(assessment, answers = []) {
-  return scoreAssessmentWithTestCases(assessment, answers);
-}
-
 export async function enqueueAssessmentCodingEvaluationJobs({
   assessment,
   submission,
   studentId,
 }) {
-  const updatedAnswers = (submission.answers || []).map((answer) => ({
-    ...answer.toObject?.() || answer,
-  }));
-
-  const queuedJobs = [];
-
-  (assessment.sections || []).forEach((section, sectionIndex) => {
-    (section.questions || []).forEach((question, questionIndex) => {
-      const questionType = question.type || section.type;
-      if (questionType !== 'coding') return;
-
-      const answer = extractStoredAnswer(updatedAnswers, sectionIndex, questionIndex);
-      const problemId = question?.problemId || question?.coding?.problemId;
-      const sourceCode = String(answer?.code || '').trim();
-      const languageKey = String(answer?.language || question?.coding?.supportedLanguages?.[0] || DEFAULT_LANGUAGE).trim().toLowerCase();
-      const languageId = KEY_TO_LANGUAGE_ID[languageKey];
-
-      if (!problemId || !sourceCode || !languageId) {
-        return;
-      }
-
-      const jobId = `${submission._id}:${sectionIndex}:${questionIndex}`;
-      queuedJobs.push({
-        jobId,
-        sectionIndex,
-        questionIndex,
-        languageId,
-        languageKey,
-        sourceCode,
-        problemId: String(problemId),
+  const expectedVersion = {
+    attemptGeneration: Number(submission.attemptGeneration || 1),
+    evaluationVersion: Number(submission.evaluationVersion || 0),
+  };
+  const prepared = await mutateAssessmentSubmission({
+    filter: { _id: submission._id },
+    mutate(current) {
+      if (!isCurrentAssessmentEvaluation(current, expectedVersion)) return [];
+      const queuedJobs = [];
+      const delivered = deliveredAssessmentForEvaluation(assessment, current);
+      (delivered.sections || []).forEach((section, sectionIndex) => {
+        (section.questions || []).forEach((question, questionIndex) => {
+          if ((question.type || section.type) !== 'coding') return;
+          const answer = extractStoredAnswer(current.answers || [], sectionIndex, questionIndex);
+          const problemId = question?.problemId || question?.coding?.problemId;
+          const sourceCode = String(answer?.code || '');
+          const languageKey = String(answer?.language || question?.coding?.supportedLanguages?.[0] || DEFAULT_LANGUAGE).trim().toLowerCase();
+          const languageId = KEY_TO_LANGUAGE_ID[languageKey];
+          if (!answer || !problemId || !sourceCode.trim() || !languageId) return;
+          const jobId = `${current._id}:${expectedVersion.attemptGeneration}:${expectedVersion.evaluationVersion}:${sectionIndex}:${questionIndex}`;
+          if (answer.jobId !== jobId) {
+            answer.jobId = jobId;
+            answer.submissionId = undefined;
+            answer.executionStatus = 'queued';
+            answer.executionVerdict = 'PENDING';
+            answer.executionResult = null;
+          }
+          if (['completed', 'failed'].includes(answer.executionStatus)) return;
+          queuedJobs.push({
+            jobId, sectionIndex, questionIndex, languageId, languageKey, sourceCode,
+            sourceHash: assessmentSourceHash(sourceCode, languageKey),
+            problemId: String(problemId),
+            ...expectedVersion,
+          });
+        });
       });
-
-      const answerIndex = updatedAnswers.findIndex((entry) => (
-        Number(entry.sectionIndex) === Number(sectionIndex)
-        && Number(entry.questionIndex) === Number(questionIndex)
-      ));
-
-      if (answerIndex >= 0) {
-        updatedAnswers[answerIndex] = {
-          ...updatedAnswers[answerIndex],
-          jobId,
-          submissionId: undefined,
-          executionStatus: 'queued',
-          executionVerdict: 'PENDING',
-          executionResult: null,
-        };
-      }
-    });
+      refreshAssessmentEvaluationSummary(current, assessment);
+      return queuedJobs;
+    },
   });
+  const queuedJobs = prepared.result || [];
 
-  submission.answers = updatedAnswers;
-  submission.codingJobsPending = queuedJobs.length;
-  submission.codingJobsCompleted = 0;
-  submission.evaluationStatus = queuedJobs.length > 0 ? 'processing' : 'completed';
-  await submission.save();
-
-  await Promise.all(queuedJobs.map(async (jobDetails) => {
-    const jobRecord = await createExecutionJobRecord({
+  const publish = async (jobDetails) => {
+    // Recovery may publish the same deterministic job more than once. Preserve
+    // durable tracking instead of attempting a duplicate create or resetting it.
+    const jobRecord = await ExecutionJob.findOneAndUpdate({ jobId: jobDetails.jobId }, { $setOnInsert: {
       jobId: jobDetails.jobId,
       queueName: assessmentQueue.name,
       jobName: 'assessment-final-code-submit',
@@ -1204,8 +1164,12 @@ export async function enqueueAssessmentCodingEvaluationJobs({
         sectionIndex: jobDetails.sectionIndex,
         questionIndex: jobDetails.questionIndex,
         language: jobDetails.languageKey,
+        attemptGeneration: jobDetails.attemptGeneration,
+        evaluationVersion: jobDetails.evaluationVersion,
       },
-    });
+      status: 'queued',
+      queuedAt: new Date(),
+    } }, { upsert: true, new: true });
 
     await assessmentQueue.add('assessment-final-code-submit', {
       executionJobId: jobRecord.jobId,
@@ -1218,11 +1182,20 @@ export async function enqueueAssessmentCodingEvaluationJobs({
       languageId: jobDetails.languageId,
       languageKey: jobDetails.languageKey,
       sourceCode: jobDetails.sourceCode,
+      sourceHash: jobDetails.sourceHash,
+      attemptGeneration: jobDetails.attemptGeneration,
+      evaluationVersion: jobDetails.evaluationVersion,
     }, {
       jobId: jobRecord.jobId,
       attempts: DEFAULT_ATTEMPTS,
+      retryFailed: true,
+      recoveryLimit: 3,
     });
-  }));
+  };
+  // One coding-heavy attempt must not consume the entire DB/queue connection pool.
+  for (let index = 0; index < queuedJobs.length; index += 4) {
+    await Promise.all(queuedJobs.slice(index, index + 4).map(publish));
+  }
 
   return queuedJobs.map((job) => job.jobId);
 }
@@ -1381,48 +1354,24 @@ export async function processCompilerExecutionJob(job) {
 
 async function updateAssessmentAnswerExecutionState({
   assessmentSubmissionId,
-  sectionIndex,
-  questionIndex,
-  executionJobId,
+  assessment,
   executionStatus,
   executionVerdict,
   executionResult,
+  ...job
 }) {
-  const submission = await AssessmentSubmission.findById(assessmentSubmissionId);
-  if (!submission) {
-    throw new HttpError(404, 'Assessment submission not found.');
-  }
-
-  const answerIndex = submission.answers.findIndex((answer) => (
-    Number(answer.sectionIndex) === Number(sectionIndex)
-    && Number(answer.questionIndex) === Number(questionIndex)
-  ));
-
-  if (answerIndex < 0) {
-    throw new HttpError(404, 'Assessment answer not found.');
-  }
-
-  submission.answers[answerIndex].jobId = executionJobId;
-  submission.answers[answerIndex].executionStatus = executionStatus;
-  submission.answers[answerIndex].executionVerdict = executionVerdict;
-  submission.answers[answerIndex].executionResult = executionResult;
-  submission.answers[answerIndex].lastEvaluatedAt = new Date();
-
-  const trackedCodingAnswers = submission.answers.filter((answer) => Boolean(answer.jobId));
-  submission.codingJobsPending = trackedCodingAnswers.length;
-  submission.codingJobsCompleted = trackedCodingAnswers.filter((answer) => (
-    answer.executionStatus === 'completed' || answer.executionStatus === 'failed'
-  )).length;
-  submission.evaluationStatus = submission.codingJobsCompleted >= submission.codingJobsPending
-    ? 'completed'
-    : 'processing';
-
-  return submission;
+  const updated = await mutateAssessmentSubmission({
+    filter: { _id: assessmentSubmissionId },
+    mutate: (submission) => applyAssessmentExecutionResult(submission, assessment, job, {
+      executionStatus, executionVerdict, executionResult,
+    }),
+  });
+  return updated.result ? updated.submission : null;
 }
 
 async function processAssessmentFinalCodingJob(job) {
   const attemptNumber = job.attemptsMade + 1;
-  const isFinalAttempt = attemptNumber >= job.maxAttempts;
+  let isFinalAttempt = attemptNumber >= job.maxAttempts;
   const {
     executionJobId,
     assessmentSubmissionId,
@@ -1437,23 +1386,40 @@ async function processAssessmentFinalCodingJob(job) {
   } = job.data || {};
 
   await markExecutionJobProcessing(executionJobId, attemptNumber);
-  await updateAssessmentAnswerExecutionState({
-    assessmentSubmissionId,
-    sectionIndex,
-    questionIndex,
-    executionJobId,
-    executionStatus: 'processing',
-    executionVerdict: 'PENDING',
-    executionResult: null,
-  }).then((submission) => submission.save());
-
+  let assessment;
   try {
-    const [assessment, problem] = await Promise.all([
+    const [loadedAssessment, problem] = await Promise.all([
       Assessment.findById(assessmentId).lean(),
       resolveActiveProblem(problemId, { userId: studentId, assessmentId }),
     ]);
+    assessment = loadedAssessment;
     if (!assessment) {
       throw new HttpError(404, 'Assessment not found.');
+    }
+
+    const current = await updateAssessmentAnswerExecutionState({
+      ...job.data,
+      assessment,
+      executionStatus: 'processing',
+      executionVerdict: 'PENDING',
+      executionResult: null,
+    });
+    if (!current) {
+      const ignored = { kind: 'assessment-submit', assessmentSubmissionId, ignored: true };
+      await markExecutionJobCompleted(executionJobId, ignored);
+      return ignored;
+    }
+    const durableRun = await ExecutionJob.findOneAndUpdate(
+      { jobId: executionJobId },
+      { $inc: { 'metadata.totalRuns': 1 } },
+      { new: true },
+    ).select('metadata');
+    const maxDurableRuns = Math.max(1, Number(job.maxAttempts || DEFAULT_ATTEMPTS)) + 3;
+    if (Number(durableRun?.metadata?.totalRuns || 0) > maxDurableRuns) {
+      // The retry budget survives queue loss/recreation. Answers remain stored;
+      // an exhausted evaluation is explicitly failed for operator review.
+      isFinalAttempt = true;
+      throw new HttpError(503, 'Assessment evaluation retry budget exhausted.');
     }
 
     const submitResult = await executeSubmitPayload({
@@ -1462,21 +1428,13 @@ async function processAssessmentFinalCodingJob(job) {
       problem,
     });
 
-    const submission = await updateAssessmentAnswerExecutionState({
-      assessmentSubmissionId,
-      sectionIndex,
-      questionIndex,
-      executionJobId,
+    await updateAssessmentAnswerExecutionState({
+      ...job.data,
+      assessment,
       executionStatus: 'completed',
       executionVerdict: submitResult.persisted.status,
       executionResult: buildSubmitApiResponse(submitResult.persisted),
     });
-
-    const scoring = scoreAssessmentWithCoding(assessment, submission.answers);
-    submission.score = scoring.score;
-    submission.maxMarks = scoring.maxMarks;
-    submission.accuracy = scoring.accuracy;
-    await submission.save();
 
     const resultPayload = {
       kind: 'assessment-submit',
@@ -1495,30 +1453,14 @@ async function processAssessmentFinalCodingJob(job) {
       ? ((error?.status === 400) ? 'CE' : 'FAILED')
       : 'PENDING';
 
-    const submission = await updateAssessmentAnswerExecutionState({
-      assessmentSubmissionId,
-      sectionIndex,
-      questionIndex,
-      executionJobId,
-      executionStatus: isFinalAttempt ? 'failed' : 'queued',
-      executionVerdict,
-      executionResult: isFinalAttempt ? { error: error.message || 'Execution failed unexpectedly.' } : null,
-    });
-
-    if (isFinalAttempt) {
-      const assessment = await Assessment.findById(assessmentId).lean();
-      if (assessment) {
-        const scoring = scoreAssessmentWithCoding(assessment, submission.answers);
-        submission.score = scoring.score;
-        submission.maxMarks = scoring.maxMarks;
-        submission.accuracy = scoring.accuracy;
-        submission.evaluationStatus = 'failed';
-        await submission.save();
-      } else {
-        await submission.save();
-      }
-    } else {
-      await submission.save();
+    if (assessment) {
+      await updateAssessmentAnswerExecutionState({
+        ...job.data,
+        assessment,
+        executionStatus: isFinalAttempt ? 'failed' : 'queued',
+        executionVerdict,
+        executionResult: isFinalAttempt ? { error: error.message || 'Execution failed unexpectedly.' } : null,
+      });
     }
 
     await markExecutionJobFailed(executionJobId, error, {

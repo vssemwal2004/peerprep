@@ -7,7 +7,7 @@ module.exports = {
       instances: 1,
       exec_mode: 'fork',
       max_memory_restart: '1400M',
-      kill_timeout: 15000,
+      kill_timeout: 45000,
       listen_timeout: 15000,
       env: {
         NODE_ENV: 'production',
@@ -22,6 +22,7 @@ module.exports = {
       cwd: __dirname,
       instances: 1,
       exec_mode: 'fork',
+      kill_timeout: 45000,
       max_memory_restart: '900M',
       env: {
         NODE_ENV: 'production',
@@ -34,6 +35,7 @@ module.exports = {
       cwd: __dirname,
       instances: 1,
       exec_mode: 'fork',
+      kill_timeout: 45000,
       max_memory_restart: '900M',
       env: {
         NODE_ENV: 'production',
@@ -46,6 +48,7 @@ module.exports = {
       cwd: __dirname,
       instances: 1,
       exec_mode: 'fork',
+      kill_timeout: 45000,
       max_memory_restart: '700M',
       env: {
         NODE_ENV: 'production',

@@ -35,6 +35,9 @@ import { decodeLegacyCodeEntities, getCodeValidationMessage, getStarterCodeForLa
 import ProctoringFooter from '../features/assessment/student/components/ProctoringFooter';
 import { ProctoringManager } from '../features/assessment/proctoring';
 import { logAiProctoringViolation } from '../features/assessment/proctoring/services/proctoringApi';
+import { AssessmentSaveProtocol, answerPayloadKey, answerPayloadSignature, isDraftForAttempt, mergeLiveCodingDraft } from './assessment/assessmentSaveProtocol';
+import { readAssessmentDraft, writeAssessmentDraft, deleteAssessmentDraft } from './assessment/assessmentDraftStore';
+import { uploadAssessmentEvidence } from './assessment/assessmentEvidenceUpload';
 
 const formatTime = (ms) => {
   if (ms <= 0) return '00:00';
@@ -160,8 +163,6 @@ const AUTOSAVE_JITTER_MS = Math.max(0, Number(import.meta.env.VITE_ASSESSMENT_AU
 const HEARTBEAT_BASE_MS = Math.max(10000, Number(import.meta.env.VITE_ASSESSMENT_HEARTBEAT_MS || 15000));
 const HEARTBEAT_JITTER_MS = Math.max(0, Number(import.meta.env.VITE_ASSESSMENT_HEARTBEAT_JITTER_MS || 5000));
 
-const answerPayloadKey = (answer = {}) => `${Number(answer.sectionIndex)}-${Number(answer.questionIndex)}`;
-const answerPayloadSignature = (answer = {}) => JSON.stringify(answer);
 const nextJitteredDelay = (baseMs, jitterMs) => baseMs + (jitterMs > 0 ? Math.random() * jitterMs : 0);
 
 const hasVeryWeakConnection = () => {
@@ -317,6 +318,10 @@ export default function AssessmentAttempt() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState('saved');
+  const [finalizing, setFinalizing] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [draftStorageAvailable, setDraftStorageAvailable] = useState(true);
   const [tabSwitches, setTabSwitches] = useState(0);
   const [fullscreenExits, setFullscreenExits] = useState(0);
   const [copyPasteCount, setCopyPasteCount] = useState(0);
@@ -419,9 +424,14 @@ export default function AssessmentAttempt() {
   const autoSavePromiseRef = useRef(null);
   const answersDirtyRef = useRef(false);
   const autoSavePayloadRef = useRef(null);
+  const buildLatestAnswersRef = useRef(null);
+  const saveProtocolRef = useRef(null);
+  const draftAnswersRef = useRef({});
+  const activeDraftKeyRef = useRef('');
   const answerRevisionRef = useRef(0);
   const savedAnswerSignaturesRef = useRef(new Map());
   const heartbeatInFlightRef = useRef(false);
+  const evidenceInFlightRef = useRef(false);
   const handleSubmitRef = useRef(null);
   const recordViolationRef = useRef(null);
   const faceDetectorRef = useRef(null);
@@ -461,6 +471,7 @@ export default function AssessmentAttempt() {
   const draftStorageKey = `peerprep_assessment_answer_draft:${id}`;
 
   useEffect(() => {
+    saveProtocolRef.current = null;
     liveCodingCodeRef.current = {};
     liveCodingLanguageRef.current = {};
   }, [id]);
@@ -471,7 +482,7 @@ export default function AssessmentAttempt() {
   }, [assessment?.sections, phase]);
 
   const answerKey = (sectionIndex, questionIndex) => `${sectionIndex}-${questionIndex}`;
-  const isSubmitted = submission?.status === 'submitted';
+  const isSubmitted = COMPLETED_ASSESSMENT_STATUSES.has(submission?.status);
   const secureActive = phase === 'active' && !isSubmitted;
   const securitySettings = useMemo(() => assessment?.settings || {}, [assessment?.settings]);
   const watermarkConfig = useMemo(() => {
@@ -652,11 +663,18 @@ export default function AssessmentAttempt() {
   ), [answersMap, assessment]);
 
   const answersArray = useMemo(() => buildAnswersPayload(), [buildAnswersPayload]);
+  buildLatestAnswersRef.current = buildAnswersPayload;
+
+  // Keep the local draft current before callbacks or a final-submit checkpoint run.
+  draftAnswersRef.current = mergeLiveCodingDraft(answersMap, liveCodingCodeRef.current, liveCodingLanguageRef.current);
 
   useEffect(() => {
-    if (phase === 'active') {
+    if (phase === 'active' && !saveProtocolRef.current?.finalizing) {
       answerRevisionRef.current += 1;
       answersDirtyRef.current = true;
+      if (answersArray.some((answer) => savedAnswerSignaturesRef.current.get(answerPayloadKey(answer)) !== answerPayloadSignature(answer))) {
+        setSaveStatus('local_pending');
+      }
     }
   }, [answersArray, phase]);
 
@@ -678,24 +696,12 @@ export default function AssessmentAttempt() {
     };
   }, [assessment?._id, answersArray, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violationScore, pauseCount, lastPauseAt, securityHeartbeat, violations]);
 
-  // A short autosave interval must not make a browser refresh or transient
-  // outage lose the newest local edits. Persist the display-state draft
-  // locally; the server remains the durable source of truth.
+  // IndexedDB is independent of network autosave. Protocol checkpoints serialize
+  // draft + pending request writes, including an ambiguous response after a reload.
   useEffect(() => {
-    if (phase !== 'active' || !submission?._id) return undefined;
-    const timer = setTimeout(() => {
-      try {
-        localStorage.setItem(draftStorageKey, JSON.stringify({
-          submissionId: String(submission._id),
-          updatedAt: Date.now(),
-          answersMap,
-        }));
-      } catch {
-        // Storage can be unavailable in hardened/private browser modes.
-      }
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [answersMap, draftStorageKey, phase, submission?._id]);
+    if (phase !== 'active' || !submission?._id || saveProtocolRef.current?.finalizing) return;
+    void saveProtocolRef.current?.checkpoint();
+  }, [answersMap, phase, submission?._id]);
   const flatQuestions = useMemo(() => {
     const list = [];
     let mcqCount = 0;
@@ -887,52 +893,54 @@ export default function AssessmentAttempt() {
   };
 
   const handleSave = useCallback(async () => {
-    if (!assessment || isSubmitted || phase !== 'active' || !answersDirtyRef.current || autoSaveInFlightRef.current) return;
-    const currentPayload = autoSavePayloadRef.current;
+    const protocol = saveProtocolRef.current;
+    if (!assessment || isSubmitted || phase !== 'active' || submissionInFlightRef.current || protocol?.finalizing || !protocol
+      || (!answersDirtyRef.current && !protocol.pendingBatch) || autoSaveInFlightRef.current) return;
+    const currentPayload = { ...autoSavePayloadRef.current, answers: buildLatestAnswersRef.current?.() || [] };
     const pendingAnswers = (currentPayload?.answers || []).filter((answer) => (
       savedAnswerSignaturesRef.current.get(answerPayloadKey(answer)) !== answerPayloadSignature(answer)
     ));
-    if (pendingAnswers.length === 0) {
+    if (pendingAnswers.length === 0 && !protocol.pendingBatch) {
       answersDirtyRef.current = false;
       return;
     }
 
     const sentRevision = answerRevisionRef.current;
-    const sentSignatures = new Map(pendingAnswers.map((answer) => [
-      answerPayloadKey(answer),
-      answerPayloadSignature(answer),
-    ]));
     autoSaveInFlightRef.current = true;
     setSaving(true);
     try {
-      const savePromise = api.saveStudentAssessmentProgress(assessment._id, {
+      const savePromise = protocol.save({
         ...currentPayload,
         answers: pendingAnswers,
       });
       autoSavePromiseRef.current = savePromise;
-      await savePromise;
-      sentSignatures.forEach((signature, key) => savedAnswerSignaturesRef.current.set(key, signature));
+      const result = await savePromise;
+      if (result?.submissionReceipt || result?.receipt) {
+        await handleSubmitRef.current?.(true);
+        return;
+      }
       const latestAnswers = autoSavePayloadRef.current?.answers || [];
       const hasNewChanges = latestAnswers.some((answer) => (
         savedAnswerSignaturesRef.current.get(answerPayloadKey(answer)) !== answerPayloadSignature(answer)
       ));
       answersDirtyRef.current = answerRevisionRef.current !== sentRevision || hasNewChanges;
+      if (hasNewChanges) setSaveStatus('local');
     } catch (err) {
       if (err?.response?.status === 409 && err?.response?.data?.code === 'ACTIVE_ASSESSMENT_SESSION') {
         setActiveSessionConflict(true);
         return;
       }
-      toast.error(err.message || 'Auto-save failed');
+      setSaveError(err.message || 'Answers are waiting to sync. Keep this page open.');
     } finally {
       autoSavePromiseRef.current = null;
       autoSaveInFlightRef.current = false;
-      setSaving(false);
+      if (!submissionInFlightRef.current) setSaving(false);
     }
-  }, [assessment, isSubmitted, phase, toast]);
+  }, [assessment, isSubmitted, phase]);
 
   const handleSubmit = useCallback(async (auto = false, autoMessage = '') => {
-    if (!assessment || submissionInFlightRef.current) return false;
-    if (!auto && assessment.settings?.questionSelectionEnabled) {
+    if (!assessment || submissionInFlightRef.current || !saveProtocolRef.current) return false;
+    if (!auto && !saveProtocolRef.current.finalizing && assessment.settings?.questionSelectionEnabled) {
       const attemptedByType = Object.entries(answersMap).reduce((counts, [key, value]) => {
         const [sectionIndex, questionIndex] = key.split('-').map(Number);
         const sectionItem = assessment.sections?.[sectionIndex];
@@ -951,13 +959,12 @@ export default function AssessmentAttempt() {
       }
     }
     submissionInFlightRef.current = true;
+    setFinalizing(true);
     setSaving(true);
     let submissionCompleted = false;
+    let finalAnswersAccepted = true;
     try {
-      if (autoSavePromiseRef.current) {
-        await autoSavePromiseRef.current.catch(() => null);
-      }
-      await api.submitStudentAssessment({
+      const result = await saveProtocolRef.current.submit({
         assessmentId: assessment._id,
         answers: buildAnswersPayload(),
         status: 'submitted',
@@ -972,6 +979,7 @@ export default function AssessmentAttempt() {
         violations,
         sessionId: assessmentSessionIdRef.current,
       });
+      finalAnswersAccepted = result?.answersAccepted !== false;
       submissionCompleted = true;
     } catch (err) {
       if (err?.response?.status === 409 && err?.response?.data?.code === 'ACTIVE_ASSESSMENT_SESSION') {
@@ -987,11 +995,8 @@ export default function AssessmentAttempt() {
 
     if (!submissionCompleted) return false;
 
-    try {
-      localStorage.removeItem(draftStorageKey);
-    } catch {
-      // Ignore local cleanup failures after the durable submit succeeded.
-    }
+    answersDirtyRef.current = false;
+    if (finalAnswersAccepted) await deleteAssessmentDraft(activeDraftKeyRef.current || draftStorageKey);
 
     // Cleanup/proctoring must never prevent the mandatory feedback redirect
     // after the server has already accepted the assessment submission.
@@ -1000,7 +1005,11 @@ export default function AssessmentAttempt() {
     } catch (cleanupError) {
       console.warn('Assessment cleanup after submit failed:', cleanupError);
     }
-    toast.success(auto ? (autoMessage || 'Time is up. Assessment auto-submitted.') : 'Assessment submitted successfully');
+    if (finalAnswersAccepted) {
+      toast.success(auto ? (autoMessage || 'Time is up. Assessment auto-submitted.') : 'Assessment submitted successfully');
+    } else {
+      toast.info('The assessment had already ended. Your last server-saved answers were submitted; newer device edits were not accepted.');
+    }
     navigate(`/student/assessment/${assessment._id}/feedback`, { replace: true });
     return true;
   }, [assessment, answersMap, buildAnswersPayload, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violationScore, pauseCount, lastPauseAt, securityHeartbeat, violations, stopAiProctoring, toast, navigate, draftStorageKey]);
@@ -1141,6 +1150,7 @@ export default function AssessmentAttempt() {
     const detectionOnly = NON_BLOCKING_DETECTION_TYPES.has(type) || meta.warningOnly === true;
     const weight = detectionOnly ? 0 : getViolationWeight(securitySettings, type);
     const entry = {
+      eventId: globalThis.crypto?.randomUUID?.() || `violation-${now}-${Math.random().toString(16).slice(2)}`,
       type,
       message,
       at: new Date().toISOString(),
@@ -1158,6 +1168,10 @@ export default function AssessmentAttempt() {
 
     try {
       const result = await api.logStudentAssessmentViolation(assessment._id, {
+        eventId: entry.eventId,
+        submissionId: saveProtocolRef.current?.submissionId,
+        sessionId: assessmentSessionIdRef.current,
+        attemptGeneration: saveProtocolRef.current?.generation || 1,
         type,
         message,
         timestamp: entry.at,
@@ -1288,21 +1302,34 @@ export default function AssessmentAttempt() {
           ...displayAnswer,
         };
       });
+      savedAnswerSignaturesRef.current = new Map((data.submission?.answers || []).map((answer) => [
+        answerPayloadKey(answer), answerPayloadSignature(answer),
+      ]));
       let restoredLocalDraft = false;
-      try {
-        const localDraft = JSON.parse(localStorage.getItem(draftStorageKey) || 'null');
+      const scopedDraftKey = `${draftStorageKey}:${String(data.submission?._id || '')}`;
+      activeDraftKeyRef.current = scopedDraftKey;
+      const localDraft = await readAssessmentDraft(scopedDraftKey) || await readAssessmentDraft(draftStorageKey);
+      const canRecover = isDraftForAttempt(localDraft, data.submission, assessmentSessionIdRef.current);
+      if (canRecover && localDraft.answersMap && typeof localDraft.answersMap === 'object') {
         const serverSavedAt = new Date(data.submission?.lastSavedAt || 0).getTime();
-        if (
-          localDraft?.submissionId === String(data.submission?._id || '')
-          && Number(localDraft.updatedAt || 0) > serverSavedAt
-          && localDraft.answersMap
-          && typeof localDraft.answersMap === 'object'
-        ) {
-          Object.assign(initialAnswers, localDraft.answersMap);
-          restoredLocalDraft = true;
-        }
-      } catch {
-        // Ignore malformed or unavailable local drafts.
+        const priorSignatures = new Map(Array.isArray(localDraft.savedSignatures)
+          ? localDraft.savedSignatures.filter((entry) => Array.isArray(entry) && entry.length === 2) : []);
+        Object.entries(localDraft.answersMap).forEach(([key, value]) => {
+          if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+          const [sectionIndex, questionIndex] = key.split('-').map(Number);
+          const questionItem = attemptAssessment?.sections?.[sectionIndex]?.questions?.[questionIndex];
+          if (!questionItem) return;
+          const originKey = `${Number(questionItem.__originSectionIndex ?? sectionIndex)}-${Number(questionItem.__originQuestionIndex ?? questionIndex)}`;
+          // Only restore unacknowledged edits; never replace newer server answers
+          // with the entire old display-state snapshot.
+          const dirty = localDraft.protocol
+            ? priorSignatures.get(originKey) !== answerPayloadSignature(value)
+            : Number(localDraft.updatedAt || 0) > serverSavedAt;
+          if (dirty) {
+            initialAnswers[key] = value;
+            restoredLocalDraft = true;
+          }
+        });
       }
       (attemptAssessment?.sections || []).forEach((sectionItem, displaySectionIndex) => {
         if (sectionItem?.type !== 'coding') return;
@@ -1327,21 +1354,47 @@ export default function AssessmentAttempt() {
           };
         });
       });
-      savedAnswerSignaturesRef.current = restoredLocalDraft ? new Map() : new Map(Object.entries(initialAnswers).map(([key, value]) => {
-        const [displaySectionIndex, displayQuestionIndex] = key.split('-').map(Number);
-        const displayQuestion = attemptAssessment?.sections?.[displaySectionIndex]?.questions?.[displayQuestionIndex];
-        const originSectionIndex = Number(displayQuestion?.__originSectionIndex ?? displaySectionIndex);
-        const originQuestionIndex = Number(displayQuestion?.__originQuestionIndex ?? displayQuestionIndex);
-        const { codeByLanguage: _codeByLanguage, ...payload } = value;
-        const normalized = {
-          sectionIndex: originSectionIndex,
-          questionIndex: originQuestionIndex,
-          ...payload,
-        };
-        return [answerPayloadKey(normalized), answerPayloadSignature(normalized)];
-      }));
+      draftAnswersRef.current = initialAnswers;
+      let protocol;
+      protocol = new AssessmentSaveProtocol({
+        server: data.submission || {},
+        recovered: canRecover ? localDraft.protocol : undefined,
+        sendSave: (body) => api.saveStudentAssessmentProgress(id, body),
+        sendSubmit: (body) => api.submitStudentAssessment(body),
+        onAcknowledged: (answers) => {
+          if (protocol && saveProtocolRef.current !== protocol) return;
+          answers.forEach((answer) => savedAnswerSignaturesRef.current.set(answerPayloadKey(answer), answerPayloadSignature(answer)));
+        },
+        onState: (state, saveFailure) => {
+          if (protocol && saveProtocolRef.current !== protocol) return;
+          setSaveStatus(state);
+          setSaveError(saveFailure?.message || '');
+          if (state.startsWith('submit')) setFinalizing(true);
+          if (state === 'validation_failed') setFinalizing(false);
+        },
+        persist: async (state) => {
+          if (protocol && saveProtocolRef.current !== protocol) return;
+          const localRevision = answerRevisionRef.current;
+          const stored = await writeAssessmentDraft(scopedDraftKey, {
+            submissionId: String(data.submission?._id || ''),
+            attemptGeneration: Number(data.submission?.attemptGeneration || 1),
+            sessionId: assessmentSessionIdRef.current,
+            updatedAt: Date.now(),
+            answersMap: JSON.parse(JSON.stringify(draftAnswersRef.current)),
+            savedSignatures: [...savedAnswerSignaturesRef.current],
+            protocol: state,
+          });
+          setDraftStorageAvailable(stored);
+          if (stored && localRevision === answerRevisionRef.current) {
+            setSaveStatus((previous) => previous === 'local_pending' ? 'local' : previous);
+          }
+        },
+      });
+      saveProtocolRef.current = protocol;
+      setFinalizing(protocol.finalizing);
+      setSaveStatus(protocol.finalizing ? 'submit_failed' : restoredLocalDraft ? 'local' : 'saved');
       answerRevisionRef.current = 0;
-      answersDirtyRef.current = false;
+      answersDirtyRef.current = restoredLocalDraft || Boolean(protocol.pendingBatch);
       setAnswersMap(initialAnswers);
       setTabSwitches(data.submission?.tabSwitches || 0);
       setFullscreenExits(data.submission?.fullscreenExits || 0);
@@ -1583,6 +1636,24 @@ export default function AssessmentAttempt() {
       clearTimeout(timer);
     };
   }, [secureActive, isSubmitted, handleSave]);
+
+  useEffect(() => {
+    const retry = () => {
+      if (saveProtocolRef.current?.finalizing) void handleSubmitRef.current?.(true, 'Assessment submitted successfully');
+      else void handleSave();
+    };
+    window.addEventListener('online', retry);
+    const warnBeforeClose = (event) => {
+      if (!answersDirtyRef.current && !saveProtocolRef.current?.pendingBatch && !saveProtocolRef.current?.pendingFinal) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeClose);
+    return () => {
+      window.removeEventListener('online', retry);
+      window.removeEventListener('beforeunload', warnBeforeClose);
+    };
+  }, [handleSave]);
 
   useEffect(() => {
     if (!secureActive) return;
@@ -2235,6 +2306,7 @@ export default function AssessmentAttempt() {
     if (!secureActive || !cameraRequired || !assessment?._id) return undefined;
     const intervalSec = Math.max(15, Number(securitySettings.cameraSnapshotInterval || 120) || 120);
     const timer = setInterval(() => {
+      if (evidenceInFlightRef.current || saveProtocolRef.current?.finalizing) return;
       const video = monitorVideoRef.current;
       if (!video || video.readyState < 2) return;
       const canvas = document.createElement('canvas');
@@ -2243,15 +2315,13 @@ export default function AssessmentAttempt() {
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      void api.logStudentAssessmentMonitoring(assessment._id, {
-        snapshot: {
-          type: 'camera',
-          capturedAt: new Date().toISOString(),
-          dataUrl: canvas.toDataURL('image/jpeg', 0.45),
-          width: canvas.width,
-          height: canvas.height,
-        },
-      }).catch(() => {});
+      evidenceInFlightRef.current = true;
+      void uploadAssessmentEvidence({
+        canvas,
+        context: { submissionId: saveProtocolRef.current?.submissionId, sessionId: assessmentSessionIdRef.current, attemptGeneration: saveProtocolRef.current?.generation || 1 },
+        requestUpload: (body) => api.createStudentAssessmentEvidenceUpload(assessment._id, body),
+        recordEvidence: (body) => api.logStudentAssessmentMonitoring(assessment._id, body),
+      }).catch(() => {}).finally(() => { evidenceInFlightRef.current = false; });
     }, intervalSec * 1000);
     return () => clearInterval(timer);
   }, [secureActive, cameraRequired, assessment?._id, securitySettings.cameraSnapshotInterval]);
@@ -2288,8 +2358,13 @@ export default function AssessmentAttempt() {
       monitoringCooldownRef.current.audio = now;
       setSecurityNotice(`Background noise is above the allowed threshold (${pseudoDb}/${threshold}). Please keep your environment quiet.`);
       void api.logStudentAssessmentMonitoring(assessment._id, {
+        submissionId: saveProtocolRef.current?.submissionId,
+        sessionId: assessmentSessionIdRef.current,
+        attemptGeneration: saveProtocolRef.current?.generation || 1,
+        eventId: globalThis.crypto?.randomUUID?.() || `audio-${now}`,
         event: {
           type: 'audio_threshold',
+          eventId: globalThis.crypto?.randomUUID?.() || `audio-${now}`,
           at: new Date().toISOString(),
           message: 'Audio threshold exceeded during assessment.',
           meta: { level: pseudoDb, threshold },
@@ -2324,6 +2399,8 @@ export default function AssessmentAttempt() {
       setSecurityStatus((prev) => ({ ...prev, ...status }));
       try {
         const result = await api.sendStudentAssessmentHeartbeat(assessment._id, {
+          submissionId: saveProtocolRef.current?.submissionId,
+          attemptGeneration: saveProtocolRef.current?.generation || 1,
           status,
           violationScore: violationScoreRef.current,
           pauseCount: pauseCountRef.current,
@@ -2372,9 +2449,13 @@ export default function AssessmentAttempt() {
         }
         if (Date.now() - heartbeatFailureRef.current > 12000) {
           heartbeatFailureRef.current = Date.now();
-          setSecurityNotice('The server connection is unstable. Your answers remain stored locally while reconnection is attempted.');
+          setSecurityNotice('The server connection is unstable. Keep this assessment tab open while reconnection is attempted.');
           void api.logStudentAssessmentMonitoring(assessment._id, {
+            submissionId: saveProtocolRef.current?.submissionId,
+            sessionId: assessmentSessionIdRef.current,
+            attemptGeneration: saveProtocolRef.current?.generation || 1,
             event: {
+              eventId: globalThis.crypto?.randomUUID?.() || `heartbeat-warning-${Date.now()}`,
               type: 'heartbeat_connection_warning',
               at: new Date().toISOString(),
               message: 'Security heartbeat request failed during assessment.',
@@ -2422,6 +2503,7 @@ export default function AssessmentAttempt() {
   };
 
   const updateAnswer = (sectionIndex, questionIndex, value) => {
+    if (saveProtocolRef.current?.finalizing || isSubmitted) return;
     const key = answerKey(sectionIndex, questionIndex);
     const nextValue = { ...(answersMap[key] || {}), ...value };
     if (wouldExceedQuestionAttemptLimit(sectionIndex, questionIndex, nextValue)) {
@@ -2437,6 +2519,7 @@ export default function AssessmentAttempt() {
   };
 
   const updateCodingLanguage = (sectionIndex, questionIndex, nextLanguage) => {
+    if (saveProtocolRef.current?.finalizing || isSubmitted) return;
     const sectionItem = assessment?.sections?.[sectionIndex];
     const questionItem = sectionItem?.questions?.[questionIndex];
     if (!questionItem || sectionItem?.type !== 'coding') {
@@ -2494,6 +2577,12 @@ export default function AssessmentAttempt() {
     }
     return Promise.resolve();
   };
+
+  const markSetupStep = (step, meta) => api.markStudentAssessmentSetupStep(assessment._id, step, meta, {
+    submissionId: saveProtocolRef.current?.submissionId,
+    sessionId: assessmentSessionIdRef.current,
+    attemptGeneration: saveProtocolRef.current?.generation || 1,
+  });
 
   const attachStream = (stream) => {
     const videos = [validationVideoRef.current, monitorVideoRef.current, aiProctoringVideoRef.current];
@@ -2568,7 +2657,7 @@ export default function AssessmentAttempt() {
       try {
         let result = null;
         if (assessment?._id) {
-          result = await api.markStudentAssessmentSetupStep(assessment._id, 'fullscreen');
+          result = await markSetupStep('fullscreen');
         }
         syncCompletedSecuritySteps(result?.completedSecuritySteps || ['fullscreen']);
         setValidationMessage('');
@@ -2622,7 +2711,7 @@ export default function AssessmentAttempt() {
       try {
         let result = null;
         if (assessment?._id) {
-          result = await api.markStudentAssessmentSetupStep(assessment._id, 'environment');
+          result = await markSetupStep('environment');
         }
         syncCompletedSecuritySteps(result?.completedSecuritySteps || ['environment']);
         setValidationMessage('');
@@ -2660,7 +2749,7 @@ export default function AssessmentAttempt() {
         try {
           let result = null;
           if (assessment?._id) {
-            result = await api.markStudentAssessmentSetupStep(assessment._id, 'camera');
+            result = await markSetupStep('camera');
           }
           syncCompletedSecuritySteps(result?.completedSecuritySteps || ['camera']);
           setValidationMessage('');
@@ -2700,7 +2789,7 @@ export default function AssessmentAttempt() {
       };
       let result = null;
       if (assessment?._id) {
-        result = await api.markStudentAssessmentSetupStep(assessment._id, 'location', meta);
+        result = await markSetupStep('location', meta);
       }
       setLocationData(meta);
       setValidationState((prev) => ({ ...prev, location: true }));
@@ -2735,7 +2824,7 @@ export default function AssessmentAttempt() {
         setSetupCheckingStep('final');
         let result = null;
         if (assessment?._id) {
-          result = await api.markStudentAssessmentSetupStep(assessment._id, 'final');
+          result = await markSetupStep('final');
         }
         syncCompletedSecuritySteps(result?.completedSecuritySteps || ['final']);
         setValidationMessage('');
@@ -2783,7 +2872,7 @@ export default function AssessmentAttempt() {
           return;
         }
       }
-      const data = await api.beginStudentAssessment(assessment._id, assessmentSessionIdRef.current);
+      const data = await api.beginStudentAssessment(assessment._id, assessmentSessionIdRef.current, saveProtocolRef.current?.generation || 1, saveProtocolRef.current?.submissionId);
       const serverTime = new Date(data.serverTime).getTime();
       const serverAllowedEnd = new Date(data.allowedEnd).getTime();
       setOffset(serverTime - Date.now());
@@ -2824,7 +2913,7 @@ export default function AssessmentAttempt() {
 
 
   const handleRunCoding = (sourceOverride) => {
-    if (!assessment || isSubmitted) return;
+    if (!assessment || isSubmitted || saveProtocolRef.current?.finalizing) return;
     const section = assessment?.sections?.[activeSection];
     if (!section || section.type !== 'coding') return;
     const question = section?.questions?.[activeQuestion];
@@ -2931,6 +3020,7 @@ export default function AssessmentAttempt() {
   };
 
   const handleSubmitCoding = (sourceOverride) => {
+    if (saveProtocolRef.current?.finalizing) return;
     if (!assessment || isSubmitted) return;
     const section = assessment?.sections?.[activeSection];
     if (!section || section.type !== 'coding') return;
@@ -3023,6 +3113,7 @@ export default function AssessmentAttempt() {
   };
 
   const handleResetCoding = () => {
+    if (saveProtocolRef.current?.finalizing || isSubmitted) return;
     const key = answerKey(activeSection, activeQuestion);
     const section = assessment?.sections?.[activeSection];
     if (!section || section.type !== 'coding') return;
@@ -3133,13 +3224,14 @@ export default function AssessmentAttempt() {
   }, [perMcqTimingEnabled, assessment?.sections, activeSection, phase, isSubmitted, mcqTimeLeft, flatQuestions, currentNavigationEndIndex]);
 
   const clearResponse = () => {
+    if (saveProtocolRef.current?.finalizing || isSubmitted) return;
     const section = assessment?.sections?.[activeSection];
     const key = answerKey(activeSection, activeQuestion);
     if (!section) return;
     if (section.type === 'mcq') {
       setAnswersMap((prev) => ({
         ...prev,
-        [key]: { ...prev[key], answer: undefined },
+        [key]: { ...prev[key], answer: null },
       }));
       return;
     }
@@ -3355,6 +3447,31 @@ export default function AssessmentAttempt() {
 
   return (
     <div className="relative min-h-screen bg-[linear-gradient(180deg,#f8fbff_0%,#f8fafc_36%,#eef2ff_100%)] text-slate-900 dark:bg-none dark:bg-gray-950 dark:text-gray-100 lg:h-screen lg:overflow-hidden">
+      {showAssessmentWorkspace && !isSubmitted && (
+        <div role="status" aria-live="polite" className="fixed bottom-2 left-3 z-40 max-w-[min(90vw,480px)] rounded-lg border border-slate-200 bg-white/95 px-3 py-2 text-xs text-slate-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+          {!draftStorageAvailable ? 'Device storage unavailable. Keep this page open until answers are saved to the server.'
+            : saveStatus === 'saved' ? 'Answers saved to server'
+              : saveStatus === 'local' ? 'Saved on this device · waiting to sync'
+                : saveStatus === 'local_pending' ? 'Saving on this device…'
+                : saveStatus === 'saving' ? 'Saving answers…'
+                  : ['unsaved', 'retrying', 'validation_failed'].includes(saveStatus) ? 'Answers are waiting to sync'
+                    : 'Confirming submission…'}
+          {saveStatus === 'unsaved' && <button type="button" className="ml-2 font-semibold text-sky-700 underline" onClick={() => void handleSave()}>Retry save</button>}
+          {['unsaved', 'validation_failed'].includes(saveStatus) && saveError && <span className="mt-1 block">{saveError}</span>}
+        </div>
+      )}
+      {finalizing && !isSubmitted && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-950/65 p-5" role="dialog" aria-modal="true" aria-labelledby="submission-progress-title">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 text-slate-900 shadow-xl dark:bg-gray-900 dark:text-white">
+            <h2 id="submission-progress-title" className="text-lg font-semibold">{saveStatus === 'submit_failed' ? 'Submission needs confirmation' : 'Submitting your assessment'}</h2>
+            <p className="mt-3 text-sm leading-6">Your final answers are locked. Keep this page open until the server confirms your submission.</p>
+            {saveStatus === 'submit_failed' ? <>
+              <p className="mt-3 text-sm text-amber-700 dark:text-amber-300">{saveError || 'A submission was pending when this page reopened. Retry to confirm it.'}</p>
+              <button type="button" disabled={saving} className="mt-4 rounded-lg bg-sky-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" onClick={() => void handleSubmit(true, 'Assessment submitted successfully')}>Retry submission</button>
+            </> : <Loader2 className="mt-4 h-5 w-5 animate-spin" aria-label="Waiting for server confirmation" />}
+          </div>
+        </div>
+      )}
       {showAssessmentWorkspace && watermarkConfig.enabled && !isCoding && (
         <div className="pointer-events-none fixed inset-0 z-[1] overflow-hidden" aria-hidden="true">
           {watermarkColumns.map((item) => (
@@ -3566,6 +3683,7 @@ export default function AssessmentAttempt() {
                         code={answerValue.code ?? getStarterCodeForLanguage(codingData, answerValue.language || codingLanguages[0])}
                         onLanguageChange={(lang) => updateCodingLanguage(activeSection, activeQuestion, lang)}
                         onCodeChange={(code) => {
+                          if (saveProtocolRef.current?.finalizing) return;
                           const currentLanguage = answerValue.language || codingLanguages[0];
                           setAnswersMap((prev) => ({
                             ...prev,
@@ -3602,7 +3720,13 @@ export default function AssessmentAttempt() {
                         editorKey={key}
                         valueVersion={codeValueVersion}
                         onLiveCodeChange={(code) => {
+                          if (saveProtocolRef.current?.finalizing) return;
                           liveCodingCodeRef.current[key] = code;
+                          draftAnswersRef.current = mergeLiveCodingDraft(draftAnswersRef.current, liveCodingCodeRef.current, liveCodingLanguageRef.current);
+                          answersDirtyRef.current = true;
+                          answerRevisionRef.current += 1;
+                          setSaveStatus('local_pending');
+                          void saveProtocolRef.current?.checkpoint();
                         }}
                         executionMode={codingData?.category === 'SQL' ? 'sql' : 'code'}
                       />

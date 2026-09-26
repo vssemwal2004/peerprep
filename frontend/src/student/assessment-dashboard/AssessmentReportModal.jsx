@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { assessmentEvaluationLabel } from '../../utils/assessmentEvaluation';
 import { Clock3, Target, Trophy, X } from 'lucide-react';
 import { formatScore, formatSeconds } from './assessmentDashboardUtils';
 
@@ -81,6 +82,7 @@ export default function AssessmentReportModal({ report, open, onClose }) {
   if (!report) return null;
 
   const totalQuestions = report.totalQuestions || 0;
+  const evaluationLabel = assessmentEvaluationLabel(report);
 
   return (
     <AnimatePresence>
@@ -121,7 +123,7 @@ export default function AssessmentReportModal({ report, open, onClose }) {
             <div className="mt-4 grid gap-3 xl:grid-cols-[1.08fr_0.92fr]">
               <div className="rounded-md border border-slate-200 bg-slate-50 p-3.5 dark:border-gray-700 dark:bg-gray-800">
                 <div className="flex flex-col items-center justify-between gap-5 sm:flex-row">
-                  <ScoreRing score={report.accuracy} />
+                  {!evaluationLabel && <ScoreRing score={report.accuracy} />}
 
                   <div className="grid flex-1 gap-2.5 sm:grid-cols-2">
                     <div className="rounded-md border border-slate-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
@@ -129,8 +131,8 @@ export default function AssessmentReportModal({ report, open, onClose }) {
                         Final Score
                       </div>
                       <div className="mt-1.5 text-xl font-black tracking-tight text-slate-950 dark:text-white">
-                        {formatScore(report.score)}
-                        <span className="ml-1 text-base font-semibold text-slate-400 dark:text-gray-400">/ {formatScore(report.totalMarks)}</span>
+                        {evaluationLabel || formatScore(report.score)}
+                        {!evaluationLabel && <span className="ml-1 text-base font-semibold text-slate-400 dark:text-gray-400">/ {formatScore(report.totalMarks)}</span>}
                       </div>
                     </div>
                     <div className="rounded-md border border-slate-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">

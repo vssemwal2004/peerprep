@@ -2,6 +2,10 @@
 
 This document describes the production shape required for live assessments. Capacity is established by load tests and service-level objectives, not by a user-count claim alone.
 
+For the implemented persistence/queue protocol and staged migration, see
+[Assessment scaling v2](ASSESSMENT_SCALING_V2.md) and
+[load-test instructions](../load-tests/ASSESSMENT_TESTING.md).
+
 ## Request model after the scalability refactor
 
 - Answer edits stay in browser state and a local recovery draft.
@@ -9,7 +13,7 @@ This document describes the production shape required for live assessments. Capa
 - Autosave and heartbeat timers include jitter to avoid synchronized request waves.
 - `Save & Next` changes navigation only; it does not force a database write.
 - Final submit sends the complete answer set and waits for an in-flight autosave.
-- Heartbeat and monitoring MongoDB writes are atomic.
+- Heartbeats use atomic durable checkpoints; new monitoring lives in a separate event collection.
 - Authentication session state is cached in Redis/Valkey, with MongoDB fallback.
 - API, execution workers, mail processing, and singleton schedules can run as separate processes.
 
@@ -58,13 +62,13 @@ Do not approve the next stage unless all conditions hold:
 
 The production test script is `load-tests/assessment-production.js`. Use synthetic accounts and a dedicated assessment, and reset only that assessment's submissions between stages.
 
-## Remaining scale-out work
+## Remaining deployment gates
 
 These are required before claiming 2,000-user high availability:
 
-- Upload camera evidence directly to object storage; retain only metadata/URLs in MongoDB.
-- Add the Socket.IO Redis adapter for multi-node real-time delivery.
-- Move dashboard/report analytics to precomputed read models or a reporting replica.
+- Configure a private evidence bucket for the implemented signed direct-upload path.
+- Configure the implemented shared Socket.IO adapter and proxy behavior.
+- Enable the maintenance role for precomputed report summaries and durable work dispatch.
 - Add multi-node MongoDB replication, automated backups, restore drills, metrics, and alerts.
 - Run the full 2,000-user test from distributed load generators and test the simultaneous-submit wave.
 

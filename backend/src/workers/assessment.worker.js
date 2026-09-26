@@ -3,10 +3,12 @@ import { connectDb } from '../utils/db.js';
 import { startQueueWorker } from '../queues/workerRuntime.js';
 import { QUEUE_NAMES } from '../queues/queueManager.js';
 import { processAssessmentExecutionJob } from '../services/compilerExecutionWorkflowService.js';
+import { installWorkerShutdown } from './installWorkerShutdown.js';
 
 const concurrency = Number(process.env.ASSESSMENT_WORKER_CONCURRENCY || 5);
 
 await connectDb();
+installWorkerShutdown();
 
 console.log(`[AssessmentWorker] Starting with concurrency=${concurrency}`);
 await startQueueWorker({

@@ -1,76 +1,65 @@
-import {
-  completeQueueJob,
-  createWorkerClients,
-  failQueueJob,
-  fetchNextQueueJob,
-  retryQueueJob,
-  startDelayedJobPromoter,
-  startStalledJobReaper,
-  touchQueueJob,
-} from './queueManager.js';
+import { Worker } from 'bullmq';
+import { assertLegacyQueuesDrained, assertQueueServer, createQueueConnection, queuePrefix, DEFAULT_ATTEMPTS } from './queueManager.js';
+import { positiveInteger, withDeadline } from '../utils/valkey.js';
+import { startWorkerEmitter, closeRealtime } from '../utils/realtime.js';
 
-function wait(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+const workers = new Set();
+
+export function toApplicationJob(job) {
+  return {
+    id: job.data.externalId,
+    name: job.name,
+    data: job.data.payload,
+    attemptsMade: job.attemptsMade,
+    maxAttempts: positiveInteger(job.opts.attempts, DEFAULT_ATTEMPTS),
+  };
 }
 
-export async function startQueueWorker({
-  queueName,
-  concurrency = 5,
-  processJob,
-}) {
-  const workerConcurrency = Math.max(1, Number(concurrency || 1));
-  const stopController = new AbortController();
-  const { commandClient, blockingClients } = await createWorkerClients(queueName, workerConcurrency);
-
-  void startDelayedJobPromoter(queueName, {
-    intervalMs: Number(process.env.EXECUTION_PROMOTER_INTERVAL_MS || 1000),
-    stopSignal: stopController.signal,
+export async function startQueueWorker({ queueName, concurrency = 5, processJob }) {
+  await assertLegacyQueuesDrained();
+  startWorkerEmitter();
+  const connection = createQueueConnection({ worker: true });
+  try {
+    await withDeadline(connection.connect(), 2000, 'Worker connection');
+    await assertQueueServer(connection);
+  } catch (error) { connection.disconnect(); throw error; }
+  const active = new Set();
+  const worker = new Worker(queueName, (job) => {
+    const processing = Promise.resolve().then(() => processJob(toApplicationJob(job)));
+    active.add(processing);
+    return processing.finally(() => active.delete(processing));
+  }, {
+    connection,
+    prefix: queuePrefix(),
+    concurrency: Math.min(100, positiveInteger(concurrency, 1)),
+    lockDuration: positiveInteger(process.env.EXECUTION_JOB_LOCK_MS, 60000),
+    maxStalledCount: 2,
+    autorun: false,
   });
-  void startStalledJobReaper(queueName, {
-    intervalMs: Number(process.env.EXECUTION_STALLED_REAPER_INTERVAL_MS || 15000),
-    stalledAfterMs: Number(process.env.EXECUTION_JOB_STALLED_AFTER_MS || 120000),
-    stopSignal: stopController.signal,
+  const entry = { worker, connection, active };
+  workers.add(entry);
+  worker.on('error', (error) => {
+    console.warn(`[Worker:${queueName}] Queue dependency error (${error.code || error.name}).`);
   });
-
-  const runLoop = async (blockingClient) => {
-    while (!stopController.signal.aborted) {
-      try {
-        const job = await fetchNextQueueJob(queueName, blockingClient, commandClient);
-        if (!job) {
-          await wait(250);
-          continue;
-        }
-
-        const heartbeatMs = Math.max(1000, Number(process.env.EXECUTION_JOB_HEARTBEAT_MS || 10000));
-        const heartbeat = setInterval(() => {
-          void touchQueueJob(commandClient, job.id).catch((error) => {
-            console.warn(`[Worker:${queueName}] Heartbeat failed for ${job.id}: ${error.message}`);
-          });
-        }, heartbeatMs);
-
-        try {
-          await processJob(job);
-          clearInterval(heartbeat);
-          await completeQueueJob(queueName, commandClient, job.id);
-        } catch (error) {
-          clearInterval(heartbeat);
-          const nextAttemptNumber = job.attemptsMade + 1;
-          if (nextAttemptNumber < job.maxAttempts) {
-            await retryQueueJob(queueName, commandClient, job, error.message || 'Worker execution failed');
-          } else {
-            await failQueueJob(queueName, commandClient, job.id, {
-              message: error.message || 'Worker execution failed',
-            });
-          }
-        } finally {
-          clearInterval(heartbeat);
-        }
-      } catch (error) {
-        console.error(`[Worker:${queueName}] Loop failure:`, error);
-        await wait(1000);
-      }
+  worker.on('failed', (job) => {
+    if (job && job.attemptsMade >= (job.opts.attempts || 1)) {
+      console.error(`[Worker:${queueName}] Job ${job.data.externalId} exhausted retries; retained for review.`);
     }
-  };
+  });
+  try { await worker.run(); }
+  finally { workers.delete(entry); connection.disconnect(); }
+}
 
-  await Promise.all(blockingClients.map((client) => runLoop(client)));
+export async function closeQueueWorkers() {
+  await Promise.all([...workers].map(async ({ worker, connection, active }) => {
+    await withDeadline(worker.pause(true), 1000, 'Worker pause').catch(() => {});
+    let force = false;
+    try {
+      await withDeadline(Promise.allSettled([...active]), positiveInteger(process.env.WORKER_DRAIN_TIMEOUT_MS, 30000), 'Worker drain');
+    } catch { force = true; }
+    try { await withDeadline(worker.close(force), 2000, 'Worker close'); }
+    catch { /* Lock expiry recovers any work not acknowledged before exit. */ }
+    finally { connection.disconnect(); }
+  }));
+  await closeRealtime();
 }

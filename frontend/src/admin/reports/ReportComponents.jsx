@@ -5,6 +5,7 @@ import {
   LayoutDashboard, BarChart3,
 } from 'lucide-react';
 import { DonutChart, HorizontalProgress, Sparkline } from './ReportCharts';
+import { assessmentEvaluationLabel } from '../../utils/assessmentEvaluation';
 
 /* ═════════════════ FORMATTERS ═════════════════ */
 export const formatDateTime = (value) => {
@@ -138,7 +139,7 @@ export function AssessmentListItem({ assessment, isActive, onClick, stats }) {
           </div>
         </div>
         <div className="flex-shrink-0 text-right">
-          <div className="text-sm font-bold text-slate-900 dark:text-white">{assessment.attempted || 0}</div>
+          <div className="text-sm font-bold text-slate-900 dark:text-white">{assessment.summaryPending ? 'Updating' : assessment.attempted || 0}</div>
           <div className="text-[10px] text-slate-400 dark:text-gray-500">attempts</div>
         </div>
       </div>
@@ -146,9 +147,9 @@ export function AssessmentListItem({ assessment, isActive, onClick, stats }) {
         <div className="mt-1">
           <div className="flex items-center justify-between text-[10px] text-slate-400 dark:text-gray-500">
             <span>Avg score</span>
-            <span className="font-medium text-slate-600 dark:text-gray-300">{stats.avgScore?.toFixed?.(1) || 0}%</span>
+            <span className="font-medium text-slate-600 dark:text-gray-300">{stats.avgScore == null ? 'Awaiting results' : `${stats.avgScore.toFixed(1)}%`}</span>
           </div>
-          <HorizontalProgress value={stats.avgScore || 0} max={100} height={3} color="#0ea5e9" />
+          {stats.avgScore != null && <HorizontalProgress value={stats.avgScore} max={100} height={3} color="#0ea5e9" />}
         </div>
       )}
     </button>
@@ -172,6 +173,7 @@ export function TableEmpty() {
 
 /* ═════════════════ TABLE ROW ═════════════════ */
 export function TableRow({ row, visibleColumns, openStudentDetail, openViolationReport, toast }) {
+  const evaluationLabel = assessmentEvaluationLabel(row);
   const getInitials = (name) => (name || 'U').split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
   return (
     <tr key={row._id} className="group cursor-pointer text-slate-700 transition-colors hover:bg-sky-50/40 dark:text-slate-200 dark:hover:bg-sky-900/10" onClick={() => openStudentDetail(row)}>
@@ -191,16 +193,16 @@ export function TableRow({ row, visibleColumns, openStudentDetail, openViolation
       {visibleColumns.score && (
         <td className="px-4 py-3 text-right">
           <div className="flex items-center justify-end gap-2">
-            <DonutChart value={row.score || 0} total={row.totalMarks || 100} size={32} stroke={3} />
-            <span className="text-sm font-bold text-slate-900 dark:text-white">{row.score ?? 0}<span className="text-[10px] font-normal text-slate-400 dark:text-gray-500">/{row.totalMarks || 100}</span></span>
+            {!evaluationLabel && row.score != null && <DonutChart value={row.score} total={row.totalMarks || 100} size={32} stroke={3} />}
+            <span className="text-sm font-bold text-slate-900 dark:text-white">{evaluationLabel || (row.score == null ? 'Not available' : `${row.score}/${row.totalMarks || 100}`)}</span>
           </div>
         </td>
       )}
       {visibleColumns.accuracy && (
         <td className="px-4 py-3 text-center">
           <div className="mx-auto w-24">
-            <div className="text-[10px] text-slate-400 dark:text-gray-500">{row.accuracy ?? 0}%</div>
-            <HorizontalProgress value={row.accuracy || 0} max={100} height={3} color={row.accuracy >= 75 ? '#84cc16' : '#0ea5e9'} />
+            <div className="text-[10px] text-slate-400 dark:text-gray-500">{evaluationLabel || (row.accuracy == null ? 'Not available' : `${row.accuracy}%`)}</div>
+            {!evaluationLabel && row.accuracy != null && <HorizontalProgress value={row.accuracy} max={100} height={3} color={row.accuracy >= 75 ? '#84cc16' : '#0ea5e9'} />}
           </div>
         </td>
       )}

@@ -172,7 +172,10 @@ export function Pagination({ value, onPage, onLimit }) {
 }
 export function PageHeader({ title, back, crumbs = [], actions }) {
   return (
-    <header data-page-header className="border-b border-slate-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-900 sm:px-6">
+    <header
+      data-page-header
+      className="border-b border-slate-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-900 sm:px-6"
+    >
       <div className="mb-2 flex items-center gap-2 text-xs text-slate-500">
         {back && (
           <Link
@@ -231,6 +234,7 @@ export function Dialog({ title, children, onClose }) {
       onSubmit={(e) => e.stopPropagation()}
       onCancel={(e) => {
         e.preventDefault();
+        e.stopPropagation();
         onClose();
       }}
       className="m-auto max-h-[85dvh] w-[min(680px,94vw)] rounded-xl border border-slate-200 bg-white p-0 text-slate-800 shadow-xl backdrop:bg-slate-950/30 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
@@ -249,6 +253,89 @@ export function Dialog({ title, children, onClose }) {
         </button>
       </div>
       <div className="p-5">{children}</div>
+    </dialog>,
+    document.body,
+  );
+}
+let openDrawers = 0;
+let previousBodyOverflow = "";
+
+// Native dialog supplies focus containment and a top layer above nested editors.
+export function Drawer({
+  title,
+  description,
+  children,
+  onClose,
+  footer,
+  readOnly = false,
+}) {
+  const ref = useRef(null),
+    label = useId(),
+    descriptionId = useId();
+  useEffect(() => {
+    const previous = document.activeElement;
+    const element = ref.current;
+    if (openDrawers++ === 0) {
+      previousBodyOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+    }
+    element?.showModal();
+    return () => {
+      element?.close();
+      if (--openDrawers === 0)
+        document.body.style.overflow = previousBodyOverflow;
+      if (previous?.isConnected) previous.focus?.();
+    };
+  }, []);
+  return createPortal(
+    <dialog
+      ref={ref}
+      data-authoring-drawer
+      aria-labelledby={label}
+      aria-describedby={description ? descriptionId : undefined}
+      onSubmit={(event) => event.stopPropagation()}
+      onCancel={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.target === ref.current) onClose();
+      }}
+      className="fixed inset-y-0 left-auto right-0 m-0 h-[100dvh] max-h-none w-full max-w-3xl overflow-hidden border-l border-slate-200 bg-slate-50 p-0 text-slate-800 shadow-2xl backdrop:bg-slate-950/35 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+    >
+      <div className="flex h-full min-h-0 flex-col">
+        <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4 dark:border-gray-800 dark:bg-gray-900">
+          <div className="min-w-0">
+            <h2 id={label} className="break-words text-lg font-semibold">
+              {title}
+            </h2>
+            {description && (
+              <p
+                id={descriptionId}
+                className="mt-1 text-xs leading-relaxed text-slate-500"
+              >
+                {description}
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            aria-label={`Close ${title}`}
+            onClick={onClose}
+            className="shrink-0 rounded-lg p-2 text-slate-500 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-500 dark:hover:bg-gray-800"
+          >
+            <X size={18} />
+          </button>
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+          <fieldset disabled={readOnly} className="min-w-0 space-y-4">
+            {children}
+          </fieldset>
+        </div>
+        {footer && (
+          <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-white px-5 py-3 dark:border-gray-800 dark:bg-gray-900">
+            {footer}
+          </footer>
+        )}
+      </div>
     </dialog>,
     document.body,
   );

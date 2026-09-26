@@ -1,103 +1,107 @@
 import { createClient } from 'redis';
 
-let clientPromise = null;
-let loggedDisabled = false;
-let loggedEnabled = false;
+let cacheClient = null;
+let cacheConnection = null;
+let unavailableUntil = 0;
 
-export function buildValkeyUrl() {
-  const directUrl = String(process.env.VALKEY_URL || process.env.REDIS_URL || '').trim();
-  if (directUrl) {
-    return directUrl;
-  }
-
-  const host = String(process.env.VALKEY_HOST || process.env.REDIS_HOST || '').trim();
-  if (!host) return '';
-
-  const port = Number(process.env.VALKEY_PORT || process.env.REDIS_PORT || 6379);
-  const password = String(process.env.VALKEY_PASSWORD || process.env.REDIS_PASSWORD || '').trim();
-
-  if (password) {
-    return `redis://:${encodeURIComponent(password)}@${host}:${port}`;
-  }
-
-  return `redis://${host}:${port}`;
+export function positiveInteger(value, fallback) {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-export function isValkeyEnabled() {
-  return Boolean(buildValkeyUrl());
+export function buildValkeyUrl(purpose = 'cache') {
+  const specific = purpose === 'queue' ? process.env.QUEUE_VALKEY_URL : process.env.CACHE_VALKEY_URL;
+  const direct = String(specific || process.env.VALKEY_URL || process.env.REDIS_URL || '').trim();
+  if (direct) return direct;
+  const host = String(process.env.VALKEY_HOST || process.env.REDIS_HOST || '').trim();
+  if (!host) return '';
+  const port = positiveInteger(process.env.VALKEY_PORT || process.env.REDIS_PORT, 6379);
+  const password = String(process.env.VALKEY_PASSWORD || process.env.REDIS_PASSWORD || '').trim();
+  return `redis://${password ? `:${encodeURIComponent(password)}@` : ''}${host}:${port}`;
+}
+
+export function isValkeyEnabled(purpose = 'cache') {
+  return Boolean(buildValkeyUrl(purpose));
+}
+
+// A timeout cannot prove a write was not applied. Queue retry uses durable IDs.
+export async function withDeadline(operation, timeoutMs, label = 'Dependency') {
+  let timer;
+  try {
+    return await Promise.race([
+      Promise.resolve(operation),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          const error = new Error(`${label} timed out`);
+          error.code = 'DEPENDENCY_TIMEOUT';
+          reject(error);
+        }, timeoutMs);
+      }),
+    ]);
+  } finally { clearTimeout(timer); }
 }
 
 export function createValkeyBaseClient(overrides = {}) {
-  const url = buildValkeyUrl();
-  if (!url) {
-    return null;
-  }
-
+  const { purpose = 'cache', socket = {}, ...options } = overrides;
+  const url = options.url || buildValkeyUrl(purpose);
+  if (!url) return null;
   return createClient({
     url,
+    disableOfflineQueue: true,
     socket: {
-      reconnectStrategy: (retries) => Math.min(retries * 50, 2000),
-      ...overrides.socket,
+      connectTimeout: positiveInteger(process.env.CACHE_CONNECT_TIMEOUT_MS, 1000),
+      reconnectStrategy: (retries) => Math.min(100 + retries * 100, 2000),
+      ...socket,
     },
-    ...overrides,
+    ...options,
   });
 }
 
-export function getValkeyClient() {
-  const redisUrl = buildValkeyUrl();
-  if (!redisUrl) {
-    if (!loggedDisabled) {
-      console.warn('[Valkey] REDIS/VALKEY env not configured. Falling back to in-memory limits.');
-      loggedDisabled = true;
-    }
-    return null;
-  }
-
-  if (!clientPromise) {
+function ensureCacheConnection() {
+  if (!cacheClient) {
     const client = createValkeyBaseClient();
-
-    client.on('error', (error) => {
-      console.warn(`[Valkey] Client error: ${error.message}`);
-    });
-
-    clientPromise = client.connect()
-      .then(() => {
-        if (!loggedEnabled) {
-          console.log('[Valkey] Connected. Using shared queues, distributed limits, and response caching.');
-          loggedEnabled = true;
-        }
-        return client;
-      })
-      .catch((error) => {
-        console.warn(`[Valkey] Connection failed: ${error.message}. Falling back to in-memory limits.`);
-        clientPromise = null;
-        return null;
-      });
+    if (!client) return null;
+    cacheClient = client;
+    client.on('error', () => { unavailableUntil = Date.now() + 1000; });
+    client.on('ready', () => { unavailableUntil = 0; });
+    cacheConnection = client.connect().catch(() => null);
   }
+  return cacheClient;
+}
 
-  return {
-    sendCommand: async (args) => {
-      const client = await clientPromise;
-      if (!client) throw new Error('Valkey unavailable');
-      return client.sendCommand(args);
-    },
-    set: async (...args) => {
-      const client = await clientPromise;
-      if (!client) throw new Error('Valkey unavailable');
-      return client.set(...args);
-    },
-    pTTL: async (...args) => {
-      const client = await clientPromise;
-      if (!client) throw new Error('Valkey unavailable');
-      return client.pTTL(...args);
-    },
-  };
+async function cacheOperation(method, args) {
+  if (Date.now() < unavailableUntil) throw new Error('Cache temporarily unavailable');
+  const client = ensureCacheConnection();
+  if (!client) throw new Error('Cache is not configured');
+  const timeout = positiveInteger(process.env.CACHE_COMMAND_TIMEOUT_MS, 250);
+  try {
+    if (!client.isReady) await withDeadline(cacheConnection, timeout, 'Cache connection');
+    if (!client.isReady) throw new Error('Cache is not ready');
+    return await withDeadline(client[method](...args), timeout, 'Cache command');
+  } catch (error) {
+    unavailableUntil = Date.now() + 1000;
+    throw error;
+  }
+}
+
+const cacheFacade = {
+  sendCommand: (args) => cacheOperation('sendCommand', [args]),
+  set: (...args) => cacheOperation('set', args),
+  pTTL: (...args) => cacheOperation('pTTL', args),
+};
+
+export function getValkeyClient() { return isValkeyEnabled() ? cacheFacade : null; }
+
+export async function getCacheHealth() {
+  if (!isValkeyEnabled()) return { configured: false, ready: false };
+  try { return { configured: true, ready: await cacheFacade.sendCommand(['PING']) === 'PONG' }; }
+  catch { return { configured: true, ready: false }; }
 }
 
 export async function closeValkeyClient() {
-  const pendingClient = clientPromise;
-  clientPromise = null;
-  if (!pendingClient) return;
-  const client = await pendingClient.catch(() => null);
-  if (client?.isOpen) await client.quit();
+  const client = cacheClient;
+  cacheClient = null;
+  cacheConnection = null;
+  unavailableUntil = 0;
+  if (client?.isOpen) await client.disconnect().catch(() => {});
 }

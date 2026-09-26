@@ -358,7 +358,7 @@ export function YearlyAssessmentActivity({ calendar = [], monthly = [], onSelect
                             <span className="rounded bg-white px-1.5 py-0.5 font-semibold dark:bg-gray-900">{assessment.assessmentType || 'mixed'}</span>
                             <span>{assessment.totalQuestions || 0} Qs</span>
                             <span>{assessment.submissionCount || 0} attempts</span>
-                            <span>{Number(assessment.avgScore || 0).toFixed(1)}% avg</span>
+                            <span>{assessment.avgScore == null ? 'Awaiting results' : `${Number(assessment.avgScore).toFixed(1)}% avg`}</span>
                           </div>
                         </div>
                         <span className="rounded-full bg-lime-50 px-2 py-0.5 text-[10px] font-bold text-lime-700 dark:bg-lime-900/30 dark:text-lime-300">
@@ -742,7 +742,7 @@ export default function AssessmentReports() {
       summarySheet.headerFooter.oddFooter = '&RPage &P of &N';
       const kpis = [
         ['Candidates', summary.totalCandidates || rows.length || 0, palette.blue, palette.sky],
-        ['Average score', summary.avgScore || 0, palette.navy, 'FFE8EEF5'],
+        ['Average score', summary.avgScore ?? 'Awaiting results', palette.navy, 'FFE8EEF5'],
         ['Passed', summary.passCount || 0, palette.green, palette.greenPale],
         ['Failed', summary.failCount || 0, palette.red, palette.redPale],
       ];
@@ -771,8 +771,8 @@ export default function AssessmentReports() {
       summarySheet.getCell('A8').font = { name: 'Aptos', size: 11, bold: true, color: { argb: palette.navy } };
       const totalResults = Number(summary.passCount || 0) + Number(summary.failCount || 0);
       const detailRows = [
-        ['Highest score', summary.maxScore || 0],
-        ['Lowest score', summary.minScore || 0],
+        ['Highest score', summary.maxScore ?? 'Awaiting results'],
+        ['Lowest score', summary.minScore ?? 'Awaiting results'],
         ['Pass rate', totalResults ? Number(((Number(summary.passCount || 0) / totalResults) * 100).toFixed(1)) : 0],
       ];
       detailRows.forEach(([label, value], index) => {
@@ -1032,13 +1032,13 @@ export default function AssessmentReports() {
         chart: Array.isArray(s.attemptTrend) && s.attemptTrend.length > 1 ? <Sparkline data={s.attemptTrend} stroke="#84cc16" /> : null,
       },
       {
-        icon: TrendingUp, label: 'Avg Score', value: `${avgScore.toFixed(1)}%`,
+        icon: TrendingUp, label: 'Avg Score', value: s.avgScore == null ? 'Awaiting results' : `${avgScore.toFixed(1)}%`,
         sub: `of ${s.maxScore || 100} max`, insight: s.medianScore ? `Median: ${s.medianScore}%` : undefined,
         trend: s.scoreGrowth, tone: 'lime',
         chart: Array.isArray(s.scoreTrend) && s.scoreTrend.length > 1 ? <Sparkline data={s.scoreTrend} stroke="#84cc16" /> : null,
       },
       {
-        icon: BarChart3, label: 'Pass Rate', value: `${passRate.toFixed(1)}%`,
+        icon: BarChart3, label: 'Pass Rate', value: totalForPassRate > 0 ? `${passRate.toFixed(1)}%` : 'Awaiting results',
         insight: totalForPassRate > 0 ? `${passCount} passed, ${failCount} failed` : undefined,
         trend: s.passRateGrowth, tone: 'lime',
       },
@@ -1094,6 +1094,7 @@ export default function AssessmentReports() {
     // Fallback: compute from student scores
     const buckets = [0, 0, 0, 0, 0];
     students.forEach((st) => {
+      if (st.score == null || ['processing', 'failed'].includes(st.evaluationStatus)) return;
       const score = Number(st.score) || 0;
       if (score < 26) buckets[0]++;
       else if (score < 51) buckets[1]++;

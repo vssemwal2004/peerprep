@@ -4,6 +4,7 @@ import User from '../models/User.js';
 import QuestionLibrary from '../models/QuestionLibrary.js';
 import Assessment from '../models/Assessment.js';
 import AssessmentSubmission from '../models/AssessmentSubmission.js';
+import { deleteAssessmentAttemptData } from '../services/assessmentDataCleanupService.js';
 import Submission from '../models/Submission.js';
 import Event from '../models/Event.js';
 import Progress from '../models/Progress.js';
@@ -210,7 +211,7 @@ async function deleteLinkedStudentAccounts(batch) {
   }).select('_id').lean()).map((pair) => pair._id);
 
   await Promise.all([
-    AssessmentSubmission.deleteMany({ studentId: { $in: studentIds } }),
+    deleteAssessmentAttemptData({ studentId: { $in: studentIds } }),
     AssessmentFeedback.deleteMany({ studentId: { $in: studentIds } }),
     Submission.deleteMany({ user: { $in: studentIds } }),
     ExecutionJob.deleteMany({ userId: { $in: studentIds } }),

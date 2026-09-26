@@ -1015,17 +1015,19 @@ export const api = {
       method: "POST",
       body: { password },
     }),
-  markStudentAssessmentSetupStep: (id, step, meta) =>
+  markStudentAssessmentSetupStep: (id, step, meta, attemptContext = {}) =>
     request(`/student/assessment/${id}/setup-step`, {
       method: "POST",
-      body: { step, ...(meta ? { meta } : {}) },
+      body: { step, ...(meta ? { meta } : {}), ...attemptContext },
     }),
-  beginStudentAssessment: (id, sessionId) =>
+  beginStudentAssessment: (id, sessionId, attemptGeneration, submissionId) =>
     request(`/student/assessment/${id}/begin`, {
       method: "POST",
-      body: { sessionId },
+      body: { sessionId, ...(attemptGeneration === undefined ? {} : { attemptGeneration }), ...(submissionId ? { submissionId } : {}) },
     }),
-  getStudentAssessment: (id) => request(`/student/assessment/${id}`),
+  getStudentAssessment: (id) => request(`/student/assessment/${id}`, { skipCache: true }),
+  createStudentAssessmentEvidenceUpload: (id, body) =>
+    request(`/student/assessment/${id}/evidence/upload-url`, { method: "POST", body, timeoutMs: 10000 }),
   logStudentAssessmentViolation: (id, body) =>
     request(`/student/assessment/${id}/violations`, {
       method: "POST",
@@ -1053,8 +1055,10 @@ export const api = {
     }),
   submitStudentAssessment: (body) =>
     request("/student/assessment/submit", { method: "POST", body }),
-  getSubmissionViolations: (submissionId) =>
-    request(`/admin/assessment/submissions/${submissionId}/violations`, {
+  getAssessmentEvidence: (eventId) =>
+    request(`/admin/assessment/evidence/${encodeURIComponent(eventId)}`, { skipCache: true }),
+  getSubmissionViolations: (submissionId, { before } = {}) =>
+    request(`/admin/assessment/submissions/${submissionId}/violations${before ? `?before=${encodeURIComponent(before)}` : ''}`, {
       skipCache: true,
     }),
 

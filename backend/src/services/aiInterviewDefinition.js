@@ -4,6 +4,8 @@ export const LIMITS = Object.freeze({
   sections: 20,
   groups: 10,
   questions: 200,
+  subquestions: 10,
+  plannedQuestionsPerGroup: 50,
   followUps: 3,
   text: 12000,
   payload: 750000,
@@ -161,7 +163,7 @@ export function normalizeDefinition(input) {
         expectedAnswer: text(q.expectedAnswer),
         tags: words(q.tags),
         ruleOverrides: normalizeRules(q.ruleOverrides, true),
-        subquestions: list(q.subquestions ?? [], 10).map((s) => ({
+        subquestions: list(q.subquestions ?? [], LIMITS.subquestions).map((s) => ({
           id: id(object(s).id),
           prompt: text(s.prompt),
         })),
@@ -229,7 +231,12 @@ export function normalizeDefinition(input) {
         if (source === "manual")
           return { ...base, questions: questions(g.questions) };
         const a = object(g.annu ?? {});
-        const targetCount = integer(a.targetCount, 1, 50, 3);
+        const targetCount = integer(
+          a.targetCount,
+          1,
+          LIMITS.plannedQuestionsPerGroup,
+          3,
+        );
         count += targetCount;
         if (count > LIMITS.questions)
           fail("Too many authored or planned questions.");
@@ -278,7 +285,7 @@ export function inspectDefinition(d) {
     )
       add(path, "Weights must total 100%.");
   };
-  const timing = (rules, path) => {
+  const timing = (rules, path, label = "") => {
     if (
       rules.responseSeconds !== null &&
       (rules.responseSeconds < 1 ||
@@ -286,7 +293,7 @@ export function inspectDefinition(d) {
     )
       add(
         path,
-        "Response limit must be positive and at least the minimum response time.",
+        `${label ? `${label}: ` : ""}Response limit must be positive and at least the minimum response time.`,
       );
   };
   if (!d.role) add("basics", "Add a job role.");
@@ -331,20 +338,24 @@ export function inspectDefinition(d) {
       } else {
         if (!g.questions.length) add(gp, "Add at least one question.");
         summary.manualCount += g.questions.length;
-        for (const q of g.questions) {
-          if (!q.prompt) add(gp, "A main question is empty.");
-          if (
-            q.subquestions.some((x) => !x.prompt) ||
-            q.followUps.some((x) => !x.prompt)
-          )
-            add(gp, "A subquestion or follow-up is empty.");
+        for (const [questionIndex, q] of g.questions.entries()) {
+          const label = `Question ${questionIndex + 1}`;
+          if (!q.prompt) add(gp, `${label}: Add the main question.`);
+          q.subquestions.forEach((part, index) => {
+            if (!part.prompt)
+              add(gp, `${label}: Question part ${index + 1} is empty.`);
+          });
+          q.followUps.forEach((followUp, index) => {
+            if (!followUp.prompt)
+              add(gp, `${label}: Cross-question ${index + 1} is empty.`);
+          });
           const qr = { ...rules, ...q.ruleOverrides };
-          timing(qr, gp);
+          timing(qr, gp, label);
           budget(qr);
           summary.followUpCount += q.followUps.length;
-          for (const f of q.followUps) {
+          for (const [followUpIndex, f] of q.followUps.entries()) {
             const fr = { ...qr, ...f.ruleOverrides };
-            timing(fr, gp);
+            timing(fr, gp, `${label}, cross-question ${followUpIndex + 1}`);
             budget(fr);
           }
         }

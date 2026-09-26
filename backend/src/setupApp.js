@@ -10,8 +10,7 @@ import { mongoSanitizeMiddleware, xssProtectionMiddleware } from './middleware/s
 import { apiLimiter } from './middleware/rateLimiter.js';
 import { apiRequestTimeout } from './middleware/requestTimeout.js';
 import { requestPerformance } from './middleware/requestPerformance.js';
-import mongoose from 'mongoose';
-import { getValkeyClient, isValkeyEnabled } from './utils/valkey.js';
+import { readDependencyHealth, readinessFromDependencies } from './services/dependencyHealthService.js';
 
 const app = express();
 
@@ -160,17 +159,9 @@ app.use('/api', apiRequestTimeout);
 // verifies dependencies before a load balancer sends production traffic.
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 app.get('/api/health/ready', async (req, res) => {
-  const mongoReady = mongoose.connection.readyState === 1;
-  let redisReady = !isValkeyEnabled();
-  if (isValkeyEnabled()) {
-    try {
-      redisReady = await getValkeyClient()?.sendCommand(['PING']) === 'PONG';
-    } catch {
-      redisReady = false;
-    }
-  }
-  const ready = mongoReady && redisReady;
-  return res.status(ready ? 200 : 503).json({ ok: ready, mongo: mongoReady, redis: redisReady });
+  const health = readinessFromDependencies(await readDependencyHealth(), app.get('isShuttingDown'));
+  res.set('Cache-Control', 'no-store');
+  return res.status(health.ok ? 200 : 503).json(health);
 });
 
 // General API rate limiting (generous limits)

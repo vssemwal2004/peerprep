@@ -1,29 +1,28 @@
 import './setup.js';
 import app from './setupApp.js';
 import { closeDb, connectDb } from './utils/db.js';
-import { seedAdminIfNeeded } from './controllers/authController.js';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { verifyToken } from './utils/jwt.js';
 import { logSuspiciousActivity } from './utils/logger.js';
 import cookie from 'cookie';
 import crypto from 'crypto';
-import { seedEmailTemplates } from './services/emailTemplateService.js';
 import { setIo } from './utils/io.js';
 import { startEmbeddedWorkers } from './workers/startEmbeddedWorkers.js';
 import { verifyMailTransport } from './utils/mailer.js';
 import User from './models/User.js';
 import { hasCoordinatorPermission } from './services/coordinatorPermissions.js';
 import { startMailQueueWorker } from './workers/mailQueue.worker.js';
-import { seedDefaultMasterData } from './services/masterDataService.js';
 import { closeValkeyClient } from './utils/valkey.js';
+import { configureSocketAdapter, closeRealtime } from './utils/realtime.js';
+import { closeQueueWorkers } from './queues/workerRuntime.js';
+import { closeQueues } from './queues/queueManager.js';
+import { startAssessmentEvaluationDispatcher } from './services/assessmentEvaluationDispatchService.js';
+import { startAssessmentReportSummaryWorker } from './services/assessmentReportSummaryService.js';
 //fufgv
 const PORT = process.env.PORT || 4000;
 //new file check
 await connectDb();
-await seedAdminIfNeeded();
-await seedEmailTemplates();
-await seedDefaultMasterData();
 
 const httpServer = createServer(app);
 
@@ -56,6 +55,7 @@ const io = new Server(httpServer, {
     credentials: true
   }
 });
+configureSocketAdapter(io);
 
 // SECURITY: WebSocket authentication middleware
 // Now reads JWT from HttpOnly cookies to prevent XSS token theft
@@ -201,12 +201,16 @@ setIo(io);
 startEmbeddedWorkers();
 const scheduledJobsEnabled = String(process.env.START_SCHEDULED_JOBS || 'true').trim().toLowerCase() !== 'false';
 const mailWorkerEnabled = String(process.env.START_MAIL_WORKER || 'true').trim().toLowerCase() !== 'false';
+let stopAssessmentDispatcher = async () => {};
+let stopReportSummaryWorker = async () => {};
 if (scheduledJobsEnabled) {
   await Promise.all([
     import('./jobs/reminders.js'),
     import('./jobs/analytics.js'),
     import('./jobs/assessmentExpiry.js'),
   ]);
+  stopAssessmentDispatcher = startAssessmentEvaluationDispatcher();
+  stopReportSummaryWorker = startAssessmentReportSummaryWorker();
 }
 if (mailWorkerEnabled) startMailQueueWorker();
 
@@ -214,10 +218,16 @@ if (mailWorkerEnabled) startMailQueueWorker();
 const shutdown = async (signal) => {
   if (isShuttingDown) return;
   isShuttingDown = true;
+  app.set('isShuttingDown', true);
 
   console.log(`\n${signal} received. Starting graceful shutdown...`);
 
   const exitCleanly = async (code) => {
+    await stopAssessmentDispatcher().catch(() => {});
+    await stopReportSummaryWorker().catch(() => {});
+    await closeQueueWorkers().catch(() => {});
+    await closeQueues().catch(() => {});
+    await closeRealtime().catch(() => {});
     try {
       io.close(() => {
         console.log('WebSocket server closed');
@@ -250,6 +260,9 @@ const shutdown = async (signal) => {
       return;
     }
 
+    // Close sockets before waiting for HTTP drain so upgraded connections do
+    // not hold shutdown open indefinitely.
+    io.disconnectSockets(true);
     httpServer.close(async () => {
       console.log('HTTP server closed');
       await exitCleanly(signal === 'UNCAUGHT_EXCEPTION' ? 1 : 0);
@@ -259,11 +272,11 @@ const shutdown = async (signal) => {
     await exitCleanly(1);
   }
   
-  // Force shutdown after 10 seconds
+  // Give workers their bounded drain interval before the process manager kills.
   setTimeout(() => {
     console.error('Forced shutdown after timeout');
     process.exit(1);
-  }, 10000);
+  }, 40000);
 };
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));

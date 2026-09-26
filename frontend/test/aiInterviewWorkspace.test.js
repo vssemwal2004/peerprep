@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, beforeEach, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { act, createElement as h } from "react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { JSDOM } from "jsdom";
 import { createServer } from "vite";
 
@@ -114,7 +114,14 @@ beforeEach(async () => {
   };
   api.get = async () => structuredClone(saved);
   api.capabilities = async () => ({
-    limits: { sections: 20, groups: 10, questions: 200, followUps: 3 },
+    limits: {
+      sections: 20,
+      groups: 10,
+      questions: 200,
+      followUps: 3,
+      subquestions: 10,
+      plannedQuestionsPerGroup: 50,
+    },
   });
   api.resources = async () => ({
     items: [],
@@ -176,6 +183,12 @@ const button = (text) =>
   [...document.querySelectorAll("button")].find(
     (x) => x.textContent.trim() === text,
   );
+const drawerButton = (text) =>
+  [
+    ...[...document.querySelectorAll("dialog[open]")]
+      .at(-1)
+      .querySelectorAll("button"),
+  ].find((x) => x.textContent.trim() === text);
 const link = (text) =>
   [...document.querySelectorAll("a")].find(
     (x) => x.textContent.trim() === text,
@@ -218,6 +231,7 @@ async function mount(path = "/admin/ai-interviews") {
         MemoryRouter,
         { initialEntries: [path] },
         h(Dismiss),
+        h(HistoryControls),
         h(
           Routes,
           null,
@@ -225,6 +239,15 @@ async function mount(path = "/admin/ai-interviews") {
         ),
       ),
     ),
+  );
+}
+function HistoryControls() {
+  const navigate = useNavigate();
+  return h(
+    "div",
+    null,
+    h("button", { onClick: () => navigate(-1) }, "History back"),
+    h("button", { onClick: () => navigate(1) }, "History forward"),
   );
 }
 async function settle(ms = 1300) {
@@ -251,15 +274,34 @@ test("directory has one secondary navigation, URL pagination and working action 
   assert.equal(calls.find((x) => x[0] === "action")[2], "archive");
 });
 test("reports opens a truthful placeholder without fetching an interview record", async () => {
-  api.get = async () => { calls.push(["get"]); throw new Error("Reports must not be loaded as an interview ID"); };
+  api.get = async () => {
+    calls.push(["get"]);
+    throw new Error("Reports must not be loaded as an interview ID");
+  };
   await mount("/admin/ai-interviews/reports");
-  assert.equal(document.querySelector("h1").textContent, "AI Interview Reports");
-  assert.ok(document.body.textContent.includes("Reports are not available yet"));
+  assert.equal(
+    document.querySelector("h1").textContent,
+    "AI Interview Reports",
+  );
+  assert.ok(
+    document.body.textContent.includes("Reports are not available yet"),
+  );
   assert.ok(document.querySelector('[aria-label="Back"]'));
   const nav = document.querySelector('[aria-label="AI interview workspace"]');
-  assert.equal(nav.querySelector('[aria-current="page"]').textContent, "Reports");
-  assert.equal(calls.length, 0, "Reports placeholder must not call any authoring APIs");
-  await click([...document.querySelectorAll("a")].find((link) => link.textContent === "View AI interviews"));
+  assert.equal(
+    nav.querySelector('[aria-current="page"]').textContent,
+    "Reports",
+  );
+  assert.equal(
+    calls.length,
+    0,
+    "Reports placeholder must not call any authoring APIs",
+  );
+  await click(
+    [...document.querySelectorAll("a")].find(
+      (link) => link.textContent === "View AI interviews",
+    ),
+  );
   assert.ok(calls.some(([kind]) => kind === "list"));
 });
 test("create draft uses a compact form and navigates into the section builder", async () => {
@@ -268,12 +310,27 @@ test("create draft uses a compact form and navigates into the section builder", 
   assert.ok(document.querySelector('[aria-label="Breadcrumb"]'));
   await type(labeled("Interview title *"), "Graduate practice");
   await click(button("Technical"));
-  await click(button("Create draft"));
+  assert.ok(
+    button("Create & add questions")
+      .closest("footer")
+      .classList.contains("sticky"),
+    "Initial creation action remains in the sticky footer",
+  );
+  await click(button("Create & add questions"));
   const created = calls.find((x) => x[0] === "create");
   assert.equal(created[1].title, "Graduate practice");
   assert.equal(created[1].sections.length, 1);
   assert.ok(created[2]);
-  assert.ok(document.querySelector('[aria-label="Interview configuration"]'));
+  assert.equal(
+    document.querySelectorAll(
+      '[aria-label="AI interview creation progress"] li',
+    ).length,
+    3,
+  );
+  assert.ok(
+    !document.querySelector('[aria-label="AI interview workspace"]'),
+    "Authoring must not repeat directory navigation",
+  );
   assert.ok(button("Add section"));
 });
 test("new company is persisted and selected in the creation form", async () => {
@@ -293,38 +350,59 @@ test("manual questions, subquestions and ANNU replacement preserve explicit sour
   s.groups = [g];
   saved.data.sections = [s];
   await mount(`/admin/ai-interviews/${id}/sections/${s.id}/groups/${g.id}`);
-  await click(button("Question"));
+  await click(button("Add question"));
   await type(labeled("Main question *"), "Explain event loops");
   assert.equal(
-    labeled("Main question *").closest("details").open,
+    labeled("Main question *").closest("dialog").open,
     true,
     "Typing must not collapse the question editor",
   );
-  await click(button("+ Add subquestion"));
+  await click(button("Add subquestion"));
   await type(
-    document.querySelector('[aria-label="Required subquestions 1"]'),
+    document.querySelector('[aria-label="Subquestions 1"]'),
     "What is a microtask?",
   );
+  await click(drawerButton("Add question"));
+  assert.equal(
+    saved.data.sections[0].groups[0].questions.length,
+    0,
+    "Question remains in the topic draft until Save topic",
+  );
+  await click(button("Save topic"));
   await click(button("Save"));
   assert.equal(
     saved.data.sections[0].groups[0].questions[0].subquestions.length,
     1,
   );
-  await click(button("ANNU specification"));
-  await click(button("Cancel"));
+  await click(
+    document.querySelector(
+      `a[href="/admin/ai-interviews/${id}/sections/${s.id}/groups/${g.id}"]`,
+    ),
+  );
+  await click(
+    [
+      ...document.querySelectorAll('[aria-label="Question source"] button'),
+    ].find((x) => x.textContent.includes("ANNU AI")),
+  );
+  await click(drawerButton("Keep current source"));
   assert.equal(saved.data.sections[0].groups[0].source, "manual");
-  await click(button("ANNU specification"));
-  await click(button("Replace source"));
+  await click(
+    [
+      ...document.querySelectorAll('[aria-label="Question source"] button'),
+    ].find((x) => x.textContent.includes("ANNU AI")),
+  );
+  await click(button("Change source"));
   await type(
-    labeled("What should ANNU assess? *"),
+    labeled("What should ANNU ask? *"),
     "Assess basic debugging skills.",
   );
+  assert.ok(document.body.textContent.includes("not connected yet"));
+  await click(button("Save topic"));
   await click(button("Save"));
   const next = saved.data.sections[0].groups[0];
   assert.equal(next.source, "annu");
   assert.equal(next.questions, undefined);
   assert.equal(next.annu.requirements, "Assess basic debugging skills.");
-  assert.ok(document.body.textContent.includes("generation is not connected"));
 });
 test("Library selection imports a snapshot and preview hides answer guidance", async () => {
   const s = newSection(),
@@ -333,8 +411,13 @@ test("Library selection imports a snapshot and preview hides answer guidance", a
   saved.data.sections = [s];
   await mount(`/admin/ai-interviews/${id}/sections/${s.id}/groups/${g.id}`);
   await click(button("Library"));
-  await click(document.querySelector('dialog input[type="checkbox"]'));
+  await click(
+    [...document.querySelectorAll("dialog[open]")]
+      .at(-1)
+      .querySelector('input[type="checkbox"]'),
+  );
   await click(button("Add selected"));
+  await click(button("Save topic"));
   await click(button("Save"));
   assert.equal(
     saved.data.sections[0].groups[0].questions[0].prompt,
@@ -366,10 +449,11 @@ test("autosave preserves edits and revision conflicts stop automatic retries", a
 });
 test("review validates the saved revision and links to specific missing configuration", async () => {
   await mount(`/admin/ai-interviews/${id}/review`);
-  await click(button("Validate configuration"));
+  await click(button("Finish setup"));
   assert.equal(calls.find((x) => x[0] === "validate")[1], 1);
   assert.ok(document.body.textContent.includes("Add a job role."));
-  await click(link("Fix →"));
+  assert.equal(link("Fix").getAttribute("aria-label"), "Fix: Add a job role.");
+  await click(link("Fix"));
   assert.ok(labeled("Job role"));
 });
 test("archived interview remains read-only in the builder", async () => {
@@ -385,7 +469,7 @@ test("delete requires the exact title and copy links remain authenticated admin 
   await click(button("Copy admin link"));
   assert.equal(
     calls.find((x) => x[0] === "clipboard")[1],
-    `http://localhost:5173/admin/ai-interviews/${id}/basics`,
+    `http://localhost:5173/admin/ai-interviews/${id}/sections`,
   );
   await click(document.querySelector('[aria-haspopup="menu"]'));
   await click(button("Delete draft"));
@@ -421,4 +505,271 @@ test("edits made during an in-flight autosave survive the older response", async
     calls.filter((x) => x[0] === "save").map((x) => x[1]),
     [1, 2],
   );
+});
+
+test("admin completes both question sources and chooses an interviewer through the three-step flow", async () => {
+  api.resources = async (kind) => ({
+    items:
+      kind === "profiles"
+        ? [
+            {
+              _id: "profile1",
+              name: "ANNU coach",
+              revision: 1,
+              active: true,
+              data: {
+                name: "ANNU coach",
+                displayName: "ANNU",
+                avatar: "annu",
+                tone: "Professional",
+                language: "English",
+                introduction: "Welcome to your practice interview.",
+                closing: "Thank you.",
+              },
+            },
+          ]
+        : [],
+    pagination: {
+      page: 1,
+      pages: 1,
+      limit: 25,
+      total: kind === "profiles" ? 1 : 0,
+    },
+  });
+  api.validate = async (_id, revision) => {
+    calls.push(["validate", revision]);
+    saved = {
+      ...saved,
+      revision: revision + 1,
+      validation: { complete: true, issues: [] },
+    };
+    return structuredClone(saved);
+  };
+  await mount("/admin/ai-interviews/new");
+  await type(labeled("Interview title *"), "Graduate software practice");
+  await type(labeled("Job role"), "Software engineer");
+  await type(labeled("Experience level"), "fresher");
+  await type(labeled("Default question difficulty"), "easy");
+  await click(button("Technical"));
+  await click(button("Create & add questions"));
+  await click(button("Add topic"));
+  const sourceChoices = [
+    ...document.querySelector("dialog[open]").querySelectorAll("button"),
+  ];
+  await click(
+    sourceChoices.find((el) => el.textContent.startsWith("Manual questions")),
+  );
+  await type(labeled("Topic name *"), "API fundamentals");
+  await click(button("Add question"));
+  await type(
+    labeled("Main question *"),
+    "Explain how an API request is processed.",
+  );
+  await click(button("Add cross-question"));
+  await type(
+    document.querySelector('[aria-label="Cross-questions 1"]'),
+    "How would you handle a timeout?",
+  );
+  await click(drawerButton("Add question"));
+  await click(button("Save topic"));
+  await click(button("Add topic"));
+  await click(
+    [...document.querySelector("dialog[open]").querySelectorAll("button")].find(
+      (el) => el.textContent.startsWith("ANNU AI"),
+    ),
+  );
+  await type(labeled("Topic name *"), "Debugging approach");
+  await type(
+    labeled("What should ANNU ask? *"),
+    "Ask about diagnosing slow APIs. Keep questions suitable for a fresher and adapt follow-ups to their answer.",
+  );
+  await click(button("Save topic"));
+  await click(button("Save"));
+  assert.equal(saved.data.sections[0].groups.length, 2);
+  assert.equal(
+    saved.data.sections[0].groups[0].questions[0].followUps.length,
+    1,
+  );
+  assert.equal(saved.data.sections[0].groups[1].annu.targetCount, 3);
+  assert.equal(saved.data.sections[0].groups[1].annu.maxFollowUps, 0);
+  assert.equal(saved.data.sections[0].groups[0].weight, 50);
+  const sectionSummary = document.querySelector(
+    '[data-platform-disclosure="authoring"]',
+  ).textContent;
+  assert.ok(sectionSummary.includes("1 written"));
+  assert.ok(sectionSummary.includes("3 planned"));
+  await click(link("Review interview →"));
+  await click(
+    [...document.querySelectorAll("a")].find((el) =>
+      el.textContent.includes("Edit Interviewer & settings"),
+    ),
+  );
+  assert.ok(document.querySelector("dialog[open][data-authoring-drawer]"));
+  await click(button("Select interviewer profile"));
+  await click(drawerButton("Select"));
+  await click(link("Done"));
+  await click(button("Finish setup"));
+  assert.equal(saved.data.interviewer.displayName, "ANNU");
+  assert.ok(document.body.textContent.includes("Setup is complete"));
+  assert.ok(document.body.textContent.includes("not published to students"));
+  assert.ok(document.body.textContent.includes("have not been generated"));
+  assert.equal(calls.filter(([kind]) => kind === "validate").length, 1);
+  assert.equal(calls.filter(([kind]) => kind === "action").length, 0);
+});
+
+test("canceling a new topic creates nothing and returning with browser history recovers staged edits", async () => {
+  const section = newSection(),
+    group = newGroup();
+  section.groups = [group];
+  saved.data.sections = [section];
+  await mount(`/admin/ai-interviews/${id}/sections`);
+  await click(button("Add topic"));
+  await click(drawerButton("Cancel"));
+  assert.equal(document.querySelectorAll("dialog[open]").length, 0);
+  assert.equal(saved.data.sections[0].groups.length, 1);
+  const topicHref = `/admin/ai-interviews/${id}/sections/${section.id}/groups/${group.id}`;
+  await click(document.querySelector(`a[href="${topicHref}"]`));
+  await type(labeled("Topic name *"), "Recovered topic");
+  await click(button("Add question"));
+  await type(labeled("Main question *"), "Preserve this unsaved question.");
+  await click(button("History back"));
+  assert.equal(document.querySelectorAll("dialog[open]").length, 0);
+  await click(button("History forward"));
+  assert.equal(labeled("Topic name *").value, "Recovered topic");
+  assert.ok(
+    document.body.textContent.includes("unsaved changes from this tab"),
+  );
+  await click(button("Add question"));
+  assert.equal(
+    labeled("Main question *").value,
+    "Preserve this unsaved question.",
+  );
+  await click(drawerButton("Add question"));
+  await click(button("Save topic"));
+  await click(button("Save"));
+  assert.equal(
+    saved.data.sections[0].groups[0].questions[0].prompt,
+    "Preserve this unsaved question.",
+  );
+});
+
+test("a question written before naming a new topic is recoverable after browser navigation", async () => {
+  const section = newSection();
+  saved.data.sections = [section];
+  await mount(`/admin/ai-interviews/${id}/basics`);
+  await click(link("Continue to questions →"));
+  const startManualTopic = async () => {
+    await click(button("Add topic"));
+    await click(
+      [
+        ...document.querySelector("dialog[open]").querySelectorAll("button"),
+      ].find((el) => el.textContent.startsWith("Manual questions")),
+    );
+    await click(button("Add question"));
+  };
+  await startManualTopic();
+  await type(
+    labeled("Main question *"),
+    "Recover this before the topic has a name.",
+  );
+  await click(button("History back"));
+  assert.equal(document.querySelectorAll("dialog[open]").length, 0);
+  await click(button("History forward"));
+  await startManualTopic();
+  assert.equal(
+    labeled("Main question *").value,
+    "Recover this before the topic has a name.",
+  );
+  await click(drawerButton("Add question"));
+  await type(labeled("Topic name *"), "Named afterwards");
+  await click(button("Save topic"));
+  await click(button("Save"));
+  assert.equal(
+    saved.data.sections[0].groups[0].questions[0].prompt,
+    "Recover this before the topic has a name.",
+  );
+});
+
+test("archived section disclosures and full topic previews remain usable without mutations", async () => {
+  const section = newSection(),
+    group = newGroup(),
+    question = newQuestion();
+  question.prompt = "A complete archived prompt that must remain readable.";
+  question.followUps = [
+    {
+      id: "cross1",
+      prompt: "Explain the trade-offs.",
+      expectedAnswer: "",
+      ruleOverrides: {},
+    },
+  ];
+  group.questions = [question];
+  section.groups = [group];
+  saved.data.sections = [section, newSection("Behavioral")];
+  saved.lifecycle = "archived";
+  await mount(`/admin/ai-interviews/${id}/sections`);
+  const disclosure = document.querySelector(
+    '[data-platform-disclosure="authoring"]',
+  );
+  assert.equal(disclosure.getAttribute("aria-expanded"), "false");
+  await click(disclosure);
+  assert.equal(disclosure.getAttribute("aria-expanded"), "true");
+  await click(
+    document.querySelector(
+      `a[href="/admin/ai-interviews/${id}/sections/${section.id}/groups/${group.id}"]`,
+    ),
+  );
+  assert.ok(document.body.textContent.includes(question.prompt));
+  assert.ok(document.body.textContent.includes("Explain the trade-offs."));
+  assert.ok(!button("Save topic"));
+  assert.ok(!button("Add question"));
+  assert.equal(calls.filter(([kind]) => kind === "save").length, 0);
+});
+
+test("ANNU defaults respect remaining interview capacity and invalid counts cannot be staged", async () => {
+  api.capabilities = async () => ({
+    limits: {
+      sections: 20,
+      groups: 10,
+      questions: 3,
+      followUps: 3,
+      subquestions: 10,
+      plannedQuestionsPerGroup: 50,
+    },
+  });
+  const section = newSection(),
+    group = newGroup();
+  group.questions = [newQuestion(), newQuestion()].map((q) => ({
+    ...q,
+    prompt: "Existing question",
+  }));
+  section.groups = [group];
+  saved.data.sections = [section];
+  await mount(`/admin/ai-interviews/${id}/sections`);
+  await click(button("Add topic"));
+  await click(
+    [...document.querySelector("dialog[open]").querySelectorAll("button")].find(
+      (el) => el.textContent.startsWith("ANNU AI"),
+    ),
+  );
+  await type(labeled("Topic name *"), "One remaining slot");
+  await type(
+    labeled("What should ANNU ask? *"),
+    "Ask one fundamentals question.",
+  );
+  const count = [
+    ...document
+      .querySelector("dialog[open]")
+      .querySelectorAll('input[type="number"]'),
+  ].find((el) => el.value === "1" && el.min === "1");
+  assert.ok(count);
+  await type(count, "2");
+  await click(button("Save topic"));
+  assert.ok(document.querySelector("dialog[open]"));
+  assert.ok(document.body.textContent.includes("at most 1 main questions"));
+  await type(count, "1");
+  await click(button("Save topic"));
+  await click(button("Save"));
+  assert.equal(saved.data.sections[0].groups[1].annu.targetCount, 1);
+  assert.equal(button("Add topic").disabled, true);
 });

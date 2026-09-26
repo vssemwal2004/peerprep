@@ -10,7 +10,6 @@ import {
   useParams,
 } from "react-router-dom";
 import {
-  ArrowLeft,
   BarChart3,
   Bot,
   Building2,
@@ -19,6 +18,7 @@ import {
   Eye,
   Plus,
   Save,
+  SlidersHorizontal,
   UserRound,
 } from "lucide-react";
 import Directory from "./Directory";
@@ -26,6 +26,7 @@ import { ResourceList } from "./Resources";
 import { BasicsEditor, InterviewerEditor, RulesEditor } from "./Editors";
 import Sections from "./Sections";
 import Review from "./Review";
+import CreationProgress from "./CreationProgress";
 import {
   ROOT,
   categories,
@@ -40,6 +41,7 @@ import { useInterviewDraft } from "./useInterviewDraft";
 import { useRemote } from "./useRemote";
 import {
   Badge,
+  Drawer,
   EmptyState,
   Notice,
   PageHeader,
@@ -48,58 +50,27 @@ import {
   secondaryClass,
 } from "./ui";
 
-function Navigation({ id, title, returnTo = ROOT }) {
-  const items = id
-    ? divisions.map((d) => ({
-        to: `${ROOT}/${id}/${d.id}`,
-        label: d.label,
-        Icon: {
-          basics: ClipboardList,
-          sections: ClipboardList,
-          interviewer: UserRound,
-          rules: ClipboardList,
-          review: CheckCircle2,
-        }[d.id],
-      }))
-    : [
-        { to: ROOT, label: "Interviews", Icon: ClipboardList, end: true },
-        { to: `${ROOT}/reports`, label: "Reports", Icon: BarChart3 },
-        {
-          to: `${ROOT}/profiles`,
-          label: "Interviewer profiles",
-          Icon: UserRound,
-        },
-        { to: `${ROOT}/companies`, label: "Companies", Icon: Building2 },
-      ];
+function Navigation() {
+  const items = [
+    { to: ROOT, label: "Interviews", Icon: ClipboardList, end: true },
+    { to: `${ROOT}/reports`, label: "Reports", Icon: BarChart3 },
+    {
+      to: `${ROOT}/profiles`,
+      label: "Interviewer profiles",
+      Icon: UserRound,
+    },
+    { to: `${ROOT}/companies`, label: "Companies", Icon: Building2 },
+  ];
   return (
     <aside className="border-b border-slate-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900 lg:border-b-0 lg:border-r">
       <div className="mb-4 hidden px-2 lg:block">
-        {id ? (
-          <>
-            <Link
-              className="mb-4 inline-flex items-center gap-1 text-xs text-slate-500 hover:text-sky-700"
-              to={returnTo}
-            >
-              <ArrowLeft size={13} />
-              Back to interviews
-            </Link>
-            <p
-              className="truncate text-sm font-semibold text-slate-800 dark:text-gray-100"
-              title={title}
-            >
-              {title}
-            </p>
-            <p className="mt-1 text-[11px] text-slate-400">CONFIGURATION</p>
-          </>
-        ) : (
-          <div className="flex items-center gap-2 py-2 font-semibold text-slate-800 dark:text-white">
-            <Bot size={19} className="text-sky-600" />
-            AI Interviews
-          </div>
-        )}
+        <div className="flex items-center gap-2 py-2 font-semibold text-slate-800 dark:text-white">
+          <Bot size={19} className="text-sky-600" />
+          AI Interviews
+        </div>
       </div>
       <nav
-        aria-label={id ? "Interview configuration" : "AI interview workspace"}
+        aria-label="AI interview workspace"
         className="flex gap-1 overflow-x-auto lg:flex-col"
       >
         {items.map(({ to, label, Icon, end }) => (
@@ -123,7 +94,9 @@ function Frame({ title, back, crumbs, actions, sidebar, children }) {
   return (
     <main className="min-h-screen bg-slate-50 text-slate-800 dark:bg-gray-950 dark:text-gray-100">
       <PageHeader title={title} back={back} crumbs={crumbs} actions={actions} />
-      <div className="grid min-h-[calc(100vh-100px)] lg:grid-cols-[208px_minmax(0,1fr)]">
+      <div
+        className={`min-h-[calc(100vh-100px)] ${sidebar ? "grid lg:grid-cols-[208px_minmax(0,1fr)]" : ""}`}
+      >
         {sidebar}
         <div className="min-w-0 p-4 sm:p-6">
           <div className="mx-auto max-w-[1500px]">{children}</div>
@@ -159,7 +132,11 @@ function ReportsPage() {
         <EmptyState
           title="Reports are not available yet"
           detail="AI interviews currently support configuration only. Reports will become available when interview sessions and evaluation are enabled."
-          action={<Link className={primaryClass} to={ROOT}>View AI interviews</Link>}
+          action={
+            <Link className={primaryClass} to={ROOT}>
+              View AI interviews
+            </Link>
+          }
         />
       </Panel>
     </Frame>
@@ -211,14 +188,14 @@ function CreatePage() {
         { label: "AI Interviews", to: returnTo },
         { label: "Create draft" },
       ]}
-      sidebar={<Navigation />}
     >
-      <form className="mx-auto max-w-4xl space-y-4" onSubmit={create}>
+      <form className="mx-auto max-w-5xl space-y-4" onSubmit={create}>
+        <CreationProgress data={data} />
         {error && <Notice error>{error}</Notice>}
         <fieldset disabled={busy} className="space-y-4">
           <BasicsEditor data={data} onChange={setData} />
           <Panel
-            title="Initial sections"
+            title="Interview sections"
             action={<Badge>{data.sections.length} selected</Badge>}
           >
             <div className="flex flex-wrap gap-2">
@@ -252,19 +229,20 @@ function CreatePage() {
               })}
             </div>
             <p className="mt-3 text-xs text-slate-500">
-              Optional. Rename, reorder or add more sections in the builder.
+              Choose the rounds you need. You can add or change these in the
+              next step.
             </p>
           </Panel>
         </fieldset>
-        <footer className="flex justify-end gap-2 rounded-xl border border-slate-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+        <footer className="sticky bottom-0 z-20 flex flex-wrap justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-[0_-4px_16px_rgba(15,23,42,0.04)] dark:border-gray-800 dark:bg-gray-900">
           <Link className={secondaryClass} to={returnTo}>
             Cancel
           </Link>
           <button
-            className={primaryClass}
+            className={`${primaryClass} flex-1 sm:flex-none`}
             disabled={busy || !data.title.trim()}
           >
-            {busy ? "Creating…" : "Create draft"}
+            {busy ? "Creating…" : "Create & add questions"}
           </button>
         </footer>
       </form>
@@ -273,7 +251,8 @@ function CreatePage() {
 }
 function BuilderContent({ id }) {
   const { "*": rest } = useParams(),
-    location = useLocation();
+    location = useLocation(),
+    navigate = useNavigate();
   const parts = (rest || "basics").split("/"),
     division = parts[0],
     sectionId = parts[1],
@@ -323,12 +302,10 @@ function BuilderContent({ id }) {
     preview = division === "preview";
   const currentSection = data.sections.find((s) => s.id === sectionId),
     currentGroup = currentSection?.groups.find((g) => g.id === groupId);
-  const title =
-    currentGroup?.name ||
-    currentSection?.name ||
-    (preview
-      ? "Configuration preview"
-      : divisions.find((d) => d.id === division)?.label);
+  const title = preview ? "Interview preview" : data.title;
+  const settingsView = division === "interviewer" || division === "rules";
+  const step = settingsView || preview ? "review" : division;
+  const readOnly = archived || state.conflict || state.validating;
   const crumbs = [
     { label: "AI Interviews", to: initialReturn.current },
     { label: data.title, to: `${ROOT}/${id}/basics` },
@@ -356,13 +333,6 @@ function BuilderContent({ id }) {
       title={title}
       back={back}
       crumbs={crumbs}
-      sidebar={
-        <Navigation
-          id={id}
-          title={data.title}
-          returnTo={initialReturn.current}
-        />
-      }
       actions={
         <>
           <span role="status" className="text-xs text-slate-500">
@@ -372,7 +342,7 @@ function BuilderContent({ id }) {
                 ? "Not saved"
                 : state.dirty
                   ? "Unsaved changes"
-                  : `Saved · revision ${doc.revision}`}
+                  : "All changes saved"}
           </span>
           <Badge complete={doc.validation?.complete && !state.dirty}>
             {archived
@@ -381,6 +351,12 @@ function BuilderContent({ id }) {
                 ? "Complete · not live"
                 : "Draft"}
           </Badge>
+          {!preview && (
+            <Link className={secondaryClass} to={`${ROOT}/${id}/rules`}>
+              <SlidersHorizontal size={14} />
+              Settings
+            </Link>
+          )}
           {!preview && (
             <Link className={secondaryClass} to={`${ROOT}/${id}/preview`}>
               <Eye size={14} />
@@ -401,6 +377,14 @@ function BuilderContent({ id }) {
       }
     >
       <div className="mx-auto max-w-5xl space-y-4">
+        {!preview && (
+          <CreationProgress
+            id={id}
+            current={step}
+            data={data}
+            complete={doc.validation?.complete && !state.dirty}
+          />
+        )}
         {state.error && (
           <Notice error>
             {state.error}{" "}
@@ -432,12 +416,11 @@ function BuilderContent({ id }) {
             directory to edit.
           </Notice>
         )}
-        <fieldset
-          disabled={archived || state.conflict || state.validating}
-          className="min-w-0 space-y-4"
-        >
+        <div className="min-w-0 space-y-4">
           {division === "basics" && (
-            <BasicsEditor data={data} onChange={state.change} />
+            <fieldset disabled={readOnly} className="min-w-0">
+              <BasicsEditor data={data} onChange={state.change} />
+            </fieldset>
           )}
           {division === "sections" &&
             (caps.result ? (
@@ -448,6 +431,7 @@ function BuilderContent({ id }) {
                 sectionId={sectionId}
                 groupId={groupId}
                 limits={caps.result.limits}
+                readOnly={readOnly}
               />
             ) : caps.error ? (
               <Notice error>
@@ -456,39 +440,69 @@ function BuilderContent({ id }) {
             ) : (
               <p role="status">Loading authoring limits…</p>
             ))}
-          {division === "interviewer" && (
-            <InterviewerEditor data={data} onChange={state.change} />
-          )}
-          {division === "rules" && (
-            <RulesEditor data={data} onChange={state.change} />
-          )}
-          {(division === "review" || preview) && (
+          {(division === "review" || settingsView || preview) && (
             <Review doc={doc} data={data} preview={preview} />
           )}
-        </fieldset>
+        </div>
         {!preview && (
           <footer className="sticky bottom-0 z-20 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-            <span className="text-xs text-slate-500">
-              Configuration only · no live AI services
-            </span>
-            {division === "review" ? (
+            <Link
+              className={secondaryClass}
+              to={
+                step === "basics"
+                  ? initialReturn.current
+                  : `${ROOT}/${id}/${step === "sections" ? "basics" : "sections"}`
+              }
+            >
+              {step === "basics" ? "All interviews" : "Previous"}
+            </Link>
+            {step === "review" ? (
               <button
                 className={primaryClass}
-                disabled={archived || state.saving || state.conflict}
+                disabled={readOnly || state.saving}
                 onClick={state.validate}
               >
                 <CheckCircle2 size={15} />
-                {state.saving ? "Saving…" : "Validate configuration"}
+                {state.saving
+                  ? "Saving…"
+                  : doc.validation?.complete && !state.dirty
+                    ? "Recheck setup"
+                    : "Finish setup"}
               </button>
             ) : (
               <Link
                 className={primaryClass}
-                to={`${ROOT}/${id}/${divisions[Math.min(divisions.findIndex((d) => d.id === division) + 1, divisions.length - 1)].id}`}
+                to={`${ROOT}/${id}/${step === "basics" ? "sections" : "review"}`}
               >
-                Continue →
+                {step === "basics"
+                  ? "Continue to questions →"
+                  : "Review interview →"}
               </Link>
             )}
           </footer>
+        )}
+        {settingsView && (
+          <Drawer
+            title={
+              division === "interviewer"
+                ? "Interviewer profile"
+                : "Interview settings"
+            }
+            description="Changes save to your draft automatically."
+            readOnly={readOnly}
+            onClose={() => navigate(`${ROOT}/${id}/review`)}
+            footer={
+              <Link className={primaryClass} to={`${ROOT}/${id}/review`}>
+                Done
+              </Link>
+            }
+          >
+            {division === "interviewer" ? (
+              <InterviewerEditor data={data} onChange={state.change} />
+            ) : (
+              <RulesEditor data={data} onChange={state.change} />
+            )}
+          </Drawer>
         )}
       </div>
     </Frame>

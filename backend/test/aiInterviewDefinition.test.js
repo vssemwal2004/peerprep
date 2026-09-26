@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   CAPABILITIES,
+  LIMITS,
   normalizeDefinition,
   normalizeRules,
   normalizedName,
@@ -130,4 +131,116 @@ test("company names normalize and searches remain literal", () => {
   const d = definition();
   d.title = "<script>alert(1)</script>Safe";
   assert.equal(normalizeDefinition(d).title, "Safe");
+});
+
+test("capabilities expose the enforced question-part and ANNU planning limits", () => {
+  assert.equal(CAPABILITIES.limits.subquestions, 10);
+  assert.equal(CAPABILITIES.limits.plannedQuestionsPerGroup, 50);
+  const d = definition();
+  d.sections[0].groups[0].questions[0].subquestions = Array.from(
+    { length: LIMITS.subquestions },
+    (_, index) => ({ id: `part${index}`, prompt: "Explain this part." }),
+  );
+  assert.doesNotThrow(() => normalizeDefinition(d));
+  d.sections[0].groups[0].questions[0].subquestions.push({
+    id: "extraPart",
+    prompt: "One too many.",
+  });
+  assert.throws(() => normalizeDefinition(d), /at most 10/);
+  d.sections[0].groups = [
+    {
+      id: "annuGroup",
+      source: "annu",
+      annu: { requirements: "Test REST", targetCount: 51 },
+    },
+  ];
+  assert.throws(() => normalizeDefinition(d), /between 1 and 50/);
+});
+
+test("empty question parts and cross-questions identify their position without changing issue paths", () => {
+  const d = definition();
+  d.sections[0].groups[0].questions.push({
+    id: "question2",
+    prompt: " ",
+    subquestions: [{ id: "part1", prompt: " " }],
+    followUps: [
+      { id: "cross1", prompt: "Explain your reasoning." },
+      { id: "cross2", prompt: " " },
+    ],
+  });
+  const result = inspectDefinition(normalizeDefinition(d));
+  assert.equal(result.complete, false);
+  assert.deepEqual(result.issues, [
+    {
+      path: "sections/section1/groups/group1",
+      message: "Question 2: Add the main question.",
+    },
+    {
+      path: "sections/section1/groups/group1",
+      message: "Question 2: Question part 1 is empty.",
+    },
+    {
+      path: "sections/section1/groups/group1",
+      message: "Question 2: Cross-question 2 is empty.",
+    },
+  ]);
+});
+
+test("question parts share their parent's response budget while cross-questions have separate inherited timing", () => {
+  const d = definition();
+  const q = d.sections[0].groups[0].questions[0];
+  q.ruleOverrides = { preparationSeconds: 5, responseSeconds: 60 };
+  q.subquestions = [
+    { id: "part1", prompt: "Name a status code." },
+    { id: "part2", prompt: "Explain when you use it." },
+  ];
+  q.followUps = [
+    { id: "cross1", prompt: "How would you handle errors?" },
+    {
+      id: "cross2",
+      prompt: "Give an example.",
+      ruleOverrides: { responseSeconds: 30 },
+    },
+  ];
+  const result = inspectDefinition(normalizeDefinition(d));
+  assert.equal(result.complete, true);
+  assert.equal(result.summary.manualCount, 1);
+  assert.equal(result.summary.followUpCount, 2);
+  assert.equal(result.summary.budgetSeconds, 65 + 65 + 35);
+
+  q.followUps[1].ruleOverrides.minimumSeconds = 40;
+  assert.deepEqual(inspectDefinition(normalizeDefinition(d)).issues, [
+    {
+      path: "sections/section1/groups/group1",
+      message:
+        "Question 1, cross-question 2: Response limit must be positive and at least the minimum response time.",
+    },
+  ]);
+});
+
+test("manual and ANNU planned main questions share one interview-wide limit in either order", () => {
+  const d = definition();
+  const manualGroup = d.sections[0].groups[0];
+  manualGroup.weight = 50;
+  manualGroup.questions = Array.from({ length: 150 }, (_, index) => ({
+    id: `question${index}`,
+    prompt: "Explain a REST concept.",
+  }));
+  const annuGroup = {
+    id: "annuGroup",
+    name: "Scenario discussion",
+    source: "annu",
+    weight: 50,
+    annu: { requirements: "Discuss REST scenarios.", targetCount: 50 },
+  };
+  d.sections[0].groups = [manualGroup, annuGroup];
+  const result = inspectDefinition(normalizeDefinition(d));
+  assert.equal(result.complete, true);
+  assert.equal(result.summary.manualCount, 150);
+  assert.equal(result.summary.plannedCount, 50);
+
+  manualGroup.questions.push({ id: "extraQuestion", prompt: "Exceeds budget." });
+  assert.throws(() => normalizeDefinition(d), /Too many authored or planned/);
+  d.sections[0].groups.reverse();
+  assert.throws(() => normalizeDefinition(d), /Too many questions/);
 });

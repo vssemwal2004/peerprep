@@ -21,6 +21,27 @@ const answerSchema = new mongoose.Schema({
 }, { _id: false });
 
 const assessmentSubmissionSchema = new mongoose.Schema({
+  schemaVersion: { type: Number, default: 2 },
+  attemptGeneration: { type: Number, default: 1, min: 1 },
+  answerRevision: { type: Number, default: 0, min: 0 },
+  lastAcceptedBatch: {
+    id: { type: String, default: '' },
+    sequence: { type: Number, default: 0 },
+    hash: { type: String, default: '' },
+    answersAccepted: { type: Boolean, default: true },
+  },
+  submissionReceipt: { type: String, default: '' },
+  evaluationVersion: { type: Number, default: 0 },
+  pendingWork: {
+    status: { type: String, enum: ['pending', 'processing', 'completed', 'failed'] },
+    version: Number,
+    leaseToken: String,
+    leaseUntil: Date,
+    attempts: { type: Number, default: 0 },
+    nextAttemptAt: Date,
+    lastError: String,
+  },
+  deadlineAt: Date,
   assessmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Assessment', required: true },
   studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   deliverySections: { type: [mongoose.Schema.Types.Mixed], default: [] },
@@ -83,7 +104,7 @@ const assessmentSubmissionSchema = new mongoose.Schema({
   },
   codingJobsPending: { type: Number, default: 0 },
   codingJobsCompleted: { type: Number, default: 0 },
-}, { timestamps: true });
+}, { timestamps: true, optimisticConcurrency: true });
 
 assessmentSubmissionSchema.index({ assessmentId: 1, studentId: 1 }, { unique: true });
 assessmentSubmissionSchema.index({ assessmentId: 1, submittedAt: -1 });
@@ -92,6 +113,9 @@ assessmentSubmissionSchema.index({ status: 1, submittedAt: -1 });
 assessmentSubmissionSchema.index({ status: 1, startedAt: 1 });
 assessmentSubmissionSchema.index({ assessmentId: 1, status: 1, startedAt: -1 });
 assessmentSubmissionSchema.index({ studentId: 1, status: 1, activeSessionHeartbeatAt: -1 });
+assessmentSubmissionSchema.index({ status: 1, deadlineAt: 1, _id: 1 });
+assessmentSubmissionSchema.index({ status: 1, _id: 1 });
+assessmentSubmissionSchema.index({ 'pendingWork.status': 1, 'pendingWork.nextAttemptAt': 1, 'pendingWork.leaseUntil': 1 });
 
 export default mongoose.model('AssessmentSubmission', assessmentSubmissionSchema);
 
