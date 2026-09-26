@@ -12,7 +12,7 @@ import { validatePasswordStrength, validateEmail, generateSecureToken, hashToken
 import { checkEmailResetLimit, recordEmailResetAttempt } from '../middleware/rateLimiter.js';
 import { createNotification } from '../services/notificationService.js';
 import { normalizeCoordinatorPermissions } from '../services/coordinatorPermissions.js';
-import { invalidateUserCache } from '../middleware/auth.js';
+import { cacheUserSessionState, invalidateUserCache } from '../middleware/auth.js';
 
 function getAuthCookieOptions() {
   return {
@@ -400,10 +400,15 @@ export async function login(req, res) {
     
     // SECURITY: Single session per user - store session token hash
     const sessionTokenHash = crypto.createHash('sha256').update(token).digest('hex');
-    admin.activeSessionToken = sessionTokenHash;
-    admin.activeSessionCreatedAt = new Date();
-    await admin.save();
-    invalidateUserCache(admin._id);
+    await User.updateOne(
+      { _id: admin._id },
+      { $set: { activeSessionToken: sessionTokenHash, activeSessionCreatedAt: new Date() } },
+    );
+    await cacheUserSessionState(admin._id, {
+      activeSessionToken: sessionTokenHash,
+      passwordChangedAt: admin.passwordChangedAt,
+      isActive: admin.isActive,
+    });
     console.log('[Session] Admin session created:', admin.email, sessionTokenHash.substring(0, 10) + '...');
     
     // SECURITY: Store JWT in HttpOnly cookie instead of sending in response
@@ -429,12 +434,12 @@ export async function login(req, res) {
     logAuthAttempt(req, true, student.email, student._id);
     
     // Log student login activity
-    await logStudentActivity({
+    void logStudentActivity({
       studentId: student._id,
       studentModel: 'User',
       activityType: 'LOGIN',
       metadata: { email: student.email, studentId: student.studentId, isSpecialStudent: Boolean(student.isSpecialStudent) }
-    });
+    }).catch((error) => console.warn('[AUTH] Login activity write failed:', error.message));
     
     const token = signToken({  
       sub: student._id, 
@@ -445,10 +450,15 @@ export async function login(req, res) {
     
     // SECURITY: Single session per user - store session token hash
     const sessionTokenHash = crypto.createHash('sha256').update(token).digest('hex');
-    student.activeSessionToken = sessionTokenHash;
-    student.activeSessionCreatedAt = new Date();
-    await student.save();
-    invalidateUserCache(student._id);
+    await User.updateOne(
+      { _id: student._id },
+      { $set: { activeSessionToken: sessionTokenHash, activeSessionCreatedAt: new Date() } },
+    );
+    await cacheUserSessionState(student._id, {
+      activeSessionToken: sessionTokenHash,
+      passwordChangedAt: student.passwordChangedAt,
+      isActive: student.isActive,
+    });
     console.log('[Session] Student session created:', student.email, sessionTokenHash.substring(0, 10) + '...');
     
     // SECURITY: Store JWT in HttpOnly cookie
@@ -481,10 +491,15 @@ export async function login(req, res) {
     const token = signToken({ sub: coordinator._id, role: coordinator.role, email: coordinator.email });
 
     const sessionTokenHash = crypto.createHash('sha256').update(token).digest('hex');
-    coordinator.activeSessionToken = sessionTokenHash;
-    coordinator.activeSessionCreatedAt = new Date();
-    await coordinator.save();
-    invalidateUserCache(coordinator._id);
+    await User.updateOne(
+      { _id: coordinator._id },
+      { $set: { activeSessionToken: sessionTokenHash, activeSessionCreatedAt: new Date() } },
+    );
+    await cacheUserSessionState(coordinator._id, {
+      activeSessionToken: sessionTokenHash,
+      passwordChangedAt: coordinator.passwordChangedAt,
+      isActive: coordinator.isActive,
+    });
     console.log('[Session] Coordinator session created:', coordinator.email, sessionTokenHash.substring(0, 10) + '...');
     
     // SECURITY: Store JWT in HttpOnly cookie

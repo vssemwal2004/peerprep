@@ -1415,7 +1415,8 @@ export async function createStudentUploadBatch(req, res) {
       createdRecordIds: [],
       updatedRecordIds: studentIds,
       totalRows: studentIds.length,
-      createdCount: studentIds.length,
+      createdCount: 0,
+      updatedCount: studentIds.length,
     });
     await User.updateMany({ _id: { $in: studentIds } }, { $addToSet: { uploadBatchIds: batch._id } });
     res.status(201).json({ batch });

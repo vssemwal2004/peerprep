@@ -11,6 +11,16 @@ import StudentActivity from '../models/StudentActivity.js';
 import Resume from '../models/Resume.js';
 import Notification from '../models/Notification.js';
 import StudentAnalytics from '../models/StudentAnalytics.js';
+import StudentAnalyticsSnapshot from '../models/StudentAnalyticsSnapshot.js';
+import AssessmentFeedback from '../models/AssessmentFeedback.js';
+import EventParticipant from '../models/EventParticipant.js';
+import ExecutionJob from '../models/ExecutionJob.js';
+import MailJob from '../models/MailJob.js';
+import Feedback from '../models/Feedback.js';
+import Pair from '../models/Pair.js';
+import SlotProposal from '../models/SlotProposal.js';
+import AIInterview from '../models/AIInterview.js';
+import AIInterviewResource from '../models/AIInterviewResource.js';
 import { logActivity } from './adminActivityController.js';
 
 const ENTITY_TYPES = new Set(['student', 'coordinator', 'question_mcq', 'question_short', 'question_one_line', 'question_coding', 'question_mixed']);
@@ -92,20 +102,63 @@ export async function listBulkUploads(req, res) {
 }
 
 export async function buildDeletePreview(batch) {
+  const provenanceReady = Array.isArray(batch.createdRecordIds);
   const createdIds = (batch.createdRecordIds || []).map(String).filter(validObjectId);
+  const linkedIds = (batch.recordIds?.length ? batch.recordIds : batch.studentIds || [])
+    .map(String)
+    .filter(validObjectId);
   const preview = {
     batchId: batch._id,
     name: batch.name,
     entityType: batch.entityType || 'student',
+    linkedRecords: linkedIds.length,
     createdRecords: createdIds.length,
     deletableRecords: createdIds.length,
     retainedSharedRecords: 0,
     blockers: [],
     warnings: [],
+    linkedStudentAccounts: 0,
+    assessmentOnlyAccounts: 0,
+    linkedStudentBlockers: [],
+    linkedStudentWarnings: [],
   };
-  if (!createdIds.length) {
+  if ((batch.entityType || 'student') === 'student' && linkedIds.length) {
+    const now = new Date();
+    const [linkedStudents, activeAssessments, assessmentAttempts, codingSubmissions] = await Promise.all([
+      User.find({ _id: { $in: linkedIds }, role: 'student' }).select('_id accessScope').lean(),
+      Assessment.countDocuments({
+        assignedStudents: { $in: linkedIds },
+        lifecycleStatus: 'published',
+        $and: [
+          { $or: [{ manuallyCompletedAt: { $exists: false } }, { manuallyCompletedAt: null }] },
+          { $or: [{ endTime: { $gt: now } }, { endTime: { $exists: false } }, { endTime: null }] },
+        ],
+      }),
+      AssessmentSubmission.countDocuments({ studentId: { $in: linkedIds } }),
+      Submission.countDocuments({ user: { $in: linkedIds } }),
+    ]);
+    preview.linkedStudentAccounts = linkedStudents.length;
+    preview.assessmentOnlyAccounts = linkedStudents.filter((student) => student.accessScope === 'assessment_only').length;
+    if (activeAssessments) {
+      preview.linkedStudentBlockers.push({
+        code: 'active_assessments',
+        count: activeAssessments,
+        message: `${activeAssessments} active or upcoming assessment(s) still use students from this list. Complete them before deleting accounts.`,
+      });
+    }
+    if (assessmentAttempts || codingSubmissions) {
+      preview.linkedStudentWarnings.push(`Permanent account deletion will also remove ${assessmentAttempts} assessment attempt(s) and ${codingSubmissions} coding submission(s).`);
+    }
+    const fullAccounts = linkedStudents.length - preview.assessmentOnlyAccounts;
+    if (fullAccounts) preview.linkedStudentWarnings.push(`${fullAccounts} linked account(s) have full platform access and will also be permanently deleted.`);
+  }
+  if (!provenanceReady) {
     preview.deletableRecords = 0;
-    preview.blockers.push({ code: 'missing_provenance', count: 1, message: 'This legacy list does not identify which records it created, so cascade deletion is disabled.' });
+    preview.blockers.push({ code: 'missing_provenance', count: 1, message: 'This legacy list does not identify which records it created. Created-record deletion is unavailable, but the list itself can still be deleted safely.' });
+    return preview;
+  }
+  if (!createdIds.length) {
+    preview.warnings.push('This list did not create any records. Deleting the list will preserve every linked record.');
     return preview;
   }
   if ((batch.entityType || 'student') === 'student') {
@@ -143,6 +196,62 @@ export async function buildDeletePreview(batch) {
     if (publishedUsage) preview.blockers.push({ code: 'published_assessments', count: publishedUsage, message: `${publishedUsage} published assessment(s) use questions from this upload.` });
   }
   return preview;
+}
+
+async function deleteLinkedStudentAccounts(batch) {
+  const linkedIds = (batch.recordIds?.length ? batch.recordIds : batch.studentIds || [])
+    .map(String)
+    .filter(validObjectId);
+  const students = await User.find({ _id: { $in: linkedIds }, role: 'student' }).select('_id').lean();
+  const studentIds = students.map((student) => student._id);
+  if (!studentIds.length) return 0;
+  const pairIds = (await Pair.find({
+    $or: [{ interviewer: { $in: studentIds } }, { interviewee: { $in: studentIds } }],
+  }).select('_id').lean()).map((pair) => pair._id);
+
+  await Promise.all([
+    AssessmentSubmission.deleteMany({ studentId: { $in: studentIds } }),
+    AssessmentFeedback.deleteMany({ studentId: { $in: studentIds } }),
+    Submission.deleteMany({ user: { $in: studentIds } }),
+    ExecutionJob.deleteMany({ userId: { $in: studentIds } }),
+    Progress.deleteMany({ studentId: { $in: studentIds } }),
+    StudentActivity.deleteMany({ studentId: { $in: studentIds } }),
+    Resume.deleteMany({ student: { $in: studentIds } }),
+    Notification.deleteMany({ userId: { $in: studentIds } }),
+    StudentAnalytics.deleteMany({ studentId: { $in: studentIds } }),
+    StudentAnalyticsSnapshot.deleteMany({ studentId: { $in: studentIds } }),
+    EventParticipant.deleteMany({ studentId: { $in: studentIds } }),
+    MailJob.deleteMany({ recipientId: { $in: studentIds } }),
+    Feedback.deleteMany({ $or: [{ from: { $in: studentIds } }, { to: { $in: studentIds } }] }),
+    Pair.deleteMany({ $or: [{ interviewer: { $in: studentIds } }, { interviewee: { $in: studentIds } }] }),
+    SlotProposal.deleteMany({ $or: [{ user: { $in: studentIds } }, { pair: { $in: pairIds } }] }),
+    AIInterview.deleteMany({ ownerId: { $in: studentIds } }),
+    AIInterviewResource.deleteMany({ ownerId: { $in: studentIds } }),
+    Event.updateMany(
+      { $or: [{ allowedParticipants: { $in: studentIds } }, { participants: { $in: studentIds } }, { excludedParticipants: { $in: studentIds } }] },
+      { $pull: { allowedParticipants: { $in: studentIds }, participants: { $in: studentIds }, excludedParticipants: { $in: studentIds } } },
+    ),
+    Assessment.updateMany(
+      { assignedStudents: { $in: studentIds } },
+      { $pull: { assignedStudents: { $in: studentIds }, candidateSetAssignments: { student: { $in: studentIds } } } },
+    ),
+    StudentUploadBatch.updateMany(
+      { _id: { $ne: batch._id } },
+      [
+        { $set: {
+          studentIds: { $filter: { input: { $ifNull: ['$studentIds', []] }, as: 'id', cond: { $not: [{ $in: ['$$id', studentIds] }] } } },
+          recordIds: { $filter: { input: { $ifNull: ['$recordIds', []] }, as: 'id', cond: { $not: [{ $in: ['$$id', studentIds] }] } } },
+          createdRecordIds: { $filter: { input: { $ifNull: ['$createdRecordIds', []] }, as: 'id', cond: { $not: [{ $in: ['$$id', studentIds] }] } } },
+          updatedRecordIds: { $filter: { input: { $ifNull: ['$updatedRecordIds', []] }, as: 'id', cond: { $not: [{ $in: ['$$id', studentIds] }] } } },
+        } },
+        { $set: {
+          createdCount: { $size: '$createdRecordIds' },
+          updatedCount: { $size: '$updatedRecordIds' },
+        } },
+      ],
+    ),
+  ]);
+  return (await User.deleteMany({ _id: { $in: studentIds }, role: 'student' })).deletedCount || 0;
 }
 
 export async function getBulkUploadDeletePreview(req, res) {
@@ -201,11 +310,25 @@ export async function deleteBulkUpload(req, res) {
   if (!batch) return res.status(404).json({ error: 'Upload batch not found.' });
   if (batch.status === 'deleted') return res.status(409).json({ error: 'This upload has already been deleted.' });
   if (String(req.body?.confirmation || '') !== batch.name) return res.status(400).json({ error: 'Type the exact list name to confirm deletion.' });
+  const requestedMode = String(req.body?.mode || 'created_records');
+  const mode = ['list_only', 'created_records', 'linked_students'].includes(requestedMode)
+    ? requestedMode
+    : 'created_records';
   const preview = await buildDeletePreview(batch.toObject());
-  if (preview.blockers.length) return res.status(409).json({ error: 'Deletion is blocked by linked data.', preview });
+  if (mode === 'created_records' && preview.blockers.length) {
+    return res.status(409).json({ error: 'Created-record deletion is blocked by linked data.', preview });
+  }
+  if (mode === 'linked_students' && preview.linkedStudentBlockers.length) {
+    return res.status(409).json({ error: 'Student-account deletion is blocked while an assessment is active or upcoming.', preview });
+  }
   const createdIds = (batch.createdRecordIds || []).map(String);
   let deletedRecords = 0;
-  if ((batch.entityType || 'student') === 'student') {
+  if (mode === 'linked_students') {
+    if ((batch.entityType || 'student') !== 'student') {
+      return res.status(400).json({ error: 'Linked-account deletion is available only for student lists.' });
+    }
+    deletedRecords = await deleteLinkedStudentAccounts(batch);
+  } else if (mode === 'created_records' && (batch.entityType || 'student') === 'student') {
     const students = await User.find({ _id: { $in: createdIds }, role: 'student' }).select('_id uploadBatchIds').lean();
     const exclusiveIds = students.filter((student) => !(student.uploadBatchIds || []).some((id) => String(id) !== String(batch._id))).map((student) => student._id);
     const sharedIds = students.filter((student) => (student.uploadBatchIds || []).some((id) => String(id) !== String(batch._id))).map((student) => student._id);
@@ -221,15 +344,18 @@ export async function deleteBulkUpload(req, res) {
       User.updateMany({ _id: { $in: sharedIds } }, { $pull: { uploadBatchIds: batch._id } }),
     ]);
     deletedRecords = (await User.deleteMany({ _id: { $in: exclusiveIds }, role: 'student' })).deletedCount || 0;
-  } else if (batch.entityType === 'coordinator') {
+  } else if (mode === 'created_records' && batch.entityType === 'coordinator') {
     deletedRecords = (await User.deleteMany({ _id: { $in: createdIds }, role: 'coordinator' })).deletedCount || 0;
-  } else if (String(batch.entityType).startsWith('question_')) {
+  } else if (mode === 'created_records' && String(batch.entityType).startsWith('question_')) {
     deletedRecords = (await QuestionLibrary.deleteMany({ _id: { $in: createdIds } })).deletedCount || 0;
   }
+  // Removing a list must remove its reverse membership link even when every
+  // underlying account is intentionally retained (legacy/list-only mode).
+  await User.updateMany({ uploadBatchIds: batch._id }, { $pull: { uploadBatchIds: batch._id } });
   batch.status = 'deleted';
   batch.deletedAt = new Date();
   batch.deletedBy = req.user._id;
-  batch.deletionSummary = { deletedRecords, retainedSharedRecords: preview.retainedSharedRecords || 0 };
+  batch.deletionSummary = { mode, deletedRecords, retainedSharedRecords: preview.retainedSharedRecords || 0 };
   await batch.save();
   await logActivity({
     userEmail: req.user.email,
@@ -237,9 +363,22 @@ export async function deleteBulkUpload(req, res) {
     actionType: 'BULK_DELETE',
     targetType: 'UPLOAD_BATCH',
     targetId: String(batch._id),
-    description: `Deleted upload batch “${batch.name}” and ${deletedRecords} created record(s)`,
+    description: mode === 'list_only'
+      ? `Deleted upload list “${batch.name}” without deleting linked records`
+      : mode === 'linked_students'
+        ? `Deleted upload list “${batch.name}” and ${deletedRecords} linked student account(s)`
+        : `Deleted upload batch “${batch.name}” and ${deletedRecords} created record(s)`,
     metadata: batch.deletionSummary,
     req,
   });
-  res.json({ message: `Upload deleted. ${deletedRecords} created record${deletedRecords === 1 ? '' : 's'} removed.`, deletedRecords, retainedSharedRecords: preview.retainedSharedRecords || 0 });
+  res.json({
+    message: mode === 'list_only'
+      ? 'Upload list deleted. All linked records were preserved.'
+      : mode === 'linked_students'
+        ? `Upload list and ${deletedRecords} linked student account${deletedRecords === 1 ? '' : 's'} deleted.`
+        : `Upload deleted. ${deletedRecords} created record${deletedRecords === 1 ? '' : 's'} removed.`,
+    mode,
+    deletedRecords,
+    retainedSharedRecords: preview.retainedSharedRecords || 0,
+  });
 }

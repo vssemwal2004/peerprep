@@ -645,8 +645,8 @@ export const api = {
     request(`/bulk-uploads/${batchId}`, { method: "PATCH", body: { name } }),
   updateBulkUploadStatus: (batchId, status) =>
     request(`/bulk-uploads/${batchId}/status`, { method: "PATCH", body: { status } }),
-  deleteBulkUpload: (batchId, confirmation) =>
-    request(`/bulk-uploads/${batchId}`, { method: "DELETE", body: { confirmation } }),
+  deleteBulkUpload: (batchId, confirmation, mode = "created_records") =>
+    request(`/bulk-uploads/${batchId}`, { method: "DELETE", body: { confirmation, mode } }),
   downloadBulkUpload: async (batchId, kind = "data") => {
     const res = await fetch(`${API_BASE}/bulk-uploads/${batchId}/download?kind=${encodeURIComponent(kind)}`, { credentials: "include" });
     if (!res.ok) {
@@ -1042,6 +1042,12 @@ export const api = {
   logStudentAssessmentMonitoring: (id, body) =>
     request(`/student/assessment/${id}/monitoring`, {
       method: "POST",
+      body,
+      timeoutMs: 10000,
+    }),
+  saveStudentAssessmentProgress: (id, body) =>
+    request(`/student/assessment/${id}/answers`, {
+      method: "PATCH",
       body,
       timeoutMs: 10000,
     }),

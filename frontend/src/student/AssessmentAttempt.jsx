@@ -155,6 +155,14 @@ const CAMERA_WARNING_STREAK_LIMIT = 3;
 const FACE_CENTER_TOLERANCE_RATIO = 0.46;
 const FACE_MIN_WIDTH_RATIO = 0.08;
 const NETWORK_FAILURES_BEFORE_PAUSE = 2;
+const AUTOSAVE_BASE_MS = Math.max(15000, Number(import.meta.env.VITE_ASSESSMENT_AUTOSAVE_MS || 25000));
+const AUTOSAVE_JITTER_MS = Math.max(0, Number(import.meta.env.VITE_ASSESSMENT_AUTOSAVE_JITTER_MS || 10000));
+const HEARTBEAT_BASE_MS = Math.max(10000, Number(import.meta.env.VITE_ASSESSMENT_HEARTBEAT_MS || 15000));
+const HEARTBEAT_JITTER_MS = Math.max(0, Number(import.meta.env.VITE_ASSESSMENT_HEARTBEAT_JITTER_MS || 5000));
+
+const answerPayloadKey = (answer = {}) => `${Number(answer.sectionIndex)}-${Number(answer.questionIndex)}`;
+const answerPayloadSignature = (answer = {}) => JSON.stringify(answer);
+const nextJitteredDelay = (baseMs, jitterMs) => baseMs + (jitterMs > 0 ? Math.random() * jitterMs : 0);
 
 const hasVeryWeakConnection = () => {
   if (typeof navigator === 'undefined') return false;
@@ -408,8 +416,11 @@ export default function AssessmentAttempt() {
   const fullscreenAutoSubmitRef = useRef(false);
   const submissionInFlightRef = useRef(false);
   const autoSaveInFlightRef = useRef(false);
+  const autoSavePromiseRef = useRef(null);
   const answersDirtyRef = useRef(false);
   const autoSavePayloadRef = useRef(null);
+  const answerRevisionRef = useRef(0);
+  const savedAnswerSignaturesRef = useRef(new Map());
   const heartbeatInFlightRef = useRef(false);
   const handleSubmitRef = useRef(null);
   const recordViolationRef = useRef(null);
@@ -447,6 +458,7 @@ export default function AssessmentAttempt() {
   })());
   const rulesSeenStorageKey = `peerprep_assessment_rules_seen:${id}`;
   const activeSessionStorageKey = `peerprep_assessment_active_session:${id}`;
+  const draftStorageKey = `peerprep_assessment_answer_draft:${id}`;
 
   useEffect(() => {
     liveCodingCodeRef.current = {};
@@ -642,7 +654,10 @@ export default function AssessmentAttempt() {
   const answersArray = useMemo(() => buildAnswersPayload(), [buildAnswersPayload]);
 
   useEffect(() => {
-    if (phase === 'active') answersDirtyRef.current = true;
+    if (phase === 'active') {
+      answerRevisionRef.current += 1;
+      answersDirtyRef.current = true;
+    }
   }, [answersArray, phase]);
 
   useEffect(() => {
@@ -662,6 +677,25 @@ export default function AssessmentAttempt() {
       sessionId: assessmentSessionIdRef.current,
     };
   }, [assessment?._id, answersArray, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violationScore, pauseCount, lastPauseAt, securityHeartbeat, violations]);
+
+  // A short autosave interval must not make a browser refresh or transient
+  // outage lose the newest local edits. Persist the display-state draft
+  // locally; the server remains the durable source of truth.
+  useEffect(() => {
+    if (phase !== 'active' || !submission?._id) return undefined;
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem(draftStorageKey, JSON.stringify({
+          submissionId: String(submission._id),
+          updatedAt: Date.now(),
+          answersMap,
+        }));
+      } catch {
+        // Storage can be unavailable in hardened/private browser modes.
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [answersMap, draftStorageKey, phase, submission?._id]);
   const flatQuestions = useMemo(() => {
     const list = [];
     let mcqCount = 0;
@@ -854,11 +888,35 @@ export default function AssessmentAttempt() {
 
   const handleSave = useCallback(async () => {
     if (!assessment || isSubmitted || phase !== 'active' || !answersDirtyRef.current || autoSaveInFlightRef.current) return;
+    const currentPayload = autoSavePayloadRef.current;
+    const pendingAnswers = (currentPayload?.answers || []).filter((answer) => (
+      savedAnswerSignaturesRef.current.get(answerPayloadKey(answer)) !== answerPayloadSignature(answer)
+    ));
+    if (pendingAnswers.length === 0) {
+      answersDirtyRef.current = false;
+      return;
+    }
+
+    const sentRevision = answerRevisionRef.current;
+    const sentSignatures = new Map(pendingAnswers.map((answer) => [
+      answerPayloadKey(answer),
+      answerPayloadSignature(answer),
+    ]));
     autoSaveInFlightRef.current = true;
     setSaving(true);
     try {
-      await api.submitStudentAssessment(autoSavePayloadRef.current);
-      answersDirtyRef.current = false;
+      const savePromise = api.saveStudentAssessmentProgress(assessment._id, {
+        ...currentPayload,
+        answers: pendingAnswers,
+      });
+      autoSavePromiseRef.current = savePromise;
+      await savePromise;
+      sentSignatures.forEach((signature, key) => savedAnswerSignaturesRef.current.set(key, signature));
+      const latestAnswers = autoSavePayloadRef.current?.answers || [];
+      const hasNewChanges = latestAnswers.some((answer) => (
+        savedAnswerSignaturesRef.current.get(answerPayloadKey(answer)) !== answerPayloadSignature(answer)
+      ));
+      answersDirtyRef.current = answerRevisionRef.current !== sentRevision || hasNewChanges;
     } catch (err) {
       if (err?.response?.status === 409 && err?.response?.data?.code === 'ACTIVE_ASSESSMENT_SESSION') {
         setActiveSessionConflict(true);
@@ -866,6 +924,7 @@ export default function AssessmentAttempt() {
       }
       toast.error(err.message || 'Auto-save failed');
     } finally {
+      autoSavePromiseRef.current = null;
       autoSaveInFlightRef.current = false;
       setSaving(false);
     }
@@ -895,6 +954,9 @@ export default function AssessmentAttempt() {
     setSaving(true);
     let submissionCompleted = false;
     try {
+      if (autoSavePromiseRef.current) {
+        await autoSavePromiseRef.current.catch(() => null);
+      }
       await api.submitStudentAssessment({
         assessmentId: assessment._id,
         answers: buildAnswersPayload(),
@@ -925,6 +987,12 @@ export default function AssessmentAttempt() {
 
     if (!submissionCompleted) return false;
 
+    try {
+      localStorage.removeItem(draftStorageKey);
+    } catch {
+      // Ignore local cleanup failures after the durable submit succeeded.
+    }
+
     // Cleanup/proctoring must never prevent the mandatory feedback redirect
     // after the server has already accepted the assessment submission.
     try {
@@ -935,7 +1003,7 @@ export default function AssessmentAttempt() {
     toast.success(auto ? (autoMessage || 'Time is up. Assessment auto-submitted.') : 'Assessment submitted successfully');
     navigate(`/student/assessment/${assessment._id}/feedback`, { replace: true });
     return true;
-  }, [assessment, answersMap, buildAnswersPayload, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violationScore, pauseCount, lastPauseAt, securityHeartbeat, violations, stopAiProctoring, toast, navigate]);
+  }, [assessment, answersMap, buildAnswersPayload, tabSwitches, fullscreenExits, copyPasteCount, cameraFlags, violationScore, pauseCount, lastPauseAt, securityHeartbeat, violations, stopAiProctoring, toast, navigate, draftStorageKey]);
 
   const triggerForcePause = useCallback((type, message, serverState = {}) => {
     if (type !== 'tab_switch') {
@@ -1220,6 +1288,22 @@ export default function AssessmentAttempt() {
           ...displayAnswer,
         };
       });
+      let restoredLocalDraft = false;
+      try {
+        const localDraft = JSON.parse(localStorage.getItem(draftStorageKey) || 'null');
+        const serverSavedAt = new Date(data.submission?.lastSavedAt || 0).getTime();
+        if (
+          localDraft?.submissionId === String(data.submission?._id || '')
+          && Number(localDraft.updatedAt || 0) > serverSavedAt
+          && localDraft.answersMap
+          && typeof localDraft.answersMap === 'object'
+        ) {
+          Object.assign(initialAnswers, localDraft.answersMap);
+          restoredLocalDraft = true;
+        }
+      } catch {
+        // Ignore malformed or unavailable local drafts.
+      }
       (attemptAssessment?.sections || []).forEach((sectionItem, displaySectionIndex) => {
         if (sectionItem?.type !== 'coding') return;
         (sectionItem.questions || []).forEach((questionItem, displayQuestionIndex) => {
@@ -1243,6 +1327,21 @@ export default function AssessmentAttempt() {
           };
         });
       });
+      savedAnswerSignaturesRef.current = restoredLocalDraft ? new Map() : new Map(Object.entries(initialAnswers).map(([key, value]) => {
+        const [displaySectionIndex, displayQuestionIndex] = key.split('-').map(Number);
+        const displayQuestion = attemptAssessment?.sections?.[displaySectionIndex]?.questions?.[displayQuestionIndex];
+        const originSectionIndex = Number(displayQuestion?.__originSectionIndex ?? displaySectionIndex);
+        const originQuestionIndex = Number(displayQuestion?.__originQuestionIndex ?? displayQuestionIndex);
+        const { codeByLanguage: _codeByLanguage, ...payload } = value;
+        const normalized = {
+          sectionIndex: originSectionIndex,
+          questionIndex: originQuestionIndex,
+          ...payload,
+        };
+        return [answerPayloadKey(normalized), answerPayloadSignature(normalized)];
+      }));
+      answerRevisionRef.current = 0;
+      answersDirtyRef.current = false;
       setAnswersMap(initialAnswers);
       setTabSwitches(data.submission?.tabSwitches || 0);
       setFullscreenExits(data.submission?.fullscreenExits || 0);
@@ -1290,7 +1389,7 @@ export default function AssessmentAttempt() {
     } finally {
       setLoading(false);
     }
-  }, [id, rulesSeenStorageKey, syncCompletedSecuritySteps]);
+  }, [id, rulesSeenStorageKey, draftStorageKey, syncCompletedSecuritySteps]);
 
   useEffect(() => {
     loadAssessment();
@@ -1470,10 +1569,19 @@ export default function AssessmentAttempt() {
 
   useEffect(() => {
     if (!secureActive || isSubmitted) return undefined;
-    const interval = setInterval(() => {
-      handleSave();
-    }, 15000);
-    return () => clearInterval(interval);
+    let cancelled = false;
+    let timer;
+    const tick = async () => {
+      await handleSave();
+      if (!cancelled) {
+        timer = setTimeout(tick, nextJitteredDelay(AUTOSAVE_BASE_MS, AUTOSAVE_JITTER_MS));
+      }
+    };
+    timer = setTimeout(tick, nextJitteredDelay(AUTOSAVE_BASE_MS, AUTOSAVE_JITTER_MS));
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [secureActive, isSubmitted, handleSave]);
 
   useEffect(() => {
@@ -2195,7 +2303,7 @@ export default function AssessmentAttempt() {
   }, [secureActive, audioMonitoringEnabled, assessment?._id, securitySettings.audioNoiseThreshold, securitySettings.audioEventCooldownSec]);
 
   useEffect(() => {
-    if (!secureActive) return undefined;
+    if (!secureActive || isSubmitted) return undefined;
     const sendHeartbeat = async () => {
       if (heartbeatInFlightRef.current) return;
       heartbeatInFlightRef.current = true;
@@ -2278,10 +2386,20 @@ export default function AssessmentAttempt() {
         heartbeatInFlightRef.current = false;
       }
     };
-    void sendHeartbeat();
-    const interval = setInterval(sendHeartbeat, 10000);
-    return () => clearInterval(interval);
-  }, [secureActive, assessment?._id, fullscreenRequired, fullscreenRecovery.active, tabGuardEnabled, cameraRequired, cameraFlags]);
+    let cancelled = false;
+    let timer;
+    const tick = async () => {
+      await sendHeartbeat();
+      if (!cancelled) {
+        timer = setTimeout(tick, nextJitteredDelay(HEARTBEAT_BASE_MS, HEARTBEAT_JITTER_MS));
+      }
+    };
+    timer = setTimeout(tick, Math.random() * Math.min(5000, HEARTBEAT_BASE_MS));
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [secureActive, isSubmitted, assessment?._id, fullscreenRequired, fullscreenRecovery.active, tabGuardEnabled, cameraRequired, cameraFlags]);
 
   const wouldExceedQuestionAttemptLimit = (sectionIndex, questionIndex, nextValue) => {
     const sectionItem = assessment?.sections?.[sectionIndex];
@@ -3047,7 +3165,6 @@ export default function AssessmentAttempt() {
   };
 
   const saveAndNext = () => {
-    void handleSave();
     goToNextQuestion();
   };
 

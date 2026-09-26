@@ -16,6 +16,8 @@ export async function connectDb() {
     maxPoolSize: Number(process.env.MONGODB_MAX_POOL_SIZE || 20),
     minPoolSize: Number(process.env.MONGODB_MIN_POOL_SIZE || 0),
     maxIdleTimeMS: Number(process.env.MONGODB_MAX_IDLE_TIME_MS || 30000),
+    waitQueueTimeoutMS: Number(process.env.MONGODB_WAIT_QUEUE_TIMEOUT_MS || 5000),
+    maxConnecting: Number(process.env.MONGODB_MAX_CONNECTING || 2),
   };
   const maskUri = (u) => {
     try {

@@ -3,6 +3,7 @@ import User from '../models/User.js';
 import { HttpError } from '../utils/errors.js';
 import crypto from 'crypto';
 import { hasCoordinatorPermission } from '../services/coordinatorPermissions.js';
+import { getValkeyClient, isValkeyEnabled } from '../utils/valkey.js';
 
 /**
  * Simple in-memory cache for user data to reduce database hits
@@ -13,8 +14,21 @@ const CACHE_TTL = 60 * 1000; // 60 seconds
 // Session state changes rarely, but requireAuth runs once for every dashboard
 // request. Keep a deliberately short cache so a burst of parallel requests
 // performs one MongoDB read instead of one read per request.
-const SESSION_CACHE_TTL = Number(process.env.AUTH_SESSION_CACHE_TTL_MS || 5000);
+const SESSION_CACHE_TTL = Number(
+  process.env.AUTH_SESSION_CACHE_TTL_MS
+  || (process.env.NODE_ENV === 'production' ? 30000 : 5000),
+);
 const sessionCache = new Map();
+const sessionStateLoads = new Map();
+const SESSION_CACHE_PREFIX = 'peerprep:auth-session:v1:';
+
+function normalizeSessionState(value) {
+  if (!value) return null;
+  return {
+    ...value,
+    passwordChangedAt: value.passwordChangedAt ? new Date(value.passwordChangedAt) : null,
+  };
+}
 
 function getCachedUser(userId) {
   const cached = userCache.get(userId);
@@ -34,6 +48,28 @@ export function invalidateUserCache(userId) {
   const key = String(userId);
   userCache.delete(key);
   sessionCache.delete(key);
+  if (isValkeyEnabled()) {
+    const client = getValkeyClient();
+    if (client) void client.sendCommand(['DEL', `${SESSION_CACHE_PREFIX}${key}`]).catch(() => {});
+  }
+}
+
+export async function cacheUserSessionState(userId, state = {}) {
+  if (!userId) return;
+  const key = String(userId);
+  const normalized = normalizeSessionState({ _id: key, ...state });
+  userCache.delete(key);
+  sessionCache.set(key, { value: normalized, timestamp: Date.now() });
+  if (!isValkeyEnabled()) return;
+  const client = getValkeyClient();
+  if (!client) return;
+  await client.sendCommand([
+    'SET',
+    `${SESSION_CACHE_PREFIX}${key}`,
+    JSON.stringify(normalized),
+    'PX',
+    String(SESSION_CACHE_TTL),
+  ]).catch(() => {});
 }
 
 // Clean up expired cache entries every 5 minutes
@@ -52,13 +88,51 @@ cacheCleanupTimer.unref?.();
 
 async function getSessionState(userId) {
   const key = String(userId);
-  const cached = sessionCache.get(key);
-  if (cached && Date.now() - cached.timestamp < SESSION_CACHE_TTL) return cached.value;
-  const value = await User.findById(userId)
+  const redisKey = `${SESSION_CACHE_PREFIX}${key}`;
+  let sharedCacheAvailable = false;
+
+  if (isValkeyEnabled()) {
+    try {
+      const client = getValkeyClient();
+      const cachedJson = await client?.sendCommand(['GET', redisKey]);
+      sharedCacheAvailable = Boolean(client);
+      if (cachedJson) return normalizeSessionState(JSON.parse(cachedJson));
+    } catch {
+      // Fall back to the bounded in-process cache and MongoDB.
+    }
+  }
+
+  if (!sharedCacheAvailable) {
+    const cached = sessionCache.get(key);
+    if (cached && Date.now() - cached.timestamp < SESSION_CACHE_TTL) return cached.value;
+  }
+  if (sessionStateLoads.has(key)) return sessionStateLoads.get(key);
+
+  const load = User.findById(userId)
     .select('_id activeSessionToken passwordChangedAt isActive')
-    .lean();
-  if (value) sessionCache.set(key, { value, timestamp: Date.now() });
-  return value;
+    .lean()
+    .then(async (value) => {
+      const normalized = normalizeSessionState(value);
+      if (normalized) {
+        sessionCache.set(key, { value: normalized, timestamp: Date.now() });
+        if (isValkeyEnabled()) {
+          const client = getValkeyClient();
+          if (client) {
+            await client.sendCommand([
+              'SET',
+              redisKey,
+              JSON.stringify(normalized),
+              'PX',
+              String(SESSION_CACHE_TTL),
+            ]).catch(() => {});
+          }
+        }
+      }
+      return normalized;
+    })
+    .finally(() => sessionStateLoads.delete(key));
+  sessionStateLoads.set(key, load);
+  return load;
 }
 
 /**

@@ -28,6 +28,21 @@ test('legacy uploads without created-record provenance are blocked from cascade 
   assert.equal(preview.blockers[0].code, 'missing_provenance');
 });
 
+test('a tracked list with zero created records can be removed without deleting accounts', async () => {
+  const preview = await buildDeletePreview({
+    _id: '507f1f77bcf86cd799439011',
+    name: 'Assessment candidate list',
+    entityType: 'student',
+    recordIds: [],
+    createdRecordIds: [],
+    updatedRecordIds: [],
+  });
+  assert.equal(preview.linkedRecords, 0);
+  assert.equal(preview.createdRecords, 0);
+  assert.equal(preview.deletableRecords, 0);
+  assert.equal(preview.blockers.length, 0);
+});
+
 test('bulk upload CSV export preserves commas and neutralizes spreadsheet formulas', () => {
   const csv = buildBulkUploadCsv([{ name: 'Doe, Jane', note: '=HYPERLINK("bad")' }]);
   assert.match(csv, /"Doe, Jane"/);

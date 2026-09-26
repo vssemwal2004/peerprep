@@ -1,9 +1,6 @@
 import './setup.js';
 import app from './setupApp.js';
 import { closeDb, connectDb } from './utils/db.js';
-import './jobs/reminders.js';
-import './jobs/analytics.js';
-import './jobs/assessmentExpiry.js';
 import { seedAdminIfNeeded } from './controllers/authController.js';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
@@ -202,7 +199,16 @@ io.on('connection', (socket) => {
 app.set('io', io);
 setIo(io);
 startEmbeddedWorkers();
-startMailQueueWorker();
+const scheduledJobsEnabled = String(process.env.START_SCHEDULED_JOBS || 'true').trim().toLowerCase() !== 'false';
+const mailWorkerEnabled = String(process.env.START_MAIL_WORKER || 'true').trim().toLowerCase() !== 'false';
+if (scheduledJobsEnabled) {
+  await Promise.all([
+    import('./jobs/reminders.js'),
+    import('./jobs/analytics.js'),
+    import('./jobs/assessmentExpiry.js'),
+  ]);
+}
+if (mailWorkerEnabled) startMailQueueWorker();
 
 // SECURITY: Graceful shutdown handlers
 const shutdown = async (signal) => {

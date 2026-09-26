@@ -18,6 +18,10 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Production load-test credentials and results
+load-tests/users*.json
+load-tests/results/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -10,6 +10,8 @@ import { mongoSanitizeMiddleware, xssProtectionMiddleware } from './middleware/s
 import { apiLimiter } from './middleware/rateLimiter.js';
 import { apiRequestTimeout } from './middleware/requestTimeout.js';
 import { requestPerformance } from './middleware/requestPerformance.js';
+import mongoose from 'mongoose';
+import { getValkeyClient, isValkeyEnabled } from './utils/valkey.js';
 
 const app = express();
 
@@ -137,7 +139,14 @@ app.use((req, res, next) => {
 
 // Request logging - use 'combined' in production, 'dev' in development
 if (process.env.NODE_ENV === 'production') {
-  app.use(morgan('combined'));
+  const logNoisyAssessmentRequests = String(process.env.LOG_NOISY_ASSESSMENT_REQUESTS || '').toLowerCase() === 'true';
+  app.use(morgan('combined', {
+    skip: (req, res) => {
+      if (logNoisyAssessmentRequests || res.statusCode >= 400) return false;
+      if ((req.originalUrl || '').startsWith('/api/health')) return true;
+      return /^\/api\/student\/assessment\/[0-9a-f]{24}\/(?:heartbeat|monitoring)(?:\?|$)/i.test(req.originalUrl || '');
+    },
+  }));
 } else {
   app.use(morgan('dev'));
 }
@@ -147,10 +156,25 @@ if (process.env.NODE_ENV === 'production') {
 app.use('/api', requestPerformance);
 app.use('/api', apiRequestTimeout);
 
+// Liveness only proves the process/event loop can answer. Readiness also
+// verifies dependencies before a load balancer sends production traffic.
+app.get('/api/health', (req, res) => res.json({ ok: true }));
+app.get('/api/health/ready', async (req, res) => {
+  const mongoReady = mongoose.connection.readyState === 1;
+  let redisReady = !isValkeyEnabled();
+  if (isValkeyEnabled()) {
+    try {
+      redisReady = await getValkeyClient()?.sendCommand(['PING']) === 'PONG';
+    } catch {
+      redisReady = false;
+    }
+  }
+  const ready = mongoReady && redisReady;
+  return res.status(ready ? 200 : 503).json({ ok: ready, mongo: mongoReady, redis: redisReady });
+});
+
 // General API rate limiting (generous limits)
 app.use('/api', apiLimiter);
-
-app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 app.use('/api', routes);
 
