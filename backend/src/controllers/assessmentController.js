@@ -20,6 +20,7 @@ import {
   getCodingQuestionScore,
   scoreAssessmentWithTestCases,
 } from '../services/assessmentScoringService.js';
+import { mergeAssessmentAnswers } from '../services/assessmentAnswerService.js';
 import crypto from 'crypto';
 import {
   AI_PROCTORING_VIOLATION_TYPES,
@@ -79,9 +80,14 @@ async function syncAssessmentCandidateBatch(assessment) {
         originalFileName: 'assessment-candidates.csv',
         uploadedBy: assessment.createdBy,
         studentIds,
+        recordIds: studentIds,
+        // An assessment candidate list groups existing accounts; it does not
+        // claim ownership of those accounts for cascade deletion.
+        createdRecordIds: [],
+        updatedRecordIds: studentIds,
         totalRows: studentIds.length,
-        createdCount: studentIds.length,
-        updatedCount: 0,
+        createdCount: 0,
+        updatedCount: studentIds.length,
         failedCount: 0,
         sourceType: 'assessment',
         sourceAssessmentId: assessment._id,
@@ -483,6 +489,7 @@ function resetSubmissionSecuritySetup(submission) {
 }
 
 const ASSESSMENT_EXPIRY_GRACE_MS = 24 * 60 * 60 * 1000;
+const ACTIVE_SESSION_FRESH_MS = Math.max(30000, Number(process.env.ASSESSMENT_ACTIVE_SESSION_FRESH_MS || 45000));
 
 function sanitizeAssessmentForResponse(assessment) {
   if (!assessment) return assessment;
@@ -1659,41 +1666,6 @@ function applyMarksAndTotals(sections = []) {
 
 function scoreAssessment(assessment, answers = []) {
   return scoreAssessmentWithTestCases(assessment, answers);
-}
-
-function mergeAssessmentAnswers(existingAnswers = [], incomingAnswers = []) {
-  if (!Array.isArray(incomingAnswers)) return existingAnswers;
-
-  const previousByKey = new Map((existingAnswers || []).map((answer) => [
-    `${answer.sectionIndex}-${answer.questionIndex}`,
-    typeof answer.toObject === 'function' ? answer.toObject() : answer,
-  ]));
-
-  return incomingAnswers.map((incoming) => {
-    const key = `${incoming?.sectionIndex}-${incoming?.questionIndex}`;
-    const previous = previousByKey.get(key);
-    const incomingCode = String(incoming?.code ?? '');
-    const previousCode = String(previous?.code ?? '');
-    const sameCodingSubmission = Boolean(
-      previous
-      && (Object.prototype.hasOwnProperty.call(incoming || {}, 'code')
-        || Object.prototype.hasOwnProperty.call(previous, 'code'))
-      && incomingCode === previousCode
-      && String(incoming?.language || '') === String(previous?.language || ''),
-    );
-
-    if (!sameCodingSubmission) return { ...incoming };
-
-    return {
-      ...incoming,
-      jobId: previous.jobId,
-      executionStatus: previous.executionStatus,
-      executionVerdict: previous.executionVerdict,
-      executionResult: previous.executionResult,
-      submissionId: previous.submissionId,
-      lastEvaluatedAt: previous.lastEvaluatedAt,
-    };
-  });
 }
 
 function isAssessmentAnswerAttempted(answer = {}, question = {}, type = '') {
@@ -3882,7 +3854,7 @@ export async function startStudentAssessment(req, res) {
 
     if (!submission) {
       const delivery = buildDeliverySections(assessment, studentId);
-      submission = await AssessmentSubmission.create({
+      submission = new AssessmentSubmission({
         assessmentId: assessment._id,
         studentId,
         deliverySections: delivery.sections,
@@ -3952,7 +3924,7 @@ export async function beginStudentAssessment(req, res) {
     const activeSessionIsFresh = Boolean(
       submission?.activeSessionId
       && activeHeartbeatAt
-      && now.getTime() - activeHeartbeatAt < 30000,
+      && now.getTime() - activeHeartbeatAt < ACTIVE_SESSION_FRESH_MS,
     );
     if (activeSessionIsFresh && submission.activeSessionId !== sessionId) {
       return res.status(409).json({
@@ -3965,7 +3937,7 @@ export async function beginStudentAssessment(req, res) {
       studentId,
       assessmentId: { $ne: assessment._id },
       status: 'in_progress',
-      activeSessionHeartbeatAt: { $gte: new Date(now.getTime() - 30000) },
+      activeSessionHeartbeatAt: { $gte: new Date(now.getTime() - ACTIVE_SESSION_FRESH_MS) },
       activeSessionId: { $nin: ['', null] },
     }).select('assessmentId activeSessionHeartbeatAt').lean();
     if (otherActiveSubmission) {
@@ -4008,7 +3980,7 @@ export async function beginStudentAssessment(req, res) {
 
     if (!submission) {
       const delivery = buildDeliverySections(assessment, studentId);
-      submission = await AssessmentSubmission.create({
+      submission = new AssessmentSubmission({
         assessmentId: assessment._id,
         studentId,
         deliverySections: delivery.sections,
@@ -4023,15 +3995,12 @@ export async function beginStudentAssessment(req, res) {
       submission.startedAt = now;
       submission.securityCompletedAt = submission.securityCompletedAt || now;
       submission.status = 'in_progress';
-      await submission.save();
     } else if (!submission.securityCompletedAt) {
       submission.securityCompletedAt = now;
-      await submission.save();
     }
 
     if (submission.pauseStartedAt) {
       finishSubmissionSecurityPause(submission, now);
-      await submission.save();
     }
 
     submission.activeSessionId = sessionId;
@@ -4117,7 +4086,14 @@ export async function submitAssessment(req, res) {
 
     const attemptLimit = assessment.attemptLimit || 1;
     if (submission?.status === 'submitted' && submission.attemptCount >= attemptLimit) {
-      return res.status(403).json({ error: 'No attempts remaining for this assessment.' });
+      // Submission is idempotent: a retry after the original response was lost
+      // should return the already-accepted result, not trigger another retry.
+      return res.json({
+        message: 'Assessment already submitted',
+        status: submission.status,
+        submittedAt: submission.submittedAt,
+        serverTime: now,
+      });
     }
 
     if (!submission) {
@@ -4194,11 +4170,6 @@ export async function submitAssessment(req, res) {
     submission.lastIp = req.ip;
     submission.lastUserAgent = req.headers['user-agent'];
 
-    const currentScoring = scoreAssessment(deliveredAssessment, submission.answers);
-    submission.score = currentScoring.score;
-    submission.maxMarks = currentScoring.maxMarks;
-    submission.accuracy = currentScoring.accuracy;
-
     if (finalStatus === 'submitted' && !submission.submittedAt) {
       submission.submittedAt = now;
       submission.attemptCount = (submission.attemptCount || 0) + 1;
@@ -4259,6 +4230,15 @@ export async function submitAssessment(req, res) {
     console.error('Error submitting assessment:', err);
     res.status(500).json({ error: 'Failed to submit assessment' });
   }
+}
+
+export async function saveAssessmentProgress(req, res) {
+  req.body = {
+    ...(req.body || {}),
+    assessmentId: req.params.id,
+    status: 'in_progress',
+  };
+  return submitAssessment(req, res);
 }
 
 function parseReportDate(value) {
@@ -4794,16 +4774,41 @@ export async function getAssessmentReports(req, res) {
       { $limit: 12 },
     ]);
 
+    const assessmentSubmissionSummaryLookup = {
+      $lookup: {
+        from: 'assessmentsubmissions',
+        let: { assessmentId: '$_id' },
+        pipeline: [
+          { $match: { $expr: { $eq: ['$assessmentId', '$$assessmentId'] } } },
+          {
+            $group: {
+              _id: null,
+              submissionCount: { $sum: 1 },
+              completedCount: { $sum: { $cond: [{ $eq: ['$status', 'submitted'] }, 1, 0] } },
+              lastAttemptAt: { $max: '$startedAt' },
+              avgScore: { $avg: { $ifNull: ['$score', 0] } },
+              maxScore: { $max: { $ifNull: ['$score', 0] } },
+              minScore: { $min: { $ifNull: ['$score', 0] } },
+              violationCount: {
+                $sum: {
+                  $add: [
+                    { $ifNull: ['$tabSwitches', 0] },
+                    { $ifNull: ['$fullscreenExits', 0] },
+                    { $ifNull: ['$cameraFlags', 0] },
+                    { $ifNull: ['$copyPasteCount', 0] },
+                  ],
+                },
+              },
+            },
+          },
+        ],
+        as: 'submissionSummary',
+      },
+    };
+
     const assessmentSummaries = await Assessment.aggregate([
       { $match: assessmentSummariesMatch },
-      {
-        $lookup: {
-          from: 'assessmentsubmissions',
-          localField: '_id',
-          foreignField: 'assessmentId',
-          as: 'submissions',
-        },
-      },
+      assessmentSubmissionSummaryLookup,
       {
         $project: {
           title: 1,
@@ -4824,37 +4829,14 @@ export async function getAssessmentReports(req, res) {
             },
           },
           totalMarks: 1,
-          attempted: { $size: { $ifNull: ['$submissions', []] } },
-          lastAttemptAt: { $max: '$submissions.startedAt' },
-          avgScore: { $avg: '$submissions.score' },
-          maxScore: { $max: '$submissions.score' },
-          minScore: { $min: '$submissions.score' },
-          submissionCount: { $size: { $ifNull: ['$submissions', []] } },
-          completedCount: {
-            $size: {
-              $filter: {
-                input: { $ifNull: ['$submissions', []] },
-                as: 'submission',
-                cond: { $eq: ['$$submission.status', 'submitted'] },
-              },
-            },
-          },
-          violationCount: {
-            $sum: {
-              $map: {
-                input: { $ifNull: ['$submissions', []] },
-                as: 'submission',
-                in: {
-                  $add: [
-                    { $ifNull: ['$$submission.tabSwitches', 0] },
-                    { $ifNull: ['$$submission.fullscreenExits', 0] },
-                    { $ifNull: ['$$submission.cameraFlags', 0] },
-                    { $ifNull: ['$$submission.copyPasteCount', 0] },
-                  ],
-                },
-              },
-            },
-          },
+          attempted: { $ifNull: [{ $first: '$submissionSummary.submissionCount' }, 0] },
+          lastAttemptAt: { $first: '$submissionSummary.lastAttemptAt' },
+          avgScore: { $ifNull: [{ $first: '$submissionSummary.avgScore' }, 0] },
+          maxScore: { $ifNull: [{ $first: '$submissionSummary.maxScore' }, 0] },
+          minScore: { $ifNull: [{ $first: '$submissionSummary.minScore' }, 0] },
+          submissionCount: { $ifNull: [{ $first: '$submissionSummary.submissionCount' }, 0] },
+          completedCount: { $ifNull: [{ $first: '$submissionSummary.completedCount' }, 0] },
+          violationCount: { $ifNull: [{ $first: '$submissionSummary.violationCount' }, 0] },
         },
       },
       { $sort: { createdAt: -1 } },
@@ -4863,14 +4845,7 @@ export async function getAssessmentReports(req, res) {
     const assessmentCalendarSummaries = assessmentId
       ? await Assessment.aggregate([
         { $match: assessmentCalendarMatch },
-        {
-          $lookup: {
-            from: 'assessmentsubmissions',
-            localField: '_id',
-            foreignField: 'assessmentId',
-            as: 'submissions',
-          },
-        },
+        assessmentSubmissionSummaryLookup,
         {
           $project: {
             title: 1,
@@ -4890,34 +4865,11 @@ export async function getAssessmentReports(req, res) {
               },
             },
             totalMarks: 1,
-            attempted: { $size: { $ifNull: ['$submissions', []] } },
-            avgScore: { $avg: '$submissions.score' },
-            submissionCount: { $size: { $ifNull: ['$submissions', []] } },
-            completedCount: {
-              $size: {
-                $filter: {
-                  input: { $ifNull: ['$submissions', []] },
-                  as: 'submission',
-                  cond: { $eq: ['$$submission.status', 'submitted'] },
-                },
-              },
-            },
-            violationCount: {
-              $sum: {
-                $map: {
-                  input: { $ifNull: ['$submissions', []] },
-                  as: 'submission',
-                  in: {
-                    $add: [
-                      { $ifNull: ['$$submission.tabSwitches', 0] },
-                      { $ifNull: ['$$submission.fullscreenExits', 0] },
-                      { $ifNull: ['$$submission.cameraFlags', 0] },
-                      { $ifNull: ['$$submission.copyPasteCount', 0] },
-                    ],
-                  },
-                },
-              },
-            },
+            attempted: { $ifNull: [{ $first: '$submissionSummary.submissionCount' }, 0] },
+            avgScore: { $ifNull: [{ $first: '$submissionSummary.avgScore' }, 0] },
+            submissionCount: { $ifNull: [{ $first: '$submissionSummary.submissionCount' }, 0] },
+            completedCount: { $ifNull: [{ $first: '$submissionSummary.completedCount' }, 0] },
+            violationCount: { $ifNull: [{ $first: '$submissionSummary.violationCount' }, 0] },
           },
         },
         { $sort: { createdAt: -1 } },
@@ -5215,7 +5167,21 @@ export async function getAssessmentReportsExportData(req, res) {
         violationLog: { $ifNull: ['$violationLog', []] },
         violations: { $ifNull: ['$violations', []] },
         monitoringEvents: { $ifNull: ['$monitoringEvents', []] },
-        proctoringSnapshots: { $ifNull: ['$proctoringSnapshots', []] },
+        // Export/reporting only needs snapshot timing metadata. Pulling Base64
+        // image bodies into a cross-assessment aggregation can add gigabytes
+        // of avoidable I/O and was a primary report-timeout amplifier.
+        proctoringSnapshots: {
+          $map: {
+            input: { $ifNull: ['$proctoringSnapshots', []] },
+            as: 'snapshot',
+            in: {
+              type: '$$snapshot.type',
+              capturedAt: '$$snapshot.capturedAt',
+              width: '$$snapshot.width',
+              height: '$$snapshot.height',
+            },
+          },
+        },
         attemptCount: { $ifNull: ['$attemptCount', 0] },
         lastIp: 1,
         lastUserAgent: 1,
@@ -5714,22 +5680,9 @@ export async function logStudentHeartbeat(req, res) {
     const { status = {}, violationScore, pauseCount, cameraFlags, networkPauseStartedAt, sessionId } = req.body || {};
     const assessment = await findAssessmentForStudentRoute(id, { lean: true, select: 'settings duration endTime' });
     if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
-    const submission = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId });
-    if (!submission) return res.status(404).json({ error: 'Submission not found.' });
-    if (submission.status === 'submitted') return res.json({ ok: true, action: 'warn' });
     const settings = assessment.settings || {};
     const now = new Date();
-    if (submission.activeSessionId && String(sessionId || '') !== submission.activeSessionId) {
-      return res.status(409).json({
-        error: 'This assessment is already active in another tab, browser, or device.',
-        code: 'ACTIVE_ASSESSMENT_SESSION',
-      });
-    }
-    if (!submission.activeSessionId && sessionId) submission.activeSessionId = String(sessionId).slice(0, 160);
-    submission.activeSessionHeartbeatAt = now;
-    const previousHeartbeatAt = submission.securityHeartbeat?.at
-      ? new Date(submission.securityHeartbeat.at).getTime()
-      : null;
+    const normalizedSessionId = String(sessionId || '').slice(0, 160);
     const normalizedStatus = {
       fullscreen: Boolean(status.fullscreen),
       tabActive: Boolean(status.tabActive),
@@ -5739,30 +5692,80 @@ export async function logStudentHeartbeat(req, res) {
       at: now,
     };
 
-    submission.securityHeartbeat = normalizedStatus;
-    if (typeof violationScore === 'number') submission.violationScore = Math.max(submission.violationScore || 0, violationScore);
-    if (typeof pauseCount === 'number') submission.pauseCount = Math.max(submission.pauseCount || 0, pauseCount);
-    if (typeof cameraFlags === 'number') submission.cameraFlags = cameraFlags;
+    const heartbeatSet = {
+      securityHeartbeat: normalizedStatus,
+      activeSessionHeartbeatAt: now,
+      updatedAt: now,
+    };
+    if (normalizedSessionId) heartbeatSet.activeSessionId = normalizedSessionId;
+    if (typeof cameraFlags === 'number') heartbeatSet.cameraFlags = cameraFlags;
 
-    const requestedNetworkPauseAt = networkPauseStartedAt ? new Date(networkPauseStartedAt).getTime() : null;
-    const lastAppliedNetworkPauseAt = submission.lastNetworkPauseAt
-      ? new Date(submission.lastNetworkPauseAt).getTime()
-      : null;
-    const requestIsFresh = Number.isFinite(requestedNetworkPauseAt)
-      && requestedNetworkPauseAt <= now.getTime()
-      && (!Number.isFinite(lastAppliedNetworkPauseAt) || requestedNetworkPauseAt > lastAppliedNetworkPauseAt);
-    const followsLastHeartbeat = !Number.isFinite(previousHeartbeatAt)
-      || requestedNetworkPauseAt >= previousHeartbeatAt - 15000;
-    if (requestIsFresh && followsLastHeartbeat) {
+    const heartbeatMax = {};
+    if (typeof violationScore === 'number') heartbeatMax.violationScore = violationScore;
+    if (typeof pauseCount === 'number') heartbeatMax.pauseCount = pauseCount;
+
+    const requestedNetworkPauseAtMs = networkPauseStartedAt ? new Date(networkPauseStartedAt).getTime() : null;
+    const hasValidNetworkPause = Number.isFinite(requestedNetworkPauseAtMs)
+      && requestedNetworkPauseAtMs <= now.getTime();
+    const updatePipeline = [];
+
+    if (hasValidNetworkPause) {
+      const requestedNetworkPauseAtDate = new Date(requestedNetworkPauseAtMs);
       const MAX_NETWORK_PAUSE_MS = 5 * 60 * 1000;
-      const pausedMs = Math.min(MAX_NETWORK_PAUSE_MS, Math.max(0, now.getTime() - requestedNetworkPauseAt));
-      if (pausedMs >= 1000) {
-        submission.pausedDurationMs = getPausedDurationMs(submission.pausedDurationMs) + pausedMs;
-        submission.pauseCount = (submission.pauseCount || 0) + 1;
-        submission.lastPauseAt = now;
-      }
-      submission.lastNetworkPauseAt = new Date(requestedNetworkPauseAt);
+      const pausedMs = Math.min(MAX_NETWORK_PAUSE_MS, Math.max(0, now.getTime() - requestedNetworkPauseAtMs));
+      const previousHeartbeatDate = {
+        $convert: { input: '$securityHeartbeat.at', to: 'date', onError: null, onNull: null },
+      };
+      const lastNetworkPauseDate = {
+        $convert: { input: '$lastNetworkPauseAt', to: 'date', onError: null, onNull: null },
+      };
+      const shouldRecordNetworkPause = {
+        $and: [
+          {
+            $or: [
+              { $eq: [lastNetworkPauseDate, null] },
+              { $gt: [requestedNetworkPauseAtDate, lastNetworkPauseDate] },
+            ],
+          },
+          {
+            $or: [
+              { $eq: [previousHeartbeatDate, null] },
+              { $gte: [requestedNetworkPauseAtDate, { $subtract: [previousHeartbeatDate, 15000] }] },
+            ],
+          },
+        ],
+      };
+      const shouldCreditNetworkPause = pausedMs >= 1000 ? shouldRecordNetworkPause : false;
+      const currentPauseCount = { $ifNull: ['$pauseCount', 0] };
+      const requestedPauseCount = typeof pauseCount === 'number'
+        ? { $max: [currentPauseCount, pauseCount] }
+        : currentPauseCount;
+
+      heartbeatSet.lastNetworkPauseAt = {
+        $cond: [shouldRecordNetworkPause, requestedNetworkPauseAtDate, '$lastNetworkPauseAt'],
+      };
+      heartbeatSet.pausedDurationMs = {
+        $cond: [
+          shouldCreditNetworkPause,
+          { $add: [{ $ifNull: ['$pausedDurationMs', 0] }, pausedMs] },
+          { $ifNull: ['$pausedDurationMs', 0] },
+        ],
+      };
+      heartbeatSet.pauseCount = {
+        $cond: [shouldCreditNetworkPause, { $add: [requestedPauseCount, 1] }, requestedPauseCount],
+      };
+      heartbeatSet.lastPauseAt = {
+        $cond: [shouldCreditNetworkPause, now, '$lastPauseAt'],
+      };
+      delete heartbeatMax.pauseCount;
     }
+
+    if (Object.keys(heartbeatMax).length > 0) {
+      Object.entries(heartbeatMax).forEach(([field, value]) => {
+        heartbeatSet[field] = { $max: [{ $ifNull: [`$${field}`, 0] }, value] };
+      });
+    }
+    updatePipeline.push({ $set: heartbeatSet });
 
     let action = 'warn';
     let inconsistent = false;
@@ -5790,8 +5793,36 @@ export async function logStudentHeartbeat(req, res) {
     // logged through the dedicated violation endpoint and are the only event
     // allowed to create a security recheck pause.
 
-    await submission.save();
-    const allowedEnd = computeAllowedEnd(assessmentForSubmission(assessment, submission), submission.startedAt || now, submission.pausedDurationMs);
+    const sessionFilter = [
+      { activeSessionId: { $exists: false } },
+      { activeSessionId: '' },
+    ];
+    if (normalizedSessionId) sessionFilter.push({ activeSessionId: normalizedSessionId });
+
+    const submission = await AssessmentSubmission.findOneAndUpdate(
+      {
+        assessmentId: assessment._id,
+        studentId,
+        status: { $ne: 'submitted' },
+        $or: sessionFilter,
+      },
+      updatePipeline,
+      { new: true },
+    ).select('status startedAt pausedDurationMs violationScore pauseCount lastPauseAt pauseStartedAt');
+
+    if (!submission) {
+      const existingSubmission = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId })
+        .select('status activeSessionId')
+        .lean();
+      if (!existingSubmission) return res.status(404).json({ error: 'Submission not found.' });
+      if (existingSubmission.status === 'submitted') return res.json({ ok: true, action: 'warn' });
+      return res.status(409).json({
+        error: 'This assessment is already active in another tab, browser, or device.',
+        code: 'ACTIVE_ASSESSMENT_SESSION',
+      });
+    }
+
+    const allowedEnd = computeAllowedEnd(assessment, submission.startedAt || now, submission.pausedDurationMs);
     return res.json({
       ok: true,
       action,
@@ -5908,38 +5939,44 @@ export async function logStudentMonitoring(req, res) {
     const { snapshot, event } = req.body || {};
     const assessment = await findAssessmentForStudentRoute(id, { lean: true, select: '_id' });
     if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
-    const submission = await AssessmentSubmission.findOne({ assessmentId: assessment._id, studentId });
-    if (!submission) return res.status(404).json({ error: 'Submission not found.' });
-    if (submission.status === 'submitted') return res.json({ ok: true });
+    const push = {};
 
     if (snapshot && typeof snapshot === 'object') {
-      submission.proctoringSnapshots = Array.isArray(submission.proctoringSnapshots) ? submission.proctoringSnapshots : [];
-      submission.proctoringSnapshots.push({
-        type: String(snapshot.type || 'camera'),
-        capturedAt: snapshot.capturedAt ? new Date(snapshot.capturedAt) : new Date(),
-        dataUrl: String(snapshot.dataUrl || ''),
-        width: Number(snapshot.width || 0),
-        height: Number(snapshot.height || 0),
-      });
-      if (submission.proctoringSnapshots.length > 60) {
-        submission.proctoringSnapshots = submission.proctoringSnapshots.slice(-60);
-      }
+      push.proctoringSnapshots = {
+        $each: [{
+          type: String(snapshot.type || 'camera'),
+          capturedAt: snapshot.capturedAt ? new Date(snapshot.capturedAt) : new Date(),
+          dataUrl: String(snapshot.dataUrl || ''),
+          width: Number(snapshot.width || 0),
+          height: Number(snapshot.height || 0),
+        }],
+        $slice: -60,
+      };
     }
 
     if (event && typeof event === 'object') {
-      submission.monitoringEvents = Array.isArray(submission.monitoringEvents) ? submission.monitoringEvents : [];
-      submission.monitoringEvents.push({
-        type: String(event.type || 'info'),
-        at: event.at ? new Date(event.at) : new Date(),
-        message: String(event.message || ''),
-        meta: event.meta && typeof event.meta === 'object' ? event.meta : {},
-      });
-      if (submission.monitoringEvents.length > 250) {
-        submission.monitoringEvents = submission.monitoringEvents.slice(-250);
-      }
+      push.monitoringEvents = {
+        $each: [{
+          type: String(event.type || 'info'),
+          at: event.at ? new Date(event.at) : new Date(),
+          message: String(event.message || ''),
+          meta: event.meta && typeof event.meta === 'object' ? event.meta : {},
+        }],
+        $slice: -250,
+      };
     }
 
-    await submission.save();
+    const update = { $set: { updatedAt: new Date() } };
+    if (Object.keys(push).length > 0) update.$push = push;
+    const updateResult = await AssessmentSubmission.updateOne(
+      { assessmentId: assessment._id, studentId, status: { $ne: 'submitted' } },
+      update,
+    );
+
+    if (updateResult.matchedCount === 0) {
+      const existingSubmission = await AssessmentSubmission.exists({ assessmentId: assessment._id, studentId });
+      if (!existingSubmission) return res.status(404).json({ error: 'Submission not found.' });
+    }
     return res.json({ ok: true });
   } catch (err) {
     console.error('Error logging monitoring payload:', err);
@@ -5952,7 +5989,7 @@ export async function getSubmissionViolations(req, res) {
     const { submissionId } = req.params;
     const submission = await AssessmentSubmission.findById(submissionId)
       .populate('studentId', 'name email studentId')
-      .select('violationLog violations monitoringEvents proctoringSnapshots aiProctoringSummary tabSwitches fullscreenExits copyPasteCount cameraFlags violationScore pauseCount lastPauseAt status startedAt submittedAt studentId assessmentId securitySetup securityHeartbeat lastIp lastUserAgent')
+      .select('violationLog violations monitoringEvents proctoringSnapshots.type proctoringSnapshots.capturedAt proctoringSnapshots.width proctoringSnapshots.height aiProctoringSummary tabSwitches fullscreenExits copyPasteCount cameraFlags violationScore pauseCount lastPauseAt status startedAt submittedAt studentId assessmentId securitySetup securityHeartbeat lastIp lastUserAgent')
       .lean();
     if (!submission) return res.status(404).json({ error: 'Submission not found.' });
     if (req.user && req.user.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') {
