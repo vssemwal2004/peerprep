@@ -50,13 +50,10 @@ test("complete manual configuration is valid without any AI provider", () => {
   assert.equal(checked.complete, true);
   assert.equal(checked.summary.manualCount, 1);
   assert.equal(checked.summary.budgetSeconds, 135);
-  for (const key of [
-    "questionGeneration",
-    "liveConversation",
-    "candidateAssignment",
-    "evaluation",
-  ])
-    assert.equal(CAPABILITIES[key], false);
+  assert.equal(CAPABILITIES.questionGeneration, true);
+  assert.equal(CAPABILITIES.liveConversation, true);
+  assert.equal(CAPABILITIES.candidateAssignment, false);
+  assert.equal(CAPABILITIES.evaluation, false);
 });
 test("ANNU saves specifications and counts planned questions separately", () => {
   const d = definition();

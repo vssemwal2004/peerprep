@@ -15,6 +15,7 @@ export const categories = [
   "Custom",
 ];
 export const uid = () => crypto.randomUUID();
+export const questionSlots = (question) => question.kind === "resume" ? question.resumeCount || 1 : 1;
 export const equalWeights = (items) =>
   items.map((item, index) => ({
     ...item,
@@ -29,7 +30,10 @@ export const equalWeights = (items) =>
   }));
 export const newQuestion = () => ({
   id: uid(),
+  kind: "specific",
   prompt: "",
+  resumeCount: 1,
+  maxFollowUps: 0,
   context: "",
   expectedAnswer: "",
   difficulty: "",
@@ -105,8 +109,8 @@ export function summarize(data) {
   for (const s of data.sections)
     for (const g of s.groups) {
       if (g.source === "manual") {
-        manual += g.questions.length;
-        followUps += g.questions.reduce((n, q) => n + q.followUps.length, 0);
+        manual += g.questions.reduce((n, q) => n + questionSlots(q), 0);
+        followUps += g.questions.reduce((n, q) => n + (q.followUps.length + (q.maxFollowUps || 0)) * questionSlots(q), 0);
       } else {
         planned += g.annu.targetCount;
         followUps += g.annu.targetCount * g.annu.maxFollowUps;

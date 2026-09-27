@@ -557,8 +557,16 @@ function QuestionDrawer({
     }));
   const save = () => {
     if (readOnly || stale) return;
-    if (!draft.prompt.trim()) {
-      setError("Write the main question before saving.");
+    if (draft.kind !== "resume" && !draft.prompt.trim()) {
+      setError("Write the main question or topic before saving.");
+      return;
+    }
+    if (!Number.isInteger(draft.maxFollowUps ?? 0) || (draft.maxFollowUps ?? 0) < 0 || (draft.maxFollowUps ?? 0) > limits.followUps) {
+      setError(`Choose 0–${limits.followUps} AI follow-ups.`);
+      return;
+    }
+    if (draft.kind === "resume" && (!Number.isInteger(draft.resumeCount) || draft.resumeCount < 1 || draft.resumeCount > (limits.plannedQuestionsPerGroup ?? 50))) {
+      setError(`Choose 1–${limits.plannedQuestionsPerGroup ?? 50} resume questions.`);
       return;
     }
     if (
@@ -630,15 +638,33 @@ function QuestionDrawer({
           )
         )}
         {error && <Notice error>{error}</Notice>}
-        <Field label="Main question *">
+        <Field label="Question type">
+          <Select
+            value={draft.kind || "specific"}
+            options={[
+              { value: "specific", label: "Specific question" },
+              { value: "topic", label: "Topic question (AI writes the question)" },
+              { value: "resume", label: "Question from student's resume" },
+            ]}
+            onChange={(e) => set("kind", e.target.value)}
+          />
+        </Field>
+        {draft.kind === "resume" ? (
+          <Field label="Number of questions from the resume">
+            <TextInput type="number" min={1} max={limits.plannedQuestionsPerGroup ?? 50} value={draft.resumeCount ?? 1} onChange={(e) => set("resumeCount", Number(e.target.value))} />
+          </Field>
+        ) : <Field label={draft.kind === "topic" ? "Topic *" : "Main question *"}>
           <TextArea
             rows={4}
             autoFocus
             maxLength={12000}
             value={draft.prompt}
-            placeholder="e.g. How would you investigate a slow API?"
+            placeholder={draft.kind === "topic" ? "e.g. REST API design" : "e.g. How would you investigate a slow API?"}
             onChange={(e) => set("prompt", e.target.value)}
           />
+        </Field>}
+        <Field label="AI follow-ups after each answer" hint="ANNU writes each follow-up using the student's most recent answer.">
+          <TextInput type="number" min={0} max={limits.followUps} value={draft.maxFollowUps ?? 0} onChange={(e) => set("maxFollowUps", Number(e.target.value))} />
         </Field>
         {[
           [
@@ -966,7 +992,7 @@ function ReadOnlyTopic({ group }) {
         <div className="mt-3 space-y-2 text-slate-500">
           <p>Difficulty: {group.difficulty || "Use interview default"}</p>
           {group.source === "manual" && (
-            <p>Shuffle questions: {group.shuffle ? "On" : "Off"}</p>
+            <p>Question order varies by student; follow-ups stay with their main question.</p>
           )}
           <ReadOnlyTiming value={group.ruleOverrides} />
         </div>
@@ -1097,7 +1123,7 @@ export function GroupEditor({
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-indigo-100 bg-gradient-to-r from-sky-50/70 to-indigo-50/50 px-4 py-3 dark:border-indigo-900 dark:from-sky-950/30 dark:to-indigo-950/30">
               <AnnuBrand />
               <span className="rounded-full border border-indigo-100 bg-white/90 px-2 py-1 text-[10px] font-semibold tracking-wide text-indigo-700 dark:border-indigo-800 dark:bg-gray-900 dark:text-indigo-300">
-                Authoring only
+                Generated during student interviews
               </span>
             </div>
             <div className="space-y-2 p-4">
@@ -1128,8 +1154,7 @@ export function GroupEditor({
                 size={14}
                 className="mt-0.5 shrink-0 text-indigo-500 dark:text-indigo-400"
               />
-              Instructions only. AI generation and adaptive conversation are not
-              connected yet.
+              ANNU uses these instructions when a student starts an available interview.
             </p>
           </section>
           <details className="rounded-xl border border-slate-200 p-4 dark:border-gray-700">
@@ -1330,16 +1355,7 @@ export function GroupEditor({
               onChange={(e) => set("difficulty", e.target.value)}
             />
           </Field>
-          {group.source === "manual" && (
-            <label className="flex items-start gap-2 text-xs text-slate-600 dark:text-gray-300">
-              <input
-                type="checkbox"
-                checked={group.shuffle}
-                onChange={(e) => set("shuffle", e.target.checked)}
-              />
-              Shuffle main questions. Subquestions stay with their parent.
-            </label>
-          )}
+          <p className="text-xs text-slate-500">Topic and main-question order varies by student. Follow-ups stay with their main question.</p>
           <details>
             <summary className="cursor-pointer text-xs font-medium text-slate-500">
               Custom timing

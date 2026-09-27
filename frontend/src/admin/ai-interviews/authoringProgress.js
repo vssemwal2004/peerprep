@@ -61,7 +61,9 @@ export function getAuthoringProgress(data = {}) {
         if (!questions.length) add(groupPath, `Add a question to ${topic}.`);
         questions.forEach((question, questionIndex) => {
           const label = `${topic}, question ${questionIndex + 1}`;
-          if (!filled(question.prompt)) add(groupPath, `Write ${label}.`);
+          if (question.kind !== "resume" && !filled(question.prompt)) add(groupPath, `Write ${label}.`);
+          if (question.kind === "resume" && (!Number.isInteger(question.resumeCount) || question.resumeCount < 1 || question.resumeCount > 50)) add(groupPath, `Choose 1–50 resume questions in ${label}.`);
+          if (!Number.isInteger(question.maxFollowUps ?? 0) || (question.maxFollowUps ?? 0) < 0 || (question.maxFollowUps ?? 0) > 3) add(groupPath, `Choose 0–3 AI follow-ups in ${label}.`);
           if ((question.subquestions || []).some((sub) => !filled(sub.prompt)))
             add(
               groupPath,

@@ -262,6 +262,8 @@ export default function Directory() {
                     <Badge complete={item.validation?.complete}>
                       {item.lifecycle === "archived"
                         ? "Archived"
+                        : item.publishedAt
+                          ? "Available to students"
                         : item.validation?.complete
                           ? "Complete · not live"
                           : "Draft"}

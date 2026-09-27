@@ -41,8 +41,7 @@ function QuestionPreview({ data, preview }) {
                 {group.source === "annu" ? (
                   <div className="space-y-2 text-sm text-slate-500">
                     <p>
-                      {group.annu.targetCount} questions planned. Generation is
-                      not connected.
+                      {group.annu.targetCount} questions generated when a student starts the interview.
                     </p>
                     {!preview && (
                       <p className="whitespace-pre-wrap">
@@ -55,8 +54,9 @@ function QuestionPreview({ data, preview }) {
                     {group.questions.map((question) => (
                       <li key={question.id}>
                         <span className="whitespace-pre-wrap font-medium">
-                          {question.prompt || "Empty question"}
+                          {question.kind === "resume" ? `${question.resumeCount || 1} questions from the student's resume` : question.kind === "topic" ? `Topic: ${question.prompt || "Empty topic"}` : question.prompt || "Empty question"}
                         </span>
+                        {!!question.maxFollowUps && <p className="mt-1 pl-4 text-xs text-slate-500">{question.maxFollowUps} answer-based AI follow-ups per question</p>}
                         {question.context && (
                           <p className="mt-1 pl-4 text-slate-500">
                             {question.context}
@@ -185,8 +185,8 @@ export default function Review({ doc, data, preview = false }) {
         {preview
           ? "Configuration preview only — this is not a live interview."
           : validated
-            ? "Setup is complete. This interview is not published to students."
-            : "Check your setup below, then choose Finish setup. This saves and checks your draft without publishing to students."}
+            ? doc.publishedAt ? "This interview is available to students. Changes to the draft require another validation and release." : "Setup is complete. Use Make available to students when you're ready."
+            : "Check your setup below, then choose Finish setup. This saves and checks your draft."}
       </Notice>
 
       <Panel
@@ -270,9 +270,7 @@ export default function Review({ doc, data, preview = false }) {
         )}
         {counts.planned > 0 && (
           <p className="mt-3 rounded-lg bg-violet-50 px-3 py-2 text-xs text-violet-800 dark:bg-violet-950/30 dark:text-violet-200">
-            ANNU AI instructions are saved for future use. The {counts.planned}{" "}
-            planned questions have not been generated; no LLM or live interview
-            is connected.
+            ANNU will generate these {counts.planned} questions during each student interview when the interview is available and the AI service is configured.
           </p>
         )}
       </Panel>

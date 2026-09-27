@@ -346,8 +346,39 @@ async function request(
   return promise;
 }
 
+async function interviewMediaRequest(path, { method = 'GET', recording, version } = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 90000);
+  try {
+    const response = await fetch(`${API_BASE}${path}`, {
+      method, credentials: 'include', signal: controller.signal,
+      headers: {
+        'X-Interview-Version': String(version),
+        ...(recording ? { 'Content-Type': recording.type || 'audio/webm' } : {}),
+      },
+      ...(recording ? { body: recording } : {}),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      const error = new Error(payload.error || 'Interview audio request failed.');
+      error.response = { status: response.status, data: payload };
+      throw error;
+    }
+    return recording ? response.json() : response.blob();
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('Interview audio request timed out. Please retry.');
+    throw error;
+  } finally { clearTimeout(timeout); }
+}
+
 export const api = {
   aiInterviewRequest: (path = '', options = {}) => request(`/ai-interviews${path}`, { ...options, skipCache: true, skipDedupe: true }),
+  listStudentAIInterviews: () => request('/student/ai-interviews', { skipCache: true }),
+  startStudentAIInterview: (id, resumeConsent = false) => request(`/student/ai-interviews/${id}/start`, { method: 'POST', body: { resumeConsent }, timeoutMs: 60000, skipQueue: true }),
+  getStudentAIInterviewSession: (id) => request(`/student/ai-interviews/sessions/${id}`, { skipCache: true }),
+  answerStudentAIInterview: (id, version, transcriptId) => request(`/student/ai-interviews/sessions/${id}/answer`, { method: 'POST', body: { version, transcriptId }, timeoutMs: 60000, skipQueue: true }),
+  transcribeStudentAIAnswer: (id, recording, version) => interviewMediaRequest(`/student/ai-interviews/sessions/${id}/transcribe`, { method: 'POST', recording, version }),
+  getStudentAIQuestionAudio: (id, version) => interviewMediaRequest(`/student/ai-interviews/sessions/${id}/question-audio`, { version }),
   updateEventJoinDisable: (eventId, joinDisabled, joinDisableTime) =>
     request(`/events/${eventId}/join-disable`, {
       method: "PATCH",

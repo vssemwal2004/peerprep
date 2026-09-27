@@ -17,6 +17,7 @@ import {
   newGroup,
   newSection,
   rekeySection,
+  questionSlots,
   summarize,
 } from "./definition";
 import { GroupEditor, TimingFields } from "./Editors";
@@ -45,7 +46,7 @@ const countSection = (section) =>
     (sum, group) =>
       sum +
       (group.source === "manual"
-        ? group.questions.length
+        ? group.questions.reduce((count, question) => count + questionSlots(question), 0)
         : group.annu.targetCount),
     0,
   );
@@ -172,7 +173,7 @@ function TopicDrawer({
   const save = () => {
     const count =
       draft.source === "manual"
-        ? draft.questions.length
+        ? draft.questions.reduce((sum, question) => sum + (question.kind === "resume" ? question.resumeCount || 1 : 1), 0)
         : draft.annu.targetCount;
     if (
       draft.source === "annu" &&
@@ -801,7 +802,7 @@ export default function Sections({
                 (addingTopicTo
                   ? 0
                   : topic.source === "manual"
-                    ? topic.questions.length
+                    ? topic.questions.reduce((sum, question) => sum + (question.kind === "resume" ? question.resumeCount || 1 : 1), 0)
                     : topic.annu.targetCount),
             ),
           }}
