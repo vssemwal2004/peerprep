@@ -1,0 +1,20 @@
+{
+  "purpose": "Operator-maintained inventory; placeholders must be replaced after explicit provisioning",
+  "sadtalker": {
+    "repository": "https://github.com/OpenTalker/SadTalker",
+    "commit": "REPLACE_WITH_REVIEWED_40_CHARACTER_COMMIT",
+    "pythonVersion": "REPLACE_WITH_TESTED_VERSION",
+    "requirementsLockSha256": "REPLACE_WITH_SHA256",
+    "models": [
+      { "file": "checkpoints/SadTalker_V0.0.2_256.safetensors", "sha256": "REPLACE_WITH_SHA256" },
+      { "file": "checkpoints/mapping_00229-model.pth.tar", "sha256": "REPLACE_WITH_SHA256" },
+      { "file": "gfpgan/weights/alignment_WFLW_4HG.pth", "sha256": "REPLACE_WITH_SHA256" },
+      { "file": "gfpgan/weights/detection_Resnet50_Final.pth", "sha256": "REPLACE_WITH_SHA256" }
+    ],
+    "additionalPreprocessingAssets": "RECORD_ALL_REQUIRED_FILES_AND_HASHES"
+  },
+  "ffmpegVersion": "REPLACE_WITH_TESTED_VERSION",
+  "optionalChatterboxCommitAndModelRevision": null,
+  "optionalFasterWhisperVersionAndModelRevision": null,
+  "fiveSecondSmokeTest": { "passed": false, "elapsedSeconds": null, "peakMemoryMiB": null }
+}

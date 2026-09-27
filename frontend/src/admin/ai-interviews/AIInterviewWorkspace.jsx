@@ -22,6 +22,7 @@ import {
   UserRound,
 } from "lucide-react";
 import Directory from "./Directory";
+import AvatarStudio from "./avatars/AvatarStudio";
 import { ResourceList } from "./Resources";
 import { BasicsEditor, InterviewerEditor, RulesEditor } from "./Editors";
 import Sections from "./Sections";
@@ -55,8 +56,8 @@ function Navigation() {
     { to: ROOT, label: "Interviews", Icon: ClipboardList, end: true },
     { to: `${ROOT}/reports`, label: "Reports", Icon: BarChart3 },
     {
-      to: `${ROOT}/profiles`,
-      label: "Interviewer profiles",
+      to: `${ROOT}/avatars`,
+      label: "Avatars",
       Icon: UserRound,
     },
     { to: `${ROOT}/companies`, label: "Companies", Icon: Building2 },
@@ -152,6 +153,27 @@ function ResourcesPage({ kind }) {
       sidebar={<Navigation />}
     >
       <ResourceList key={kind} kind={kind} />
+    </Frame>
+  );
+}
+function AvatarsPage() {
+  const location = useLocation();
+  const creating = location.pathname.endsWith("/avatars/new");
+  const editing = location.pathname.endsWith("/edit");
+  const inEditor = creating || editing;
+  const title = creating ? "Create avatar" : editing ? "Edit avatar" : "Avatars";
+  return (
+    <Frame
+      title={title}
+      back={inEditor ? `${ROOT}/avatars` : ROOT}
+      crumbs={[
+        { label: "AI Interviews", to: ROOT },
+        { label: "Avatars", ...(inEditor ? { to: `${ROOT}/avatars` } : {}) },
+        ...(inEditor ? [{ label: creating ? "Create" : "Edit" }] : []),
+      ]}
+      sidebar={inEditor ? undefined : <Navigation />}
+    >
+      <AvatarStudio />
     </Frame>
   );
 }
@@ -518,6 +540,7 @@ export default function AIInterviewWorkspace() {
       <Route index element={<DirectoryPage />} />
       <Route path="new" element={<CreatePage />} />
       <Route path="reports" element={<ReportsPage />} />
+      <Route path="avatars/*" element={<AvatarsPage />} />
       <Route path="companies" element={<ResourcesPage kind="companies" />} />
       <Route path="profiles" element={<ResourcesPage kind="profiles" />} />
       <Route path=":id/*" element={<Builder />} />

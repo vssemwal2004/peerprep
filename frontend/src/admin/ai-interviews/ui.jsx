@@ -215,7 +215,7 @@ export function PageHeader({ title, back, crumbs = [], actions }) {
     </header>
   );
 }
-export function Dialog({ title, children, onClose }) {
+export function Dialog({ title, children, onClose, wide = false }) {
   const ref = useRef(null),
     label = useId();
   useEffect(() => {
@@ -237,7 +237,7 @@ export function Dialog({ title, children, onClose }) {
         e.stopPropagation();
         onClose();
       }}
-      className="m-auto max-h-[85dvh] w-[min(680px,94vw)] rounded-xl border border-slate-200 bg-white p-0 text-slate-800 shadow-xl backdrop:bg-slate-950/30 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+      className={`m-auto max-h-[85dvh] ${wide ? "w-[min(1100px,94vw)]" : "w-[min(680px,94vw)]"} rounded-xl border border-slate-200 bg-white p-0 text-slate-800 shadow-xl backdrop:bg-slate-950/30 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100`}
     >
       <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
         <h2 id={label} className="font-semibold">

@@ -2,7 +2,9 @@
 
 ## Scope
 
-Admin-only creation workspace at `/admin/ai-interviews`. Existing One-to-One interviews, assessments and the coordinator AI placeholder are unchanged. No LLM SDK, generation, speech, recording, candidate assignment, invitations or scoring is connected.
+An independent admin-only [Avatar Studio](AVATAR_STUDIO.md) now provides the generated-media authoring workflow at `/admin/ai-interviews/avatars`. Its optional renderer and provider integrations are separate from the interview definition builder. Existing static interviewer profiles and their saved snapshots remain compatible; candidate runtime is still out of scope.
+
+Admin-only creation workspace at `/admin/ai-interviews`. Existing One-to-One interviews, assessments and the coordinator AI placeholder are unchanged. The interview definition builder does not connect question generation, live speech, candidate assignment, invitations or scoring. Avatar Studio's separate media and introduction tools are described in its own guide.
 
 ## Implemented flow
 
@@ -10,7 +12,7 @@ The creation flow has three steps: **Interview details**, **Questions & topics**
 
 The steps use a connected blue journey line matching the assessment/Library pattern. The line shows the current position, not a percentage of saved work. The active step displays its number out of three; ready steps use check marks, and skipped incomplete steps remain marked "Needs details." Mobile labels are shorter, keyboard focus is visible, and motion follows reduced-motion preferences. The initial Create action remains visible in a sticky footer.
 
-The admin primary sidebar expands AI Interviews into All AI Interviews, Create AI Interview and Reports. Clicking the AI Interviews label opens the directory and expands these links; its chevron toggles them without navigation. The directory's secondary navigation has Interviews, Reports, Interviewer profiles and Companies. The builder uses a compact three-step progress bar instead of duplicating these links or presenting five competing configuration divisions. Statuses remain directory filters.
+The admin primary sidebar expands AI Interviews into All AI Interviews, Create AI Interview, Avatars and Reports. Clicking the AI Interviews label opens the directory and expands these links; its chevron toggles them without navigation. The directory's secondary navigation has Interviews, Reports, Avatars and Companies. Existing static interviewer profiles remain accessible through the legacy profiles link. The builder uses a compact three-step progress bar instead of duplicating these links or presenting five competing configuration divisions. Statuses remain directory filters.
 
 `/admin/ai-interviews/reports` is an explicit not-yet-available page, not a live reporting service. It does not request interview data using `reports` as an interview ID, fabricate results or invoke AI services. Candidate sessions and evaluation remain out of scope.
 

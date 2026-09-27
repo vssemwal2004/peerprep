@@ -209,7 +209,7 @@ test('AI Interviews label opens its submenu and each option navigates with an ex
   assert.ok(toggle, 'Clicking the label must expand the AI submenu');
   const panel = document.getElementById(toggle.getAttribute('aria-controls'));
   const links = [...panel.querySelectorAll('a')];
-  assert.deepEqual(links.map((link) => link.textContent), ['All AI Interviews', 'Create AI Interview', 'Reports']);
+  assert.deepEqual(links.map((link) => link.textContent), ['All AI Interviews', 'Create AI Interview', 'Avatars', 'Reports']);
   for (const link of links) {
     await click(link);
     assert.equal(document.getElementById('location').textContent, link.getAttribute('href'));
