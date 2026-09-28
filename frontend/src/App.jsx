@@ -30,6 +30,7 @@ const ContactUs = lazy(() => import("./pages/ContactUs"));
 // Student Pages
 const StudentDashboard = lazy(() => import("./student/StudentDashboard"));
 const StudentInterview = lazy(() => import("./student/StudentInterview"));
+const StudentAIInterview = lazy(() => import("./student/StudentAIInterview"));
 const ChangePassword = lazy(() => import("./student/ChangePassword"));
 const SessionAndFeedback = lazy(() => import("./student/SessionAndFeedback"));
 const FeedbackForm = lazy(() => import("./student/FeedbackForm"));
@@ -338,6 +339,8 @@ function AppContent() {
         <Route path="/student/resume" element={<StudentProtectedRoute><StudentResume /></StudentProtectedRoute>} />
         <Route path="/student/dashboard" element={<StudentProtectedRoute><StudentDashboard /></StudentProtectedRoute>} />
         <Route path="/student/interview" element={<StudentProtectedRoute><StudentInterview /></StudentProtectedRoute>} />
+        <Route path="/student/ai-interviews" element={<StudentProtectedRoute><StudentAIInterview /></StudentProtectedRoute>} />
+        <Route path="/student/ai-interviews/room/:sessionId" element={<StudentProtectedRoute><StudentAIInterview /></StudentProtectedRoute>} />
         <Route path="/student/session" element={<StudentProtectedRoute><SessionAndFeedback /></StudentProtectedRoute>} />
         <Route path="/student/feedback/:pairId" element={<StudentProtectedRoute><FeedbackForm /></StudentProtectedRoute>} />
         <Route path="/student/learning" element={<StudentProtectedRoute><StudentLearning /></StudentProtectedRoute>} />
@@ -518,8 +521,6 @@ function App() {
 }
 
 export default App;
-
-
 
 
 

@@ -281,6 +281,20 @@ function BuilderContent({ id }) {
     groupId = parts[2] === "groups" ? parts[3] : undefined;
   const state = useInterviewDraft(id),
     caps = useRemote(interviewApi.capabilities, []);
+  const [releaseBusy, setReleaseBusy] = useState(false);
+  const [releaseError, setReleaseError] = useState("");
+  const release = async (action) => {
+    setReleaseBusy(true);
+    setReleaseError("");
+    try {
+      await interviewApi.action(id, action, state.doc.revision);
+      await state.reload();
+    } catch (error) {
+      setReleaseError(error.message);
+    } finally {
+      setReleaseBusy(false);
+    }
+  };
   const initialReturn = useRef(location.state?.returnTo || ROOT);
   if (!divisions.some((d) => d.id === division) && division !== "preview")
     return <Navigate to={`${ROOT}/${id}/basics`} replace />;
@@ -369,6 +383,8 @@ function BuilderContent({ id }) {
           <Badge complete={doc.validation?.complete && !state.dirty}>
             {archived
               ? "Archived"
+              : doc.publishedAt
+                ? "Available to students"
               : doc.validation?.complete && !state.dirty
                 ? "Complete · not live"
                 : "Draft"}
@@ -432,6 +448,7 @@ function BuilderContent({ id }) {
           </Notice>
         )}
         {state.notice && <Notice>{state.notice}</Notice>}
+        {releaseError && <Notice error>{releaseError}</Notice>}
         {archived && (
           <Notice>
             This interview is archived and read-only. Restore it from the
@@ -479,6 +496,9 @@ function BuilderContent({ id }) {
               {step === "basics" ? "All interviews" : "Previous"}
             </Link>
             {step === "review" ? (
+              <div className="flex flex-wrap gap-2">
+                {doc.publishedAt && <button className={secondaryClass} disabled={releaseBusy || state.dirty || state.saving} onClick={() => release("unpublish")}>Remove student access</button>}
+                {(!doc.publishedAt || (doc.validation?.complete && doc.validation.validatedRevision === doc.revision && doc.publishedRevision !== doc.revision)) && <button className={secondaryClass} disabled={releaseBusy || state.dirty || state.saving || !doc.validation?.complete || doc.validation.validatedRevision !== doc.revision || archived} onClick={() => release("publish")}>{doc.publishedAt ? "Update student version" : "Make available to students"}</button>}
               <button
                 className={primaryClass}
                 disabled={readOnly || state.saving}
@@ -491,6 +511,7 @@ function BuilderContent({ id }) {
                     ? "Recheck setup"
                     : "Finish setup"}
               </button>
+              </div>
             ) : (
               <Link
                 className={primaryClass}

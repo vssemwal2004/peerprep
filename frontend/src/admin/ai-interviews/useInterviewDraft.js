@@ -116,7 +116,7 @@ export function useInterviewDraft(id) {
         accept(next, snapshot);
         setNotice(
           next.validation.complete
-            ? "Configuration complete. Student delivery is not connected."
+            ? "Configuration complete. You can now make this interview available to students."
             : `${next.validation.issues.length} configuration issues need attention.`,
         );
       }

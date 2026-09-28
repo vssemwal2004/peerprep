@@ -29,6 +29,7 @@ export function createAuthoringRouter(authenticate = requireAuth) {
   router.put("/:id", asyncRoute(controller.saveInterview));
   router.post("/:id/validate", asyncRoute(controller.validateInterview));
   router.post("/:id/duplicate", asyncRoute(controller.duplicateInterview));
+  router.post("/:id/:action(publish|unpublish)", asyncRoute(controller.releaseInterview));
   router.post("/:id/:action", asyncRoute(controller.lifecycleInterview));
   router.delete("/:id", asyncRoute(controller.deleteInterview));
   router.use((err, req, res, next) => {

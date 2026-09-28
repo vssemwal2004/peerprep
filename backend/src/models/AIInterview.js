@@ -16,6 +16,10 @@ const schema = new Schema(
     // Audit and last validation snapshot are committed atomically with the draft.
     history: { type: [Schema.Types.Mixed], default: [] },
     validatedSnapshot: Schema.Types.Mixed,
+    publishedSnapshot: Schema.Types.Mixed,
+    publishedAt: Date,
+    publishedRevision: Number,
+    requiresResume: Boolean,
     archivedAt: Date,
   },
   { timestamps: true, minimize: false },

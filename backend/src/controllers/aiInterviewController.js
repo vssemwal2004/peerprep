@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import AIInterview from "../models/AIInterview.js";
 import Resource from "../models/AIInterviewResource.js";
 import QuestionLibrary from "../models/QuestionLibrary.js";
+import { interviewServiceConfigured } from "../services/interviewServiceClient.js";
 import {
   AuthoringError,
   CAPABILITIES,
@@ -163,7 +164,7 @@ async function references(req, data, previous) {
       );
   }
 }
-export const capabilities = (_req, res) => res.json(CAPABILITIES);
+export const capabilities = (_req, res) => res.json({ ...CAPABILITIES, aiConfigured: interviewServiceConfigured() });
 export async function listInterviews(req, res) {
   const { page, limit } = pageParams(req);
   const where = {
@@ -188,7 +189,7 @@ export async function listInterviews(req, res) {
   const [items, total] = await Promise.all([
     AIInterview.find(where)
       .select(
-        "title role companyName revision lifecycle summary validation.complete updatedAt",
+        "title role companyName revision lifecycle summary validation.complete publishedAt updatedAt",
       )
       .sort(sort)
       .skip((page - 1) * limit)
@@ -229,6 +230,7 @@ export async function createInterview(req, res) {
 export async function getInterview(req, res) {
   const doc = await find(req);
   delete doc.validatedSnapshot;
+  delete doc.publishedSnapshot;
   res.json(doc);
 }
 export async function saveInterview(req, res) {
@@ -307,6 +309,7 @@ export async function lifecycleInterview(req, res) {
         archivedAt: action === "archive" ? new Date() : null,
         validation: { complete: false },
       },
+      ...(action === "archive" ? { $unset: { publishedSnapshot: "", publishedAt: "", publishedRevision: "", requiresResume: "" } } : {}),
       $inc: { revision: 1 },
       $push: {
         history: {
@@ -318,6 +321,39 @@ export async function lifecycleInterview(req, res) {
     false,
   );
   delete doc.validatedSnapshot;
+  res.json(doc);
+}
+export async function releaseInterview(req, res) {
+  const action = req.params.action;
+  if (!["publish", "unpublish"].includes(action))
+    error(404, "RESOURCE_NOT_FOUND", "Action not found.");
+  const current = await find(req);
+  if (current.revision !== revision(req)) error(409, "REVISION_CONFLICT", "Reload the latest interview revision.");
+  if (current.lifecycle !== "draft") error(409, "INVALID_LIFECYCLE", "Restore the interview first.");
+  if (action === "publish" && (!current.validation?.complete || current.validation.validatedRevision !== current.revision))
+    error(422, "VALIDATION_REQUIRED", "Finish and validate the latest setup before making it available to students.");
+  if (action === "publish" && !interviewServiceConfigured())
+    error(503, "AI_NOT_CONFIGURED", "Configure INTERVIEW_SERVICE_URL and INTERVIEW_SERVICE_SECRET on the backend before making AI interviews available.");
+  const next = current.revision + 1;
+  const update = {
+    $inc: { revision: 1 },
+    $push: { history: { $each: [audit(req, action, next)], $slice: -100 } },
+  };
+  if (action === "publish") update.$set = {
+    publishedSnapshot: { data: current.data, revision: next, at: new Date() },
+    publishedAt: new Date(),
+    publishedRevision: next,
+    requiresResume: current.data.sections.some((section) => section.groups.some((group) => (group.questions || []).some((question) => question.kind === "resume"))),
+    "validation.validatedRevision": next,
+  };
+  else {
+    update.$unset = { publishedSnapshot: "", publishedAt: "", publishedRevision: "", requiresResume: "" };
+    if (current.validation?.complete && current.validation.validatedRevision === current.revision)
+      update.$set = { "validation.validatedRevision": next };
+  }
+  const doc = await cas(req, update);
+  delete doc.validatedSnapshot;
+  delete doc.publishedSnapshot;
   res.json(doc);
 }
 export async function duplicateInterview(req, res) {
@@ -360,6 +396,12 @@ export async function deleteInterview(req, res) {
     );
   if (current.lifecycle !== "draft")
     error(409, "INVALID_LIFECYCLE", "Restore before deleting.");
+  // Session documents are written by the separate interview service. Keep
+  // this read-only guard so admins cannot delete a definition in active use.
+  if (await mongoose.connection.collection("aiinterviewsessions").findOne(
+    { interviewId: current._id }, { projection: { _id: 1 } },
+  ))
+    error(409, "HAS_STUDENT_SESSIONS", "This interview has student sessions and cannot be deleted. Archive it instead.");
   const result = await AIInterview.deleteOne({
     ...filter(req),
     revision: revision(req),

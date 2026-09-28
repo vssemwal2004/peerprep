@@ -15,8 +15,8 @@ export const CAPABILITIES = Object.freeze({
   manualQuestions: true,
   annuSpecification: true,
   staticProfiles: true,
-  questionGeneration: false,
-  liveConversation: false,
+  questionGeneration: true,
+  liveConversation: true,
   candidateAssignment: false,
   evaluation: false,
   limits: LIMITS,
@@ -152,12 +152,15 @@ export function normalizeDefinition(input) {
   const questions = (items) =>
     list(items ?? [], LIMITS.questions).map((q) => {
       object(q);
-      count++;
+      count += q.kind === "resume" ? integer(q.resumeCount, 1, LIMITS.plannedQuestionsPerGroup, 1) : 1;
       if (count > LIMITS.questions)
         fail("Too many questions in this interview.");
       return {
         id: id(q.id),
+        kind: choice(q.kind, ["specific", "topic", "resume"], "specific"),
         prompt: text(q.prompt),
+        resumeCount: integer(q.resumeCount, 1, LIMITS.plannedQuestionsPerGroup, 1),
+        maxFollowUps: integer(q.maxFollowUps, 0, LIMITS.followUps, 0),
         context: text(q.context),
         difficulty: difficulty(q.difficulty),
         expectedAnswer: text(q.expectedAnswer),
@@ -337,10 +340,10 @@ export function inspectDefinition(d) {
         budget(rules, g.annu.targetCount + followups);
       } else {
         if (!g.questions.length) add(gp, "Add at least one question.");
-        summary.manualCount += g.questions.length;
+        summary.manualCount += g.questions.reduce((n, q) => n + (q.kind === "resume" ? q.resumeCount : 1), 0);
         for (const [questionIndex, q] of g.questions.entries()) {
           const label = `Question ${questionIndex + 1}`;
-          if (!q.prompt) add(gp, `${label}: Add the main question.`);
+          if (!q.prompt && q.kind !== "resume") add(gp, `${label}: Add the main question.`);
           q.subquestions.forEach((part, index) => {
             if (!part.prompt)
               add(gp, `${label}: Question part ${index + 1} is empty.`);
@@ -351,12 +354,14 @@ export function inspectDefinition(d) {
           });
           const qr = { ...rules, ...q.ruleOverrides };
           timing(qr, gp, label);
-          budget(qr);
-          summary.followUpCount += q.followUps.length;
+          const mainCount = q.kind === "resume" ? q.resumeCount : 1;
+          budget(qr, mainCount);
+          summary.followUpCount += (q.followUps.length + q.maxFollowUps) * mainCount;
+          budget(qr, q.maxFollowUps * mainCount);
           for (const [followUpIndex, f] of q.followUps.entries()) {
             const fr = { ...qr, ...f.ruleOverrides };
             timing(fr, gp, `${label}, cross-question ${followUpIndex + 1}`);
-            budget(fr);
+            budget(fr, mainCount);
           }
         }
       }

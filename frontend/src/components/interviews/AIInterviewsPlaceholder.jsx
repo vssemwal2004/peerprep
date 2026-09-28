@@ -14,7 +14,7 @@ import {
 
 const plannedCapabilities = [
   { Icon: Mic2, title: 'Voice-first conversation', detail: 'Natural turn-taking, pause handling, interruption, and reliable voice fallback.' },
-  { Icon: BrainCircuit, title: 'Adaptive interviews', detail: 'Role, job description, resume, rubric, and answer-aware follow-up questions.' },
+  { Icon: BrainCircuit, title: 'Coordinator assignments', detail: 'Manage which student groups receive each AI interview.' },
   { Icon: Languages, title: 'Multilingual foundation', detail: 'Planned support for English, Hindi, and Hinglish with language-specific quality checks.' },
   { Icon: FileSearch, title: 'Reviewable evaluation', detail: 'Evidence-linked scoring, transcript review, human override, and controlled result release.' },
 ];
@@ -39,7 +39,7 @@ export default function AIInterviewsPlaceholder() {
                 </div>
                 <h1 className="text-3xl font-bold tracking-tight text-slate-950 dark:text-white sm:text-4xl">AI Interviews</h1>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 dark:text-gray-300 sm:text-base">
-                  A dedicated workspace is reserved for PeerPrep's future AI mock interview system. The experience is being designed around voice reliability, evidence-based feedback, privacy, and administrator control.
+                  Text AI interviews are available through the admin and student workspaces. Coordinator management and advanced voice features are planned for a later release.
                 </p>
               </div>
               <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-3xl border border-sky-200 bg-gradient-to-br from-sky-50 to-violet-50 text-sky-700 shadow-inner dark:border-sky-900 dark:from-sky-950/40 dark:to-violet-950/30 dark:text-sky-300">
@@ -64,9 +64,9 @@ export default function AIInterviewsPlaceholder() {
             <div className="flex gap-3">
               <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-amber-700 dark:text-amber-300" />
               <div>
-                <h2 className="text-sm font-bold text-amber-950 dark:text-amber-100">No AI interview functionality is active yet</h2>
+                <h2 className="text-sm font-bold text-amber-950 dark:text-amber-100">Coordinator AI interview management is not available yet</h2>
                 <p className="mt-1 text-sm leading-6 text-amber-800 dark:text-amber-200/80">
-                  This page establishes the product boundary only. Model calls, sessions, scoring, recordings, and candidate assignment remain disabled until the architecture and pilot gates are approved.
+                  Admins can configure text AI interviews and make them available to students. Coordinator assignment, scoring, recordings, and review are not available on this page.
                 </p>
               </div>
             </div>

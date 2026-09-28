@@ -25,7 +25,6 @@ import resumeRoutes from './resume.js';
 import assessmentFeedbackRoutes from './assessmentFeedback.js';
 import masterDataRoutes from './masterData.js';
 import aiInterviewRoutes from './aiInterviews.js';
-import avatarRoutes from './avatars.js';
 import bulkUploadRoutes from './bulkUploads.js';
 import { requireAuth, requireFullStudent } from '../middleware/auth.js';
 
@@ -33,6 +32,7 @@ const router = Router();
 // Reserved feature routes must precede the interview identifier routes.
 router.use('/ai-interviews/avatars', avatarRoutes);
 router.use('/ai-interviews', aiInterviewRoutes);
+router.use('/student/ai-interviews', aiInterviewStudentRoutes);
 router.use('/bulk-uploads', bulkUploadRoutes);
 router.use('/auth', authRoutes);
 router.use('/students', requireAuth, requireFullStudent, studentRoutes);

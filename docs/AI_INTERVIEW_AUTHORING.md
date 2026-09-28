@@ -2,9 +2,7 @@
 
 ## Scope
 
-An independent admin-only [Avatar Studio](AVATAR_STUDIO.md) now provides the generated-media authoring workflow at `/admin/ai-interviews/avatars`. Its optional renderer and provider integrations are separate from the interview definition builder. Existing static interviewer profiles and their saved snapshots remain compatible; candidate runtime is still out of scope.
-
-Admin-only creation workspace at `/admin/ai-interviews`. Existing One-to-One interviews, assessments and the coordinator AI placeholder are unchanged. The interview definition builder does not connect question generation, live speech, candidate assignment, invitations or scoring. Avatar Studio's separate media and introduction tools are described in its own guide.
+Admin-only creation workspace at `/admin/ai-interviews`. Existing One-to-One interviews, assessments and the coordinator AI placeholder are unchanged. No LLM SDK, generation, speech, recording, candidate assignment, invitations or scoring is connected.
 
 ## Implemented flow
 
@@ -14,7 +12,7 @@ The steps use a connected blue journey line matching the assessment/Library patt
 
 The admin primary sidebar expands AI Interviews into All AI Interviews, Create AI Interview, Avatars and Reports. Clicking the AI Interviews label opens the directory and expands these links; its chevron toggles them without navigation. The directory's secondary navigation has Interviews, Reports, Avatars and Companies. Existing static interviewer profiles remain accessible through the legacy profiles link. The builder uses a compact three-step progress bar instead of duplicating these links or presenting five competing configuration divisions. Statuses remain directory filters.
 
-`/admin/ai-interviews/reports` is an explicit not-yet-available page, not a live reporting service. It does not request interview data using `reports` as an interview ID, fabricate results or invoke AI services. Candidate sessions and evaluation remain out of scope.
+`/admin/ai-interviews/reports` is an explicit not-yet-available page, not a live reporting service. Candidate text sessions exist, but evaluation and reporting are not implemented.
 
 The UI includes breadcrumbs, contextual back links, server pagination, compact row cards, accessible action menus, static SVG empty states, search and reusable resource pickers. Preview is explicitly a configuration preview, not a running interview. Answer guidance is omitted from that preview.
 
@@ -22,12 +20,12 @@ The UI includes breadcrumbs, contextual back links, server pagination, compact r
 
 The outline shows sections (interview rounds) and their topics together. "Topic" is the user-facing name for the existing `groups` data field; the section/group/question schema is unchanged. Add section and section settings open a side drawer. Adding or editing a topic opens a drawer with two authoring choices:
 
-- **Manual:** write questions or select compatible Library questions. Each question opens a nested drawer for its main prompt, optional subquestions and sequential cross-questions. Answer guidance, difficulty and timing remain available without overwhelming the basic question form.
-- **ANNU AI:** describe what ANNU should ask in one requirements box. Planned question count, cross-question limits, skills and exclusions remain configurable. This stores an authoring specification only; it does not call an LLM, generate questions or conduct an interview.
+- **Manual:** add a specific question, a topic for ANNU to turn into a question, or a number of questions from each student's saved resume. Each entry can set 0–3 answer-based AI follow-ups. Existing optional subquestions and prewritten sequential cross-questions remain supported.
+- **ANNU AI:** describe what ANNU should ask in one requirements box. Planned question count and follow-up limits remain configurable. ANNU generates these questions during student interviews.
 
 ANNU uses a shared compact blue/indigo identity across source selection, topic summaries and review. Its prompt panel has a visible "Authoring only" label, concise writing guidance and character count. Section summaries distinguish written questions from planned ANNU questions.
 
-Subquestions are parts of the same main response. Cross-questions use the existing `followUps` array and represent additional sequential responses, not response-dependent AI branching. Existing advanced fields are retained when editing a question.
+Subquestions are parts of the same main response. Existing prewritten cross-questions use the `followUps` array and are asked before the configured answer-based AI follow-ups. Topic and question order is derived separately for each student; follow-ups stay with their parent question.
 
 **Add question / Save question** stages the question in the current topic; it does not save the interview to the server. **Save topic** applies the topic to the interview draft, which is then handled by the existing revision-checked autosave. Canceling a dirty staged drawer asks before discarding it. The drawer makes this save boundary explicit so closing a topic cannot be mistaken for saving its questions.
 
@@ -35,7 +33,7 @@ Subquestions are parts of the same main response. Cross-questions use the existi
 
 Review presents a short readiness checklist, direct Fix links and a readable question preview. Interviewer selection and advanced interview settings open drawers from the review/workspace rather than adding more required navigation steps. Those settings edit the autosaved interview draft directly; they do not share the topic drawer's staged Save behavior.
 
-**Finish setup** saves pending interview changes and requests server validation. A successful result marks the saved configuration complete. It does not publish, assign candidates, start a session or enable reports. The server remains authoritative even when the client checklist looks complete.
+**Finish setup** saves pending interview changes and requests server validation. An admin then explicitly makes that revision available to students. Revalidating a changed draft permits updating the student version. Removing access or archiving stops new starts; existing sessions keep their snapshotted plan.
 
 ## Storage and services
 
@@ -66,7 +64,7 @@ Browser-history POP navigation is not a fully blocking router flow; this applica
 
 Draft and Archived are lifecycle states. A successful explicit validation marks a particular revision complete. Authoring/lifecycle changes invalidate that checkpoint. Complete does not mean live or published.
 
-This authoring release retains the latest successful configuration snapshot atomically with the record and the latest 100 audit actions. It does **not** provide a permanent full version archive or audit export. Before live candidate delivery is introduced, add immutable version retention and bind sessions to those versions.
+The latest released configuration is snapshotted with the interview. Each started session stores its own question plan, resume context and language. The system retains the latest 100 admin audit actions. It does **not** provide a permanent full version archive or audit export.
 
 Archive is reversible. Delete requires the exact title and a matching revision, and is only allowed for drafts. Duplicate creates an independent draft. Create and duplicate require an Idempotency-Key.
 
@@ -76,15 +74,18 @@ All routes are under `/api/ai-interviews`.
 
 | Method           | Path                                          | Purpose                                                |
 | ---------------- | --------------------------------------------- | ------------------------------------------------------ |
-| GET              | `/capabilities`                               | Authoring limits and disconnected runtime capabilities |
+| GET              | `/capabilities`                               | Authoring limits and AI configuration status           |
 | GET, POST        | `/`                                           | Paginated directory / create draft                     |
 | GET, PUT, DELETE | `/:id`                                        | Load / revision-checked save / confirmed delete        |
 | POST             | `/:id/validate`                               | Validate and checkpoint                                |
 | POST             | `/:id/duplicate`                              | Duplicate using an idempotency key                     |
 | POST             | `/:id/archive`, `/:id/restore`                | Lifecycle operations                                   |
+| POST             | `/:id/publish`, `/:id/unpublish`              | Make a validated revision available / remove access  |
 | GET, POST        | `/resources/companies`, `/resources/profiles` | Search / create resources                              |
 | PUT              | `/resources/:kind/:id`                        | Revision-checked edit or deactivate/restore            |
 | GET              | `/library`                                    | Paginated compatible authorized questions              |
+
+Student routes under `/api/student/ai-interviews`: `GET /` lists available interviews, `POST /:id/start` starts or resumes a session, `GET /sessions/:id` restores a session, `GET /sessions/:id/question-audio` speaks the current question, `POST /sessions/:id/transcribe` uploads microphone audio, and `POST /sessions/:id/answer` confirms its pending transcript and advances. These routes require a full student account. PeerPrep validates its normal session cookie, then forwards requests to the interview service with a short-lived, student-scoped service token. The browser never receives the service URL, token or OpenAI key. The voice-only student room remains at `/student/ai-interviews/room/:sessionId` on PeerPrep, and reloads its transcript from the service.
 
 Directory responses omit question bodies, requirements, snapshots and audit history. Default page size is 25; 50 and 100 are supported. Sorts use an ID tie-breaker. Search escapes regex syntax.
 
@@ -98,7 +99,13 @@ Timing overrides distinguish missing (inherit), zero and null (unlimited). The r
 
 ## Deployment
 
-The simplified creation flow does not require a data/schema migration or an LLM integration. Existing section/group/question definitions remain compatible. The initial authoring index setup below is still required for installations that have not yet deployed it.
+Existing section/group/question definitions remain compatible. Run both additive index scripts below before release. Resume interview start requires the student's explicit consent. The model receives resume content without contact fields, and the request uses `store: false`.
+
+The main API owns login, authoring and publication. The interview service lives in the sibling `peerprep-interview-service` workspace and runs there with `npm start`. It is the only writer of `AIInterviewSession` records (ordered plan, answer versions and chat turns). Both processes connect to the **same persistent MongoDB database** so a newly published interview or saved resume is visible at Start; the service saves the question plan derived from the publication snapshot and filtered resume context into the student's session, so later admin/resume edits do not alter an in-progress interview. There is no second chat store or dual-write synchronization job.
+
+Set `INTERVIEW_SERVICE_URL` (the service's private HTTPS base URL) and the same random `INTERVIEW_SERVICE_SECRET` of at least 32 characters on the main API and interview service. Set `OPENAI_API_KEY`, optional `AI_INTERVIEW_MODEL` (default `gpt-4o-mini`), `PORT` and the same `MONGODB_URI` in the separate workspace. Keep the service URL and `/internal/ai-interviews` inaccessible from the public internet where possible; the service rejects requests without a valid short-lived service token. The public `/health` endpoint is only for load-balancer liveness. Keep the main API's `OPENAI_API_KEY` unset after cutover. The student-facing API returns 503 until the service URL and secret are configured; there is no silent fallback to a second session writer on the main API.
+
+Deploy the interview service and run the index migration first. Verify its `/health`, then configure/restart the main API and publish interviews. Point `INTERVIEW_SERVICE_URL` at a stable internal load balancer rather than a single temporary host. If the runtime service is down, students see a retryable 503 and existing transcripts remain in MongoDB. Voice uses the interview service's `AI_INTERVIEW_TRANSCRIBE_MODEL`, `AI_INTERVIEW_TTS_MODEL` and `AI_INTERVIEW_VOICE` settings. The ANNU avatar is an audio-reactive 2D SVG in PeerPrep; phoneme-accurate visemes are not implemented.
 
 Production disables automatic Mongoose indexes. Run this **additive** migration against the intended deployment database before enabling authoring:
 
@@ -106,6 +113,8 @@ Production disables automatic Mongoose indexes. Run this **additive** migration 
 cd backend
 node --env-file=.env src/migrations/create-ai-interview-indexes.js
 ```
+
+In the sibling `peerprep-interview-service` workspace, run `npm run migrate:indexes` against the same deployment database to add the unique student-session index. The service's own README contains its install and start commands.
 
 The migration creates indexes only; it does not drop indexes or rewrite interview data. It was not run against the user's application database during implementation. Deploy the frontend and backend together; restart the backend so the new router is registered.
 

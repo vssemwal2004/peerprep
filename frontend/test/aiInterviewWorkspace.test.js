@@ -396,7 +396,7 @@ test("manual questions, subquestions and ANNU replacement preserve explicit sour
     labeled("What should ANNU ask? *"),
     "Assess basic debugging skills.",
   );
-  assert.ok(document.body.textContent.includes("not connected yet"));
+  assert.ok(document.body.textContent.includes("available interview"));
   await click(button("Save topic"));
   await click(button("Save"));
   const next = saved.data.sections[0].groups[0];
@@ -611,8 +611,8 @@ test("admin completes both question sources and chooses an interviewer through t
   await click(button("Finish setup"));
   assert.equal(saved.data.interviewer.displayName, "ANNU");
   assert.ok(document.body.textContent.includes("Setup is complete"));
-  assert.ok(document.body.textContent.includes("not published to students"));
-  assert.ok(document.body.textContent.includes("have not been generated"));
+  assert.ok(document.body.textContent.includes("Make available to students"));
+  assert.ok(document.body.textContent.includes("during each student interview"));
   assert.equal(calls.filter(([kind]) => kind === "validate").length, 1);
   assert.equal(calls.filter(([kind]) => kind === "action").length, 0);
 });

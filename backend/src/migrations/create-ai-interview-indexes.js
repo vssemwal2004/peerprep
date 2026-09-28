@@ -9,7 +9,7 @@ try {
   await mongoose.connect(process.env.MONGODB_URI, { autoIndex: false });
   await AIInterview.createIndexes();
   await Resource.createIndexes();
-  console.log("AI interview authoring indexes created.");
+  console.log("AI interview authoring indexes created. Run the separate interview service's session-index migration there.");
 } finally {
   await mongoose.disconnect();
 }

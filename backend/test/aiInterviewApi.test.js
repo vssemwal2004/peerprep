@@ -68,7 +68,8 @@ test("only administrators can use authoring endpoints", async () => {
     );
   const cap = await call("/capabilities");
   assert.equal(cap.status, 200);
-  assert.equal(cap.body.questionGeneration, false);
+  assert.equal(cap.body.questionGeneration, true);
+  assert.equal(cap.body.aiConfigured, false);
 });
 test("companies persist, normalize duplicates and are owner scoped", async () => {
   const [a, b] = await Promise.all([
@@ -224,6 +225,43 @@ test("profiles snapshot on selection, validation is atomic, subsequent edits inv
   ).body;
   assert.equal(doc.data.interviewer.displayName, "ANNU");
   assert.equal(doc.validation.complete, false);
+});
+test("release requires a validated revision and keeps the student snapshot stable through draft edits", async () => {
+  const profile = (await call("/resources/profiles", "POST", { name: `Release ${crypto.randomUUID()}`, data: { displayName: "ANNU" } })).body;
+  const data = {
+    title: "Release flow", role: "Engineer", experience: "junior", difficulty: "easy",
+    interviewer: { profileId: profile._id, profileRevision: profile.revision },
+    sections: [{ id: "s1", name: "Technical", weight: 100, groups: [{
+      id: "g1", name: "APIs", weight: 100, source: "manual",
+      questions: [{ id: "q1", kind: "topic", prompt: "REST", maxFollowUps: 2 }],
+    }] }],
+    rubric: [{ id: "r1", name: "Clarity", weight: 100 }],
+  };
+  let doc = (await call("", "POST", { data }, { "Idempotency-Key": crypto.randomUUID() })).body;
+  assert.equal((await call(`/${doc._id}/publish`, "POST", { revision: doc.revision })).status, 422);
+  doc = (await call(`/${doc._id}/validate`, "POST", { revision: doc.revision })).body;
+  const oldUrl = process.env.INTERVIEW_SERVICE_URL;
+  const oldSecret = process.env.INTERVIEW_SERVICE_SECRET;
+  process.env.INTERVIEW_SERVICE_URL = "http://127.0.0.1:4100";
+  process.env.INTERVIEW_SERVICE_SECRET = "test-secret-longer-than-thirty-two-characters";
+  try {
+    doc = (await call(`/${doc._id}/publish`, "POST", { revision: doc.revision })).body;
+    assert.equal(doc.publishedRevision, doc.revision);
+    doc = (await call(`/${doc._id}`, "PUT", { revision: doc.revision, data: { ...doc.data, description: "New draft" } })).body;
+    assert.equal(doc.validation.complete, false);
+    assert.equal((await AIInterview.findById(doc._id).lean()).publishedSnapshot.data.description, "");
+    doc = (await call(`/${doc._id}/validate`, "POST", { revision: doc.revision })).body;
+    doc = (await call(`/${doc._id}/publish`, "POST", { revision: doc.revision })).body;
+    assert.equal((await AIInterview.findById(doc._id).lean()).publishedSnapshot.data.description, "New draft");
+    doc = (await call(`/${doc._id}/archive`, "POST", { revision: doc.revision })).body;
+    assert.equal(doc.publishedAt, undefined);
+    assert.equal((await AIInterview.findById(doc._id).lean()).publishedSnapshot, undefined);
+  } finally {
+    if (oldUrl === undefined) delete process.env.INTERVIEW_SERVICE_URL;
+    else process.env.INTERVIEW_SERVICE_URL = oldUrl;
+    if (oldSecret === undefined) delete process.env.INTERVIEW_SERVICE_SECRET;
+    else process.env.INTERVIEW_SERVICE_SECRET = oldSecret;
+  }
 });
 test("directory is paginated and excludes prompts and internal snapshots", async () => {
   const seed = Array.from({ length: 30 }, (_, i) => ({

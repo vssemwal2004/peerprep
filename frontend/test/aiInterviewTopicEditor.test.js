@@ -185,6 +185,21 @@ test("new questions stay local until saved and reject empty prompts", async () =
   );
   assert.equal(document.querySelectorAll("dialog[open]").length, 1);
 });
+test("resume question authoring saves its question and answer-based follow-up counts", async () => {
+  await mount();
+  await click(button("Add question"));
+  const kind = labelled("Question type");
+  await act(async () => {
+    kind.value = "resume";
+    kind.dispatchEvent(new window.Event("change", { bubbles: true }));
+  });
+  await type(labelled("Number of questions from the resume"), "3");
+  await type(labelled("AI follow-ups after each answer"), "2");
+  await click(button("Add question", activeDrawer()));
+  assert.equal(current.questions[0].kind, "resume");
+  assert.equal(current.questions[0].resumeCount, 3);
+  assert.equal(current.questions[0].maxFollowUps, 2);
+});
 test("subquestions and cross-questions retain separate backend semantics", async () => {
   await mount();
   await click(button("Add question"));
@@ -265,7 +280,7 @@ test("source switching protects authored content and preserves topic settings", 
   assert.equal(current.shuffle, true);
   assert.equal(current.ruleOverrides.responseSeconds, 90);
   assert.equal(current.annu.targetCount, 3);
-  assert.match(document.body.textContent, /not connected yet/);
+  assert.match(document.body.textContent, /available interview/);
   await type(labelled("What should ANNU ask? *"), "Ask about API design.");
   assert.equal(current.annu.requirements, "Ask about API design.");
   assert.equal(
@@ -425,8 +440,8 @@ test("ANNU prompt presentation keeps authoring status and a live character count
   const panel = document.querySelector("[data-annu-prompt]");
   assert.ok(panel);
   assert.match(panel.textContent, /ANNU AI/);
-  assert.match(panel.textContent, /Authoring only/);
-  assert.match(panel.textContent, /not connected yet/);
+  assert.match(panel.textContent, /Generated during student interviews/);
+  assert.match(panel.textContent, /available interview/);
   assert.equal(
     panel.querySelector('[aria-label="ANNU prompt character count"]')
       .textContent,
