@@ -67,7 +67,7 @@ export async function forwardInterviewMedia(req, res) {
     res.set("Cache-Control", "private, no-store");
     if (upstream.ok && !isUpload) {
       const audio = Buffer.from(await upstream.arrayBuffer());
-      res.set("Content-Type", "audio/mpeg");
+      res.set("Content-Type", upstream.headers.get("content-type") || "audio/mpeg");
       return res.status(upstream.status).send(audio);
     }
     const payload = await upstream.json();
