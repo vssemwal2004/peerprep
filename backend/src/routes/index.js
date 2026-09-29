@@ -25,6 +25,8 @@ import resumeRoutes from './resume.js';
 import assessmentFeedbackRoutes from './assessmentFeedback.js';
 import masterDataRoutes from './masterData.js';
 import aiInterviewRoutes from './aiInterviews.js';
+import aiInterviewStudentRoutes from './aiInterviewStudent.js';
+import avatarRoutes from './avatars.js';
 import bulkUploadRoutes from './bulkUploads.js';
 import { requireAuth, requireFullStudent } from '../middleware/auth.js';
 
