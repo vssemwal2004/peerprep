@@ -54,6 +54,35 @@ export async function uploadAvatar(fileBuffer, folder, userId) {
   });
 }
 
+export async function uploadProblemAsset(fileBuffer, { ownerId = 'admin', publicId }) {
+  if (!isCloudinaryConfigured()) throw new Error('Cloudinary not configured');
+
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder: `peerprep/problem-assets/authored/${String(ownerId)}`,
+        public_id: publicId,
+        resource_type: 'image',
+        overwrite: false,
+        unique_filename: false,
+        use_filename: false,
+      },
+      (error, result) => {
+        if (error) reject(error);
+        else resolve({
+          url: result.secure_url,
+          publicId: result.public_id,
+          width: result.width,
+          height: result.height,
+          format: result.format,
+          bytes: result.bytes,
+        });
+      },
+    );
+    uploadStream.end(fileBuffer);
+  });
+}
+
 /**
  * Delete avatar from Cloudinary
  * @param {string} imageUrl - The URL of the image to delete

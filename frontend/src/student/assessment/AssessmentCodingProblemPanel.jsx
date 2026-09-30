@@ -1,6 +1,8 @@
 import { memo, useMemo } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { RichTextPreview } from '../../admin/compiler/CompilerContentPreview';
+import { getDisplayProblemStatement } from '../../admin/compiler/problemStatementFormatting';
+import ProblemAssetImages from '../../components/ProblemAssetImages';
 
 function normalizeVisibleExamples(codingData = {}) {
   const source = Array.isArray(codingData.sampleTestCases) && codingData.sampleTestCases.length
@@ -22,6 +24,7 @@ function normalizeVisibleExamples(codingData = {}) {
     input: testCase?.input ?? '',
     output: testCase?.output ?? testCase?.expectedOutput ?? '',
     explanation: testCase?.explanation ?? '',
+    images: Array.isArray(testCase?.images) ? testCase.images : [],
   }));
 }
 
@@ -35,7 +38,7 @@ function DetailBlock({ title, children }) {
   );
 }
 
-function AssessmentCodingProblemPanel({ question, codingData = {}, marks = 0, sectionLabel = 'Coding' }) {
+function AssessmentCodingProblemPanel({ question, codingData = {}, language = '', marks = 0, sectionLabel = 'Coding' }) {
   const isSql = codingData.category === 'SQL';
   const examples = useMemo(() => normalizeVisibleExamples(codingData), [codingData]);
   const hints = useMemo(() => (
@@ -48,8 +51,19 @@ function AssessmentCodingProblemPanel({ question, codingData = {}, marks = 0, se
       ? codingData.faqs.filter((faq) => String(faq?.question || '').trim() || String(faq?.answer || '').trim())
       : []
   ), [codingData.faqs]);
+  const companyTags = useMemo(() => (
+    Array.isArray(codingData.companyTags)
+      ? [...new Set(codingData.companyTags.map((company) => String(company || '').trim()).filter(Boolean))]
+      : []
+  ), [codingData.companyTags]);
   const title = question?.questionText || codingData.title || (isSql ? 'SQL problem' : 'Coding problem');
   const description = codingData.description || codingData.statement || '';
+  const constraints = String(codingData.constraints || '')
+    .split(/\r?\n/)
+    .map((item) => item.replace(/^[-*]\s*/, '').trim())
+    .filter(Boolean);
+  const runnerLanguage = language || codingData.supportedLanguages?.[0] || '';
+  const visibleRunner = codingData.studentRunnerTemplates?.[runnerLanguage] || '';
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] bg-white shadow-[0_12px_34px_rgba(15,23,42,0.05)] backdrop-blur-sm dark:bg-gray-900 dark:shadow-black/30">
@@ -65,7 +79,8 @@ function AssessmentCodingProblemPanel({ question, codingData = {}, marks = 0, se
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
         <div className="space-y-6">
           <section>
-            <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-[24px] font-semibold leading-8 tracking-tight text-slate-950 dark:text-white">{title}</h1>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
               {codingData.difficulty ? (
                 <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
                   {codingData.difficulty}
@@ -83,60 +98,66 @@ function AssessmentCodingProblemPanel({ question, codingData = {}, marks = 0, se
               ) : null}
               {isSql ? <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:bg-sky-900/20 dark:text-sky-300">SQLite</span> : null}
             </div>
-            <h1 className="mt-3 text-xl font-bold leading-8 text-slate-900 dark:text-gray-100">{title}</h1>
           </section>
 
-          <section className="space-y-3">
-            <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">Problem statement</h2>
+          <section className="space-y-4">
             {description ? (
-              <RichTextPreview content={description} />
+              <RichTextPreview content={getDisplayProblemStatement(description, examples.length > 0)} lead />
             ) : (
               <p className="text-sm text-slate-500 dark:text-gray-400">No problem statement was provided.</p>
             )}
+            <ProblemAssetImages images={(codingData.contentImages || []).filter((image) => image.section !== 'constraints')} className="mt-4" />
           </section>
 
-          <div className="space-y-5 border-t border-slate-100 pt-5 dark:border-gray-800">
+          {isSql ? <div className="space-y-5">
             {isSql && codingData.sqlConfig?.schemaSql ? <div><h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">Database schema</h3><pre className="mt-2 max-h-64 overflow-auto rounded-xl bg-slate-950 p-4 font-mono text-xs leading-5 text-sky-100">{codingData.sqlConfig.schemaSql}</pre></div> : null}
             {isSql && codingData.sqlConfig?.seedDataSql ? <div><h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">Sample data</h3><pre className="mt-2 max-h-64 overflow-auto rounded-xl bg-slate-950 p-4 font-mono text-xs leading-5 text-sky-100">{codingData.sqlConfig.seedDataSql}</pre></div> : null}
-            <DetailBlock title={isSql ? 'Schema notes' : 'Input'}>{codingData.inputFormat}</DetailBlock>
-            <DetailBlock title={isSql ? 'Required result' : 'Output'}>{codingData.outputFormat}</DetailBlock>
-            <DetailBlock title={isSql ? 'Query rules' : 'Constraints'}>{codingData.constraints}</DetailBlock>
-          </div>
+            <DetailBlock title="Schema notes">{codingData.inputFormat}</DetailBlock>
+            <DetailBlock title="Required result">{codingData.outputFormat}</DetailBlock>
+          </div> : null}
+
+          {visibleRunner ? <details className="group overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-slate-800 dark:text-gray-100">
+              Execution runner ({runnerLanguage})
+              <span className="text-xs font-normal text-slate-400">Read-only</span>
+            </summary>
+            <pre className="max-h-72 overflow-auto border-t border-slate-200 bg-slate-950 p-4 font-mono text-xs leading-5 text-slate-100 dark:border-gray-700">{visibleRunner}</pre>
+          </details> : null}
 
           <section className="space-y-3">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">Examples</h2>
+              <h2 className="text-base font-semibold text-slate-900 dark:text-gray-100">Examples</h2>
               <span className="text-xs text-slate-400">{examples.length} visible</span>
             </div>
             {examples.length ? (
-              <div className="space-y-4">
+              <div className="space-y-5">
                 {examples.map((example, index) => (
-                  <article key={example.id} className="overflow-hidden rounded-[20px] border border-slate-200/70 bg-white dark:border-gray-700 dark:bg-gray-900">
-                    <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-2.5 text-sm font-semibold text-slate-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100">
-                      Example {index + 1}
-                    </div>
-                    <div className="grid gap-3 p-4 sm:grid-cols-2">
+                  <article key={example.id} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)] dark:border-gray-700 dark:bg-gray-900">
+                    <div className="text-base font-semibold text-slate-900 dark:text-gray-100">Example {index + 1}:</div>
+                    {example.images.length ? <ProblemAssetImages images={example.images} /> : null}
+                    <div className="space-y-3 rounded-lg bg-slate-50 px-4 py-3.5 font-mono text-[13px] leading-6 text-slate-800 dark:bg-gray-800 dark:text-gray-200">
                       <div>
-                        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">{isSql ? 'Additional dataset SQL' : 'Input'}</div>
-                        <pre className="min-h-12 whitespace-pre-wrap break-words rounded-xl bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-800 dark:bg-gray-800 dark:text-gray-200">{example.input || (isSql ? 'Uses shared sample data' : '(empty)')}</pre>
+                        <div className="font-sans text-sm font-semibold text-slate-900 dark:text-gray-100">{isSql ? 'Additional dataset SQL:' : 'Input:'}</div>
+                        <pre className="mt-1 whitespace-pre-wrap break-words font-mono">{example.input || (isSql ? 'Uses shared sample data' : '(empty)')}</pre>
                       </div>
                       <div>
-                        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">{isSql ? 'Expected result' : 'Output'}</div>
-                        <pre className="min-h-12 whitespace-pre-wrap break-words rounded-xl bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-800 dark:bg-gray-800 dark:text-gray-200">{example.output || '(empty)'}</pre>
+                        <div className="font-sans text-sm font-semibold text-slate-900 dark:text-gray-100">{isSql ? 'Expected result:' : 'Output:'}</div>
+                        <pre className="mt-1 whitespace-pre-wrap break-words font-mono">{example.output || '(empty)'}</pre>
                       </div>
-                      {example.explanation ? (
-                        <div className="sm:col-span-2">
-                          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Explanation</div>
-                          <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-gray-300">{example.explanation}</p>
-                        </div>
-                      ) : null}
                     </div>
+                    {example.explanation ? <div className="border-t border-slate-100 pt-3 text-[15px] leading-6 text-slate-800 dark:border-gray-800 dark:text-gray-200"><span className="font-semibold text-slate-950 dark:text-white">Explanation: </span><RichTextPreview className="mt-1" content={example.explanation} /></div> : null}
                   </article>
                 ))}
               </div>
             ) : (
               <div className="rounded-2xl bg-slate-50 px-4 py-5 text-sm text-slate-500 dark:bg-gray-800/70 dark:text-gray-400">No visible sample cases are available.</div>
             )}
+          </section>
+
+          <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)] dark:border-gray-700 dark:bg-gray-900">
+            <h2 className="text-base font-semibold text-slate-900 dark:text-gray-100">{isSql ? 'Query rules' : 'Constraints'}</h2>
+            {constraints.length ? <ul className="list-disc space-y-2 pl-6 font-mono text-[13px] leading-6 text-slate-800 marker:text-slate-600 dark:text-gray-200 dark:marker:text-gray-400">{constraints.map((constraint, index) => <li key={`${constraint}-${index}`} className="break-words pl-1">{constraint}</li>)}</ul> : <p className="text-sm text-slate-500 dark:text-gray-400">No additional constraints.</p>}
+            <ProblemAssetImages images={(codingData.contentImages || []).filter((image) => image.section === 'constraints')} />
           </section>
 
           {hints.length ? (
@@ -169,6 +190,25 @@ function AssessmentCodingProblemPanel({ question, codingData = {}, marks = 0, se
                 ))}
               </div>
             </section>
+          ) : null}
+
+          {companyTags.length ? (
+            <details className="group overflow-hidden rounded-[20px] border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3.5 text-sm font-semibold text-slate-800 dark:text-gray-100">
+                Company tags
+                <span className="flex items-center gap-2 text-xs font-normal text-slate-400">
+                  {companyTags.length}
+                  <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+                </span>
+              </summary>
+              <div className="flex flex-wrap gap-2 border-t border-slate-100 px-4 py-4 dark:border-gray-800">
+                {companyTags.map((company) => (
+                  <span key={company} className="rounded-full bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700 dark:bg-violet-900/20 dark:text-violet-200">
+                    {company}
+                  </span>
+                ))}
+              </div>
+            </details>
           ) : null}
         </div>
       </div>

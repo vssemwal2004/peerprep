@@ -37,6 +37,8 @@ Thumbs.db
 dist/
 build/
 *.local
+__pycache__/
+*.py[cod]
 
 
 # MongoDB Backups

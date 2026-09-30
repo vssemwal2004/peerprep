@@ -1010,6 +1010,30 @@ export const api = {
       },
     );
   },
+  listCodingTopics: (params = {}) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") qs.append(key, String(value));
+    });
+    return request(`/admin/library/coding-topics${qs.toString() ? `?${qs.toString()}` : ""}`, {
+      cacheTtlMs: 30 * 1000,
+      skipCache: Boolean(params.skipCache),
+    });
+  },
+  createCodingTopic: (body) =>
+    request("/admin/library/coding-topics", { method: "POST", body }),
+  listCodingTags: (params = {}) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") qs.append(key, String(value));
+    });
+    return request(`/admin/library/coding-tags${qs.toString() ? `?${qs.toString()}` : ""}`, {
+      cacheTtlMs: 30 * 1000,
+      skipCache: Boolean(params.skipCache),
+    });
+  },
+  createCodingTag: (body) =>
+    request("/admin/library/coding-tags", { method: "POST", body }),
   createLibraryQuestion: (question) =>
     request("/admin/library/questions", { method: "POST", body: { question } }),
   createLibraryQuestionsBulk: (questions, uploadMetadata) =>
@@ -1390,6 +1414,15 @@ export const api = {
   },
   createCompilerProblem: (formData) =>
     request("/compiler/problems", { method: "POST", formData }),
+  uploadCompilerProblemAsset: (file) => {
+    const formData = new FormData();
+    formData.append("image", file);
+    return request("/compiler/problem-assets", {
+      method: "POST",
+      formData,
+      timeoutMs: 30 * 1000,
+    });
+  },
   updateCompilerProblem: (problemId, formData) =>
     request(`/compiler/problems/${problemId}`, { method: "PUT", formData }),
   updateCompilerProblemVisibility: (problemId, visibility) => {
@@ -1411,9 +1444,9 @@ export const api = {
   deleteCompilerProblem: (problemId) =>
     request(`/compiler/problems/${problemId}`, { method: "DELETE" }),
   getCompilerProblem: (problemId) =>
-    request(`/compiler/problems/${problemId}`, { cacheTtlMs: 60 * 1000 }),
+    request(`/compiler/problems/${problemId}`, { skipCache: true }),
   getCompilerProblemPreview: (problemId) =>
-    request(`/compiler/problems/${problemId}?view=preview`, { cacheTtlMs: 60 * 1000 }),
+    request(`/compiler/problems/${problemId}?view=preview`, { skipCache: true }),
   runCompilerPreview: (formData) =>
     request("/compiler/problems/preview/run", { method: "POST", formData }),
   approveCompilerProblemPreview: (problemId, formData) =>

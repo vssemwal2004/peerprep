@@ -17,6 +17,9 @@ const questionLibrarySchema = new mongoose.Schema({
   questionType: { type: String, required: true, trim: true },
   questionText: { type: String, default: '' },
   tags: { type: [String], default: [] },
+  topicIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'CodingTopic' }],
+  topicAncestorIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'CodingTopic' }],
+  codingTagIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'CodingTag' }],
   keywords: { type: [String], default: [] },
   difficulty: { type: String, default: '', trim: true, index: true },
   status: { type: String, default: 'draft', trim: true, index: true },
@@ -39,5 +42,8 @@ questionLibrarySchema.index({ status: 1, visibility: 1, updatedAt: -1 });
 questionLibrarySchema.index({ status: 1, visibility: 1, questionType: 1, updatedAt: -1 });
 // Compound index for coordinator-scoped queries
 questionLibrarySchema.index({ createdBy: 1, status: 1, visibility: 1, updatedAt: -1 });
+questionLibrarySchema.index({ questionType: 1, topicIds: 1, updatedAt: -1 });
+questionLibrarySchema.index({ questionType: 1, topicAncestorIds: 1, updatedAt: -1 });
+questionLibrarySchema.index({ questionType: 1, codingTagIds: 1, updatedAt: -1 });
 
 export default mongoose.model('QuestionLibrary', questionLibrarySchema);

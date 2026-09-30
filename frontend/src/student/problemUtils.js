@@ -26,6 +26,31 @@
 ];
 
 const DRAFT_KEY_PREFIX = 'peerprep:problem-drafts:';
+const LEGACY_PYTHON_ADAPTER_MARKER = '# PeerPrep generated function adapter. Keep this section unchanged.';
+
+function isLegacyFullProgramDraft(language, sourceCode) {
+  const source = String(sourceCode || '');
+  if (!source.trim()) return false;
+  if (source.includes(LEGACY_PYTHON_ADAPTER_MARKER)) return true;
+
+  const normalizedLanguage = String(language || '').toLowerCase();
+  const entrypointPatterns = {
+    c: /\b(?:int|void)\s+main\s*\(/,
+    cpp: /\b(?:int|void)\s+main\s*\(/,
+    java: /\bpublic\s+static\s+void\s+main\s*\(/,
+    csharp: /\bstatic\s+void\s+Main\s*\(/,
+    go: /\bfunc\s+main\s*\(/,
+    rust: /\bfn\s+main\s*\(/,
+    kotlin: /\bfun\s+main\s*\(/,
+    swift: /@main\b|\bstatic\s+func\s+main\s*\(/,
+    python: /__name__\s*==\s*['"]__main__['"]/,
+    javascript: /require\.main\s*===\s*module|process\.stdin/,
+    typescript: /require\.main\s*===\s*module|process\.stdin/,
+    ruby: /\bSTDIN\.(?:read|gets)\b/,
+    php: /php:\/\/stdin|\$argv\b/i,
+  };
+  return entrypointPatterns[normalizedLanguage]?.test(source) || false;
+}
 
 export function resolveProblemSort(value) {
   return PROBLEM_SORT_OPTIONS.find((option) => option.value === value) || PROBLEM_SORT_OPTIONS[0];
@@ -64,7 +89,12 @@ export function buildProblemDrafts(problem, storedDrafts = {}) {
   return (problem?.supportedLanguages || []).reduce((acc, language) => {
     const fallbackTemplate = getStarterCodeForLanguage(problem, language);
     const storedDraft = storedDrafts?.[language];
-    acc[language] = typeof storedDraft === 'string' ? storedDraft : fallbackTemplate;
+    const isLegacyGeneratedDraft = problem?.executionMode === 'function'
+      && typeof storedDraft === 'string'
+      && isLegacyFullProgramDraft(language, storedDraft);
+    acc[language] = typeof storedDraft === 'string' && !isLegacyGeneratedDraft
+      ? storedDraft
+      : fallbackTemplate;
     return acc;
   }, {});
 }

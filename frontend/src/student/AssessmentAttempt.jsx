@@ -3636,6 +3636,7 @@ export default function AssessmentAttempt() {
                   <AssessmentCodingProblemPanel
                     question={question}
                     codingData={codingData || {}}
+                    language={activeLanguage}
                     marks={questionMarks}
                     sectionLabel={currentSectionLabel}
                   />

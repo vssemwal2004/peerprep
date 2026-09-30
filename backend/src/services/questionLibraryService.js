@@ -58,6 +58,7 @@ function buildProblemSnapshot(problem = {}, { sampleTestCases = [], hiddenTestCa
     _id: problem._id,
     title: problem.title || '',
     description: problem.description || '',
+    contentImages: Array.isArray(problem.contentImages) ? problem.contentImages : [],
     difficulty: problem.difficulty || 'Easy',
     category: problem.category || 'DSA',
     sqlConfig: {
@@ -66,13 +67,26 @@ function buildProblemSnapshot(problem = {}, { sampleTestCases = [], hiddenTestCa
       seedDataSql: problem.sqlConfig?.seedDataSql || '',
     },
     tags: Array.isArray(problem.tags) ? problem.tags : [],
+    topicIds: Array.isArray(problem.topicIds) ? problem.topicIds : [],
+    topicAncestorIds: Array.isArray(problem.topicAncestorIds) ? problem.topicAncestorIds : [],
+    codingTagIds: Array.isArray(problem.codingTagIds) ? problem.codingTagIds : [],
     companyTags: Array.isArray(problem.companyTags) ? problem.companyTags : [],
     supportedLanguages: Array.isArray(problem.supportedLanguages) ? problem.supportedLanguages : [],
+    validatedLanguages: Array.isArray(problem.validatedLanguages) ? problem.validatedLanguages : [],
     codeTemplates: mapCodeMap(problem.codeTemplates),
+    executionMode: problem.executionMode || 'function',
+    functionContract: problem.functionContract || {
+      className: 'Solution', methodName: '', parameters: [], returnType: '', outputMode: 'return', outputParameterIndex: 0,
+    },
+    showExecutionHarness: false,
+    studentRunnerTemplates: undefined,
     hasReferenceSolution: referenceSolutionCount > 0,
     inputFormat: problem.inputFormat || '',
     outputFormat: problem.outputFormat || '',
     constraints: problem.constraints || '',
+    editorial: problem.editorial || '',
+    hints: Array.isArray(problem.hints) ? problem.hints : [],
+    faqs: Array.isArray(problem.faqs) ? problem.faqs : [],
     timeLimitSeconds: problem.timeLimitSeconds,
     memoryLimitMb: problem.memoryLimitMb,
     totalMarks: Number(problem.totalMarks || hiddenTestCaseTotalMarks || hiddenTestCaseCount || 1),
@@ -171,6 +185,9 @@ function buildAssessmentLibraryPayload({ assessment, section, question, sectionI
     questionId: sourceQuestionId,
     type: questionType,
     tags,
+    topicIds: question?.topicIds || question?.coding?.topicIds || question?.problemDataSnapshot?.topicIds || [],
+    topicAncestorIds: question?.topicAncestorIds || question?.coding?.topicAncestorIds || question?.problemDataSnapshot?.topicAncestorIds || [],
+    codingTagIds: question?.codingTagIds || question?.coding?.codingTagIds || question?.problemDataSnapshot?.codingTagIds || [],
     keywords,
   };
 
@@ -186,6 +203,9 @@ function buildAssessmentLibraryPayload({ assessment, section, question, sectionI
     questionType,
     questionText,
     tags,
+    topicIds: Array.isArray(snapshot.topicIds) ? snapshot.topicIds : [],
+    topicAncestorIds: Array.isArray(snapshot.topicAncestorIds) ? snapshot.topicAncestorIds : [],
+    codingTagIds: Array.isArray(snapshot.codingTagIds) ? snapshot.codingTagIds : [],
     keywords,
     difficulty,
     status: String(assessment.lifecycleStatus || '').trim().toLowerCase() === 'draft' ? 'draft' : 'published',
@@ -227,6 +247,9 @@ function buildProblemLibraryPayload(problem = {}, { sampleTestCases = [], hidden
     questionType: 'coding',
     questionText: String(problem.title || '').trim(),
     tags,
+    topicIds: Array.isArray(problem.topicIds) ? problem.topicIds : [],
+    topicAncestorIds: Array.isArray(problem.topicAncestorIds) ? problem.topicAncestorIds : [],
+    codingTagIds: Array.isArray(problem.codingTagIds) ? problem.codingTagIds : [],
     keywords,
     difficulty: String(problem.difficulty || '').trim(),
     status: normalizedStatus === 'active' ? 'published' : (normalizedStatus || 'draft'),
@@ -247,6 +270,9 @@ function buildProblemLibraryPayload(problem = {}, { sampleTestCases = [], hidden
       questionText: String(problem.title || '').trim(),
       problemId: problem._id,
       tags,
+      topicIds: Array.isArray(problem.topicIds) ? problem.topicIds : [],
+      topicAncestorIds: Array.isArray(problem.topicAncestorIds) ? problem.topicAncestorIds : [],
+      codingTagIds: Array.isArray(problem.codingTagIds) ? problem.codingTagIds : [],
       keywords,
       problemDataSnapshot: snapshot,
     },
@@ -264,7 +290,7 @@ async function loadProblemLibraryContext(problemInput) {
   const [sampleTestCases, hiddenTestCases] = await Promise.all([
     TestCase.find({ problem: problem._id, kind: 'sample' })
       .sort({ position: 1 })
-      .select('input output explanation marks')
+      .select('input output explanation images marks')
       .lean(),
     TestCase.find({ problem: problem._id, kind: 'hidden' }).select('marks').lean(),
   ]);
@@ -280,6 +306,7 @@ async function loadProblemLibraryContext(problemInput) {
       input: testCase.input || '',
       output: testCase.output || '',
       explanation: testCase.explanation || '',
+      images: Array.isArray(testCase.images) ? testCase.images : [],
       marks: Number(testCase.marks) || 1,
     })),
     hiddenTestCaseCount: Math.max(
@@ -377,7 +404,7 @@ export async function removeProblemFromLibrary(problemId) {
 async function performFullLibrarySync() {
   const [assessments, problems] = await Promise.all([
     Assessment.find({}).lean(),
-    Problem.find({}).lean(),
+    Problem.find({}).select('+executionHarnesses').lean(),
   ]);
 
   // Sync assessments in parallel (batched to avoid overwhelming DB)
@@ -413,6 +440,18 @@ export async function ensureQuestionLibrarySynchronized({ force = false, blockin
   const now = Date.now();
   if (!force && lastFullSyncAt && now - lastFullSyncAt < LIBRARY_SYNC_COOLDOWN_MS) {
     return;
+  }
+
+  // CRUD/import flows synchronize their own records. Rebuilding every problem
+  // snapshot from a library-list request is prohibitively expensive once the
+  // bank contains thousands of questions, so only auto-backfill an empty bank.
+  // Maintenance/admin callers can still request an explicit force rebuild.
+  if (!force) {
+    const existingCount = await QuestionLibrary.estimatedDocumentCount();
+    if (existingCount > 0) {
+      lastFullSyncAt = now;
+      return;
+    }
   }
 
   if (!pendingFullSync) {
@@ -513,6 +552,9 @@ export function formatLibraryQuestionSummary(question = {}) {
     passageTitle: isPassageSet ? (questionData.passage?.title || '') : '',
     questionText: question.questionText || '',
     tags: Array.isArray(question.tags) ? question.tags : [],
+    topicIds: Array.isArray(question.topicIds) ? question.topicIds : [],
+    topicAncestorIds: Array.isArray(question.topicAncestorIds) ? question.topicAncestorIds : [],
+    codingTagIds: Array.isArray(question.codingTagIds) ? question.codingTagIds : [],
     keywords: Array.isArray(question.keywords) ? question.keywords : [],
     difficulty: question.difficulty || '',
     status: question.status || 'published',

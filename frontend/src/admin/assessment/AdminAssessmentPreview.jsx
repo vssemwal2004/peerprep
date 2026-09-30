@@ -243,7 +243,7 @@ export default function AdminAssessmentPreview() {
           <div className="flex h-full flex-col gap-3 lg:min-h-0 lg:flex-row lg:overflow-hidden">
             <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 lg:flex-row lg:overflow-hidden">
               <section className="min-h-[520px] min-w-0 overflow-hidden rounded-[28px] border border-slate-200/80 lg:h-full lg:min-h-0 lg:w-[42%] dark:border-gray-700">
-                <AssessmentCodingProblemPanel question={question} codingData={codingData} marks={marks} sectionLabel={sectionLabel} />
+                <AssessmentCodingProblemPanel question={question} codingData={codingData} language={previewLanguage} marks={marks} sectionLabel={sectionLabel} />
               </section>
               <section className="flex min-h-[520px] min-w-0 flex-1 flex-col overflow-hidden rounded-[28px] border border-slate-200/80 bg-white dark:border-gray-700 dark:bg-gray-900 lg:min-h-0">
                 <div className="flex min-h-12 items-center justify-between gap-2 border-b border-slate-200 bg-slate-50/80 px-3 py-2 dark:border-gray-700 dark:bg-gray-900">

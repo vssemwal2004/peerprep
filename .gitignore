@@ -49,3 +49,18 @@ coverage/
 # MongoDB Backups
 MongoBackup/
 mongo-backup.bat
+
+# Local reference-repository downloads used during data repair
+/.codex-temp-*/
+
+# Local scratch files and generated reports
+/tmp/
+
+# Python caches and local virtual environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

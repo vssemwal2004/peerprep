@@ -67,6 +67,7 @@ export function createEmptySampleTestCase() {
     input: '',
     output: '',
     explanation: '',
+    images: [],
     marks: 1,
   };
 }
@@ -123,6 +124,7 @@ export function createDefaultProblemForm() {
   return {
     title: '',
     description: '',
+    contentImages: [],
     difficulty: 'Easy',
     category: 'DSA',
     sqlConfig: {
@@ -131,9 +133,22 @@ export function createDefaultProblemForm() {
       seedDataSql: '',
     },
     tags: '',
+    topicIds: [],
+    codingTagIds: [],
     companyTags: '',
     supportedLanguages: ['python', 'javascript'],
     codeTemplates: {},
+    executionMode: 'function',
+    functionContract: {
+      className: 'Solution',
+      methodName: '',
+      parameters: [],
+      returnType: '',
+      outputMode: 'return',
+      outputParameterIndex: 0,
+    },
+    showExecutionHarness: false,
+    executionHarnesses: {},
     referenceSolutions: {},
     inputFormat: '',
     outputFormat: '',
@@ -178,6 +193,7 @@ export function createProblemFormFromProblem(problem) {
   return {
     title: problem?.title || '',
     description: problem?.description || '',
+    contentImages: Array.isArray(problem?.contentImages) ? problem.contentImages.map((image) => ({ ...image })) : [],
     difficulty: problem?.difficulty || 'Easy',
     category: problem?.category === 'SQL' ? 'SQL' : 'DSA',
     sqlConfig: {
@@ -186,9 +202,27 @@ export function createProblemFormFromProblem(problem) {
       seedDataSql: problem?.sqlConfig?.seedDataSql || '',
     },
     tags: (problem?.tags || []).join(', '),
+    topicIds: (problem?.topicIds || []).map(String),
+    codingTagIds: (problem?.codingTagIds || []).map(String),
     companyTags: (problem?.companyTags || []).join(', '),
     supportedLanguages,
     codeTemplates: normalizeCompilerCodeMap(problem?.codeTemplates),
+    executionMode: problem?.executionMode === 'full_program' ? 'full_program' : 'function',
+    functionContract: {
+      className: problem?.functionContract?.className || 'Solution',
+      methodName: problem?.functionContract?.methodName || '',
+      parameters: Array.isArray(problem?.functionContract?.parameters)
+        ? problem.functionContract.parameters.map((parameter) => ({
+          name: parameter?.name || '',
+          type: parameter?.type || '',
+        }))
+        : [],
+      returnType: problem?.functionContract?.returnType || '',
+      outputMode: problem?.functionContract?.outputMode === 'parameter' ? 'parameter' : 'return',
+      outputParameterIndex: Number(problem?.functionContract?.outputParameterIndex || 0),
+    },
+    showExecutionHarness: Boolean(problem?.showExecutionHarness),
+    executionHarnesses: normalizeCompilerCodeMap(problem?.executionHarnesses),
     referenceSolutions: normalizeCompilerCodeMap(problem?.referenceSolutions),
     inputFormat: problem?.inputFormat || '',
     outputFormat: problem?.outputFormat || '',
@@ -208,6 +242,7 @@ export function createProblemFormFromProblem(problem) {
         input: testCase.input || '',
         output: testCase.output || '',
         explanation: testCase.explanation || '',
+        images: Array.isArray(testCase.images) ? testCase.images.map((image) => ({ ...image })) : [],
         marks: Number(testCase.marks) > 0 ? Number(testCase.marks) : 1,
       }))
       : [createEmptySampleTestCase()],
@@ -263,14 +298,21 @@ export function buildProblemFormData(problemForm, status) {
   const supportedLanguages = normalizeCompilerLanguageIds(problemForm.supportedLanguages || []);
   formData.append('title', problemForm.title || '');
   formData.append('description', problemForm.description || '');
+  formData.append('contentImages', JSON.stringify(problemForm.contentImages || []));
   formData.append('difficulty', problemForm.difficulty || 'Easy');
   formData.append('category', problemForm.category === 'SQL' ? 'SQL' : 'DSA');
   formData.append('sqlConfig', JSON.stringify(problemForm.sqlConfig || {}));
   formData.append('tags', problemForm.tags || '');
+  formData.append('topicIds', JSON.stringify(problemForm.topicIds || []));
+  formData.append('codingTagIds', JSON.stringify(problemForm.codingTagIds || []));
   formData.append('companyTags', problemForm.companyTags || '');
   formData.append('visibility', problemForm.visibility || 'public');
   formData.append('supportedLanguages', JSON.stringify(supportedLanguages));
   formData.append('codeTemplates', JSON.stringify(normalizeCompilerCodeMap(problemForm.codeTemplates)));
+  formData.append('executionMode', problemForm.executionMode || 'function');
+  formData.append('functionContract', JSON.stringify(problemForm.functionContract || {}));
+  formData.append('showExecutionHarness', String(Boolean(problemForm.showExecutionHarness)));
+  formData.append('executionHarnesses', JSON.stringify(normalizeCompilerCodeMap(problemForm.executionHarnesses)));
   formData.append('inputFormat', problemForm.inputFormat || '');
   formData.append('outputFormat', problemForm.outputFormat || '');
   formData.append('constraints', problemForm.constraints || '');
@@ -324,6 +366,9 @@ export function buildPreviewRunFormData(problemForm, language, customInput) {
   formData.append('language', language);
   formData.append('supportedLanguages', JSON.stringify(problemForm.supportedLanguages || []));
   formData.append('codeTemplates', JSON.stringify(problemForm.codeTemplates || {}));
+  formData.append('executionMode', problemForm.executionMode || 'function');
+  formData.append('functionContract', JSON.stringify(problemForm.functionContract || {}));
+  formData.append('executionHarnesses', JSON.stringify(problemForm.executionHarnesses || {}));
   formData.append('sampleTestCases', JSON.stringify(problemForm.sampleTestCases || []));
   formData.append('timeLimitSeconds', String(problemForm.timeLimitSeconds || 2));
   formData.append('category', problemForm.category === 'SQL' ? 'SQL' : 'DSA');

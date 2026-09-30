@@ -7,6 +7,7 @@ import {
   compilerRunLimiter,
   compilerSubmitCooldown,
   compilerSubmitLimiter,
+  uploadLimiter,
 } from '../middleware/rateLimiter.js';
 import {
   approveProblemPreview,
@@ -36,6 +37,7 @@ import {
   listSubmissions,
 } from '../controllers/submissionController.js';
 import { cacheJsonResponse, invalidateResponseCache } from '../middleware/responseCache.js';
+import { uploadCodingProblemAsset } from '../controllers/problemAssetController.js';
 
 const router = Router();
 const upload = multer({
@@ -52,12 +54,27 @@ const compilerCache = cacheJsonResponse({
   namespace: 'compiler',
   ttlSeconds: Number(process.env.RESPONSE_CACHE_COMPILER_TTL_SECONDS || 30),
 });
+const problemAssetUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 1024 * 1024, files: 1, fields: 0, parts: 1 },
+});
+
+function acceptProblemAsset(req, res, next) {
+  problemAssetUpload.single('image')(req, res, (error) => {
+    if (!error) return next();
+    if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: 'Image must be 1 MB or smaller.' });
+    }
+    return res.status(400).json({ error: 'Upload one JPG, PNG, WebP, or GIF image up to 1 MB.' });
+  });
+}
 const invalidateCompilerCache = invalidateResponseCache('compiler');
 
 router.get('/overview', requireCoordinatorPermission('coordinator.compiler.view'), compilerCache, getAdminCompilerOverview);
 router.get('/analytics', requireCoordinatorPermission('coordinator.compiler.analytics'), compilerCache, getAdminCompilerAnalytics);
 router.get('/student/:id', requireCoordinatorPermission('coordinator.compiler.analytics'), getCompilerStudentAnalytics);
 router.get('/problems/overview', requireCoordinatorPermission('coordinator.compiler.view'), compilerCache, getCompilerOverview);
+router.post('/problem-assets', requireCoordinatorPermission('coordinator.compiler.create'), uploadLimiter, acceptProblemAsset, uploadCodingProblemAsset);
 router.post('/problems/preview/run', requireCoordinatorPermission('coordinator.compiler.manage'), upload.none(), previewRunProblem);
 router.post('/problems/:id/preview/approve', requireCoordinatorPermission('coordinator.compiler.manage'), invalidateCompilerCache, upload.none(), approveProblemPreview);
 router.get('/problems', requireAdminCoordinatorOrStudent, requireFullStudent, listProblems);

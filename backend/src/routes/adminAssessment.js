@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { requireAuth, requireCoordinatorPermission } from '../middleware/auth.js';
+import { requireAuth, requireAdmin, requireCoordinatorPermission } from '../middleware/auth.js';
 import { bulkOperationLimiter, uploadLimiter } from '../middleware/rateLimiter.js';
 import { cacheJsonResponse, invalidateResponseCache } from '../middleware/responseCache.js';
 import {
@@ -43,6 +43,15 @@ import {
   deleteLibraryQuestion,
   uploadLibraryAsset,
 } from '../controllers/questionLibraryController.js';
+import {
+  archiveCodingTopic,
+  assignCodingTopicsBulk,
+  createCodingTopic,
+  createCodingTag,
+  listCodingTags,
+  listCodingTopics,
+  updateCodingTopic,
+} from '../controllers/codingTopicController.js';
 
 const router = Router();
 const questionAssetUpload = multer({
@@ -61,6 +70,13 @@ router.get('/assessment/reports/export', requireAuth, requireCoordinatorPermissi
 router.get('/assessment/submissions/:submissionId/violations', requireAuth, requireCoordinatorPermission('coordinator.assessment.reports'), getSubmissionViolations);
 router.get('/assessment/evidence/:eventId', requireAuth, requireCoordinatorPermission('coordinator.assessment.reports'), getAssessmentEvidence);
 router.get('/library/questions', requireAuth, requireCoordinatorPermission('coordinator.library.view'), listLibraryQuestions);
+router.get('/library/coding-topics', requireAuth, requireCoordinatorPermission('coordinator.library.view'), listCodingTopics);
+router.post('/library/coding-topics', requireAuth, requireAdmin, createCodingTopic);
+router.get('/library/coding-tags', requireAuth, requireCoordinatorPermission('coordinator.library.view'), listCodingTags);
+router.post('/library/coding-tags', requireAuth, requireAdmin, createCodingTag);
+router.patch('/library/coding-topics/:id', requireAuth, requireAdmin, updateCodingTopic);
+router.delete('/library/coding-topics/:id', requireAuth, requireAdmin, archiveCodingTopic);
+router.post('/library/questions/topics/bulk', requireAuth, requireAdmin, assignCodingTopicsBulk);
 router.post('/library/questions', requireAuth, requireCoordinatorPermission('coordinator.library.create'), createLibraryQuestion);
 router.post('/library/questions/bulk', requireAuth, requireCoordinatorPermission('coordinator.library.create'), createLibraryQuestionsBulk);
 router.post('/library/assets', requireAuth, requireCoordinatorPermission('coordinator.library.create'), uploadLimiter, questionAssetUpload.single('image'), uploadLibraryAsset);

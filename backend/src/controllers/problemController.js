@@ -1,5 +1,7 @@
 import mongoose from 'mongoose';
 import Problem, { SUPPORTED_LANGUAGES } from '../models/Problem.js';
+import CodingTopic from '../models/CodingTopic.js';
+import CodingTag from '../models/CodingTag.js';
 import Submission from '../models/Submission.js';
 import TestCase from '../models/TestCase.js';
 import { HttpError } from '../utils/errors.js';
@@ -9,6 +11,7 @@ import { runJudge0 } from '../services/executionService.js';
 import { removeProblemFromLibrary, syncProblemToLibrary } from '../services/questionLibraryService.js';
 import { parseBulkCasePair } from '../utils/testcaseBulkParser.js';
 import { isTestcaseStorageEnabled, readTestcaseTextObject, uploadTestcaseTextObject } from '../utils/testcaseStorage.js';
+import { prepareFunctionSourceForExecution } from '../services/functionProblemAdapterService.js';
 
 const STATUS_MAP = {
   draft: 'draft',
@@ -229,6 +232,34 @@ function normalizeLanguageId(value) {
   return LANGUAGE_ALIASES[normalized] || normalized;
 }
 
+function normalizeTopicIds(value) {
+  const values = parseCommaOrJsonList(value);
+  return Array.from(new Map(values.map((id) => {
+    if (!mongoose.Types.ObjectId.isValid(id)) throw new HttpError(400, 'One or more coding topics are invalid.');
+    const objectId = new mongoose.Types.ObjectId(id);
+    return [String(objectId), objectId];
+  })).values());
+}
+
+async function attachCodingClassification(problemFields) {
+  const topicIds = Array.isArray(problemFields.topicIds) ? problemFields.topicIds : [];
+  if (!topicIds.length) throw new HttpError(400, 'Select at least one topic for this coding question.');
+  const topics = await CodingTopic.find({ _id: { $in: topicIds }, status: 'active' })
+  .select('_id ancestorIds').lean();
+  if (topics.length !== topicIds.length) throw new HttpError(400, 'One or more selected coding topics are unavailable.');
+  const ancestors = new Map();
+  topics.forEach((topic) => (topic.ancestorIds || [])
+    .forEach((id) => ancestors.set(String(id), id)));
+  problemFields.topicAncestorIds = Array.from(ancestors.values());
+
+  const codingTagIds = Array.isArray(problemFields.codingTagIds) ? problemFields.codingTagIds : [];
+  const tags = await CodingTag.find({ _id: { $in: codingTagIds }, status: 'active' })
+    .select('_id name').lean();
+  if (tags.length !== codingTagIds.length) throw new HttpError(400, 'One or more selected tags are unavailable.');
+  problemFields.codingTagIds = tags.map((tag) => tag._id);
+  problemFields.tags = tags.map((tag) => tag.name);
+}
+
 function normalizeSupportedLanguages(value) {
   const requested = parseCommaOrJsonList(value);
   const normalized = requested
@@ -283,6 +314,20 @@ function normalizeSampleTestCases(value) {
       input: String(testCase?.input ?? ''),
       output: String(testCase?.output ?? ''),
       explanation: sanitizeString(testCase?.explanation ?? '', 4000),
+      images: (Array.isArray(testCase?.images) ? testCase.images : []).slice(0, 10).map((image, imageIndex) => {
+        const width = Number(image?.width);
+        const height = Number(image?.height);
+        return {
+          url: String(image?.url || '').trim(),
+          publicId: String(image?.publicId || '').trim(),
+          sourceUrl: String(image?.sourceUrl || '').trim(),
+          alt: sanitizeString(image?.alt ?? '', 500),
+          caption: sanitizeString(image?.caption ?? '', 1000),
+          width: Number.isFinite(width) && width > 0 ? width : undefined,
+          height: Number.isFinite(height) && height > 0 ? height : undefined,
+          position: Math.max(0, Number(image?.position) || imageIndex),
+        };
+      }).filter((image) => /^https:\/\//i.test(image.url)),
       marks: Math.max(0.01, Number(testCase?.marks) || 1),
     }))
     .filter((testCase) => testCase.input || testCase.output || testCase.explanation);
@@ -302,6 +347,26 @@ function normalizeHiddenTestCases(value) {
       marks: Math.max(0.01, Number(testCase?.marks) || 1),
     }))
     .filter((testCase) => testCase.input || testCase.output);
+}
+
+function normalizeContentImages(value) {
+  const parsedImages = parseJsonField(value, []);
+  if (!Array.isArray(parsedImages)) throw new HttpError(400, 'Problem images must be an array.');
+  return parsedImages.slice(0, 20).map((image, index) => {
+    const width = Number(image?.width);
+    const height = Number(image?.height);
+    return {
+      url: String(image?.url || '').trim(),
+      publicId: String(image?.publicId || '').trim(),
+      sourceUrl: String(image?.sourceUrl || '').trim(),
+      alt: sanitizeString(image?.alt ?? '', 500),
+      caption: sanitizeString(image?.caption ?? '', 1000),
+      width: Number.isFinite(width) && width > 0 ? width : undefined,
+      height: Number.isFinite(height) && height > 0 ? height : undefined,
+      section: image?.section === 'constraints' ? 'constraints' : 'description',
+      position: Math.max(0, Number(image?.position) || index),
+    };
+  }).filter((image) => /^https:\/\//i.test(image.url));
 }
 
 function normalizeProblemCategory(value) {
@@ -469,6 +534,68 @@ function normalizeReferenceSolutions(value, supportedLanguages) {
   return referenceSolutions;
 }
 
+function normalizeExecutionMode(value, category = 'DSA') {
+  if (category === 'SQL') return 'full_program';
+  return value === 'full_program' ? 'full_program' : 'function';
+}
+
+function normalizeFunctionContract(value, category = 'DSA', executionMode = 'function') {
+  if (category === 'SQL' || executionMode === 'full_program') {
+    return {
+      className: 'Solution', methodName: '', parameters: [], returnType: '', outputMode: 'return', outputParameterIndex: 0,
+    };
+  }
+  const parsed = parseJsonField(value, {});
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+    throw new HttpError(400, 'Function contract must be an object.');
+  }
+  const identifier = (input, fallback = '') => {
+    const normalized = String(input ?? fallback).trim();
+    if (normalized && !/^[A-Za-z_$][\w$]*$/.test(normalized)) {
+      throw new HttpError(400, `Invalid function contract identifier "${normalized}".`);
+    }
+    return normalized;
+  };
+  const parameters = (Array.isArray(parsed.parameters) ? parsed.parameters : []).map((parameter, index) => {
+    const name = identifier(parameter?.name);
+    const type = sanitizeString(parameter?.type ?? '', 120);
+    if (!name || !type) throw new HttpError(400, `Function parameter ${index + 1} requires a name and type.`);
+    return { name, type };
+  });
+  if (new Set(parameters.map((parameter) => parameter.name)).size !== parameters.length) {
+    throw new HttpError(400, 'Function parameter names must be unique.');
+  }
+  const outputMode = parsed.outputMode === 'parameter' ? 'parameter' : 'return';
+  const outputParameterIndex = Math.max(0, Number.parseInt(parsed.outputParameterIndex, 10) || 0);
+  if (outputMode === 'parameter' && outputParameterIndex >= parameters.length) {
+    throw new HttpError(400, 'Output parameter index must point to an existing function parameter.');
+  }
+  return {
+    className: identifier(parsed.className, 'Solution') || 'Solution',
+    methodName: identifier(parsed.methodName),
+    parameters,
+    returnType: sanitizeString(parsed.returnType ?? '', 120),
+    outputMode,
+    outputParameterIndex,
+  };
+}
+
+function normalizeExecutionHarnesses(value, supportedLanguages) {
+  const parsedHarnesses = parseJsonField(value, {});
+  if (!parsedHarnesses || Array.isArray(parsedHarnesses) || typeof parsedHarnesses !== 'object') {
+    throw new HttpError(400, 'Execution runners must be an object keyed by language.');
+  }
+
+  return supportedLanguages.reduce((result, language) => {
+    const code = String(parsedHarnesses[language] ?? '').replace(/\r\n/g, '\n');
+    if (Buffer.byteLength(code, 'utf8') > 100 * 1024) {
+      throw new HttpError(400, `${language} execution runner exceeds the 100 KB limit.`);
+    }
+    result[language] = code;
+    return result;
+  }, {});
+}
+
 function countReferenceSolutions(value) {
   if (!value) return 0;
   if (value instanceof Map) {
@@ -601,16 +728,25 @@ function buildProblemPayload(
     }
   }
 
+  const executionMode = normalizeExecutionMode(req.body.executionMode, category);
   const problem = {
     title,
     description: String(req.body.description ?? ''),
+    contentImages: normalizeContentImages(req.body.contentImages),
     difficulty: ['Easy', 'Medium', 'Hard'].includes(req.body.difficulty) ? req.body.difficulty : 'Easy',
     category,
     sqlConfig,
     tags: parseCommaOrJsonList(req.body.tags),
+    topicIds: normalizeTopicIds(req.body.topicIds),
+    topicAncestorIds: [],
+    codingTagIds: normalizeTopicIds(req.body.codingTagIds),
     companyTags: parseCommaOrJsonList(req.body.companyTags),
     supportedLanguages,
     codeTemplates: normalizeCodeTemplates(req.body.codeTemplates, supportedLanguages),
+    executionMode,
+    functionContract: normalizeFunctionContract(req.body.functionContract, category, executionMode),
+    showExecutionHarness: false,
+    executionHarnesses: normalizeExecutionHarnesses(req.body.executionHarnesses, supportedLanguages),
     referenceSolutions: normalizeReferenceSolutions(req.body.referenceSolutions, supportedLanguages),
     inputFormat: String(req.body.inputFormat ?? ''),
     outputFormat: String(req.body.outputFormat ?? ''),
@@ -635,6 +771,49 @@ function buildProblemPayload(
     hiddenBulkDelimiter,
     hiddenBulkCases,
   };
+}
+
+function getMissingValidatedLanguages(problem) {
+  const supported = Array.isArray(problem?.supportedLanguages) ? problem.supportedLanguages : [];
+  const validated = new Set(Array.isArray(problem?.validatedLanguages) ? problem.validatedLanguages : []);
+  return supported.filter((language) => !validated.has(language));
+}
+
+function plainCodeMap(value) {
+  if (!value) return {};
+  if (value instanceof Map) return Object.fromEntries(value.entries());
+  if (typeof value === 'object' && !Array.isArray(value)) return { ...value };
+  return {};
+}
+
+function runtimeValidationFingerprint(problem) {
+  const sortObject = (value) => Object.fromEntries(
+    Object.entries(plainCodeMap(value)).sort(([left], [right]) => left.localeCompare(right)),
+  );
+  return JSON.stringify({
+    category: problem?.category || 'DSA',
+    supportedLanguages: [...(problem?.supportedLanguages || [])].sort(),
+    codeTemplates: sortObject(problem?.codeTemplates),
+    executionMode: problem?.executionMode || 'function',
+    functionContract: problem?.functionContract || {},
+    executionHarnesses: sortObject(problem?.executionHarnesses),
+    referenceSolutions: sortObject(problem?.referenceSolutions),
+    timeLimitSeconds: Number(problem?.timeLimitSeconds || 0),
+    memoryLimitMb: Number(problem?.memoryLimitMb || 0),
+    sqlConfig: {
+      dialect: problem?.sqlConfig?.dialect || 'sqlite',
+      schemaSql: String(problem?.sqlConfig?.schemaSql || '').replace(/\r\n/g, '\n'),
+      seedDataSql: String(problem?.sqlConfig?.seedDataSql || '').replace(/\r\n/g, '\n'),
+    },
+  });
+}
+
+function testcaseIoFingerprint(testCases = []) {
+  return JSON.stringify(testCases.map((testCase, index) => ({
+    position: Number(testCase?.position || index + 1),
+    input: String(testCase?.input ?? '').replace(/\r\n/g, '\n'),
+    output: String(testCase?.output ?? '').replace(/\r\n/g, '\n'),
+  })));
 }
 
 function prepareHiddenTestCasePersistence(payload) {
@@ -713,7 +892,7 @@ async function evaluateOfficialSolution(problem, { language, sourceCode, testCas
   for (let index = 0; index < testCases.length; index += 1) {
     const testCase = testCases[index];
     const judgeResult = await runJudge0(
-      sourceCode,
+      prepareFunctionSourceForExecution(problem, language, sourceCode, testCase.input || ''),
       languageId,
       testCase.input || '',
       buildJudge0Options(problem),
@@ -773,6 +952,7 @@ async function replaceTestCases(problemId, userId, { sampleTestCases, hiddenTest
         input: testCase.input,
         output: testCase.output,
         explanation: testCase.explanation,
+        images: testCase.images || [],
         marks: testCase.marks || 1,
         createdBy: userId,
       })));
@@ -865,11 +1045,14 @@ async function loadProblemShape(
     studentStatus = null,
     includeHiddenTestCases = false,
     includeReferenceSolutions = false,
+    includeExecutionHarnesses = false,
     problemDocument = null,
   } = {},
 ) {
   const [problem, sampleTestCases, hiddenTestCaseCount, hiddenTestCases, hiddenMarksResult] = await Promise.all([
-    problemDocument ? Promise.resolve(problemDocument) : Problem.findById(problemId).lean(),
+    problemDocument
+      ? Promise.resolve(problemDocument)
+      : Problem.findById(problemId).select(includeExecutionHarnesses ? '+executionHarnesses' : '').lean(),
     TestCase.find({ problem: problemId, kind: 'sample' })
       .sort({ position: 1 })
       .lean(),
@@ -907,6 +1090,7 @@ async function loadProblemShape(
         input: testCase.input,
         output: testCase.output,
         explanation: testCase.explanation || '',
+        images: testCase.images || [],
         marks: testCase.marks || 1,
       })),
       hiddenTestCaseCount: effectiveHiddenTestCaseCount,
@@ -918,6 +1102,7 @@ async function loadProblemShape(
       })),
       includeHiddenTestCases,
       includeReferenceSolutions,
+      includeExecutionHarnesses,
       studentStatus,
     }),
   };
@@ -990,7 +1175,7 @@ async function resolveExecutionProblem(req) {
   const problemId = req.params.id || req.body.problemId;
   ensureObjectId(problemId, 'Problem ID');
 
-  const problem = await Problem.findById(problemId);
+  const problem = await Problem.findById(problemId).select('+executionHarnesses');
   if (!problem) {
     throw new HttpError(404, 'Problem not found.');
   }
@@ -1241,7 +1426,9 @@ export async function getProblemDetail(req, res) {
     isStudentRequest(req)
       ? getStudentProblemStatus(req.user._id, req.params.id)
       : Promise.resolve(null),
-    Problem.findById(req.params.id).lean(),
+    Problem.findById(req.params.id)
+      .select('+executionHarnesses')
+      .lean(),
   ]);
   if (!problemDoc) {
     throw new HttpError(404, 'Problem not found.');
@@ -1254,6 +1441,7 @@ export async function getProblemDetail(req, res) {
     studentStatus,
     includeHiddenTestCases: !!isAuthor && !previewOnly,
     includeReferenceSolutions: !!isAuthor && !previewOnly,
+    includeExecutionHarnesses: !!isAuthor && !previewOnly,
     problemDocument: problemDoc,
   });
 
@@ -1267,6 +1455,7 @@ export async function getProblemDetail(req, res) {
 
 export async function createProblem(req, res) {
   const payload = prepareHiddenTestCasePersistence(buildProblemPayload(req));
+  await attachCodingClassification(payload.problem);
   await ensureUniqueProblemTitle(payload.problem.title);
 
   if (payload.problem.status === 'published') {
@@ -1277,7 +1466,9 @@ export async function createProblem(req, res) {
     ...payload.problem,
     previewValidated: false,
     previewTested: false,
+    validatedLanguages: [],
     codeTemplates: new Map(Object.entries(payload.problem.codeTemplates)),
+    executionHarnesses: new Map(Object.entries(payload.problem.executionHarnesses)),
     referenceSolutions: new Map(),
     createdBy: req.user._id,
     updatedBy: req.user._id,
@@ -1315,42 +1506,70 @@ export async function createProblem(req, res) {
   }
 
   await refreshProblemStats(problem._id);
-  await syncProblemToLibrary(await Problem.findById(problem._id).lean());
+  await syncProblemToLibrary(await Problem.findById(problem._id).select('+executionHarnesses').lean());
 
-  const { serializedProblem } = await loadProblemShape(problem._id);
+  const { serializedProblem } = await loadProblemShape(problem._id, { includeExecutionHarnesses: true });
   res.status(201).json(serializedProblem);
 }
 
 export async function updateProblem(req, res) {
   ensureObjectId(req.params.id, 'Problem ID');
 
-  const existingProblem = await Problem.findById(req.params.id);
+  const existingProblem = await Problem.findById(req.params.id).select('+executionHarnesses');
   if (!existingProblem || (coordinatorRequiresOwnership(req) && String(existingProblem.createdBy) !== String(req.user._id))) {
     throw new HttpError(404, 'Problem not found.');
   }
 
-  const existingHiddenTestCaseCount = await TestCase.countDocuments({
-    problem: existingProblem._id,
-    kind: 'hidden',
-  });
+  const existingTestCases = await TestCase.find({ problem: existingProblem._id })
+    .select('kind position input output')
+    .sort({ kind: 1, position: 1 })
+    .lean();
+  const existingHiddenTestCaseCount = existingTestCases.filter((testCase) => testCase.kind === 'hidden').length;
 
   const payload = prepareHiddenTestCasePersistence(buildProblemPayload(req, {
     existingHiddenTestCaseCount,
     existingHiddenBulkCaseCount: Number(existingProblem.hiddenTestSource?.caseCount || 0),
     existingTotalMarks: Number(existingProblem.totalMarks || 1),
   }));
+  await attachCodingClassification(payload.problem);
   await ensureUniqueProblemTitle(payload.problem.title, existingProblem._id);
-  const canRetainPreviewStatus = payload.problem.status === 'published' && (existingProblem.previewValidated ?? existingProblem.previewTested);
   const {
     referenceSolutions: payloadReferenceSolutions,
     ...problemFields
   } = payload.problem;
 
+  const nextReferenceSolutions = payloadReferenceSolutions !== null
+    ? payloadReferenceSolutions
+    : plainCodeMap(existingProblem.referenceSolutions);
+  const sampleCasesChanged = payload.sampleTestCasesProvided
+    && testcaseIoFingerprint(payload.sampleTestCases) !== testcaseIoFingerprint(
+      existingTestCases.filter((testCase) => testCase.kind === 'sample'),
+    );
+  const hiddenCasesChanged = payload.hiddenBulkProvided || (payload.hiddenTestCasesProvided
+    && testcaseIoFingerprint(payload.hiddenTestCases) !== testcaseIoFingerprint(
+      existingTestCases.filter((testCase) => testCase.kind === 'hidden'),
+    ));
+  const runtimeChanged = runtimeValidationFingerprint(existingProblem) !== runtimeValidationFingerprint({
+    ...problemFields,
+    referenceSolutions: nextReferenceSolutions,
+  }) || sampleCasesChanged || hiddenCasesChanged;
+  const retainedValidatedLanguages = runtimeChanged
+    ? []
+    : (existingProblem.validatedLanguages || []).filter((language) => problemFields.supportedLanguages.includes(language));
+  const fullyValidated = problemFields.supportedLanguages.length > 0
+    && problemFields.supportedLanguages.every((language) => retainedValidatedLanguages.includes(language));
+
+  if (runtimeChanged && problemFields.status === 'published') {
+    problemFields.status = 'draft';
+  }
+
   Object.assign(existingProblem, {
     ...problemFields,
-    previewValidated: canRetainPreviewStatus,
-    previewTested: canRetainPreviewStatus,
+    validatedLanguages: retainedValidatedLanguages,
+    previewValidated: fullyValidated,
+    previewTested: fullyValidated,
     codeTemplates: new Map(Object.entries(problemFields.codeTemplates)),
+    executionHarnesses: new Map(Object.entries(problemFields.executionHarnesses)),
     updatedBy: req.user._id,
   });
 
@@ -1358,11 +1577,11 @@ export async function updateProblem(req, res) {
     existingProblem.referenceSolutions = new Map(Object.entries(payloadReferenceSolutions || {}));
   }
 
-  if (payload.problem.status === 'published' && !canRetainPreviewStatus) {
+  if (problemFields.status === 'published' && !fullyValidated) {
     throw new HttpError(400, 'Preview testing is required before publishing a problem.');
   }
 
-  if (payload.problem.status === 'published') {
+  if (problemFields.status === 'published') {
     const nextReferenceSolutionCount = payloadReferenceSolutions !== null
       ? countReferenceSolutions(payloadReferenceSolutions)
       : countReferenceSolutions(existingProblem.referenceSolutions);
@@ -1372,7 +1591,7 @@ export async function updateProblem(req, res) {
     }
   }
 
-  if (payload.problem.status === 'published' && !existingProblem.publishedAt) {
+  if (problemFields.status === 'published' && !existingProblem.publishedAt) {
     existingProblem.publishedAt = new Date();
   }
 
@@ -1401,9 +1620,9 @@ export async function updateProblem(req, res) {
   }
 
   await refreshProblemStats(existingProblem._id);
-  await syncProblemToLibrary(await Problem.findById(existingProblem._id).lean());
+  await syncProblemToLibrary(await Problem.findById(existingProblem._id).select('+executionHarnesses').lean());
 
-  const { serializedProblem } = await loadProblemShape(existingProblem._id);
+  const { serializedProblem } = await loadProblemShape(existingProblem._id, { includeExecutionHarnesses: true });
   res.json(serializedProblem);
 }
 
@@ -1470,6 +1689,10 @@ export async function updateProblemStatus(req, res) {
     if (countReferenceSolutions(problem.referenceSolutions) === 0) {
       throw new HttpError(400, 'Preview approval is required before publishing a problem.');
     }
+    const missingLanguages = getMissingValidatedLanguages(problem);
+    if (missingLanguages.length > 0) {
+      throw new HttpError(400, `Validate every enabled language before publishing. Remaining: ${missingLanguages.join(', ')}.`);
+    }
     if (!problem.publishedAt) {
       problem.publishedAt = new Date();
     }
@@ -1478,11 +1701,12 @@ export async function updateProblemStatus(req, res) {
   problem.status = nextStatus;
   problem.updatedBy = req.user._id;
   await problem.save();
-  await syncProblemToLibrary(await Problem.findById(problem._id).lean());
+  await syncProblemToLibrary(await Problem.findById(problem._id).select('+executionHarnesses').lean());
 
   const { serializedProblem } = await loadProblemShape(problem._id, {
     includeHiddenTestCases: true,
     includeReferenceSolutions: true,
+    includeExecutionHarnesses: true,
   });
   res.json(serializedProblem);
 }
@@ -1502,6 +1726,9 @@ export async function previewRunProblem(req, res) {
   const timeLimitSeconds = parseNumber(req.body.timeLimitSeconds ?? req.body.timeLimit, 2, { min: 1, max: 15, integer: false });
   const category = normalizeProblemCategory(req.body.category);
   const sqlConfig = normalizeSqlConfig(req.body.sqlConfig, category);
+  const executionMode = normalizeExecutionMode(req.body.executionMode, category);
+  const functionContract = normalizeFunctionContract(req.body.functionContract, category, executionMode);
+  const executionHarnesses = normalizeExecutionHarnesses(req.body.executionHarnesses, supportedLanguages);
 
   const languageId = KEY_TO_LANGUAGE_ID[selectedLanguage];
   if (!languageId) {
@@ -1509,7 +1736,12 @@ export async function previewRunProblem(req, res) {
   }
 
   const judgeResult = await runJudge0(
-    templates[selectedLanguage],
+    prepareFunctionSourceForExecution(
+      { executionMode, functionContract, executionHarnesses, codeTemplates: templates },
+      selectedLanguage,
+      templates[selectedLanguage],
+      customInput,
+    ),
     languageId,
     customInput,
     {
@@ -1543,7 +1775,7 @@ export async function previewRunProblem(req, res) {
 export async function approveProblemPreview(req, res) {
   ensureObjectId(req.params.id, 'Problem ID');
 
-  const problem = await Problem.findById(req.params.id);
+  const problem = await Problem.findById(req.params.id).select('+executionHarnesses');
   if (!problem || (coordinatorRequiresOwnership(req) && String(problem.createdBy) !== String(req.user._id))) {
     throw new HttpError(404, 'Problem not found.');
   }
@@ -1584,12 +1816,14 @@ export async function approveProblemPreview(req, res) {
   }
 
   if (!allPassed) {
+    const failedLanguages = results.filter((result) => result.status !== 'AC').map((result) => result.language);
     await Problem.findByIdAndUpdate(problem._id, {
       $set: {
         previewValidated: false,
         previewTested: false,
         updatedBy: req.user._id,
       },
+      $pull: { validatedLanguages: { $in: failedLanguages } },
     });
 
     return res.json({
@@ -1601,25 +1835,41 @@ export async function approveProblemPreview(req, res) {
     });
   }
 
-  problem.referenceSolutions = new Map(Object.entries(referenceSolutions));
-  problem.previewValidated = true;
-  problem.previewTested = true;
+  const mergedReferenceSolutions = {
+    ...Object.fromEntries(problem.referenceSolutions || []),
+    ...referenceSolutions,
+  };
+  const validatedLanguages = [...new Set([
+    ...(Array.isArray(problem.validatedLanguages) ? problem.validatedLanguages : []),
+    ...results.filter((result) => result.status === 'AC').map((result) => result.language),
+  ])].filter((language) => supportedLanguages.includes(language));
+  const missingLanguages = supportedLanguages.filter((language) => !validatedLanguages.includes(language));
+  const fullyValidated = missingLanguages.length === 0;
+  problem.referenceSolutions = new Map(Object.entries(mergedReferenceSolutions));
+  problem.validatedLanguages = validatedLanguages;
+  problem.previewValidated = fullyValidated;
+  problem.previewTested = fullyValidated;
   problem.updatedBy = req.user._id;
   await problem.save();
-  await syncProblemToLibrary(await Problem.findById(problem._id).lean());
+  await syncProblemToLibrary(await Problem.findById(problem._id).select('+executionHarnesses').lean());
 
   const { serializedProblem } = await loadProblemShape(problem._id, {
     includeHiddenTestCases: true,
     includeReferenceSolutions: true,
+    includeExecutionHarnesses: true,
   });
 
   return res.json({
     success: true,
-    approved: true,
-    previewValidated: true,
+    approved: fullyValidated,
+    previewValidated: fullyValidated,
+    validatedLanguages,
+    missingLanguages,
     results,
     problem: serializedProblem,
-    message: 'Solution passed all internal testcases.',
+    message: fullyValidated
+      ? 'Every enabled language passed all internal testcases.'
+      : `${results.map((result) => result.language).join(', ')} validated. Remaining: ${missingLanguages.join(', ')}.`,
   });
 }
 
@@ -1660,7 +1910,7 @@ export async function runProblemCode(req, res) {
     await markSubmissionRunning(req, submission);
 
     const judgeResult = await runJudge0(
-      sourceCode,
+      prepareFunctionSourceForExecution(problem, language, sourceCode, customInput),
       languageId,
       customInput,
       buildJudge0Options(problem),
@@ -1690,17 +1940,7 @@ export async function runProblemCode(req, res) {
     };
 
     await finalizeSubmission(req, submission, result);
-    void Promise.all([
-      result.status === 'AC'
-        ? Problem.findByIdAndUpdate(problem._id, {
-          $set: {
-            previewValidated: true,
-            previewTested: true,
-          },
-        })
-        : Promise.resolve(),
-      refreshProblemStats(problem._id),
-    ]).catch(() => {});
+    void refreshProblemStats(problem._id).catch(() => {});
 
     res.json(buildSubmissionResponse(req, submission));
   } catch (error) {
@@ -1760,7 +2000,7 @@ export async function submitProblemCode(req, res) {
     for (let index = 0; index < hiddenTestCases.length; index += 1) {
       const testCase = hiddenTestCases[index];
       const judgeResult = await runJudge0(
-        sourceCode,
+        prepareFunctionSourceForExecution(problem, language, sourceCode, testCase.input || ''),
         languageId,
         testCase.input || '',
         buildJudge0Options(problem),
@@ -1818,17 +2058,7 @@ export async function submitProblemCode(req, res) {
     };
 
     await finalizeSubmission(req, submission, result);
-    void Promise.all([
-      result.status === 'AC'
-        ? Problem.findByIdAndUpdate(problem._id, {
-          $set: {
-            previewValidated: true,
-            previewTested: true,
-          },
-        })
-        : Promise.resolve(),
-      refreshProblemStats(problem._id),
-    ]).catch(() => {});
+    void refreshProblemStats(problem._id).catch(() => {});
 
     res.json(buildSubmissionResponse(req, submission));
   } catch (error) {

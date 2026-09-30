@@ -6,9 +6,11 @@ import {
   ChevronDown,
   PanelLeftOpen,
   Tag,
+  X,
 } from 'lucide-react';
 import { api } from '../../utils/api';
 import { useToast } from '../../components/CustomToast';
+import ProblemAssetImages from '../../components/ProblemAssetImages';
 import CodeEditor from '../../student/CodeEditor';
 import {
   buildProblemDrafts,
@@ -16,6 +18,7 @@ import {
   getStarterCodeForLanguage,
 } from '../../student/problemUtils';
 import { RichTextPreview } from './CompilerContentPreview';
+import { getDisplayProblemStatement } from './problemStatementFormatting';
 import { getLanguageLabel } from './compilerUtils';
 import { DifficultyBadge, EmptyState, LoadingPanel, ProblemStatusBadge } from './CompilerUi';
 
@@ -77,13 +80,26 @@ function ProblemDescriptionPanel({ problem, previewValidated }) {
 
   const topics = Array.isArray(problem?.tags) ? problem.tags : [];
   const companies = Array.isArray(problem?.companyTags) ? problem.companyTags : [];
+  const hints = Array.isArray(problem?.hints)
+    ? problem.hints.filter((hint) => String(hint || '').trim())
+    : [];
+  const faqs = Array.isArray(problem?.faqs)
+    ? problem.faqs.filter((faq) => String(faq?.question || '').trim() || String(faq?.answer || '').trim())
+    : [];
   const sampleCount = Array.isArray(problem?.sampleTestCases) ? problem.sampleTestCases.length : 0;
   const isSql = problem?.category === 'SQL';
+  const constraintItems = String(problem?.constraints || '')
+    .split(/\r?\n/)
+    .map((item) => item.replace(/^[-*]\s*/, '').trim())
+    .filter(Boolean);
+  const descriptionImages = (problem?.contentImages || []).filter((image) => image.section !== 'constraints');
+  const constraintImages = (problem?.contentImages || []).filter((image) => image.section === 'constraints');
 
   return (
-    <div className="space-y-6 px-5 py-5">
-      <section className="space-y-4">
-        <div className="flex flex-wrap items-center gap-2">
+    <div className="space-y-7 px-5 py-6 sm:px-6">
+      <section>
+        <h1 className="text-[24px] font-semibold leading-8 tracking-tight text-slate-950 dark:text-white">{problem.title}</h1>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
           <DifficultyBadge difficulty={problem.difficulty} />
           <ProblemStatusBadge status={problem.status} />
           {isSql ? <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 dark:bg-sky-900/20 dark:text-sky-300">SQLite</span> : null}
@@ -91,53 +107,25 @@ function ProblemDescriptionPanel({ problem, previewValidated }) {
             {previewValidated ? 'Preview Passed' : 'Preview Required'}
           </span>
         </div>
-
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-gray-100">{problem.title}</h1>
-          <p className="mt-2 text-sm text-slate-500 dark:text-gray-400">
-            {sampleCount} sample case{sampleCount === 1 ? '' : 's'} | {problem.hiddenTestCaseCount || 0} hidden case{(problem.hiddenTestCaseCount || 0) === 1 ? '' : 's'}
-          </p>
-        </div>
       </section>
 
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">
-          Description
-        </h2>
-        <RichTextPreview content={problem.description} />
+      <section className="space-y-4">
+        <RichTextPreview content={getDisplayProblemStatement(problem.description, sampleCount > 0)} lead />
+        <ProblemAssetImages images={descriptionImages} />
       </section>
 
-      <section className="space-y-6">
+      <section className="space-y-7">
         {isSql && problem.sqlConfig?.schemaSql ? <div className="space-y-2"><h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Database schema</h2><pre className="max-h-72 overflow-auto rounded-xl bg-slate-950 p-4 font-mono text-xs leading-5 text-sky-100">{problem.sqlConfig.schemaSql}</pre></div> : null}
         {isSql && problem.sqlConfig?.seedDataSql ? <div className="space-y-2"><h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Sample data</h2><pre className="max-h-72 overflow-auto rounded-xl bg-slate-950 p-4 font-mono text-xs leading-5 text-sky-100">{problem.sqlConfig.seedDataSql}</pre></div> : null}
-        <div className="space-y-2">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">{isSql ? 'Schema notes' : 'Input'}</h2>
-          <p className="whitespace-pre-wrap text-sm text-slate-700 dark:text-gray-300">
-            {problem.inputFormat || 'Input format will appear here.'}
-          </p>
-        </div>
-        <div className="space-y-2">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">{isSql ? 'Required result' : 'Output'}</h2>
-          <p className="whitespace-pre-wrap text-sm text-slate-700 dark:text-gray-300">
-            {problem.outputFormat || 'Output format will appear here.'}
-          </p>
-        </div>
-        <div className="space-y-2">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">{isSql ? 'Query rules' : 'Constraints'}</h2>
-          <p className="whitespace-pre-wrap text-sm text-slate-700 dark:text-gray-300">
-            {problem.constraints || 'Constraints will appear here.'}
-          </p>
-        </div>
+        {isSql ? <div className="space-y-2"><h2 className="text-base font-semibold text-slate-900 dark:text-gray-100">Schema notes</h2><RichTextPreview content={problem.inputFormat || 'Schema notes will appear here.'} /></div> : null}
+        {isSql ? <div className="space-y-2"><h2 className="text-base font-semibold text-slate-900 dark:text-gray-100">Required result</h2><RichTextPreview content={problem.outputFormat || 'Required result will appear here.'} /></div> : null}
       </section>
 
-      <section className="space-y-3">
+      <section className="space-y-4">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">
+          <h2 className="text-base font-semibold text-slate-900 dark:text-gray-100">
             Examples
           </h2>
-          <span className="text-xs text-slate-500 dark:text-gray-400">
-            {sampleCount} sample cases
-          </span>
         </div>
 
         {sampleCount === 0 ? (
@@ -146,43 +134,88 @@ function ProblemDescriptionPanel({ problem, previewValidated }) {
             description="Add at least one sample testcase to review this problem like a student."
           />
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-5">
             {problem.sampleTestCases.map((testCase, index) => (
-              <div
+              <article
                 key={`sample-${index + 1}`}
-                className="overflow-hidden rounded-[24px] bg-white/80 shadow-[0_10px_30px_rgba(15,23,42,0.04)] dark:bg-gray-900/85"
+                className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)] dark:border-gray-700 dark:bg-gray-900"
               >
-                <div className="flex items-center justify-between gap-3 bg-slate-50/85 px-4 py-3 dark:bg-gray-800/85">
-                  <div className="text-sm font-semibold text-slate-900 dark:text-gray-100">Example {index + 1}</div>
-                </div>
+                <div className="text-base font-semibold text-slate-900 dark:text-gray-100">Example {index + 1}:</div>
 
-                <div className="space-y-4 px-4 py-4">
-                  <div className="space-y-2">
-                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Input</div>
-                    <pre className="whitespace-pre-wrap break-words rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-800 dark:bg-gray-800 dark:text-gray-200">
+                <ProblemAssetImages images={testCase.images} />
+                <div className="space-y-3 rounded-lg bg-slate-50 px-4 py-3.5 font-mono text-[13px] leading-6 text-slate-800 dark:bg-gray-800 dark:text-gray-200">
+                  <div>
+                    <div className="font-sans text-sm font-semibold text-slate-900 dark:text-gray-100">Input:</div>
+                    <pre className="mt-1 whitespace-pre-wrap break-words font-mono">
                       {testCase.input || ''}
                     </pre>
                   </div>
 
-                  <div className="space-y-2">
-                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Output</div>
-                    <pre className="whitespace-pre-wrap break-words rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-800 dark:bg-gray-800 dark:text-gray-200">
+                  <div>
+                    <div className="font-sans text-sm font-semibold text-slate-900 dark:text-gray-100">Output:</div>
+                    <pre className="mt-1 whitespace-pre-wrap break-words font-mono">
                       {testCase.output || ''}
                     </pre>
                   </div>
-
-                  {testCase.explanation ? (
-                    <div className="space-y-2">
-                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Explanation</div>
-                      <div className="text-sm text-slate-700 dark:text-gray-300">{testCase.explanation}</div>
-                    </div>
-                  ) : null}
                 </div>
-              </div>
+
+                {testCase.explanation ? (
+                  <div className="border-t border-slate-100 pt-3 text-[15px] leading-6 text-slate-800 dark:border-gray-800 dark:text-gray-200">
+                    <span className="font-semibold text-slate-950 dark:text-white">Explanation: </span>
+                    <RichTextPreview className="mt-1" content={testCase.explanation} />
+                  </div>
+                ) : null}
+              </article>
             ))}
           </div>
         )}
       </section>
+
+      <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)] dark:border-gray-700 dark:bg-gray-900">
+        <h2 className="text-base font-semibold text-slate-900 dark:text-gray-100">{isSql ? 'Query rules' : 'Constraints'}</h2>
+        {constraintItems.length ? <ul className="list-disc space-y-2 pl-6 font-mono text-[13px] leading-6 text-slate-800 marker:text-slate-600 dark:text-gray-200 dark:marker:text-gray-400">{constraintItems.map((constraint, index) => <li key={`${constraint}-${index}`} className="break-words pl-1">{constraint}</li>)}</ul> : <p className="text-sm text-slate-500 dark:text-gray-400">No additional constraints.</p>}
+        <ProblemAssetImages images={constraintImages} />
+      </section>
+
+      {hints.length > 0 ? (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-base font-semibold text-slate-900 dark:text-gray-100">Hints</h2>
+            <span className="text-xs text-slate-500 dark:text-gray-400">{hints.length} available</span>
+          </div>
+          <div className="space-y-2">
+            {hints.map((hint, index) => (
+              <details key={`preview-hint-${index + 1}`} className="group rounded-[18px] border border-sky-100 bg-sky-50/70 px-4 py-3 dark:border-sky-900/40 dark:bg-sky-900/10">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-sky-800 dark:text-sky-200">
+                  Hint {index + 1}
+                  <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+                </summary>
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-gray-300">{hint}</p>
+              </details>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {faqs.length > 0 ? (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-base font-semibold text-slate-900 dark:text-gray-100">FAQ</h2>
+            <span className="text-xs text-slate-500 dark:text-gray-400">{faqs.length} notes</span>
+          </div>
+          <div className="divide-y divide-slate-200/70 overflow-hidden rounded-[22px] bg-slate-50/80 dark:divide-gray-700 dark:bg-gray-800/70">
+            {faqs.map((faq, index) => (
+              <details key={`preview-faq-${index + 1}`} className="group px-4 py-3">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-slate-800 dark:text-gray-100">
+                  {faq.question || `Question ${index + 1}`}
+                  <ChevronDown className="h-4 w-4 flex-none text-slate-400 transition-transform group-open:rotate-180" />
+                </summary>
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-gray-300">{faq.answer}</p>
+              </details>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {(topics.length > 0 || companies.length > 0) ? (
         <section className="divide-y divide-slate-200/70 rounded-[22px] bg-slate-50/80 dark:divide-gray-700 dark:bg-gray-800/70">
@@ -410,6 +443,9 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
   }, [activeTestCaseId, testCases]);
 
   const previewValidated = Boolean(problem?.previewValidated ?? problem?.previewTested);
+  const validatedLanguages = Array.isArray(problem?.validatedLanguages) ? problem.validatedLanguages : [];
+  const languageValidated = validatedLanguages.includes(language);
+  const validationProgress = `${validatedLanguages.length}/${problem?.supportedLanguages?.length || 0} languages`;
 
   const verdictStatus = useMemo(() => {
     if (!result) return '';
@@ -524,9 +560,6 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
       });
       const normalized = normalizeSubmitResult(response);
       setResult(normalized);
-      if (response?.status === 'AC') {
-        setProblem((prev) => prev ? { ...prev, previewValidated: true, previewTested: true } : prev);
-      }
       toast.success(`Submission finished with verdict ${normalized.status}.`);
     } catch (error) {
       toast.error(error.message || 'Failed to submit code.');
@@ -544,6 +577,14 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
 
     setIsApprovingPublish(true);
     try {
+      if (previewValidated) {
+        await api.updateCompilerProblemStatus(problem._id, 'published');
+        const refreshed = await api.getCompilerProblemPreview(problem._id);
+        setProblem(refreshed);
+        toast.success('Published successfully.');
+        return;
+      }
+
       // Persist preview validation using the currently accepted solution (stored privately server-side).
       const fd = new FormData();
       fd.append('referenceSolutions', JSON.stringify({ [language]: activeCode }));
@@ -554,11 +595,17 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
         return;
       }
 
-      await api.updateCompilerProblemStatus(problem._id, 'published');
       const refreshed = await api.getCompilerProblemPreview(problem._id);
       setProblem(refreshed);
-
-      toast.success('Approved and published successfully.');
+      if (approval.previewValidated) {
+        await api.updateCompilerProblemStatus(problem._id, 'published');
+        const published = await api.getCompilerProblemPreview(problem._id);
+        setProblem(published);
+        toast.success('Every language passed. Problem published successfully.');
+      } else {
+        setResult(null);
+        toast.success(approval.message || `${getLanguageLabel(language)} validated.`);
+      }
     } catch (error) {
       toast.error(error.message || 'Failed to approve and publish.');
     } finally {
@@ -660,7 +707,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
           <p className="text-[11px] text-slate-500 dark:text-gray-400">Coding preview · validate before publishing</p>
         </div>
         <span className={`hidden rounded-full px-2.5 py-1 text-[11px] font-semibold sm:inline-flex ${statusBadgeClass}`}>
-          {verdictStatus || (previewValidated ? 'Preview Passed' : 'Validation Pending')}
+          {verdictStatus || (previewValidated ? 'All Languages Passed' : `Validation Pending · ${validationProgress}`)}
         </span>
       </div>
       <div className="flex shrink-0 items-center gap-2">
@@ -673,7 +720,16 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
           title={!isPublished && !canApprovePublish ? 'Submit an accepted solution to enable publishing.' : ''}
           className={`min-w-24 rounded-lg px-3 py-2 text-xs font-bold transition-colors ${isPublished ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : canApprovePublish ? 'bg-sky-600 text-white hover:bg-sky-500' : 'cursor-not-allowed bg-slate-200 text-slate-500 dark:bg-gray-700 dark:text-gray-400'}`}
         >
-          {isPublished ? 'Published' : isApprovingPublish ? 'Publishing...' : 'Publish'}
+          {isPublished ? 'Published' : isApprovingPublish ? 'Validating...' : previewValidated ? 'Publish' : languageValidated ? 'Validated' : 'Validate language'}
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate(backTo || `${rolePrefix}/library/coding/problems`)}
+          aria-label="Close preview"
+          title="Close preview"
+          className="ml-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white"
+        >
+          <X className="h-5 w-5" aria-hidden="true" />
         </button>
       </div>
     </div>
@@ -691,7 +747,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
           >
             <section
               style={{
-                width: leftWidth === null ? 'clamp(300px, 38vw, 620px)' : `${leftWidth}px`,
+                width: leftWidth === null ? 'clamp(400px, 45vw, 760px)' : `${leftWidth}px`,
                 willChange: 'width',
               }}
               className="flex h-full min-w-[280px] shrink-0 flex-col overflow-hidden rounded-[24px] border border-transparent bg-white/72 shadow-[0_12px_36px_-28px_rgba(15,23,42,0.24)] backdrop-blur-sm dark:border-transparent dark:bg-gray-900/84"

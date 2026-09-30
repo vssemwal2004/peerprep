@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import * as bundledMonaco from 'monaco-editor/esm/vs/editor/editor.api';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
-import TypeScriptWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker';
 import 'monaco-editor/esm/vs/basic-languages/cpp/cpp.contribution';
 import 'monaco-editor/esm/vs/basic-languages/csharp/csharp.contribution';
 import 'monaco-editor/esm/vs/basic-languages/go/go.contribution';
@@ -99,10 +98,7 @@ function registerRCompletionProvider(monaco) {
 
 if (typeof window !== 'undefined') {
   window.MonacoEnvironment = {
-    getWorker: (_moduleId, label) => {
-      if (label === 'typescript' || label === 'javascript') return new TypeScriptWorker();
-      return new EditorWorker();
-    },
+    getWorker: () => new EditorWorker(),
   };
 }
 
@@ -129,7 +125,11 @@ function definePeerprepThemes(monaco) {
       'editorLineNumber.foreground': '#94a3b8',
       'editorCursor.foreground': '#0284c7',
       'editor.selectionBackground': '#bae6fd99',
-      'editor.lineHighlightBackground': '#f8fafc',
+      'editor.lineHighlightBackground': '#00000000',
+      'editorIndentGuide.background1': '#00000000',
+      'editorIndentGuide.activeBackground1': '#00000000',
+      'editorBracketPairGuide.background1': '#00000000',
+      'editorBracketPairGuide.activeBackground1': '#00000000',
     },
   });
 
@@ -151,7 +151,11 @@ function definePeerprepThemes(monaco) {
       'editorLineNumber.foreground': '#64748b',
       'editorCursor.foreground': '#38bdf8',
       'editor.selectionBackground': '#07598599',
-      'editor.lineHighlightBackground': '#172033',
+      'editor.lineHighlightBackground': '#00000000',
+      'editorIndentGuide.background1': '#00000000',
+      'editorIndentGuide.activeBackground1': '#00000000',
+      'editorBracketPairGuide.background1': '#00000000',
+      'editorBracketPairGuide.activeBackground1': '#00000000',
     },
   });
 }
@@ -382,10 +386,17 @@ export default function MonacoCodeEditor({
         inlineSuggest: { enabled: false },
         tabCompletion: 'on',
         acceptSuggestionOnEnter: 'smart',
-        bracketPairColorization: { enabled: true },
-        guides: { bracketPairs: true, indentation: true, highlightActiveIndentation: true },
+        bracketPairColorization: { enabled: false, independentColorPoolPerBracketType: false },
+        guides: {
+          bracketPairs: false,
+          bracketPairsHorizontal: false,
+          highlightActiveBracketPair: false,
+          indentation: false,
+          highlightActiveIndentation: false,
+        },
+        matchBrackets: 'never',
         occurrencesHighlight: 'off',
-        selectionHighlight: true,
+        selectionHighlight: false,
         renderValidationDecorations: 'off',
         stickyScroll: { enabled: false },
         tabSize: 2,
@@ -396,8 +407,8 @@ export default function MonacoCodeEditor({
         copyWithSyntaxHighlighting: false,
         largeFileOptimizations: true,
         maxTokenizationLineLength: 20000,
-        renderLineHighlight: 'line',
-        renderWhitespace: 'selection',
+        renderLineHighlight: 'none',
+        renderWhitespace: 'none',
         mouseWheelZoom: true,
         fixedOverflowWidgets: true,
         overviewRulerLanes: 0,

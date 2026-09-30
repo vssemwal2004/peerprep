@@ -42,6 +42,10 @@ import {
 import { getCodingQuestionScore } from './assessmentScoringService.js';
 import { mutateAssessmentSubmission } from './assessmentPersistenceService.js';
 import {
+  getVisibleCodeTemplate,
+  prepareFunctionSourceForExecution,
+} from './functionProblemAdapterService.js';
+import {
   applyAssessmentExecutionResult,
   assessmentSourceHash,
   deliveredAssessmentForEvaluation,
@@ -85,7 +89,7 @@ function assessmentIncludesProblem(assessment, problemId) {
 
 export async function resolveActiveProblem(problemId, { userId, assessmentId, accessScope } = {}) {
   ensureObjectId(problemId, 'Problem ID');
-  const problem = await Problem.findById(problemId);
+  const problem = await Problem.findById(problemId).select('+executionHarnesses');
   const normalizedStatus = String(problem?.status || '').toLowerCase();
   const isPublished = normalizedStatus === 'published' || normalizedStatus === 'active';
   if (!problem || !isPublished) {
@@ -138,7 +142,7 @@ function getProblemStarterCode(problem, languageKey = '') {
     ? Object.fromEntries(problem.codeTemplates.entries())
     : (problem?.codeTemplates && typeof problem.codeTemplates === 'object' ? problem.codeTemplates : {});
 
-  return String(templates?.[languageKey] ?? '');
+  return getVisibleCodeTemplate(languageKey, templates?.[languageKey]);
 }
 
 export function validateSourceCode(sourceCode, { starterCode = '', action = 'submit' } = {}) {
@@ -560,6 +564,7 @@ function buildPersistedRunCase(entry, index) {
 
 async function executeRunCasesPayload({
   sourceCode,
+  sourceCodeFactory,
   languageId,
   problem,
   runTestCases,
@@ -573,7 +578,8 @@ async function executeRunCasesPayload({
     const providedExpectedOutput = testCase.expectedOutput !== undefined && testCase.expectedOutput !== null
       ? sanitizeExecutionText(testCase.expectedOutput, MAX_TESTCASE_TEXT_BYTES, `Run testcase expected output #${index + 1}`)
       : undefined;
-    const judgeResult = await runJudge0(sourceCode, languageId, input, judge0Options);
+    const executableSource = sourceCodeFactory ? sourceCodeFactory(input) : sourceCode;
+    const judgeResult = await runJudge0(executableSource, languageId, input, judge0Options);
     const resolvedExpectedOutput = await resolveRunExpectedOutput({
       providedExpectedOutput,
     });
@@ -721,7 +727,7 @@ async function executeRunPayload({
   };
 }
 
-async function executeSubmitPayload({ sourceCode, languageId, problem }) {
+async function executeSubmitPayload({ sourceCode, sourceCodeFactory, languageId, problem }) {
   const allTestCases = await loadSubmissionTestCases(problem);
   const judge0Options = buildJudge0Options(problem);
   const testCaseResults = [];
@@ -740,7 +746,8 @@ async function executeSubmitPayload({ sourceCode, languageId, problem }) {
     const testCase = allTestCases[index];
     const configuredMarks = Math.max(0.01, Number(testCase?.marks) || 1);
     const testCaseMarks = (configuredMarks / configuredTestCaseMarks) * totalTestCaseMarks;
-    const judgeResult = await runJudge0(sourceCode, languageId, testCase.input || '', judge0Options);
+    const executableSource = sourceCodeFactory ? sourceCodeFactory(testCase.input || '') : sourceCode;
+    const judgeResult = await runJudge0(executableSource, languageId, testCase.input || '', judge0Options);
     const evaluation = evaluateSubmissionResult(judgeResult, testCase.output || '');
     const executionTimeMs = secondsToMilliseconds(judgeResult.time);
     const memoryUsedKb = Math.trunc(Number(judgeResult.memory || 0));
@@ -1245,6 +1252,9 @@ export async function processCompilerExecutionJob(job) {
       : validateSourceCode(sourceCode, {
         action: job.name === 'run' || job.name === 'assessment-code-run' ? 'run' : 'submit',
       });
+    const executionSourceFactory = (testInput = '') => (problem
+      ? prepareFunctionSourceForExecution(problem, languageKey, validatedSourceCode, testInput)
+      : validatedSourceCode);
 
     if (submissionId) {
       await markSubmissionRunning(submissionId);
@@ -1253,13 +1263,13 @@ export async function processCompilerExecutionJob(job) {
     if (job.name === 'run' || job.name === 'assessment-code-run') {
       const runResult = Array.isArray(runTestCases) && runTestCases.length > 0
         ? await executeRunCasesPayload({
-          sourceCode: validatedSourceCode,
+          sourceCodeFactory: executionSourceFactory,
           languageId,
           problem,
           runTestCases,
         })
         : await executeRunPayload({
-          sourceCode: validatedSourceCode,
+          sourceCode: executionSourceFactory(standardInput),
           languageId,
           standardInput,
           problem,
@@ -1282,7 +1292,7 @@ export async function processCompilerExecutionJob(job) {
     }
 
     const submitResult = await executeSubmitPayload({
-      sourceCode: validatedSourceCode,
+      sourceCodeFactory: executionSourceFactory,
       languageId,
       problem,
     });
@@ -1422,8 +1432,14 @@ async function processAssessmentFinalCodingJob(job) {
       throw new HttpError(503, 'Assessment evaluation retry budget exhausted.');
     }
 
+    const validatedSourceCode = validateProblemSourceCode(problem, languageKey, sourceCode, { action: 'submit' });
     const submitResult = await executeSubmitPayload({
-      sourceCode: validateProblemSourceCode(problem, languageKey, sourceCode, { action: 'submit' }),
+      sourceCodeFactory: (testInput = '') => prepareFunctionSourceForExecution(
+        problem,
+        languageKey,
+        validatedSourceCode,
+        testInput,
+      ),
       languageId,
       problem,
     });

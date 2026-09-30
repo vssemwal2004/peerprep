@@ -591,7 +591,7 @@ async function hydrateAssessmentCodingRuntime(assessment) {
   if (!problemIds.length) return source;
 
   const problems = await Problem.find({ _id: { $in: problemIds } })
-    .select('_id supportedLanguages codeTemplates category sqlConfig')
+    .select('_id supportedLanguages codeTemplates category sqlConfig executionMode functionContract companyTags hints faqs')
     .lean();
   const problemsById = new Map(problems.map((problem) => [String(problem._id), problem]));
 
@@ -612,6 +612,7 @@ async function hydrateAssessmentCodingRuntime(assessment) {
           ? liveProblem.supportedLanguages.filter(Boolean)
           : [];
         const codeTemplates = mapToPlainObject(liveProblem.codeTemplates);
+        const studentRunnerTemplates = undefined;
         const existingSnapshot = question.problemDataSnapshot
           || question?.coding?.problemData
           || question?.coding
@@ -621,6 +622,13 @@ async function hydrateAssessmentCodingRuntime(assessment) {
           _id: liveProblem._id,
           supportedLanguages,
           codeTemplates,
+          executionMode: liveProblem.executionMode || 'function',
+          functionContract: liveProblem.functionContract || existingSnapshot.functionContract,
+          showExecutionHarness: false,
+          studentRunnerTemplates,
+          companyTags: Array.isArray(liveProblem.companyTags) ? liveProblem.companyTags : [],
+          hints: Array.isArray(liveProblem.hints) ? liveProblem.hints : [],
+          faqs: Array.isArray(liveProblem.faqs) ? liveProblem.faqs : [],
           category: liveProblem.category || existingSnapshot.category || 'DSA',
           sqlConfig: liveProblem.sqlConfig || existingSnapshot.sqlConfig,
         };

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { AlertTriangle, BookOpenText, ChevronLeft, ChevronRight, Code2, Copy, Database, Edit2, Eye, EyeOff, FilePlus2, FileText, FlaskConical, Hash, Plus, Save, Trash2, Upload, X } from 'lucide-react';
+import { AlertTriangle, BookOpenText, ChevronLeft, ChevronRight, Code2, Copy, Database, Edit2, Eye, EyeOff, FilePlus2, FileText, FlaskConical, Hash, ImagePlus, LoaderCircle, Plus, Save, Trash2, Upload, X } from 'lucide-react';
 import { api } from '../../utils/api';
 import { useToast } from '../../components/CustomToast';
 import RichTextEditor from './RichTextEditor';
@@ -23,6 +23,7 @@ import { EmptyState, LoadingPanel, SectionCard } from './CompilerUi';
 import { loadCodingDraft, removeCodingDraft, saveCodingDraft } from '../assessment/assessmentCodingStore';
 import { queueProblemSelection } from '../assessment/assessmentProblemSelectionStore';
 import AuthoringStepper from '../library/AuthoringStepper';
+import CodingClassificationPicker from '../library/CodingClassificationPicker';
 
 const EDITOR_TABS = [
   { key: 'details', label: 'Description', shortLabel: 'Details', Icon: FileText },
@@ -40,6 +41,9 @@ const PAIR_TEMPLATE_FILES = [
 
 const BULK_INPUT_TEMPLATE = '2 3\n###CASE###\n10 20\n###CASE###\n7 8\n';
 const BULK_OUTPUT_TEMPLATE = '5\n###CASE###\n30\n###CASE###\n15\n';
+const PROBLEM_IMAGE_MAX_BYTES = 1024 * 1024;
+const CODE_FILE_MAX_BYTES = 100 * 1024;
+const PROBLEM_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
 function downloadTextFile(filename, content) {
   const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
@@ -70,6 +74,90 @@ function RequiredFieldLabel({ children, optional = false }) {
   return <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-gray-300">{children}{optional ? <span className="ml-1 text-xs font-normal text-slate-400">(optional)</span> : <span className="ml-1 font-bold text-rose-500" aria-label="required">*</span>}</label>;
 }
 
+function ProblemImageManager({ images = [], onChange, maxImages = 10, allowSection = false, title = 'Problem images' }) {
+  const inputRef = useRef(null);
+  const toast = useToast();
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState('');
+
+  const uploadImages = async (event) => {
+    const selectedFiles = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (!selectedFiles.length) return;
+    const unsupported = selectedFiles.find((file) => !PROBLEM_IMAGE_TYPES.has(file.type));
+    if (unsupported) {
+      toast.error(`“${unsupported.name}” is not supported. Use JPG, PNG, WebP, or GIF.`);
+      return;
+    }
+    const oversized = selectedFiles.find((file) => file.size > PROBLEM_IMAGE_MAX_BYTES);
+    if (oversized) {
+      toast.error(`“${oversized.name}” is larger than 1 MB. Choose a smaller image.`);
+      return;
+    }
+    if (images.length + selectedFiles.length > maxImages) {
+      toast.error(`You can add up to ${maxImages} images here.`);
+      return;
+    }
+
+    setUploading(true);
+    const uploaded = [];
+    try {
+      for (let index = 0; index < selectedFiles.length; index += 1) {
+        setUploadProgress(`${index + 1}/${selectedFiles.length}`);
+        const response = await api.uploadCompilerProblemAsset(selectedFiles[index]);
+        uploaded.push({
+          ...(response.asset || {}),
+          ...(allowSection ? { section: 'description' } : {}),
+          position: images.length + index,
+        });
+        onChange([...images, ...uploaded]);
+      }
+      toast.success(`${uploaded.length} image${uploaded.length === 1 ? '' : 's'} uploaded to Cloudinary.`);
+    } catch (error) {
+      toast.error(uploaded.length ? `${uploaded.length} image(s) uploaded before the next upload failed.` : (error.message || 'Image upload failed.'));
+    } finally {
+      setUploading(false);
+      setUploadProgress('');
+    }
+  };
+
+  const updateImage = (index, updates) => onChange(images.map((image, itemIndex) => (
+    itemIndex === index ? { ...image, ...updates } : image
+  )));
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/50">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h4 className="text-sm font-semibold text-slate-900 dark:text-white">{title}</h4>
+          <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">JPG, PNG, WebP or GIF · maximum 1 MB each · {images.length}/{maxImages}</p>
+        </div>
+        <button type="button" onClick={() => inputRef.current?.click()} disabled={uploading || images.length >= maxImages} className="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-white px-3 py-2 text-xs font-semibold text-sky-700 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-sky-900 dark:bg-gray-900 dark:text-sky-300 dark:hover:bg-sky-950/30">
+          {uploading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+          {uploading ? `Uploading ${uploadProgress}` : 'Upload images'}
+        </button>
+        <input ref={inputRef} type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif" onChange={uploadImages} className="hidden" />
+      </div>
+
+      {images.length ? <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        {images.map((image, index) => (
+          <div key={`${image.publicId || image.url}-${index}`} className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+            <div className="relative flex h-36 items-center justify-center bg-slate-100 p-2 dark:bg-gray-950">
+              <img src={image.url} alt={image.alt || ''} loading="lazy" decoding="async" className="max-h-full max-w-full rounded-lg object-contain" />
+              <button type="button" onClick={() => onChange(images.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove image ${index + 1}`} title="Remove image" className="absolute right-2 top-2 rounded-lg bg-white/95 p-1.5 text-slate-500 shadow transition hover:text-rose-600 dark:bg-gray-800 dark:text-gray-300"><Trash2 className="h-4 w-4" /></button>
+            </div>
+            <div className="space-y-2 p-3">
+              {allowSection ? <select value={image.section || 'description'} onChange={(event) => updateImage(index, { section: event.target.value })} className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"><option value="description">Show after description</option><option value="constraints">Show with constraints</option></select> : null}
+              <input value={image.alt || ''} onChange={(event) => updateImage(index, { alt: event.target.value })} maxLength={500} placeholder="Alternative text (recommended)" className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
+              <input value={image.caption || ''} onChange={(event) => updateImage(index, { caption: event.target.value })} maxLength={1000} placeholder="Caption (optional)" className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
+            </div>
+          </div>
+        ))}
+      </div> : <p className="mt-4 rounded-xl border border-dashed border-slate-300 px-4 py-4 text-center text-xs text-slate-500 dark:border-gray-700 dark:text-gray-400">No images added. Upload diagrams only when they help explain the problem.</p>}
+    </div>
+  );
+}
+
 function isConfiguredHiddenCase(testCase = {}) {
   return Boolean(String(testCase.input || '').trim() || String(testCase.output || '').trim());
 }
@@ -95,6 +183,7 @@ function TestCaseEditorCard({
   onDuplicate,
   onChange,
   includeExplanation = false,
+  includeImages = false,
   staged = false,
   inputLabel = 'Input',
   outputLabel = 'Expected output',
@@ -178,6 +267,7 @@ function TestCaseEditorCard({
             <div><p className="font-bold uppercase tracking-wide text-slate-400">{outputLabel}</p><pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-100 p-3 font-mono text-slate-700 dark:bg-gray-800 dark:text-gray-200">{testCase.output || '(empty)'}</pre></div>
             {includeExplanation && <div><p className="font-bold uppercase tracking-wide text-slate-400">Explanation</p><p className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-100 p-3 leading-5 text-slate-700 dark:bg-gray-800 dark:text-gray-200">{testCase.explanation || 'No explanation added.'}</p></div>}
           </div>}
+          {includeImages && testCase.images?.length ? <div className="border-t border-emerald-200 p-4 dark:border-emerald-800"><p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Example images</p><div className="flex flex-wrap gap-2">{testCase.images.map((image, imageIndex) => <img key={`${image.publicId || image.url}-${imageIndex}`} src={image.url} alt={image.alt || ''} loading="lazy" className="h-20 max-w-40 rounded-lg border border-slate-200 object-contain dark:border-gray-700" />)}</div></div> : null}
         </div>
       ) : (
         <div key={`${title}-${index}`} className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700">
@@ -214,6 +304,7 @@ function TestCaseEditorCard({
               <input type="number" min="0.01" step="0.5" value={testCase.marks ?? 1} onChange={(event) => updateCase(index, 'marks', event.target.value)} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500" />
             </label>
           </div>
+          {includeImages ? <div className="mt-4"><ProblemImageManager title={`${title} ${index + 1} images`} images={testCase.images || []} onChange={(images) => updateCase(index, 'images', images)} maxImages={10} /></div> : null}
           {staged && <div className="mt-4 flex justify-end"><button type="button" onClick={() => saveCase(index)} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-500"><Save className="h-4 w-4" />Save {title.toLowerCase()} case</button></div>}
         </div>
       ))}
@@ -465,6 +556,7 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
     : Math.max(hiddenPairs.pairs.filter((pair) => pair.complete).length, manualHiddenCount, form.existingHiddenTestCaseCount || 0);
   const codingTotalMarks = Math.max(0.01, Number(form.totalMarks) || 1);
   const activeTemplate = form.codeTemplates[activeLanguage] || '';
+  const activeHarness = form.executionHarnesses?.[activeLanguage] || '';
   const hasTemplate = form.supportedLanguages.some((language) => String(form.codeTemplates?.[language] || '').trim());
   const canAddToAssessment = isAssessment && previewValidated && visibleSampleCount > 0 && hiddenCount > 0 && hasTemplate;
   const canAddToAssessmentDynamic = currentStatus === 'published' && previewValidated && visibleSampleCount > 0 && hiddenCount > 0 && hasTemplate && currentProblemId;
@@ -551,6 +643,56 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
     setIsDirty(true);
   };
 
+  const updateFunctionContract = (field, value) => {
+    setForm((previous) => ({
+      ...previous,
+      functionContract: {
+        ...(previous.functionContract || {}),
+        [field]: value,
+      },
+    }));
+    setPreviewValidated(false);
+    setIsDirty(true);
+  };
+
+  const updateFunctionParameter = (index, field, value) => {
+    const parameters = [...(form.functionContract?.parameters || [])];
+    parameters[index] = { ...parameters[index], [field]: value };
+    updateFunctionContract('parameters', parameters);
+  };
+
+  const addFunctionParameter = () => updateFunctionContract('parameters', [
+    ...(form.functionContract?.parameters || []),
+    { name: '', type: '' },
+  ]);
+
+  const removeFunctionParameter = (index) => updateFunctionContract(
+    'parameters',
+    (form.functionContract?.parameters || []).filter((_, itemIndex) => itemIndex !== index),
+  );
+
+  const updateExecutionHarness = (language, nextHarness) => {
+    setForm((previous) => ({
+      ...previous,
+      executionHarnesses: { ...previous.executionHarnesses, [language]: nextHarness },
+    }));
+    setIsDirty(true);
+  };
+
+  const importCodeFile = (event, onLoad) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (file.size > CODE_FILE_MAX_BYTES) {
+      toast.error('Code files must be 100 KB or smaller.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => onLoad(String(reader.result || ''));
+    reader.onerror = () => toast.error('Could not read this code file.');
+    reader.readAsText(file);
+  };
+
   const updateSampleTestCase = (index, field, value) => {
     setForm((previous) => ({
       ...previous,
@@ -633,7 +775,7 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
   };
 
   const persistProblem = async (status, { redirectToPreview = false, silent = false } = {}) => {
-    if (status === 'draft' && !redirectToPreview && !String(form.title || '').trim() && (isAssessment || !isEditMode)) {
+    if (status === 'draft' && !redirectToPreview && (!String(form.title || '').trim() || !(form.topicIds || []).length) && (isAssessment || !isEditMode)) {
       const draftForm = {
         ...form,
         hiddenTestFiles: [],
@@ -1051,8 +1193,8 @@ if (!isValidated || publishedProblem.status !== 'published') {
   const isFinalTab = activeTabIndex === EDITOR_TABS.length - 1;
   const tabCompletion = {
     details: isSqlProblem
-      ? Boolean(form.title?.trim() && form.description?.trim() && form.sqlConfig?.schemaSql?.trim() && form.outputFormat?.trim() && form.constraints?.trim())
-      : Boolean(form.title?.trim() && form.description?.trim() && form.inputFormat?.trim() && form.outputFormat?.trim() && form.constraints?.trim()),
+      ? Boolean(form.title?.trim() && form.topicIds?.length > 0 && form.description?.trim() && form.sqlConfig?.schemaSql?.trim() && form.outputFormat?.trim() && form.constraints?.trim())
+      : Boolean(form.title?.trim() && form.topicIds?.length > 0 && form.description?.trim() && form.inputFormat?.trim() && form.outputFormat?.trim() && form.constraints?.trim()),
     tests: visibleSampleCount > 0 && hiddenCount > 0,
     templates: form.supportedLanguages.length > 0 && hasTemplate,
     editorial: Boolean(form.editorial?.trim() || form.hints?.length || form.faqs?.length),
@@ -1111,7 +1253,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
                 </button>
                 <button type="button" onClick={() => switchProblemCategory('SQL')} className={`flex items-start gap-3 rounded-xl border p-3 text-left transition ${isSqlProblem ? 'border-sky-300 bg-sky-50 ring-2 ring-sky-100 dark:border-sky-700 dark:bg-sky-950/30 dark:ring-sky-900/40' : 'border-slate-200 hover:border-slate-300 dark:border-gray-700'}`}>
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-600 text-white"><Database className="h-5 w-5" /></span>
-                  <span><span className="block text-sm font-bold text-slate-900 dark:text-white">SQL query</span><span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-gray-400">LeetCode-style SQLite schema, datasets and result-table evaluation.</span></span>
+                  <span><span className="block text-sm font-bold text-slate-900 dark:text-white">SQL query</span><span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-gray-400">Function-focused SQLite schema, datasets and result-table evaluation.</span></span>
                 </button>
               </div>
             </SectionCard>
@@ -1124,14 +1266,21 @@ if (!isValidated || publishedProblem.status !== 'published') {
                 <div className="md:col-span-2">
                   <RequiredFieldLabel>Problem statement</RequiredFieldLabel>
                   <RichTextEditor value={form.description} onChange={(value) => updateField('description', value)} rows={9} placeholder="Explain the problem clearly using headings, examples, and inline code." />
+                  <div className="mt-4">
+                    <ProblemImageManager images={form.contentImages || []} onChange={(contentImages) => updateField('contentImages', contentImages)} maxImages={20} allowSection title="Statement and constraint images" />
+                  </div>
                 </div>
                 <div>
                   <RequiredFieldLabel>Difficulty</RequiredFieldLabel>
                   <select value={form.difficulty} onChange={(event) => updateField('difficulty', event.target.value)} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"><option>Easy</option><option>Medium</option><option>Hard</option></select>
                 </div>
-                <div>
-                  <RequiredFieldLabel optional>Tags</RequiredFieldLabel>
-                  <input value={form.tags} onChange={(event) => updateField('tags', event.target.value)} placeholder="arrays, dp, greedy" className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900" />
+                <div className="md:col-span-2">
+                  <CodingClassificationPicker
+                    topicIds={form.topicIds || []}
+                    tagIds={form.codingTagIds || []}
+                    onTopicsChange={(topicIds) => updateField('topicIds', topicIds)}
+                    onTagsChange={(codingTagIds) => updateField('codingTagIds', codingTagIds)}
+                  />
                 </div>
                 <div className="md:col-span-2">
                   <RequiredFieldLabel optional>Company tags</RequiredFieldLabel>
@@ -1227,6 +1376,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
                 title="Sample"
                 cases={form.sampleTestCases}
                 includeExplanation
+                includeImages
                 staged
                 onAdd={() => updateField('sampleTestCases', [...form.sampleTestCases, createEmptySampleTestCase()])}
                 onRemove={(index) => updateField('sampleTestCases', form.sampleTestCases.filter((_, itemIndex) => itemIndex !== index))}
@@ -1511,11 +1661,43 @@ if (!isValidated || publishedProblem.status !== 'published') {
               </div></>}
             </SectionCard>
 
-            <SectionCard title={isSqlProblem ? 'Starter query' : 'Code Templates'} subtitle={isSqlProblem ? 'Give students a focused starting point without exposing the reference query.' : 'Provide starter code for each language. Students can fully replace it with any valid program entrypoint.'}>
+            {!isSqlProblem && <SectionCard title="Execution style" subtitle="Choose what the student writes and what PeerPrep adds before sending code to Judge0.">
+              <div className="grid gap-3 md:grid-cols-2">
+                <button type="button" onClick={() => updateField('executionMode', 'function')} className={`rounded-2xl border p-4 text-left transition-colors ${form.executionMode !== 'full_program' ? 'border-sky-400 bg-sky-50 dark:border-sky-700 dark:bg-sky-950/20' : 'border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900'}`}>
+                  <div className="flex items-center justify-between gap-3"><span className="text-sm font-bold text-slate-900 dark:text-white">Function only</span><span className="rounded-full bg-sky-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">Function mode</span></div>
+                  <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-gray-400">Student completes the method. A language-specific runner reads testcase input, calls it, and prints the result.</p>
+                </button>
+                <button type="button" onClick={() => updateField('executionMode', 'full_program')} className={`rounded-2xl border p-4 text-left transition-colors ${form.executionMode === 'full_program' ? 'border-sky-400 bg-sky-50 dark:border-sky-700 dark:bg-sky-950/20' : 'border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900'}`}>
+                  <span className="text-sm font-bold text-slate-900 dark:text-white">Full program</span>
+                  <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-gray-400">Student owns the complete entrypoint, input parsing, solution logic, and output. No runner is injected.</p>
+                </button>
+              </div>
+              {form.executionMode !== 'full_program' && <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900/50 dark:bg-emerald-950/20"><p className="text-sm font-semibold text-emerald-900 dark:text-emerald-200">Private runner enforced</p><p className="mt-1 text-xs leading-5 text-emerald-800 dark:text-emerald-300">Students see and submit only the function template. PeerPrep injects the hidden main, testcase arguments, and output serializer immediately before Judge0 execution.</p></div>}
+            </SectionCard>}
+
+            {!isSqlProblem && form.executionMode !== 'full_program' && <SectionCard title="Function contract" subtitle="One canonical signature controls hidden main generation, argument ordering, and output handling in every enabled language.">
+              <div className="grid gap-4 md:grid-cols-3">
+                <div><RequiredFieldLabel>Class / module name</RequiredFieldLabel><input value={form.functionContract?.className || ''} onChange={(event) => updateFunctionContract('className', event.target.value)} placeholder="Solution" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" /></div>
+                <div><RequiredFieldLabel>Function name</RequiredFieldLabel><input value={form.functionContract?.methodName || ''} onChange={(event) => updateFunctionContract('methodName', event.target.value)} placeholder="twoSum" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" /></div>
+                <div><RequiredFieldLabel>Return type</RequiredFieldLabel><input value={form.functionContract?.returnType || ''} onChange={(event) => updateFunctionContract('returnType', event.target.value)} placeholder="integer[]" className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" /></div>
+              </div>
+              <div className="mt-5 flex items-center justify-between gap-3"><div><p className="text-sm font-semibold text-slate-800 dark:text-gray-100">Parameters</p><p className="mt-1 text-xs text-slate-500 dark:text-gray-400">Keep the same order as the student-facing function signature.</p></div><button type="button" onClick={addFunctionParameter} className="inline-flex items-center gap-2 rounded-lg border border-sky-200 px-3 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-50 dark:border-sky-800 dark:text-sky-300 dark:hover:bg-sky-950/20"><Plus className="h-3.5 w-3.5" />Add parameter</button></div>
+              <div className="mt-3 space-y-2">
+                {(form.functionContract?.parameters || []).map((parameter, index) => <div key={`function-parameter-${index}`} className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[44px_1fr_1fr_40px] dark:border-gray-700 dark:bg-gray-800/60"><span className="flex items-center justify-center text-xs font-bold text-slate-400">#{index + 1}</span><input value={parameter.name || ''} onChange={(event) => updateFunctionParameter(index, 'name', event.target.value)} placeholder="Parameter name" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900" /><input value={parameter.type || ''} onChange={(event) => updateFunctionParameter(index, 'type', event.target.value)} placeholder="Type, e.g. integer[]" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-900" /><button type="button" onClick={() => removeFunctionParameter(index)} aria-label={`Remove parameter ${index + 1}`} className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/20"><Trash2 className="h-4 w-4" /></button></div>)}
+                {(form.functionContract?.parameters || []).length === 0 ? <p className="rounded-xl border border-dashed border-slate-200 px-4 py-5 text-center text-xs text-slate-500 dark:border-gray-700 dark:text-gray-400">Add parameters so PeerPrep can pass testcase values to the hidden runner in the correct order.</p> : null}
+              </div>
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <div><RequiredFieldLabel>Expected output comes from</RequiredFieldLabel><select value={form.functionContract?.outputMode || 'return'} onChange={(event) => updateFunctionContract('outputMode', event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-gray-700 dark:bg-gray-900"><option value="return">Function return value</option><option value="parameter">Modified parameter</option></select></div>
+                {form.functionContract?.outputMode === 'parameter' ? <div><RequiredFieldLabel>Output parameter</RequiredFieldLabel><select value={Number(form.functionContract?.outputParameterIndex || 0)} onChange={(event) => updateFunctionContract('outputParameterIndex', Number(event.target.value))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-gray-700 dark:bg-gray-900">{(form.functionContract?.parameters || []).map((parameter, index) => <option key={`output-param-${index}`} value={index}>#{index + 1} {parameter.name || 'Unnamed parameter'}</option>)}</select></div> : null}
+              </div>
+            </SectionCard>}
+
+            <SectionCard title={isSqlProblem ? 'Starter query' : 'Code Templates'} subtitle={isSqlProblem ? 'Give students a focused starting point without exposing the reference query.' : (form.executionMode === 'full_program' ? 'Provide a basic full-program skeleton, or leave it minimal so the student writes the complete program.' : 'Provide only the class or function signature the student should complete.')}>
               <RequiredFieldLabel>{isSqlProblem ? 'Student query template' : 'Starter code'}</RequiredFieldLabel>
               {!isSqlProblem && <div className="mb-4 flex flex-wrap gap-2">
                 <div className="flex flex-wrap gap-2">{form.supportedLanguages.map((languageId) => <button key={languageId} type="button" onClick={() => setActiveLanguage(languageId)} className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${activeLanguage === languageId ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}>{getLanguageLabel(languageId)}</button>)}</div>
               </div>}
+              <div className="mb-2 flex justify-end"><label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><Upload className="h-3.5 w-3.5" />Import template<input type="file" className="hidden" accept=".txt,.py,.js,.ts,.java,.cpp,.cc,.c,.cs,.php,.go,.rs,.kt,.rb,.swift,.r,.sql" onChange={(event) => importCodeFile(event, (code) => updateTemplate(activeLanguage, code))} /></label></div>
               <MonacoCodeEditor
                 language={activeLanguage}
                 value={activeTemplate}
@@ -1526,6 +1708,17 @@ if (!isValidated || publishedProblem.status !== 'published') {
                 contentKey={`problem-template:${activeLanguage}`}
               />
             </SectionCard>
+
+            {!isSqlProblem && form.executionMode !== 'full_program' && <SectionCard title="Execution runner" subtitle={`Private ${getLanguageLabel(activeLanguage)} wrapper used by Judge0 for every sample and hidden testcase.`}>
+              <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-200">
+                Put <code className="rounded bg-white/80 px-1.5 py-0.5 font-mono font-bold dark:bg-gray-900">{'{{USER_CODE}}'}</code> exactly where the student's function must be inserted. The runner should read stdin, call that function, and print only the expected output. Without the placeholder, PeerPrep appends the runner after student code for backward compatibility.
+              </div>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-gray-300">{form.showExecutionHarness ? <Eye className="h-4 w-4 text-sky-600" /> : <EyeOff className="h-4 w-4" />}{form.showExecutionHarness ? 'Visible to students (read-only)' : 'Hidden from students'}</div>
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><Upload className="h-3.5 w-3.5" />Import runner<input type="file" className="hidden" accept=".txt,.py,.js,.ts,.java,.cpp,.cc,.c,.cs,.php,.go,.rs,.kt,.rb,.swift,.r" onChange={(event) => importCodeFile(event, (code) => updateExecutionHarness(activeLanguage, code))} /></label>
+              </div>
+              <MonacoCodeEditor language={activeLanguage} value={activeHarness} onChange={(nextHarness) => updateExecutionHarness(activeLanguage, nextHarness)} height={420} readOnly={false} internalClipboardOnly={false} contentKey={`problem-runner:${activeLanguage}`} />
+            </SectionCard>}
           </>
         ) : null}
 

@@ -80,6 +80,22 @@ export function normalizeComparableOutput(value) {
     .trim();
 }
 
+function comparableOutputsMatch(actual, expected) {
+  const normalizedActual = normalizeComparableOutput(actual);
+  const normalizedExpected = normalizeComparableOutput(expected);
+  if (normalizedActual === normalizedExpected) return true;
+  const numericPattern = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
+  if (numericPattern.test(normalizedActual) && numericPattern.test(normalizedExpected)) {
+    const left = Number(normalizedActual);
+    const right = Number(normalizedExpected);
+    if (Number.isFinite(left) && Number.isFinite(right)) {
+      const tolerance = 1e-9 * Math.max(1, Math.abs(left), Math.abs(right));
+      return Math.abs(left - right) <= tolerance;
+    }
+  }
+  return false;
+}
+
 export function roundNumber(value, digits = 3) {
   const numericValue = Number(value || 0);
   if (!Number.isFinite(numericValue)) {
@@ -332,7 +348,7 @@ export async function runJudge0(sourceCodeInput, languageId, stdin = '', options
 export function mapRunStatusCode(result) {
   const description = String(result.status?.description || '').toLowerCase();
   const statusId = Number(result.status?.id || 0);
-  if (result.compile_output || result.status?.id === 6) {
+  if (result.status?.id === 6 || description.includes('compilation error')) {
     return 'CE';
   }
   if (result.status?.id === 5 || description.includes('time limit')) {
@@ -364,7 +380,7 @@ export function buildRunResponse(result) {
 export function evaluateSubmissionResult(result, expectedOutput) {
   const description = String(result.status?.description || '').toLowerCase();
   const statusId = Number(result.status?.id || 0);
-  if (result.compile_output || result.status?.id === 6) {
+  if (result.status?.id === 6 || description.includes('compilation error')) {
     return {
       verdict: 'Compilation Error',
       internalStatus: 'CE',
@@ -398,7 +414,7 @@ export function evaluateSubmissionResult(result, expectedOutput) {
 
   const actualOutput = result.stdout || '';
   const expected = String(expectedOutput ?? '');
-  if (normalizeComparableOutput(actualOutput) !== normalizeComparableOutput(expected)) {
+  if (!comparableOutputsMatch(actualOutput, expected)) {
     return {
       verdict: 'Wrong Answer',
       internalStatus: 'WA',

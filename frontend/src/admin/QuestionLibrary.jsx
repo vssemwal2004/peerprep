@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowLeft, BookOpenText, CheckSquare, ChevronLeft, ChevronRight, Columns3, Edit3, Eye, EyeOff, Filter, Globe2, Library, Lock, MoreVertical, RefreshCw, Search, Tag, Trash2, X } from 'lucide-react';
+import { ArrowLeft, BookOpenText, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, Columns3, Edit3, Eye, EyeOff, Filter, Folder, Globe2, Library, LoaderCircle, Lock, MoreVertical, RefreshCw, Search, Tag, Trash2, X } from 'lucide-react';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import { queueQuestionSelection } from './assessment/assessmentProblemSelectionStore';
 import { loadAssessmentDraft } from './assessment/assessmentDraftStore';
 import { buildAssessmentQuestionIdentitySet, isLibraryQuestionAlreadyAdded } from './assessment/assessmentQuestionIdentity';
 import { getLanguageLabel, getProblemSupportedLanguages } from './compiler/compilerUtils';
+import CodingQuestionFilterDrawer from './library/CodingQuestionFilterDrawer';
 
 const TYPE_LABELS = {
   all: 'All Questions',
@@ -16,6 +18,8 @@ const TYPE_LABELS = {
   short: 'Short Questions',
   one_line: 'One-word Questions',
 };
+const LIBRARY_PAGE_SIZE = 25;
+const LIBRARY_PAGE_SIZES = [25, 50, 100];
 
 function labelForType(type = '') {
   return TYPE_LABELS[type] || `${String(type || 'other').replace(/_/g, ' ')} Questions`;
@@ -174,9 +178,16 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   const initialType = params.get('type') || 'all';
   const initialStatus = params.get('status') || '';
   const lockType = params.get('lockType') || '';
+  const libraryViewStateKey = `peerprep:library-view:${location.pathname}:${lockType || initialType}`;
+  const restoredViewState = useMemo(() => {
+    try {
+      return JSON.parse(window.sessionStorage.getItem(libraryViewStateKey) || '{}');
+    } catch {
+      return {};
+    }
+  }, [libraryViewStateKey]);
 
-  const [filters, setFilters] = useState({
-    type: lockType || initialType,
+  const [filters, setFilters] = useState(() => ({
     search: '',
     tag: '',
     difficulty: '',
@@ -185,16 +196,29 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
     sourceAssessmentId: '',
     sortBy: 'updatedAt',
     sortOrder: 'desc',
-  });
-  const [searchInput, setSearchInput] = useState('');
+    topicIds: [],
+    topicLabels: [],
+    topicScope: 'direct',
+    topicMatch: 'any',
+    tagIds: [],
+    tagLabels: [],
+    tagMatch: 'any',
+    classificationMatch: 'all',
+    uncategorized: false,
+    viewMode: 'questions',
+    folderBy: 'topics',
+    ...(restoredViewState.filters || {}),
+    type: lockType || initialType,
+  }));
+  const [searchInput, setSearchInput] = useState(() => restoredViewState.filters?.search || '');
   const [questions, setQuestions] = useState([]);
   const [categories, setCategories] = useState([]);
   const [statusCounts, setStatusCounts] = useState([]);
-  const [availableTags, setAvailableTags] = useState([]);
   const [availableDifficulties, setAvailableDifficulties] = useState([]);
   const [availableAssessments, setAvailableAssessments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(() => Math.max(1, Number(restoredViewState.page) || 1));
+  const [pageSize, setPageSize] = useState(() => LIBRARY_PAGE_SIZES.includes(Number(restoredViewState.pageSize)) ? Number(restoredViewState.pageSize) : LIBRARY_PAGE_SIZE);
   const [pages, setPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -206,13 +230,24 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   const [statementModal, setStatementModal] = useState({ open: false, title: '', statement: '' });
   const [actorModal, setActorModal] = useState(null);
   const [actionMenuId, setActionMenuId] = useState('');
+  const [actionMenuPopup, setActionMenuPopup] = useState(null);
   const [bulkMenuOpen, setBulkMenuOpen] = useState(false);
   const [bulkSelecting, setBulkSelecting] = useState(false);
   const [selectingAll, setSelectingAll] = useState(false);
   const [editModal, setEditModal] = useState({ open: false, question: null, saving: false });
   const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', message: '', confirmLabel: 'Confirm', tone: 'default', onConfirm: null });
   const [reloadKey, setReloadKey] = useState(0);
+  const previousRouteTypeRef = useRef(lockType || initialType);
+  const previousRouteStatusRef = useRef(initialStatus);
+  const committedSearchRef = useRef(restoredViewState.filters?.search || '');
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  const [folderItems, setFolderItems] = useState([]);
+  const [folderLoading, setFolderLoading] = useState(false);
+  const [folderPages, setFolderPages] = useState(1);
+  const [folderTotal, setFolderTotal] = useState(0);
+  const [expandedFolderId, setExpandedFolderId] = useState('');
+  const [folderQuestions, setFolderQuestions] = useState({});
+  const [folderQuestionLoading, setFolderQuestionLoading] = useState('');
   const [columnsPanelOpen, setColumnsPanelOpen] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState(() => {
     try {
@@ -222,6 +257,18 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
       return { type: true, difficulty: true, tags: true, usedIn: true, source: false, updated: true };
     }
   });
+
+  useEffect(() => {
+    if (!actionMenuId) return undefined;
+
+    const closeMenu = () => setActionMenuId('');
+    window.addEventListener('scroll', closeMenu, true);
+    window.addEventListener('resize', closeMenu);
+    return () => {
+      window.removeEventListener('scroll', closeMenu, true);
+      window.removeEventListener('resize', closeMenu);
+    };
+  }, [actionMenuId]);
   const rowSelectionActive = selectionMode || bulkSelecting;
   const assessmentQuestionIdentities = useMemo(() => {
     if (!selectionMode) return new Set();
@@ -236,6 +283,8 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
 
   useEffect(() => {
     const timer = setTimeout(() => {
+      if (committedSearchRef.current === searchInput) return;
+      committedSearchRef.current = searchInput;
       setFilters((prev) => (prev.search === searchInput ? prev : { ...prev, search: searchInput }));
       setPage(1);
     }, 160);
@@ -249,11 +298,19 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
 
   useEffect(() => {
     if (lockType) return;
-    setFilters((prev) => ({ ...prev, type: initialType || 'all' }));
+    if (previousRouteTypeRef.current === initialType) return;
+    previousRouteTypeRef.current = initialType;
+    setFilters((prev) => ({
+      ...prev,
+      type: initialType || 'all',
+      ...((initialType || 'all') === 'coding' ? {} : { topicIds: [], tagIds: [], topicLabels: [], tagLabels: [], uncategorized: false, viewMode: 'questions' }),
+    }));
     setPage(1);
   }, [initialType, lockType]);
 
   useEffect(() => {
+    if (previousRouteStatusRef.current === initialStatus) return;
+    previousRouteStatusRef.current = initialStatus;
     setFilters((prev) => ({ ...prev, status: initialStatus }));
     setPage(1);
   }, [initialStatus]);
@@ -263,6 +320,18 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   }, [visibleColumns]);
 
   useEffect(() => {
+    try {
+      window.sessionStorage.setItem(libraryViewStateKey, JSON.stringify({ filters, page, pageSize }));
+    } catch {
+      // Keep the library usable when browser storage is restricted.
+    }
+  }, [filters, libraryViewStateKey, page, pageSize]);
+
+  useEffect(() => {
+    if (filters.type === 'coding' && filters.viewMode === 'folders') {
+      setLoading(false);
+      return undefined;
+    }
     let mounted = true;
     const loadQuestions = async () => {
       setLoading(true);
@@ -277,15 +346,21 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
           sourceAssessmentId: filters.sourceAssessmentId,
           sortBy: filters.sortBy,
           sortOrder: filters.sortOrder,
+          topicIds: (filters.topicIds || []).join(','),
+          topicScope: filters.topicScope,
+          topicMatch: filters.topicMatch,
+          tagIds: (filters.tagIds || []).join(','),
+          tagMatch: filters.tagMatch,
+          classificationMatch: filters.classificationMatch,
+          uncategorized: filters.uncategorized || undefined,
           page,
-          limit: 20,
+          limit: pageSize,
           skipCache: reloadKey > 0,
         });
         if (!mounted) return;
         setQuestions(data.questions || []);
         setCategories(data.filters?.categories || []);
         setStatusCounts(data.filters?.statuses || []);
-        setAvailableTags(data.filters?.tags || []);
         setAvailableDifficulties(data.filters?.difficulties || []);
         setAvailableAssessments(data.filters?.assessments || []);
         setPages(data.pagination?.pages || 1);
@@ -299,7 +374,93 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
     };
     loadQuestions();
     return () => { mounted = false; };
-  }, [filters, page, reloadKey, toast]);
+  }, [filters, page, pageSize, reloadKey, toast]);
+
+  useEffect(() => {
+    if (filters.type !== 'coding' || filters.viewMode !== 'folders') {
+      setFolderItems([]);
+      setExpandedFolderId('');
+      setFolderQuestions({});
+      return undefined;
+    }
+    let cancelled = false;
+    const loadFolders = async () => {
+      setFolderLoading(true);
+      try {
+        const kind = filters.folderBy === 'tags' ? 'tags' : 'topics';
+        const selectedIds = kind === 'tags' ? (filters.tagIds || []) : (filters.topicIds || []);
+        const result = kind === 'tags'
+          ? await api.listCodingTags({ ids: selectedIds.join(','), withQuestions: true, page, limit: pageSize, skipCache: reloadKey > 0 })
+          : await api.listCodingTopics({ ids: selectedIds.join(','), withQuestions: true, page, limit: pageSize, skipCache: reloadKey > 0 });
+        if (!cancelled) {
+          setFolderItems(result[kind] || []);
+          setFolderPages(Number(result.pagination?.pages || 1));
+          setFolderTotal(Number(result.pagination?.total || 0));
+        }
+      } catch (error) {
+        if (!cancelled) toast.error(error.message || 'Failed to load coding folders.');
+      } finally {
+        if (!cancelled) setFolderLoading(false);
+      }
+    };
+    setExpandedFolderId('');
+    setFolderQuestions({});
+    loadFolders();
+    return () => { cancelled = true; };
+  }, [filters.folderBy, filters.tagIds, filters.topicIds, filters.type, filters.viewMode, page, pageSize, reloadKey, toast]);
+
+  const loadFolderQuestionPage = async (folder, targetPage = 1, { allInFolder = false } = {}) => {
+    const folderId = String(folder?._id || '');
+    if (!folderId) return;
+    setFolderQuestionLoading(folderId);
+    try {
+      const byTags = filters.folderBy === 'tags';
+      const data = await api.listLibraryQuestions({
+        type: 'coding',
+        search: allInFolder ? '' : filters.search,
+        difficulty: allInFolder ? '' : filters.difficulty,
+        status: allInFolder ? '' : filters.status,
+        visibility: allInFolder ? '' : filters.visibility,
+        sourceAssessmentId: allInFolder ? '' : filters.sourceAssessmentId,
+        topicIds: byTags ? (allInFolder ? '' : (filters.topicIds || []).join(',')) : folderId,
+        topicScope: allInFolder ? 'direct' : filters.topicScope,
+        topicMatch: allInFolder ? 'any' : filters.topicMatch,
+        tagIds: byTags ? folderId : (allInFolder ? '' : (filters.tagIds || []).join(',')),
+        tagMatch: allInFolder ? 'any' : filters.tagMatch,
+        classificationMatch: 'all',
+        page: targetPage,
+        limit: pageSize,
+        includeMeta: false,
+        skipCache: reloadKey > 0,
+      });
+      setFolderQuestions((current) => ({
+        ...current,
+        [folderId]: {
+          items: data.questions || [],
+          pagination: data.pagination || { page: targetPage, pages: 1, total: 0, limit: pageSize },
+          allInFolder,
+        },
+      }));
+    } catch (error) {
+      toast.error(error.message || 'Failed to open this question folder.');
+      setExpandedFolderId('');
+    } finally {
+      setFolderQuestionLoading('');
+    }
+  };
+
+  const toggleQuestionFolder = async (folder) => {
+    const folderId = String(folder?._id || '');
+    if (!folderId) return;
+    if (expandedFolderId === folderId) {
+      setExpandedFolderId('');
+      return;
+    }
+    setExpandedFolderId(folderId);
+    if (folderQuestions[folderId]) return;
+    await loadFolderQuestionPage(folder, 1, { allInFolder: true });
+  };
+
 
   const categoryTabs = useMemo(() => {
     const coreTypes = ['mcq', 'one_line', 'short', 'coding'];
@@ -330,7 +491,10 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
     }, {});
   }, [selectedMeta]);
 
-  const activeFilterCount = [filters.tag, filters.difficulty, filters.status, filters.visibility, filters.sourceAssessmentId].filter(Boolean).length;
+  const activeFilterCount = [filters.search, filters.tag, filters.difficulty, filters.status, filters.visibility, filters.sourceAssessmentId].filter(Boolean).length
+    + ((filters.topicIds || []).length || filters.uncategorized ? 1 : 0)
+    + ((filters.tagIds || []).length ? 1 : 0)
+    + (filters.viewMode === 'folders' ? 1 : 0);
   const columnTemplate = useMemo(() => {
     const columns = [];
     if (rowSelectionActive) columns.push('32px');
@@ -345,7 +509,18 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   }, [rowSelectionActive, visibleColumns]);
 
   const resetFilters = () => {
-    setFilters((prev) => ({ ...prev, tag: '', difficulty: '', status: '', visibility: '', sourceAssessmentId: '' }));
+    setFilters((prev) => ({ ...prev, tag: '', difficulty: '', status: '', visibility: '', sourceAssessmentId: '', topicIds: [], tagIds: [], topicLabels: [], tagLabels: [], topicScope: 'direct', topicMatch: 'any', tagMatch: 'any', classificationMatch: 'all', uncategorized: false, viewMode: 'questions', folderBy: 'topics' }));
+    setPage(1);
+  };
+
+  const removeClassificationFilter = (kind, id) => {
+    const idsKey = kind === 'topic' ? 'topicIds' : 'tagIds';
+    const labelsKey = kind === 'topic' ? 'topicLabels' : 'tagLabels';
+    setFilters((current) => ({
+      ...current,
+      [idsKey]: (current[idsKey] || []).filter((value) => String(value) !== String(id)),
+      [labelsKey]: (current[labelsKey] || []).filter((item) => String(item.id) !== String(id)),
+    }));
     setPage(1);
   };
 
@@ -409,6 +584,13 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
         sourceAssessmentId: filters.sourceAssessmentId,
         sortBy: filters.sortBy,
         sortOrder: filters.sortOrder,
+        topicIds: (filters.topicIds || []).join(','),
+        topicScope: filters.topicScope,
+        topicMatch: filters.topicMatch,
+        tagIds: (filters.tagIds || []).join(','),
+        tagMatch: filters.tagMatch,
+        classificationMatch: filters.classificationMatch,
+        uncategorized: filters.uncategorized || undefined,
         selectAll: true,
         skipCache: true,
       });
@@ -716,6 +898,32 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
     navigate(`${rolePrefix}/library/add-question`);
   };
 
+  const toggleQuestionActions = (question, event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (actionMenuId === question._id) {
+      setActionMenuId('');
+      setActionMenuPopup(null);
+      return;
+    }
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const menuWidth = 192;
+    const estimatedMenuHeight = question.status === 'draft' ? 206 : 170;
+    const viewportPadding = 12;
+    const left = Math.max(
+      viewportPadding,
+      Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - viewportPadding),
+    );
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const top = spaceBelow >= estimatedMenuHeight + 8
+      ? rect.bottom + 8
+      : Math.max(viewportPadding, rect.top - estimatedMenuHeight - 8);
+
+    setActionMenuPopup({ question, top, left });
+    setActionMenuId(question._id);
+  };
+
   return (
     <div className={embedded ? 'bg-white dark:bg-gray-900 md:flex md:h-[calc(100vh-5.5rem)] md:min-h-0 md:flex-col' : 'min-h-screen bg-white dark:bg-gray-900'}>
       <div className={embedded ? 'w-full md:flex md:min-h-0 md:flex-1 md:flex-col' : 'mx-auto max-w-7xl px-4 py-6'}>
@@ -888,7 +1096,11 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                 key={category.type}
                 type="button"
                 onClick={() => {
-                  setFilters((prev) => ({ ...prev, type: category.type }));
+                  setFilters((prev) => ({
+                    ...prev,
+                    type: category.type,
+                    ...(category.type === 'coding' ? {} : { topicIds: [], tagIds: [], topicLabels: [], tagLabels: [], uncategorized: false, viewMode: 'questions' }),
+                  }));
                   setPage(1);
                 }}
                 disabled={Boolean(lockType && category.type !== lockType)}
@@ -961,25 +1173,10 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                 <button type="button" onClick={handleAddSelected} disabled={!selectedIds.size} className="inline-flex h-9 items-center gap-2 rounded-lg bg-sky-600 px-4 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"><CheckSquare className="h-3.5 w-3.5" />Add selected ({selectedIds.size})</button>
               </>
             )}
-            <div className="relative">
-              <button type="button" aria-expanded={filterPanelOpen} onClick={() => { setFilterPanelOpen((open) => !open); setColumnsPanelOpen(false); }} className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold shadow-sm transition-colors ${filterPanelOpen || activeFilterCount ? 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
-                <Filter className="h-3.5 w-3.5" /> Filters
-                {activeFilterCount > 0 && <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-sky-600 px-1.5 text-[10px] text-white">{activeFilterCount}</span>}
-              </button>
-              {filterPanelOpen && (
-                <div className="absolute right-0 top-12 z-40 w-[min(92vw,390px)] rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
-                  <div className="flex items-center justify-between"><div><p className="text-sm font-bold text-slate-900 dark:text-white">Filter questions</p><p className="mt-0.5 text-[11px] text-slate-500 dark:text-gray-400">Narrow the current question bank.</p></div>{activeFilterCount > 0 && <button type="button" onClick={resetFilters} className="text-xs font-semibold text-sky-600 hover:text-sky-700">Clear all</button>}</div>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <label className="grid gap-1.5 text-xs font-semibold text-slate-600 dark:text-gray-300 sm:col-span-2">Assessment question list<select value={filters.sourceAssessmentId} onChange={(event) => { setFilters((prev) => ({ ...prev, sourceAssessmentId: event.target.value })); setPage(1); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal dark:border-gray-700 dark:bg-gray-800"><option value="">All assessment lists</option>{availableAssessments.map((assessment) => <option key={assessment.id} value={assessment.id}>{assessment.title}</option>)}</select></label>
-                    <label className="grid gap-1.5 text-xs font-semibold text-slate-600 dark:text-gray-300">Difficulty<select value={filters.difficulty} onChange={(event) => { setFilters((prev) => ({ ...prev, difficulty: event.target.value })); setPage(1); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal dark:border-gray-700 dark:bg-gray-800"><option value="">All levels</option>{availableDifficulties.map((level) => <option key={level} value={level}>{level}</option>)}</select></label>
-                    <label className="grid gap-1.5 text-xs font-semibold text-slate-600 dark:text-gray-300">Tag or topic<select value={filters.tag} onChange={(event) => { setFilters((prev) => ({ ...prev, tag: event.target.value })); setPage(1); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal dark:border-gray-700 dark:bg-gray-800"><option value="">All tags</option>{availableTags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}</select></label>
-                    <label className="grid gap-1.5 text-xs font-semibold text-slate-600 dark:text-gray-300">Status<select value={filters.status} onChange={(event) => { setFilters((prev) => ({ ...prev, status: event.target.value })); setPage(1); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal dark:border-gray-700 dark:bg-gray-800"><option value="">All statuses</option><option value="published">Published</option><option value="draft">Draft</option><option value="hidden">Hidden</option><option value="archived">Archived</option></select></label>
-                    <label className="grid gap-1.5 text-xs font-semibold text-slate-600 dark:text-gray-300">Visibility<select value={filters.visibility} onChange={(event) => { setFilters((prev) => ({ ...prev, visibility: event.target.value })); setPage(1); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal dark:border-gray-700 dark:bg-gray-800"><option value="">All visibility</option><option value="public">Public</option><option value="private">Private</option></select></label>
-                  </div>
-                  <button type="button" onClick={() => setFilterPanelOpen(false)} className="mt-4 w-full rounded-xl bg-sky-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-sky-500">Show questions</button>
-                </div>
-              )}
-            </div>
+            <button type="button" aria-expanded={filterPanelOpen} onClick={() => { setFilterPanelOpen(true); setColumnsPanelOpen(false); }} className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold shadow-sm transition-colors ${filterPanelOpen || activeFilterCount ? 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
+              <Filter className="h-3.5 w-3.5" /> Filters
+              {activeFilterCount > 0 && <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-sky-600 px-1.5 text-[10px] text-white">{activeFilterCount}</span>}
+            </button>
 
             <div className="relative">
               <button type="button" aria-expanded={columnsPanelOpen} onClick={() => { setColumnsPanelOpen((open) => !open); setFilterPanelOpen(false); }} className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"><Columns3 className="h-3.5 w-3.5" /> Columns</button>
@@ -1006,9 +1203,19 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
         </div>
 
         {activeFilterCount > 0 && (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            {[['difficulty', filters.difficulty], ['tag', filters.tag], ['status', filters.status], ['visibility', filters.visibility], ['sourceAssessmentId', availableAssessments.find((item) => item.id === filters.sourceAssessmentId)?.title]].filter(([, value]) => value).map(([key, value]) => <button key={key} type="button" onClick={() => { setFilters((prev) => ({ ...prev, [key]: '' })); setPage(1); }} className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300">{value}<X className="h-3 w-3" /></button>)}
-            <button type="button" onClick={resetFilters} className="text-[11px] font-semibold text-slate-500 hover:text-slate-900 dark:hover:text-white">Clear filters</button>
+          <div className="mt-3 flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/80 p-2 dark:border-gray-700 dark:bg-gray-900/70">
+            <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto whitespace-nowrap pb-0.5 [scrollbar-width:thin]">
+              <span className="shrink-0 px-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Active filters</span>
+              {[['search', filters.search ? `Search: ${filters.search}` : ''], ['difficulty', filters.difficulty], ['tag', filters.tag], ['status', filters.status], ['visibility', filters.visibility], ['sourceAssessmentId', availableAssessments.find((item) => item.id === filters.sourceAssessmentId)?.title]].filter(([, value]) => value).map(([key, value]) => <button key={key} type="button" onClick={() => { if (key === 'search') setSearchInput(''); setFilters((prev) => ({ ...prev, [key]: '' })); setPage(1); }} className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">{value}<X className="h-3 w-3" /></button>)}
+              {(filters.topicLabels || []).map((item) => <button key={`topic-${item.id}`} type="button" onClick={() => removeClassificationFilter('topic', item.id)} className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300">{item.name}<X className="h-3 w-3" /></button>)}
+              {(filters.topicIds || []).length > 0 && !(filters.topicLabels || []).length && <button type="button" onClick={() => { setFilters((prev) => ({ ...prev, topicIds: [] })); setPage(1); }} className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700">{filters.topicIds.length} topics · {filters.topicMatch === 'all' ? 'all' : 'any'}<X className="h-3 w-3" /></button>}
+              {(filters.tagLabels || []).map((item) => <button key={`tag-${item.id}`} type="button" onClick={() => removeClassificationFilter('tag', item.id)} className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-300">{item.name}<X className="h-3 w-3" /></button>)}
+              {(filters.tagIds || []).length > 0 && !(filters.tagLabels || []).length && <button type="button" onClick={() => { setFilters((prev) => ({ ...prev, tagIds: [] })); setPage(1); }} className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700">{filters.tagIds.length} tags · {filters.tagMatch === 'all' ? 'all' : 'any'}<X className="h-3 w-3" /></button>}
+              {filters.uncategorized && <button type="button" onClick={() => { setFilters((prev) => ({ ...prev, uncategorized: false })); setPage(1); }} className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">No topic assigned<X className="h-3 w-3" /></button>}
+              {filters.viewMode === 'folders' && <button type="button" onClick={() => setFilters((prev) => ({ ...prev, viewMode: 'questions' }))} className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-300">{filters.folderBy === 'tags' ? 'Tag folders' : 'Topic folders'}<X className="h-3 w-3" /></button>}
+            </div>
+            <span className="shrink-0 border-l border-slate-200 pl-2 text-[11px] font-bold tabular-nums text-slate-600 dark:border-gray-700 dark:text-gray-300">{filters.viewMode === 'folders' ? `${folderTotal} folders` : `${total} results`}</span>
+            <button type="button" onClick={resetFilters} className="shrink-0 rounded-lg px-2 py-1 text-[11px] font-bold text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-950/30">Clear all</button>
           </div>
         )}
 
@@ -1025,7 +1232,44 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
             {!rowSelectionActive ? <div className="text-right">Actions</div> : null}
           </div>
 
-          {loading ? (
+          {filters.type === 'coding' && filters.viewMode === 'folders' ? (
+            folderLoading ? <div className="flex items-center justify-center gap-2 p-10 text-sm text-slate-500"><LoaderCircle className="h-4 w-4 animate-spin" />Loading folders...</div> : folderItems.length === 0 ? <div className="p-10 text-center text-sm text-slate-500">No topic or tag folders match the current filters.</div> : <div>
+              {folderItems.map((folder, folderIndex) => {
+                const folderId = String(folder._id);
+                const expanded = expandedFolderId === folderId;
+                const folderData = folderQuestions[folderId] || {};
+                const items = folderData.items || [];
+                const questionPagination = folderData.pagination || { page: 1, pages: 1, total: 0 };
+                const allInFolder = Boolean(folderData.allInFolder);
+                const count = Number(folder[filters.folderBy === 'tags' ? 'questionCount' : 'directQuestionCount'] || 0);
+                return <div key={folderId} className="border-b border-slate-200 last:border-b-0 dark:border-gray-800">
+                  <button type="button" onClick={() => toggleQuestionFolder(folder)} className="flex w-full items-center gap-3 bg-white px-4 py-3.5 text-left transition hover:bg-sky-50/60 dark:bg-gray-900 dark:hover:bg-sky-950/20">
+                    <span className="flex h-7 min-w-8 items-center justify-center rounded-lg bg-slate-100 px-2 text-xs font-bold tabular-nums text-slate-500 dark:bg-gray-800 dark:text-gray-300">{((page - 1) * pageSize) + folderIndex + 1}</span>
+                    <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${filters.folderBy === 'tags' ? 'bg-violet-50 text-violet-600 dark:bg-violet-950/30 dark:text-violet-300' : 'bg-sky-50 text-sky-600 dark:bg-sky-950/30 dark:text-sky-300'}`}><Folder className="h-4 w-4" /></span>
+                    <span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold text-slate-900 dark:text-white">{folder.name}</span><span className="mt-0.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">{filters.folderBy === 'tags' ? 'Tag folder' : 'Topic folder'}</span></span>
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold tabular-nums text-slate-600 dark:bg-gray-800 dark:text-gray-300">{count} total</span>
+                    {expanded && !allInFolder && folderData.pagination && Number(questionPagination.total) < count && <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-bold tabular-nums text-sky-700 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300">{questionPagination.total} matching</span>}
+                    {folderQuestionLoading === folderId ? <LoaderCircle className="h-4 w-4 animate-spin text-sky-600" /> : <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />}
+                  </button>
+                  {expanded && <div className="border-t border-slate-200 bg-slate-50/40 dark:border-gray-800 dark:bg-gray-950/20">
+                    {folderQuestionLoading !== folderId && folderData.pagination && (allInFolder || Number(questionPagination.total) < count) && <div className="flex flex-wrap items-center justify-between gap-2 border-b border-sky-100 bg-sky-50/70 px-4 py-2.5 text-xs dark:border-sky-900/60 dark:bg-sky-950/20"><span className="font-medium text-slate-600 dark:text-gray-300">{allInFolder ? `Showing all ${count} questions in ${folder.name}.` : `${questionPagination.total} questions match the current search and filters out of ${count} total.`}</span><button type="button" onClick={() => loadFolderQuestionPage(folder, 1, { allInFolder: !allInFolder })} className="shrink-0 rounded-lg border border-sky-200 bg-white px-3 py-1.5 font-bold text-sky-700 shadow-sm hover:bg-sky-50 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300">{allInFolder ? 'Apply current filters' : `View all ${count}`}</button></div>}
+                    {folderQuestionLoading === folderId ? <div className="p-6 text-center text-xs text-slate-500">Loading matching questions...</div> : items.length === 0 ? <div className="p-6 text-center text-xs text-slate-500">No questions match the remaining filters in this folder.</div> : items.map((question, questionIndex) => <div key={`${folderId}-${question._id}`} onClick={() => (rowSelectionActive ? toggleSelection(question) : previewQuestion(question))} role="button" tabIndex={0} className="grid min-w-0 cursor-pointer items-center gap-2 border-b border-slate-200/70 px-3 py-3 text-sm text-slate-600 last:border-b-0 hover:bg-white dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-900" style={{ gridTemplateColumns: columnTemplate }}>
+                      {rowSelectionActive ? <div className="flex justify-center"><input type="checkbox" checked={selectedIds.has(question._id)} onChange={(event) => { event.stopPropagation(); toggleSelection(question); }} onClick={(event) => event.stopPropagation()} className="h-4 w-4 rounded border-slate-300 text-sky-600" /></div> : null}
+                      <div className="flex min-w-0 items-center gap-2"><span className="flex h-6 min-w-7 items-center justify-center rounded-md bg-white px-1.5 text-[10px] font-bold tabular-nums text-slate-500 shadow-sm dark:bg-gray-800 dark:text-gray-300">{((Number(questionPagination.page) - 1) * pageSize) + questionIndex + 1}</span><span className="min-w-0 flex-1 truncate font-semibold text-slate-800 dark:text-gray-100">{getLibraryQuestionTitle(question)}</span><button type="button" onClick={(event) => { event.stopPropagation(); setStatementModal({ open: true, title: getLibraryQuestionTitle(question), statement: getFullQuestionStatement(question) }); }} className="shrink-0 text-[11px] font-semibold text-sky-600 hover:underline dark:text-sky-400">+ More</button></div>
+                      <div className="truncate text-xs font-semibold">{labelForQuestionType(question)}</div>
+                      {visibleColumns.difficulty && <div><span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold dark:border-gray-700 dark:bg-gray-800">{question.difficulty || 'Not set'}</span></div>}
+                      {visibleColumns.tags && <div className="flex min-w-0 gap-1 overflow-hidden">{(question.tags || []).slice(0, 2).map((tag) => <span key={`${question._id}-${tag}`} className="max-w-[90px] truncate rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] dark:border-gray-700 dark:bg-gray-800">{tag}</span>)}{(question.tags || []).length > 2 && <button type="button" onClick={(event) => { event.stopPropagation(); openTagsModal(question.questionText || 'Question', question.tags || []); }} className="shrink-0 rounded-full border border-sky-200 bg-white px-2 py-0.5 text-[10px] font-bold text-sky-700 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300">+{question.tags.length - 2}</button>}</div>}
+                      {visibleColumns.usedIn && <div className="flex min-w-0 gap-1 overflow-hidden">{(question.usedInAssessments || []).length ? <>{question.usedInAssessments.slice(0, 1).map((assessment) => <span key={`${question._id}-${assessment}`} className="max-w-[100px] truncate rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] text-violet-700 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-300">{assessment}</span>)}{question.usedInAssessments.length > 1 && <button type="button" onClick={(event) => { event.stopPropagation(); setUsageModal({ open: true, questionText: question.questionText || 'Question', assessments: question.usedInAssessments || [] }); }} className="shrink-0 text-[10px] font-bold text-sky-600">+{question.usedInAssessments.length - 1}</button>}</> : <span className="truncate text-xs text-slate-400">Not used yet</span>}</div>}
+                      {visibleColumns.updated && <div className="text-xs text-slate-500">{question.updatedAt ? new Date(question.updatedAt).toLocaleDateString() : '-'}</div>}
+                      {!rowSelectionActive ? <div className="flex justify-end gap-1"><button type="button" onClick={(event) => { event.stopPropagation(); previewQuestion(question); }} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-sky-200 bg-white text-sky-700 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300" aria-label={`Preview ${getLibraryQuestionTitle(question)}`}><Eye className="h-4 w-4" /></button><button id={`question-actions-trigger-${question._id}`} data-platform-menu-trigger type="button" aria-haspopup="menu" aria-controls="question-library-action-menu" aria-expanded={actionMenuId === question._id} onClick={(event) => toggleQuestionActions(question, event)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" aria-label={`Actions for ${getLibraryQuestionTitle(question)}`}><MoreVertical className="h-4 w-4" /></button></div> : null}
+                    </div>)}
+                    {folderQuestionLoading !== folderId && items.length > 0 && <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400"><span>Showing {((Number(questionPagination.page) - 1) * pageSize) + 1}-{Math.min(Number(questionPagination.page) * pageSize, Number(questionPagination.total))} of {questionPagination.total} {allInFolder ? 'folder' : 'matching'} questions</span><div className="flex items-center gap-1.5"><button type="button" disabled={Number(questionPagination.page) <= 1} onClick={() => loadFolderQuestionPage(folder, Number(questionPagination.page) - 1, { allInFolder })} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900"><ChevronLeft className="h-3.5 w-3.5" /></button><span className="min-w-20 text-center font-semibold">Page {questionPagination.page} of {questionPagination.pages}</span><button type="button" disabled={Number(questionPagination.page) >= Number(questionPagination.pages)} onClick={() => loadFolderQuestionPage(folder, Number(questionPagination.page) + 1, { allInFolder })} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900"><ChevronRight className="h-3.5 w-3.5" /></button></div></div>}
+                  </div>}
+                </div>;
+              })}
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500 dark:border-gray-800 dark:bg-gray-950/40 dark:text-gray-400"><div className="flex flex-wrap items-center gap-3"><span>Showing {folderItems.length ? ((page - 1) * pageSize) + 1 : 0}-{Math.min(page * pageSize, folderTotal)} of {folderTotal} folders</span><div className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 dark:border-gray-700 dark:bg-gray-900"><span className="px-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">Per page</span>{LIBRARY_PAGE_SIZES.map((size) => <button key={size} type="button" onClick={() => { setPageSize(size); setPage(1); }} className={`h-7 min-w-9 rounded-md px-2 text-xs font-bold transition ${pageSize === size ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-600 hover:bg-sky-50 dark:text-gray-300 dark:hover:bg-gray-800'}`}>{size}</button>)}</div></div><div className="flex items-center gap-1.5"><button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900"><ChevronLeft className="h-3.5 w-3.5" /></button><span className="min-w-20 text-center font-semibold">Page {page} of {folderPages}</span><button type="button" onClick={() => setPage((current) => Math.min(folderPages, current + 1))} disabled={page >= folderPages} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900"><ChevronRight className="h-3.5 w-3.5" /></button></div></div>
+            </div>
+          ) : loading ? (
             <div className="p-8 text-center text-sm text-slate-500 dark:text-gray-400">Loading library questions...</div>
           ) : questions.length === 0 ? (
             <div className="p-10 text-center">
@@ -1033,7 +1277,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
               <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">{filters.status === 'draft' ? 'Choose Save draft while creating or editing a question and it will appear here.' : 'No questions matched the current filters.'}</p>
             </div>
           ) : (
-            questions.map((question) => (
+            questions.map((question, questionIndex) => (
               <div
                 key={question._id}
                 onClick={() => (rowSelectionActive ? toggleSelection(question) : previewQuestion(question))}
@@ -1066,6 +1310,9 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                 )}
                 <div className="min-w-0">
                   <div className="flex min-w-0 items-center gap-1.5 font-semibold text-slate-800 dark:text-gray-100">
+                    <span className="flex h-6 min-w-7 shrink-0 items-center justify-center rounded-md bg-slate-100 px-1.5 text-[11px] font-bold tabular-nums text-slate-500 dark:bg-gray-800 dark:text-gray-300">
+                      {(page - 1) * pageSize + questionIndex + 1}
+                    </span>
                     {isPassageSet(question) && <BookOpenText className="h-4 w-4 shrink-0 text-sky-600" />}
                     <span className="min-w-0 max-w-[calc(100%-3.25rem)] truncate leading-5">{getLibraryQuestionTitle(question)}</span>
                     {questionAlreadyAdded(question) && <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">Added</span>}
@@ -1135,44 +1382,18 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                       <Eye className="h-4 w-4" />
                     </button>
                     <button
+                      id={`question-actions-trigger-${question._id}`}
                       data-platform-menu-trigger
                       aria-expanded={actionMenuId === question._id}
+                      aria-haspopup="menu"
+                      aria-controls="question-library-action-menu"
                       type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setActionMenuId((current) => current === question._id ? '' : question._id);
-                      }}
+                      onClick={(event) => toggleQuestionActions(question, event)}
                       className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
                       aria-label="Question actions"
                     >
                       <MoreVertical className="h-4 w-4" />
                     </button>
-                    {actionMenuId === question._id && (
-                      <div data-platform-action-menu
-                        className="absolute right-0 top-10 z-30 w-48 overflow-hidden rounded-2xl border border-slate-200 bg-white py-1 text-xs font-semibold text-slate-600 shadow-xl dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        <button type="button" onClick={() => startEditQuestion(question)} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-gray-800">
-                          <Edit3 className="h-3.5 w-3.5" /> Edit
-                        </button>
-                        {question.status === 'draft' && (
-                          <button type="button" onClick={() => publishDraft(question)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-900/20">
-                            <CheckSquare className="h-3.5 w-3.5" /> Publish
-                          </button>
-                        )}
-                        <button type="button" onClick={() => toggleVisibility(question)} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-gray-800">
-                          {question.visibility === 'private' ? <Globe2 className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
-                          {question.visibility === 'private' ? 'Make Public' : 'Make Private'}
-                        </button>
-                        <button type="button" onClick={() => toggleHiddenStatus(question)} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-gray-800">
-                          <EyeOff className="h-3.5 w-3.5" />
-                          {question.status === 'hidden' ? 'Unhide' : 'Hide'}
-                        </button>
-                        <button type="button" onClick={() => deleteQuestion(question)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20">
-                          <Trash2 className="h-3.5 w-3.5" /> Delete
-                        </button>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -1183,8 +1404,8 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
 
         {actorModal && <div className="fixed inset-0 z-[220] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setActorModal(null); }}><div role="dialog" aria-modal="true" aria-label="Record creator" className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-gray-700 dark:bg-gray-900"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-sky-600">Added by</p><h2 className="mt-1 text-lg font-bold text-slate-950 dark:text-white">{actorModal.name || 'Administrator'}</h2></div><button type="button" onClick={() => setActorModal(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-gray-800"><X className="h-4 w-4" /></button></div><dl className="mt-4 space-y-3 text-sm"><div><dt className="text-xs font-bold uppercase tracking-wide text-slate-400">Role</dt><dd className="mt-1 capitalize font-semibold text-slate-800 dark:text-slate-100">{actorModal.role || 'admin'}</dd></div>{actorModal.email && <div><dt className="text-xs font-bold uppercase tracking-wide text-slate-400">Email</dt><dd className="mt-1 break-all text-slate-700 dark:text-slate-200">{actorModal.email}</dd></div>}{actorModal.coordinatorId && <div><dt className="text-xs font-bold uppercase tracking-wide text-slate-400">Teacher ID</dt><dd className="mt-1 font-mono font-bold text-slate-700 dark:text-slate-200">{actorModal.coordinatorId}</dd></div>}</dl></div></div>}
 
-        <div className="mt-3 flex shrink-0 flex-col gap-2 border-t border-slate-200 pt-3 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between dark:border-gray-800 dark:text-gray-400">
-          <div>Showing {questions.length ? ((page - 1) * 20) + 1 : 0}-{Math.min(page * 20, total)} of {total} questions</div>
+        {filters.viewMode !== 'folders' && <div className="mt-3 flex shrink-0 flex-col gap-2 border-t border-slate-200 pt-3 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between dark:border-gray-800 dark:text-gray-400">
+          <div className="flex flex-wrap items-center gap-3"><span>Showing {questions.length ? ((page - 1) * pageSize) + 1 : 0}-{Math.min(page * pageSize, total)} of {total} questions</span><div className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-gray-700 dark:bg-gray-800"><span className="px-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">Rows</span>{LIBRARY_PAGE_SIZES.map((size) => <button key={size} type="button" onClick={() => { setPageSize(size); setPage(1); }} className={`h-7 min-w-9 rounded-md px-2 text-xs font-bold transition ${pageSize === size ? 'bg-sky-600 text-white shadow-sm' : 'bg-white text-slate-600 hover:bg-sky-50 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-700'}`}>{size}</button>)}</div></div>
           <div className="flex items-center gap-1.5">
           <button
             type="button"
@@ -1211,8 +1432,40 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
             <ChevronRight className="h-3.5 w-3.5" />
           </button>
           </div>
-        </div>
+        </div>}
       </div>
+
+      {actionMenuId && actionMenuPopup && createPortal(
+        <div
+          id="question-library-action-menu"
+          data-platform-action-menu
+          role="menu"
+          aria-labelledby={`question-actions-trigger-${actionMenuPopup.question._id}`}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+          className="fixed z-[1000] w-48 overflow-hidden rounded-2xl border border-slate-200 bg-white py-1 text-xs font-semibold text-slate-600 shadow-[0_18px_46px_rgba(15,23,42,0.18)] dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
+          style={{ top: actionMenuPopup.top, left: actionMenuPopup.left }}
+        >
+          <button type="button" role="menuitem" onClick={() => startEditQuestion(actionMenuPopup.question)} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-gray-800"><Edit3 className="h-3.5 w-3.5" /> Edit</button>
+          {actionMenuPopup.question.status === 'draft' && <button type="button" role="menuitem" onClick={() => publishDraft(actionMenuPopup.question)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-900/20"><CheckSquare className="h-3.5 w-3.5" /> Publish</button>}
+          <button type="button" role="menuitem" onClick={() => toggleVisibility(actionMenuPopup.question)} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-gray-800">{actionMenuPopup.question.visibility === 'private' ? <Globe2 className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}{actionMenuPopup.question.visibility === 'private' ? 'Make Public' : 'Make Private'}</button>
+          <button type="button" role="menuitem" onClick={() => toggleHiddenStatus(actionMenuPopup.question)} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-gray-800"><EyeOff className="h-3.5 w-3.5" />{actionMenuPopup.question.status === 'hidden' ? 'Unhide' : 'Hide'}</button>
+          <button type="button" role="menuitem" onClick={() => deleteQuestion(actionMenuPopup.question)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"><Trash2 className="h-3.5 w-3.5" /> Delete</button>
+        </div>,
+        document.body,
+      )}
+
+      <CodingQuestionFilterDrawer
+        open={filterPanelOpen}
+        onClose={() => setFilterPanelOpen(false)}
+        filters={filters}
+        onApply={(nextFilters) => {
+          setFilters((current) => ({ ...current, ...nextFilters, type: lockType || nextFilters.type || 'all' }));
+          setPage(1);
+        }}
+        availableDifficulties={availableDifficulties}
+        availableAssessments={availableAssessments}
+      />
 
       <AnimatePresence>
         {(activeQuestion || detailLoading) && (

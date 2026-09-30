@@ -151,7 +151,7 @@ function ProfessionalTrackCard({ label, value, helper, icon, tone = 'slate' }) {
   );
 }
 
-function LeetCodeProgressCard({
+function CodingProgressCard({
   totalSolved,
   totalProblems,
   totalAttempts,
@@ -575,7 +575,7 @@ export default function AdminStudentProfile() {
                 title="Coding Progress"
                 subtitle="Student-style coding snapshot, expanded for admin and coordinator visibility."
               >
-                <LeetCodeProgressCard {...codingTotals} />
+                <CodingProgressCard {...codingTotals} />
               </Panel>
 
               <Panel

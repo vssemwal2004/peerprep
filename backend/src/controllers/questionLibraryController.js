@@ -18,6 +18,11 @@ function normalizeTag(tag = '') {
   return String(tag || '').trim();
 }
 
+function queryList(value) {
+  const source = Array.isArray(value) ? value : String(value || '').split(',');
+  return Array.from(new Set(source.map((entry) => String(entry || '').trim()).filter(Boolean)));
+}
+
 function normalizeLibraryStatus(status = 'published') {
   const normalized = String(status || '').trim().toLowerCase();
   return ['published', 'draft', 'hidden', 'archived'].includes(normalized) ? normalized : 'published';
@@ -211,14 +216,35 @@ function buildStatusCounts(questions = []) {
     .sort((a, b) => String(a.status).localeCompare(String(b.status)));
 }
 
+const LIBRARY_SUMMARY_PROJECTION = [
+  '_id', 'sourceKey', 'sourceType', 'sourceAssessmentId', 'sourceAssessmentTitle',
+  'sourceProblemId', 'sourceProblemTitle', 'sourceQuestionId', 'sectionName',
+  'questionType', 'questionText', 'tags', 'topicIds', 'topicAncestorIds',
+  'codingTagIds', 'keywords', 'difficulty', 'status', 'visibility', 'createdBy',
+  'createdAt', 'updatedAt', 'questionData.libraryItemKind', 'questionData.questions',
+  'questionData.passage.title', 'questionData.problemId', 'questionData.coding.problemId',
+  'questionData.problemDataSnapshot._id',
+].join(' ');
+const LIBRARY_SUMMARY_AGGREGATION_PROJECTION = Object.fromEntries(
+  LIBRARY_SUMMARY_PROJECTION.split(/\s+/).filter(Boolean).map((field) => [field, 1]),
+);
+
 export async function listLibraryQuestions(req, res) {
   try {
     await ensureQuestionLibrarySynchronized();
 
     const {
       type = '',
+      types = '',
       search = '',
       tag = '',
+      topicIds = '',
+      topicScope = 'descendants',
+      topicMatch = 'any',
+      tagIds = '',
+      tagMatch = 'any',
+      classificationMatch = 'all',
+      uncategorized = 'false',
       difficulty = '',
       status = '',
       visibility = '',
@@ -229,6 +255,7 @@ export async function listLibraryQuestions(req, res) {
       page = 1,
       limit = 25,
       selectAll = 'false',
+      includeMeta = 'true',
     } = req.query || {};
 
     const pageNum = Math.max(1, Number(page) || 1);
@@ -239,8 +266,43 @@ export async function listLibraryQuestions(req, res) {
       ...buildLibrarySearchMatch(search),
     };
 
+    const selectedTypes = queryList(types || type).filter((entry) => entry !== 'all');
+    if (selectedTypes.length === 1) baseMatch.questionType = selectedTypes[0];
+    else if (selectedTypes.length > 1) baseMatch.questionType = { $in: selectedTypes };
+
+    const selectedTopicIds = queryList(topicIds).map((id) => {
+      if (!mongoose.Types.ObjectId.isValid(id)) throw new Error('Invalid coding topic filter.');
+      return new mongoose.Types.ObjectId(id);
+    });
+    const wantsUncategorized = String(uncategorized).trim().toLowerCase() === 'true';
+    let topicClause = null;
+    if (wantsUncategorized) {
+      topicClause = { $or: [{ topicIds: { $exists: false } }, { topicIds: { $size: 0 } }] };
+    } else if (selectedTopicIds.length) {
+      const directOnly = String(topicScope).toLowerCase() === 'direct';
+      const matchAll = String(topicMatch).toLowerCase() === 'all';
+      if (directOnly) topicClause = { topicIds: matchAll ? { $all: selectedTopicIds } : { $in: selectedTopicIds } };
+      else if (matchAll) topicClause = { $and: selectedTopicIds.map((id) => ({ $or: [{ topicIds: id }, { topicAncestorIds: id }] })) };
+      else topicClause = { $or: [{ topicIds: { $in: selectedTopicIds } }, { topicAncestorIds: { $in: selectedTopicIds } }] };
+    }
+
     if (normalizeTag(tag)) {
       baseMatch.tags = normalizeTag(tag);
+    }
+    const selectedTagIds = queryList(tagIds).map((id) => {
+      if (!mongoose.Types.ObjectId.isValid(id)) throw new Error('Invalid coding tag filter.');
+      return new mongoose.Types.ObjectId(id);
+    });
+    const tagClause = selectedTagIds.length
+      ? { codingTagIds: String(tagMatch).toLowerCase() === 'all' ? { $all: selectedTagIds } : { $in: selectedTagIds } }
+      : null;
+    const classificationClauses = [topicClause, tagClause].filter(Boolean);
+    if (classificationClauses.length) {
+      baseMatch.questionType = 'coding';
+      const combinedClause = classificationClauses.length > 1 && String(classificationMatch).toLowerCase() === 'any'
+        ? { $or: classificationClauses }
+        : classificationClauses;
+      baseMatch.$and = [...(baseMatch.$and || []), ...(Array.isArray(combinedClause) ? combinedClause : [combinedClause])];
     }
     if (difficulty) {
       baseMatch.difficulty = String(difficulty).trim();
@@ -261,16 +323,104 @@ export async function listLibraryQuestions(req, res) {
       baseMatch.createdBy = req.user._id;
     }
 
+    if (String(includeMeta).trim().toLowerCase() === 'false') {
+      const allowedSortFields = new Set(['updatedAt', 'createdAt', 'questionText', 'difficulty']);
+      const selectedSort = allowedSortFields.has(sortBy) ? sortBy : 'updatedAt';
+      const direction = String(sortOrder).toLowerCase() === 'asc' ? 1 : -1;
+      const includeAllMatches = String(selectAll).trim().toLowerCase() === 'true';
+      const identityExpression = {
+        $cond: [
+          { $and: [{ $eq: ['$questionType', 'coding'] }, { $ne: [{ $ifNull: ['$sourceProblemId', null] }, null] }] },
+          { $concat: ['problem:', { $toString: '$sourceProblemId' }] },
+          { $concat: ['source:', { $toString: { $cond: [{ $ne: [{ $ifNull: ['$sourceKey', ''] }, ''] }, '$sourceKey', '$_id'] } }] },
+        ],
+      };
+      const sortExpression = selectedSort === 'difficulty'
+        ? { __difficultyRank: direction, updatedAt: -1, _id: 1 }
+        : { [selectedSort]: direction, updatedAt: -1, _id: 1 };
+      const pageStages = includeAllMatches ? [] : [{ $skip: skip }, { $limit: limitNum }];
+      const [result = { rows: [], count: [] }] = await QuestionLibrary.aggregate([
+        { $match: baseMatch },
+        { $project: LIBRARY_SUMMARY_AGGREGATION_PROJECTION },
+        {
+          $addFields: {
+            __identity: identityExpression,
+            __sourcePriority: {
+              $switch: {
+                branches: [
+                  { case: { $eq: ['$sourceType', 'compiler'] }, then: 0 },
+                  { case: { $eq: ['$sourceType', 'manual'] }, then: 1 },
+                  { case: { $eq: ['$sourceType', 'assessment'] }, then: 2 },
+                ],
+                default: 9,
+              },
+            },
+          },
+        },
+        { $sort: { __sourcePriority: 1, updatedAt: -1, createdAt: -1 } },
+        { $group: { _id: '$__identity', document: { $first: '$$ROOT' } } },
+        { $replaceRoot: { newRoot: '$document' } },
+        ...(selectedSort === 'difficulty' ? [{
+          $addFields: {
+            __difficultyRank: {
+              $switch: {
+                branches: [
+                  { case: { $eq: [{ $toLower: { $ifNull: ['$difficulty', ''] } }, 'easy'] }, then: 1 },
+                  { case: { $eq: [{ $toLower: { $ifNull: ['$difficulty', ''] } }, 'medium'] }, then: 2 },
+                  { case: { $eq: [{ $toLower: { $ifNull: ['$difficulty', ''] } }, 'hard'] }, then: 3 },
+                ],
+                default: 99,
+              },
+            },
+          },
+        }] : []),
+        { $sort: sortExpression },
+        { $facet: { rows: pageStages, count: [{ $count: 'total' }] } },
+      ]).allowDiskUse(true);
+
+      const rows = await QuestionLibrary.populate(result.rows || [], {
+        path: 'createdBy',
+        select: 'name email role coordinatorId',
+      });
+      const problemIds = rows.map((question) => question.sourceProblemId).filter(Boolean);
+      const usageQuestions = problemIds.length
+        ? await QuestionLibrary.find({ sourceType: 'assessment', sourceProblemId: { $in: problemIds } })
+          .select('sourceProblemId sourceAssessmentTitle').lean()
+        : [];
+      const assessmentUsage = new Map();
+      usageQuestions.forEach((question) => {
+        const key = `problem:${String(question.sourceProblemId)}`;
+        if (!assessmentUsage.has(key)) assessmentUsage.set(key, new Set());
+        if (question.sourceAssessmentTitle) assessmentUsage.get(key).add(String(question.sourceAssessmentTitle).trim());
+      });
+      const total = Number(result.count?.[0]?.total || 0);
+
+      return res.json({
+        questions: rows.map((question) => ({
+          ...formatLibraryQuestionSummary(question),
+          usedInAssessments: Array.from(assessmentUsage.get(getLibraryUsageKey(question)) || []).sort((a, b) => a.localeCompare(b)),
+        })),
+        pagination: {
+          page: includeAllMatches ? 1 : pageNum,
+          limit: includeAllMatches ? total : limitNum,
+          total,
+          pages: Math.max(1, Math.ceil(total / limitNum)),
+        },
+        filters: {},
+      });
+    }
+
     const scopeMatch = req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all'
       ? { createdBy: req.user._id }
       : {};
     const [baseQuestions, scopeQuestions, tags, difficulties] = await Promise.all([
       QuestionLibrary.find(baseMatch)
+        .select(LIBRARY_SUMMARY_PROJECTION)
         .sort({ updatedAt: -1, createdAt: -1 })
         .populate('createdBy', 'name email role coordinatorId')
         .lean(),
       QuestionLibrary.find(scopeMatch)
-        .select('sourceKey questionType questionData status sourceType sourceProblemId sourceQuestionId sourceAssessmentId sourceAssessmentTitle createdBy createdAt updatedAt')
+        .select('sourceKey questionType status sourceType sourceProblemId sourceQuestionId sourceAssessmentId sourceAssessmentTitle createdBy createdAt updatedAt')
         .populate('createdBy', 'name email role coordinatorId')
         .lean(),
       QuestionLibrary.distinct('tags', baseMatch),

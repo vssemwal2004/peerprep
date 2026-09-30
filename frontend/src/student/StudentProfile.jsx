@@ -225,7 +225,7 @@ function ProfileField({ label, value, onChange, placeholder = '', multiline = fa
   );
 }
 
-function LeetCodeProgressCard({
+function CodingProgressCard({
   totalSolved,
   totalProblems,
   totalAttempts,
@@ -1183,7 +1183,7 @@ export default function StudentProfile() {
                 title="Coding Progress"
                 subtitle="A compact PeerPrep coding snapshot with live solved totals and difficulty breakdown."
               >
-                <LeetCodeProgressCard {...codingTotals} />
+                <CodingProgressCard {...codingTotals} />
               </Panel>
 
               <Panel

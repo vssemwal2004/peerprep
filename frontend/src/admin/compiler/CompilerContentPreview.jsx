@@ -1,4 +1,19 @@
 import { difficultyBadgeClass, formatDateTime, formatPercent, problemStatusClass } from './compilerUtils';
+import ProblemAssetImages from '../../components/ProblemAssetImages';
+import { getDisplayProblemStatement, normalizeRichText } from './problemStatementFormatting';
+
+const INLINE_CODE_CLASS = 'rounded border border-slate-200 bg-slate-100 px-1 py-0.5 font-mono text-[0.88em] font-normal text-slate-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200';
+
+function renderSemanticText(text, keyPrefix) {
+  const semanticPattern = /(O\([^\n)]*\)|\b(?:null|true|false|None)\b|\b\d+(?:\.\d+)?\s*\^\s*\d+\b|\[[^\]\n]{1,80}\]|"[^"\n]{1,100}"|'[^'\n]{1,100}'|\b[A-Za-z_]\w*(?=\s*\()|\b(?:minimum|maximum|at least|at most|exactly|distinct|unique|non-empty|in any order)\b)/gi;
+  return String(text || '').split(semanticPattern).filter(Boolean).map((part, index) => (
+    /^(?:minimum|maximum|at least|at most|exactly|distinct|unique|non-empty|in any order)$/i.test(part)
+      ? <strong key={`${keyPrefix}-important-${index}`} className="font-semibold text-slate-950 dark:text-white">{part}</strong>
+      : /^(?:O\([^\n)]*\)|(?:null|true|false|None)|\d+(?:\.\d+)?\s*\^\s*\d+|\[[^\]\n]{1,80}\]|"[^"\n]{1,100}"|'[^'\n]{1,100}'|[A-Za-z_]\w*)$/.test(part)
+        ? <code key={`${keyPrefix}-semantic-${index}`} className={INLINE_CODE_CLASS}>{part}</code>
+        : <span key={`${keyPrefix}-text-${index}`}>{part}</span>
+  ));
+}
 
 function renderInlineNodes(text, keyPrefix) {
   const tokens = String(text || '').split(/(\*\*.*?\*\*|`.*?`|_.*?_)/g).filter(Boolean);
@@ -7,29 +22,48 @@ function renderInlineNodes(text, keyPrefix) {
     const key = `${keyPrefix}-${index}`;
 
     if (token.startsWith('**') && token.endsWith('**')) {
-      return <strong key={key}>{token.slice(2, -2)}</strong>;
+      return <strong key={key} className="font-bold text-slate-950 dark:text-white">{token.slice(2, -2)}</strong>;
     }
 
     if (token.startsWith('`') && token.endsWith('`')) {
       return (
-        <code key={key} className="rounded bg-slate-100 px-1.5 py-0.5 text-[0.92em] text-slate-700 dark:bg-gray-800 dark:text-gray-200">
+        <code key={key} className={INLINE_CODE_CLASS}>
           {token.slice(1, -1)}
         </code>
       );
     }
 
     if (token.startsWith('_') && token.endsWith('_')) {
-      return <em key={key}>{token.slice(1, -1)}</em>;
+      return <em key={key} className="font-medium text-slate-700 dark:text-gray-200">{token.slice(1, -1)}</em>;
     }
 
-    return <span key={key}>{token}</span>;
+    return <span key={key}>{renderSemanticText(token, key)}</span>;
   });
 }
 
-export function RichTextPreview({ content, className = '' }) {
-  const lines = String(content || '').split('\n');
+export function RichTextPreview({ content, className = '', lead = false }) {
+  const lines = normalizeRichText(content).split('\n');
   const blocks = [];
   let listBuffer = null;
+  let codeBuffer = null;
+  let exampleBuffer = null;
+
+  const flushExample = () => {
+    if (!exampleBuffer) return;
+    const input = exampleBuffer.input.join('\n').trim();
+    const output = exampleBuffer.output.join('\n').trim();
+    const explanation = exampleBuffer.explanation.join('\n').trim();
+    blocks.push(
+      <section key={`inline-example-${blocks.length}`} className="max-w-[78ch] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)] dark:border-gray-700 dark:bg-gray-900">
+        <div className="space-y-3 bg-slate-50/80 px-4 py-3.5 font-mono text-[13px] leading-6 text-slate-800 dark:bg-gray-800/80 dark:text-gray-200">
+          {input ? <div><div className="font-sans text-sm font-semibold text-slate-950 dark:text-white">Input:</div><div className="mt-1 whitespace-pre-wrap break-words">{renderInlineNodes(input, `inline-input-${blocks.length}`)}</div></div> : null}
+          {output ? <div><div className="font-sans text-sm font-semibold text-slate-950 dark:text-white">Output:</div><div className="mt-1 whitespace-pre-wrap break-words">{renderInlineNodes(output, `inline-output-${blocks.length}`)}</div></div> : null}
+        </div>
+        {explanation ? <div className="whitespace-pre-wrap border-t border-slate-100 px-4 py-3.5 text-[15px] leading-6 text-slate-700 dark:border-gray-800 dark:text-gray-200"><span className="font-semibold text-slate-950 dark:text-white">Explanation: </span>{renderInlineNodes(explanation, `inline-explanation-${blocks.length}`)}</div> : null}
+      </section>,
+    );
+    exampleBuffer = null;
+  };
 
   const flushList = () => {
     if (!listBuffer || listBuffer.items.length === 0) return;
@@ -38,10 +72,10 @@ export function RichTextPreview({ content, className = '' }) {
     blocks.push(
       <ListTag
         key={`list-${blocks.length}`}
-        className={`space-y-2 pl-5 ${listBuffer.type === 'ordered' ? 'list-decimal' : 'list-disc'}`}
+        className={`space-y-2 pl-6 text-[15px] text-slate-800 dark:text-gray-200 ${listBuffer.type === 'ordered' ? 'list-decimal' : 'list-disc'}`}
       >
         {listBuffer.items.map((item, index) => (
-          <li key={`${listBuffer.type}-${index}`} className="leading-7 text-slate-700 dark:text-gray-300">
+          <li key={`${listBuffer.type}-${index}`} className="pl-1 leading-[26px] marker:text-slate-700 dark:marker:text-gray-300">
             {renderInlineNodes(item, `${listBuffer.type}-${index}`)}
           </li>
         ))}
@@ -52,6 +86,41 @@ export function RichTextPreview({ content, className = '' }) {
 
   lines.forEach((line) => {
     const trimmed = line.trim();
+    const labeledLine = trimmed.match(/^(?:\*\*)?(input|output|explanation)\s*:(?:\*\*)?\s*(.*)$/i);
+    const constraintLine = /^(?:\d+|[A-Za-z_]\w*(?:\[[^\]]+\]|(?:\.\w+))*)\s*(?:<=|>=|<|>|==|!=)/.test(trimmed);
+    if (labeledLine) {
+      flushList();
+      const field = labeledLine[1].toLowerCase();
+      if (field === 'input') {
+        flushExample();
+        exampleBuffer = { input: [], output: [], explanation: [], active: 'input' };
+      } else if (!exampleBuffer) {
+        exampleBuffer = { input: [], output: [], explanation: [], active: field };
+      }
+      exampleBuffer.active = field;
+      if (labeledLine[2]) exampleBuffer[field].push(labeledLine[2]);
+      return;
+    }
+    if (exampleBuffer) {
+      if (constraintLine || /^(?:#{2,3}\s|example\s+\d+\s*:|constraints?\s*:)/i.test(trimmed)) {
+        flushExample();
+      } else {
+        if (trimmed) exampleBuffer[exampleBuffer.active].push(trimmed);
+        return;
+      }
+    }
+    if (trimmed.startsWith('```')) {
+      flushList();
+      if (codeBuffer) {
+        blocks.push(<pre key={`code-${blocks.length}`} className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950 px-4 py-4 font-mono text-[13px] leading-6 text-sky-100 shadow-inner"><code>{codeBuffer.join('\n')}</code></pre>);
+        codeBuffer = null;
+      } else codeBuffer = [];
+      return;
+    }
+    if (codeBuffer) {
+      codeBuffer.push(line);
+      return;
+    }
     if (!trimmed) {
       flushList();
       return;
@@ -77,11 +146,25 @@ export function RichTextPreview({ content, className = '' }) {
 
     flushList();
 
+    if (constraintLine) {
+      blocks.push(<div key={`constraint-${blocks.length}`} className="max-w-[78ch] rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 font-mono text-[13px] leading-6 text-slate-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">{renderInlineNodes(trimmed, `constraint-${blocks.length}`)}</div>);
+      return;
+    }
+
     if (trimmed.startsWith('## ')) {
       blocks.push(
-        <h3 key={`heading-${blocks.length}`} className="text-lg font-semibold text-slate-800 dark:text-gray-100">
+        <h3 key={`heading-${blocks.length}`} className="text-base font-semibold text-slate-900 dark:text-white">
           {renderInlineNodes(trimmed.slice(3), `heading-${blocks.length}`)}
         </h3>,
+      );
+      return;
+    }
+
+    if (trimmed.startsWith('### ')) {
+      blocks.push(
+        <h4 key={`subheading-${blocks.length}`} className="text-base font-bold text-slate-900 dark:text-gray-100">
+          {renderInlineNodes(trimmed.slice(4), `subheading-${blocks.length}`)}
+        </h4>,
       );
       return;
     }
@@ -90,7 +173,7 @@ export function RichTextPreview({ content, className = '' }) {
       blocks.push(
         <blockquote
           key={`quote-${blocks.length}`}
-          className="border-l-4 border-sky-400/70 bg-sky-50/70 px-4 py-3 text-sm italic text-slate-700 dark:border-sky-600 dark:bg-sky-900/10 dark:text-gray-300"
+          className="border-l-4 border-slate-300 pl-4 text-[15px] leading-[26px] text-slate-800 dark:border-gray-600 dark:text-gray-200"
         >
           {renderInlineNodes(trimmed.slice(2), `quote-${blocks.length}`)}
         </blockquote>,
@@ -98,17 +181,25 @@ export function RichTextPreview({ content, className = '' }) {
       return;
     }
 
-    blocks.push(
-      <p key={`paragraph-${blocks.length}`} className="leading-7 text-slate-700 dark:text-gray-300">
+    const isCallout = /^(?:note|important|remember|you may assume|it is guaranteed|the overall|follow-up)\b/i.test(trimmed);
+    const isLead = lead && blocks.length === 0;
+    blocks.push(isCallout ? (
+      <p key={`paragraph-${blocks.length}`} className="max-w-[78ch] text-[15px] leading-[26px] text-slate-800 dark:text-gray-200">
         {renderInlineNodes(trimmed, `paragraph-${blocks.length}`)}
-      </p>,
-    );
+      </p>
+    ) : (
+      <p key={`paragraph-${blocks.length}`} className={`${isLead ? 'font-medium text-slate-900 dark:text-gray-100' : 'text-slate-800 dark:text-gray-200'} max-w-[78ch] text-[15px] leading-[26px]`}>
+        {renderInlineNodes(trimmed, `paragraph-${blocks.length}`)}
+      </p>
+    ));
   });
 
   flushList();
+  flushExample();
+  if (codeBuffer) blocks.push(<pre key={`code-${blocks.length}`} className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950 px-4 py-4 font-mono text-[13px] leading-6 text-sky-100 shadow-inner"><code>{codeBuffer.join('\n')}</code></pre>);
 
   return (
-    <div className={`space-y-4 text-sm ${className}`}>
+    <div className={`space-y-3.5 ${className}`}>
       {blocks.length > 0 ? blocks : (
         <p className="text-slate-500 dark:text-gray-400">Nothing to preview yet.</p>
       )}
@@ -165,27 +256,22 @@ export function ProblemStatementPreview({ problem, showMeta = true }) {
       <div className="space-y-6 px-5 py-5">
         <section className="space-y-3">
           <h3 className="text-sm font-semibold text-slate-800 dark:text-gray-100">Problem Description</h3>
-          <RichTextPreview content={problem?.description || ''} />
+          <RichTextPreview content={getDisplayProblemStatement(problem?.description || '', sampleTestCases.length > 0)} lead />
+          <ProblemAssetImages images={(problem?.contentImages || []).filter((image) => image.section !== 'constraints')} />
         </section>
 
         <section className="grid gap-4 md:grid-cols-3">
           <div className="rounded-xl bg-slate-50 px-4 py-3 dark:bg-gray-800">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Input</p>
-            <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700 dark:text-gray-300">
-              {problem?.inputFormat || 'Input details will appear here.'}
-            </p>
+            <RichTextPreview className="mt-2" content={problem?.inputFormat || 'Input details will appear here.'} />
           </div>
           <div className="rounded-xl bg-slate-50 px-4 py-3 dark:bg-gray-800">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Output</p>
-            <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700 dark:text-gray-300">
-              {problem?.outputFormat || 'Output details will appear here.'}
-            </p>
+            <RichTextPreview className="mt-2" content={problem?.outputFormat || 'Output details will appear here.'} />
           </div>
           <div className="rounded-xl bg-slate-50 px-4 py-3 dark:bg-gray-800">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Constraints</p>
-            <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700 dark:text-gray-300">
-              {problem?.constraints || 'Constraints will appear here.'}
-            </p>
+            <RichTextPreview className="mt-2" content={problem?.constraints || 'Constraints will appear here.'} />
           </div>
         </section>
 
@@ -258,6 +344,7 @@ export function ProblemStatementPreview({ problem, showMeta = true }) {
                     <h4 className="text-sm font-semibold text-slate-800 dark:text-gray-100">Sample {index + 1}</h4>
                     <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-300">{Number(testCase.marks) || 1} mark(s)</span>
                   </div>
+                  <ProblemAssetImages images={testCase.images} className="mt-3" />
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">Input</p>

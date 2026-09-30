@@ -867,7 +867,7 @@ export default function AdminLearningDetail() {
                       name="problemLink"
                       defaultValue={editingTopic?.problemLink || ''}
                       className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-gray-100"
-                      placeholder="https://leetcode.com/problems/..."
+                      placeholder="https://example.com/problem/..."
                     />
                   </div>
                   <div>

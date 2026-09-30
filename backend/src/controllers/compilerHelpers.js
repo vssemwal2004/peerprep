@@ -1,5 +1,9 @@
 import Problem from '../models/Problem.js';
 import Submission from '../models/Submission.js';
+import {
+  cleanImportedProblemDescription,
+  getVisibleCodeTemplates,
+} from '../services/functionProblemAdapterService.js';
 
 export function mapCodeTemplates(codeTemplates) {
   if (!codeTemplates) return {};
@@ -21,6 +25,7 @@ export function serializeProblem(
     hiddenTestCases = [],
     includeHiddenTestCases = false,
     includeReferenceSolutions = false,
+    includeExecutionHarnesses = false,
     studentStatus = null,
   } = {},
 ) {
@@ -39,7 +44,20 @@ export function serializeProblem(
   return {
     _id: problem._id,
     title: problem.title,
-    description: problem.description || '',
+    description: cleanImportedProblemDescription(problem.description, problem.codeTemplates),
+    contentImages: Array.isArray(problem.contentImages)
+      ? problem.contentImages.map((image) => ({
+        url: image?.url || '',
+        publicId: image?.publicId || '',
+        sourceUrl: image?.sourceUrl || '',
+        alt: image?.alt || '',
+        caption: image?.caption || '',
+        width: image?.width,
+        height: image?.height,
+        section: image?.section || 'description',
+        position: Number(image?.position || 0),
+      })).filter((image) => image.url)
+      : [],
     difficulty: problem.difficulty,
     category: problem.category || 'DSA',
     sqlConfig: {
@@ -48,14 +66,26 @@ export function serializeProblem(
       seedDataSql: problem.sqlConfig?.seedDataSql || '',
     },
     tags: problem.tags || [],
+    topicIds: problem.topicIds || [],
+    topicAncestorIds: problem.topicAncestorIds || [],
+    codingTagIds: problem.codingTagIds || [],
     companyTags: problem.companyTags || [],
     supportedLanguages: problem.supportedLanguages || [],
-    codeTemplates: mapCodeTemplates(problem.codeTemplates),
+    validatedLanguages: Array.isArray(problem.validatedLanguages) ? problem.validatedLanguages : [],
+    codeTemplates: getVisibleCodeTemplates(problem.codeTemplates),
+    executionMode: problem.executionMode || 'function',
+    functionContract: problem.functionContract || {
+      className: 'Solution', methodName: '', parameters: [], returnType: '', outputMode: 'return', outputParameterIndex: 0,
+    },
+    showExecutionHarness: includeExecutionHarnesses ? Boolean(problem.showExecutionHarness) : false,
+    executionHarnesses: includeExecutionHarnesses ? mapCodeTemplates(problem.executionHarnesses) : undefined,
+    studentRunnerTemplates: undefined,
     referenceSolutions: includeReferenceSolutions ? mapCodeTemplates(problem.referenceSolutions) : undefined,
     hasReferenceSolution: referenceSolutionCount > 0,
     inputFormat: problem.inputFormat || '',
     outputFormat: problem.outputFormat || '',
     constraints: problem.constraints || '',
+    editorial: problem.editorial || '',
     hints: Array.isArray(problem.hints) ? problem.hints.filter((hint) => String(hint || '').trim()) : [],
     faqs: Array.isArray(problem.faqs)
       ? problem.faqs

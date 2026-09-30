@@ -148,7 +148,8 @@ export default function LibraryWorkspace({ view = 'questions' }) {
   const canCreateCoding = hasPermission(user, 'coordinator.compiler.create');
   const canManageCoding = hasPermission(user, 'coordinator.compiler.manage');
   const canViewCodingAnalytics = hasPermission(user, 'coordinator.compiler.analytics');
-  const isDrawerView = ['create-question', 'edit-question', 'create-coding', 'edit-coding', 'preview-coding'].includes(view);
+  const isPreviewPage = view === 'preview-coding';
+  const isDrawerView = ['create-question', 'edit-question', 'create-coding', 'edit-coding'].includes(view);
 
   const displayedQuestionCounts = useMemo(() => {
     if (compilerProblemCount === null) return questionCounts;
@@ -301,17 +302,23 @@ export default function LibraryWorkspace({ view = 'questions' }) {
   const renderDrawerContent = () => {
     if (view === 'create-question') return <AddQuestionToLibrary embedded />;
     if (view === 'edit-question') return <AddQuestionToLibrary embedded editQuestionId={routeItemId} />;
-    if (view === 'preview-coding') {
-      return <AdminTestCompiler
-        headerTargetId="coding-preview-drawer-header"
-        backTo={mode === 'assessment' ? editorRoute : (requestedReturnTo || `${libraryRoot}/coding/problems`)}
-        editTo={mode === 'assessment' ? editorRoute : `${libraryRoot}/coding/${codingProblemId}/edit`}
-        backLabel={mode === 'assessment' ? 'Back to editor' : 'Back to library'}
-        editLabel="Edit question"
-      />;
-    }
     return <CreateProblem mode={mode} assessmentContext={assessmentContext} />;
   };
+
+  if (isPreviewPage) {
+    return (
+      <div className="h-[100dvh] min-h-[720px] bg-slate-100 pt-[var(--app-navbar-height,5rem)] font-['Manrope'] dark:bg-gray-950">
+        <Suspense fallback={<LoadingPanel />}>
+          <AdminTestCompiler
+            backTo={mode === 'assessment' ? editorRoute : (requestedReturnTo || `${libraryRoot}/coding/problems`)}
+            editTo={mode === 'assessment' ? editorRoute : `${libraryRoot}/coding/${codingProblemId}/edit`}
+            backLabel={mode === 'assessment' ? 'Back to editor' : 'Back to library'}
+            editLabel="Edit question"
+          />
+        </Suspense>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white pt-[var(--app-navbar-height,5rem)] font-['Manrope'] dark:bg-gray-900">

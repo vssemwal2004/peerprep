@@ -1023,7 +1023,7 @@ function ChapterCard({ chapter, semesterId, subjectId, isExpanded, onToggle, onD
                       <label className="block text-xs font-medium text-slate-700 dark:text-gray-300 mb-0.5">Problem Link (Optional)</label>
                       <input
                         type="url"
-                        placeholder="https://leetcode.com/problems/..."
+                        placeholder="https://example.com/problem/..."
                         value={newTopic.problemLink || ''}
                         onChange={(e) => setNewTopic({ ...newTopic, problemLink: e.target.value })}
                         className="w-full px-2.5 py-1.5 border border-slate-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded text-xs text-slate-800 dark:text-gray-100 focus:ring-2 focus:ring-sky-500 focus:border-sky-500"

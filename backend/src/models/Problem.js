@@ -6,6 +6,23 @@ export const SUPPORTED_LANGUAGES = [
   'r', 'sql',
 ];
 
+const problemImageSchema = new mongoose.Schema({
+  url: { type: String, required: true, trim: true },
+  publicId: { type: String, default: '', trim: true },
+  sourceUrl: { type: String, default: '', trim: true },
+  alt: { type: String, default: '', trim: true, maxlength: 500 },
+  caption: { type: String, default: '', trim: true, maxlength: 1000 },
+  width: { type: Number, min: 1 },
+  height: { type: Number, min: 1 },
+  section: { type: String, enum: ['description', 'constraints'], default: 'description' },
+  position: { type: Number, min: 0, default: 0 },
+}, { _id: false });
+
+const functionParameterSchema = new mongoose.Schema({
+  name: { type: String, required: true, trim: true, maxlength: 80 },
+  type: { type: String, required: true, trim: true, maxlength: 120 },
+}, { _id: false });
+
 const problemSchema = new mongoose.Schema({
   title: {
     type: String,
@@ -17,6 +34,10 @@ const problemSchema = new mongoose.Schema({
     type: String,
     default: '',
   },
+  contentImages: {
+    type: [problemImageSchema],
+    default: [],
+  },
   difficulty: {
     type: String,
     enum: ['Easy', 'Medium', 'Hard'],
@@ -25,6 +46,18 @@ const problemSchema = new mongoose.Schema({
   tags: [{
     type: String,
     trim: true,
+  }],
+  topicIds: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'CodingTopic',
+  }],
+  topicAncestorIds: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'CodingTopic',
+  }],
+  codingTagIds: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'CodingTag',
   }],
   companyTags: [{
     type: String,
@@ -39,11 +72,40 @@ const problemSchema = new mongoose.Schema({
     of: String,
     default: {},
   },
+  executionMode: {
+    type: String,
+    enum: ['function', 'full_program'],
+    default: 'function',
+  },
+  functionContract: {
+    className: { type: String, default: 'Solution', trim: true, maxlength: 120 },
+    methodName: { type: String, default: '', trim: true, maxlength: 120 },
+    parameters: { type: [functionParameterSchema], default: [] },
+    returnType: { type: String, default: '', trim: true, maxlength: 120 },
+    outputMode: { type: String, enum: ['return', 'parameter'], default: 'return' },
+    outputParameterIndex: { type: Number, min: 0, default: 0 },
+  },
+  showExecutionHarness: {
+    type: Boolean,
+    default: false,
+  },
+  // Runtime-only harnesses let the editor expose a focused function template
+  // while Judge0 still receives the imports, data structures and stdin adapter.
+  executionHarnesses: {
+    type: Map,
+    of: String,
+    default: {},
+    select: false,
+  },
   referenceSolutions: {
     type: Map,
     of: String,
     default: {},
   },
+  validatedLanguages: [{
+    type: String,
+    enum: SUPPORTED_LANGUAGES,
+  }],
   inputFormat: {
     type: String,
     default: '',
@@ -179,5 +241,8 @@ const problemSchema = new mongoose.Schema({
 
 problemSchema.index({ title: 'text', tags: 'text', companyTags: 'text' });
 problemSchema.index({ status: 1, visibility: 1, difficulty: 1, createdAt: -1 });
+problemSchema.index({ topicIds: 1, status: 1, updatedAt: -1 });
+problemSchema.index({ topicAncestorIds: 1, status: 1, updatedAt: -1 });
+problemSchema.index({ codingTagIds: 1, status: 1, updatedAt: -1 });
 
 export default mongoose.model('Problem', problemSchema);
