@@ -175,8 +175,8 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   const questionSet = Math.max(1, Number(params.get('questionSet')) || 1);
   const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
   const returnTo = params.get('return') || `${rolePrefix}/assessment/create`;
-  const initialType = params.get('type') || 'all';
   const initialStatus = params.get('status') || '';
+  const initialType = params.get('type') || (initialStatus || selectionMode ? 'all' : 'coding');
   const lockType = params.get('lockType') || '';
   const libraryViewStateKey = `peerprep:library-view:${location.pathname}:${lockType || initialType}`;
   const restoredViewState = useMemo(() => {

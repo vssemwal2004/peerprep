@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, ArrowRight, Eye, MoreVertical, Search, Trash2, X } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Eye, Flame, MoreVertical, Save, Search, Trash2, X } from 'lucide-react';
 import { api } from '../../utils/api';
 import { useToast } from '../../components/CustomToast';
 import { formatDate, formatPercent } from './compilerUtils';
@@ -55,6 +55,8 @@ export default function ProblemManagement() {
   const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, problem: null, nextVisibility: null });
   const [deleteDialog, setDeleteDialog] = useState({ isOpen: false, problem: null, deleting: false });
   const [statementDialog, setStatementDialog] = useState({ isOpen: false, problem: null });
+  const [challengeSettings, setChallengeSettings] = useState({ enabled: true, difficultyPool: ['Easy', 'Medium', 'Hard'] });
+  const [savingChallenge, setSavingChallenge] = useState(false);
 
   const closeMenu = () => setOpenMenu(null);
   const closeConfirmDialog = () => setConfirmDialog({ isOpen: false, problem: null, nextVisibility: null });
@@ -121,6 +123,13 @@ export default function ProblemManagement() {
   }, [deferredSearch, difficulty, page, sortBy, sortOrder, status, visibility, toast]);
 
   useEffect(() => {
+    if (rolePrefix !== '/admin') return;
+    api.getDailyChallengeSettings()
+      .then((result) => setChallengeSettings(result.settings || { enabled: true, difficultyPool: ['Easy', 'Medium', 'Hard'] }))
+      .catch(() => {});
+  }, [rolePrefix]);
+
+  useEffect(() => {
     setPage(1);
   }, [deferredSearch, difficulty, sortBy, sortOrder, status, visibility]);
 
@@ -135,6 +144,19 @@ export default function ProblemManagement() {
       toast.error(error.message || 'Failed to delete problem.');
     } finally {
       setDeleteDialog({ isOpen: false, problem: null, deleting: false });
+    }
+  };
+
+  const saveChallengeSettings = async () => {
+    try {
+      setSavingChallenge(true);
+      const result = await api.updateDailyChallengeSettings(challengeSettings);
+      setChallengeSettings(result.settings);
+      toast.success('Daily challenge settings saved.');
+    } catch (error) {
+      toast.error(error.message || 'Failed to save daily challenge settings.');
+    } finally {
+      setSavingChallenge(false);
     }
   };
 
@@ -215,6 +237,21 @@ export default function ProblemManagement() {
         </button>
       )}
     >
+      {rolePrefix === '/admin' && (
+        <section className="mb-5 rounded-2xl border border-orange-200 bg-gradient-to-r from-orange-50 to-amber-50 p-4 dark:border-orange-500/20 dark:from-orange-500/10 dark:to-amber-500/5">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-orange-500 shadow-sm dark:bg-gray-900"><Flame className="h-5 w-5" /></span>
+              <div><h3 className="text-sm font-semibold text-slate-900 dark:text-white">Daily coding streak</h3><p className="mt-1 text-xs leading-5 text-slate-600 dark:text-gray-300">One deterministic challenge is shared by every student. The coding day resets at 2:00 AM IST.</p></div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm dark:bg-gray-900 dark:text-gray-200"><input type="checkbox" checked={challengeSettings.enabled !== false} onChange={(event) => setChallengeSettings((current) => ({ ...current, enabled: event.target.checked }))} className="accent-orange-500" />Enabled</label>
+              {['Easy', 'Medium', 'Hard'].map((level) => <label key={level} className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-medium text-slate-700 shadow-sm dark:bg-gray-900 dark:text-gray-200"><input type="checkbox" checked={(challengeSettings.difficultyPool || []).includes(level)} onChange={(event) => setChallengeSettings((current) => ({ ...current, difficultyPool: event.target.checked ? [...new Set([...(current.difficultyPool || []), level])] : (current.difficultyPool || []).filter((item) => item !== level) }))} className="accent-orange-500" />{level}</label>)}
+              <button type="button" onClick={saveChallengeSettings} disabled={savingChallenge || !(challengeSettings.difficultyPool || []).length} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white disabled:opacity-40 dark:bg-white dark:text-slate-900"><Save className="h-3.5 w-3.5" />{savingChallenge ? 'Saving...' : 'Save streak settings'}</button>
+            </div>
+          </div>
+        </section>
+      )}
       <div className="mb-5 grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_repeat(5,minmax(0,1fr))]">
         <label className="relative block">
           <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />

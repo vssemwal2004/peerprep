@@ -9,13 +9,17 @@ import {
   RotateCcw,
   Tag,
   Building2,
+  Lightbulb,
   PanelLeftOpen,
   PanelRightOpen,
+  Clock3,
+  Maximize2,
 } from 'lucide-react';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import ProblemAssetImages from '../components/ProblemAssetImages';
 import CodeEditor from './CodeEditor';
+import DailyCodingChallenge from './DailyCodingChallenge';
 import { DifficultyBadge, EmptyState, LoadingPanel } from '../admin/compiler/CompilerUi';
 import {
   formatDateTime,
@@ -52,14 +56,14 @@ function LeftPanelTabs({
     : (verdictTone === 'danger' ? 'text-rose-600 dark:text-rose-300' : 'text-slate-500 dark:text-gray-400');
 
   return (
-    <div className="sticky top-0 z-20 flex flex-none items-center justify-between gap-3 border-b border-slate-200/70 bg-white px-5 pt-3 dark:border-gray-800 dark:bg-gray-900">
+    <div className="sticky top-0 z-20 flex flex-none items-center justify-between gap-3 border-b border-zinc-200 bg-[#f7f7f7] px-4 pt-3 dark:border-zinc-700 dark:bg-[#282828]">
       <div className="flex items-center gap-4">
         <button
           type="button"
           onClick={() => onTabChange('description')}
           className={`pb-3 text-sm font-semibold transition-colors ${
             activeTab === 'description'
-              ? 'border-b-2 border-sky-600 text-slate-900 dark:border-sky-500 dark:text-gray-100'
+              ? 'border-b-2 border-zinc-900 text-zinc-900 dark:border-white dark:text-white'
               : 'border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:text-gray-400 dark:hover:text-gray-200'
           }`}
         >
@@ -70,7 +74,7 @@ function LeftPanelTabs({
           onClick={() => onTabChange('submissions')}
           className={`pb-3 text-sm font-semibold transition-colors ${
             activeTab === 'submissions'
-              ? 'border-b-2 border-sky-600 text-slate-900 dark:border-sky-500 dark:text-gray-100'
+              ? 'border-b-2 border-zinc-900 text-zinc-900 dark:border-white dark:text-white'
               : 'border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:text-gray-400 dark:hover:text-gray-200'
           }`}
         >
@@ -83,7 +87,7 @@ function LeftPanelTabs({
           disabled={verdictDisabled}
           className={`pb-3 text-sm font-semibold transition-colors ${
             activeTab === 'acceptance'
-              ? 'border-b-2 border-sky-600 text-slate-900 dark:border-sky-500 dark:text-gray-100'
+              ? 'border-b-2 border-zinc-900 text-zinc-900 dark:border-white dark:text-white'
               : `border-b-2 border-transparent ${verdictTextTone} ${verdictDisabled ? 'opacity-50' : 'hover:text-slate-700 dark:hover:text-gray-200'}`
           }`}
         >
@@ -320,8 +324,7 @@ function ReadingSectionTitle({ children, meta }) {
 }
 
 function ProblemDescriptionPanel({ problem, language }) {
-  const [topicsOpen, setTopicsOpen] = useState(false);
-  const [companiesOpen, setCompaniesOpen] = useState(false);
+  const [activeMetaPanel, setActiveMetaPanel] = useState('');
 
   const topics = problem.tags || [];
   const companies = problem.companyTags || [];
@@ -339,17 +342,60 @@ function ProblemDescriptionPanel({ problem, language }) {
   const visibleRunner = problem.studentRunnerTemplates?.[language] || '';
 
   return (
-    <div className="space-y-7 px-5 py-5 sm:px-6">
+    <div className="space-y-7 px-5 py-6 sm:px-6">
       <section>
-        <h1 className="text-[24px] font-semibold leading-8 text-slate-950 dark:text-white">{problem.title}</h1>
+        <h1 className="text-[22px] font-semibold leading-8 text-zinc-900 dark:text-white">{problem.title}</h1>
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <DifficultyBadge difficulty={problem.difficulty} />
           <StudentProgressBadge status={problem.studentStatus || 'Unsolved'} />
+          <button
+            type="button"
+            onClick={() => setActiveMetaPanel((current) => current === 'topics' ? '' : 'topics')}
+            aria-expanded={activeMetaPanel === 'topics'}
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition ${activeMetaPanel === 'topics' ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900' : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700'}`}
+          >
+            <Tag className="h-3.5 w-3.5" /> Topics {topics.length ? `(${topics.length})` : ''}
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveMetaPanel((current) => current === 'companies' ? '' : 'companies')}
+            aria-expanded={activeMetaPanel === 'companies'}
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition ${activeMetaPanel === 'companies' ? 'bg-amber-500 text-white' : 'bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-300 dark:hover:bg-amber-900/30'}`}
+          >
+            <Building2 className="h-3.5 w-3.5" /> Companies {companies.length ? `(${companies.length})` : ''}
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveMetaPanel((current) => current === 'hints' ? '' : 'hints')}
+            aria-expanded={activeMetaPanel === 'hints'}
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition ${activeMetaPanel === 'hints' ? 'bg-sky-600 text-white' : 'bg-sky-50 text-sky-700 hover:bg-sky-100 dark:bg-sky-900/20 dark:text-sky-300 dark:hover:bg-sky-900/30'}`}
+          >
+            <Lightbulb className="h-3.5 w-3.5" /> Hint {hints.length ? `(${hints.length})` : ''}
+          </button>
           {isSql ? <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700 dark:bg-sky-900/20 dark:text-sky-300">SQLite</span> : null}
         </div>
         <p className="mt-3 text-xs text-slate-400 dark:text-gray-500">
             {Number(problem.acceptanceRate || 0).toFixed(1)}% acceptance | {problem.totalSubmissions || 0} submissions
         </p>
+        {activeMetaPanel && (
+          <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/70">
+            {activeMetaPanel === 'topics' && (
+              <div className="flex flex-wrap gap-2">
+                {topics.length ? topics.map((topic) => <span key={topic} className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-sm dark:bg-zinc-700 dark:text-zinc-100">{topic}</span>) : <p className="text-sm text-zinc-500">No topics have been added yet.</p>}
+              </div>
+            )}
+            {activeMetaPanel === 'companies' && (
+              <div className="flex flex-wrap gap-2">
+                {companies.length ? companies.map((company) => <span key={company} className="rounded-full bg-amber-100 px-3 py-1.5 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">{company}</span>) : <p className="text-sm text-zinc-500">No company tags are available for this problem.</p>}
+              </div>
+            )}
+            {activeMetaPanel === 'hints' && (
+              <div className="space-y-2">
+                {hints.length ? hints.map((hint, index) => <div key={`quick-hint-${index}`} className="rounded-lg bg-white px-3 py-2 text-sm leading-6 text-zinc-700 shadow-sm dark:bg-zinc-700 dark:text-zinc-200"><span className="mr-2 font-semibold text-sky-600 dark:text-sky-300">Hint {index + 1}</span>{hint}</div>) : <p className="text-sm text-zinc-500">No hints are available for this problem.</p>}
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       <section>
@@ -438,26 +484,6 @@ function ProblemDescriptionPanel({ problem, language }) {
           <ProblemAssetImages images={constraintImages} className="mt-4" />
         </section>
 
-        {hints.length > 0 ? (
-          <section className="space-y-3 pt-2">
-            <div className="flex items-center justify-between gap-3">
-              <ReadingSectionTitle>Hints</ReadingSectionTitle>
-              <span className="text-xs text-slate-500 dark:text-gray-400">{hints.length} available</span>
-            </div>
-            <div className="space-y-2">
-              {hints.map((hint, index) => (
-                <details key={`hint-${index}`} className="group rounded-[18px] border border-sky-100 bg-sky-50/70 px-4 py-3 dark:border-sky-900/40 dark:bg-sky-900/10">
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-sky-800 dark:text-sky-200">
-                    Hint {index + 1}
-                    <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
-                  </summary>
-                  <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-gray-300">{hint}</p>
-                </details>
-              ))}
-            </div>
-          </section>
-        ) : null}
-
         {faqs.length > 0 ? (
           <section className="space-y-3">
             <div className="flex items-center justify-between gap-3">
@@ -483,69 +509,6 @@ function ProblemDescriptionPanel({ problem, language }) {
           </section>
         ) : null}
 
-        {(topics.length > 0 || companies.length > 0) && (
-          <section className="divide-y divide-slate-200/70 rounded-[22px] bg-slate-50/80 dark:divide-gray-700 dark:bg-gray-800/70">
-            {topics.length > 0 && (
-              <div>
-                <button
-                  type="button"
-                  onClick={() => setTopicsOpen((previous) => !previous)}
-                  className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <Tag className="h-4 w-4 text-slate-500 dark:text-gray-400" />
-                    <span className="text-sm font-semibold text-slate-800 dark:text-gray-100">Topics</span>
-                  </div>
-                  <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform dark:text-gray-500 ${topicsOpen ? 'rotate-180' : ''}`} />
-                </button>
-                {topicsOpen && (
-                  <div className="px-4 pb-3">
-                    <div className="flex flex-wrap gap-2">
-                      {topics.map((tag) => (
-                        <span
-                          key={tag}
-                          className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:bg-gray-800 dark:text-gray-200"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {companies.length > 0 && (
-              <div>
-                <button
-                  type="button"
-                  onClick={() => setCompaniesOpen((previous) => !previous)}
-                  className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <Building2 className="h-4 w-4 text-amber-500" />
-                    <span className="text-sm font-semibold text-slate-800 dark:text-gray-100">Companies</span>
-                  </div>
-                  <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform dark:text-gray-500 ${companiesOpen ? 'rotate-180' : ''}`} />
-                </button>
-                {companiesOpen && (
-                  <div className="px-4 pb-3">
-                    <div className="flex flex-wrap gap-2">
-                      {companies.map((tag) => (
-                        <span
-                          key={tag}
-                          className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-900/20 dark:text-amber-200"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </section>
-        )}
       </section>
 
     </div>
@@ -1008,6 +971,14 @@ export default function ProblemSolver() {
   const [selectedSubmissionId, setSelectedSubmissionId] = useState(null);
   const [isRunning, setIsRunning] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setElapsedSeconds((value) => value + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const elapsedLabel = `${String(Math.floor(elapsedSeconds / 3600)).padStart(2, '0')}:${String(Math.floor((elapsedSeconds % 3600) / 60)).padStart(2, '0')}:${String(elapsedSeconds % 60).padStart(2, '0')}`;
 
   const stopSubmissionPolling = useCallback(() => {
     if (submissionPollRef.current) {
@@ -1540,14 +1511,14 @@ export default function ProblemSolver() {
   }
 
   return (
-    <div className="h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.10),_transparent_34%),linear-gradient(180deg,_#f8fbff_0%,_#eff6ff_45%,_#f8fafc_100%)] dark:bg-[linear-gradient(180deg,_#0f172a_0%,_#111827_100%)]">
+    <div className="h-screen overflow-hidden bg-[#f2f2f2] font-sans dark:bg-[#1a1a1a]">
       <div className="flex h-full min-h-0 flex-col">
-        <header className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-3 bg-white px-4 py-3 shadow-[0_8px_22px_rgba(15,23,42,0.035)] dark:bg-gray-900">
+        <header className="sticky top-0 z-40 grid min-h-[56px] grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-zinc-200 bg-[#f7f7f7] px-3 py-2 dark:border-zinc-800 dark:bg-[#282828]">
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => navigate(-1)}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white/90 text-slate-800 shadow-[0_8px_18px_rgba(15,23,42,0.035)] transition-colors hover:bg-white dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-zinc-600 transition-colors hover:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-zinc-700"
               aria-label="Go back"
             >
               <ChevronLeft className="h-4 w-4" />
@@ -1555,12 +1526,12 @@ export default function ProblemSolver() {
             <button
               type="button"
               onClick={() => setProblemListOpen((previous) => !previous)}
-              className="inline-flex items-center gap-2 rounded-xl bg-white/90 px-3 py-1.5 text-sm font-semibold text-slate-800 shadow-[0_8px_18px_rgba(15,23,42,0.035)] transition-colors hover:bg-white dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+              className="inline-flex max-w-[220px] items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-200 dark:text-zinc-100 dark:hover:bg-zinc-700"
             >
               {problemListOpen ? <PanelRightOpen className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
-              Problem List
+              <span className="truncate">{problem.title}</span>
             </button>
-            <div className="hidden items-center gap-1 rounded-xl bg-white/90 p-1 shadow-[0_8px_18px_rgba(15,23,42,0.035)] dark:bg-gray-900 lg:inline-flex">
+            <div className="hidden items-center gap-1 lg:inline-flex">
               <button
                 type="button"
                 onClick={() => previousProblem && openProblemById(previousProblem._id)}
@@ -1582,11 +1553,16 @@ export default function ProblemSolver() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-center gap-1 rounded-lg bg-zinc-200/70 p-1 dark:bg-[#333]">
+            <button type="button" onClick={handleRun} disabled={isRunning || isSubmitting} className="inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium text-zinc-700 hover:bg-white disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-zinc-700"><Play className="h-3.5 w-3.5 fill-current" />{isRunning ? 'Running...' : 'Run'}</button>
+            <button type="button" onClick={handleSubmit} disabled={isRunning || isSubmitting} className="inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-semibold text-[#00a83e] hover:bg-white disabled:opacity-40 dark:text-[#2cbb5d] dark:hover:bg-zinc-700"><Send className="h-3.5 w-3.5" />{isSubmitting ? 'Submitting...' : 'Submit'}</button>
+          </div>
+
+          <div className="flex items-center justify-end gap-2">
             <select
               value={language}
               onChange={(event) => setLanguage(event.target.value)}
-              className="rounded-xl bg-white/85 px-2.5 py-1.5 text-xs font-semibold text-slate-700 outline-none shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-colors focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-400 dark:bg-gray-800 dark:text-gray-200 dark:focus:ring-sky-500"
+              className="hidden rounded-lg border-0 bg-zinc-200/70 px-2.5 py-1.5 text-xs font-medium text-zinc-700 outline-none focus:ring-2 focus:ring-[#ffa116] dark:bg-[#333] dark:text-zinc-200 sm:block"
             >
               {(problem.supportedLanguages || []).map((supportedLanguage) => (
                 <option key={supportedLanguage} value={supportedLanguage}>
@@ -1597,31 +1573,17 @@ export default function ProblemSolver() {
 
             <button
               type="button"
-              onClick={handleRun}
-              disabled={isRunning || isSubmitting}
-              className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-sky-600 dark:hover:bg-sky-500 dark:disabled:bg-gray-700"
-            >
-              <Play className="h-3.5 w-3.5" />
-              {isRunning ? 'Running...' : 'Run'}
-            </button>
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={isRunning || isSubmitting}
-              className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"
-            >
-              <Send className="h-3.5 w-3.5" />
-              {isSubmitting ? 'Submitting...' : 'Submit'}
-            </button>
-            <button
-              type="button"
               onClick={resetCode}
               disabled={isRunning || isSubmitting}
-              className="inline-flex items-center gap-2 rounded-xl bg-white/90 px-3 py-2 text-xs font-semibold text-slate-700 shadow-[0_8px_18px_rgba(15,23,42,0.03)] transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+              className="hidden h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-200 disabled:opacity-40 dark:hover:bg-zinc-700 md:inline-flex"
+              title="Reset code"
             >
               <RotateCcw className="h-3.5 w-3.5" />
-              Reset
             </button>
+
+            <div className="hidden items-center gap-1 rounded-lg bg-zinc-200/70 px-2.5 py-2 text-xs font-medium tabular-nums text-blue-500 dark:bg-[#333] sm:flex"><Clock3 className="h-3.5 w-3.5" />{elapsedLabel}</div>
+            <DailyCodingChallenge variant="header" />
+            <button type="button" onClick={() => document.documentElement.requestFullscreen?.()} className="hidden h-8 w-8 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700 md:inline-flex" aria-label="Enter fullscreen"><Maximize2 className="h-4 w-4" /></button>
 
             <div className="flex items-center gap-1 rounded-2xl bg-white/90 p-1 shadow-[0_8px_20px_rgba(15,23,42,0.04)] dark:bg-gray-900 lg:hidden">
               <button
@@ -1642,7 +1604,7 @@ export default function ProblemSolver() {
           </div>
         </header>
 
-        <div className="relative hidden min-h-0 flex-1 overflow-hidden px-3 pb-3 pt-2 lg:flex">
+        <div className="relative hidden min-h-0 flex-1 overflow-hidden p-2 lg:flex">
           {problemListOpen && (
             <>
               <button
@@ -1720,7 +1682,7 @@ export default function ProblemSolver() {
               flexBasis: leftWidth === null ? 'clamp(320px, 40vw, 680px)' : `${leftWidth}px`,
               willChange: 'width',
             }}
-            className="flex shrink-0 min-w-[320px] flex-col overflow-hidden rounded-[30px] bg-white/84 shadow-[0_10px_32px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:bg-gray-900/84"
+            className="flex shrink-0 min-w-[320px] flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-[#282828]"
           >
             <LeftPanelTabs
               activeTab={activeLeftTab}
@@ -1753,13 +1715,10 @@ export default function ProblemSolver() {
           <button
             type="button"
             onPointerDown={handleResizeStart}
-            className="group relative flex w-4 shrink-0 cursor-col-resize touch-none select-none items-center justify-center transition-colors"
+            className="group relative flex w-2 shrink-0 cursor-col-resize touch-none select-none items-center justify-center transition-colors"
             aria-label="Resize panels"
           >
-            <div className="absolute inset-y-5 left-1/2 w-px -translate-x-1/2 rounded-full bg-slate-200/90 dark:bg-gray-700" />
-            <div className="relative z-10 rounded-full bg-white/92 p-1 text-slate-400 shadow-[0_10px_20px_rgba(15,23,42,0.06)] transition-colors group-hover:text-sky-500 dark:bg-gray-900 dark:text-gray-500">
-              <PanelLeftOpen className="h-3.5 w-3.5 rotate-90" />
-            </div>
+            <div className="absolute inset-y-4 left-1/2 w-1 -translate-x-1/2 rounded-full bg-zinc-300 transition group-hover:bg-[#ffa116] dark:bg-zinc-700" />
           </button>
 
           <section className="min-h-0 min-w-0 overflow-hidden">

@@ -1,19 +1,26 @@
 import React from 'react';
+import { Bell, CheckCircle2, Flame, Megaphone } from 'lucide-react';
 
 function NotificationItem({ notification, onView, timeLabel }) {
   const isUnread = !notification.isRead;
   const isAnnouncement = notification.source === 'announcement';
+  const isStreak = notification.type === 'STREAK';
+  const isCoding = notification.type === 'CODING';
+  const Icon = isAnnouncement ? Megaphone : isStreak ? Flame : isCoding ? CheckCircle2 : Bell;
+  const iconTone = isStreak ? 'bg-orange-50 text-orange-500 dark:bg-orange-500/10' : isCoding ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10' : 'bg-sky-50 text-sky-600 dark:bg-sky-500/10';
 
   return (
     <div
-      className={`rounded-lg border px-4 py-3 transition-colors ${
+      className={`rounded-xl border px-4 py-3 transition-all hover:-translate-y-px hover:shadow-sm ${
         isUnread
           ? 'border-sky-500/30 bg-sky-50/80 dark:bg-slate-800/70'
           : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/60'
       }`}
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div className="flex min-w-0 gap-3">
+          <span className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${iconTone}`}><Icon className="h-4 w-4" /></span>
+          <div className="min-w-0">
           <div className="flex items-center gap-2">
             <div className={`text-sm font-semibold ${isUnread ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-200'}`}>
               {notification.title}
@@ -33,12 +40,13 @@ function NotificationItem({ notification, onView, timeLabel }) {
           <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
             {timeLabel}
           </div>
+          </div>
         </div>
         <button
           onClick={() => onView(notification)}
           className="shrink-0 rounded-md border border-slate-200 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-sky-400 hover:text-sky-600 dark:hover:text-sky-400 transition-colors"
         >
-          View
+          {notification.actionUrl ? 'Open' : 'Read'}
         </button>
       </div>
     </div>

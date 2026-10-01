@@ -21,6 +21,7 @@ import { useState, useEffect } from "react";
 import DarkModeToggle from "./DarkModeToggle";
 import { useAuth } from "../context/AuthContext";
 import NotificationBell from "./NotificationBell";
+import DailyCodingChallenge from "../student/DailyCodingChallenge";
 
 export function StudentNavbar() {
   const location = useLocation();
@@ -186,6 +187,7 @@ export function StudentNavbar() {
 
           {/* Dark Mode Toggle */}
           <div className="hidden md:flex items-center gap-2 ml-1">
+            <DailyCodingChallenge variant="header" />
             <NotificationBell />
             <DarkModeToggle />
           </div>

@@ -16,6 +16,7 @@ import {
   getCompilerOverview,
   getProblemDetail,
   listProblems,
+  listStudentProblemCompanies,
   previewRunProblem,
   runProblemCode,
   submitProblemCode,
@@ -38,6 +39,7 @@ import {
 } from '../controllers/submissionController.js';
 import { cacheJsonResponse, invalidateResponseCache } from '../middleware/responseCache.js';
 import { uploadCodingProblemAsset } from '../controllers/problemAssetController.js';
+import { getDailyChallenge, getDailyChallengeSettings, saveDailyChallengeSettings } from '../controllers/codingStreakController.js';
 
 const router = Router();
 const upload = multer({
@@ -70,6 +72,10 @@ function acceptProblemAsset(req, res, next) {
 }
 const invalidateCompilerCache = invalidateResponseCache('compiler');
 
+router.get('/daily-challenge', requireStudent, requireFullStudent, getDailyChallenge);
+router.get('/daily-challenge/settings', requireAdmin, getDailyChallengeSettings);
+router.patch('/daily-challenge/settings', requireAdmin, saveDailyChallengeSettings);
+
 router.get('/overview', requireCoordinatorPermission('coordinator.compiler.view'), compilerCache, getAdminCompilerOverview);
 router.get('/analytics', requireCoordinatorPermission('coordinator.compiler.analytics'), compilerCache, getAdminCompilerAnalytics);
 router.get('/student/:id', requireCoordinatorPermission('coordinator.compiler.analytics'), getCompilerStudentAnalytics);
@@ -78,6 +84,7 @@ router.post('/problem-assets', requireCoordinatorPermission('coordinator.compile
 router.post('/problems/preview/run', requireCoordinatorPermission('coordinator.compiler.manage'), upload.none(), previewRunProblem);
 router.post('/problems/:id/preview/approve', requireCoordinatorPermission('coordinator.compiler.manage'), invalidateCompilerCache, upload.none(), approveProblemPreview);
 router.get('/problems', requireAdminCoordinatorOrStudent, requireFullStudent, listProblems);
+router.get('/problem-companies', requireStudent, requireFullStudent, compilerCache, listStudentProblemCompanies);
 router.post('/problems', requireCoordinatorPermission('coordinator.compiler.create'), invalidateCompilerCache, upload.any(), createProblem);
 router.get('/problems/:id/submissions', requireStudent, requireFullStudent, listProblemSubmissions);
 router.get('/problems/:id', requireAdminCoordinatorOrStudent, requireFullStudent, getProblemDetail);

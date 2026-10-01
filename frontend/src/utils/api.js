@@ -1592,6 +1592,8 @@ export const api = {
     search = "",
     difficulty = "",
     tags = "",
+    companies = "",
+    ids = "",
     sortBy = "acceptanceRate",
     sortOrder = "desc",
     page = 1,
@@ -1601,6 +1603,8 @@ export const api = {
     if (search) params.append("search", search);
     if (difficulty) params.append("difficulty", difficulty);
     if (tags) params.append("tags", tags);
+    if (companies) params.append("companies", companies);
+    if (ids) params.append("ids", ids);
     if (sortBy) params.append("sortBy", sortBy);
     if (sortOrder) params.append("sortOrder", sortOrder);
     params.append("page", String(page));
@@ -1609,8 +1613,28 @@ export const api = {
       cacheTtlMs: 30 * 1000,
     });
   },
+  listStudentProblemCompanies: ({ search = '', limit = 50 } = {}) => {
+    const params = new URLSearchParams();
+    if (search) params.append('search', search);
+    params.append('limit', String(limit));
+    return request(`/compiler/problem-companies?${params.toString()}`, { cacheTtlMs: 60 * 1000 });
+  },
+  listProblemLists: () => request('/problem-lists', { skipCache: true }),
+  createProblemList: (body) => request('/problem-lists', { method: 'POST', body }),
+  updateProblemList: (id, body) => request(`/problem-lists/${id}`, { method: 'PATCH', body }),
+  deleteProblemList: (id) => request(`/problem-lists/${id}`, { method: 'DELETE' }),
+  setProblemListMembership: (listId, problemId, included) => request(`/problem-lists/${listId}/problems/${problemId}`, {
+    method: 'PATCH',
+    body: { included },
+  }),
   getStudentProblem: (problemId) =>
     request(`/compiler/problems/${problemId}`, { skipCache: true }),
+  getDailyCodingChallenge: () =>
+    request('/compiler/daily-challenge', { skipCache: true }),
+  getDailyChallengeSettings: () =>
+    request('/compiler/daily-challenge/settings', { skipCache: true }),
+  updateDailyChallengeSettings: (body) =>
+    request('/compiler/daily-challenge/settings', { method: 'PATCH', body }),
   runStudentProblem: (
     problemId,
     {

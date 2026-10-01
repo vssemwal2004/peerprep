@@ -612,7 +612,7 @@ function CodeEditor({
   return (
     <div
       ref={rootRef}
-      className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900"
+      className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-[#282828]"
     >
       {showToolbar ? (
         <div
@@ -697,7 +697,7 @@ function CodeEditor({
         type="button"
         ref={splitterRef}
         onPointerDown={handleConsoleResizeStart}
-        className="group relative z-20 flex h-2.5 w-full cursor-row-resize items-center justify-center border-y border-slate-200/70 bg-slate-50/70 transition-colors hover:bg-sky-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-sky-950/30"
+        className="group relative z-20 flex h-2 w-full cursor-row-resize items-center justify-center border-y border-zinc-200 bg-[#f7f7f7] transition-colors hover:bg-orange-50 dark:border-zinc-700 dark:bg-[#282828] dark:hover:bg-zinc-700"
         aria-label="Resize testcase panel"
       >
         <div className="relative z-10 h-1 w-10 rounded-full bg-slate-300/80 transition-colors group-hover:bg-sky-400 dark:bg-gray-700 dark:group-hover:bg-sky-500" />
@@ -705,7 +705,7 @@ function CodeEditor({
 
       <div
         ref={consoleContainerRef}
-        className="relative z-20 flex min-h-0 flex-col overflow-hidden bg-slate-50/60 px-3 pb-2 pt-0.5 dark:bg-gray-900"
+        className="relative z-20 flex min-h-0 flex-col overflow-hidden bg-white px-3 pb-2 pt-0.5 dark:bg-[#282828]"
         style={{ height: consoleHeight }}
       >
         <div className="flex flex-none items-center gap-5 overflow-x-auto bg-transparent [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

@@ -121,6 +121,14 @@ function NotificationBell() {
   }, [canLoadNotifications]);
 
   useEffect(() => {
+    if (!isOpen || !canLoadNotifications) return;
+    api.getNotifications().then((data) => {
+      setNotifications(data.notifications || []);
+      setServerUnreadCount(data.unreadCount || 0);
+    }).catch(() => {});
+  }, [canLoadNotifications, isOpen]);
+
+  useEffect(() => {
     if (!canLoadNotifications) {
       setAnnouncementNotifications([]);
       return;

@@ -23,6 +23,12 @@ function NotificationSidebar({
   );
 
   const [announcementIndex, setAnnouncementIndex] = useState(0);
+  const [activeFilter, setActiveFilter] = useState('all');
+
+  const filteredItems = useMemo(
+    () => activeFilter === 'unread' ? listItems.filter((item) => !item?.isRead) : listItems,
+    [activeFilter, listItems],
+  );
 
   useEffect(() => {
     // Reset when opening or when the list changes.
@@ -89,6 +95,10 @@ function NotificationSidebar({
                 </button>
               </div>
 
+              <div className="flex gap-1 border-b border-slate-200 px-5 py-2 dark:border-slate-800">
+                {[['all', `All (${listItems.length})`], ['unread', `Unread (${unreadCount})`]].map(([value, label]) => <button key={value} type="button" onClick={() => setActiveFilter(value)} className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${activeFilter === value ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'}`}>{label}</button>)}
+              </div>
+
               {/* Announcement highlight (auto-fades every 5s) */}
               {announcementItems.length > 0 && (
                 <div className="border-b border-slate-200 dark:border-slate-800 px-5 py-4">
@@ -131,14 +141,14 @@ function NotificationSidebar({
               )}
 
               <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-                {listItems.length === 0 ? (
+                {filteredItems.length === 0 ? (
                   <div className="flex h-full items-center justify-center">
                     <div className="text-sm text-slate-500 dark:text-slate-400">
-                      No notifications yet
+                      {activeFilter === 'unread' ? 'You are all caught up' : 'No notifications yet'}
                     </div>
                   </div>
                 ) : (
-                  listItems.map((notif) => (
+                  filteredItems.map((notif) => (
                     <NotificationItem
                       key={notif._id}
                       notification={notif}

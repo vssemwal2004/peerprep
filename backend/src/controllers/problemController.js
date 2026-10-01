@@ -1301,6 +1301,9 @@ export async function listProblems(req, res) {
   const difficulty = String(req.query.difficulty || '').trim();
   const status = String(req.query.status || '').trim();
   const tagFilters = parseCommaOrJsonList(req.query.tags);
+  const companyFilters = parseCommaOrJsonList(req.query.companies);
+  const idFilters = parseCommaOrJsonList(req.query.ids)
+    .filter((id) => mongoose.Types.ObjectId.isValid(id));
   const sortBy = String(req.query.sortBy || 'updatedAt');
   const sortOrder = String(req.query.sortOrder || 'desc') === 'asc' ? 1 : -1;
   const accessQuery = isAdminRequest(req)
@@ -1309,6 +1312,10 @@ export async function listProblems(req, res) {
       ? (coordinatorRequiresOwnership(req) ? { createdBy: req.user._id } : {})
       : { status: { $in: ['published', 'Active', 'active'] }, $or: [{ visibility: 'public' }, { visibility: { $exists: false } }] };
   const query = { ...accessQuery };
+
+  if (req.query.ids !== undefined) {
+    query._id = { $in: idFilters.map((id) => new mongoose.Types.ObjectId(id)) };
+  }
 
   if (difficulty && ['Easy', 'Medium', 'Hard'].includes(difficulty)) {
     query.difficulty = difficulty;
@@ -1331,12 +1338,22 @@ export async function listProblems(req, res) {
     };
   }
 
+  if (companyFilters.length > 0) {
+    query.companyTags = {
+      $in: companyFilters.map((company) => new RegExp(`^${sanitizeSearchQuery(company)}$`, 'i')),
+    };
+  }
+
   if (search) {
     const regex = new RegExp(search, 'i');
-    query.$or = [
-      { title: regex },
-      { tags: regex },
-      { companyTags: regex },
+    query.$and = [
+      {
+        $or: [
+          { title: regex },
+          { tags: regex },
+          { companyTags: regex },
+        ],
+      },
     ];
   }
 
@@ -1371,7 +1388,7 @@ export async function listProblems(req, res) {
       .limit(limit)
       .lean();
 
-  const [total, totalProblems, problemsResult, availableTagsResult, tagCountsResult] = await Promise.all([
+  const [total, totalProblems, problemsResult, availableTagsResult, tagCountsResult, companyCountsResult] = await Promise.all([
     Problem.countDocuments(query),
     Problem.countDocuments(accessQuery),
     problemsPromise,
@@ -1385,6 +1402,20 @@ export async function listProblems(req, res) {
         $group: {
           _id: { $toLower: '$normalizedTag' },
           label: { $first: '$normalizedTag' },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { count: -1, label: 1 } },
+    ]),
+    Problem.aggregate([
+      { $match: accessQuery },
+      { $unwind: '$companyTags' },
+      { $set: { normalizedCompany: { $trim: { input: '$companyTags' } } } },
+      { $match: { normalizedCompany: { $ne: '' } } },
+      {
+        $group: {
+          _id: { $toLower: '$normalizedCompany' },
+          label: { $first: '$normalizedCompany' },
           count: { $sum: 1 },
         },
       },
@@ -1415,8 +1446,40 @@ export async function listProblems(req, res) {
         tag: tag.label,
         count: tag.count,
       })),
+      companyCounts: companyCountsResult.map((company) => ({
+        company: company.label,
+        count: company.count,
+      })),
     },
   });
+}
+
+export async function listStudentProblemCompanies(req, res) {
+  const search = sanitizeSearchQuery(String(req.query.search || '').trim());
+  const requestedLimit = Number.parseInt(req.query.limit, 10);
+  const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 50;
+  const publicProblemQuery = {
+    status: { $in: ['published', 'Active', 'active'] },
+    $or: [{ visibility: 'public' }, { visibility: { $exists: false } }],
+  };
+  const pipeline = [
+    { $match: publicProblemQuery },
+    { $unwind: '$companyTags' },
+    { $set: { normalizedCompany: { $trim: { input: '$companyTags' } } } },
+    { $match: { normalizedCompany: { $ne: '' } } },
+    {
+      $group: {
+        _id: { $toLower: '$normalizedCompany' },
+        company: { $first: '$normalizedCompany' },
+        count: { $sum: 1 },
+      },
+    },
+  ];
+  if (search) pipeline.push({ $match: { company: new RegExp(search, 'i') } });
+  pipeline.push({ $sort: { count: -1, company: 1 } }, { $limit: limit }, { $project: { _id: 0, company: 1, count: 1 } });
+
+  const companies = await Problem.aggregate(pipeline);
+  res.json({ companies });
 }
 
 export async function getProblemDetail(req, res) {

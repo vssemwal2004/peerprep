@@ -9,6 +9,7 @@ import { validateObjectId } from '../utils/validators.js';
 import { parseBulkCasePair } from '../utils/testcaseBulkParser.js';
 import { readTestcaseTextObject } from '../utils/testcaseStorage.js';
 import { createNotification } from './notificationService.js';
+import { recordDailyChallengeCompletion } from './codingStreakService.js';
 import { getIo } from '../utils/io.js';
 import { serializeSubmission, refreshProblemStats } from '../controllers/compilerHelpers.js';
 import {
@@ -1315,6 +1316,11 @@ export async function processCompilerExecutionJob(job) {
         });
       } catch (error) {
         console.error('[processCompilerExecutionJob] Notification error:', error.message);
+      }
+      if (!finalizedSubmission?.assessmentId) {
+        void recordDailyChallengeCompletion({ userId, problemId: problem._id }).catch((error) => {
+          console.error('[processCompilerExecutionJob] Coding streak error:', error.message);
+        });
       }
     }
 

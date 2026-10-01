@@ -26,6 +26,7 @@ import ContributionCalendar from '../components/ContributionCalendar';
 import { api } from '../utils/api';
 import socketService from '../utils/socket';
 import { getLearnerBadge } from './profileBadge';
+import DailyCodingChallenge from './DailyCodingChallenge';
 
 const MotionDiv = motion.div;
 
@@ -92,10 +93,10 @@ function AnimatedMetric({ value, suffix = '', decimals = 0, className = '' }) {
 
 function Panel({ title, subtitle, children, className = '' }) {
   return (
-    <section className={`rounded-[24px] border border-slate-200 bg-white shadow-[0_18px_48px_-36px_rgba(15,23,42,0.22)] dark:border-gray-800 dark:bg-gray-900 dark:shadow-[0_18px_48px_-36px_rgba(2,6,23,0.7)] ${className}`}>
+    <section className={`rounded-2xl border border-zinc-200 bg-white shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:border-zinc-800 dark:bg-[#242424] ${className}`}>
       {(title || subtitle) && (
         <div className="border-b border-slate-100 px-4 py-3 dark:border-gray-800">
-          {title ? <h2 className="text-xs font-semibold text-slate-900 dark:text-gray-100">{title}</h2> : null}
+          {title ? <h2 className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">{title}</h2> : null}
           {subtitle ? <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">{subtitle}</p> : null}
         </div>
       )}
@@ -1102,7 +1103,7 @@ export default function StudentProfile() {
   }
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#f4f7fb_52%,#f8fafc_100%)] pt-3 dark:bg-[linear-gradient(180deg,#020617_0%,#0f172a_52%,#020617_100%)]">
+    <div className="min-h-screen bg-[#f7f7f8] pt-3 font-sans dark:bg-[#1a1a1a]">
       <MotionDiv
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -1111,8 +1112,8 @@ export default function StudentProfile() {
       >
         <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
           <aside className="xl:sticky xl:top-[88px] xl:self-start">
-            <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_22px_60px_-42px_rgba(15,23,42,0.28)] dark:border-gray-800 dark:bg-gray-900 dark:shadow-[0_22px_60px_-42px_rgba(2,6,23,0.8)]">
-              <div className="h-24 bg-[linear-gradient(135deg,#0f172a_0%,#12323d_38%,#0f766e_100%)]" />
+            <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_8px_30px_rgba(0,0,0,0.05)] dark:border-zinc-800 dark:bg-[#242424]">
+              <div className="h-24 bg-[linear-gradient(135deg,#262626_0%,#3f3f46_55%,#b45309_130%)]" />
               <div className="px-5 pb-5">
                 <div className="-mt-12 flex items-end justify-between gap-3">
                   <div className="relative">
@@ -1154,7 +1155,7 @@ export default function StudentProfile() {
                 <button
                   type="button"
                   onClick={openEditModal}
-                  className="mt-5 inline-flex w-full items-center justify-center rounded-2xl bg-sky-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-sky-500"
+                  className="mt-5 inline-flex w-full items-center justify-center rounded-xl bg-zinc-900 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-zinc-800 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
                 >
                   Edit Profile
                 </button>
@@ -1178,6 +1179,7 @@ export default function StudentProfile() {
           </aside>
 
           <main className="space-y-6">
+            <DailyCodingChallenge />
             <section className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
               <Panel
                 title="Coding Progress"

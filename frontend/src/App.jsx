@@ -406,17 +406,17 @@ function AppContent() {
         <Route path="/admin/library/create" element={<AdminShell><LibraryWorkspace view="create-question" /></AdminShell>} />
         <Route path="/admin/library/add-question" element={<AdminShell><LibraryWorkspace view="create-question" /></AdminShell>} />
         <Route path="/admin/library/question/:id/edit" element={<AdminShell><LibraryWorkspace view="edit-question" /></AdminShell>} />
-        <Route path="/admin/library/coding/overview" element={<Navigate to="/admin/library/coding/problems" replace />} />
+        <Route path="/admin/library/coding/overview" element={<Navigate to="/admin/library?type=coding" replace />} />
         <Route path="/admin/library/coding/create" element={<AdminShell><LibraryWorkspace view="create-coding" /></AdminShell>} />
-        <Route path="/admin/library/coding/problems" element={<AdminShell><LibraryWorkspace view="coding-problems" /></AdminShell>} />
+        <Route path="/admin/library/coding/problems" element={<Navigate to="/admin/library?type=coding" replace />} />
         <Route path="/admin/library/coding/:id/edit" element={<AdminShell><LibraryWorkspace view="edit-coding" /></AdminShell>} />
         <Route path="/admin/library/coding/:id/preview" element={<AdminShell><LibraryWorkspace view="preview-coding" /></AdminShell>} />
         <Route path="/admin/library/coding/analytics" element={<AdminShell><LibraryWorkspace view="coding-analytics" /></AdminShell>} />
         <Route path="/admin/assessment/select-problem" element={<AdminShell><SelectProblemFromLibrary /></AdminShell>} />
         <Route path="/admin/assessment/preview/:id" element={<AdminShell layout={false}><AdminAssessmentPreview /></AdminShell>} />
-        <Route path="/admin/compiler" element={<Navigate to="/admin/library/coding/problems" replace />} />
+        <Route path="/admin/compiler" element={<Navigate to="/admin/library?type=coding" replace />} />
         <Route path="/admin/compiler/create" element={<AdminShell><LibraryWorkspace view="create-coding" /></AdminShell>} />
-        <Route path="/admin/compiler/problems" element={<AdminShell><LibraryWorkspace view="coding-problems" /></AdminShell>} />
+        <Route path="/admin/compiler/problems" element={<Navigate to="/admin/library?type=coding" replace />} />
         <Route path="/admin/compiler/:id/edit" element={<AdminShell><LibraryWorkspace view="edit-coding" /></AdminShell>} />
         <Route path="/admin/compiler/:id/preview" element={<AdminShell><LibraryWorkspace view="preview-coding" /></AdminShell>} />
         <Route path="/admin/compiler/analytics" element={<AdminShell><LibraryWorkspace view="coding-analytics" /></AdminShell>} />
@@ -475,17 +475,17 @@ function AppContent() {
         <Route path="/coordinator/library/create" element={<CoordinatorShell permission="coordinator.library.create"><LibraryWorkspace view="create-question" /></CoordinatorShell>} />
         <Route path="/coordinator/library/add-question" element={<CoordinatorShell permission="coordinator.library.create"><LibraryWorkspace view="create-question" /></CoordinatorShell>} />
         <Route path="/coordinator/library/question/:id/edit" element={<CoordinatorShell permission="coordinator.library.create"><LibraryWorkspace view="edit-question" /></CoordinatorShell>} />
-        <Route path="/coordinator/library/coding/overview" element={<Navigate to="/coordinator/library/coding/problems" replace />} />
+        <Route path="/coordinator/library/coding/overview" element={<Navigate to="/coordinator/library?type=coding" replace />} />
         <Route path="/coordinator/library/coding/create" element={<CoordinatorShell permission="coordinator.compiler.create"><LibraryWorkspace view="create-coding" /></CoordinatorShell>} />
-        <Route path="/coordinator/library/coding/problems" element={<CoordinatorShell permission="coordinator.compiler.manage"><LibraryWorkspace view="coding-problems" /></CoordinatorShell>} />
+        <Route path="/coordinator/library/coding/problems" element={<Navigate to="/coordinator/library?type=coding" replace />} />
         <Route path="/coordinator/library/coding/:id/edit" element={<CoordinatorShell permission="coordinator.compiler.manage"><LibraryWorkspace view="edit-coding" /></CoordinatorShell>} />
         <Route path="/coordinator/library/coding/:id/preview" element={<CoordinatorShell permission="coordinator.compiler.manage"><LibraryWorkspace view="preview-coding" /></CoordinatorShell>} />
         <Route path="/coordinator/library/coding/analytics" element={<CoordinatorShell permission="coordinator.compiler.analytics"><LibraryWorkspace view="coding-analytics" /></CoordinatorShell>} />
         <Route path="/coordinator/announcements/add" element={<CoordinatorShell permission="coordinator.announcements.create"><AnnouncementCreate /></CoordinatorShell>} />
         <Route path="/coordinator/announcements/manage" element={<CoordinatorShell permission="coordinator.announcements.manage"><AnnouncementManage /></CoordinatorShell>} />
-        <Route path="/coordinator/compiler" element={<Navigate to="/coordinator/library/coding/problems" replace />} />
+        <Route path="/coordinator/compiler" element={<Navigate to="/coordinator/library?type=coding" replace />} />
         <Route path="/coordinator/compiler/create" element={<CoordinatorShell permission="coordinator.compiler.create"><LibraryWorkspace view="create-coding" /></CoordinatorShell>} />
-        <Route path="/coordinator/compiler/problems" element={<CoordinatorShell permission="coordinator.compiler.manage"><LibraryWorkspace view="coding-problems" /></CoordinatorShell>} />
+        <Route path="/coordinator/compiler/problems" element={<Navigate to="/coordinator/library?type=coding" replace />} />
         <Route path="/coordinator/compiler/:id/edit" element={<CoordinatorShell permission="coordinator.compiler.manage"><LibraryWorkspace view="edit-coding" /></CoordinatorShell>} />
         <Route path="/coordinator/compiler/:id/preview" element={<CoordinatorShell permission="coordinator.compiler.manage"><LibraryWorkspace view="preview-coding" /></CoordinatorShell>} />
         <Route path="/coordinator/compiler/analytics" element={<CoordinatorShell permission="coordinator.compiler.analytics"><LibraryWorkspace view="coding-analytics" /></CoordinatorShell>} />

@@ -8,7 +8,6 @@ import {
   ChevronRight,
   CircleDot,
   Code2,
-  FileCode2,
   FilePenLine,
   HelpCircle,
   Library,
@@ -24,7 +23,6 @@ import { api } from '../../utils/api';
 
 const AddQuestionToLibrary = lazy(() => import('../AddQuestionToLibrary'));
 const CreateProblem = lazy(() => import('../compiler/CreateProblem'));
-const ProblemManagement = lazy(() => import('../compiler/ProblemManagement'));
 const CompilerAnalytics = lazy(() => import('../compiler/CompilerAnalytics'));
 const AdminTestCompiler = lazy(() => import('../compiler/AdminTestCompiler'));
 
@@ -35,7 +33,6 @@ const LoadingPanel = () => (
 );
 
 const questionTypes = [
-  { type: 'all', label: 'All questions', description: 'Every reusable question', Icon: Library },
   { type: 'coding', label: 'Coding', description: 'Judge-ready problems', Icon: Code2 },
   { type: 'mcq', label: 'Multiple choice', description: 'Single or multiple answer', Icon: ListChecks },
   { type: 'short', label: 'Short answer', description: 'Written responses', Icon: AlignLeft },
@@ -133,7 +130,7 @@ export default function LibraryWorkspace({ view = 'questions' }) {
   const [compilerProblemCount, setCompilerProblemCount] = useState(null);
   const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
   const libraryRoot = `${rolePrefix}/library`;
-  const selectedType = searchParams.get('type') || 'all';
+  const selectedType = searchParams.get('type') || 'coding';
   const selectedStatus = searchParams.get('status') || '';
   const mode = searchParams.get('mode') || 'library';
   const assessmentSelectionMode = mode === 'select';
@@ -218,7 +215,6 @@ export default function LibraryWorkspace({ view = 'questions' }) {
   }, [mode, searchParams]);
 
   const codingItems = [
-    canManageCoding && { id: 'coding-problems', label: 'Problem management', Icon: FileCode2, to: `${libraryRoot}/coding/problems` },
     canViewCodingAnalytics && { id: 'coding-analytics', label: 'Coding analytics', Icon: BarChart3, to: `${libraryRoot}/coding/analytics` },
   ].filter(Boolean);
 
@@ -275,9 +271,7 @@ export default function LibraryWorkspace({ view = 'questions' }) {
     ? 'Add questions to assessment'
     : assessmentCreationMode
       ? 'Create question for assessment'
-    : view === 'coding-problems'
-      ? 'Problem management'
-      : view === 'coding-analytics'
+    : view === 'coding-analytics'
         ? 'Coding analytics'
         : view === 'questions' && selectedStatus === 'draft'
           ? 'Draft questions'
@@ -294,7 +288,6 @@ export default function LibraryWorkspace({ view = 'questions' }) {
         : 'Create coding problem';
 
   const renderMainContent = () => {
-    if (view === 'coding-problems') return <ProblemManagement />;
     if (view === 'coding-analytics') return <CompilerAnalytics />;
     return <QuestionLibrary embedded onCategoryCountsChange={updateQuestionCounts} />;
   };
@@ -310,7 +303,7 @@ export default function LibraryWorkspace({ view = 'questions' }) {
       <div className="h-[100dvh] min-h-[720px] bg-slate-100 pt-[var(--app-navbar-height,5rem)] font-['Manrope'] dark:bg-gray-950">
         <Suspense fallback={<LoadingPanel />}>
           <AdminTestCompiler
-            backTo={mode === 'assessment' ? editorRoute : (requestedReturnTo || `${libraryRoot}/coding/problems`)}
+            backTo={mode === 'assessment' ? editorRoute : (requestedReturnTo || `${libraryRoot}?type=coding`)}
             editTo={mode === 'assessment' ? editorRoute : `${libraryRoot}/coding/${codingProblemId}/edit`}
             backLabel={mode === 'assessment' ? 'Back to editor' : 'Back to library'}
             editLabel="Edit question"
