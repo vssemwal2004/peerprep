@@ -46,12 +46,27 @@ export function getGraphState(definition, serverGraph) {
   return { status, reason: serverGraph.reason || (status === "empty" ? "No qualifying evidence in this scope." : "") };
 }
 
-export function getVisibleGraphs({ mode, selectedIds, graphs }) {
+const MODE_PRIORITY = {
+  overview: ["activity-trend", "source-mix", "student-ranking", "performance-distribution", "cohort-comparison", "skill-radar", "mastery-funnel"],
+  coding: ["activity-trend", "topic-performance", "difficulty-analysis", "question-conversion", "student-ranking", "performance-distribution"],
+  assessments: ["assessment-score-trend", "assessment-topic-analysis", "performance-distribution", "student-ranking", "activity-trend"],
+  learning: ["learning-hierarchy", "activity-trend", "topic-performance", "topic-student-heatmap", "student-ranking"],
+  students: ["student-ranking", "performance-distribution", "score-effort-scatter", "topic-student-heatmap", "engagement-calendar"],
+};
+
+export function getVisibleGraphs({ mode, selectedIds, graphs, analysisMode = "overview", limit = 4 }) {
   const byId = Object.fromEntries((graphs || []).map((graph) => [graph.id, graph]));
   const serverSelectedIds = (graphs || []).filter((graph) => graph.selected).map((graph) => graph.id);
   const activeIds = mode === "custom" ? selectedIds : serverSelectedIds;
   const candidates = GRAPH_REGISTRY.filter((graph) => activeIds.includes(graph.id));
-  return candidates
+  const items = candidates
     .map((definition) => ({ definition, payload: byId[definition.id], ...getGraphState(definition, byId[definition.id]) }))
     .filter((item) => item.status === "ready" || item.status === "partial");
+  const priority = MODE_PRIORITY[analysisMode] || MODE_PRIORITY.overview;
+  const modeItems = items.filter((item) => priority.includes(item.definition.id));
+  return modeItems.sort((left, right) => {
+    const leftIndex = priority.indexOf(left.definition.id);
+    const rightIndex = priority.indexOf(right.definition.id);
+    return (leftIndex < 0 ? 999 : leftIndex) - (rightIndex < 0 ? 999 : rightIndex);
+  }).slice(0, limit);
 }

@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { attachAdminAnalyticsInvalidation } from '../modules/adminAnalytics/adminAnalytics.invalidation.js';
 
 const progressSchema = new mongoose.Schema({
   studentId: {
@@ -53,5 +54,10 @@ const progressSchema = new mongoose.Schema({
 progressSchema.index({ studentId: 1, topicId: 1 }, { unique: true });
 progressSchema.index({ studentId: 1, subjectId: 1 });
 progressSchema.index({ studentId: 1, semesterId: 1 });
+
+attachAdminAnalyticsInvalidation(progressSchema, {
+  source: 'learning-progress',
+  relevantPaths: ['studentId', 'semesterId', 'subjectId', 'chapterId', 'topicId', 'completed', 'completedAt', 'videoWatchedSeconds', 'videoDuration', 'lastAccessedAt'],
+});
 
 export default mongoose.model('Progress', progressSchema);

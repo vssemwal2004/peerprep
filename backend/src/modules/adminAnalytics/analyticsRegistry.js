@@ -95,11 +95,11 @@ function buildRanking({ students, studentMetrics, query }) {
   return data.length >= 2 ? ready('student-ranking', data, { metric, direction: query.population.rank.direction, labelKey: 'name', valueKey: 'value', valueLabel: `${metric} score` }) : unavailable('student-ranking', 'At least two students with sufficient evidence are required.');
 }
 
-function buildHeatmap({ students, coding, learning }) {
+function buildHeatmap({ students, coding, learning, detailMode = false }) {
   const hasCoding = coding?.topicStats?.size > 0;
   const hasLearning = learning?.perTopic?.size > 0;
   if (hasCoding && hasLearning) return unavailable('topic-student-heatmap', 'Combined heatmap requires an explicit cross-source topic mapping. Select one source.');
-  if (students.length > ANALYTICS_LIMITS.maxHeatmapStudents) return unavailable('topic-student-heatmap', `Heatmap is limited to ${ANALYTICS_LIMITS.maxHeatmapStudents} students. Narrow the population.`);
+  if (!detailMode && students.length > ANALYTICS_LIMITS.maxHeatmapStudents) return unavailable('topic-student-heatmap', `Heatmap is limited to ${ANALYTICS_LIMITS.maxHeatmapStudents} students. Open details or narrow the population.`);
   if (hasCoding) {
     const topics = [...coding.topicStats.values()].sort((a, b) => b.attempts - a.attempts).slice(0, ANALYTICS_LIMITS.maxHeatmapTopics);
     const rows = students.map((student) => ({
@@ -260,26 +260,48 @@ function buildMasteryFunnel({ students, studentMetrics, coding, assessment, lear
   return { ...ready('mastery-funnel', data, { labelKey: 'stage', valueKey: 'value', valueLabel: 'Students' }), note: 'Stages use strict same-student intersections across sources; they describe a cross-source journey, not same-topic causation.' };
 }
 
-export function buildAnalyticsGraphs(context) {
-  const graphMap = {
-    'activity-trend': buildActivityTrend(context),
-    'student-ranking': buildRanking(context),
-    'topic-student-heatmap': buildHeatmap(context),
-    'topic-performance': buildTopicPerformance(context),
-    'difficulty-analysis': buildDifficulty(context),
-    'assessment-topic-analysis': unavailable('assessment-topic-analysis', 'Per-question awarded marks are not persisted; assessment topic scores cannot be calculated safely.'),
-    'skill-radar': buildSkillRadar(context),
-    'mastery-funnel': buildMasteryFunnel(context),
-    'performance-distribution': buildDistribution(context),
-    'cohort-comparison': buildComparison(context),
-    'assessment-score-trend': buildAssessmentTrend(context),
-    'learning-hierarchy': buildLearningHierarchy(context),
-    'question-conversion': buildConversion(context),
-    'engagement-calendar': buildCalendar(context),
-    'score-effort-scatter': buildScatter(context),
-    'source-mix': buildSourceMix(context),
+export function buildAnalyticsGraphs(context, graphIds = GRAPH_IDS) {
+  const builders = {
+    'activity-trend': buildActivityTrend,
+    'student-ranking': buildRanking,
+    'topic-student-heatmap': buildHeatmap,
+    'topic-performance': buildTopicPerformance,
+    'difficulty-analysis': buildDifficulty,
+    'assessment-topic-analysis': () => unavailable('assessment-topic-analysis', 'Per-question awarded marks are not persisted; assessment topic scores cannot be calculated safely.'),
+    'skill-radar': buildSkillRadar,
+    'mastery-funnel': buildMasteryFunnel,
+    'performance-distribution': buildDistribution,
+    'cohort-comparison': buildComparison,
+    'assessment-score-trend': buildAssessmentTrend,
+    'learning-hierarchy': buildLearningHierarchy,
+    'question-conversion': buildConversion,
+    'engagement-calendar': buildCalendar,
+    'score-effort-scatter': buildScatter,
+    'source-mix': buildSourceMix,
   };
-  return GRAPH_IDS.map((id) => graphMap[id]);
+  return [...new Set(graphIds)].filter((id) => GRAPH_IDS.includes(id)).map((id) => builders[id](context));
+}
+
+const MODE_GRAPHS = Object.freeze({
+  overview: ['source-mix', 'activity-trend', 'student-ranking', 'performance-distribution'],
+  students: ['student-ranking', 'performance-distribution', 'score-effort-scatter', 'engagement-calendar'],
+  coding: ['difficulty-analysis', 'question-conversion', 'topic-performance', 'activity-trend'],
+  assessment: ['assessment-score-trend', 'performance-distribution', 'student-ranking', 'activity-trend'],
+  learning: ['learning-hierarchy', 'topic-performance', 'topic-student-heatmap', 'activity-trend'],
+  topics: ['topic-performance', 'topic-student-heatmap', 'difficulty-analysis', 'question-conversion'],
+  engagement: ['activity-trend', 'engagement-calendar', 'source-mix', 'score-effort-scatter'],
+  comparison: ['cohort-comparison', 'student-ranking', 'performance-distribution', 'source-mix'],
+});
+
+export function planAnalyticsGraphIds(query = {}) {
+  if (query.graphs?.mode === 'custom') return [...new Set(query.graphs.ids || [])];
+  let mode = query.analysisType || 'overview';
+  if (mode === 'overview' && query.comparison?.by && query.comparison.by !== 'none') mode = 'comparison';
+  if (mode === 'overview' && (query.sources || []).length === 1) {
+    const source = query.sources[0];
+    mode = source === 'assessment' ? 'assessment' : source;
+  }
+  return (MODE_GRAPHS[mode] || MODE_GRAPHS.overview).slice(0, 4);
 }
 
 export function selectRecommendedGraphs(graphs = [], query = {}) {

@@ -9,10 +9,13 @@ import {
   consistencyScore, FORMULA_VERSION, learningMetrics, percentage, roundMetric,
 } from './analyticsFormulas.js';
 import { resolveAuthorizedCohort, authorizedLearningFilter, authorizedOwnedFilter, authorizedStudentBaseFilter } from './adminAnalytics.authorization.js';
-import { buildAnalyticsGraphs, selectRecommendedGraphs } from './analyticsRegistry.js';
+import { buildAnalyticsGraphs, planAnalyticsGraphIds } from './analyticsRegistry.js';
+import { analyticsAuthorizationScope, withAdminAnalyticsCache } from './adminAnalytics.cache.js';
 import { collectCodingEvidence } from './pipelines/coding.pipeline.js';
 import { collectAssessmentEvidence } from './pipelines/assessment.pipeline.js';
 import { collectLearningEvidence } from './pipelines/learning.pipeline.js';
+import { analyticsPythonCacheVariant, analyzeWithPython } from './analyticsPython.client.js';
+import { buildAnalyticsIntelligence } from './analyticsPython.mapper.js';
 
 function stable(value) {
   if (Array.isArray(value)) return value.map(stable).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
@@ -24,8 +27,13 @@ function stable(value) {
 }
 
 export function fingerprintQuery(query, user) {
-  const scope = user?.role === 'coordinator' ? `${user._id}:${user.coordinatorDataScope}:${user.coordinatorId}` : String(user?.role || 'unknown');
-  return crypto.createHash('sha256').update(JSON.stringify({ query: stable(query), scope, formulaVersion: FORMULA_VERSION })).digest('hex').slice(0, 24);
+  const cacheNeutralQuery = { ...query };
+  delete cacheNeutralQuery.cache;
+  const scope = analyticsAuthorizationScope(user);
+  return crypto.createHash('sha256').update(JSON.stringify({
+    query: stable(cacheNeutralQuery), scope, formulaVersion: FORMULA_VERSION,
+    intelligenceVariant: analyticsPythonCacheVariant(),
+  })).digest('hex').slice(0, 24);
 }
 
 export function buildStudentMetricRows(students, query, coding, assessment, learning) {
@@ -137,17 +145,17 @@ export function buildAnalyticsSummary(students, studentMetrics, coding, assessme
   return cards.filter((card) => card.value !== null);
 }
 
-export async function executeAnalyticsQuery({ user, query }) {
+async function executeAnalyticsQueryUncached({ user, query }) {
   const startedAt = Date.now();
   const { cohort, students, coding, assessment, learning, studentMetrics } = await collectAnalyticsContext({ user, query });
-  let graphs = buildAnalyticsGraphs({ students, studentMetrics, query, coding, assessment, learning });
+  const plannedGraphIds = planAnalyticsGraphIds(query);
+  let graphs = buildAnalyticsGraphs({ students, studentMetrics, query, coding, assessment, learning }, plannedGraphIds);
   const truncatedSources = [coding, assessment, learning].filter((source) => source?.truncated).map((source) => source.source);
   if (truncatedSources.length) {
     graphs = graphs.map((graph) => graph.status === 'ready' ? { ...graph, status: 'partial', reason: `Recent ${truncatedSources.join(', ')} evidence was capped for interactive analysis; use a narrower scope.` } : graph);
   }
-  const recommendedGraphIds = selectRecommendedGraphs(graphs, query);
-  const selected = query.graphs.mode === 'custom' ? query.graphs.ids : recommendedGraphIds;
-  graphs = graphs.map((graph) => ({ ...graph, selected: selected.includes(graph.id) }));
+  const recommendedGraphIds = query.graphs.mode === 'custom' ? [] : plannedGraphIds;
+  graphs = graphs.map((graph) => ({ ...graph, selected: plannedGraphIds.includes(graph.id) }));
   const warnings = [];
   if (cohort.truncated) warnings.push(`Cohort was capped at ${students.length} students. Narrow the population for complete results.`);
   if (truncatedSources.length) warnings.push(`Interactive ${truncatedSources.join(', ')} rows use a recent bounded sample and must not be treated as complete totals.`);
@@ -156,16 +164,21 @@ export async function executeAnalyticsQuery({ user, query }) {
   if (query.assessments.questionTypes.length || query.assessments.sections.length || query.assessments.topics.length) {
     warnings.push('Assessment question, section, and topic filters select whole completed attempts containing those items; persisted scores remain whole-assessment scores.');
   }
+  const queryFingerprint = fingerprintQuery(query, user);
+  const intelligence = await buildAnalyticsIntelligence({
+    students, studentMetrics, query, analysisId: queryFingerprint, client: analyzeWithPython,
+  });
   return {
     meta: {
       formulaVersion: FORMULA_VERSION,
       formula: buildFormulaMetadata(),
       generatedAt: new Date().toISOString(),
       timezone: 'UTC',
-      queryFingerprint: fingerprintQuery(query, user),
+      queryFingerprint,
       cohortSize: students.length,
       baseCohortSize: cohort.baseSize,
       selectionMode: query.population.selectionMode,
+      analysisType: query.analysisType,
       evidence: {
         codingSubmissions: coding?.submissions.length || 0,
         assessmentAttempts: assessment?.submissions.length || 0,
@@ -174,11 +187,24 @@ export async function executeAnalyticsQuery({ user, query }) {
       evidenceCount: (coding?.submissions.length || 0) + (assessment?.submissions.length || 0) + (learning?.progress.length || 0),
       warnings,
       recommendedGraphIds,
+      plannedGraphIds,
       durationMs: Date.now() - startedAt,
     },
     summary: buildAnalyticsSummary(students, studentMetrics, coding, assessment, learning),
     graphs,
+    intelligence,
   };
+}
+
+export async function executeAnalyticsQuery({ user, query }) {
+  const scopeHash = analyticsAuthorizationScope(user);
+  const key = fingerprintQuery(query, user);
+  return withAdminAnalyticsCache({
+    key,
+    scopeHash,
+    bypass: query.cache?.bypass === true,
+    loader: () => executeAnalyticsQueryUncached({ user, query }),
+  });
 }
 
 export async function collectAnalyticsContext({ user, query }) {
@@ -213,7 +239,7 @@ export async function estimateAnalyticsQuery({ user, query }) {
     selectionMode: query.population.selectionMode,
     capped: count > 5000,
     requestedSources: query.sources,
-    requestedGraphs: query.graphs.mode === 'custom' ? query.graphs.ids.length : 'recommended',
+    requestedGraphs: planAnalyticsGraphIds(query).length,
     warnings: count > 5000 ? ['Interactive analysis is capped at 5,000 students; narrow the scope.'] : [],
   };
 }

@@ -2,12 +2,13 @@ import mongoose from 'mongoose';
 import { getCacheHealth, withDeadline } from '../utils/valkey.js';
 import { getQueueHealth } from '../queues/queueManager.js';
 import { getRealtimeHealth } from '../utils/realtime.js';
+import { getAnalyticsPythonDependencyHealth } from '../modules/adminAnalytics/analyticsPython.client.js';
 
 let snapshot = null;
 let expiresAt = 0;
 let pending = null;
 
-export function readinessFromDependencies({ mongo, cache, queue, realtime }, shuttingDown = false) {
+export function readinessFromDependencies({ mongo, cache, queue, realtime, analyticsPython }, shuttingDown = false) {
   // Durable answer writes and submission acceptance depend on Mongo. Cache,
   // Pub/Sub and scoring outages degrade capabilities without dropping saves.
   const ok = Boolean(mongo) && !shuttingDown;
@@ -18,7 +19,9 @@ export function readinessFromDependencies({ mongo, cache, queue, realtime }, shu
     cache,
     queue,
     realtime,
-    degraded: !cache?.ready || !queue?.ready || (realtime?.configured && !realtime.ready),
+    analyticsPython,
+    degraded: !cache?.ready || !queue?.ready || (realtime?.configured && !realtime.ready)
+      || (analyticsPython?.configured && !analyticsPython.ready),
     acceptingAnswers: ok,
   };
 }
@@ -31,7 +34,7 @@ export async function readDependencyHealth() {
         ? withDeadline(mongoose.connection.db.admin().ping({ maxTimeMS: 750 }), 1000, 'Mongo health').then(() => true).catch(() => false)
         : Promise.resolve(false);
       const [mongo, cache, queue] = await Promise.all([mongoCheck, getCacheHealth(), getQueueHealth()]);
-      snapshot = { mongo, cache, queue, realtime: getRealtimeHealth() };
+      snapshot = { mongo, cache, queue, realtime: getRealtimeHealth(), analyticsPython: getAnalyticsPythonDependencyHealth() };
       expiresAt = Date.now() + 3000;
       return snapshot;
     })().finally(() => { pending = null; });

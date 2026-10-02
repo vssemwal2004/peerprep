@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { SUPPORTED_LANGUAGES } from './Problem.js';
+import { attachAdminAnalyticsInvalidation } from '../modules/adminAnalytics/adminAnalytics.invalidation.js';
 
 const submissionCaseResultSchema = new mongoose.Schema({
   index: Number,
@@ -133,6 +134,12 @@ submissionSchema.index({ problem: 1, createdAt: -1 });
 submissionSchema.index({ mode: 1, status: 1, createdAt: -1 });
 submissionSchema.index({ user: 1, mode: 1, createdAt: -1 });
 submissionSchema.index({ assessmentId: 1, mode: 1, createdAt: -1 });
+
+attachAdminAnalyticsInvalidation(submissionSchema, {
+  source: 'coding-submission',
+  relevantPaths: ['user', 'problem', 'assessmentId', 'mode', 'status', 'createdAt'],
+  documentFilter: (doc) => doc.mode === 'submit' && ['AC', 'WA', 'TLE', 'RE', 'CE'].includes(doc.status),
+});
 
 export default mongoose.model('Submission', submissionSchema);
 

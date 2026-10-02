@@ -5,14 +5,22 @@ import { BookOpenCheck, Check, ChevronDown, ClipboardCheck, Code2, Layers3, Load
 import { adminAnalyticsApi } from "../api";
 import { buildDependencies, createDefaultAnalyticsQuery } from "../analyticsQuery";
 import { useAnalyticsOptions } from "../hooks/useAnalyticsOptions";
-import GraphPicker from "./GraphPicker";
+import AnalysisModeSelector from "./AnalysisModeSelector";
 
 const TABS = [
+  { id: "analysis", label: "Analysis" },
   { id: "population", label: "Students" },
   { id: "activity", label: "Evidence" },
   { id: "comparison", label: "Compare" },
-  { id: "graphs", label: "Graphs" },
 ];
+
+const MODE_SOURCES = {
+  overview: ["coding", "assessments", "learning"],
+  coding: ["coding"],
+  assessments: ["assessments"],
+  learning: ["learning"],
+  students: ["coding", "assessments", "learning"],
+};
 
 function SearchMultiSelect({ type, label, value, onChange, query, placeholder = "Search and select…" }) {
   const [open, setOpen] = useState(false);
@@ -61,6 +69,26 @@ function SectionTitle({ children, helper }) {
 
 function Toggle({ label, helper, checked, onChange }) {
   return <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)} className="col-span-full flex items-center justify-between gap-4 rounded-xl border border-slate-200 p-3 text-left dark:border-white/10"><span><span className="block text-xs font-bold text-slate-700 dark:text-slate-200">{label}</span>{helper && <span className="mt-0.5 block text-[11px] leading-4 text-slate-400">{helper}</span>}</span><span aria-hidden="true" className={`relative h-6 w-11 rounded-full transition ${checked ? "bg-sky-600" : "bg-slate-200 dark:bg-slate-700"}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition ${checked ? "left-6" : "left-1"}`} /></span></button>;
+}
+
+function AnalysisTab({ draft, setDraft }) {
+  const changeMode = (analysisType) => setDraft((current) => ({
+    ...current,
+    analysisType,
+    activity: { ...current.activity, sources: MODE_SOURCES[analysisType] || MODE_SOURCES.overview },
+    graphs: { mode: "recommended", selectedIds: [] },
+  }));
+  const selectedLabel = {
+    overview: "overall platform health",
+    coding: "coding practice and problem solving",
+    assessments: "assessment outcomes and participation",
+    learning: "learning progress and completion",
+    students: "student ranking, spread and support needs",
+  }[draft.analysisType] || "overall platform health";
+  return <div className="space-y-4">
+    <AnalysisModeSelector value={draft.analysisType || "overview"} onChange={changeMode} />
+    <div className="rounded-xl border border-sky-100 bg-sky-50/70 p-3 text-[11px] leading-5 text-sky-900 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100"><strong className="block text-xs">Selected view</strong>The dashboard will focus on {selectedLabel}. You can fine-tune students and evidence in the next tabs.</div>
+  </div>;
 }
 
 function PopulationTab({ draft, setDraft }) {
@@ -130,8 +158,8 @@ function ComparisonTab({ draft, setDraft }) {
   return <div className="space-y-4"><SectionTitle helper="Comparison groups are capped by the server to keep every chart legible. Scores use normalized percentages so unlike assessments and modules remain comparable.">Comparison and scoring</SectionTitle><SelectField label="Compare by" value={draft.comparison.compareBy} onChange={(value) => update("compareBy", value)} options={["none", "semester", "branch", "course", "group", "college", "uploadBatch", "assessment", "learningSubject", "topic"].map((value) => ({ value, label: value === "none" ? "No comparison" : value.replace(/([A-Z])/g, " $1") }))} /><SelectField label="Time grain" value={draft.comparison.timeGrain} onChange={(value) => update("timeGrain", value)} options={["auto", "day", "week", "month"].map((value) => ({ value, label: value[0].toUpperCase() + value.slice(1) }))} /></div>;
 }
 
-export default function FilterDrawer({ open, query, serverGraphs, onClose, onApply }) {
-  const [activeTab, setActiveTab] = useState("population");
+export default function FilterDrawer({ open, query, onClose, onApply }) {
+  const [activeTab, setActiveTab] = useState("analysis");
   const [draft, setDraft] = useState(query);
   const [estimate, setEstimate] = useState(null);
   const [estimating, setEstimating] = useState(false);
@@ -161,13 +189,15 @@ export default function FilterDrawer({ open, query, serverGraphs, onClose, onApp
     const timer = setTimeout(async () => { setEstimating(true); try { setEstimate(await adminAnalyticsApi.estimate(draft, controller.signal)); } catch { setEstimate(null); } finally { setEstimating(false); } }, 500);
     return () => { clearTimeout(timer); controller.abort(); };
   }, [draft, open]);
-  const reset = () => setDraft(createDefaultAnalyticsQuery());
+  const reset = () => {
+    setDraft(createDefaultAnalyticsQuery());
+  };
   return createPortal(<AnimatePresence>{open && <div className="fixed inset-0 z-[100]">
     <motion.button type="button" aria-label="Close filters" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="absolute inset-0 bg-slate-950/45 backdrop-blur-[2px]" />
-    <motion.aside ref={panelRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="analytics-filter-title" initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={{ type: "spring", damping: 30, stiffness: 300 }} className="absolute inset-y-0 right-0 flex w-full flex-col bg-slate-50 shadow-2xl outline-none dark:bg-slate-950 sm:max-w-3xl">
+    <motion.aside ref={panelRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="analytics-filter-title" initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={{ type: "spring", damping: 30, stiffness: 300 }} className="absolute inset-y-0 right-0 flex w-full flex-col bg-slate-50 shadow-2xl outline-none dark:bg-slate-950 sm:max-w-[720px]">
       <div className="border-b border-slate-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-slate-950 sm:px-5"><div className="flex items-center justify-between gap-4"><div><div className="flex items-center gap-2"><SlidersHorizontal className="h-4 w-4 text-sky-600" /><h2 id="analytics-filter-title" className="text-base font-bold text-slate-950 dark:text-white">Build analysis scope</h2></div><p className="mt-0.5 text-[11px] text-slate-400">Choose the audience, evidence and visualizations. Categories combine with AND logic.</p></div><button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10"><X className="h-4 w-4" /></button></div>
         <nav role="tablist" aria-label="Analytics filter categories" className="mt-3 flex gap-1 overflow-x-auto rounded-lg bg-slate-100 p-1 dark:bg-white/5">{TABS.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} onClick={() => setActiveTab(tab.id)} className={`min-w-max flex-1 rounded-md px-3 py-2 text-[11px] font-bold transition ${activeTab === tab.id ? "bg-white text-sky-700 shadow-sm dark:bg-slate-800 dark:text-sky-300" : "text-slate-500"}`}>{tab.label}</button>)}</nav></div>
-      <div className="flex-1 overflow-y-auto p-4 sm:p-5">{activeTab === "population" && <PopulationTab draft={draft} setDraft={setDraft} />}{activeTab === "activity" && <ActivityTab draft={draft} setDraft={setDraft} />}{activeTab === "comparison" && <ComparisonTab draft={draft} setDraft={setDraft} />}{activeTab === "graphs" && <GraphPicker value={draft.graphs} onChange={(graphs) => setDraft((current) => ({ ...current, graphs }))} serverGraphs={serverGraphs} />}</div>
+      <div className="flex-1 overflow-y-auto p-4 sm:p-5">{activeTab === "analysis" && <AnalysisTab draft={draft} setDraft={setDraft} />}{activeTab === "population" && <PopulationTab draft={draft} setDraft={setDraft} />}{activeTab === "activity" && <ActivityTab draft={draft} setDraft={setDraft} />}{activeTab === "comparison" && <ComparisonTab draft={draft} setDraft={setDraft} />}</div>
       <footer className="border-t border-slate-200 bg-white p-3.5 dark:border-white/10 dark:bg-slate-950 sm:px-5"><div className="mb-2.5 flex items-center justify-between gap-3 text-[11px]"><span className="text-slate-500">{estimating ? "Estimating scope…" : estimate ? <><strong className="text-slate-800 dark:text-slate-200">{Number(estimate.cohortSize).toLocaleString()} students</strong>{estimate.baseCohortSize !== estimate.cohortSize ? ` selected from ${Number(estimate.baseCohortSize).toLocaleString()}` : ""}</> : "Scope estimate appears when available"}</span>{(estimate?.warnings?.[0] || estimate?.warning) && <span className="font-bold text-amber-600">{estimate.warnings?.[0] || estimate.warning}</span>}</div><div className="flex items-center justify-between gap-3"><button type="button" onClick={reset} className="inline-flex h-10 items-center gap-2 rounded-lg px-3 text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10"><RotateCcw className="h-3.5 w-3.5" /> Reset</button><div className="flex gap-2"><button type="button" onClick={onClose} className="h-10 rounded-lg border border-slate-200 px-4 text-xs font-bold text-slate-600 dark:border-white/10 dark:text-slate-300">Cancel</button><button type="button" onClick={() => onApply(draft)} className="h-10 rounded-lg bg-sky-600 px-5 text-xs font-bold text-white shadow-md shadow-sky-600/20 hover:bg-sky-500">Apply analysis</button></div></div></footer>
     </motion.aside>
   </div>}</AnimatePresence>, document.body);

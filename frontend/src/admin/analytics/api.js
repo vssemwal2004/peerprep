@@ -3,12 +3,12 @@ import { serializeAnalyticsQuery } from "./analyticsQuery";
 
 const API_BASE = getApiBase();
 
-async function analyticsRequest(path, { method = "GET", body, signal } = {}) {
+async function analyticsRequest(path, { method = "GET", body, signal, headers } = {}) {
   const response = await fetch(`${API_BASE}/admin/analytics${path}`, {
     method,
     credentials: "include",
     signal,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
+    headers: { ...(body ? { "Content-Type": "application/json" } : {}), ...headers },
     body: body ? JSON.stringify(body) : undefined,
   });
   const payload = await response.json().catch(() => ({}));
@@ -47,7 +47,7 @@ async function analyticsDownload(path, { body, signal } = {}) {
 }
 
 export const adminAnalyticsApi = {
-  query: (query, signal) => analyticsRequest("/query", { method: "POST", body: serializeAnalyticsQuery(query), signal }),
+  query: (query, signal, refresh = false) => analyticsRequest("/query", { method: "POST", body: { ...serializeAnalyticsQuery(query), refresh }, headers: refresh ? { "Cache-Control": "no-cache", "X-PeerPrep-Cache-Bypass": "true" } : undefined, signal }),
   estimate: (query, signal) => analyticsRequest("/estimate", { method: "POST", body: serializeAnalyticsQuery(query), signal }),
   options: ({ type, q = "", cursor = "", dependencies = {} }, signal) => {
     const typeMap = {
@@ -58,5 +58,11 @@ export const adminAnalyticsApi = {
     if (cursor) params.set("cursor", cursor);
     return analyticsRequest(`/options?${params}`, { signal });
   },
+  graphDetails: (graphId, { query, page = 1, limit = 25, search = "", sort = null, signal } = {}) =>
+    analyticsRequest(`/graphs/${encodeURIComponent(graphId)}/details`, {
+      method: "POST",
+      body: { query: serializeAnalyticsQuery(query), page, limit, search, sort },
+      signal,
+    }),
   createExport: (request, signal) => analyticsDownload("/exports", { body: { ...request, query: serializeAnalyticsQuery(request.query) }, signal }),
 };

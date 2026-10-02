@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { attachAdminAnalyticsInvalidation } from '../modules/adminAnalytics/adminAnalytics.invalidation.js';
 
 const answerSchema = new mongoose.Schema({
   sectionIndex: { type: Number, required: true },
@@ -116,6 +117,12 @@ assessmentSubmissionSchema.index({ studentId: 1, status: 1, activeSessionHeartbe
 assessmentSubmissionSchema.index({ status: 1, deadlineAt: 1, _id: 1 });
 assessmentSubmissionSchema.index({ status: 1, _id: 1 });
 assessmentSubmissionSchema.index({ 'pendingWork.status': 1, 'pendingWork.nextAttemptAt': 1, 'pendingWork.leaseUntil': 1 });
+
+attachAdminAnalyticsInvalidation(assessmentSubmissionSchema, {
+  source: 'assessment-submission',
+  relevantPaths: ['assessmentId', 'studentId', 'status', 'evaluationStatus', 'score', 'maxMarks', 'submittedAt', 'deliverySections', 'assignedSetNumber'],
+  documentFilter: (doc) => ['submitted', 'violation', 'expired'].includes(doc.status),
+});
 
 export default mongoose.model('AssessmentSubmission', assessmentSubmissionSchema);
 

@@ -5,6 +5,7 @@ export const ARRAY_FILTER_KEYS = [
 ];
 
 export const createDefaultAnalyticsQuery = () => ({
+  analysisType: "overview",
   population: {
     studentIds: [], semesters: [], groups: [], branches: [], courses: [], colleges: [], uploadBatchIds: [],
     status: [], selectionMode: "all", rankSegment: "top", rankN: 25, rankMetric: "overall", minimumEvidence: true,
@@ -81,6 +82,7 @@ export function buildDependencies(query, type) {
 
 export function serializeAnalyticsQuery(query) {
   const next = structuredClone(query);
+  next.analysisType = next.analysisType === "assessments" ? "assessment" : next.analysisType;
   next.activity.sources = (next.activity.sources || []).map((source) => source === "assessments" ? "assessment" : source);
   if (next.activity.datePreset !== "custom" && /^(7|30|90|180|365)d$/.test(next.activity.datePreset || "")) {
     const days = Number(next.activity.datePreset.slice(0, -1));

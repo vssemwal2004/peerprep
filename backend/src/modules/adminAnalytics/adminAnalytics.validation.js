@@ -25,6 +25,13 @@ const SOURCE_VALUES = new Set(['coding', 'assessment', 'learning']);
 const COMPARISONS = new Set(['none', 'semester', 'branch', 'course', 'group', 'college', 'uploadBatch', 'assessment', 'learningSubject', 'topic']);
 const RANK_METRICS = new Set(['overall', 'coding', 'assessment', 'learning', 'consistency']);
 const POPULATION_MODES = new Set(['all', 'selected', 'top', 'bottom', 'coding-active', 'assessment-active', 'learning-active', 'multi-source']);
+export const ANALYSIS_TYPES = Object.freeze(['overview', 'students', 'coding', 'assessment', 'learning', 'topics', 'engagement', 'comparison']);
+const ANALYSIS_TYPE_ALIASES = Object.freeze({
+  overall: 'overview', dashboard: 'overview', student: 'students', 'student-performance': 'students',
+  assessments: 'assessment', 'assessment-performance': 'assessment', 'coding-performance': 'coding',
+  'learning-progress': 'learning', topic: 'topics', 'topic-performance': 'topics', activity: 'engagement',
+  compare: 'comparison', cohorts: 'comparison',
+});
 
 function uniqueStrings(value, max = ANALYTICS_LIMITS.maxIdsPerFilter) {
   const values = Array.isArray(value) ? value : (value === undefined || value === null || value === '' ? [] : [value]);
@@ -94,7 +101,11 @@ export function validateAnalyticsQuery(input = {}, { estimate = false } = {}) {
   if (!['recommended', 'custom'].includes(graphMode)) throw new HttpError(400, 'Graph mode must be recommended or custom.');
   const graphIds = uniqueStrings(input.graphs?.selectedIds || input.graphs?.ids || input.graphIds, ANALYTICS_LIMITS.maxGraphs);
   if (graphIds.some((id) => !GRAPH_IDS.includes(id))) throw new HttpError(400, 'Unknown graph selection.');
+  if (graphMode === 'custom' && graphIds.length > 4) throw new HttpError(400, 'Custom analytics queries support at most 4 graphs.');
   if (graphMode === 'custom' && !estimate && !graphIds.length) throw new HttpError(400, 'Custom graph mode requires at least one graph.');
+  const rawAnalysisType = String(input.analysisType || input.analysis?.type || input.mode || 'overview');
+  const analysisType = ANALYSIS_TYPE_ALIASES[rawAnalysisType] || rawAnalysisType;
+  if (!ANALYSIS_TYPES.includes(analysisType)) throw new HttpError(400, 'Unsupported analytics analysis type.');
 
   const rawSemesters = uniqueStrings(population.semesters || input.semesters);
   const semesters = rawSemesters.map(Number);
@@ -110,6 +121,7 @@ export function validateAnalyticsQuery(input = {}, { estimate = false } = {}) {
   const setNumbers = uniqueStrings(activity.setNumbers || assessments.setNumbers).map(Number);
   if (setNumbers.some((value) => !Number.isInteger(value) || value < 1 || value > 8)) throw new HttpError(400, 'Assessment set numbers must be integers from 1 to 8.');
   return {
+    analysisType,
     sources: normalizeSources(input),
     population: {
       studentIds: objectIds(population.studentIds || input.studentIds, 'student ID'),
@@ -159,6 +171,7 @@ export function validateAnalyticsQuery(input = {}, { estimate = false } = {}) {
     timeGrain: rawTimeGrain,
     scoreMode: (input.comparison?.scoreMode || input.scoreMode) === 'absolute' ? 'absolute' : 'percentage',
     graphs: { mode: graphMode, ids: graphIds },
+    cache: { bypass: input.refresh === true || input.cache?.bypass === true },
   };
 }
 

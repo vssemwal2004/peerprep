@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcrypt';
+import { attachAdminAnalyticsInvalidation } from '../modules/adminAnalytics/adminAnalytics.invalidation.js';
 
 const userSchema = new mongoose.Schema({
   role: { type: String, enum: ['admin', 'student', 'coordinator'], default: 'student' },
@@ -72,6 +73,12 @@ const userSchema = new mongoose.Schema({
 userSchema.index({ role: 1, semester: 1, createdAt: 1 });
 userSchema.index({ role: 1, teacherIds: 1, semester: 1, createdAt: 1 });
 userSchema.index({ role: 1, createdAt: -1 });
+
+attachAdminAnalyticsInvalidation(userSchema, {
+  source: 'analytics-cohort',
+  relevantPaths: ['role', 'name', 'email', 'studentId', 'teacherIds', 'course', 'branch', 'college', 'semester', 'group', 'uploadBatchIds', 'isActive'],
+  documentFilter: (doc) => doc.role === 'student',
+});
 
 userSchema.methods.verifyPassword = async function (pw) {
   return bcrypt.compare(pw, this.passwordHash);

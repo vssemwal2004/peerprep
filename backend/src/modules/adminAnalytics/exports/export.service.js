@@ -102,7 +102,7 @@ function exportWarnings(context, query) {
 export async function createAnalyticsExport({ user, query, exportOptions }) {
   const context = await collectAnalyticsContext({ user, query });
   const rows = sortRows(buildRows(context, query), exportOptions.sort).slice(0, 5000);
-  const allGraphs = buildAnalyticsGraphs({ ...context, query });
+  const allGraphs = buildAnalyticsGraphs({ ...context, query }, exportOptions.graphIds);
   const reportAllowList = REPORT_GRAPHS[exportOptions.reportType];
   const requested = new Set(exportOptions.graphIds);
   const charts = exportOptions.includeCharts

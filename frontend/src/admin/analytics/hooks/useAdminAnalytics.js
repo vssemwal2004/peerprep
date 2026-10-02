@@ -16,7 +16,7 @@ export function useAdminAnalytics(initialQuery) {
     refresh ? setRefreshing(true) : setLoading(true);
     setError(null);
     try {
-      const result = await adminAnalyticsApi.query(nextQuery, controller.signal);
+      const result = await adminAnalyticsApi.query(nextQuery, controller.signal, refresh);
       setData(result);
       setQuery(nextQuery);
       return result;
@@ -38,4 +38,3 @@ export function useAdminAnalytics(initialQuery) {
 
   return { query, data, loading, refreshing, error, apply: run, refresh: () => run(query, { refresh: true }) };
 }
-
