@@ -343,8 +343,8 @@ export default function AdminOverview() {
     { label: 'Assessments', value: formatNumber(model.publishedAssessments), helper: `${model.draftAssessments} drafts`, Icon: ClipboardList, tone: 'amber', to: '/admin/assessment' },
     { label: 'Submissions', value: formatNumber(model.assessmentAttempts), helper: model.averageAssessmentScore == null ? 'Awaiting results' : `${Math.round(model.averageAssessmentScore)}% average`, Icon: BarChart3, tone: 'indigo', to: '/admin/assessment/reports' },
     { label: 'Interviews', value: formatNumber(model.upcomingEvents), helper: `${model.liveEvents} live now`, Icon: CalendarDays, tone: 'emerald', to: '/admin/interviews/scheduled' },
-    { label: 'Active coders', value: formatNumber(model.activeCoders), helper: `${model.codingProblemsCovered} problems`, Icon: Code2, tone: 'rose', to: '/admin/library/coding/analytics' },
-    { label: 'Code acceptance', value: `${Math.round(model.codingAcceptance)}%`, helper: `${formatNumber(model.codingAttempts)} attempts`, Icon: FileCode2, tone: 'sky', to: '/admin/library/coding/analytics' },
+    { label: 'Active coders', value: formatNumber(model.activeCoders), helper: `${model.codingProblemsCovered} problems`, Icon: Code2, tone: 'rose', to: '/admin/analysis?source=coding' },
+    { label: 'Code acceptance', value: `${Math.round(model.codingAcceptance)}%`, helper: `${formatNumber(model.codingAttempts)} attempts`, Icon: FileCode2, tone: 'sky', to: '/admin/analysis?source=coding' },
   ];
 
   const upcomingSchedule = dashboard.events
@@ -380,7 +380,7 @@ export default function AdminOverview() {
     {
       label: model.totalProblems ? 'Inspect coding analytics' : 'Add coding problem',
       detail: model.totalProblems ? `${model.totalProblems} problems in the coding catalog` : 'Start the controlled coding workspace',
-      to: model.totalProblems ? '/admin/library/coding/analytics' : '/admin/library/coding/create',
+      to: model.totalProblems ? '/admin/analysis?source=coding' : '/admin/library/coding/create',
       Icon: FileCode2,
       tone: 'rose',
     },
@@ -446,7 +446,7 @@ export default function AdminOverview() {
             </div>
           </Panel>
 
-          <Panel title="Coding performance" Icon={Code2} action={<Link to="/admin/library/coding/analytics" className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">Open analytics</Link>} className="xl:col-span-5">
+          <Panel title="Coding performance" Icon={Code2} action={<Link to="/admin/analysis?source=coding" className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">Open analysis</Link>} className="xl:col-span-5">
             <DifficultyChart data={codingDifficulty} loading={secondaryLoading} />
             <div className="mt-4 grid grid-cols-3 divide-x divide-slate-200 dark:divide-gray-700"><div><b className="block text-lg text-slate-950 dark:text-white">{model.activeCoders}</b><span className="text-[10px] text-slate-500">Active students</span></div><div className="pl-3"><b className="block text-lg text-slate-950 dark:text-white">{model.codingAcceptance.toFixed(0)}%</b><span className="text-[10px] text-slate-500">Acceptance</span></div><div className="pl-3"><b className="block text-lg text-slate-950 dark:text-white">{formatNumber(model.codingAttempts)}</b><span className="text-[10px] text-slate-500">Attempts</span></div></div>
           </Panel>

@@ -144,7 +144,10 @@ export default function LibraryWorkspace({ view = 'questions' }) {
   const canCreateGeneral = hasPermission(user, 'coordinator.library.create');
   const canCreateCoding = hasPermission(user, 'coordinator.compiler.create');
   const canManageCoding = hasPermission(user, 'coordinator.compiler.manage');
-  const canViewCodingAnalytics = hasPermission(user, 'coordinator.compiler.analytics');
+  // Admin analytics now lives in the dedicated top-level Analysis workspace.
+  // Keep the legacy coding-only entry for coordinators until their V2 scope ships.
+  const canViewCodingAnalytics = rolePrefix === '/coordinator'
+    && hasPermission(user, 'coordinator.compiler.analytics');
   const isPreviewPage = view === 'preview-coding';
   const isDrawerView = ['create-question', 'edit-question', 'create-coding', 'edit-coding'].includes(view);
 
@@ -215,7 +218,9 @@ export default function LibraryWorkspace({ view = 'questions' }) {
   }, [mode, searchParams]);
 
   const codingItems = [
-    canViewCodingAnalytics && { id: 'coding-analytics', label: 'Coding analytics', Icon: BarChart3, to: `${libraryRoot}/coding/analytics` },
+    rolePrefix === '/admin'
+      ? { id: 'admin-analysis', label: 'Analysis', Icon: BarChart3, to: '/admin/analysis' }
+      : canViewCodingAnalytics && { id: 'coding-analytics', label: 'Coding analytics', Icon: BarChart3, to: `${libraryRoot}/coding/analytics` },
   ].filter(Boolean);
 
   const editorQuery = searchParams.toString();
@@ -347,7 +352,9 @@ export default function LibraryWorkspace({ view = 'questions' }) {
             </div>}
 
             {codingItems.length > 0 && <div className="mt-5 border-t border-slate-200 pt-3 dark:border-gray-800">
-              <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Coding workspace</p>
+              <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                {rolePrefix === '/admin' ? 'Insights' : 'Coding workspace'}
+              </p>
               <nav className="space-y-1">
                 {codingItems.map(({ id, label, Icon, to }) => (
                   <Link key={id} to={to} className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${view === id ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300' : 'text-slate-600 hover:bg-white hover:text-slate-950 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'}`}>

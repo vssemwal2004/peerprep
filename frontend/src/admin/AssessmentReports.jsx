@@ -15,7 +15,6 @@ import {
 } from './reports/ReportComponents';
 import ReportDetailDrawer from './reports/ReportDetailDrawer';
 import ReportViolationModal from './reports/ReportViolationModal';
-import CompilerAnalytics from './compiler/CompilerAnalytics';
 
 const PAGE_SIZES = [25, 50, 100, 250];
 
@@ -1315,7 +1314,13 @@ export default function AssessmentReports() {
                 const Icon = tab.icon;
                 const active = activeTab === tab.id;
                 return (
-                  <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`relative flex items-center gap-1.5 border-b-2 px-3 py-3 text-xs font-semibold transition-colors ${active ? 'border-sky-600 text-sky-700 dark:border-sky-400 dark:text-sky-300' : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-gray-400 dark:hover:text-gray-300'}`}>
+                  <button key={tab.id} onClick={() => {
+                    if (tab.id === 'analytics') {
+                      navigate(`/admin/analysis${selectedAssessmentId ? `?assessmentIds=${encodeURIComponent(selectedAssessmentId)}` : ''}`);
+                      return;
+                    }
+                    setActiveTab(tab.id);
+                  }} className={`relative flex items-center gap-1.5 border-b-2 px-3 py-3 text-xs font-semibold transition-colors ${active ? 'border-sky-600 text-sky-700 dark:border-sky-400 dark:text-sky-300' : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-gray-400 dark:hover:text-gray-300'}`}>
                     <Icon className="h-3.5 w-3.5" />
                     {tab.label}
                     {tab.id === 'violations' && (summary?.violationCount || 0) > 0 && (
@@ -1524,14 +1529,6 @@ export default function AssessmentReports() {
             {activeChips.map((chip) => <FilterChip key={chip.key} label={chip.label} onRemove={chip.clear} />)}
             <button onClick={clearFilters} className="text-[11px] font-medium text-sky-600 hover:underline dark:text-sky-400">Clear all</button>
           </div>
-        )}
-
-        {activeTab === 'analytics' && (
-          <CompilerAnalytics
-            assessmentId={selectedAssessmentId}
-            assessmentTitle={selectedAssessment?.title || ''}
-            embedded
-          />
         )}
 
         <div className={activeTab === 'analytics' || (activeTab === 'overview' && !selectedAssessment) ? 'hidden' : activeTab === 'candidates' ? 'flex min-h-0 flex-1 flex-col' : 'block'}>

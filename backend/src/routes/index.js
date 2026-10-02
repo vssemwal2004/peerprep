@@ -29,6 +29,7 @@ import aiInterviewStudentRoutes from './aiInterviewStudent.js';
 import avatarRoutes from './avatars.js';
 import bulkUploadRoutes from './bulkUploads.js';
 import problemListRoutes from './problemLists.js';
+import adminAnalyticsRoutes from '../modules/adminAnalytics/adminAnalytics.routes.js';
 import { requireAuth, requireFullStudent } from '../middleware/auth.js';
 
 const router = Router();
@@ -50,6 +51,7 @@ router.use('/activity', requireAuth, requireFullStudent, activityRoutes);
 // Compiler routes perform their own student scope checks. Assessment-only
 // students must be able to execute coding questions inside an assigned test.
 router.use('/compiler', requireAuth, compilerRoutes);
+router.use('/admin/analytics', adminAnalyticsRoutes);
 router.use('/problem-lists', problemListRoutes);
 router.use('/admin', adminAssessmentRoutes);
 router.use('/student', studentAssessmentRoutes);

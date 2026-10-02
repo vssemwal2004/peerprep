@@ -7,6 +7,12 @@ function cleanIdentifier(value, fallback) {
   return /^[A-Za-z_$][\w$]*$/.test(normalized) ? normalized : fallback;
 }
 
+function stripCStyleComments(value) {
+  return String(value || '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/[^\r\n]*/g, '');
+}
+
 function pythonRunner(functionContract) {
   const methodName = cleanIdentifier(functionContract?.methodName, 'solve');
   const className = cleanIdentifier(functionContract?.className, 'Solution');
@@ -147,14 +153,14 @@ interface ObjectConstructor { entries(value: any): any[]; values(value: any): an
 // PeerPrep private runner. This block is never returned to students.
 function __ppTree(values${type(': any[]')})${type(': any')} {
   if (!Array.isArray(values) || values.length === 0) return null;
-  const root${type(': any')} = { val: values[0], left: null, right: null };
+  const root${type(': any')} = new TreeNode(values[0]);
   const queue${type(': any[]')} = [root];
   let index = 1;
   while (queue.length && index < values.length) {
     const node = queue.shift();
-    if (index < values.length && values[index] !== null) { node.left = { val: values[index], left: null, right: null }; queue.push(node.left); }
+    if (index < values.length && values[index] !== null) { node.left = new TreeNode(values[index]); queue.push(node.left); }
     index += 1;
-    if (index < values.length && values[index] !== null) { node.right = { val: values[index], left: null, right: null }; queue.push(node.right); }
+    if (index < values.length && values[index] !== null) { node.right = new TreeNode(values[index]); queue.push(node.right); }
     index += 1;
   }
   return root;
@@ -164,7 +170,7 @@ function __ppList(values${type(': any[]')})${type(': any')} {
   let head${type(': any')} = null;
   let tail${type(': any')} = null;
   for (const value of Array.isArray(values) ? values : []) {
-    const node${type(': any')} = { val: value, next: null };
+    const node${type(': any')} = new ListNode(value);
     if (tail) tail.next = node; else head = node;
     tail = node;
   }
@@ -433,34 +439,64 @@ func main() {
 }
 
 function cppRunner(functionContract, studentTemplate) {
-  const templateMethod = String(studentTemplate || '').match(/\b([A-Za-z_]\w*)\s*\([^;{}]*\)\s*\{/g)?.pop()?.match(/([A-Za-z_]\w*)\s*\(/)?.[1];
-  const methodName = cleanIdentifier(templateMethod || functionContract?.methodName, 'solve');
+  const methodName = cleanIdentifier(functionContract?.methodName, 'solve');
   const className = cleanIdentifier(functionContract?.className, 'Solution');
   const parameters = functionContract?.parameters || [];
   const declarations = parameters.map((_, index) => `auto __ppArg${index} = {{ARG_${index}}};`).join('\n  ');
   const argumentsList = parameters.map((_, index) => `__ppArg${index}`).join(', ');
   const classBased = new RegExp(`\\bclass\\s+${className}\\b`).test(String(studentTemplate || ''));
   const call = classBased ? `${className}().${methodName}(${argumentsList})` : `${methodName}(${argumentsList})`;
+  const contractTypes = [
+    ...parameters.map((parameter) => String(parameter?.type || '').toLowerCase()),
+    String(functionContract?.returnType || '').toLowerCase(),
+  ];
+  const needsTreeNode = contractTypes.some((type) => type.includes('tree-node') || type.includes('treenode'));
+  const needsListNode = contractTypes.some((type) => type.includes('list-node') || type.includes('listnode'));
+  const uncommentedTemplate = stripCStyleComments(studentTemplate);
+  const declaresTreeNode = /\b(?:struct|class)\s+TreeNode\b/.test(uncommentedTemplate);
+  const declaresListNode = /\b(?:struct|class)\s+ListNode\b/.test(uncommentedTemplate);
+  const nodeDefinitions = [
+    needsTreeNode && !declaresTreeNode
+      ? 'struct TreeNode { int val; TreeNode *left; TreeNode *right; TreeNode(int value = 0, TreeNode *l = nullptr, TreeNode *r = nullptr) : val(value), left(l), right(r) {} };'
+      : '',
+    needsListNode && !declaresListNode
+      ? 'struct ListNode { int val; ListNode *next; ListNode(int value = 0, ListNode *n = nullptr) : val(value), next(n) {} };'
+      : '',
+  ].filter(Boolean).join('\n');
+  const nodeBuilders = [
+    needsTreeNode
+      ? `TreeNode* __ppBuildTree(const vector<long long>& values) {
+  if (values.empty() || values[0] == LLONG_MIN) return nullptr;
+  auto *root = new TreeNode((int)values[0]); queue<TreeNode*> nodes; nodes.push(root); size_t index = 1;
+  while (!nodes.empty() && index < values.size()) { auto *node = nodes.front(); nodes.pop(); if (index < values.size() && values[index] != LLONG_MIN) { node->left = new TreeNode((int)values[index]); nodes.push(node->left); } ++index; if (index < values.size() && values[index] != LLONG_MIN) { node->right = new TreeNode((int)values[index]); nodes.push(node->right); } ++index; }
+  return root;
+}`
+      : '',
+    needsListNode
+      ? 'ListNode* __ppBuildList(const vector<int>& values) { ListNode dummy; auto *tail = &dummy; for (int value : values) { tail->next = new ListNode(value); tail = tail->next; } return dummy.next; }'
+      : '',
+  ].filter(Boolean).join('\n');
   const outputMode = functionContract?.outputMode === 'parameter' ? 'parameter' : 'return';
   const outputIndex = Math.max(0, Number(functionContract?.outputParameterIndex || 0));
   const invocation = outputMode === 'parameter'
     ? `${call};\n  cout << __ppTop(__ppArg${outputIndex});`
     : `auto __ppResult = ${call};\n  cout << __ppTop(__ppResult);`;
+  const nodeFormatters = [
+    needsListNode
+      ? 'string __ppFormat(ListNode *head, bool = true) { if (!head) return "None"; vector<int> values; unordered_set<ListNode*> seen; while (head && !seen.count(head)) { seen.insert(head); values.push_back(head->val); head = head->next; } return __ppFormat(values); }'
+      : '',
+    needsTreeNode
+      ? 'string __ppFormat(TreeNode *root, bool = true) { if (!root) return "None"; vector<string> values; queue<TreeNode*> nodes; nodes.push(root); while (!nodes.empty()) { auto *node = nodes.front(); nodes.pop(); if (!node) { values.push_back("None"); continue; } values.push_back(to_string(node->val)); nodes.push(node->left); nodes.push(node->right); } while (!values.empty() && values.back() == "None") values.pop_back(); string output = "["; for (size_t index = 0; index < values.size(); ++index) { if (index) output += ", "; output += values[index]; } return output + "]"; }'
+      : '',
+  ].filter(Boolean).join('\n');
   return `#include <bits/stdc++.h>
 using namespace std;
 
-struct TreeNode { int val; TreeNode *left; TreeNode *right; TreeNode(int value = 0, TreeNode *l = nullptr, TreeNode *r = nullptr) : val(value), left(l), right(r) {} };
-struct ListNode { int val; ListNode *next; ListNode(int value = 0, ListNode *n = nullptr) : val(value), next(n) {} };
-
-TreeNode* __ppBuildTree(const vector<long long>& values) {
-  if (values.empty() || values[0] == LLONG_MIN) return nullptr;
-  auto *root = new TreeNode((int)values[0]); queue<TreeNode*> nodes; nodes.push(root); size_t index = 1;
-  while (!nodes.empty() && index < values.size()) { auto *node = nodes.front(); nodes.pop(); if (index < values.size() && values[index] != LLONG_MIN) { node->left = new TreeNode((int)values[index]); nodes.push(node->left); } ++index; if (index < values.size() && values[index] != LLONG_MIN) { node->right = new TreeNode((int)values[index]); nodes.push(node->right); } ++index; }
-  return root;
-}
-ListNode* __ppBuildList(const vector<int>& values) { ListNode dummy; auto *tail = &dummy; for (int value : values) { tail->next = new ListNode(value); tail = tail->next; } return dummy.next; }
+${nodeDefinitions}
 
 ${USER_CODE_PLACEHOLDER}
+
+${nodeBuilders}
 
 // PeerPrep private runner. This block is never returned to students.
 string __ppEscape(const string& value) { string output; for (char ch : value) { if (ch == 92 || ch == 39) output += char(92); output += ch; } return output; }
@@ -471,8 +507,7 @@ string __ppFormat(nullptr_t, bool = true) { return "None"; }
 template <typename T, typename enable_if<is_arithmetic<T>::value && !is_same<T, bool>::value && !is_same<T, char>::value, int>::type = 0>
 string __ppFormat(const T& value, bool = true) { ostringstream output; output << value; return output.str(); }
 template <typename T> string __ppFormat(const vector<T>& values, bool = true) { string output = "["; for (size_t index = 0; index < values.size(); ++index) { if (index) output += ", "; output += __ppFormat(values[index], true); } return output + "]"; }
-string __ppFormat(ListNode *head, bool = true) { if (!head) return "None"; vector<int> values; unordered_set<ListNode*> seen; while (head && !seen.count(head)) { seen.insert(head); values.push_back(head->val); head = head->next; } return __ppFormat(values); }
-string __ppFormat(TreeNode *root, bool = true) { if (!root) return "None"; vector<string> values; queue<TreeNode*> nodes; nodes.push(root); while (!nodes.empty()) { auto *node = nodes.front(); nodes.pop(); if (!node) { values.push_back("None"); continue; } values.push_back(to_string(node->val)); nodes.push(node->left); nodes.push(node->right); } while (!values.empty() && values.back() == "None") values.pop_back(); string output = "["; for (size_t index = 0; index < values.size(); ++index) { if (index) output += ", "; output += values[index]; } return output + "]"; }
+${nodeFormatters}
 template <typename T> string __ppTop(const T& value) { return __ppFormat(value, false); }
 
 int main() {
@@ -484,7 +519,7 @@ int main() {
 `;
 }
 
-function javaRunner(functionContract) {
+function javaRunner(functionContract, studentTemplate) {
   const methodName = cleanIdentifier(functionContract?.methodName, 'solve');
   const className = cleanIdentifier(functionContract?.className, 'Solution');
   const parameters = functionContract?.parameters || [];
@@ -498,11 +533,14 @@ function javaRunner(functionContract) {
     ...(functionContract?.parameters || []).map((parameter) => String(parameter?.type || '').toLowerCase()),
     String(functionContract?.returnType || '').toLowerCase(),
   ];
+  const uncommentedTemplate = stripCStyleComments(studentTemplate);
   const nodeDefinitions = [
     contractTypes.some((type) => type.includes('tree-node') || type.includes('treenode'))
+      && !/\b(?:class|record)\s+TreeNode\b/.test(uncommentedTemplate)
       ? 'class TreeNode { int val; TreeNode left; TreeNode right; TreeNode() {} TreeNode(int val) { this.val = val; } TreeNode(int val, TreeNode left, TreeNode right) { this.val = val; this.left = left; this.right = right; } }'
       : '',
     contractTypes.some((type) => type.includes('list-node') || type.includes('listnode'))
+      && !/\b(?:class|record)\s+ListNode\b/.test(uncommentedTemplate)
       ? 'class ListNode { int val; ListNode next; ListNode() {} ListNode(int val) { this.val = val; } ListNode(int val, ListNode next) { this.val = val; this.next = next; } }'
       : '',
   ].filter(Boolean).join('\n');
@@ -517,7 +555,13 @@ ${nodeDefinitions}
 class Main {
   private static Object __ppConvert(Object value, Class<?> target, java.lang.reflect.Type genericType) throws Exception {
     if (value == null) return null;
-    if (target == Object.class) return value;
+    if (target == Object.class) {
+      if (genericType instanceof java.lang.reflect.ParameterizedType) {
+        java.lang.reflect.Type rawType = ((java.lang.reflect.ParameterizedType) genericType).getRawType();
+        if (rawType instanceof Class) target = (Class<?>) rawType;
+        else return value;
+      } else return value;
+    }
     if (target == String.class) return String.valueOf(value);
     if (target == char.class || target == Character.class) return String.valueOf(value).charAt(0);
     if (target == boolean.class || target == Boolean.class) return (Boolean) value;
@@ -710,31 +754,55 @@ function cRunner(functionContract, studentTemplate) {
   const outputMode = functionContract?.outputMode === 'parameter' ? 'parameter' : 'return';
   const outputIndex = Math.max(0, Number(functionContract?.outputParameterIndex || 0));
   const returnType = String(functionContract?.returnType || '').toLowerCase();
+  const cArrayPrinter = (type, value, count) => {
+    const normalized = String(type || '').toLowerCase();
+    const elementType = normalized.endsWith('[]') ? normalized.slice(0, -2) : normalized;
+    if (['boolean', 'bool'].includes(elementType)) return `__ppPrintBoolArray((const bool*)${value}, ${count});`;
+    if (elementType === 'string') return `__ppPrintStringArray((char**)${value}, ${count});`;
+    if (['long'].includes(elementType)) return `__ppPrintLongArray((const long long*)${value}, ${count});`;
+    if (['double', 'float'].includes(elementType)) return `__ppPrintDoubleArray((const double*)${value}, ${count});`;
+    if (['character', 'char'].includes(elementType)) return `__ppPrintCharArray((const char*)${value}, ${count});`;
+    return `__ppPrintIntArray((const int*)${value}, ${count});`;
+  };
+  const cMatrixPrinter = (type, value, rows, columns) => {
+    const normalized = String(type || '').toLowerCase();
+    const elementType = normalized.endsWith('[][]') ? normalized.slice(0, -4) : normalized;
+    if (['boolean', 'bool'].includes(elementType)) return `__ppPrintBoolMatrix((bool**)${value}, ${rows}, ${columns});`;
+    if (elementType === 'string') return `__ppPrintStringMatrix((char***)${value}, ${rows}, ${columns});`;
+    if (elementType === 'long') return `__ppPrintLongMatrix((long long**)${value}, ${rows}, ${columns});`;
+    if (['double', 'float'].includes(elementType)) return `__ppPrintDoubleMatrix((double**)${value}, ${rows}, ${columns});`;
+    if (['character', 'char'].includes(elementType)) return `__ppPrintCharMatrix((char**)${value}, ${rows}, ${columns});`;
+    return `__ppPrintIntMatrix((int**)${value}, ${rows}, ${columns});`;
+  };
+  const cScalarPrinter = (type, value) => {
+    const normalized = String(type || '').toLowerCase();
+    if (['list-node', 'listnode'].includes(normalized)) return `__ppPrintList(${value});`;
+    if (['tree-node', 'treenode'].includes(normalized)) return `__ppPrintTree(${value});`;
+    if (normalized === 'string') return `printf("%s", ${value} ? ${value} : "");`;
+    if (['boolean', 'bool'].includes(normalized)) return `printf("%s", ${value} ? "True" : "False");`;
+    if (['double', 'float'].includes(normalized)) return `printf("%.15g", (double)${value});`;
+    if (['character', 'char'].includes(normalized)) return `putchar(${value});`;
+    return `printf("%lld", (long long)${value});`;
+  };
   let output;
   if (outputMode === 'parameter') {
     const type = String(parameters[outputIndex]?.type || '').toLowerCase();
-    output = ['boolean[][]', 'bool[][]'].includes(type)
-      ? `__ppPrintBoolMatrix(__ppArg${outputIndex}, (int)(sizeof(__ppArg${outputIndex}) / sizeof(__ppArg${outputIndex}[0])), __ppArg${outputIndex}ColSizes);`
-      : type.endsWith('[][]')
-      ? `__ppPrintIntMatrix(__ppArg${outputIndex}, (int)(sizeof(__ppArg${outputIndex}) / sizeof(__ppArg${outputIndex}[0])), __ppArg${outputIndex}ColSizes);`
-      : ['boolean[]', 'bool[]'].includes(type)
-      ? `__ppPrintBoolArray(__ppArg${outputIndex}, (int)(sizeof(__ppArg${outputIndex}) / sizeof(__ppArg${outputIndex}[0])));`
+    const size = `(int)(sizeof(__ppArg${outputIndex}) / sizeof(__ppArg${outputIndex}[0]))`;
+    output = type.endsWith('[][]')
+      ? cMatrixPrinter(type, `__ppArg${outputIndex}`, size, `__ppArg${outputIndex}ColSizes`)
       : type.endsWith('[]')
-      ? `__ppPrintIntArray(__ppArg${outputIndex}, (int)(sizeof(__ppArg${outputIndex}) / sizeof(__ppArg${outputIndex}[0])));`
-      : `printf("%lld", (long long)__ppArg${outputIndex});`;
+        ? cArrayPrinter(type, `__ppArg${outputIndex}`, size)
+        : cScalarPrinter(type, `__ppArg${outputIndex}`);
   } else if (['list-node', 'listnode'].includes(returnType)) output = '__ppPrintList(__ppResult);';
   else if (['tree-node', 'treenode'].includes(returnType)) output = '__ppPrintTree(__ppResult);';
-  else if (returnType === 'string[][]') output = '__ppPrintStringMatrix(__ppResult, __ppReturnSize, __ppReturnColumnSizes);';
-  else if (['boolean[][]', 'bool[][]'].includes(returnType)) output = '__ppPrintBoolMatrix(__ppResult, __ppReturnSize, __ppReturnColumnSizes);';
-  else if (returnType.endsWith('[][]')) output = '__ppPrintIntMatrix(__ppResult, __ppReturnSize, __ppReturnColumnSizes);';
+  else if (returnType.endsWith('[][]')) output = cMatrixPrinter(returnType, '__ppResult', '__ppReturnSize', '__ppReturnColumnSizes');
   else if (['boolean[]', 'bool[]'].includes(returnType) || returnsBoolPointer) output = '__ppPrintBoolArray((const bool*)__ppResult, __ppReturnSize);';
-  else if (returnType.endsWith('[]')) output = returnType.startsWith('string')
-    ? '__ppPrintStringArray(__ppResult, __ppReturnSize);'
-    : returnsLongPointer
-      ? '__ppPrintLongArray((const long long*)__ppResult, __ppReturnSize);'
-      : '__ppPrintIntArray((const int*)__ppResult, __ppReturnSize);';
+  else if (returnType.endsWith('[]')) output = returnsLongPointer
+    ? '__ppPrintLongArray((const long long*)__ppResult, __ppReturnSize);'
+    : cArrayPrinter(returnType, '__ppResult', '__ppReturnSize');
   else if (returnType === 'string') output = 'printf("%s", __ppResult ? __ppResult : "");';
   else if (returnType === 'boolean' || returnType === 'bool') output = 'printf("%s", __ppResult ? "True" : "False");';
+  else if (returnType === 'character' || returnType === 'char') output = 'putchar(__ppResult);';
   else if (returnType === 'double' || returnType === 'float') output = 'printf("%.15g", (double)__ppResult);';
   else output = 'printf("%lld", (long long)__ppResult);';
   const resultDeclaration = outputMode === 'parameter' || /\bvoid\b/.test(returnDeclaration)
@@ -757,7 +825,12 @@ static void __ppPrintBoolArray(const bool* values, int count) { putchar('['); fo
 static void __ppPrintBoolMatrix(bool** values, int rows, const int* columns) { putchar('['); for (int row = 0; row < rows; ++row) { if (row) printf(", "); __ppPrintBoolArray(values[row], columns ? columns[row] : 0); } putchar(']'); }
 static void __ppPrintIntArray(const int* values, int count) { putchar('['); for (int i = 0; i < count; ++i) { if (i) printf(", "); printf("%d", values[i]); } putchar(']'); }
 static void __ppPrintLongArray(const long long* values, int count) { putchar('['); for (int i = 0; i < count; ++i) { if (i) printf(", "); printf("%lld", values[i]); } putchar(']'); }
+static void __ppPrintDoubleArray(const double* values, int count) { putchar('['); for (int i = 0; i < count; ++i) { if (i) printf(", "); printf("%.15g", values[i]); } putchar(']'); }
+static void __ppPrintCharArray(const char* values, int count) { putchar('['); for (int i = 0; i < count; ++i) { if (i) printf(", "); printf("'%c'", values[i]); } putchar(']'); }
 static void __ppPrintIntMatrix(int** values, int rows, const int* columns) { putchar('['); for (int row = 0; row < rows; ++row) { if (row) printf(", "); __ppPrintIntArray(values[row], columns ? columns[row] : 0); } putchar(']'); }
+static void __ppPrintLongMatrix(long long** values, int rows, const int* columns) { putchar('['); for (int row = 0; row < rows; ++row) { if (row) printf(", "); __ppPrintLongArray(values[row], columns ? columns[row] : 0); } putchar(']'); }
+static void __ppPrintDoubleMatrix(double** values, int rows, const int* columns) { putchar('['); for (int row = 0; row < rows; ++row) { if (row) printf(", "); __ppPrintDoubleArray(values[row], columns ? columns[row] : 0); } putchar(']'); }
+static void __ppPrintCharMatrix(char** values, int rows, const int* columns) { putchar('['); for (int row = 0; row < rows; ++row) { if (row) printf(", "); __ppPrintCharArray(values[row], columns ? columns[row] : 0); } putchar(']'); }
 static void __ppPrintStringArray(char** values, int count) { putchar('['); for (int i = 0; i < count; ++i) { if (i) printf(", "); printf("'%s'", values[i]); } putchar(']'); }
 static void __ppPrintStringMatrix(char*** values, int rows, const int* columns) { putchar('['); for (int row = 0; row < rows; ++row) { if (row) printf(", "); __ppPrintStringArray(values[row], columns ? columns[row] : 0); } putchar(']'); }
 static void __ppPrintList(struct ListNode* node) { if (!node) { printf("None"); return; } putchar('['); int first = 1; while (node) { if (!first) printf(", "); printf("%d", node->val); first = 0; node = node->next; } putchar(']'); }
@@ -785,7 +858,7 @@ export function generateFunctionRunnerTemplate(language, functionContract, stude
   if (language === 'php') return phpRunner(functionContract, studentTemplate);
   if (language === 'go') return goRunner(functionContract, studentTemplate);
   if (language === 'cpp') return cppRunner(functionContract, studentTemplate);
-  if (language === 'java') return javaRunner(functionContract);
+  if (language === 'java') return javaRunner(functionContract, studentTemplate);
   if (language === 'c') return cRunner(functionContract, studentTemplate);
   return '';
 }

@@ -66,6 +66,7 @@ const CoordinatorOnboarding = lazy(() => import("./admin/CoordinatorOnboarding")
 const CoordinatorDirectory = lazy(() => import("./admin/CoordinatorDirectory"));
 const AdminChangePassword = lazy(() => import("./admin/AdminChangePassword"));
 const AdminActivity = lazy(() => import("./admin/AdminActivity"));
+const AdminAnalyticsPage = lazy(() => import("./admin/analytics/AdminAnalyticsPage"));
 const LibraryWorkspace = lazy(() => import("./admin/library/LibraryWorkspace"));
 const AdminCompanyInsights = lazy(() => import("./admin/AdminCompanyInsights"));
 const AdminCompanyBenchmarkAdd = lazy(() => import("./admin/AdminCompanyBenchmarkAdd"));
@@ -396,6 +397,7 @@ function AppContent() {
         <Route path="/admin/learning" element={<AdminShell><AdminLearning /></AdminShell>} />
         <Route path="/admin/learning/:semester/:subject/:teacherId" element={<AdminShell><AdminLearningDetail /></AdminShell>} />
         <Route path="/admin/activity" element={<AdminShell><AdminActivity /></AdminShell>} />
+        <Route path="/admin/analysis" element={<AdminShell><AdminAnalyticsPage /></AdminShell>} />
         <Route path="/admin/assessment" element={<AdminShell><AssessmentDashboard /></AdminShell>} />
         <Route path="/admin/assessment/create" element={<AdminShell><CreateAssessment /></AdminShell>} />
         <Route path="/admin/assessment/:id" element={<AdminShell><CreateAssessment viewOnly /></AdminShell>} />
@@ -411,7 +413,7 @@ function AppContent() {
         <Route path="/admin/library/coding/problems" element={<Navigate to="/admin/library?type=coding" replace />} />
         <Route path="/admin/library/coding/:id/edit" element={<AdminShell><LibraryWorkspace view="edit-coding" /></AdminShell>} />
         <Route path="/admin/library/coding/:id/preview" element={<AdminShell><LibraryWorkspace view="preview-coding" /></AdminShell>} />
-        <Route path="/admin/library/coding/analytics" element={<AdminShell><LibraryWorkspace view="coding-analytics" /></AdminShell>} />
+        <Route path="/admin/library/coding/analytics" element={<Navigate to="/admin/analysis?source=coding" replace />} />
         <Route path="/admin/assessment/select-problem" element={<AdminShell><SelectProblemFromLibrary /></AdminShell>} />
         <Route path="/admin/assessment/preview/:id" element={<AdminShell layout={false}><AdminAssessmentPreview /></AdminShell>} />
         <Route path="/admin/compiler" element={<Navigate to="/admin/library?type=coding" replace />} />
@@ -419,7 +421,7 @@ function AppContent() {
         <Route path="/admin/compiler/problems" element={<Navigate to="/admin/library?type=coding" replace />} />
         <Route path="/admin/compiler/:id/edit" element={<AdminShell><LibraryWorkspace view="edit-coding" /></AdminShell>} />
         <Route path="/admin/compiler/:id/preview" element={<AdminShell><LibraryWorkspace view="preview-coding" /></AdminShell>} />
-        <Route path="/admin/compiler/analytics" element={<AdminShell><LibraryWorkspace view="coding-analytics" /></AdminShell>} />
+        <Route path="/admin/compiler/analytics" element={<Navigate to="/admin/analysis?source=coding" replace />} />
         <Route path="/admin/company-insights" element={<AdminShell><AdminCompanyInsights /></AdminShell>} />
         <Route path="/admin/company-insights/add" element={<AdminShell><AdminCompanyBenchmarkAdd /></AdminShell>} />
         <Route path="/admin/settings/email-templates" element={<AdminShell><AdminEmailTemplates /></AdminShell>} />

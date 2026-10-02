@@ -62,7 +62,7 @@ app.use(cors({
     return callback(new HttpError(403, 'Origin not allowed by CORS'));
   },
   credentials: true,
-  exposedHeaders: ['Server-Timing', 'X-PeerPrep-Cache'],
+  exposedHeaders: ['Server-Timing', 'X-PeerPrep-Cache', 'Content-Disposition', 'X-Analytics-Row-Count'],
 }));
 
 // SECURITY: Cookie parser for HttpOnly JWT cookies

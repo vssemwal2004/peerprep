@@ -197,6 +197,7 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
       icon: LayoutDashboard,
       match: (loc) => loc.pathname === '/admin' || loc.pathname.startsWith('/admin/overview') || loc.pathname.startsWith('/admin/dashboard'),
     },
+    { type: 'link', label: 'Analysis', to: '/admin/analysis', icon: BarChart3 },
     {
       type: 'group',
       key: 'interviews',
@@ -271,7 +272,6 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
       icon: Library,
       items: [
         { label: 'View Library', to: '/admin/library', icon: Library, match: (loc) => loc.pathname === '/admin/library' },
-        { label: 'Coding Analytics', to: '/admin/library/coding/analytics', icon: BarChart3 },
       ],
     },
     {
