@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import mongoose from 'mongoose';
 import { validateAnalyticsQuery, validateOptionsQuery } from '../src/modules/adminAnalytics/adminAnalytics.validation.js';
 import { buildAnalyticsGraphs, selectRecommendedGraphs } from '../src/modules/adminAnalytics/analyticsRegistry.js';
+import { selectPopulationSegment } from '../src/modules/adminAnalytics/adminAnalytics.service.js';
 import adminAnalyticsRouter from '../src/modules/adminAnalytics/adminAnalytics.routes.js';
 import { requireAdmin, requireAuth } from '../src/middleware/auth.js';
 
@@ -21,7 +22,7 @@ test('admin analytics router is protected by authentication and the admin-only g
 test('canonical frontend analytics DTO is normalized without silently dropping fields', () => {
   const assessmentId = oid();
   const query = validateAnalyticsQuery({
-    population: { semesters: ['5'], rankSegment: 'bottom', rankN: 10, rankMetric: 'assessment', minimumEvidence: false },
+    population: { semesters: ['5'], selectionMode: 'bottom', rankSegment: 'bottom', rankN: 10, rankMetric: 'assessment', minimumEvidence: false },
     activity: {
       sources: ['coding', 'assessments'], datePreset: '90d', codingMode: 'assessment',
       assessmentIds: [assessmentId], codingTopics: ['Arrays'], difficulties: ['Hard'],
@@ -33,6 +34,7 @@ test('canonical frontend analytics DTO is normalized without silently dropping f
   assert.deepEqual(query.sources, ['coding', 'assessment']);
   assert.deepEqual(query.population.semesters, [5]);
   assert.equal(query.population.rank.direction, 'bottom');
+  assert.equal(query.population.selectionMode, 'bottom');
   assert.equal(query.population.rank.minimumEvidence, false);
   assert.equal(query.coding.context, 'assessment');
   assert.deepEqual(query.coding.assessmentIds, [assessmentId]);
@@ -47,6 +49,7 @@ test('invalid semesters, ranking direction, coding context, and time grain fail 
   assert.throws(() => validateAnalyticsQuery({ population: { rankSegment: 'middle' } }), /Ranking direction/);
   assert.throws(() => validateAnalyticsQuery({ activity: { codingMode: 'everything' } }), /Coding mode/);
   assert.throws(() => validateAnalyticsQuery({ comparison: { timeGrain: 'quarter' } }), /Time grain/);
+  assert.throws(() => validateAnalyticsQuery({ population: { selectionMode: 'unknown' } }), /population selection mode/);
 });
 
 test('option field aliases used by the filter drawer are accepted', () => {
@@ -78,11 +81,27 @@ test('ranking ties use name then stable student id ordering', () => {
   assert.doesNotThrow(() => selectRecommendedGraphs(undefined, {}));
 });
 
+test('top and activity population modes select the complete analysis audience', () => {
+  const students = [
+    { _id: 'a', name: 'A' }, { _id: 'b', name: 'B' }, { _id: 'c', name: 'C' },
+  ];
+  const metrics = new Map([
+    ['a', { coding: { attempts: 8, mastery: 90 }, assessment: { completedAttempts: 0, normalizedScore: null }, learning: { engagedTopics: 0, completionRate: null }, overall: { value: 90 }, consistency: 40, evidence: { overall: true } }],
+    ['b', { coding: { attempts: 0, mastery: null }, assessment: { completedAttempts: 2, normalizedScore: 75 }, learning: { engagedTopics: 2, completionRate: 50 }, overall: { value: 70 }, consistency: 60, evidence: { overall: true } }],
+    ['c', { coding: { attempts: 2, mastery: 25 }, assessment: { completedAttempts: 0, normalizedScore: null }, learning: { engagedTopics: 0, completionRate: null }, overall: { value: 25 }, consistency: 20, evidence: { overall: true } }],
+  ]);
+  const rank = { metric: 'overall', n: 2, minimumEvidence: true };
+  assert.deepEqual(selectPopulationSegment(students, metrics, { selectionMode: 'top', rank }).map((student) => student._id), ['a', 'b']);
+  assert.deepEqual(selectPopulationSegment(students, metrics, { selectionMode: 'bottom', rank }).map((student) => student._id), ['c', 'b']);
+  assert.deepEqual(selectPopulationSegment(students, metrics, { selectionMode: 'multi-source', rank }).map((student) => student._id), ['b']);
+});
+
 test('cross-source graphs are withheld without a canonical mapping', () => {
   const query = { sources: ['coding', 'assessment', 'learning'], date: { spanDays: 30 }, timeGrain: 'day', comparison: { by: 'none' }, population: { studentIds: [], rank: { metric: 'overall', direction: 'top', n: 10, minimumEvidence: true } } };
   const graphs = buildAnalyticsGraphs({ students: [], studentMetrics: new Map(), query, coding: null, assessment: null, learning: null });
   assert.equal(graphs.find((graph) => graph.id === 'skill-radar').status, 'not_relevant');
   assert.equal(graphs.find((graph) => graph.id === 'mastery-funnel').status, 'not_relevant');
   assert.ok(graphs.some((graph) => graph.id === 'question-conversion'));
-  assert.equal(graphs.length, 15);
+  assert.ok(graphs.some((graph) => graph.id === 'source-mix'));
+  assert.equal(graphs.length, 16);
 });

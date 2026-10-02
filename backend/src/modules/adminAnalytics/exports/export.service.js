@@ -22,7 +22,7 @@ const REPORT_TITLES = Object.freeze({
 });
 
 const REPORT_GRAPHS = Object.freeze({
-  executive: ['activity-trend', 'student-ranking', 'performance-distribution', 'cohort-comparison'],
+  executive: ['activity-trend', 'student-ranking', 'performance-distribution', 'cohort-comparison', 'source-mix'],
   students: ['student-ranking', 'performance-distribution', 'engagement-calendar', 'score-effort-scatter', 'topic-student-heatmap'],
   topics: ['topic-performance', 'difficulty-analysis', 'topic-student-heatmap', 'assessment-topic-analysis', 'skill-radar', 'mastery-funnel'],
   assessments: ['assessment-score-trend', 'assessment-topic-analysis', 'performance-distribution', 'student-ranking'],

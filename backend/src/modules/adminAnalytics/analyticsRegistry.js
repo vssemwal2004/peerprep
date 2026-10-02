@@ -17,6 +17,7 @@ const LABELS = Object.freeze({
   'question-conversion': 'Question conversion',
   'engagement-calendar': 'Engagement calendar',
   'score-effort-scatter': 'Score vs effort',
+  'source-mix': 'Evidence source mix',
 });
 
 function ready(id, data, config = {}) {
@@ -217,6 +218,48 @@ function buildScatter({ students, studentMetrics }) {
   return data.length >= 5 ? ready('score-effort-scatter', data, { labelKey: 'name', xKey: 'effort', yKey: 'score', xLabel: 'Evidence events', yLabel: 'Score (%)', effortMeasure: 'evidence events', sampled: students.length > ANALYTICS_LIMITS.maxScatterPoints }) : unavailable('score-effort-scatter', 'At least five students need both score and effort evidence.');
 }
 
+function buildSourceMix({ coding, assessment, learning }) {
+  const data = [
+    { key: 'coding', label: 'Coding', value: coding?.submissions?.length || 0 },
+    { key: 'assessment', label: 'Assessments', value: assessment?.submissions?.length || 0 },
+    { key: 'learning', label: 'Learning', value: learning?.activity?.length || 0 },
+  ].filter((item) => item.value > 0);
+  if (data.length < 2) return unavailable('source-mix', 'Select at least two evidence sources with activity to compare their contribution.');
+  return ready('source-mix', data, { labelKey: 'label', valueKey: 'value', valueLabel: 'Evidence events' });
+}
+
+function buildSkillRadar({ studentMetrics }) {
+  const dimensions = [
+    ['Coding mastery', (row) => row.coding.mastery ?? row.coding.acceptanceRate],
+    ['Assessment', (row) => row.assessment.normalizedScore],
+    ['Learning', (row) => row.learning.completionRate],
+    ['Consistency', (row) => row.consistency],
+  ].map(([label, resolver]) => {
+    const values = [...studentMetrics.values()].map(resolver).filter(Number.isFinite);
+    return values.length ? { label, score: roundMetric(values.reduce((sum, value) => sum + value, 0) / values.length), students: values.length } : null;
+  }).filter(Boolean);
+  return dimensions.length >= 3
+    ? ready('skill-radar', dimensions, { labelKey: 'label', valueKey: 'score', valueLabel: 'Average score (%)' })
+    : unavailable('skill-radar', 'At least three comparable evidence dimensions are required for a balanced profile.');
+}
+
+function buildMasteryFunnel({ students, studentMetrics, coding, assessment, learning }) {
+  if (!coding || !assessment || !learning) return unavailable('mastery-funnel', 'Learning, coding, and assessment evidence must all be selected for the journey funnel.');
+  const eligible = new Set(students.map((student) => String(student._id)));
+  const learned = new Set([...eligible].filter((id) => (learning.perStudent.get(id)?.completedTopics?.size || 0) > 0));
+  const practiced = new Set([...learned].filter((id) => (coding.perStudent.get(id)?.attempts || 0) > 0));
+  const solved = new Set([...practiced].filter((id) => (coding.perStudent.get(id)?.solvedProblems?.size || 0) > 0));
+  const assessed = new Set([...solved].filter((id) => (assessment.perStudent.get(id)?.attempts?.length || 0) > 0));
+  const mastered = new Set([...assessed].filter((id) => {
+    const row = studentMetrics.get(id);
+    return row?.overall?.isOverall && row.overall.value >= 70;
+  }));
+  const stages = [['Eligible', eligible], ['Learned', learned], ['Practiced', practiced], ['Solved', solved], ['Assessed', assessed], ['Mastered', mastered]];
+  if (!eligible.size || stages.slice(1).every(([, ids]) => !ids.size)) return unavailable('mastery-funnel', 'No students progressed through the selected cross-source journey.');
+  const data = stages.map(([stage, ids], index) => ({ stage, value: ids.size, rate: index === 0 ? 100 : percentage(ids.size, stages[index - 1][1].size) ?? 0 }));
+  return { ...ready('mastery-funnel', data, { labelKey: 'stage', valueKey: 'value', valueLabel: 'Students' }), note: 'Stages use strict same-student intersections across sources; they describe a cross-source journey, not same-topic causation.' };
+}
+
 export function buildAnalyticsGraphs(context) {
   const graphMap = {
     'activity-trend': buildActivityTrend(context),
@@ -225,8 +268,8 @@ export function buildAnalyticsGraphs(context) {
     'topic-performance': buildTopicPerformance(context),
     'difficulty-analysis': buildDifficulty(context),
     'assessment-topic-analysis': unavailable('assessment-topic-analysis', 'Per-question awarded marks are not persisted; assessment topic scores cannot be calculated safely.'),
-    'skill-radar': unavailable('skill-radar', 'A canonical cross-source skill taxonomy is not configured.'),
-    'mastery-funnel': unavailable('mastery-funnel', 'A reliable learning-to-coding-to-assessment topic mapping is required.'),
+    'skill-radar': buildSkillRadar(context),
+    'mastery-funnel': buildMasteryFunnel(context),
     'performance-distribution': buildDistribution(context),
     'cohort-comparison': buildComparison(context),
     'assessment-score-trend': buildAssessmentTrend(context),
@@ -234,17 +277,44 @@ export function buildAnalyticsGraphs(context) {
     'question-conversion': buildConversion(context),
     'engagement-calendar': buildCalendar(context),
     'score-effort-scatter': buildScatter(context),
+    'source-mix': buildSourceMix(context),
   };
   return GRAPH_IDS.map((id) => graphMap[id]);
 }
 
 export function selectRecommendedGraphs(graphs = [], query = {}) {
   const sourceBonus = { coding: ['difficulty-analysis', 'question-conversion', 'topic-performance'], assessment: ['assessment-score-trend', 'performance-distribution'], learning: ['learning-hierarchy', 'topic-performance'] };
-  return graphs.filter((graph) => graph.status === 'ready').map((graph) => {
+  const families = {
+    'activity-trend': 'trend', 'assessment-score-trend': 'trend',
+    'student-ranking': 'ranking', 'topic-student-heatmap': 'matrix',
+    'topic-performance': 'bar', 'difficulty-analysis': 'bar', 'assessment-topic-analysis': 'bar',
+    'performance-distribution': 'bar', 'cohort-comparison': 'bar', 'learning-hierarchy': 'bar', 'question-conversion': 'bar',
+    'skill-radar': 'radar', 'mastery-funnel': 'funnel', 'engagement-calendar': 'calendar',
+    'score-effort-scatter': 'scatter', 'source-mix': 'composition',
+  };
+  const ranked = graphs.filter((graph) => graph.status === 'ready').map((graph) => {
     let score = ['activity-trend', 'student-ranking', 'performance-distribution'].includes(graph.id) ? 2 : 1;
     for (const source of query.sources || []) if (sourceBonus[source]?.includes(graph.id)) score += 3;
     if (query.comparison?.by !== 'none' && graph.id === 'cohort-comparison') score += 2;
     if (query.population?.studentIds?.length && ['topic-student-heatmap', 'score-effort-scatter'].includes(graph.id)) score += 2;
-    return { id: graph.id, score };
-  }).sort((a, b) => b.score - a.score || GRAPH_IDS.indexOf(a.id) - GRAPH_IDS.indexOf(b.id)).slice(0, 10).map((entry) => entry.id);
+    if ((query.sources || []).length > 1 && graph.id === 'source-mix') score += 4;
+    return { id: graph.id, score, family: families[graph.id] || graph.id };
+  }).sort((a, b) => b.score - a.score || GRAPH_IDS.indexOf(a.id) - GRAPH_IDS.indexOf(b.id));
+  const selected = [];
+  const familyCount = new Map();
+  for (const entry of ranked) {
+    if (familyCount.has(entry.family)) continue;
+    selected.push(entry);
+    familyCount.set(entry.family, 1);
+    if (selected.length >= 10) break;
+  }
+  for (const entry of ranked) {
+    if (selected.some((item) => item.id === entry.id)) continue;
+    const count = familyCount.get(entry.family) || 0;
+    if ((entry.family === 'bar' && count >= 3) || (entry.family === 'trend' && count >= 2)) continue;
+    selected.push(entry);
+    familyCount.set(entry.family, count + 1);
+    if (selected.length >= 10) break;
+  }
+  return selected.map((entry) => entry.id);
 }

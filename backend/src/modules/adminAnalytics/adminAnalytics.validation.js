@@ -9,7 +9,7 @@ export const ANALYTICS_LIMITS = Object.freeze({
   maxHeatmapStudents: 50,
   maxHeatmapTopics: 30,
   maxScatterPoints: 500,
-  maxGraphs: 15,
+  maxGraphs: 16,
   maxOptionPageSize: 100,
 });
 
@@ -18,11 +18,13 @@ export const GRAPH_IDS = Object.freeze([
   'difficulty-analysis', 'assessment-topic-analysis', 'skill-radar', 'mastery-funnel',
   'performance-distribution', 'cohort-comparison', 'assessment-score-trend',
   'learning-hierarchy', 'question-conversion', 'engagement-calendar', 'score-effort-scatter',
+  'source-mix',
 ]);
 
 const SOURCE_VALUES = new Set(['coding', 'assessment', 'learning']);
 const COMPARISONS = new Set(['none', 'semester', 'branch', 'course', 'group', 'college', 'uploadBatch', 'assessment', 'learningSubject', 'topic']);
 const RANK_METRICS = new Set(['overall', 'coding', 'assessment', 'learning', 'consistency']);
+const POPULATION_MODES = new Set(['all', 'selected', 'top', 'bottom', 'coding-active', 'assessment-active', 'learning-active', 'multi-source']);
 
 function uniqueStrings(value, max = ANALYTICS_LIMITS.maxIdsPerFilter) {
   const values = Array.isArray(value) ? value : (value === undefined || value === null || value === '' ? [] : [value]);
@@ -86,6 +88,8 @@ export function validateAnalyticsQuery(input = {}, { estimate = false } = {}) {
   if (!Number.isInteger(rankN) || rankN < 1 || rankN > 250) throw new HttpError(400, 'Ranking N must be between 1 and 250.');
   const rawRankDirection = String(population.rankSegment || population.rank?.direction || input.ranking?.direction || 'top');
   if (!['top', 'bottom'].includes(rawRankDirection)) throw new HttpError(400, 'Ranking direction must be top or bottom.');
+  const selectionMode = String(population.selectionMode || 'all');
+  if (!POPULATION_MODES.has(selectionMode)) throw new HttpError(400, 'Unsupported population selection mode.');
   const graphMode = String(input.graphs?.mode || input.graphMode || 'recommended');
   if (!['recommended', 'custom'].includes(graphMode)) throw new HttpError(400, 'Graph mode must be recommended or custom.');
   const graphIds = uniqueStrings(input.graphs?.selectedIds || input.graphs?.ids || input.graphIds, ANALYTICS_LIMITS.maxGraphs);
@@ -117,6 +121,7 @@ export function validateAnalyticsQuery(input = {}, { estimate = false } = {}) {
       uploadBatchIds: objectIds(population.uploadBatchIds || input.uploadBatchIds, 'upload batch ID'),
       statuses,
       activeOnly: population.activeOnly === true,
+      selectionMode,
       rank: {
         metric: rankMetric,
         direction: rawRankDirection,

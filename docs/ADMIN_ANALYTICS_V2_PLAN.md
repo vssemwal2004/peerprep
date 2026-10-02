@@ -12,7 +12,11 @@ The new workspace will analyze three first-class evidence sources together:
 
 It must support a single student, multiple students, whole cohorts, Excel-upload batches, top/bottom-N populations, one or many completed assessments, and one or many learning/coding scopes. It must not render a chart when the active filters do not provide valid evidence for that chart.
 
-This document is the implementation contract. No V2 production code should be built until its definitions and rollout sequence are accepted.
+This document is the implementation contract and records the accepted implementation direction.
+
+### 2026 interaction rebuild
+
+The analysis workspace uses a decision-first hierarchy: explicit audience → evidence scope → comparison → graph strategy. Top/Bottom-N and activity-based audiences are calculated before every summary and graph, rather than affecting only a ranking card. Default recommendations enforce chart-family diversity, compact cards explain the business question and units, and every graph opens an interactive detail workspace with row limits, series controls, interpretation guidance, and searchable evidence rows.
 
 ## 2. Current-state findings
 
@@ -107,7 +111,7 @@ The footer displays an estimated cohort/evidence scope before applying. Buttons 
 
 ## 5. Graph catalogue and visibility rules
 
-V2 ships with at least the following 15 graph definitions. A graph registry, rather than JSX conditionals scattered through the page, owns required dimensions, required measures, default size, supported comparisons, and empty-state text.
+V2 ships with the following 16 graph definitions. A graph registry, rather than JSX conditionals scattered through the page, owns required dimensions, required measures, default size, supported comparisons, and empty-state text.
 
 | Graph | Meaning | Show when |
 |---|---|---|
@@ -117,8 +121,8 @@ V2 ships with at least the following 15 graph definitions. A graph registry, rat
 | 4. Topic performance bar | Attempts, solved/complete count, and rate by topic | A source exposes mapped topics |
 | 5. Difficulty stacked bar | Easy/Medium/Hard performance by topic | Difficulty metadata exists for coding problems or assessment/learning items |
 | 6. Assessment topic analysis | Normalized score and participation by assessment topic | One or more completed assessments contain scored, tagged questions |
-| 7. Radar skill profile | Selected student/cohort skills such as DSA, Aptitude, DBMS, OS, CN, Communication | At least three skill axes have evidence; skills are derived from taxonomy, never guessed from names alone |
-| 8. Learning → Practice → Assessment funnel | Population drop from eligible/learned through practiced, solved, assessed, and mastered | Cross-source topic mappings and a valid starting cohort exist |
+| 7. Radar evidence profile | Selected student/cohort profile across coding mastery, assessment, learning, and consistency | At least three comparable evidence axes exist; subject-level skills require a future canonical taxonomy and are never guessed |
+| 8. Learning → Practice → Assessment funnel | Strict same-student intersection from eligible/learned through practiced, solved, assessed, and mastered | All three sources and a valid starting cohort exist; UI explicitly states this is not same-topic causation |
 | 9. Performance distribution | Student count across score bands | At least five eligible scored students |
 | 10. Cohort comparison bars | Chosen KPI compared by semester/branch/group/batch/etc. | A comparison dimension is selected and has 2–12 groups |
 | 11. Assessment score trend | Average/median normalized assessment score across completed assessments or time | At least two completed assessments or time buckets exist |
@@ -126,6 +130,7 @@ V2 ships with at least the following 15 graph definitions. A graph registry, rat
 | 13. Problem/question conversion | Attempted → solved/correct conversion and largest gaps | Coding problems or scored assessment questions exist |
 | 14. Engagement calendar | Daily active-student intensity | Date range is no more than one year and activity evidence exists |
 | 15. Score vs effort scatter | Score/mastery against attempts or time, highlighting outliers | Student-level score and effort both exist for at least five students |
+| 16. Evidence source donut | Relative contribution of coding, assessment, and learning activity | At least two selected sources contain evidence |
 
 ### Recommended graph selection
 
@@ -416,4 +421,3 @@ Recommended defaults are included so work can proceed unless product direction d
 4. **Coordinator scope:** add `coordinator.analytics.view` and migrate existing coding-analytics holders — recommended.
 5. **Legacy page:** redirect old coding analytics URLs after V2 core graphs are ready, then remove old UI after parity validation — recommended.
 6. **Export formats:** XLSX and PDF only in the primary UI — matches the requirement.
-

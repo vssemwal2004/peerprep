@@ -76,6 +76,36 @@ export function buildStudentMetricRows(students, query, coding, assessment, lear
   return map;
 }
 
+function metricForPopulation(row, metric) {
+  if (metric === 'coding') return row.coding.mastery ?? row.coding.acceptanceRate;
+  if (metric === 'assessment') return row.assessment.normalizedScore;
+  if (metric === 'learning') return row.learning.completionRate;
+  if (metric === 'consistency') return row.consistency;
+  return row.overall.value;
+}
+
+export function selectPopulationSegment(students, studentMetrics, population) {
+  const mode = population.selectionMode || 'all';
+  if (mode === 'all' || mode === 'selected') return students;
+  if (mode === 'coding-active') return students.filter((student) => studentMetrics.get(String(student._id))?.coding?.attempts > 0);
+  if (mode === 'assessment-active') return students.filter((student) => studentMetrics.get(String(student._id))?.assessment?.completedAttempts > 0);
+  if (mode === 'learning-active') return students.filter((student) => studentMetrics.get(String(student._id))?.learning?.engagedTopics > 0);
+  if (mode === 'multi-source') {
+    return students.filter((student) => {
+      const row = studentMetrics.get(String(student._id));
+      return [row?.coding?.attempts > 0, row?.assessment?.completedAttempts > 0, row?.learning?.engagedTopics > 0].filter(Boolean).length >= 2;
+    });
+  }
+  const direction = mode === 'bottom' ? 1 : -1;
+  return students.map((student) => {
+    const row = studentMetrics.get(String(student._id));
+    return { student, row, value: metricForPopulation(row, population.rank.metric) };
+  }).filter(({ row, value }) => Number.isFinite(value) && (!population.rank.minimumEvidence || row.evidence[population.rank.metric] !== false))
+    .sort((left, right) => direction * (left.value - right.value) || String(left.student.name || '').localeCompare(String(right.student.name || '')))
+    .slice(0, population.rank.n)
+    .map(({ student }) => student);
+}
+
 function assessmentEligiblePairs(definitions, students) {
   const cohort = new Set(students.map((student) => String(student._id)));
   return definitions.reduce((sum, assessment) => {
@@ -121,6 +151,7 @@ export async function executeAnalyticsQuery({ user, query }) {
   const warnings = [];
   if (cohort.truncated) warnings.push(`Cohort was capped at ${students.length} students. Narrow the population for complete results.`);
   if (truncatedSources.length) warnings.push(`Interactive ${truncatedSources.join(', ')} rows use a recent bounded sample and must not be treated as complete totals.`);
+  if (query.population.selectionMode !== 'all' && query.population.selectionMode !== 'selected') warnings.push(`Population mode “${query.population.selectionMode}” selected ${students.length} of ${cohort.baseSize} eligible students before graph calculation.`);
   if (query.sources.length > 1) warnings.push('Cross-source topic charts require canonical mappings; unsupported combined charts are withheld.');
   if (query.assessments.questionTypes.length || query.assessments.sections.length || query.assessments.topics.length) {
     warnings.push('Assessment question, section, and topic filters select whole completed attempts containing those items; persisted scores remain whole-assessment scores.');
@@ -133,6 +164,8 @@ export async function executeAnalyticsQuery({ user, query }) {
       timezone: 'UTC',
       queryFingerprint: fingerprintQuery(query, user),
       cohortSize: students.length,
+      baseCohortSize: cohort.baseSize,
+      selectionMode: query.population.selectionMode,
       evidence: {
         codingSubmissions: coding?.submissions.length || 0,
         assessmentAttempts: assessment?.submissions.length || 0,
@@ -150,21 +183,34 @@ export async function executeAnalyticsQuery({ user, query }) {
 
 export async function collectAnalyticsContext({ user, query }) {
   const cohort = await resolveAuthorizedCohort(user, query.population);
-  const students = cohort.students;
-  const studentIds = students.map((student) => student._id);
-  const [coding, assessment, learning] = await Promise.all([
-    query.sources.includes('coding') ? collectCodingEvidence({ user, studentIds, query }) : null,
-    query.sources.includes('assessment') ? collectAssessmentEvidence({ user, studentIds, query }) : null,
-    query.sources.includes('learning') ? collectLearningEvidence({ user, studentIds, query }) : null,
-  ]);
-  const studentMetrics = buildStudentMetricRows(students, query, coding, assessment, learning);
-  return { cohort, students, coding, assessment, learning, studentMetrics };
+  const collectEvidence = async (students) => {
+    const studentIds = students.map((student) => student._id);
+    const [coding, assessment, learning] = await Promise.all([
+      query.sources.includes('coding') ? collectCodingEvidence({ user, studentIds, query }) : null,
+      query.sources.includes('assessment') ? collectAssessmentEvidence({ user, studentIds, query }) : null,
+      query.sources.includes('learning') ? collectLearningEvidence({ user, studentIds, query }) : null,
+    ]);
+    return { coding, assessment, learning, studentMetrics: buildStudentMetricRows(students, query, coding, assessment, learning) };
+  };
+
+  const baseStudents = cohort.students;
+  let evidence = await collectEvidence(baseStudents);
+  const students = selectPopulationSegment(baseStudents, evidence.studentMetrics, query.population);
+  if (students.length !== baseStudents.length || students.some((student, index) => String(student._id) !== String(baseStudents[index]?._id))) {
+    evidence = await collectEvidence(students);
+  }
+  cohort.baseSize = baseStudents.length;
+  cohort.selectionMode = query.population.selectionMode;
+  return { cohort, students, ...evidence };
 }
 
 export async function estimateAnalyticsQuery({ user, query }) {
   const { count } = await resolveAuthorizedCohort(user, query.population, { countOnly: true });
+  const selectedEstimate = ['top', 'bottom'].includes(query.population.selectionMode) ? Math.min(count, query.population.rank.n) : count;
   return {
-    cohortSize: count,
+    cohortSize: selectedEstimate,
+    baseCohortSize: count,
+    selectionMode: query.population.selectionMode,
     capped: count > 5000,
     requestedSources: query.sources,
     requestedGraphs: query.graphs.mode === 'custom' ? query.graphs.ids.length : 'recommended',

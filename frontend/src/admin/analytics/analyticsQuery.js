@@ -7,7 +7,7 @@ export const ARRAY_FILTER_KEYS = [
 export const createDefaultAnalyticsQuery = () => ({
   population: {
     studentIds: [], semesters: [], groups: [], branches: [], courses: [], colleges: [], uploadBatchIds: [],
-    status: [], rankSegment: "top", rankN: 25, rankMetric: "overall", minimumEvidence: true,
+    status: [], selectionMode: "all", rankSegment: "top", rankN: 25, rankMetric: "overall", minimumEvidence: true,
   },
   activity: {
     sources: ["coding", "assessments", "learning"], datePreset: "90d", dateFrom: "", dateTo: "",
@@ -32,6 +32,7 @@ export function countActiveFilters(query) {
   sections.forEach((section) => ARRAY_FILTER_KEYS.forEach((key) => { if (section[key]?.length) count += 1; }));
   if (query.activity.datePreset !== "90d" || query.activity.dateFrom || query.activity.dateTo) count += 1;
   if (query.comparison.compareBy !== "none") count += 1;
+  if (query.population.selectionMode !== "all") count += 1;
   return count;
 }
 
@@ -45,6 +46,10 @@ export function getScopeChips(query, optionLabels = {}) {
     });
   });
   chips.push({ key: "datePreset", label: "Window", value: query.activity.datePreset === "custom" ? `${query.activity.dateFrom || "…"} – ${query.activity.dateTo || "…"}` : query.activity.datePreset.toUpperCase() });
+  if (query.population.selectionMode !== "all") {
+    const labels = { selected: "Selected students", top: `Top ${query.population.rankN} · ${query.population.rankMetric}`, bottom: `Bottom ${query.population.rankN} · ${query.population.rankMetric}`, "coding-active": "Coding active", "assessment-active": "Assessment participants", "learning-active": "Learning active", "multi-source": "Multi-source active" };
+    chips.unshift({ key: "selectionMode", label: "Audience", value: labels[query.population.selectionMode] || query.population.selectionMode });
+  }
   if (query.comparison.compareBy !== "none") chips.push({ key: "compareBy", label: "Compare", value: query.comparison.compareBy });
   return chips;
 }
@@ -52,6 +57,7 @@ export function getScopeChips(query, optionLabels = {}) {
 export function removeScopeFilter(query, key) {
   const next = structuredClone(query);
   if (key === "datePreset") Object.assign(next.activity, { datePreset: "90d", dateFrom: "", dateTo: "" });
+  else if (key === "selectionMode") next.population.selectionMode = "all";
   else if (key === "compareBy") next.comparison.compareBy = "none";
   else if (Object.hasOwn(next.population, key)) next.population[key] = [];
   else if (Object.hasOwn(next.activity, key)) next.activity[key] = [];
