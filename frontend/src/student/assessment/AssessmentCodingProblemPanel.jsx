@@ -1,8 +1,9 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { RichTextPreview } from '../../admin/compiler/CompilerContentPreview';
 import { getDisplayProblemStatement } from '../../admin/compiler/problemStatementFormatting';
 import ProblemAssetImages from '../../components/ProblemAssetImages';
+import AnviApproach, { AnviMark } from '../../components/AnviApproach';
 
 function normalizeVisibleExamples(codingData = {}) {
   const source = Array.isArray(codingData.sampleTestCases) && codingData.sampleTestCases.length
@@ -41,11 +42,12 @@ function DetailBlock({ title, children }) {
 function AssessmentCodingProblemPanel({ question, codingData = {}, language = '', marks = 0, sectionLabel = 'Coding' }) {
   const isSql = codingData.category === 'SQL';
   const examples = useMemo(() => normalizeVisibleExamples(codingData), [codingData]);
-  const hints = useMemo(() => (
+  const approaches = useMemo(() => (
     Array.isArray(codingData.hints)
-      ? codingData.hints.filter((hint) => String(hint || '').trim())
+      ? codingData.hints.filter((approach) => String(approach || '').trim()).slice(0, 10)
       : []
   ), [codingData.hints]);
+  const [anviRequestKey, setAnviRequestKey] = useState(0);
   const faqs = useMemo(() => (
     Array.isArray(codingData.faqs)
       ? codingData.faqs.filter((faq) => String(faq?.question || '').trim() || String(faq?.answer || '').trim())
@@ -160,20 +162,13 @@ function AssessmentCodingProblemPanel({ question, codingData = {}, language = ''
             <ProblemAssetImages images={(codingData.contentImages || []).filter((image) => image.section === 'constraints')} />
           </section>
 
-          {hints.length ? (
-            <section className="space-y-3">
-              <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-gray-500">Hints</h2>
-              {hints.map((hint, index) => (
-                <details key={`hint-${index + 1}`} className="group rounded-[18px] border border-sky-100 bg-sky-50/60 px-4 py-3 dark:border-sky-900/40 dark:bg-sky-900/10">
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-sky-800 dark:text-sky-200">
-                    Hint {index + 1}
-                    <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
-                  </summary>
-                  <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-gray-300">{hint}</p>
-                </details>
-              ))}
-            </section>
-          ) : null}
+          <section className="space-y-3">
+            <button type="button" onClick={() => setAnviRequestKey((current) => current + 1)} className="flex w-full items-center justify-between gap-4 rounded-2xl border border-violet-200 bg-gradient-to-r from-violet-50 to-fuchsia-50 px-4 py-3 text-left text-violet-800 transition hover:border-violet-300 hover:shadow-md dark:border-violet-800 dark:from-violet-950/40 dark:to-fuchsia-950/30 dark:text-violet-100">
+              <span className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#0b0714]"><AnviMark tone="dark" className="h-9 w-9" /></span><span><span className="block text-sm font-semibold">Ask AnvI</span><span className="mt-0.5 block text-xs font-normal opacity-70">Get one focused approach for this problem.</span></span></span>
+              <span className="text-xs font-semibold">Explore →</span>
+            </button>
+            {anviRequestKey > 0 ? <AnviApproach approaches={approaches} requestKey={anviRequestKey} onRequest={() => setAnviRequestKey((current) => current + 1)} /> : null}
+          </section>
 
           {faqs.length ? (
             <section className="space-y-3">

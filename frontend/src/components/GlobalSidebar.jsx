@@ -17,6 +17,7 @@ import {
   ClipboardList,
   Library,
   BarChart3,
+  ChevronsLeft,
   ChevronDown,
   Settings,
   Mail,
@@ -42,7 +43,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { hasPermission } from '../admin/coordinatorPermissions';
 import { getInterviewNavigation, getInterviewSection } from './interviews/interviewNavigation';
-import { getSidebarWidth } from './sidebarLayout';
+import { getSidebarWidth, STUDENT_SIDEBAR_PANEL_WIDTH, STUDENT_SIDEBAR_RAIL_WIDTH } from './sidebarLayout';
 
 const buildNavItems = (role = 'admin', accessScope = 'full') => {
   if (role === 'student') {
@@ -310,7 +311,7 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
   ];
 };
 
-export default function GlobalSidebar({ role = 'admin', isExpanded = false, onExpand = () => {}, onCollapse = () => {} }) {
+export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPinned = false, onTogglePin = () => {}, onExpand = () => {}, onCollapse = () => {} }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
@@ -349,6 +350,24 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
   }, [role, user]);
   const [openGroup, setOpenGroup] = useState(null);
   const [openNestedGroup, setOpenNestedGroup] = useState(null);
+  const hoverTimerRef = useRef(null);
+  const resolvedSidebarWidth = isStudent
+    ? (isExpanded ? STUDENT_SIDEBAR_PANEL_WIDTH : STUDENT_SIDEBAR_RAIL_WIDTH)
+    : getSidebarWidth(isExpanded);
+
+  const handleSidebarEnter = () => {
+    window.clearTimeout(hoverTimerRef.current);
+    if (!isStudent || isPinned) { onExpand(); return; }
+    hoverTimerRef.current = window.setTimeout(onExpand, 90);
+  };
+
+  const handleSidebarLeave = () => {
+    window.clearTimeout(hoverTimerRef.current);
+    if (profileOpenRef.current || (isStudent && isPinned)) return;
+    hoverTimerRef.current = window.setTimeout(onCollapse, isStudent ? 160 : 0);
+  };
+
+  useEffect(() => () => window.clearTimeout(hoverTimerRef.current), []);
 
   const updateProfileOpen = (nextValue) => {
     const resolvedValue = typeof nextValue === 'function' ? nextValue(profileOpenRef.current) : nextValue;
@@ -410,37 +429,47 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
 
   return (
     <aside
-      onMouseEnter={onExpand}
-      onMouseLeave={() => {
-        if (!profileOpenRef.current) onCollapse();
-      }}
-      className="fixed left-0 top-0 z-40 h-screen overflow-visible border-r border-sky-100 bg-sky-50/90 shadow-[4px_0_28px_rgba(14,165,233,0.08)] backdrop-blur-xl transition-[width] duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)] dark:border-sky-950 dark:bg-slate-950/95 dark:shadow-black/20"
-      style={{ width: 'var(--admin-sidebar-width)' }}
+      onMouseEnter={handleSidebarEnter}
+      onMouseLeave={handleSidebarLeave}
+      className={`fixed left-0 top-0 z-[70] h-screen overflow-visible border-r transition-[width,box-shadow,background-color] ease-[cubic-bezier(0.22,1,0.36,1)] ${isStudent ? `border-sky-100 bg-[#f8fbff] duration-300 dark:border-sky-950 dark:bg-slate-950 ${isExpanded ? 'shadow-[10px_0_32px_rgba(14,165,233,0.09)] dark:shadow-black/30' : 'shadow-[3px_0_18px_rgba(14,165,233,0.05)]'}` : 'border-sky-100 bg-sky-50/90 shadow-[4px_0_28px_rgba(14,165,233,0.08)] backdrop-blur-2xl duration-[800ms] dark:border-sky-950 dark:bg-slate-950/95 dark:shadow-black/20'}`}
+      style={{ width: resolvedSidebarWidth }}
     >
-      <button
+      {!isStudent && <button
         type="button"
         onClick={isExpanded ? onCollapse : onExpand}
-        className="absolute -right-3 top-[68px] z-10 flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-sky-300 hover:text-sky-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-sky-700 dark:hover:text-sky-400"
+        className="absolute -right-3 top-[68px] z-10 flex h-7 w-7 items-center justify-center rounded-full border bg-white text-slate-500 shadow-sm transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:border-sky-700 dark:hover:text-sky-400"
         aria-label={isExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
       >
         {isExpanded ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeftOpen className="h-3.5 w-3.5" />}
-      </button>
+      </button>}
       <div className="flex h-full min-h-0 flex-col">
-        <Link
-          to={homePath}
-          title="PeerPrep home"
-          className="mx-2 flex h-[76px] shrink-0 items-center overflow-hidden border-b border-sky-100 dark:border-sky-950"
-        >
-          <div className="relative h-14 w-full shrink-0 overflow-hidden">
-            <img
-              src="/images/logo.png"
-              alt="PeerPrep"
-              className={`absolute top-1/2 h-auto w-[187px] max-w-none -translate-y-1/2 transition-all duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${isExpanded ? '-left-1' : '-left-5'}`}
-            />
-          </div>
-        </Link>
+        <div className={`relative mx-2 shrink-0 border-b border-sky-100 bg-[#f8fbff] dark:border-sky-950 dark:bg-slate-950 ${isStudent ? 'h-[68px]' : 'h-[76px]'}`}>
+          <Link
+            to={homePath}
+            title="PeerPrep home"
+            className={`flex h-full items-center overflow-hidden ${isStudent ? (isExpanded ? 'justify-start px-2 pr-10' : 'justify-center') : ''}`}
+          >
+            <div className="relative h-14 w-full shrink-0 overflow-hidden">
+            {isStudent ? <>
+              <img src="/images/peerprep-mark.png" alt="PeerPrep" className={`absolute left-1/2 top-1/2 h-11 w-11 -translate-x-1/2 -translate-y-1/2 object-contain transition-[opacity,transform] duration-200 ease-out ${isExpanded ? 'scale-90 opacity-0' : 'scale-100 opacity-100'}`} />
+              <img src="/images/peerprep-wordmark.png" alt="PeerPrep" className={`absolute left-1 top-1/2 h-auto w-[158px] -translate-y-1/2 object-contain transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${isExpanded ? 'translate-x-0 opacity-100' : '-translate-x-2 opacity-0'}`} />
+            </> : <img src="/images/logo.png" alt="PeerPrep" className={`absolute top-1/2 h-auto w-[187px] max-w-none -translate-y-1/2 transition-all duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${isExpanded ? '-left-1' : '-left-5'}`} />}
+            </div>
+          </Link>
+          {isStudent && isExpanded && (
+            <button
+              type="button"
+              onClick={onTogglePin}
+              className="absolute right-1 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:hover:bg-slate-900 dark:hover:text-sky-300"
+              aria-label={isPinned ? 'Collapse navigation' : 'Keep navigation open'}
+              title={isPinned ? 'Collapse navigation' : 'Keep navigation open'}
+            >
+              <ChevronsLeft className="h-[18px] w-[18px]" />
+            </button>
+          )}
+        </div>
 
-        <nav className="min-h-0 flex-1 space-y-1 overflow-x-hidden overflow-y-auto px-1.5 py-3 [scrollbar-width:thin]" aria-label={`${roleLabel} navigation`}>
+        <nav className={`min-h-0 flex-1 overflow-x-hidden overflow-y-auto [scrollbar-width:thin] ${isStudent ? 'space-y-1 px-2 py-3' : 'space-y-1 px-1.5 py-3'}`} aria-label={`${roleLabel} navigation`}>
         {navItems.map((item) => {
           if (item.type === 'link') {
             const Icon = item.icon;
@@ -450,20 +479,20 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
                 key={item.label}
                 to={item.to}
                 title={item.label}
-                className={`relative flex min-h-11 items-center rounded-xl py-1.5 text-[13px] font-semibold transition-colors ${
+                className={`group relative flex min-h-10 items-center rounded-xl py-1 text-[13px] transition-[background-color,color,box-shadow,transform] duration-200 ${active ? 'font-semibold' : 'font-medium'} ${
                   active
-                    ? 'bg-sky-50 text-sky-700 shadow-sm dark:bg-sky-900/30 dark:text-sky-300'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100'
+                    ? isStudent ? 'bg-sky-50/90 text-sky-800 shadow-[0_3px_12px_rgba(14,165,233,0.08)] ring-1 ring-sky-200 dark:bg-sky-950/70 dark:text-sky-200 dark:ring-sky-900' : 'bg-sky-50 text-sky-700 shadow-sm dark:bg-sky-900/30 dark:text-sky-300'
+                    : isStudent ? 'text-slate-700 hover:bg-white/80 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-white/[.06] dark:hover:text-white' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100'
                 }`}
               >
-                <span className={`absolute left-[10px] flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
+                <span className={`absolute left-[10px] flex h-8 w-8 items-center justify-center rounded-lg transition-[background-color,color,transform] duration-200 ${
                   active
-                    ? 'bg-sky-100 text-sky-700 dark:bg-sky-800/40 dark:text-sky-300'
-                    : 'bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-gray-400'
+                    ? isStudent ? 'bg-sky-600 text-white shadow-sm' : 'bg-sky-100 text-sky-700 dark:bg-sky-800/40 dark:text-sky-300'
+                    : isStudent ? 'bg-transparent text-slate-700 group-hover:text-sky-700 dark:text-slate-300' : 'bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-gray-400'
                 }`}>
                   <Icon className="h-[18px] w-[18px]" />
                 </span>
-                <span className={`ml-[52px] min-w-0 pr-2 text-left leading-tight ${isExpanded ? 'visible' : 'pointer-events-none invisible'}`}>
+                <span className={`ml-12 min-w-0 whitespace-nowrap pr-2 text-left leading-tight transition-[opacity,transform] duration-200 ${isExpanded ? 'translate-x-0 opacity-100' : 'pointer-events-none -translate-x-1 opacity-0'}`}>
                   {item.label}
                 </span>
               </NavLink>
@@ -484,20 +513,20 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
                 aria-expanded={isOpen && isExpanded}
                 aria-controls={groupPanelId}
                 data-platform-disclosure="navigation"
-                className={`relative flex min-h-11 w-full items-center rounded-xl py-1.5 text-[13px] font-semibold transition-colors ${
+                className={`relative flex min-h-10 w-full items-center rounded-xl py-1 text-[13px] transition-[background-color,color,box-shadow] duration-200 ${groupActive ? 'font-semibold' : 'font-medium'} ${
                   groupActive
-                    ? 'bg-sky-50 text-sky-700 shadow-sm dark:bg-sky-900/30 dark:text-sky-300'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100'
+                    ? isStudent ? 'bg-sky-50/90 text-sky-800 shadow-[0_3px_12px_rgba(14,165,233,0.08)] ring-1 ring-sky-200 dark:bg-sky-950/70 dark:text-sky-200 dark:ring-sky-900' : 'bg-sky-50 text-sky-700 shadow-sm dark:bg-sky-900/30 dark:text-sky-300'
+                    : isStudent ? 'text-slate-700 hover:bg-white/80 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-white/[.06] dark:hover:text-white' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100'
                 }`}
               >
                 <span className={`absolute left-[10px] flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
                   groupActive
-                    ? 'bg-sky-100 text-sky-700 dark:bg-sky-800/40 dark:text-sky-300'
-                    : 'bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-gray-400'
+                    ? isStudent ? 'bg-sky-600 text-white shadow-sm' : 'bg-sky-100 text-sky-700 dark:bg-sky-800/40 dark:text-sky-300'
+                    : isStudent ? 'bg-transparent text-slate-700 dark:text-slate-300' : 'bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-gray-400'
                 }`}>
                   <GroupIcon className="h-[18px] w-[18px]" />
                 </span>
-                <span className={`ml-[52px] min-w-0 flex-1 pr-8 text-left leading-tight ${isExpanded ? 'visible' : 'pointer-events-none invisible'}`}>
+                <span className={`ml-12 min-w-0 flex-1 whitespace-nowrap pr-8 text-left leading-tight transition-[opacity,transform] duration-200 ${isExpanded ? 'translate-x-0 opacity-100' : 'pointer-events-none -translate-x-1 opacity-0'}`}>
                   {item.label}
                 </span>
                 {isExpanded && (
@@ -578,12 +607,12 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
         })}
         </nav>
 
-        <div className="relative shrink-0 border-t border-sky-100 py-2 dark:border-sky-950">
+        <div className={`relative shrink-0 border-t border-sky-100 dark:border-sky-950 ${isStudent ? 'p-2' : 'py-2'}`}>
           {isProfileOpen && createPortal(
             <div
               id={accountMenuId}
-              className="pointer-events-auto fixed bottom-3 z-[9999] w-[18rem] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_55px_rgba(15,23,42,0.18)] transition-[left] duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)] dark:border-gray-700 dark:bg-gray-900 dark:shadow-black/50"
-              style={{ left: `calc(${getSidebarWidth(isExpanded)} + 0.75rem)` }}
+              className={`pointer-events-auto fixed bottom-3 z-[9999] w-[18rem] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_55px_rgba(15,23,42,0.18)] transition-[left] ease-[cubic-bezier(0.22,1,0.36,1)] dark:border-gray-700 dark:bg-gray-900 dark:shadow-black/50 ${isStudent ? 'duration-300' : 'duration-[800ms]'}`}
+              style={{ left: `calc(${resolvedSidebarWidth} + 0.75rem)` }}
               role="dialog"
               aria-label="Account menu"
             >
@@ -654,19 +683,19 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, onEx
               if (!isExpanded) onExpand();
               updateProfileOpen((open) => !open);
             }}
-            className={`relative flex h-14 w-full items-center overflow-hidden rounded-xl text-left transition ${isProfileOpen ? 'bg-white/80 dark:bg-gray-800' : 'hover:bg-white/70 dark:hover:bg-gray-800/80'}`}
+            className={`relative flex h-12 w-full items-center overflow-hidden rounded-xl text-left transition ${isProfileOpen ? 'bg-sky-50 shadow-sm ring-1 ring-sky-200 dark:bg-sky-950/60 dark:ring-sky-900' : 'hover:bg-sky-50/80 dark:hover:bg-sky-950/40'}`}
             aria-expanded={isProfileOpen}
             aria-controls={accountMenuId}
             aria-label="Open account menu"
           >
             {avatarUrl ? (
-              <img src={avatarUrl} alt="" className="absolute left-3 h-10 w-10 rounded-xl object-cover" />
+              <img src={avatarUrl} alt="" className="absolute left-2 h-9 w-9 rounded-xl object-cover" />
             ) : (
-              <span className={`absolute left-3 flex h-10 w-10 items-center justify-center rounded-xl text-xs font-bold ${accent === 'emerald' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300'}`}>
+              <span className={`absolute left-2 flex h-9 w-9 items-center justify-center rounded-xl text-xs font-bold ${accent === 'emerald' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300'}`}>
                 {initials || (isCoordinator ? 'CO' : isStudent ? 'ST' : 'AD')}
               </span>
             )}
-            <span className={`ml-16 min-w-0 flex-1 pr-8 ${isExpanded ? 'visible' : 'pointer-events-none invisible'}`}>
+            <span className={`ml-14 min-w-0 flex-1 whitespace-nowrap pr-8 transition-[opacity,transform] duration-200 ${isExpanded ? 'translate-x-0 opacity-100' : 'pointer-events-none -translate-x-1 opacity-0'}`}>
               <span className="block truncate text-sm font-bold text-slate-800 dark:text-gray-100">{displayName}</span>
               <span className="block text-[11px] font-medium text-slate-500 dark:text-gray-400">{roleLabel}</span>
             </span>

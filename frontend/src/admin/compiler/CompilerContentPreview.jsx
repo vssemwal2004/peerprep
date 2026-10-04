@@ -209,7 +209,7 @@ export function RichTextPreview({ content, className = '', lead = false }) {
 
 export function ProblemStatementPreview({ problem, showMeta = true }) {
   const sampleTestCases = problem?.sampleTestCases || [];
-  const hints = Array.isArray(problem?.hints) ? problem.hints.filter((hint) => String(hint || '').trim()) : [];
+  const hints = Array.isArray(problem?.hints) ? problem.hints.filter((hint) => String(hint || '').trim()).slice(0, 10) : [];
   const faqs = Array.isArray(problem?.faqs)
     ? problem.faqs.filter((faq) => String(faq?.question || '').trim() || String(faq?.answer || '').trim())
     : [];
@@ -278,13 +278,13 @@ export function ProblemStatementPreview({ problem, showMeta = true }) {
         {hints.length > 0 ? (
           <section className="space-y-3">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold text-slate-800 dark:text-gray-100">Hints</h3>
+              <h3 className="text-sm font-semibold text-slate-800 dark:text-gray-100">AnvI Approaches</h3>
               <span className="text-xs text-slate-500 dark:text-gray-400">{hints.length} configured</span>
             </div>
             <div className="space-y-2">
               {hints.map((hint, index) => (
                 <div key={`hint-preview-${index}`} className="rounded-xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-sm text-slate-700 dark:border-sky-900/40 dark:bg-sky-900/10 dark:text-gray-300">
-                  <span className="font-semibold text-sky-700 dark:text-sky-300">Hint {index + 1}: </span>
+                  <span className="font-semibold text-violet-700 dark:text-violet-300">Approach {index + 1}: </span>
                   {hint}
                 </div>
               ))}

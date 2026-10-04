@@ -936,12 +936,7 @@ export default function CompilerAnalytics({ assessmentId = "", assessmentTitle =
       <header data-page-header className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-gray-800 dark:bg-gray-900">
         <div className="flex min-w-0 items-center gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-sky-50 ring-1 ring-sky-100 dark:bg-sky-950/40 dark:ring-sky-900">
-            <img
-              src="/images/peerprep-analytics-icon.png"
-              alt=""
-              aria-hidden="true"
-              className="h-10 w-10 object-contain"
-            />
+            <BarChart3 className="h-5 w-5 text-sky-700 dark:text-sky-300" aria-hidden="true" />
           </span>
           <div>
             <h1 className="text-lg font-bold text-slate-950 dark:text-white">
@@ -1052,7 +1047,7 @@ export default function CompilerAnalytics({ assessmentId = "", assessmentTitle =
             <TopicProficiencyChart data={chartData} ticks={yTicks} yAxisMaximum={topicAxisMaximum} />
           ) : (
             <div className="flex h-full min-h-[400px] flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-6 text-center dark:border-gray-700 dark:bg-gray-800/40">
-              <img src="/images/peerprep-analytics-icon.png" alt="" aria-hidden="true" className="mb-3 h-16 w-16 object-contain opacity-70" />
+              <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300" aria-hidden="true"><BarChart3 className="h-6 w-6" /></span>
               <p className="text-sm font-bold text-slate-700 dark:text-gray-200">
                 No topic data for this selection
               </p>

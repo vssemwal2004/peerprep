@@ -86,7 +86,7 @@ export function serializeProblem(
     outputFormat: problem.outputFormat || '',
     constraints: problem.constraints || '',
     editorial: problem.editorial || '',
-    hints: Array.isArray(problem.hints) ? problem.hints.filter((hint) => String(hint || '').trim()) : [],
+    hints: Array.isArray(problem.hints) ? problem.hints.filter((hint) => String(hint || '').trim()).slice(0, 10) : [],
     faqs: Array.isArray(problem.faqs)
       ? problem.faqs
         .map((faq) => ({

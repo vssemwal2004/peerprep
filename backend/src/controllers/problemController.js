@@ -612,16 +612,20 @@ function countReferenceSolutions(value) {
 function normalizeHints(value) {
   const parsedHints = parseJsonField(value, []);
   if (!Array.isArray(parsedHints)) {
-    throw new HttpError(400, 'Hints must be an array.');
+    throw new HttpError(400, 'AnvI approaches must be an array.');
+  }
+
+  if (parsedHints.filter((hint) => String(hint ?? '').trim()).length > 10) {
+    throw new HttpError(400, 'A coding problem can have at most 10 AnvI approaches.');
   }
 
   return parsedHints
     .map((hint) => String(hint ?? '').trim())
     .filter(Boolean)
-    .slice(0, 20)
+    .slice(0, 10)
     .map((hint) => {
       if (Buffer.byteLength(hint, 'utf8') > 2000) {
-        throw new HttpError(400, 'Each hint must be 2000 characters or less.');
+        throw new HttpError(400, 'Each AnvI approach must be 2000 characters or less.');
       }
       return hint;
     });

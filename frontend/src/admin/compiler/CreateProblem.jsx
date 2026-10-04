@@ -325,18 +325,19 @@ function TestCaseEditorCard({
   );
 }
 
-function HintEditor({ hints, onAdd, onRemove, onChange }) {
+function AnviApproachEditor({ hints, onAdd, onRemove, onChange }) {
+  const atLimit = (hints || []).length >= 10;
   return (
     <div className="space-y-4">
       {(hints || []).length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-5 text-sm text-slate-500 dark:border-gray-700 dark:text-gray-400">
-          No hints added yet. Add one or more optional hints for students to reveal while solving.
+          No AnvI approaches added yet. Add up to 10 approved directions that AnvI can surface while a student is solving.
         </div>
       ) : (
         hints.map((hint, index) => (
           <div key={`hint-${index}`} className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700">
             <div className="mb-3 flex items-center justify-between gap-3">
-              <h4 className="text-sm font-semibold text-slate-800 dark:text-gray-100">Hint {index + 1}</h4>
+              <h4 className="text-sm font-semibold text-slate-800 dark:text-gray-100">AnvI approach {index + 1}</h4>
               <button type="button" onClick={() => onRemove(index)} className="inline-flex items-center gap-1 text-xs font-medium text-rose-600">
                 <X className="h-3.5 w-3.5" />
                 Remove
@@ -346,7 +347,7 @@ function HintEditor({ hints, onAdd, onRemove, onChange }) {
               value={hint}
               onChange={(event) => onChange(index, event.target.value)}
               rows={4}
-              placeholder="Guide the student without giving away the full solution."
+              placeholder="Describe one useful direction without giving away the complete solution."
               className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500 dark:focus:bg-gray-900"
             />
           </div>
@@ -356,10 +357,11 @@ function HintEditor({ hints, onAdd, onRemove, onChange }) {
       <button
         type="button"
         onClick={onAdd}
-        className="inline-flex items-center gap-2 rounded-xl border border-dashed border-slate-300 px-4 py-3 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+        disabled={atLimit}
+        className="inline-flex items-center gap-2 rounded-xl border border-dashed border-violet-300 px-4 py-3 text-sm font-semibold text-violet-700 transition-colors hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-45 dark:border-violet-800 dark:text-violet-300 dark:hover:bg-violet-950/30"
       >
         <Plus className="h-4 w-4" />
-        Add Hint
+        {atLimit ? '10 approaches added' : 'Add AnvI approach'}
       </button>
     </div>
   );
@@ -1348,8 +1350,8 @@ if (!isValidated || publishedProblem.status !== 'published') {
               <RequiredFieldLabel optional>Editorial solution</RequiredFieldLabel>
               <RichTextEditor value={form.editorial || ''} onChange={(value) => updateField('editorial', value)} rows={12} placeholder="Explain the intended approach, complexity, edge cases and reference reasoning." />
             </SectionCard>
-            <SectionCard title="Hints" subtitle="Optional progressive guidance that students can reveal while solving.">
-              <HintEditor
+            <SectionCard title="AnvI Approaches" subtitle="Add up to 10 approved approaches. AnvI reveals one at random after its guided analysis experience.">
+              <AnviApproachEditor
                 hints={form.hints || []}
                 onAdd={() => updateField('hints', [...(form.hints || []), ''])}
                 onRemove={(index) => updateField('hints', (form.hints || []).filter((_, itemIndex) => itemIndex !== index))}

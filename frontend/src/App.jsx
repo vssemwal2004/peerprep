@@ -12,7 +12,8 @@ import { useAuth } from './context/AuthContext';
 import { hasPermission } from './admin/coordinatorPermissions';
 import PopupDismissManager from './components/PopupDismissManager';
 import GlobalSidebar from './components/GlobalSidebar';
-import { getSidebarWidth } from './components/sidebarLayout';
+import StudentDashboardHeader from './components/StudentDashboardHeader';
+import { STUDENT_SIDEBAR_PANEL_WIDTH, STUDENT_SIDEBAR_RAIL_WIDTH } from './components/sidebarLayout';
 
 // Lazy-load navbars to keep them out of the main bundle
 const CoordinatorLayout = lazy(() => import('./coordinator/CoordinatorLayout'));
@@ -273,7 +274,22 @@ function AppContent() {
   useHideGlobalLoader();
   const location = useLocation();
   const { user } = useAuth();
-  const [isStudentSidebarExpanded, setIsStudentSidebarExpanded] = useState(false);
+  const [isStudentSidebarPinned, setIsStudentSidebarPinned] = useState(() => {
+    try {
+      return typeof window !== 'undefined' && window.localStorage.getItem('studentSidebarPinned') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [isStudentSidebarHovered, setIsStudentSidebarHovered] = useState(false);
+  const isStudentSidebarExpanded = isStudentSidebarPinned || isStudentSidebarHovered;
+  const toggleStudentSidebarPin = useCallback(() => {
+    setIsStudentSidebarHovered(false);
+    setIsStudentSidebarPinned((current) => !current);
+  }, []);
+  useEffect(() => {
+    try { window.localStorage.setItem('studentSidebarPinned', String(isStudentSidebarPinned)); } catch { /* Storage can be disabled by the browser. */ }
+  }, [isStudentSidebarPinned]);
   const isAssessmentModuleAlias = /^\/(assessments|assessment-reports|assessment-history)(\/)?$/.test(location.pathname);
   const isProblemSolver = /^\/problems\/[^/]+$/.test(location.pathname);
   const isMain = location.pathname === "/";
@@ -294,11 +310,15 @@ function AppContent() {
     && !isFeedbackForm
     && !isAssessmentAttempt
     && !isProblemSolver;
+  const showStudentDashboardHeader = isStudentShell && location.pathname === '/student/dashboard';
   const isLoginPage = isMain || isStudentLogin || isResetPassword;
   return (
     <div
       className={`${isStudentShell ? 'h-screen overflow-hidden' : 'min-h-screen'} w-full flex flex-col`}
-      style={isStudentShell ? { '--admin-sidebar-width': getSidebarWidth(isStudentSidebarExpanded), '--app-navbar-height': '0rem' } : undefined}
+      style={isStudentShell ? {
+        '--admin-sidebar-width': isStudentSidebarPinned ? STUDENT_SIDEBAR_PANEL_WIDTH : STUDENT_SIDEBAR_RAIL_WIDTH,
+        '--app-navbar-height': '0rem',
+      } : undefined}
     >
       <RoutePrefetcher />
       <ScrollToTop />
@@ -310,15 +330,23 @@ function AppContent() {
         <GlobalSidebar
           role="student"
           isExpanded={isStudentSidebarExpanded}
-          onExpand={() => setIsStudentSidebarExpanded(true)}
-          onCollapse={() => setIsStudentSidebarExpanded(false)}
+          isPinned={isStudentSidebarPinned}
+          onTogglePin={toggleStudentSidebarPin}
+          onExpand={() => setIsStudentSidebarHovered(true)}
+          onCollapse={() => setIsStudentSidebarHovered(false)}
         />
       )}
      
       {/* Main content: Each route section gets a role-appropriate skeleton.
           This is the "streaming rendering" pattern - the page structure appears 
           immediately as skeleton shapes, then real content swaps in when loaded */}
-      <main data-app-scroll-container={isStudentShell ? true : undefined} tabIndex="-1" className={gradientBg + ` dark:bg-gray-900 flex-grow outline-none transition-[padding] duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${isStudentShell ? 'h-screen min-h-0 overflow-y-auto overscroll-contain' : ''}`} style={isStudentShell ? { paddingLeft: 'var(--admin-sidebar-width)' } : undefined}>
+      <main data-app-scroll-container={isStudentShell ? true : undefined} tabIndex="-1" className={gradientBg + ` dark:bg-gray-900 flex-grow outline-none transition-[padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${isStudentShell ? 'h-screen min-h-0 overflow-y-auto overscroll-contain' : ''}`} style={isStudentShell ? { paddingLeft: 'var(--admin-sidebar-width)' } : undefined}>
+        {showStudentDashboardHeader && (
+          <StudentDashboardHeader
+            sidebarPinned={isStudentSidebarPinned}
+            onToggleSidebar={toggleStudentSidebarPin}
+          />
+        )}
         <Suspense fallback={
           isMain ? <LandingPageSkeleton /> :
           isAdmin ? <DashboardSkeleton /> :

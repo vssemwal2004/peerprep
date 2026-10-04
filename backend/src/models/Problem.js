@@ -135,6 +135,7 @@ const problemSchema = new mongoose.Schema({
   hints: [{
     type: String,
     trim: true,
+    maxlength: 2000,
   }],
   faqs: [{
     question: {

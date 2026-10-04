@@ -635,7 +635,7 @@ function HeroInsightPanel({ displayAnnouncements, announcementIndex, fallbackTho
 
 function StudentDashboardSkeleton() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-sky-100 via-white to-slate-50 px-4 py-6 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 sm:px-6 lg:px-10">
+    <div className="min-h-screen bg-gradient-to-br from-[#f8fbff] via-white to-sky-50 px-4 py-6 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 sm:px-6 lg:px-10">
       <div className="animate-pulse space-y-6">
         <div className="rounded-[28px] border border-white/70 bg-white/65 p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.05] sm:p-8">
           <div className="grid min-h-[480px] items-center gap-8 lg:grid-cols-[1.18fr_.82fr]">
@@ -898,7 +898,7 @@ export default function StudentDashboard() {
 
   return (
     <RequirePasswordChange user={user}>
-      <div className="relative min-h-screen w-full scroll-smooth overflow-x-hidden bg-gradient-to-br from-sky-100 via-white to-slate-50 pb-10 pt-3 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
+      <div className="relative min-h-screen w-full scroll-smooth overflow-x-hidden bg-gradient-to-br from-[#f8fbff] via-white to-sky-50 pb-10 pt-3 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
 
         {/* Page-level background avoids an expensive fixed-layer repaint while scrolling. */}
         <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">

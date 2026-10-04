@@ -228,7 +228,7 @@ export function createProblemFormFromProblem(problem) {
     outputFormat: problem?.outputFormat || '',
     constraints: problem?.constraints || '',
     editorial: problem?.editorial || '',
-    hints: Array.isArray(problem?.hints) ? problem.hints.map((hint) => String(hint || '')) : [],
+    hints: Array.isArray(problem?.hints) ? problem.hints.slice(0, 10).map((hint) => String(hint || '')) : [],
     faqs: Array.isArray(problem?.faqs)
       ? problem.faqs.map((faq) => ({
         question: faq?.question || '',

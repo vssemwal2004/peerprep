@@ -81,7 +81,7 @@ function ProblemDescriptionPanel({ problem, previewValidated }) {
   const topics = Array.isArray(problem?.tags) ? problem.tags : [];
   const companies = Array.isArray(problem?.companyTags) ? problem.companyTags : [];
   const hints = Array.isArray(problem?.hints)
-    ? problem.hints.filter((hint) => String(hint || '').trim())
+    ? problem.hints.filter((hint) => String(hint || '').trim()).slice(0, 10)
     : [];
   const faqs = Array.isArray(problem?.faqs)
     ? problem.faqs.filter((faq) => String(faq?.question || '').trim() || String(faq?.answer || '').trim())
@@ -180,14 +180,14 @@ function ProblemDescriptionPanel({ problem, previewValidated }) {
       {hints.length > 0 ? (
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-base font-semibold text-slate-900 dark:text-gray-100">Hints</h2>
-            <span className="text-xs text-slate-500 dark:text-gray-400">{hints.length} available</span>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-gray-100">AnvI Approaches</h2>
+            <span className="text-xs text-slate-500 dark:text-gray-400">{hints.length} configured</span>
           </div>
           <div className="space-y-2">
             {hints.map((hint, index) => (
               <details key={`preview-hint-${index + 1}`} className="group rounded-[18px] border border-sky-100 bg-sky-50/70 px-4 py-3 dark:border-sky-900/40 dark:bg-sky-900/10">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-sky-800 dark:text-sky-200">
-                  Hint {index + 1}
+                  AnvI approach {index + 1}
                   <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
                 </summary>
                 <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-gray-300">{hint}</p>

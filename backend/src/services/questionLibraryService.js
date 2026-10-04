@@ -85,7 +85,7 @@ function buildProblemSnapshot(problem = {}, { sampleTestCases = [], hiddenTestCa
     outputFormat: problem.outputFormat || '',
     constraints: problem.constraints || '',
     editorial: problem.editorial || '',
-    hints: Array.isArray(problem.hints) ? problem.hints : [],
+    hints: Array.isArray(problem.hints) ? problem.hints.slice(0, 10) : [],
     faqs: Array.isArray(problem.faqs) ? problem.faqs : [],
     timeLimitSeconds: problem.timeLimitSeconds,
     memoryLimitMb: problem.memoryLimitMb,

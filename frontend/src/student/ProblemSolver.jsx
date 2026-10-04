@@ -9,17 +9,18 @@ import {
   RotateCcw,
   Tag,
   Building2,
-  Lightbulb,
   PanelLeftOpen,
   PanelRightOpen,
   Clock3,
   Maximize2,
+  BookOpenText,
 } from 'lucide-react';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import ProblemAssetImages from '../components/ProblemAssetImages';
 import CodeEditor from './CodeEditor';
 import DailyCodingChallenge from './DailyCodingChallenge';
+import AnviApproach, { ANVI_ASK_EVENT, AnviMark } from '../components/AnviApproach';
 import { DifficultyBadge, EmptyState, LoadingPanel } from '../admin/compiler/CompilerUi';
 import {
   formatDateTime,
@@ -27,7 +28,7 @@ import {
   getLanguageLabel,
 } from '../admin/compiler/compilerUtils';
 import { RichTextPreview } from '../admin/compiler/CompilerContentPreview';
-import { getDisplayProblemStatement } from '../admin/compiler/problemStatementFormatting';
+import { getDisplayProblemStatement, normalizeRichText } from '../admin/compiler/problemStatementFormatting';
 import {
   buildProblemDrafts,
   getCodeValidationMessage,
@@ -47,6 +48,7 @@ function StudentProgressBadge({ status }) {
 function LeftPanelTabs({
   activeTab,
   onTabChange,
+  hasEditorial = false,
   verdictLabel,
   verdictTone = 'neutral',
   verdictDisabled = false,
@@ -56,8 +58,8 @@ function LeftPanelTabs({
     : (verdictTone === 'danger' ? 'text-rose-600 dark:text-rose-300' : 'text-slate-500 dark:text-gray-400');
 
   return (
-    <div className="sticky top-0 z-20 flex flex-none items-center justify-between gap-3 border-b border-zinc-200 bg-[#f7f7f7] px-4 pt-3 dark:border-zinc-700 dark:bg-[#282828]">
-      <div className="flex items-center gap-4">
+    <div className="sticky top-0 z-20 flex flex-none items-center overflow-x-auto border-b border-zinc-200 bg-[#f7f7f7] px-4 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden dark:border-zinc-700 dark:bg-[#282828]">
+      <div className="flex min-w-max items-center gap-4">
         <button
           type="button"
           onClick={() => onTabChange('description')}
@@ -69,6 +71,20 @@ function LeftPanelTabs({
         >
           Description
         </button>
+        {hasEditorial ? (
+          <button
+            type="button"
+            onClick={() => onTabChange('editorial')}
+            className={`inline-flex items-center gap-1.5 pb-3 text-sm font-semibold transition-colors ${
+              activeTab === 'editorial'
+                ? 'border-b-2 border-zinc-900 text-zinc-900 dark:border-white dark:text-white'
+                : 'border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:text-gray-400 dark:hover:text-gray-200'
+            }`}
+          >
+            <BookOpenText className="h-3.5 w-3.5" />
+            Editorial
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => onTabChange('submissions')}
@@ -96,6 +112,23 @@ function LeftPanelTabs({
       </div>
 
     </div>
+  );
+}
+
+function EditorialPanel({ editorial }) {
+  return (
+    <article className="space-y-5 px-5 py-6 sm:px-6">
+      <header className="border-b border-zinc-200 pb-4 dark:border-zinc-700">
+        <div className="flex items-center gap-2 text-zinc-900 dark:text-white">
+          <BookOpenText className="h-5 w-5" />
+          <h1 className="text-xl font-semibold">Editorial</h1>
+        </div>
+        <p className="mt-1.5 text-sm text-slate-500 dark:text-gray-400">
+          Official explanation and solution approach provided by the problem author.
+        </p>
+      </header>
+      <RichTextPreview content={editorial} lead />
+    </article>
   );
 }
 
@@ -325,10 +358,11 @@ function ReadingSectionTitle({ children, meta }) {
 
 function ProblemDescriptionPanel({ problem, language }) {
   const [activeMetaPanel, setActiveMetaPanel] = useState('');
+  const [anviRequestKey, setAnviRequestKey] = useState(0);
 
   const topics = problem.tags || [];
   const companies = problem.companyTags || [];
-  const hints = Array.isArray(problem.hints) ? problem.hints.filter((hint) => String(hint || '').trim()) : [];
+  const approaches = Array.isArray(problem.hints) ? problem.hints.filter((approach) => String(approach || '').trim()).slice(0, 10) : [];
   const faqs = Array.isArray(problem.faqs)
     ? problem.faqs.filter((faq) => String(faq?.question || '').trim() || String(faq?.answer || '').trim())
     : [];
@@ -340,6 +374,16 @@ function ProblemDescriptionPanel({ problem, language }) {
   const descriptionImages = (problem.contentImages || []).filter((image) => image.section !== 'constraints');
   const constraintImages = (problem.contentImages || []).filter((image) => image.section === 'constraints');
   const visibleRunner = problem.studentRunnerTemplates?.[language] || '';
+
+  const askAnvi = useCallback(() => {
+    setActiveMetaPanel('anvi');
+    setAnviRequestKey((current) => current + 1);
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener(ANVI_ASK_EVENT, askAnvi);
+    return () => window.removeEventListener(ANVI_ASK_EVENT, askAnvi);
+  }, [askAnvi]);
 
   return (
     <div className="space-y-7 px-5 py-6 sm:px-6">
@@ -366,18 +410,18 @@ function ProblemDescriptionPanel({ problem, language }) {
           </button>
           <button
             type="button"
-            onClick={() => setActiveMetaPanel((current) => current === 'hints' ? '' : 'hints')}
-            aria-expanded={activeMetaPanel === 'hints'}
-            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition ${activeMetaPanel === 'hints' ? 'bg-sky-600 text-white' : 'bg-sky-50 text-sky-700 hover:bg-sky-100 dark:bg-sky-900/20 dark:text-sky-300 dark:hover:bg-sky-900/30'}`}
+            onClick={askAnvi}
+            aria-expanded={activeMetaPanel === 'anvi'}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition ${activeMetaPanel === 'anvi' ? 'border-violet-500 bg-violet-600 text-white shadow-[0_5px_18px_rgba(124,58,237,0.25)]' : 'border-violet-200 bg-gradient-to-r from-violet-50 to-fuchsia-50 text-violet-700 hover:border-violet-300 dark:border-violet-800 dark:from-violet-950/40 dark:to-fuchsia-950/30 dark:text-violet-200'}`}
           >
-            <Lightbulb className="h-3.5 w-3.5" /> Hint {hints.length ? `(${hints.length})` : ''}
+            <AnviMark className="h-4 w-4" /> Ask AnvI
           </button>
           {isSql ? <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700 dark:bg-sky-900/20 dark:text-sky-300">SQLite</span> : null}
         </div>
         <p className="mt-3 text-xs text-slate-400 dark:text-gray-500">
             {Number(problem.acceptanceRate || 0).toFixed(1)}% acceptance | {problem.totalSubmissions || 0} submissions
         </p>
-        {activeMetaPanel && (
+        {activeMetaPanel && activeMetaPanel !== 'anvi' && (
           <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/70">
             {activeMetaPanel === 'topics' && (
               <div className="flex flex-wrap gap-2">
@@ -389,13 +433,9 @@ function ProblemDescriptionPanel({ problem, language }) {
                 {companies.length ? companies.map((company) => <span key={company} className="rounded-full bg-amber-100 px-3 py-1.5 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">{company}</span>) : <p className="text-sm text-zinc-500">No company tags are available for this problem.</p>}
               </div>
             )}
-            {activeMetaPanel === 'hints' && (
-              <div className="space-y-2">
-                {hints.length ? hints.map((hint, index) => <div key={`quick-hint-${index}`} className="rounded-lg bg-white px-3 py-2 text-sm leading-6 text-zinc-700 shadow-sm dark:bg-zinc-700 dark:text-zinc-200"><span className="mr-2 font-semibold text-sky-600 dark:text-sky-300">Hint {index + 1}</span>{hint}</div>) : <p className="text-sm text-zinc-500">No hints are available for this problem.</p>}
-              </div>
-            )}
           </div>
         )}
+        {activeMetaPanel === 'anvi' && <div className="mt-4"><AnviApproach approaches={approaches} requestKey={anviRequestKey} onRequest={askAnvi} /></div>}
       </section>
 
       <section>
@@ -1224,6 +1264,17 @@ export default function ProblemSolver() {
     return drafts[language] ?? problem.codeTemplates?.[language] ?? '';
   }, [drafts, language, problem]);
 
+  const hasEditorial = useMemo(
+    () => Boolean(normalizeRichText(problem?.editorial || '').trim()),
+    [problem?.editorial],
+  );
+
+  useEffect(() => {
+    if (activeLeftTab === 'editorial' && !hasEditorial) {
+      setActiveLeftTab('description');
+    }
+  }, [activeLeftTab, hasEditorial]);
+
   const activeTestCase = useMemo(() => {
     if (!Array.isArray(testCases) || testCases.length === 0) return null;
     const found = testCases.find((entry) => String(entry.id) === String(activeTestCaseId));
@@ -1559,6 +1610,16 @@ export default function ProblemSolver() {
           </div>
 
           <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent(ANVI_ASK_EVENT))}
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-violet-200 bg-gradient-to-r from-violet-50 to-fuchsia-50 px-2 text-xs font-semibold text-violet-700 shadow-sm transition hover:border-violet-300 hover:shadow-md dark:border-violet-800 dark:from-violet-950/50 dark:to-fuchsia-950/40 dark:text-violet-200 sm:px-2.5"
+              title="Get an AnvI approach"
+            >
+              <AnviMark className="h-6 w-6" />
+              <span className="sm:hidden">AnvI</span>
+              <span className="hidden sm:inline">Ask AnvI</span>
+            </button>
             <select
               value={language}
               onChange={(event) => setLanguage(event.target.value)}
@@ -1687,6 +1748,7 @@ export default function ProblemSolver() {
             <LeftPanelTabs
               activeTab={activeLeftTab}
               onTabChange={setActiveLeftTab}
+              hasEditorial={hasEditorial}
               verdictLabel={verdictTabLabel}
               verdictTone={verdictTabTone}
               verdictDisabled={!verdictForTab}
@@ -1694,6 +1756,8 @@ export default function ProblemSolver() {
             <div className="min-h-0 flex-1 overflow-y-auto scroll-smooth">
               {activeLeftTab === 'description' ? (
                 <ProblemDescriptionPanel problem={problem} language={language} />
+              ) : activeLeftTab === 'editorial' ? (
+                <EditorialPanel editorial={problem.editorial} />
               ) : activeLeftTab === 'submissions' ? (
                 <SubmissionList
                   loading={submissionsLoading}
@@ -1755,6 +1819,7 @@ export default function ProblemSolver() {
             <LeftPanelTabs
               activeTab={activeLeftTab}
               onTabChange={setActiveLeftTab}
+              hasEditorial={hasEditorial}
               verdictLabel={verdictTabLabel}
               verdictTone={verdictTabTone}
               verdictDisabled={!verdictForTab}
@@ -1762,6 +1827,8 @@ export default function ProblemSolver() {
             <div className="max-h-[calc(100vh-14rem)] overflow-y-auto scroll-smooth">
               {activeLeftTab === 'description' ? (
                 <ProblemDescriptionPanel problem={problem} language={language} />
+              ) : activeLeftTab === 'editorial' ? (
+                <EditorialPanel editorial={problem.editorial} />
               ) : activeLeftTab === 'submissions' ? (
                 <SubmissionList
                   loading={submissionsLoading}

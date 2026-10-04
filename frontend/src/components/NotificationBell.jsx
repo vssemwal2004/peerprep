@@ -44,7 +44,7 @@ function formatRelativeTime(dateValue) {
   return date.toLocaleDateString();
 }
 
-function NotificationBell() {
+function NotificationBell({ buttonClassName = '' }) {
   const { user, authChecked, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
@@ -229,11 +229,14 @@ function NotificationBell() {
   return (
     <>
       <button
+        type="button"
         onClick={handleToggle}
-        className="relative flex items-center justify-center w-9 h-9 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-sky-400 transition-colors"
+        className={`relative flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-sky-700 dark:hover:bg-sky-950/50 ${buttonClassName}`}
         aria-label="Notifications"
+        aria-expanded={isOpen}
+        aria-controls="notification-panel"
       >
-        <Bell className="w-4 h-4 text-slate-600 dark:text-slate-200" />
+        <Bell className="h-4 w-4" />
         {unreadCount > 0 && (
           <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full bg-red-500 text-white text-[10px] font-semibold flex items-center justify-center px-1">
             {unreadCount > 99 ? '99+' : unreadCount}

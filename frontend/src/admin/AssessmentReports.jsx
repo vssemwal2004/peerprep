@@ -1348,7 +1348,7 @@ export default function AssessmentReports() {
               <div className="relative mx-auto flex h-36 w-36 items-center justify-center" aria-hidden="true">
                 <div className="absolute inset-3 rounded-full bg-sky-200/70 blur-2xl dark:bg-sky-800/25" />
                 <div className="relative flex h-28 w-28 items-center justify-center rounded-[28px] border border-sky-100 bg-white/90 p-2 shadow-xl shadow-sky-200/60 dark:border-sky-900/60 dark:bg-gray-900 dark:shadow-black/20">
-                  <img src="/images/peerprep-analytics-icon.png" alt="" className="h-full w-full object-contain" />
+                  <BarChart3 className="h-12 w-12 text-sky-700 dark:text-sky-300" />
                 </div>
               </div>
               <h2 className="mt-2 text-lg font-bold text-slate-900 dark:text-white">Select an assessment</h2>

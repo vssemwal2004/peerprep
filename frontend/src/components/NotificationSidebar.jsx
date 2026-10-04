@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import NotificationItem from './NotificationItem';
 
@@ -46,7 +47,24 @@ function NotificationSidebar({
     return () => clearInterval(id);
   }, [isOpen, announcementItems.length]);
 
-  return (
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') onClose();
+    };
+
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
+  const panel = (
     <AnimatePresence>
       {isOpen && (
         <>
@@ -55,19 +73,23 @@ function NotificationSidebar({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 z-50 bg-slate-900/40"
+            className="fixed inset-0 z-[10000] bg-slate-950/45 backdrop-blur-[2px]"
           />
           <motion.aside
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ type: 'tween', duration: 0.3 }}
-            className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-md bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 shadow-2xl"
+            id="notification-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="notification-panel-title"
+            initial={{ x: '100%', opacity: 0.96 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: '100%', opacity: 0.96 }}
+            transition={{ type: 'spring', stiffness: 360, damping: 38 }}
+            className="fixed bottom-0 right-0 top-0 z-[10001] isolate w-full overflow-hidden border-l border-slate-200 bg-white shadow-[-24px_0_70px_rgba(15,23,42,0.28)] md:w-[45vw] lg:w-[36vw] xl:w-[30vw] dark:border-slate-800 dark:bg-slate-950"
           >
-            <div className="flex h-full flex-col">
-              <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 px-5 py-4">
+            <div className="flex h-full min-h-0 flex-col bg-white dark:bg-slate-950">
+              <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-950">
                 <div>
-                  <div className="text-lg font-semibold text-slate-900 dark:text-white">Notifications</div>
+                  <div id="notification-panel-title" className="text-lg font-semibold text-slate-900 dark:text-white">Notifications</div>
                   <div className="text-xs text-slate-500 dark:text-slate-400">
                     {unreadCount} unread
                   </div>
@@ -80,7 +102,7 @@ function NotificationSidebar({
                 </button>
               </div>
 
-              <div className="flex items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 px-5 py-3">
+              <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white px-5 py-3 dark:border-slate-800 dark:bg-slate-950">
                 <button
                   onClick={onMarkAllRead}
                   className="text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-sky-500 transition-colors"
@@ -95,13 +117,13 @@ function NotificationSidebar({
                 </button>
               </div>
 
-              <div className="flex gap-1 border-b border-slate-200 px-5 py-2 dark:border-slate-800">
+              <div className="flex shrink-0 gap-1 border-b border-slate-200 bg-white px-5 py-2 dark:border-slate-800 dark:bg-slate-950">
                 {[['all', `All (${listItems.length})`], ['unread', `Unread (${unreadCount})`]].map(([value, label]) => <button key={value} type="button" onClick={() => setActiveFilter(value)} className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${activeFilter === value ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'}`}>{label}</button>)}
               </div>
 
               {/* Announcement highlight (auto-fades every 5s) */}
               {announcementItems.length > 0 && (
-                <div className="border-b border-slate-200 dark:border-slate-800 px-5 py-4">
+                <div className="shrink-0 border-b border-slate-200 bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-950">
                   <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
                     Announcement highlight
                   </div>
@@ -140,7 +162,7 @@ function NotificationSidebar({
                 </div>
               )}
 
-              <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain bg-white px-5 py-4 [scrollbar-gutter:stable] dark:bg-slate-950">
                 {filteredItems.length === 0 ? (
                   <div className="flex h-full items-center justify-center">
                     <div className="text-sm text-slate-500 dark:text-slate-400">
@@ -164,6 +186,8 @@ function NotificationSidebar({
       )}
     </AnimatePresence>
   );
+
+  return typeof document === 'undefined' ? panel : createPortal(panel, document.body);
 }
 
 export default NotificationSidebar;
