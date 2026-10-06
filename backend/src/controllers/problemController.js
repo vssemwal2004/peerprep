@@ -847,7 +847,7 @@ function statusLabel(status) {
   return status || 'Result';
 }
 
-async function loadHiddenExecutionTestCases(problem) {
+export async function loadHiddenExecutionTestCases(problem) {
   const hiddenTestCasesDb = await TestCase.find({
     problem: problem._id,
     kind: 'hidden',

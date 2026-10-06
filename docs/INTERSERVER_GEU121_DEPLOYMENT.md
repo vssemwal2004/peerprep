@@ -1,14 +1,14 @@
 # InterServer deployment: GEU-121
 
-This runbook uses `geu-121` as the machine-readable university ID. The control dashboard lowercases IDs, so enter `GEU-121` or `geu-121` there. It assumes `taskely.online` serves both the university frontend and `/api` on one university VPS. Set `CONTROL_ORIGIN` to the separately deployed super-admin service's HTTPS origin. Do not run the control and university processes against the same MongoDB database.
+This runbook uses `geu-121` as the machine-readable university ID. The control dashboard lowercases IDs, so enter `GEU-121` or `geu-121` there. It assumes `taskley.online` serves both the university frontend and `/api` on one university VPS. Set `CONTROL_ORIGIN` to the separately deployed super-admin service's HTTPS origin. Do not run the control and university processes against the same MongoDB database.
 
 The commands below target Ubuntu 24.04 on an InterServer VPS. Replace `VPS_IP`, `SSH_USER`, `SSH_KEY`, `CONTROL_ORIGIN`, administrator email/password, and all generated secrets. Run shell commands on the machine indicated by each heading. Keep secrets out of the repository and shell history. A deployment is complete only after the checks at the end pass.
 
 ## 1. Control installation and university registration
 
-On the **control VPS**, deploy the control codebase per [multi-university deployment](MULTI_UNIVERSITY_DEPLOYMENT.md) with `PEERPREP_DEPLOYMENT_ROLE=control`, its own `MONGODB_URI`, `FRONTEND_ORIGIN`, `JWT_SECRET`, and admin account. Build its frontend with `VITE_PEERPREP_DEPLOYMENT_ROLE=control`. Give the control site and API an HTTPS origin reachable from `taskely.online`'s VPS. The control VPS needs the same Ubuntu packages and firewall setup as section 2, but its MongoDB database and user must be distinct, for example `peerprep_control` and `control_app`.
+On the **control VPS**, deploy the control codebase per [multi-university deployment](MULTI_UNIVERSITY_DEPLOYMENT.md) with `PEERPREP_DEPLOYMENT_ROLE=control`, its own `MONGODB_URI`, `FRONTEND_ORIGIN`, `JWT_SECRET`, and admin account. Build its frontend with `VITE_PEERPREP_DEPLOYMENT_ROLE=control`. Give the control site and API an HTTPS origin reachable from `taskley.online`'s VPS. The control VPS needs the same Ubuntu packages and firewall setup as section 2, but its MongoDB database and user must be distinct, for example `peerprep_control` and `control_app`.
 
-For a new control VPS, repeat the package commands in section 2 there, create a MongoDB administrator and `control_app` user with `readWrite` on `peerprep_control` using the pattern in section 3, then enable MongoDB authorization. Transfer the main codebase to `/srv/peerprep/control` and run `npm ci` in both `backend` and `frontend`. Use a control domain such as `admin.taskely.online` only after its A record points to the control VPS. Set the control backend env as follows (use distinct random passwords/secrets and the actual domain):
+For a new control VPS, repeat the package commands in section 2 there, create a MongoDB administrator and `control_app` user with `readWrite` on `peerprep_control` using the pattern in section 3, then enable MongoDB authorization. Transfer the main codebase to `/srv/peerprep/control` and run `npm ci` in both `backend` and `frontend`. Use a control domain such as `admin.taskley.online` only after its A record points to the control VPS. Set the control backend env as follows (use distinct random passwords/secrets and the actual domain):
 
 ```dotenv
 NODE_ENV=production
@@ -38,7 +38,7 @@ sudo -u peerprep npm ci
 sudo -u peerprep npm run build
 ```
 
-Use the Nginx and systemd examples in section 5 with the control domain, `/srv/peerprep/control` paths and a `peerprep-control` service name. Then run `sudo certbot --nginx -d REPLACE_CONTROL_DOMAIN`, check `/api/health`, log into the control site, and remove `ADMIN_PASSWORD` from the control `.env` after changing it. The control frontend and API may share that HTTPS domain exactly as the university frontend and API share `taskely.online`.
+Use the Nginx and systemd examples in section 5 with the control domain, `/srv/peerprep/control` paths and a `peerprep-control` service name. Then run `sudo certbot --nginx -d REPLACE_CONTROL_DOMAIN`, check `/api/health`, log into the control site, and remove `ADMIN_PASSWORD` from the control `.env` after changing it. The control frontend and API may share that HTTPS domain exactly as the university frontend and API share `taskley.online`.
 
 Generate the inspection signing pair **on the control VPS**. Only the public key goes to the university VPS:
 
@@ -53,11 +53,13 @@ echo
 
 Put the first output in the control backend `.env` as `PEERPREP_INSPECTION_PRIVATE_KEY`. Put the second output in the university backend `.env` as `PEERPREP_INSPECTION_PUBLIC_KEY`. After both are saved and backed up securely, remove the temporary PEM file. Restart the control backend after setting its private key. These are Ed25519 DER keys encoded as base64; the public key lets the university verify a short-lived read-only inspection request. The private key must never be on the university VPS.
 
-Run `npm run migrate:platform-indexes` and `npm run bootstrap` once in the control backend. In the control admin sidebar, open **Universities**, create `geu-121`, set frontend URL and university API URL both to `https://taskely.online`, and save the one-time API key. Set its permissions and shared learning/question sources. Assessment assignments remain selected per university. The student detail view will become available once the university API is live.
+Run `npm run migrate:platform-indexes` and `npm run bootstrap` once in the control backend. In the control admin sidebar, open **Universities**, create `geu-121`, set frontend URL and university API URL both to `https://taskley.online`, and save the one-time API key. Set its permissions and shared learning/question sources. Assessment assignments remain selected per university. The student detail view will become available once the university API is live.
 
 ## 2. DNS and VPS base packages
 
-At the domain's DNS provider, create an **A record** for `taskely.online` (`@`) pointing to the university VPS public IP. If using a separate API hostname later, add another A record and change the frontend API build setting and control registry API URL accordingly. Wait for `dig +short taskely.online` to return the VPS IP.
+At the domain's DNS provider, create an **A record** for `taskley.online` (`@`) pointing to the university VPS public IP. If using a separate API hostname later, add another A record and change the frontend API build setting and control registry API URL accordingly. Wait for `dig +short taskley.online` to return the VPS IP.
+
+If `api.taskley.online` is configured as a separate API host, first verify `curl -i https://api.taskley.online/api/health` returns JSON from Node. Then set the university frontend's `VITE_API_URL=https://api.taskley.online` and the control dashboard's University API URL to `https://api.taskley.online`; keep `FRONTEND_ORIGIN=https://taskley.online` on the university backend. With this layout, the frontend hostname does not need to proxy `/api/`. If the API health URL returns the frontend HTML, fix that API hostname's Nginx proxy before rebuilding the frontend.
 
 From your workstation:
 
@@ -145,25 +147,33 @@ PEERPREP_CONTROL_URL=https://REPLACE_CONTROL_ORIGIN
 PEERPREP_SHARED_API_KEY=REPLACE_WITH_ONE_TIME_KEY_FROM_CONTROL_DASHBOARD
 PEERPREP_INSPECTION_PUBLIC_KEY=REPLACE_WITH_BASE64_PUBLIC_KEY
 MONGODB_URI=mongodb://geu121_app:URL_ENCODED_PASSWORD@127.0.0.1:27017/peerprep_geu121?authSource=peerprep_geu121&directConnection=true
-FRONTEND_ORIGIN=https://taskely.online
-FRONTEND_URL=https://taskely.online
+FRONTEND_ORIGIN=https://taskley.online
+FRONTEND_URL=https://taskley.online
 JWT_SECRET=REPLACE_WITH_AT_LEAST_32_RANDOM_CHARACTERS
 REDIS_HOST=127.0.0.1
 REDIS_PORT=6379
 START_EXECUTION_WORKERS=false
 START_SCHEDULED_JOBS=false
-START_MAIL_WORKER=false
+START_MAIL_WORKER=true
+EMAIL_ENABLED=true
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=REPLACE_WITH_SENDING_ACCOUNT
+SMTP_PASS=REPLACE_WITH_SMTP_APP_PASSWORD_OR_PROVIDER_CREDENTIAL
+MAIL_FROM=REPLACE_WITH_SENDING_ACCOUNT
 ADMIN_EMAIL=REPLACE_WITH_UNIVERSITY_ADMIN_EMAIL
 ADMIN_PASSWORD=REPLACE_WITH_TEMPORARY_BOOTSTRAP_PASSWORD
 ```
 
 `PEERPREP_CONTROL_URL` is an origin such as `https://control.example.com`, with no `/api` suffix. Generate a unique JWT secret for this installation (`openssl rand -base64 48`). Add SMTP, object storage, compiler/Judge0 and interview runtime credentials from the existing deployment environment before testing those modules; their integrations will not work merely from starting the core web app.
 
+The example starts the mail queue worker inside the single university API process. If a separate `npm run worker:maintenance` service is running against the same university database, set `START_MAIL_WORKER=false` in the API service so only the maintenance process drains queued mail. `ADMIN_EMAIL` is the login account, not the SMTP sender. The sender needs `SMTP_USER` and `SMTP_PASS`; `MAIL_FROM` should be an address authorized by that SMTP account. Run `node --env-file=.env --input-type=module -e "const {verifyMailTransport}=await import('./src/utils/mailer.js'); process.exitCode=(await verifyMailTransport())?0:1"` from `backend/` to check SMTP authentication and connectivity without sending a message. Do not print `SMTP_PASS` in logs or share it in chat.
+
 Set `/srv/peerprep/geu-121/frontend/.env.production`:
 
 ```dotenv
 VITE_PEERPREP_DEPLOYMENT_ROLE=university
-VITE_API_URL=https://taskely.online
+VITE_API_URL=https://taskley.online
 ```
 
 Build and bootstrap:
@@ -210,7 +220,7 @@ Create `/etc/nginx/sites-available/peerprep-geu121`:
 ```nginx
 server {
     listen 80;
-    server_name taskely.online;
+    server_name taskley.online;
     root /srv/peerprep/geu-121/frontend/dist;
     index index.html;
     client_max_body_size 30m;
@@ -239,6 +249,8 @@ server {
 }
 ```
 
+After Certbot edits the site, inspect the active `listen 443 ssl` server block for `taskley.online`. Its `/api/` and `/socket.io/` proxy locations must remain inside that HTTPS block. A static `location /` handling `/api/auth/login` will return Nginx 405 for POST. Run `sudo nginx -T` to identify the active configuration before editing it.
+
 Enable and start:
 
 ```bash
@@ -250,7 +262,7 @@ sudo systemctl status peerprep-geu121 --no-pager
 sudo snap install core && sudo snap refresh core
 sudo snap install --classic certbot
 sudo ln -s /snap/bin/certbot /usr/bin/certbot
-sudo certbot --nginx -d taskely.online
+sudo certbot --nginx -d taskley.online
 sudo certbot renew --dry-run
 ```
 
@@ -262,8 +274,8 @@ On the university VPS and from the workstation:
 
 ```bash
 curl -fsS http://127.0.0.1:4000/api/health
-curl -fsS https://taskely.online/api/health
-curl -fsS https://taskely.online/ | head
+curl -fsS https://taskley.online/api/health
+curl -fsS https://taskley.online/ | head
 sudo journalctl -u peerprep-geu121 -n 100 --no-pager
 ```
 

@@ -40,7 +40,6 @@ const LearningDetail = lazy(() => import("./student/LearningDetail"));
 const StudentProfile = lazy(() => import("./student/StudentProfile"));
 const HelpAndSupport = lazy(() => import("./student/HelpAndSupport"));
 const ProblemsPage = lazy(() => import("./student/ProblemsPage"));
-const PublicQuestions = lazy(() => import("./student/PublicQuestions"));
 const ProblemSolver = lazy(() => import("./student/ProblemSolver"));
 const StudentAssessmentList = lazy(() => import("./student/StudentAssessmentList"));
 const AssessmentReportsPage = lazy(() => import("./student/AssessmentReportsPage"));
@@ -390,13 +389,11 @@ function AppContent() {
         <Route path="/student/analysis" element={<StudentProtectedRoute><StudentAnalytics /></StudentProtectedRoute>} />
         <Route path="/student/analysis/:section" element={<StudentProtectedRoute><StudentAnalytics /></StudentProtectedRoute>} />
         <Route path="/problems" element={<StudentProtectedRoute><ProblemsPage /></StudentProtectedRoute>} />
-        <Route path="/student/public-questions" element={<StudentProtectedRoute><PublicQuestions /></StudentProtectedRoute>} />
         <Route path="/problems/:id" element={<StudentProtectedRoute><ProblemSolver /></StudentProtectedRoute>} />
         
         {/* Admin Routes - Protected */}
         <Route path="/admin" element={<AdminShell><AdminOverview /></AdminShell>} />
         <Route path="/admin/overview" element={<AdminShell><AdminOverview /></AdminShell>} />
-        <Route path="/admin/public-questions" element={<AdminShell><PublicQuestions /></AdminShell>} />
         <Route path="/admin/dashboard" element={<AdminShell><AdminOverview /></AdminShell>} />
         <Route path="/admin/onboarding" element={<AdminShell><StudentOnboarding /></AdminShell>} />
         <Route path="/admin/students" element={<AdminShell><StudentDirectory /></AdminShell>} />
@@ -556,7 +553,6 @@ function App() {
 }
 
 export default App;
-
 
 
 

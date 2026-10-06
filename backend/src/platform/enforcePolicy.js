@@ -4,6 +4,7 @@ import { universityPolicy } from './client.js';
 function routeModule(path) {
   if (/^\/(?:learning|subjects)(?:\/|$)/.test(path)) return 'learning';
   if (/^\/admin\/library(?:\/|$)/.test(path)) return 'questions';
+  if (/^\/student\/questions(?:\/|$)/.test(path)) return 'questions';
   if (/^\/(?:admin\/assessment|student\/assessments?|assessment-feedback)(?:\/|$)/.test(path)) return 'assessments';
   if (/^\/(?:events|schedule|pairing)(?:\/|$)/.test(path)) return 'events';
   if (/^\/(?:ai-interviews|student\/ai-interviews)(?:\/|$)/.test(path)) return 'interviews';

@@ -61,7 +61,6 @@ router.use('/library/questions', async (req, res, next) => {
   try {
     const policy = await universityPolicy();
     if (!policy.permissions?.questions) return res.status(403).json({ error: 'Question library is disabled' });
-    if (!['GET'].includes(req.method) && policy.sources?.questions === 'shared') return res.status(403).json({ error: 'Shared questions are managed by the super admin' });
     next();
   } catch (error) { next(error); }
 });

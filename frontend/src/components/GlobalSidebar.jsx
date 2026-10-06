@@ -78,10 +78,7 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
         ],
       },
       { type: 'link', label: 'Learning', to: '/student/learning', icon: BookOpen },
-      { type: 'link', label: 'Coding Problems', to: '/problems', icon: ListChecks },
-      ...(['control', 'university'].includes(import.meta.env.VITE_PEERPREP_DEPLOYMENT_ROLE)
-        ? [{ type: 'link', label: 'Published Questions', to: '/student/public-questions', icon: Library }]
-        : []),
+      { type: 'link', label: 'All Questions', to: '/problems', icon: ListChecks },
       { type: 'link', label: 'Resume Builder', to: '/student/resume', icon: UserCog },
     ];
   }
@@ -280,9 +277,6 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
       icon: Library,
       items: [
         { label: 'View Library', to: '/admin/library', icon: Library, match: (loc) => loc.pathname === '/admin/library' },
-        ...(['control', 'university'].includes(import.meta.env.VITE_PEERPREP_DEPLOYMENT_ROLE)
-          ? [{ label: 'Published Questions', to: '/admin/public-questions', icon: Library }]
-          : []),
       ],
     },
     {
@@ -323,7 +317,8 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
 
 function moduleForNavPath(path = '') {
   if (/\/(?:learning|subjects)(?:\/|$)/.test(path)) return 'learning';
-  if (/\/library(?:\/|$)|\/public-questions(?:\/|$)/.test(path)) return 'questions';
+  if (/^\/problems(?:\/|$)/.test(path)) return 'questions';
+  if (/\/library(?:\/|$)/.test(path)) return 'questions';
   if (/\/assessment(?:s|-feedback|\/|$)/.test(path)) return 'assessments';
   if (/\/ai-interviews(?:\/|$)/.test(path)) return 'interviews';
   if (/\/(?:events|event|interviews|schedule)(?:\/|$)/.test(path)) return 'events';

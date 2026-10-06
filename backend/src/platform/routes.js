@@ -7,6 +7,7 @@ import Assessment from '../models/Assessment.js';
 import QuestionLibrary from '../models/QuestionLibrary.js';
 import Semester from '../models/Subject.js';
 import Problem from '../models/Problem.js';
+import { loadHiddenExecutionTestCases } from '../controllers/problemController.js';
 import { University, Publication, PlatformAudit, PlatformSettings } from './models.js';
 import { isControlPlane, isUniversity } from './deployment.js';
 import { controlRequest } from './client.js';
@@ -281,6 +282,17 @@ router.get('/tenant/questions', requireModule('questions'), asyncRoute(async (re
     sourceType: { $ne: 'assessment' },
   }).lean();
   res.json({ questions });
+}));
+router.get('/tenant/questions/:id/judge-data', requireModule('questions'), asyncRoute(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) throw new HttpError(404, 'Question not found');
+  const question = await QuestionLibrary.findOne({ _id: req.params.id, status: 'published',
+    visibility: { $ne: 'private' }, sourceType: { $ne: 'assessment' }, questionType: 'coding' }).lean();
+  if (!question) throw new HttpError(404, 'Question not found');
+  const problemId = question.sourceProblemId || question.questionData?.problemId || question.questionData?.coding?.problemId;
+  if (!mongoose.isValidObjectId(problemId)) throw new HttpError(404, 'Linked coding problem not found');
+  const problem = await Problem.findById(problemId).select('+executionHarnesses').lean();
+  if (!problem) throw new HttpError(404, 'Linked coding problem not found');
+  res.set('Cache-Control', 'no-store').json({ problem, testCases: await loadHiddenExecutionTestCases(problem) });
 }));
 router.get('/tenant/learning/semesters', requireModule('learning'), asyncRoute(async (req, res) => {
   if (req.platformUniversity.sources.learning !== 'shared') throw new HttpError(403, 'Shared learning is disabled');

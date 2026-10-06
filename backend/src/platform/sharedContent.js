@@ -53,7 +53,6 @@ export async function sharedQuestions() {
   if (!isUniversity()) return null;
   const policy = await universityPolicy();
   if (!policy.permissions?.questions) return [];
-  if (policy.sources?.questions !== 'shared') return null;
   const { questions } = await controlRequest('questions');
-  return questions;
+  return questions.map((question) => ({ ...question, platformShared: true }));
 }
