@@ -1,4 +1,14 @@
 import Semester from '../models/Subject.js';
+import { learningSemesters } from '../platform/sharedContent.js';
+
+async function curriculumSemesters() {
+  return (await learningSemesters()) ?? Semester.find().sort('order');
+}
+
+async function curriculumSemester(id) {
+  const shared = await learningSemesters();
+  return shared ? shared.find((row) => String(row._id) === String(id)) : Semester.findById(id);
+}
 import Progress from '../models/Progress.js';
 import User from '../models/User.js';
 import { logStudentActivity } from './activityController.js';
@@ -8,7 +18,7 @@ export const getAllSemestersForStudent = async (req, res) => {
   try {
     console.log('[Learning] Getting all semesters for student:', req.user._id);
     
-    const semesters = await Semester.find().sort('order');
+    const semesters = await curriculumSemesters();
 
     // Build a map of coordinators by their business coordinatorId (string)
     const coordinators = await User.find({ role: 'coordinator' })
@@ -151,7 +161,7 @@ export const getCoordinatorSubjects = async (req, res) => {
   try {
     const { coordinatorId } = req.params;
 
-    const semesters = await Semester.find({ coordinatorId }).sort('order');
+    const semesters = (await curriculumSemesters()).filter((row) => String(row.coordinatorId) === String(coordinatorId));
 
     // Fetch the coordinator user for name/email
     // Try by business coordinatorId first (string), then by _id if it's a valid ObjectId
@@ -191,7 +201,7 @@ export const getSubjectDetails = async (req, res) => {
   try {
     const { semesterId, subjectId } = req.params;
 
-    const semester = await Semester.findById(semesterId);
+    const semester = await curriculumSemester(semesterId);
 
     if (!semester) {
       return res.status(404).json({ message: 'Semester not found' });
@@ -366,7 +376,7 @@ export const getSubjectProgress = async (req, res) => {
     const validTopicIds = new Set();
 
     try {
-      const semester = await Semester.findOne({ 'subjects._id': subjectId }).select('subjects._id subjects.chapters.topics');
+      const semester = (await curriculumSemesters()).find((row) => row.subjects.id(subjectId));
       if (semester) {
         const subject = semester.subjects.id(subjectId);
         if (subject) {
@@ -775,7 +785,7 @@ export const getSubjectAnalytics = async (req, res) => {
     const { semesterId, subjectId } = req.params;
 
     // Get the semester and subject details
-    const semester = await Semester.findById(semesterId);
+    const semester = await curriculumSemester(semesterId);
     if (!semester) {
       return res.status(404).json({ message: 'Semester not found' });
     }
@@ -973,7 +983,7 @@ export async function autoEnrollStudentInCourses(student) {
     console.log(`[AutoEnroll] Starting auto-enrollment for student: ${student._id} (semester: ${student.semester})`);
 
     // Fetch all semesters
-    const allSemesters = await Semester.find().sort('order');
+    const allSemesters = await curriculumSemesters();
 
     // Filter to semesters within the student's allowed range
     const allowedSemesters = allSemesters.filter(sem => {

@@ -8,6 +8,8 @@ import AssessmentAttemptArchive from '../models/AssessmentAttemptArchive.js';
 import AssessmentEvent from '../models/AssessmentEvent.js';
 import { deleteAssessmentAttemptData } from '../services/assessmentDataCleanupService.js';
 import { loadAssessmentDefinition } from '../services/assessmentDefinitionService.js';
+import { sharedAssessment, sharedAssessments, assessmentDefinitionById } from '../platform/sharedContent.js';
+import { isUniversity } from '../platform/deployment.js';
 import { readPresenceCheckpoint, writePresenceCheckpoint } from '../services/assessmentPresenceService.js';
 import { networkPauseCreditFields } from '../services/assessmentHeartbeatPolicy.js';
 import { createAssessmentEvidenceUpload, verifyAssessmentEvidenceUpload, normalizeLegacyEvidence, signAssessmentEvidenceRead } from '../services/assessmentEvidenceService.js';
@@ -252,14 +254,15 @@ async function findAssessmentForStudentRoute(id, { lean = false, select = '' } =
   let request = Assessment.findOne(query);
   if (select) request = request.select(select);
   if (lean) request = request.lean();
-  return request;
+  const local = await request;
+  return local || (query._id ? sharedAssessment(query._id) : null);
 }
 
 function isStudentAssignedToAssessment(assessment = {}, student = {}) {
   const studentObjectId = String(student?._id || '');
   const studentCode = String(student?.studentId || '').trim().toLowerCase();
   if (assessment.targetType === 'all' && (!Array.isArray(assessment.assignedStudents) || assessment.assignedStudents.length === 0)) {
-    return student?.accessScope !== 'assessment_only';
+    return assessment.platformShared === true || student?.accessScope !== 'assessment_only';
   }
   return (assessment.assignedStudents || []).some((entry) => {
     const rawId = String(entry?._id || entry || '');
@@ -2397,11 +2400,17 @@ export async function listAssessments(req, res) {
     } else {
       assessmentsQuery.populate('createdBy', 'name email role coordinatorId');
     }
-    if (paginated) assessmentsQuery.skip((requestedPage - 1) * requestedLimit).limit(requestedLimit);
-    const [assessments, total] = await Promise.all([
+    if (paginated && !isUniversity()) assessmentsQuery.skip((requestedPage - 1) * requestedLimit).limit(requestedLimit);
+    const [localAssessments, localTotal] = await Promise.all([
       assessmentsQuery.lean(),
       paginated ? Assessment.countDocuments(query) : Promise.resolve(null),
     ]);
+    const remoteAssessments = isUniversity() && req.user?.role === 'admin'
+      ? (await sharedAssessments()).map((item) => ({ ...item, shared: true })) : [];
+    const combined = [...localAssessments, ...remoteAssessments].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+    const total = isUniversity() ? combined.length : localTotal;
+    const assessments = paginated && isUniversity()
+      ? combined.slice((requestedPage - 1) * requestedLimit, requestedPage * requestedLimit) : combined;
     const assessmentIds = assessments.map((assessment) => assessment._id);
     if (dashboardView) {
       const now = new Date();
@@ -2504,7 +2513,8 @@ export async function listAssessments(req, res) {
 export async function getAssessment(req, res) {
   try {
     const { id } = req.params;
-    const assessment = await Assessment.findById(id).populate('assignedStudents', 'name email studentId accessScope').lean();
+    const assessment = await Assessment.findById(id).populate('assignedStudents', 'name email studentId accessScope').lean()
+      || await sharedAssessment(id);
     if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
     const status = computeStatus(new Date(), assessment);
     const assignmentByStudent = new Map((assessment.candidateSetAssignments || []).map((entry) => [
@@ -3551,7 +3561,7 @@ export async function sendAssessmentInvitations(req, res) {
 export async function listStudentAssessments(req, res) {
   try {
     const studentId = req.user._id;
-    const assessments = await Assessment.find({
+    const localAssessments = await Assessment.find({
       lifecycleStatus: { $ne: 'draft' },
       isVisible: { $ne: false },
       startTime: { $ne: null },
@@ -3561,6 +3571,9 @@ export async function listStudentAssessments(req, res) {
         { assignedStudents: studentId },
       ],
     }).sort({ startTime: 1 }).lean();
+    const assessments = [...localAssessments, ...await sharedAssessments()]
+      .filter((a) => a.lifecycleStatus !== 'draft' && a.isVisible !== false && a.startTime && a.endTime)
+      .sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
 
     const submissions = await AssessmentSubmission.find({ studentId }).lean();
     const submissionsByAssessment = new Map(submissions.map(s => [s.assessmentId.toString(), s]));
@@ -3623,7 +3636,8 @@ export async function getStudentAssessmentDashboard(req, res) {
           { targetType: 'all' },
           { assignedStudents: req.user._id },
         ],
-      }).sort({ startTime: -1, createdAt: -1 }).lean(),
+      }).sort({ startTime: -1, createdAt: -1 }).lean().then(async (local) => [...local, ...await sharedAssessments()]
+        .filter((a) => a.lifecycleStatus !== 'draft' && a.isVisible !== false && a.startTime && a.endTime)),
       AssessmentSubmission.find({ studentId: req.user._id }).sort({ updatedAt: -1 }).lean(),
     ]);
 
@@ -3742,7 +3756,10 @@ async function requireStudentAssessment(id, student, { metadataOnly = false } = 
     ...(metadataOnly ? { select: 'settings duration startTime endTime lifecycleStatus targetType assignedStudents passwordEnabled passwordHash manuallyCompletedAt' } : {}),
   });
   if (!assessment) throw new AssessmentWriteError(404, 'ASSESSMENT_NOT_FOUND', 'Assessment not found.');
-  if (assessment.lifecycleStatus === 'draft') throw new AssessmentWriteError(403, 'ASSESSMENT_DRAFT', 'Assessment is not published yet.');
+  if (assessment.platformPublished === false || assessment.lifecycleStatus === 'draft') {
+    const existing = await AssessmentSubmission.exists({ assessmentId: assessment._id, studentId: student._id, status: { $in: ['not_started', 'in_progress'] } });
+    if (!existing) throw new AssessmentWriteError(403, 'ASSESSMENT_UNAVAILABLE', 'Assessment is no longer available.');
+  }
   if (!assessment.startTime || !assessment.endTime || !assessment.duration) throw new AssessmentWriteError(400, 'INVALID_SCHEDULE', 'Assessment schedule is incomplete.');
   if (!isStudentAssignedToAssessment(assessment, student)) throw new AssessmentWriteError(403, 'NOT_ASSIGNED', 'Not assigned to this assessment.');
   return assessment;
@@ -3975,7 +3992,10 @@ async function persistStudentAnswers(req, res, { autosave = false } = {}) {
     if (!assessmentId) return res.status(400).json({ error: 'assessmentId is required.' });
     const assessment = await loadAssessmentDefinition({ _id: assessmentId });
     if (!assessment) return res.status(404).json({ error: 'Assessment not found.' });
-    if (assessment.lifecycleStatus === 'draft') return res.status(403).json({ error: 'Assessment is not published yet.' });
+    if (assessment.platformPublished === false || assessment.lifecycleStatus === 'draft') {
+      const existing = await AssessmentSubmission.exists({ assessmentId: assessment._id, studentId: req.user._id, status: 'in_progress' });
+      if (!existing) return res.status(403).json({ error: 'Assessment is no longer available.' });
+    }
     if (!assessment.startTime || !assessment.endTime || !assessment.duration) {
       return res.status(400).json({ error: 'Assessment schedule is incomplete.' });
     }
@@ -4133,6 +4153,159 @@ function matchesDateRange(value, from, to) {
   return true;
 }
 
+async function respondSharedAssessmentReports(req, res, assessment) {
+  const options = req.query || {};
+  const totalQuestions = countQuestions(assessment.sections || []);
+  const totalMarks = Number(assessment.totalMarks || computeTotalMarksFromSections(assessment.sections || []));
+  const match = { assessmentId: assessment._id };
+  if (options.studentId && mongoose.isValidObjectId(options.studentId)) match.studentId = new mongoose.Types.ObjectId(options.studentId);
+  if (options.status) match.status = String(options.status);
+  if (options.from || options.to) {
+    const fromDate = parseReportDate(options.from);
+    const toDate = parseReportDate(options.to);
+    if (fromDate || toDate) match.startedAt = { ...(fromDate ? { $gte: fromDate } : {}), ...(toDate ? { $lte: toDate } : {}) };
+  }
+  const minScore = normalizeScore(options.scoreMin);
+  const maxScore = normalizeScore(options.scoreMax);
+  if (minScore !== null || maxScore !== null) {
+    match.score = { ...(minScore !== null ? { $gte: minScore } : {}), ...(maxScore !== null ? { $lte: maxScore } : {}) };
+  }
+  if (options.studentQuery) {
+    const search = String(options.studentQuery).trim().slice(0, 100).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const students = await User.find({ role: 'student', $or: [{ name: new RegExp(search, 'i') }, { email: new RegExp(search, 'i') }, { studentId: new RegExp(search, 'i') }] }).select('_id').limit(1000).lean();
+    match.studentId = { $in: students.map((student) => student._id) };
+  }
+  if (options.hasViolations === 'true') match.$expr = { $gt: [{ $add: ['tabSwitches', 'fullscreenExits', 'cameraFlags', 'copyPasteCount'].map((field) => ({ $ifNull: [`$${field}`, 0] })) }, 0] };
+  const page = Math.max(1, Number(options.page) || 1);
+  const limit = Math.min(100, Math.max(1, Number(options.limit) || 25));
+  const [total, submissions, statistics] = await Promise.all([
+    AssessmentSubmission.countDocuments(match),
+    AssessmentSubmission.find(match).sort({ startedAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+    AssessmentSubmission.aggregate([
+      { $match: match },
+      { $addFields: { __scorePercent: { $cond: [
+        { $and: [{ $isNumber: '$score' }, { $gt: [{ $ifNull: ['$maxMarks', totalMarks] }, 0] }] },
+        { $multiply: [{ $divide: ['$score', { $ifNull: ['$maxMarks', totalMarks] }] }, 100] }, null,
+      ] } } },
+      { $group: {
+        _id: null, count: { $sum: 1 },
+        completedCount: { $sum: { $cond: [{ $eq: ['$status', 'submitted'] }, 1, 0] } },
+        gradedCount: { $sum: { $cond: [{ $isNumber: '$score' }, 1, 0] } },
+        pendingEvaluationCount: { $sum: { $cond: [{ $eq: ['$evaluationStatus', 'processing'] }, 1, 0] } },
+        failedEvaluationCount: { $sum: { $cond: [{ $eq: ['$evaluationStatus', 'failed'] }, 1, 0] } },
+        avgScore: { $avg: '$score' }, maxScore: { $max: '$score' }, minScore: { $min: '$score' },
+        avgTimeSec: { $avg: '$timeTakenSec' }, fastestTime: { $min: '$timeTakenSec' },
+        passCount: { $sum: { $cond: [{ $gte: ['$__scorePercent', 100 * (Number(options.passMark) || 0.4)] }, 1, 0] } },
+        score0_25: { $sum: { $cond: [{ $and: [{ $ne: ['$__scorePercent', null] }, { $lte: ['$__scorePercent', 25] }] }, 1, 0] } },
+        score26_50: { $sum: { $cond: [{ $and: [{ $gt: ['$__scorePercent', 25] }, { $lte: ['$__scorePercent', 50] }] }, 1, 0] } },
+        score51_75: { $sum: { $cond: [{ $and: [{ $gt: ['$__scorePercent', 50] }, { $lte: ['$__scorePercent', 75] }] }, 1, 0] } },
+        score76_90: { $sum: { $cond: [{ $and: [{ $gt: ['$__scorePercent', 75] }, { $lte: ['$__scorePercent', 90] }] }, 1, 0] } },
+        score91_100: { $sum: { $cond: [{ $gt: ['$__scorePercent', 90] }, 1, 0] } },
+        violations: { $sum: { $add: [{ $ifNull: ['$tabSwitches', 0] }, { $ifNull: ['$fullscreenExits', 0] }, { $ifNull: ['$cameraFlags', 0] }, { $ifNull: ['$copyPasteCount', 0] }] } },
+      } },
+    ]),
+  ]);
+  const students = await User.find({ _id: { $in: submissions.map((item) => item.studentId) } }).select('_id name studentId').lean();
+  const byStudent = new Map(students.map((student) => [String(student._id), student]));
+  const rows = submissions.map((submission) => {
+    const student = byStudent.get(String(submission.studentId));
+    return { _id: submission._id, assessmentId: assessment._id, assessmentTitle: assessment.title,
+      assessmentType: assessment.assessmentType, totalQuestions, totalMarks,
+      studentName: student?.name || 'Student', studentId: student?.studentId || '',
+      attemptDate: submission.startedAt, attempts: submission.attemptCount,
+      score: submission.score ?? null, accuracy: submission.accuracy ?? null,
+      evaluationStatus: submission.evaluationStatus || 'completed', timeTakenSec: submission.timeTakenSec || 0,
+      status: submission.status, violationCount: ['tabSwitches', 'fullscreenExits', 'cameraFlags', 'copyPasteCount'].reduce((sum, key) => sum + Number(submission[key] || 0), 0),
+      tabSwitches: submission.tabSwitches || 0, fullscreenExits: submission.fullscreenExits || 0,
+      cameraFlags: submission.cameraFlags || 0, copyPasteCount: submission.copyPasteCount || 0 };
+  });
+  const stats = statistics[0] || {};
+  const lifecycleBucket = lifecycleBucketForAssessment(assessment, new Date());
+  const summary = { avgScore: stats.avgScore ?? null, maxScore: stats.maxScore ?? null,
+    minScore: stats.minScore ?? null, gradedCount: stats.gradedCount || 0,
+    completedCount: stats.completedCount || 0, passCount: stats.passCount || 0,
+    failCount: Math.max(0, Number(stats.gradedCount || 0) - Number(stats.passCount || 0)),
+    pendingEvaluationCount: stats.pendingEvaluationCount || 0,
+    failedEvaluationCount: stats.failedEvaluationCount || 0,
+    avgTimeSec: stats.avgTimeSec || 0, fastestTime: stats.fastestTime || 0,
+    violationCount: stats.violations || 0,
+    totalAssessments: 1, assessmentBuckets: { all: 1, current: lifecycleBucket === 'current' ? 1 : 0, upcoming: lifecycleBucket === 'upcoming' ? 1 : 0, completed: lifecycleBucket === 'completed' ? 1 : 0 },
+    scoreDistribution: [stats.score0_25 || 0, stats.score26_50 || 0, stats.score51_75 || 0, stats.score76_90 || 0, stats.score91_100 || 0],
+    assessmentCalendar: [], monthlyAssessments: [] };
+  const assessmentCard = { _id: assessment._id, title: assessment.title, assessmentType: assessment.assessmentType,
+    lifecycleStatus: assessment.lifecycleStatus, startTime: assessment.startTime, endTime: assessment.endTime,
+    duration: assessment.duration, createdAt: assessment.createdAt, totalQuestions, totalMarks,
+    submissionCount: stats.count || 0, completedCount: stats.completedCount || 0, avgScore: stats.avgScore || 0 };
+  return res.json({ assessments: [assessmentCard], students: options.view === 'dashboard' ? [] : rows,
+    summary, pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } });
+}
+
+async function respondSharedAssessmentExport(req, res, assessment) {
+  const options = req.query || {};
+  const match = { assessmentId: assessment._id };
+  if (options.status) match.status = String(options.status);
+  if (options.from || options.to) {
+    const fromDate = parseReportDate(options.from);
+    const toDate = parseReportDate(options.to);
+    if (fromDate || toDate) match.startedAt = { ...(fromDate ? { $gte: fromDate } : {}), ...(toDate ? { $lte: toDate } : {}) };
+  }
+  const minScore = normalizeScore(options.scoreMin);
+  const maxScore = normalizeScore(options.scoreMax);
+  if (minScore !== null || maxScore !== null) {
+    match.score = { ...(minScore !== null ? { $gte: minScore } : {}), ...(maxScore !== null ? { $lte: maxScore } : {}) };
+  }
+  const count = await AssessmentSubmission.countDocuments(match);
+  if (count > MAX_ASSESSMENT_EXPORT_ROWS) throw new AssessmentWriteError(413, 'EXPORT_TOO_LARGE', 'Narrow the export filters.');
+  const submissions = await AssessmentSubmission.find(match).sort({ startedAt: -1 }).lean();
+  const students = await User.find({ _id: { $in: submissions.map((item) => item.studentId) } })
+    .select('_id name email studentId course branch college semester group').lean();
+  const byStudent = new Map(students.map((student) => [String(student._id), student]));
+  const totalMarks = Number(assessment.totalMarks || computeTotalMarksFromSections(assessment.sections || []));
+  const rows = submissions.map((submission) => {
+    const student = byStudent.get(String(submission.studentId)) || {};
+    const violationCount = ['tabSwitches', 'fullscreenExits', 'cameraFlags', 'copyPasteCount']
+      .reduce((sum, key) => sum + Number(submission[key] || 0), 0);
+    return {
+      submissionId: String(submission._id), assessmentId: String(assessment._id),
+      assessmentName: assessment.title || 'Untitled Assessment', assessmentType: assessment.assessmentType || 'mixed',
+      assessmentCode: assessment.assessmentId || '', assessmentStatus: assessment.lifecycleStatus,
+      assessmentWindow: lifecycleBucketForAssessment(assessment), assessmentStartTime: assessment.startTime,
+      assessmentEndTime: assessment.endTime, assessmentDurationMin: assessment.duration,
+      assessmentCreatedAt: assessment.createdAt,
+      candidateName: student.name || 'Unknown', candidateEmail: student.email || '',
+      candidateStudentId: student.studentId || '', candidateCourse: student.course || '',
+      candidateBranch: student.branch || '', candidateCollege: student.college || '',
+      candidateSemester: student.semester ?? '', candidateGroup: student.group || '',
+      attemptDate: submission.startedAt || submission.createdAt,
+      submittedAt: submission.submittedAt || null, completionStatus: submission.status,
+      evaluationStatus: submission.evaluationStatus || 'completed', attempts: submission.attemptCount || 0,
+      score: submission.score ?? null, totalMarks, percentage: submission.accuracy ?? null,
+      accuracy: submission.accuracy ?? null, totalQuestions: countQuestions(assessment.sections || []),
+      timeSpentSec: submission.timeTakenSec || 0, violationCount,
+      tabSwitches: submission.tabSwitches || 0, fullscreenExits: submission.fullscreenExits || 0,
+      cameraFlags: submission.cameraFlags || 0, copyPasteCount: submission.copyPasteCount || 0,
+    };
+  }).filter((row) => !options.studentQuery || [row.candidateName, row.candidateEmail, row.candidateStudentId]
+    .some((value) => String(value).toLowerCase().includes(String(options.studentQuery).toLowerCase())));
+  const graded = rows.filter((row) => row.score !== null && row.completionStatus === 'submitted');
+  const passCount = graded.filter((row) => row.totalMarks > 0 && row.score >= row.totalMarks * (Number(options.passMark) || 0.4)).length;
+  const summary = { totalAssessments: rows.length ? 1 : 0, totalCandidates: rows.length,
+    pendingEvaluationCount: rows.filter((row) => row.evaluationStatus === 'processing').length,
+    failedEvaluationCount: rows.filter((row) => row.evaluationStatus === 'failed').length,
+    avgScore: graded.length ? graded.reduce((sum, row) => sum + Number(row.score), 0) / graded.length : null,
+    maxScore: graded.length ? Math.max(...graded.map((row) => Number(row.score))) : null,
+    minScore: graded.length ? Math.min(...graded.map((row) => Number(row.score))) : null,
+    passCount, failCount: graded.length - passCount,
+    violationCount: rows.reduce((sum, row) => sum + row.violationCount, 0) };
+  const selectedColumns = String(options.columns || '').split(',').map((value) => value.trim()).filter(Boolean);
+  const filteredRows = selectedColumns.length
+    ? rows.map((row) => Object.fromEntries(selectedColumns.map((key) => [key, row[key]]))) : rows;
+  const payload = { generatedAt: new Date().toISOString(), filters: options, summary,
+    rows: filteredRows, sectionRows: [], availableColumns: [...new Set(rows.flatMap((row) => Object.keys(row)))] };
+  assertAssessmentExportSize(filteredRows.length, payload);
+  return res.json(payload);
+}
+
 export async function getAssessmentReports(req, res) {
   let releaseReportSlot;
   try {
@@ -4162,6 +4335,10 @@ export async function getAssessmentReports(req, res) {
     }
     if (studentId && !mongoose.Types.ObjectId.isValid(studentId)) {
       return res.status(400).json({ error: 'Invalid studentId' });
+    }
+    if (assessmentId && isUniversity() && !(await Assessment.exists({ _id: assessmentId }))) {
+      const shared = await sharedAssessment(assessmentId);
+      if (shared) return await respondSharedAssessmentReports(req, res, shared);
     }
 
     // Dashboard callers only need headline metrics and five recent assessments.
@@ -4824,7 +5001,7 @@ export async function getStudentAssessmentReport(req, res) {
       return res.status(404).json({ error: 'Submission not found' });
     }
 
-    const assessment = await Assessment.findById(submission.assessmentId).lean();
+    const assessment = await assessmentDefinitionById(submission.assessmentId);
     if (!assessment) {
       return res.status(404).json({ error: 'Assessment not found' });
     }
@@ -4902,6 +5079,10 @@ export async function getAssessmentReportsExportData(req, res) {
 
     if (assessmentId && !mongoose.Types.ObjectId.isValid(assessmentId)) {
       return res.status(400).json({ error: 'Invalid assessmentId' });
+    }
+    if (assessmentId && isUniversity() && !(await Assessment.exists({ _id: assessmentId }))) {
+      const shared = await sharedAssessment(assessmentId);
+      if (shared) return await respondSharedAssessmentExport(req, res, shared);
     }
 
     const match = {};
@@ -5731,7 +5912,7 @@ export async function getAssessmentEvidence(req, res) {
     const event = await AssessmentEvent.findOne({ _id: req.params.eventId, kind: 'snapshot' }).select('+legacyDataUrl').lean();
     if (!event) throw new AssessmentWriteError(404, 'EVIDENCE_NOT_FOUND', 'Evidence not found.');
     if (req.user.role !== 'admin') {
-      const assessment = await Assessment.findById(event.assessmentId).select('createdBy').lean();
+      const assessment = await assessmentDefinitionById(event.assessmentId);
       if (!assessment || (req.user.coordinatorDataScope !== 'all' && String(assessment.createdBy) !== String(req.user._id))) {
         throw new AssessmentWriteError(403, 'FORBIDDEN', 'Access denied.');
       }
@@ -5750,14 +5931,12 @@ export async function getSubmissionViolations(req, res) {
       .lean();
     if (!submission) return res.status(404).json({ error: 'Submission not found.' });
     if (req.user && req.user.role === 'coordinator' && req.user.coordinatorDataScope !== 'all') {
-      const assessment = await Assessment.findById(submission.assessmentId).select('createdBy').lean();
+      const assessment = await assessmentDefinitionById(submission.assessmentId);
       if (!assessment || String(assessment.createdBy) !== String(req.user._id)) {
         return res.status(403).json({ error: 'Access denied.' });
       }
     }
-    const assessment = await Assessment.findById(submission.assessmentId)
-      .select('title startTime endTime duration settings')
-      .lean();
+    const assessment = await assessmentDefinitionById(submission.assessmentId);
     const userAgentDetails = parseUserAgentDetails(submission.lastUserAgent || '');
     const eventFilter = { submissionId: submission._id, attemptGeneration: submission.attemptGeneration || 1 };
     if (req.query.before && mongoose.Types.ObjectId.isValid(req.query.before)) eventFilter._id = { $lt: new mongoose.Types.ObjectId(req.query.before) };

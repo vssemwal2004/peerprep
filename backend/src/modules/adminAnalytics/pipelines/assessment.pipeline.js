@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import Assessment from '../../../models/Assessment.js';
 import AssessmentSubmission from '../../../models/AssessmentSubmission.js';
+import { sharedAssessments } from '../../../platform/sharedContent.js';
 import { authorizedOwnedFilter } from '../adminAnalytics.authorization.js';
 import { ANALYTICS_LIMITS } from '../adminAnalytics.validation.js';
 
@@ -13,10 +14,14 @@ export async function collectAssessmentEvidence({ user, studentIds, query }) {
   const definitionFilter = authorizedOwnedFilter(user);
   if (query.assessments.ids.length) definitionFilter._id = { $in: query.assessments.ids };
   if (query.assessments.types.length) definitionFilter.assessmentType = { $in: query.assessments.types };
-  const definitions = (await Assessment.find(definitionFilter)
+  const localDefinitions = await Assessment.find(definitionFilter)
     .select('_id title assessmentType lifecycleStatus manuallyCompletedAt endTime totalMarks assignedStudents targetType')
     .limit(5000)
-    .lean())
+    .lean();
+  const remoteDefinitions = user.role === 'admin' ? await sharedAssessments() : [];
+  const definitions = [...localDefinitions, ...remoteDefinitions]
+    .filter((assessment) => !query.assessments.ids.length || query.assessments.ids.some((id) => String(id) === String(assessment._id)))
+    .filter((assessment) => !query.assessments.types.length || query.assessments.types.includes(assessment.assessmentType))
     .filter((assessment) => !query.assessments.completedOnly || isCompletedAssessment(assessment));
   const assessmentIds = definitions.map((assessment) => assessment._id);
   if (!studentIds.length || !assessmentIds.length) return emptyAssessment(definitions);

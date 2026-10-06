@@ -30,9 +30,11 @@ import avatarRoutes from './avatars.js';
 import bulkUploadRoutes from './bulkUploads.js';
 import problemListRoutes from './problemLists.js';
 import adminAnalyticsRoutes from '../modules/adminAnalytics/adminAnalytics.routes.js';
+import platformRoutes from '../platform/routes.js';
 import { requireAuth, requireFullStudent } from '../middleware/auth.js';
 
 const router = Router();
+router.use('/platform', platformRoutes);
 // Reserved feature routes must precede the interview identifier routes.
 router.use('/ai-interviews/avatars', avatarRoutes);
 router.use('/ai-interviews', aiInterviewRoutes);

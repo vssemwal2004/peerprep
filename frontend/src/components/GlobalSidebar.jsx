@@ -40,6 +40,7 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../utils/api';
 import { useTheme } from '../context/ThemeContext';
 import { hasPermission } from '../admin/coordinatorPermissions';
 import { getInterviewNavigation, getInterviewSection } from './interviews/interviewNavigation';
@@ -78,6 +79,9 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
       },
       { type: 'link', label: 'Learning', to: '/student/learning', icon: BookOpen },
       { type: 'link', label: 'Coding Problems', to: '/problems', icon: ListChecks },
+      ...(['control', 'university'].includes(import.meta.env.VITE_PEERPREP_DEPLOYMENT_ROLE)
+        ? [{ type: 'link', label: 'Published Questions', to: '/student/public-questions', icon: Library }]
+        : []),
       { type: 'link', label: 'Resume Builder', to: '/student/resume', icon: UserCog },
     ];
   }
@@ -198,6 +202,9 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
       icon: LayoutDashboard,
       match: (loc) => loc.pathname === '/admin' || loc.pathname.startsWith('/admin/overview') || loc.pathname.startsWith('/admin/dashboard'),
     },
+    ...(import.meta.env.VITE_PEERPREP_DEPLOYMENT_ROLE === 'control'
+      ? [{ type: 'link', label: 'Universities', to: '/admin/platform', icon: Building2 }]
+      : []),
     { type: 'link', label: 'Analysis', to: '/admin/analysis', icon: BarChart3 },
     {
       type: 'group',
@@ -273,6 +280,9 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
       icon: Library,
       items: [
         { label: 'View Library', to: '/admin/library', icon: Library, match: (loc) => loc.pathname === '/admin/library' },
+        ...(['control', 'university'].includes(import.meta.env.VITE_PEERPREP_DEPLOYMENT_ROLE)
+          ? [{ label: 'Published Questions', to: '/admin/public-questions', icon: Library }]
+          : []),
       ],
     },
     {
@@ -311,10 +321,48 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
   ];
 };
 
+function moduleForNavPath(path = '') {
+  if (/\/(?:learning|subjects)(?:\/|$)/.test(path)) return 'learning';
+  if (/\/library(?:\/|$)|\/public-questions(?:\/|$)/.test(path)) return 'questions';
+  if (/\/assessment(?:s|-feedback|\/|$)/.test(path)) return 'assessments';
+  if (/\/ai-interviews(?:\/|$)/.test(path)) return 'interviews';
+  if (/\/(?:events|event|interviews|schedule)(?:\/|$)/.test(path)) return 'events';
+  if (/\/resume(?:\/|$)/.test(path)) return 'resumes';
+  if (/\/(?:analytics|analysis)(?:\/|$)/.test(path)) return 'analytics';
+  return null;
+}
+
+function applyPlatformPermissions(items, permissions) {
+  if (!permissions) return items;
+  return items.map((item) => {
+    if (item.items) {
+      const children = applyPlatformPermissions(item.items, permissions);
+      return children.length ? { ...item, items: children } : null;
+    }
+    if (item.children) {
+      const children = applyPlatformPermissions(item.children, permissions);
+      return children.length ? { ...item, children, to: children[0].to } : null;
+    }
+    const moduleName = moduleForNavPath(item.to);
+    return moduleName && permissions[moduleName] === false ? null : item;
+  }).filter(Boolean);
+}
+
 export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPinned = false, onTogglePin = () => {}, onExpand = () => {}, onCollapse = () => {} }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const [platformPermissions, setPlatformPermissions] = useState(null);
+  useEffect(() => {
+    if (import.meta.env.VITE_PEERPREP_DEPLOYMENT_ROLE !== 'university' || !user) return undefined;
+    let mounted = true;
+    const refresh = () => api.universityPolicy().then((policy) => {
+      if (mounted) setPlatformPermissions(policy.permissions);
+    }).catch(() => { if (mounted) setPlatformPermissions(null); });
+    refresh();
+    const timer = setInterval(refresh, 30_000);
+    return () => { mounted = false; clearInterval(timer); };
+  }, [user]);
   const { theme, toggleTheme } = useTheme();
   const profileOpenRef = useRef(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -331,8 +379,8 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
   const accent = isCoordinator ? 'emerald' : 'sky';
   const navItems = useMemo(() => {
     const items = buildNavItems(role, user?.accessScope);
-    if (role !== 'coordinator') return items;
-    return items
+    if (role !== 'coordinator') return applyPlatformPermissions(items, platformPermissions);
+    return applyPlatformPermissions(items
       .map((item) => {
         if (item.type === 'group') {
           const children = item.items
@@ -346,8 +394,8 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
         }
         return hasPermission(user, item.permissionKey) ? item : null;
       })
-      .filter(Boolean);
-  }, [role, user]);
+      .filter(Boolean), platformPermissions);
+  }, [role, user, platformPermissions]);
   const [openGroup, setOpenGroup] = useState(null);
   const [openNestedGroup, setOpenNestedGroup] = useState(null);
   const hoverTimerRef = useRef(null);

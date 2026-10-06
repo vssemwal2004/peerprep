@@ -79,6 +79,13 @@ export default function AdminLearningDetail() {
   const [selectedChapter, setSelectedChapter] = useState(null);
   const [topicImportanceLevel, setTopicImportanceLevel] = useState(3);
   const [showAnalytics, setShowAnalytics] = useState(false);
+  const [sharedLearning, setSharedLearning] = useState(false);
+
+  useEffect(() => {
+    if (import.meta.env.VITE_PEERPREP_DEPLOYMENT_ROLE === 'university') {
+      api.universityPolicy().then((policy) => setSharedLearning(policy.sources?.learning === 'shared')).catch(() => {});
+    }
+  }, []);
 
   useEffect(() => {
     loadCoordinatorSubjects();
@@ -404,13 +411,13 @@ export default function AdminLearningDetail() {
                     <BarChart3 className="w-4 h-4 sm:w-5 sm:h-5" />
                     <span>Analytics</span>
                   </button>
-                  <button
+                  {!sharedLearning && <button
                     onClick={openCreateChapterModal}
                     className="flex items-center space-x-2 px-3 sm:px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm sm:text-base"
                   >
                     <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
                     <span>Add Chapter</span>
-                  </button>
+                  </button>}
                 </div>
               </div>
 
@@ -452,7 +459,7 @@ export default function AdminLearningDetail() {
                       </div>
 
                       {/* Admin Actions */}
-                      <div className="flex items-center space-x-2 ml-4">
+                      {!sharedLearning && <div className="flex items-center space-x-2 ml-4">
                         <button
                           onClick={() => openCreateTopicModal(chapter)}
                           className="p-2 text-green-600 hover:bg-green-50 dark:hover:bg-green-900 rounded-lg transition-colors"
@@ -474,7 +481,7 @@ export default function AdminLearningDetail() {
                         >
                           <Trash2 className="w-5 h-5" />
                         </button>
-                      </div>
+                      </div>}
                     </div>
 
                     {/* Topics Table */}
@@ -612,7 +619,7 @@ export default function AdminLearningDetail() {
 
                                       {/* Actions */}
                                       <td className="py-3 px-4">
-                                        <div className="flex items-center justify-center gap-1">
+                                        {!sharedLearning && <div className="flex items-center justify-center gap-1">
                                           <button
                                             onClick={() => openEditTopicModal(chapter, topic)}
                                             className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/50 rounded-lg transition-colors"
@@ -627,7 +634,7 @@ export default function AdminLearningDetail() {
                                           >
                                             <Trash2 className="w-4 h-4" />
                                           </button>
-                                        </div>
+                                        </div>}
                                       </td>
                                     </tr>
                                   ))}

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import Assessment from '../models/Assessment.js';
+import { assessmentDefinitionById } from '../platform/sharedContent.js';
 import AssessmentSubmission from '../models/AssessmentSubmission.js';
 import Notification from '../models/Notification.js';
 import { enqueueAssessmentCodingEvaluationJobs } from './compilerExecutionWorkflowService.js';
@@ -66,7 +66,7 @@ export async function dispatchPendingAssessmentEvaluations({ limit = 25, now = n
       'pendingWork.leaseToken': leaseToken,
     };
     try {
-      const assessment = await Assessment.findById(submission.assessmentId).lean();
+      const assessment = await assessmentDefinitionById(submission.assessmentId);
       if (!assessment) throw new Error('Assessment definition is missing for evaluation.');
       await enqueueAssessmentCodingEvaluationJobs({ assessment, submission, studentId: submission.studentId });
       await ensureSubmissionNotification(submission);

@@ -1,6 +1,8 @@
 import mongoose from 'mongoose';
 import fs from 'fs';
 import path from 'path';
+import { deploymentRole } from '../platform/deployment.js';
+import { verifyDeploymentDatabaseIdentity } from '../platform/dbIdentity.js';
 
 let memServer;
 
@@ -33,6 +35,7 @@ export async function connectDb() {
     connectUri = memServer.getUri();
     console.log('Using in-memory MongoDB');
     await mongoose.connect(connectUri, { ...connectionOptions, autoIndex: true });
+    await verifyDeploymentDatabaseIdentity();
     console.log('Connected to in-memory MongoDB');
     return;
   }
@@ -42,6 +45,7 @@ export async function connectDb() {
     // Set bounded timeouts and a production-ready pool so slow DB reads fail
     // quickly instead of making the whole API feel stuck.
     await mongoose.connect(connectUri, connectionOptions);
+    await verifyDeploymentDatabaseIdentity();
     console.log('Connected to MongoDB');
     return;
   } catch (err) {
@@ -55,13 +59,14 @@ export async function connectDb() {
     console.error('If you are in development, you can set MONGODB_URI=memory to run with an in-memory MongoDB fallback.');
 
     // In non-production, optionally fall back to in-memory server to allow local dev to continue
-    const allowFallback = process.env.NODE_ENV !== 'production';
+    const allowFallback = process.env.NODE_ENV !== 'production' && deploymentRole() === 'standalone';
     if (allowFallback) {
       console.warn('Falling back to in-memory MongoDB for development (NODE_ENV !== "production").');
       const { MongoMemoryServer } = await import('mongodb-memory-server');
       memServer = await MongoMemoryServer.create();
       connectUri = memServer.getUri();
       await mongoose.connect(connectUri, { ...connectionOptions, autoIndex: true });
+      await verifyDeploymentDatabaseIdentity();
       console.log('Connected to in-memory MongoDB (fallback)');
       return;
     }

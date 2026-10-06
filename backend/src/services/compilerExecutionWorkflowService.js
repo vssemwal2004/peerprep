@@ -1,4 +1,4 @@
-import Assessment from '../models/Assessment.js';
+import { assessmentDefinitionById, sharedAssessmentProblem } from '../platform/sharedContent.js';
 import AssessmentSubmission from '../models/AssessmentSubmission.js';
 import ExecutionJob from '../models/ExecutionJob.js';
 import Problem from '../models/Problem.js';
@@ -90,14 +90,15 @@ function assessmentIncludesProblem(assessment, problemId) {
 
 export async function resolveActiveProblem(problemId, { userId, assessmentId, accessScope } = {}) {
   ensureObjectId(problemId, 'Problem ID');
-  const problem = await Problem.findById(problemId).select('+executionHarnesses');
+  const localProblem = await Problem.findById(problemId).select('+executionHarnesses');
+  const problem = localProblem || await sharedAssessmentProblem(assessmentId, problemId);
   const normalizedStatus = String(problem?.status || '').toLowerCase();
   const isPublished = normalizedStatus === 'published' || normalizedStatus === 'active';
   if (!problem || !isPublished) {
     throw new HttpError(404, 'Problem not found.');
   }
 
-  const visibility = problem.visibility || 'public';
+  const visibility = localProblem ? (problem.visibility || 'public') : 'assessment';
   const requiresAssessmentContext = accessScope === 'assessment_only';
   if (visibility === 'public' && !requiresAssessmentContext) {
     return problem;
@@ -112,10 +113,14 @@ export async function resolveActiveProblem(problemId, { userId, assessmentId, ac
   }
 
   ensureObjectId(assessmentId, 'Assessment ID');
-  const assessment = await Assessment.findById(assessmentId).lean();
-  if (!assessment || assessment.lifecycleStatus === 'draft') {
+  const assessment = await assessmentDefinitionById(assessmentId);
+  if (!assessment) {
     throw new HttpError(404, 'Problem not found.');
   }
+
+  if ((assessment.platformPublished === false || assessment.lifecycleStatus === 'draft') && !(await AssessmentSubmission.exists({
+    assessmentId, studentId: userId, status: 'in_progress',
+  }))) throw new HttpError(404, 'Problem not found.');
 
   const studentId = String(userId);
   if (assessment.targetType !== 'all') {
@@ -964,7 +969,7 @@ export async function enqueueCompilerSubmitJob({ user, body }) {
   await submission.save();
 
   if (assessmentId) {
-    const assessment = await Assessment.findById(assessmentId).lean();
+    const assessment = await assessmentDefinitionById(assessmentId);
     if (assessment) {
       await persistAssessmentCodingDraft({
         assessment,
@@ -1072,7 +1077,7 @@ async function persistAssessmentCodingDraft({ assessment, userId, trackedSubmiss
 async function syncAssessmentAnswerFromTrackedSubmission(trackedSubmission) {
   if (!trackedSubmission?.assessmentId || !trackedSubmission?.problem) return null;
 
-  const assessment = await Assessment.findById(trackedSubmission.assessmentId).lean();
+  const assessment = await assessmentDefinitionById(trackedSubmission.assessmentId);
   if (!assessment) return null;
   const executionResult = buildSubmitApiResponse(trackedSubmission);
   const updated = await mutateAssessmentSubmission({
@@ -1405,7 +1410,7 @@ async function processAssessmentFinalCodingJob(job) {
   let assessment;
   try {
     const [loadedAssessment, problem] = await Promise.all([
-      Assessment.findById(assessmentId).lean(),
+      assessmentDefinitionById(assessmentId),
       resolveActiveProblem(problemId, { userId: studentId, assessmentId }),
     ]);
     assessment = loadedAssessment;

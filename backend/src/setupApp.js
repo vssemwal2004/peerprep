@@ -11,6 +11,7 @@ import { apiLimiter } from './middleware/rateLimiter.js';
 import { apiRequestTimeout } from './middleware/requestTimeout.js';
 import { requestPerformance } from './middleware/requestPerformance.js';
 import { readDependencyHealth, readinessFromDependencies } from './services/dependencyHealthService.js';
+import { enforceUniversityPolicy } from './platform/enforcePolicy.js';
 
 const app = express();
 
@@ -166,6 +167,7 @@ app.get('/api/health/ready', async (req, res) => {
 
 // General API rate limiting (generous limits)
 app.use('/api', apiLimiter);
+app.use('/api', enforceUniversityPolicy);
 
 app.use('/api', routes);
 

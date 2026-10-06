@@ -1,4 +1,5 @@
 import Assessment from '../models/Assessment.js';
+import { sharedAssessment } from '../platform/sharedContent.js';
 import AssessmentSubmission from '../models/AssessmentSubmission.js';
 import { finishAssessmentSubmission, mutateAssessmentSubmission } from './assessmentPersistenceService.js';
 import {
@@ -62,6 +63,11 @@ export async function reconcileExpiredAssessmentSubmissions({
   const assessmentIds = [...new Set(submissions.map((item) => String(item.assessmentId)))];
   const assessments = await Assessment.find({ _id: { $in: assessmentIds } });
   const assessmentById = new Map(assessments.map((item) => [String(item._id), item]));
+  const missing = assessmentIds.filter((id) => !assessmentById.has(id));
+  if (missing.length) {
+    const remote = await Promise.all(missing.map((id) => sharedAssessment(id)));
+    remote.forEach((item) => { if (item) assessmentById.set(String(item._id), item); });
+  }
   let completed = 0;
 
   // Keep database and queue pressure bounded while avoiding one write round trip

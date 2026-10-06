@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { randomUUID } from 'node:crypto';
 import QuestionLibrary from '../models/QuestionLibrary.js';
+import { sharedQuestions } from '../platform/sharedContent.js';
 import StudentUploadBatch from '../models/StudentUploadBatch.js';
 import { supabase } from '../utils/supabase.js';
 import {
@@ -231,6 +232,17 @@ const LIBRARY_SUMMARY_AGGREGATION_PROJECTION = Object.fromEntries(
 
 export async function listLibraryQuestions(req, res) {
   try {
+    const central = await sharedQuestions();
+    if (central) {
+      const type = String(req.query?.type || '').toLowerCase();
+      const search = String(req.query?.search || '').toLowerCase();
+      const filtered = central.filter((question) => (!type || type === 'all' || question.questionType === type)
+        && (!search || String(question.questionText || '').toLowerCase().includes(search)));
+      const page = Math.max(1, Number(req.query?.page) || 1);
+      const limit = Math.min(500, Math.max(1, Number(req.query?.limit) || 25));
+      const selected = req.query?.selectAll === 'true' ? filtered : filtered.slice((page - 1) * limit, page * limit);
+      return res.json({ questions: selected.map(formatLibraryQuestionSummary), pagination: { page, limit, total: filtered.length, pages: Math.max(1, Math.ceil(filtered.length / limit)) }, filters: {} });
+    }
     await ensureQuestionLibrarySynchronized();
 
     const {
@@ -488,6 +500,12 @@ export async function listLibraryQuestions(req, res) {
 
 export async function getLibraryQuestion(req, res) {
   try {
+    const central = await sharedQuestions();
+    if (central) {
+      const question = central.find((item) => String(item._id) === String(req.params.id));
+      return question ? res.json({ question: { ...formatLibraryQuestionSummary(question), questionData: question.questionData } })
+        : res.status(404).json({ error: 'Library question not found' });
+    }
     await ensureQuestionLibrarySynchronized();
     const { id } = req.params;
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -656,6 +674,12 @@ export async function deleteLibraryQuestion(req, res) {
 
 export async function resolveLibraryQuestions(req, res) {
   try {
+    const central = await sharedQuestions();
+    if (central) {
+      const ids = new Set(Array.isArray(req.body?.ids) ? req.body.ids.map(String) : []);
+      return res.json({ questions: central.filter((item) => ids.has(String(item._id)))
+        .map((item) => ({ ...formatLibraryQuestionSummary(item), questionData: item.questionData })) });
+    }
     await ensureQuestionLibrarySynchronized();
     const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
     const validIds = ids.filter((id) => mongoose.Types.ObjectId.isValid(id));

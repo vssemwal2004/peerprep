@@ -3,6 +3,7 @@ import {
   invalidateCacheNamespaces,
   setCachedJson,
 } from '../services/responseCacheService.js';
+import { isUniversity } from '../platform/deployment.js';
 
 function stableQueryString(query = {}) {
   return Object.entries(query)
@@ -22,7 +23,7 @@ export function cacheJsonResponse({ namespace, ttlSeconds = 30, keyBuilder = def
   if (!namespace) throw new Error('cacheJsonResponse requires a namespace');
 
   return async function responseCacheMiddleware(req, res, next) {
-    if (req.method !== 'GET' || req.headers['cache-control']?.includes('no-cache')) return next();
+    if (req.method !== 'GET' || isUniversity() || req.headers['cache-control']?.includes('no-cache')) return next();
 
     const key = keyBuilder(req);
     const cached = await getCachedJson(namespace, key);

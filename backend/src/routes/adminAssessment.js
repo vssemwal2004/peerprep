@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { requireAuth, requireAdmin, requireCoordinatorPermission } from '../middleware/auth.js';
+import { isUniversity } from '../platform/deployment.js';
+import { universityPolicy } from '../platform/client.js';
 import { bulkOperationLimiter, uploadLimiter } from '../middleware/rateLimiter.js';
 import { cacheJsonResponse, invalidateResponseCache } from '../middleware/responseCache.js';
 import {
@@ -54,6 +56,15 @@ import {
 } from '../controllers/codingTopicController.js';
 
 const router = Router();
+router.use('/library/questions', async (req, res, next) => {
+  if (!isUniversity()) return next();
+  try {
+    const policy = await universityPolicy();
+    if (!policy.permissions?.questions) return res.status(403).json({ error: 'Question library is disabled' });
+    if (!['GET'].includes(req.method) && policy.sources?.questions === 'shared') return res.status(403).json({ error: 'Shared questions are managed by the super admin' });
+    next();
+  } catch (error) { next(error); }
+});
 const questionAssetUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024, files: 1 },

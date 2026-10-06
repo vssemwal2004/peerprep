@@ -13,11 +13,15 @@ export default function AdminLearning() {
   const [expandedSubjects, setExpandedSubjects] = useState({});
   const [editMode, setEditMode] = useState(false);
   const [editingSemester, setEditingSemester] = useState(null);
+  const [sharedLearning, setSharedLearning] = useState(false);
   const navigate = useNavigate();
   const toast = useToast();
 
   useEffect(() => {
     loadSemesters();
+    if (import.meta.env.VITE_PEERPREP_DEPLOYMENT_ROLE === 'university') {
+      api.universityPolicy().then((policy) => setSharedLearning(policy.sources?.learning === 'shared')).catch(() => {});
+    }
   }, []);
 
   // Socket.IO real-time synchronization
@@ -145,11 +149,11 @@ export default function AdminLearning() {
               Learning Modules
             </h1>
             <p className="text-xs text-slate-500 dark:text-white">
-              Manage all semesters, subjects, and teachers
+              {sharedLearning ? 'Shared learning content is managed by the super admin' : 'Manage all semesters, subjects, and teachers'}
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <button
+            {!sharedLearning && <button
               onClick={() => setEditMode(!editMode)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors shadow-sm ${
                 editMode
@@ -168,7 +172,7 @@ export default function AdminLearning() {
                   Edit
                 </>
               )}
-            </button>
+            </button>}
           </div>
         </motion.div>
 

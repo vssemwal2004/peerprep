@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import User from '../../models/User.js';
 import Assessment from '../../models/Assessment.js';
+import { sharedAssessments, learningSemesters } from '../../platform/sharedContent.js';
 import Problem from '../../models/Problem.js';
 import StudentUploadBatch from '../../models/StudentUploadBatch.js';
 import Semester from '../../models/Subject.js';
@@ -276,7 +277,13 @@ export async function getAnalyticsOptions({ user, options }) {
     items = (await User.find(filter).select('_id name email studentId semester branch group').sort({ name: 1, _id: 1 }).skip(options.cursor).limit(options.limit + 1).lean()).map((row) => ({ id: String(row._id), label: row.name || row.studentId || 'Student', description: [row.studentId, row.email].filter(Boolean).join(' · '), meta: { semester: row.semester, branch: row.branch, group: row.group } }));
   } else if (type === 'assessments') {
     const filter = { ...authorizedOwnedFilter(user), $or: [{ manuallyCompletedAt: { $type: 'date' } }, { lifecycleStatus: 'published', endTime: { $lte: new Date() } }] }; if (regex) filter.title = regex;
-    items = (await Assessment.find(filter).select('_id title assessmentType endTime manuallyCompletedAt lifecycleStatus').sort({ endTime: -1, _id: 1 }).skip(options.cursor).limit(options.limit + 1).lean()).map((row) => ({ id: String(row._id), label: row.title || 'Assessment', description: row.assessmentType || '' }));
+    const local = await Assessment.find(filter).select('_id title assessmentType endTime manuallyCompletedAt lifecycleStatus').lean();
+    const remote = user.role === 'admin' ? (await sharedAssessments()).filter((row) =>
+      (row.manuallyCompletedAt || (row.lifecycleStatus === 'published' && new Date(row.endTime) <= new Date()))
+      && (!regex || regex.test(row.title || ''))) : [];
+    items = [...local, ...remote].sort((a, b) => new Date(b.endTime || 0) - new Date(a.endTime || 0))
+      .slice(options.cursor, options.cursor + options.limit + 1)
+      .map((row) => ({ id: String(row._id), label: row.title || 'Assessment', description: row.assessmentType || '' }));
   } else if (type === 'upload-batches') {
     const filter = { status: 'active', entityType: 'student' }; if (user.role === 'coordinator' && user.coordinatorDataScope !== 'all') filter.uploadedBy = user._id; if (regex) filter.name = regex;
     items = (await StudentUploadBatch.find(filter).select('_id name originalFileName studentIds').sort({ createdAt: -1 }).skip(options.cursor).limit(options.limit + 1).lean()).map((row) => ({ id: String(row._id), label: row.name, description: `${row.studentIds?.length || 0} students` }));
@@ -289,7 +296,7 @@ export async function getAnalyticsOptions({ user, options }) {
     const values = await Problem.distinct('tags', authorizedOwnedFilter(user));
     items = values.filter((value) => value && (!regex || regex.test(value))).sort((a, b) => a.localeCompare(b)).slice(options.cursor, options.cursor + options.limit + 1).map((value) => ({ id: value, label: value }));
   } else if (['learning-subjects', 'learning-chapters', 'learning-topics'].includes(type)) {
-    const semesters = await Semester.find(authorizedLearningFilter(user)).select('_id semesterName subjects').lean();
+    const semesters = await learningSemesters() || await Semester.find(authorizedLearningFilter(user)).select('_id semesterName subjects').lean();
     const flattened = [];
     for (const semester of semesters) {
       if (dependencies.semesters?.length && !dependencies.semesters.map(String).includes(String(semester._id)) && !dependencies.semesters.includes(semester.semesterName)) continue;
@@ -321,7 +328,10 @@ export async function getAnalyticsOptions({ user, options }) {
   } else if (['assessmentTypes', 'sections', 'assessmentTopics', 'setNumbers'].includes(type)) {
     const filter = authorizedOwnedFilter(user);
     if (dependencies.assessmentIds?.length) filter._id = { $in: dependencies.assessmentIds };
-    const definitions = await Assessment.find(filter).select('assessmentType sections questionSets').limit(500).lean();
+    const definitions = [...await Assessment.find(filter).select('assessmentType sections questionSets').limit(500).lean(),
+      ...(user.role === 'admin' ? await sharedAssessments() : [])]
+      .filter((row) => !dependencies.assessmentIds?.length || dependencies.assessmentIds.some((id) => String(id) === String(row._id)))
+      .slice(0, 500);
     const values = new Set();
     definitions.forEach((definition) => {
       if (type === 'assessmentTypes' && definition.assessmentType) values.add(definition.assessmentType);
