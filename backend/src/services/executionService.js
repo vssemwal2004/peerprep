@@ -1,4 +1,6 @@
 import { HttpError } from '../utils/errors.js';
+import { judge0OutputFileSizeKb, normalizeJudge0FileSizeKb } from './outputFileBudgetService.js';
+import { validateSqlMutationContract } from './sqlMutationContractService.js';
 
 const JUDGE0_URL_CONFIG = process.env.JUDGE0_URL
   || process.env.JUDGE0_BASE_URLS
@@ -12,6 +14,8 @@ const JUDGE0_AUTH_HEADER = String(process.env.JUDGE0_AUTH_HEADER || '').trim();
 const JUDGE0_AUTH_TOKEN = String(process.env.JUDGE0_AUTH_TOKEN || '').trim();
 
 const MAX_SOURCE_CODE_SIZE_BYTES = 50 * 1024;
+// Function harnesses include validated private arguments; legal million-cell inputs exceed256KB.
+const MAX_PREPARED_SOURCE_CODE_SIZE_BYTES = 4 * 1024 * 1024;
 const MAX_STDIN_SIZE_BYTES = 64 * 1024;
 const MAX_TESTCASE_TEXT_BYTES = 64 * 1024;
 const JUDGE0_REQUEST_TIMEOUT_MS = Number(process.env.JUDGE0_REQUEST_TIMEOUT_MS || 15000);
@@ -84,6 +88,22 @@ function comparableOutputsMatch(actual, expected) {
   const normalizedActual = normalizeComparableOutput(actual);
   const normalizedExpected = normalizeComparableOutput(expected);
   if (normalizedActual === normalizedExpected) return true;
+  const exactInteger = (text) => {
+    const match = text.match(/^([+-]?)(\d+)(?:\.(\d*))?(?:e([+-]?\d+))?$/i);
+    if (!match) return null;
+    const fraction = match[3] || '';
+    const shift = Number(match[4] || 0) - fraction.length;
+    if (!Number.isSafeInteger(shift) || Math.abs(shift) > 308) return null;
+    let digits = match[2] + fraction;
+    if (shift < 0) {
+      if (-shift > digits.length || !/^0*$/.test(digits.slice(shift))) return null;
+      digits = digits.slice(0, shift) || '0';
+    } else digits += '0'.repeat(shift);
+    return BigInt(`${match[1] === '-' ? '-' : ''}${digits}`);
+  };
+  const integerActual = exactInteger(normalizedActual);
+  const integerExpected = exactInteger(normalizedExpected);
+  if (integerActual !== null && integerExpected !== null) return integerActual === integerExpected;
   const numericPattern = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
   if (numericPattern.test(normalizedActual) && numericPattern.test(normalizedExpected)) {
     const left = Number(normalizedActual);
@@ -214,13 +234,16 @@ export function resolveLanguageRequest(body) {
   return { languageId, languageKey };
 }
 
-async function judge0Request(path, { method = 'GET', body } = {}) {
+async function judge0Request(path, { method = 'GET', body, targetUrl, beforeSubmission, onResponseTarget } = {}) {
   const headers = buildJudge0Headers();
 
-  const targets = getNextJudge0Targets();
+  const targets = targetUrl ? [targetUrl] : getNextJudge0Targets();
   let lastError = null;
 
   for (const target of targets) {
+    // Limit actual submissions, including retries against another node. Waiting
+    // for a slot must not consume the HTTP request's timeout budget.
+    if (method === 'POST' && beforeSubmission) await beforeSubmission();
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), JUDGE0_REQUEST_TIMEOUT_MS);
 
@@ -251,6 +274,7 @@ async function judge0Request(path, { method = 'GET', body } = {}) {
         continue;
       }
 
+      if (onResponseTarget) onResponseTarget(target);
       return parsedBody;
     } catch (error) {
       if (error.name === 'AbortError') {
@@ -285,15 +309,16 @@ export async function runJudge0(sourceCodeInput, languageId, stdin = '', options
   }
 
   const isSql = LANGUAGE_ID_TO_KEY[numericLanguageId] === 'sql';
-  const rawInput = sanitizeExecutionText(stdin, MAX_STDIN_SIZE_BYTES, isSql ? 'Dataset SQL' : 'Input');
+  if (isSql) validateSqlMutationContract(sourceCodeInput, options.sqlRequiredStatement || '');
+  const rawInput = sanitizeExecutionText(stdin, options.preparedFunctionRunner && !isSql ? MAX_PREPARED_SOURCE_CODE_SIZE_BYTES : MAX_STDIN_SIZE_BYTES, isSql ? 'Dataset SQL' : 'Input');
   const sqlSetupCode = isSql
     ? sanitizeExecutionText(options.sqlSetupCode || '', MAX_SOURCE_CODE_SIZE_BYTES, 'SQL schema and seed data')
     : '';
   const sourceCode = sanitizeExecutionText(
     isSql
-      ? [sqlSetupCode, rawInput, sourceCodeInput].filter((part) => String(part || '').trim()).join('\n\n')
+      ? [sqlSetupCode, rawInput, options.sqlResultQuery ? `${String(sourceCodeInput).trimEnd()}\n;\n${String(options.sqlResultQuery)}` : sourceCodeInput].filter((part) => String(part || '').trim()).join('\n\n')
       : sourceCodeInput,
-    MAX_SOURCE_CODE_SIZE_BYTES,
+    options.preparedFunctionRunner ? MAX_PREPARED_SOURCE_CODE_SIZE_BYTES : MAX_SOURCE_CODE_SIZE_BYTES,
     isSql ? 'Combined SQL submission' : 'Source code',
   );
   const standardInput = isSql ? '' : rawInput;
@@ -317,17 +342,26 @@ export async function runJudge0(sourceCodeInput, languageId, stdin = '', options
     DEFAULT_MEMORY_LIMIT_KB,
   ));
 
+  let submissionTarget;
   let result = await judge0Request('/submissions?base64_encoded=true&wait=true', {
     method: 'POST',
+    beforeSubmission: options.beforeSubmission,
+    onResponseTarget: (target) => { submissionTarget = target; },
     body: {
       source_code: encodeBase64(sourceCode),
       language_id: numericLanguageId,
+      ...(numericLanguageId === KEY_TO_LANGUAGE_ID.typescript
+        ? { compiler_options: '--target ES2019 --lib ESNext,DOM' } : {}),
+      ...(numericLanguageId === KEY_TO_LANGUAGE_ID.c
+        ? { compiler_options: '-std=gnu11 -Wl,--no-as-needed -lm' } : {}),
+      ...(numericLanguageId === KEY_TO_LANGUAGE_ID.cpp
+        ? { compiler_options: '-std=c++17' } : {}),
       stdin: encodeBase64(standardInput),
       cpu_time_limit: roundNumber(cpuTimeLimit, 2),
       wall_time_limit: roundNumber(wallTimeLimit, 2),
       memory_limit: memoryLimitKb,
       number_of_runs: 1,
-      max_file_size: 1024,
+      max_file_size: normalizeJudge0FileSizeKb(options.maxFileSizeKb),
     },
   });
 
@@ -335,7 +369,9 @@ export async function runJudge0(sourceCodeInput, languageId, stdin = '', options
   while (result?.token && (!result?.status || Number(result.status.id || 0) <= 2) && attempts < JUDGE0_MAX_POLL_ATTEMPTS) {
     attempts += 1;
     await sleep(JUDGE0_POLL_INTERVAL_MS);
-    result = await judge0Request(`/submissions/${encodeURIComponent(result.token)}?base64_encoded=true`);
+    result = await judge0Request(`/submissions/${encodeURIComponent(result.token)}?base64_encoded=true`, {
+      targetUrl: submissionTarget,
+    });
   }
 
   if (!result?.status || Number(result.status.id || 0) <= 2) {
@@ -433,6 +469,10 @@ export function evaluateSubmissionResult(result, expectedOutput) {
 
 export function buildJudge0Options(problem) {
   return {
+    maxFileSizeKb: judge0OutputFileSizeKb(problem),
+    sqlResultQuery: problem?.category === 'SQL' ? String(problem.sqlConfig?.resultQuery || '') : '',
+    sqlRequiredStatement: problem?.category === 'SQL' ? String(problem.sqlConfig?.requiredStatement || '') : '',
+    preparedFunctionRunner: problem?.executionMode === 'function' && String(problem?.category || '').toUpperCase() !== 'SQL',
     cpuTimeLimitSeconds: problem?.timeLimitSeconds || DEFAULT_TIME_LIMIT_SECONDS,
     wallTimeLimitSeconds: Math.max(5, (problem?.timeLimitSeconds || DEFAULT_TIME_LIMIT_SECONDS) * 2),
     memoryLimitKb: Math.trunc((problem?.memoryLimitMb || 256) * 1024),

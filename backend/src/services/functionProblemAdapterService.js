@@ -1,4 +1,16 @@
+import {normalizeJavaScalarStringFormatter} from './javaScalarStringFormatterService.js';
+import {customNodeRule,prepareCustomNodeSource} from './customNodeRunnerService.js';
+import { providedObjectRule, prepareProvidedObjectSource } from './providedObjectApiNextRunnerService.js';
+import { isRead4Problem, prepareRead4Source } from './read4ApiRunnerService.js';
+import { prepareJavaScriptFunctionSource } from './javascriptFunctionCompatibilityService.js';
+import { isAbsentIdentityTreeSelectorProblem, prepareAbsentIdentityTreeSelectorSource } from './absentIdentityTreeSelectorRunnerService.js';
+import { isExactScalarLongProblem, prepareExactScalarLongSource } from './exactScalarLongRunnerService.js';
+import { isGuessNumberProblem, prepareGuessNumberSource } from './guessNumberApiRunnerService.js';
 import { materializeFunctionInputPlaceholders } from './functionTestInputService.js';
+import { prepareBundledCHeader } from './bundledCHeaderService.js';
+import { prepareStatefulSource } from './statefulRunnerService.js';
+import { normalizeNodeCollectionContract, hasNodeCollectionContract, validateNodeCollectionFixture } from './nodeCollectionContractService.js';
+import { isIdentityTreeSelectorContract, prepareIdentityTreeSelectorSource } from './identityTreeSelectorRunnerService.js';
 
 const PYTHON_ADAPTER_MARKER = '# PeerPrep generated function adapter. Keep this section unchanged.';
 export const USER_CODE_PLACEHOLDER = '{{USER_CODE}}';
@@ -66,12 +78,29 @@ export function getVisibleCodeTemplates(codeTemplates) {
 }
 
 export function prepareFunctionSourceForExecution(problem, languageKey, submittedSource, testInput = '') {
-  const source = String(submittedSource || '');
+  let source = problem?.executionMode === 'full_program' ? String(submittedSource || '') : prepareBundledCHeader(languageKey, String(submittedSource || ''));
   if (problem?.executionMode === 'full_program') return source;
+  source = prepareJavaScriptFunctionSource(languageKey, source);
 
   const harnesses = asTemplateObject(problem?.executionHarnesses);
   const normalizedLanguage = String(languageKey || '').toLowerCase();
-  const storedContract = problem?.functionContract?.toObject?.() || problem?.functionContract || {};
+  const storedContract = normalizeNodeCollectionContract(problem?.functionContract?.toObject?.() || problem?.functionContract || {});
+  if (hasNodeCollectionContract(storedContract) && !customNodeRule({title:problem?.title,executionMode:problem?.executionMode,functionContract:storedContract})) validateNodeCollectionFixture(storedContract, testInput);
+  const absentIdentityProblem = {title:problem?.title,executionMode:problem?.executionMode,functionContract:storedContract};
+  if (isAbsentIdentityTreeSelectorProblem(absentIdentityProblem)) return prepareAbsentIdentityTreeSelectorSource(normalizedLanguage, absentIdentityProblem, source, testInput);
+  const exactLongProblem = {title:problem?.title,executionMode:problem?.executionMode,functionContract:storedContract};
+  if (isExactScalarLongProblem(exactLongProblem)) return prepareExactScalarLongSource(normalizedLanguage, exactLongProblem, source, testInput);
+  const apiProblem = {title:problem?.title,executionMode:problem?.executionMode,functionContract:storedContract};
+  if (customNodeRule(apiProblem)) return prepareCustomNodeSource(normalizedLanguage, apiProblem, source, testInput);
+  if (providedObjectRule(apiProblem)) return prepareProvidedObjectSource(normalizedLanguage, apiProblem, source, testInput);
+  if (isRead4Problem(apiProblem)) return prepareRead4Source(normalizedLanguage, apiProblem, source, testInput);
+  if (isGuessNumberProblem(apiProblem)) return prepareGuessNumberSource(normalizedLanguage, apiProblem, source, testInput);
+  if (isIdentityTreeSelectorContract(storedContract)) {
+    return prepareIdentityTreeSelectorSource(normalizedLanguage, storedContract, source, testInput);
+  }
+  if (storedContract.kind === 'stateful') {
+    return prepareStatefulSource(normalizedLanguage, storedContract, source, testInput);
+  }
   const submittedPythonParts = normalizedLanguage === 'python'
     ? splitPythonFunctionTemplate(source)
     : null;
@@ -97,7 +126,8 @@ export function prepareFunctionSourceForExecution(problem, languageKey, submitte
       .replace(/\bstruct\s+ListNode\s*\{[^}]*\}\s*;/gs, '');
   }
   const runtimeContract = { ...storedContract, runnerLanguage: normalizedLanguage };
-  const configuredHarness = String(harnesses[normalizedLanguage] || '');
+  const originalConfiguredHarness = String(harnesses[normalizedLanguage] || '');
+  const configuredHarness = normalizedLanguage === 'java' ? normalizeJavaScalarStringFormatter(originalConfiguredHarness) : originalConfiguredHarness;
   if (configuredHarness.trim()) {
     if (configuredHarness.includes(USER_CODE_PLACEHOLDER)) {
       return materializeFunctionInputPlaceholders(

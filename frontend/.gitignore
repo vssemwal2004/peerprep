@@ -6,7 +6,7 @@
 
 # Dependencies
 node_modules/
-package-lock.json
+# Keep package-lock.json tracked for reproducible installs.
 
 # Logs
 logs

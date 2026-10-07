@@ -1218,8 +1218,8 @@ export default function ProblemSolver() {
     const loadProblemList = async () => {
       try {
         const response = await api.listStudentProblems({
-          sortBy: 'updatedAt',
-          sortOrder: 'desc',
+          sortBy: 'displayOrder',
+          sortOrder: 'asc',
           page: 1,
           limit: 200,
         });

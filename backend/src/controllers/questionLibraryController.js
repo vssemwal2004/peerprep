@@ -23,6 +23,26 @@ function queryList(value) {
   return Array.from(new Set(source.map((entry) => String(entry || '').trim()).filter(Boolean)));
 }
 
+function normalizeSearchText(value = '') {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function escapeRegExp(value = '') {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function librarySearchRank(question = {}, search = '') {
+  const query = normalizeSearchText(search);
+  if (!query) return 0;
+  const titles = [question.questionText, question.sourceProblemTitle]
+    .map(normalizeSearchText)
+    .filter(Boolean);
+  if (titles.some((title) => title === query)) return 0;
+  if (titles.some((title) => title.startsWith(query))) return 1;
+  if (titles.some((title) => title.includes(query))) return 2;
+  return 3;
+}
+
 function normalizeLibraryStatus(status = 'published') {
   const normalized = String(status || '').trim().toLowerCase();
   return ['published', 'draft', 'hidden', 'archived'].includes(normalized) ? normalized : 'published';
@@ -218,7 +238,7 @@ function buildStatusCounts(questions = []) {
 
 const LIBRARY_SUMMARY_PROJECTION = [
   '_id', 'sourceKey', 'sourceType', 'sourceAssessmentId', 'sourceAssessmentTitle',
-  'sourceProblemId', 'sourceProblemTitle', 'sourceQuestionId', 'sectionName',
+  'sourceProblemId', 'sourceProblemTitle', 'displayOrder', 'sourceQuestionId', 'sectionName',
   'questionType', 'questionText', 'tags', 'topicIds', 'topicAncestorIds',
   'codingTagIds', 'keywords', 'difficulty', 'status', 'visibility', 'createdBy',
   'createdAt', 'updatedAt', 'questionData.libraryItemKind', 'questionData.questions',
@@ -261,6 +281,7 @@ export async function listLibraryQuestions(req, res) {
     const pageNum = Math.max(1, Number(page) || 1);
     const limitNum = Math.min(100, Math.max(1, Number(limit) || 25));
     const skip = (pageNum - 1) * limitNum;
+    const normalizedSearch = normalizeSearchText(search);
 
     const baseMatch = {
       ...buildLibrarySearchMatch(search),
@@ -324,7 +345,7 @@ export async function listLibraryQuestions(req, res) {
     }
 
     if (String(includeMeta).trim().toLowerCase() === 'false') {
-      const allowedSortFields = new Set(['updatedAt', 'createdAt', 'questionText', 'difficulty']);
+      const allowedSortFields = new Set(['displayOrder', 'updatedAt', 'createdAt', 'questionText', 'difficulty']);
       const selectedSort = allowedSortFields.has(sortBy) ? sortBy : 'updatedAt';
       const direction = String(sortOrder).toLowerCase() === 'asc' ? 1 : -1;
       const includeAllMatches = String(selectAll).trim().toLowerCase() === 'true';
@@ -336,8 +357,8 @@ export async function listLibraryQuestions(req, res) {
         ],
       };
       const sortExpression = selectedSort === 'difficulty'
-        ? { __difficultyRank: direction, updatedAt: -1, _id: 1 }
-        : { [selectedSort]: direction, updatedAt: -1, _id: 1 };
+        ? { ...(normalizedSearch ? { __searchRank: 1 } : {}), __difficultyRank: direction, updatedAt: -1, _id: 1 }
+        : { ...(normalizedSearch ? { __searchRank: 1 } : {}), [selectedSort]: direction, updatedAt: -1, _id: 1 };
       const pageStages = includeAllMatches ? [] : [{ $skip: skip }, { $limit: limitNum }];
       const [result = { rows: [], count: [] }] = await QuestionLibrary.aggregate([
         { $match: baseMatch },
@@ -370,6 +391,44 @@ export async function listLibraryQuestions(req, res) {
                   { case: { $eq: [{ $toLower: { $ifNull: ['$difficulty', ''] } }, 'hard'] }, then: 3 },
                 ],
                 default: 99,
+              },
+            },
+          },
+        }] : []),
+        ...(normalizedSearch ? [{
+          $addFields: {
+            __searchRank: {
+              $switch: {
+                branches: [
+                  {
+                    case: {
+                      $or: [
+                        { $eq: [{ $toLower: { $trim: { input: { $ifNull: ['$questionText', ''] } } } }, normalizedSearch] },
+                        { $eq: [{ $toLower: { $trim: { input: { $ifNull: ['$sourceProblemTitle', ''] } } } }, normalizedSearch] },
+                      ],
+                    },
+                    then: 0,
+                  },
+                  {
+                    case: {
+                      $or: [
+                        { $regexMatch: { input: { $toLower: { $ifNull: ['$questionText', ''] } }, regex: `^${escapeRegExp(normalizedSearch)}` } },
+                        { $regexMatch: { input: { $toLower: { $ifNull: ['$sourceProblemTitle', ''] } }, regex: `^${escapeRegExp(normalizedSearch)}` } },
+                      ],
+                    },
+                    then: 1,
+                  },
+                  {
+                    case: {
+                      $or: [
+                        { $regexMatch: { input: { $toLower: { $ifNull: ['$questionText', ''] } }, regex: escapeRegExp(normalizedSearch) } },
+                        { $regexMatch: { input: { $toLower: { $ifNull: ['$sourceProblemTitle', ''] } }, regex: escapeRegExp(normalizedSearch) } },
+                      ],
+                    },
+                    then: 2,
+                  },
+                ],
+                default: 3,
               },
             },
           },
@@ -436,17 +495,24 @@ export async function listLibraryQuestions(req, res) {
     const filteredQuestions = selectedType && selectedType !== 'all'
       ? uniqueBaseQuestions.filter((question) => question.questionType === selectedType)
       : uniqueBaseQuestions;
-    const allowedSortFields = new Set(['updatedAt', 'createdAt', 'questionText', 'difficulty']);
+    const allowedSortFields = new Set(['displayOrder', 'updatedAt', 'createdAt', 'questionText', 'difficulty']);
     const selectedSort = allowedSortFields.has(sortBy) ? sortBy : 'updatedAt';
     const direction = String(sortOrder).toLowerCase() === 'asc' ? 1 : -1;
     const difficultyRank = { easy: 1, medium: 2, hard: 3 };
     const sortedQuestions = [...filteredQuestions].sort((a, b) => {
+      if (normalizedSearch) {
+        const relevanceDifference = librarySearchRank(a, normalizedSearch) - librarySearchRank(b, normalizedSearch);
+        if (relevanceDifference !== 0) return relevanceDifference;
+      }
       if (selectedSort === 'difficulty') {
         return ((difficultyRank[String(a.difficulty || '').toLowerCase()] || 99)
           - (difficultyRank[String(b.difficulty || '').toLowerCase()] || 99)) * direction;
       }
       if (selectedSort === 'questionText') {
         return String(a.questionText || '').localeCompare(String(b.questionText || '')) * direction;
+      }
+      if (selectedSort === 'displayOrder') {
+        return ((Number(a.displayOrder) || 2147483647) - (Number(b.displayOrder) || 2147483647)) * direction;
       }
       const aTime = new Date(a[selectedSort] || 0).getTime();
       const bTime = new Date(b[selectedSort] || 0).getTime();

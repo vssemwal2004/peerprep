@@ -1,3 +1,4 @@
+// PeerPrep canonical node collections.
 import { USER_CODE_PLACEHOLDER } from './functionProblemAdapterService.js';
 
 const ARGUMENTS_JSON_STRING_PLACEHOLDER = '{{ARGUMENTS_JSON_STRING}}';
@@ -34,9 +35,16 @@ from collections import *
 from functools import *
 from itertools import *
 from math import *
+from builtins import pow
 from heapq import *
 from bisect import *
 import json as __pp_json
+
+# PeerPrep Python 3.8 compatible standard library aliases.
+try:
+    cache
+except NameError:
+    cache = lru_cache(maxsize=None)
 
 try:
     pairwise
@@ -95,6 +103,9 @@ def __pp_format(value, declared_type=''):
             result.append(node.val); queue.extend((node.left, node.right))
         while result and result[-1] is None: result.pop()
         return str(result)
+    if normalized in ('tree-node[]', 'list-node[]'):
+        child_type = normalized[:-2]
+        return '[' + ', '.join('[]' if node is None else __pp_format(node, child_type) for node in value) + ']'
     if value is None: return 'None'
     return str(value)
 
@@ -130,25 +141,31 @@ function javascriptRunner(functionContract, studentTemplate, { typescript = fals
     : `const __ppResult${type(': any')} = ${invocation};`;
   const contractTypes = [...parameterTypes, String(functionContract?.returnType || '')]
     .map((entry) => entry.toLowerCase());
+  const uncommentedStudentTemplate = stripCStyleComments(studentTemplate);
+  // The TypeScript runner always contains conversion helpers for both node
+  // types. TypeScript resolves identifiers while compiling those helpers even
+  // when the current contract only uses primitives, so provide the private
+  // definitions unless the submitted template already owns them. JavaScript
+  // can keep the definitions contract-driven because unresolved names inside
+  // uncalled functions are valid at runtime.
+  const needsTreeDefinition = (typescript
+    || contractTypes.some((entry) => entry.includes('tree-node') || entry.includes('treenode')))
+    && !/\bclass\s+TreeNode\b/.test(uncommentedStudentTemplate);
+  const needsListDefinition = (typescript
+    || contractTypes.some((entry) => entry.includes('list-node') || entry.includes('listnode')))
+    && !/\bclass\s+ListNode\b/.test(uncommentedStudentTemplate);
   const nodeDefinitions = [
-    contractTypes.some((entry) => entry.includes('tree-node') || entry.includes('treenode'))
+    needsTreeDefinition
       ? `class TreeNode {\n  val${type(': any')}; left${type(': any')}; right${type(': any')};\n  constructor(val${type(': any')} = 0, left${type(': any')} = null, right${type(': any')} = null) { this.val = val; this.left = left; this.right = right; }\n}`
       : '',
-    contractTypes.some((entry) => entry.includes('list-node') || entry.includes('listnode'))
+    needsListDefinition
       ? `class ListNode {\n  val${type(': any')}; next${type(': any')};\n  constructor(val${type(': any')} = 0, next${type(': any')} = null) { this.val = val; this.next = next; }\n}`
       : '',
   ].filter(Boolean).join('\n\n');
 
-  const typescriptCompatibility = typescript ? `declare class Map<K, V> { constructor(entries?: any); get(key: any): any; set(key: any, value: any): this; has(key: any): boolean; delete(key: any): boolean; clear(): void; values(): any[]; entries(): any[]; keys(): any[]; size: number; }
-declare class Set<T> { constructor(values?: any); add(value: any): this; has(value: any): boolean; delete(value: any): boolean; clear(): void; values(): any[]; entries(): any[]; keys(): any[]; size: number; }
-interface Array<T> { fill(value: T, start?: number, end?: number): this; find(predicate: (value: T, index: number, obj: T[]) => boolean): T | undefined; includes(value: T): boolean; }
-interface ArrayConstructor { from<T>(value: any): T[]; from<T, U>(value: any, mapFn: (entry: T, index: number) => U): U[]; }
-interface String { startsWith(value: string): boolean; endsWith(value: string): boolean; includes(value: string): boolean; repeat(count: number): string; }
-interface Math { trunc(value: number): number; }
-interface NumberConstructor { isInteger(value: number): boolean; isFinite(value: number): boolean; MAX_SAFE_INTEGER: number; MIN_SAFE_INTEGER: number; }
-interface ObjectConstructor { entries(value: any): any[]; values(value: any): any[]; }
-` : '';
-  return `${typescriptCompatibility}${nodeDefinitions}${nodeDefinitions ? '\n\n' : ''}${USER_CODE_PLACEHOLDER}
+  // Judge0 compiles with ESNext standard-library declarations. Redeclaring
+  // native iterators as arrays breaks legitimate Map/Set algorithms.
+  return `${nodeDefinitions}${nodeDefinitions ? '\n\n' : ''}${USER_CODE_PLACEHOLDER}
 
 // PeerPrep private runner. This block is never returned to students.
 function __ppTree(values${type(': any[]')})${type(': any')} {
@@ -214,7 +231,7 @@ function __ppQuoted(value${type(': string')})${type(': string')} {
 
 function __ppFormat(value${type(': any')}, nested = false, declaredType = '')${type(': string')} {
   const normalized = String(declaredType || '').toLowerCase();
-  if (value === null || value === undefined) return 'None';
+  if (value === null || value === undefined) return nested && ['tree-node','list-node'].includes(normalized) ? '[]' : 'None';
   if (normalized === 'tree-node' || normalized === 'treenode') value = __ppTreeValues(value);
   if (normalized === 'list-node' || normalized === 'listnode') value = __ppListValues(value);
   if (typeof value === 'boolean') return value ? 'True' : 'False';
@@ -505,9 +522,11 @@ string __ppFormat(const char value, bool = true) { return string("'") + value + 
 string __ppFormat(const bool value, bool = true) { return value ? "True" : "False"; }
 string __ppFormat(nullptr_t, bool = true) { return "None"; }
 template <typename T, typename enable_if<is_arithmetic<T>::value && !is_same<T, bool>::value && !is_same<T, char>::value, int>::type = 0>
-string __ppFormat(const T& value, bool = true) { ostringstream output; output << value; return output.str(); }
+string __ppFormat(const T& value, bool = true) { ostringstream output; if (is_floating_point<T>::value) output << setprecision(numeric_limits<T>::max_digits10); output << value; return output.str(); }
 template <typename T> string __ppFormat(const vector<T>& values, bool = true) { string output = "["; for (size_t index = 0; index < values.size(); ++index) { if (index) output += ", "; output += __ppFormat(values[index], true); } return output + "]"; }
 ${nodeFormatters}
+${needsTreeNode ? 'string __ppFormat(const vector<TreeNode*>& nodes, bool = true) { string output = "["; for (size_t index=0; index<nodes.size(); ++index) { if(index) output += ", "; output += nodes[index] ? __ppFormat(nodes[index]) : "[]"; } return output + "]"; }' : ''}
+${needsListNode ? 'string __ppFormat(const vector<ListNode*>& nodes, bool = true) { string output = "["; for (size_t index=0; index<nodes.size(); ++index) { if(index) output += ", "; output += nodes[index] ? __ppFormat(nodes[index]) : "[]"; } return output + "]"; }' : ''}
 template <typename T> string __ppTop(const T& value) { return __ppFormat(value, false); }
 
 int main() {
@@ -546,6 +565,7 @@ function javaRunner(functionContract, studentTemplate) {
   ].filter(Boolean).join('\n');
   return `import java.util.*;
 import java.math.*;
+import java.util.function.*;
 
 ${USER_CODE_PLACEHOLDER}
 
@@ -659,7 +679,7 @@ class Main {
     if (value instanceof Boolean) return ((Boolean) value) ? "True" : "False";
     if (value instanceof Character || value instanceof String) {
       String text = String.valueOf(value).replace("\\\\", "\\\\\\\\").replace("'", "\\\\'");
-      return nested ? "'" + text + "'" : text;
+      return nested ? "'" + text + "'" : String.valueOf(value);
     }
     Class<?> type = value.getClass();
     if (type.isArray()) {
@@ -690,6 +710,17 @@ class Main {
     return String.valueOf(value);
   }
 
+  private static String __ppNodeCollection(Object value) throws Exception {
+    java.util.List<String> parts = new java.util.ArrayList<>();
+    if (value == null) throw new IllegalArgumentException("Node collection result cannot be null");
+    if (value.getClass().isArray()) {
+      for(int index=0; index<java.lang.reflect.Array.getLength(value); index++) { Object node=java.lang.reflect.Array.get(value,index); parts.add(node==null ? "[]" : __ppFormat(node,true)); }
+    } else if(value instanceof Iterable) {
+      for(Object node : (Iterable<?>)value) parts.add(node==null ? "[]" : __ppFormat(node,true));
+    } else throw new IllegalArgumentException("Node collection result requires an array or list");
+    return "[" + String.join(", ",parts) + "]";
+  }
+
   public static void main(String[] ignored) throws Exception {
     Object[] __ppRaw = new Object[]{${rawArguments}};
     java.lang.reflect.Method __ppMethod = null;
@@ -704,7 +735,7 @@ class Main {
     for (int index = 0; index < __ppRaw.length; index++) __ppArgs[index] = __ppConvert(__ppRaw[index], __ppTypes[index], __ppGenericTypes[index]);
     Object __ppReceiver = java.lang.reflect.Modifier.isStatic(__ppMethod.getModifiers()) ? null : ${className}.class.getDeclaredConstructor().newInstance();
     Object __ppReturned = __ppMethod.invoke(__ppReceiver, __ppArgs);
-    System.out.print(__ppFormat(${resultExpression}, false));
+    System.out.print(${['tree-node[]','list-node[]'].includes(String(outputMode === 'parameter' ? parameters[outputIndex]?.type : functionContract?.returnType).toLowerCase()) ? `__ppNodeCollection(${resultExpression})` : `__ppFormat(${resultExpression}, false)`});
   }
 }
 `;
@@ -729,6 +760,7 @@ function cRunner(functionContract, studentTemplate) {
     const type = String(parameter?.type || 'integer').toLowerCase();
     if (['list-node', 'listnode'].includes(type)) return `int __ppArg${index}Values[] = {{ARG_${index}}};\n  struct ListNode* __ppArg${index} = __ppBuildList(__ppArg${index}Values, sizeof(__ppArg${index}Values) / sizeof(int));`;
     if (['tree-node', 'treenode'].includes(type)) return `int __ppArg${index}Values[] = {{ARG_${index}}};\n  struct TreeNode* __ppArg${index} = __ppBuildTree(__ppArg${index}Values, sizeof(__ppArg${index}Values) / sizeof(int));`;
+    if (['tree-node[]','list-node[]'].includes(type)) return `struct ${type === 'tree-node[]' ? 'TreeNode' : 'ListNode'}* __ppArg${index}[] = {{ARG_${index}}};`;
     if (type.endsWith('[][]')) {
       const base = typeBase(type.slice(0, -4));
       return `${base}* __ppArg${index}[] = {{ARG_${index}}};\n  int __ppArg${index}ColSizes[] = {{ARG_${index}_COL_SIZES}};`;
@@ -757,6 +789,7 @@ function cRunner(functionContract, studentTemplate) {
   const cArrayPrinter = (type, value, count) => {
     const normalized = String(type || '').toLowerCase();
     const elementType = normalized.endsWith('[]') ? normalized.slice(0, -2) : normalized;
+    if (['tree-node','list-node'].includes(elementType)) return `__ppPrint${elementType === 'tree-node' ? 'Tree' : 'List'}Collection(${value}, ${count});`;
     if (['boolean', 'bool'].includes(elementType)) return `__ppPrintBoolArray((const bool*)${value}, ${count});`;
     if (elementType === 'string') return `__ppPrintStringArray((char**)${value}, ${count});`;
     if (['long'].includes(elementType)) return `__ppPrintLongArray((const long long*)${value}, ${count});`;
@@ -835,6 +868,9 @@ static void __ppPrintStringArray(char** values, int count) { putchar('['); for (
 static void __ppPrintStringMatrix(char*** values, int rows, const int* columns) { putchar('['); for (int row = 0; row < rows; ++row) { if (row) printf(", "); __ppPrintStringArray(values[row], columns ? columns[row] : 0); } putchar(']'); }
 static void __ppPrintList(struct ListNode* node) { if (!node) { printf("None"); return; } putchar('['); int first = 1; while (node) { if (!first) printf(", "); printf("%d", node->val); first = 0; node = node->next; } putchar(']'); }
 static void __ppPrintTree(struct TreeNode* root) { if (!root) { printf("None"); return; } struct TreeNode* queue[100000]; int head = 0, tail = 0; queue[tail++] = root; int values[100000], present[100000], count = 0; while (head < tail) { struct TreeNode* node = queue[head++]; if (!node) { present[count++] = 0; continue; } present[count] = 1; values[count++] = node->val; queue[tail++] = node->left; queue[tail++] = node->right; } while (count && !present[count - 1]) count--; putchar('['); for (int i = 0; i < count; ++i) { if (i) printf(", "); if (present[i]) printf("%d", values[i]); else printf("None"); } putchar(']'); }
+
+static void __ppPrintTreeCollection(struct TreeNode** values, int count) { putchar('['); for(int index=0; index<count; index++) { if(index) printf(", " ); if(values[index]) __ppPrintTree(values[index]); else printf("[]"); } putchar(']'); }
+static void __ppPrintListCollection(struct ListNode** values, int count) { putchar('['); for(int index=0; index<count; index++) { if(index) printf(", " ); if(values[index]) __ppPrintList(values[index]); else printf("[]"); } putchar(']'); }
 
 int main(void) {
   ${declarations}

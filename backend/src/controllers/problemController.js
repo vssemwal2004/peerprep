@@ -1,3 +1,6 @@
+import {displayCustomNodeOutput} from '../services/customNodeOutputDisplayService.js';
+import { isSourceSupportedStatefulTolerance } from '../services/statefulFloatingOutputPolicyService.js';
+import { evaluateProblemSubmissionResult } from '../services/problemSubmissionEvaluationService.js';
 import mongoose from 'mongoose';
 import Problem, { SUPPORTED_LANGUAGES } from '../models/Problem.js';
 import CodingTopic from '../models/CodingTopic.js';
@@ -7,11 +10,12 @@ import TestCase from '../models/TestCase.js';
 import { HttpError } from '../utils/errors.js';
 import { sanitizeSearchQuery, sanitizeString, validateObjectId, validatePagination } from '../utils/validators.js';
 import { refreshProblemStats, serializeProblem, serializeSubmission, serializeStudentSubmission } from './compilerHelpers.js';
-import { runJudge0 } from '../services/executionService.js';
+import { runJudge0, buildJudge0Options as sharedJudge0Options } from '../services/executionService.js';
 import { removeProblemFromLibrary, syncProblemToLibrary } from '../services/questionLibraryService.js';
 import { parseBulkCasePair } from '../utils/testcaseBulkParser.js';
 import { isTestcaseStorageEnabled, readTestcaseTextObject, uploadTestcaseTextObject } from '../utils/testcaseStorage.js';
 import { prepareFunctionSourceForExecution } from '../services/functionProblemAdapterService.js';
+import { sqlStatementKinds } from '../services/sqlMutationContractService.js';
 
 const STATUS_MAP = {
   draft: 'draft',
@@ -85,16 +89,14 @@ function normalizeComparableOutput(value) {
 }
 
 function buildJudge0Options(problem) {
-  const timeLimit = Number(problem?.timeLimitSeconds || DEFAULT_TIME_LIMIT_SECONDS);
-  const memoryLimitMb = Number(problem?.memoryLimitMb || DEFAULT_MEMORY_LIMIT_MB);
-  return {
-    cpuTimeLimitSeconds: timeLimit,
-    wallTimeLimitSeconds: Math.max(5, timeLimit * 2),
-    memoryLimitKb: Math.trunc(memoryLimitMb * 1024),
-  };
+  return sharedJudge0Options(problem);
 }
 
-function evaluateJudge0Case(judgeResult, expectedOutput = '') {
+function evaluateJudge0Case(judgeResult, expectedOutput = '', problem, input = '') {
+  if (problem) {
+    const result = evaluateProblemSubmissionResult(problem, judgeResult, { input, output: expectedOutput });
+    return { ...result, status: result.internalStatus };
+  }
   if (judgeResult.compile_output || judgeResult.status?.id === 6) {
     return {
       status: 'CE',
@@ -381,10 +383,15 @@ function normalizeSqlConfig(value, category = 'DSA') {
   const source = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
   const schemaSql = String(source.schemaSql || '').replace(/\r\n/g, '\n').trim();
   const seedDataSql = String(source.seedDataSql || '').replace(/\r\n/g, '\n').trim();
-  if (Buffer.byteLength(`${schemaSql}\n${seedDataSql}`, 'utf8') > 40 * 1024) {
+  const resultQuery = String(source.resultQuery || '').replace(/\r\n/g, '\n').trim();
+  const requiredStatement = String(source.requiredStatement || '').toLowerCase();
+  if (!['', 'update', 'delete'].includes(requiredStatement)) throw new HttpError(400, 'SQL requiredStatement must be update or delete.');
+  if (resultQuery && (sqlStatementKinds(resultQuery).length !== 1 || sqlStatementKinds(resultQuery)[0] !== 'select')) throw new HttpError(400, 'SQL resultQuery must be one SELECT statement.');
+  if (requiredStatement && !resultQuery) throw new HttpError(400, 'SQL mutation questions require a resultQuery to check the final table.');
+  if (Buffer.byteLength(`${schemaSql}\n${seedDataSql}\n${resultQuery}`, 'utf8') > 40 * 1024) {
     throw new HttpError(400, 'Combined SQL schema and seed data must be 40 KB or less.');
   }
-  return { dialect: 'sqlite', schemaSql, seedDataSql };
+  return { dialect: 'sqlite', schemaSql, seedDataSql, resultQuery, requiredStatement };
 }
 
 function sumTestCaseMarks(testCases = []) {
@@ -539,7 +546,7 @@ function normalizeExecutionMode(value, category = 'DSA') {
   return value === 'full_program' ? 'full_program' : 'function';
 }
 
-function normalizeFunctionContract(value, category = 'DSA', executionMode = 'function') {
+export function normalizeFunctionContract(value, category = 'DSA', executionMode = 'function') {
   if (category === 'SQL' || executionMode === 'full_program') {
     return {
       className: 'Solution', methodName: '', parameters: [], returnType: '', outputMode: 'return', outputParameterIndex: 0,
@@ -565,18 +572,59 @@ function normalizeFunctionContract(value, category = 'DSA', executionMode = 'fun
   if (new Set(parameters.map((parameter) => parameter.name)).size !== parameters.length) {
     throw new HttpError(400, 'Function parameter names must be unique.');
   }
+  const kind = parsed.kind ?? 'function';
+  if (!['function', 'stateful'].includes(kind)) throw new HttpError(400, 'Invalid function contract kind.');
+  const returnType = sanitizeString(parsed.returnType ?? '', 120);
+  const absoluteTolerance = parsed.absoluteTolerance ?? 0;
+  if (typeof absoluteTolerance !== 'number' || !Number.isFinite(absoluteTolerance) || absoluteTolerance < 0 || absoluteTolerance > 0.01) {
+    throw new HttpError(400, 'Absolute tolerance must be a finite number between 0 and 0.01.');
+  }
+  if (absoluteTolerance && kind !== 'stateful' && !/^(double|float)(\[\]){0,2}$/.test(returnType)) {
+    throw new HttpError(400, 'Absolute tolerance applies only to double or float function returns and arrays of those values.');
+  }
+  if (kind === 'stateful') {
+    const statefulIdentifier = (value) => {
+      const result = identifier(value);
+      if (!/^[A-Za-z_]\w*$/.test(result)) throw new HttpError(400, 'Stateful identifiers must be valid in all six languages.');
+      return result;
+    };
+    const normalizeParameters = (values) => {
+      if (!Array.isArray(values)) throw new HttpError(400, 'Stateful parameters must be an array.');
+      const normalized = values.map((parameter) => {
+        const type = sanitizeString(parameter?.type ?? '', 120);
+        if (!/^(?:integer|long|double|float|boolean|string|character|char)(?:\[\]){0,2}$/.test(type)) throw new HttpError(400, 'Unsupported stateful parameter type.');
+        return { name: statefulIdentifier(parameter?.name), type };
+      });
+      if (new Set(normalized.map((parameter) => parameter.name.toLowerCase())).size !== normalized.length) throw new HttpError(400, 'Stateful parameter names must be unique.');
+      return normalized;
+    };
+    if (!Array.isArray(parsed.operations) || !parsed.operations.length) throw new HttpError(400, 'Stateful contract requires declared operations.');
+    const className = statefulIdentifier(parsed.className);
+    const operations = parsed.operations.map((operation) => {
+      const operationReturn = sanitizeString(operation.returnType ?? '', 120);
+      if (operationReturn !== 'void' && !/^(?:integer|long|double|float|boolean|string|character|char)(?:\[\]){0,2}$/.test(operationReturn)) throw new HttpError(400, 'Unsupported stateful return type.');
+      return { methodName: statefulIdentifier(operation.methodName), parameters: normalizeParameters(operation.parameters ?? []), returnType: operationReturn, cFunctionName: statefulIdentifier(operation.cFunctionName) };
+    });
+    if (new Set(operations.map((operation) => operation.methodName)).size !== operations.length || operations.some((operation) => operation.methodName === className)) throw new HttpError(400, 'Stateful operation names must be unique and exclude the constructor.');
+    if (absoluteTolerance && !isSourceSupportedStatefulTolerance({kind,className,operations,absoluteTolerance})) throw new HttpError(400, 'Stateful tolerance requires an explicitly supported floating source contract.');
+    return { kind, className, methodName: '', parameters: [], returnType: '', outputMode: 'return', outputParameterIndex: 0,
+      constructorParameters: normalizeParameters(parsed.constructorParameters ?? []), operations,
+      cConstructorName: statefulIdentifier(parsed.cConstructorName), cDestructorName: parsed.cDestructorName ? statefulIdentifier(parsed.cDestructorName) : '', absoluteTolerance };
+  }
   const outputMode = parsed.outputMode === 'parameter' ? 'parameter' : 'return';
   const outputParameterIndex = Math.max(0, Number.parseInt(parsed.outputParameterIndex, 10) || 0);
   if (outputMode === 'parameter' && outputParameterIndex >= parameters.length) {
     throw new HttpError(400, 'Output parameter index must point to an existing function parameter.');
   }
   return {
+    kind,
     className: identifier(parsed.className, 'Solution') || 'Solution',
     methodName: identifier(parsed.methodName),
     parameters,
-    returnType: sanitizeString(parsed.returnType ?? '', 120),
+    returnType,
     outputMode,
     outputParameterIndex,
+    absoluteTolerance,
   };
 }
 
@@ -901,7 +949,7 @@ async function evaluateOfficialSolution(problem, { language, sourceCode, testCas
       testCase.input || '',
       buildJudge0Options(problem),
     );
-    const evaluation = evaluateJudge0Case(judgeResult, testCase.output || '');
+    const evaluation = evaluateJudge0Case(judgeResult, testCase.output || '', problem, testCase.input || '');
     const executionTimeMs = secondsToMilliseconds(judgeResult.time);
     const memoryUsedKb = Math.trunc(Number(judgeResult.memory || 0));
 
@@ -915,7 +963,7 @@ async function evaluateOfficialSolution(problem, { language, sourceCode, testCas
       label: normalizedStatus,
       input: testCase.input || '',
       expectedOutput: testCase.output || '',
-      actualOutput: judgeResult.stdout || '',
+      actualOutput: displayCustomNodeOutput(problem, judgeResult.stdout || ''),
       executionTimeMs,
       memoryUsedKb,
       stderr: evaluation.status === 'RE' || evaluation.status === 'TLE' ? (evaluation.error || '') : '',
@@ -1308,8 +1356,9 @@ export async function listProblems(req, res) {
   const companyFilters = parseCommaOrJsonList(req.query.companies);
   const idFilters = parseCommaOrJsonList(req.query.ids)
     .filter((id) => mongoose.Types.ObjectId.isValid(id));
-  const sortBy = String(req.query.sortBy || 'updatedAt');
-  const sortOrder = String(req.query.sortOrder || 'desc') === 'asc' ? 1 : -1;
+  const sortBy = String(req.query.sortBy || 'displayOrder');
+  const defaultSortOrder = sortBy === 'displayOrder' ? 'asc' : 'desc';
+  const sortOrder = String(req.query.sortOrder || defaultSortOrder) === 'asc' ? 1 : -1;
   const accessQuery = isAdminRequest(req)
     ? {}
     : isCoordinatorRequest(req)
@@ -1362,6 +1411,7 @@ export async function listProblems(req, res) {
   }
 
   const sortMap = {
+    displayOrder: { displayOrder: sortOrder, title: 1 },
     title: { title: sortOrder, createdAt: -1 },
     createdAt: { createdAt: sortOrder },
     updatedAt: { updatedAt: sortOrder },
@@ -1985,7 +2035,7 @@ export async function runProblemCode(req, res) {
     const evaluation = evaluateJudge0Case(judgeResult, '');
     const result = {
       status: evaluation.status,
-      output: judgeResult.stdout || '',
+      output: displayCustomNodeOutput(problem, judgeResult.stdout || ''),
       stderr: evaluation.status === 'RE' ? (evaluation.error || '') : (judgeResult.stderr || ''),
       compileOutput: evaluation.status === 'CE' ? (evaluation.error || '') : (judgeResult.compile_output || ''),
       executionTimeMs: secondsToMilliseconds(judgeResult.time),
@@ -1998,7 +2048,7 @@ export async function runProblemCode(req, res) {
         status: evaluation.status,
         input: customInput,
         expectedOutput: '',
-        actualOutput: judgeResult.stdout || '',
+        actualOutput: displayCustomNodeOutput(problem, judgeResult.stdout || ''),
         executionTimeMs: secondsToMilliseconds(judgeResult.time),
         memoryUsedKb: Math.trunc(Number(judgeResult.memory || 0)),
         stderr: evaluation.status === 'RE' || evaluation.status === 'TLE' ? (evaluation.error || '') : '',
@@ -2072,9 +2122,9 @@ export async function submitProblemCode(req, res) {
         testCase.input || '',
         buildJudge0Options(problem),
       );
-      const evaluation = evaluateJudge0Case(judgeResult, testCase.output || '');
+      const evaluation = evaluateJudge0Case(judgeResult, testCase.output || '', problem, testCase.input || '');
       const executionTimeMs = secondsToMilliseconds(judgeResult.time);
-      const actualOutput = judgeResult.stdout || '';
+      const actualOutput = displayCustomNodeOutput(problem, judgeResult.stdout || '');
       const memoryUsedKb = Math.trunc(Number(judgeResult.memory || 0));
 
       totalExecutionTimeSeconds += Number(judgeResult.time || 0);

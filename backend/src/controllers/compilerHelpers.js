@@ -44,6 +44,7 @@ export function serializeProblem(
   return {
     _id: problem._id,
     title: problem.title,
+    displayOrder: Number(problem.displayOrder || 2147483647),
     description: cleanImportedProblemDescription(problem.description, problem.codeTemplates),
     contentImages: Array.isArray(problem.contentImages)
       ? problem.contentImages.map((image) => ({
@@ -64,6 +65,8 @@ export function serializeProblem(
       dialect: problem.sqlConfig?.dialect || 'sqlite',
       schemaSql: problem.sqlConfig?.schemaSql || '',
       seedDataSql: problem.sqlConfig?.seedDataSql || '',
+      resultQuery: problem.sqlConfig?.resultQuery || '',
+      requiredStatement: problem.sqlConfig?.requiredStatement || '',
     },
     tags: problem.tags || [],
     topicIds: problem.topicIds || [],

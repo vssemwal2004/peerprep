@@ -1,0 +1,8 @@
+{
+ "upstream": "https://github.com/troydhanson/uthash",
+ "source": "https://raw.githubusercontent.com/troydhanson/uthash/v2.3.0/src/uthash.h",
+ "version": "2.3.0",
+ "sha256": "344175d0ae3d0d7651887f932fc224f6d133559f0fc83ee73fe641697d77211a",
+ "copyright": "Copyright (c) 2003-2021, Troy D. Hanson",
+ "license": "Original upstream copyright, redistribution condition and disclaimer retained verbatim in uthash.h."
+}

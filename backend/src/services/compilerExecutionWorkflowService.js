@@ -1,3 +1,6 @@
+import {trustedTestCaseInputLimitBytes} from './trustedLargeInputPolicyService.js';
+import {trustedExpectedOutputLimitBytes} from './outputFileBudgetService.js';
+import { evaluateProblemSubmissionResult } from './problemSubmissionEvaluationService.js';
 import Assessment from '../models/Assessment.js';
 import AssessmentSubmission from '../models/AssessmentSubmission.js';
 import ExecutionJob from '../models/ExecutionJob.js';
@@ -28,7 +31,6 @@ import {
 import {
   buildJudge0Options,
   buildRunResponse,
-  evaluateSubmissionResult,
   KEY_TO_LANGUAGE_ID,
   mapRunStatusCode,
   MAX_SOURCE_CODE_SIZE_BYTES,
@@ -326,8 +328,8 @@ async function loadSubmissionTestCases(problem) {
   }
 
   allTestCases.forEach((testCase, index) => {
-    sanitizeExecutionText(testCase.input, MAX_TESTCASE_TEXT_BYTES, `Test case input #${index + 1}`);
-    sanitizeExecutionText(testCase.output, MAX_TESTCASE_TEXT_BYTES, `Test case output #${index + 1}`);
+    sanitizeExecutionText(testCase.input, trustedTestCaseInputLimitBytes(problem), `Test case input #${index + 1}`);
+    sanitizeExecutionText(testCase.output, trustedExpectedOutputLimitBytes(problem), `Test case output #${index + 1}`);
   });
 
   return allTestCases;
@@ -586,7 +588,7 @@ async function executeRunCasesPayload({
     });
     const evaluation = resolvedExpectedOutput === null
       ? null
-      : evaluateSubmissionResult(judgeResult, resolvedExpectedOutput);
+      : evaluateProblemSubmissionResult(problem, judgeResult, { input, output: resolvedExpectedOutput });
 
     caseResults.push(buildRunCaseResult({
       id: String(testCase.id || `case-${index + 1}`),
@@ -686,7 +688,7 @@ async function executeRunPayload({
     };
   }
 
-  const evaluation = evaluateSubmissionResult(judgeResult, resolvedExpectedOutput);
+  const evaluation = evaluateProblemSubmissionResult(problem, judgeResult, { input: standardInput, output: resolvedExpectedOutput });
   const persisted = {
     status: evaluation.internalStatus,
     output: judgeResult.stdout || '',
@@ -749,7 +751,7 @@ async function executeSubmitPayload({ sourceCode, sourceCodeFactory, languageId,
     const testCaseMarks = (configuredMarks / configuredTestCaseMarks) * totalTestCaseMarks;
     const executableSource = sourceCodeFactory ? sourceCodeFactory(testCase.input || '') : sourceCode;
     const judgeResult = await runJudge0(executableSource, languageId, testCase.input || '', judge0Options);
-    const evaluation = evaluateSubmissionResult(judgeResult, testCase.output || '');
+    const evaluation = evaluateProblemSubmissionResult(problem, judgeResult, testCase);
     const executionTimeMs = secondsToMilliseconds(judgeResult.time);
     const memoryUsedKb = Math.trunc(Number(judgeResult.memory || 0));
 

@@ -209,6 +209,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
     folderBy: 'topics',
     ...(restoredViewState.filters || {}),
     type: lockType || initialType,
+    ...((lockType || initialType) === 'coding' ? { sortBy: 'displayOrder', sortOrder: 'asc' } : {}),
   }));
   const [searchInput, setSearchInput] = useState(() => restoredViewState.filters?.search || '');
   const [questions, setQuestions] = useState([]);
@@ -293,7 +294,11 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
 
   useEffect(() => {
     if (!lockType) return;
-    setFilters((prev) => ({ ...prev, type: lockType }));
+    setFilters((prev) => ({
+      ...prev,
+      type: lockType,
+      ...(lockType === 'coding' ? { sortBy: 'displayOrder', sortOrder: 'asc' } : {}),
+    }));
   }, [lockType]);
 
   useEffect(() => {
@@ -303,7 +308,9 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
     setFilters((prev) => ({
       ...prev,
       type: initialType || 'all',
-      ...((initialType || 'all') === 'coding' ? {} : { topicIds: [], tagIds: [], topicLabels: [], tagLabels: [], uncategorized: false, viewMode: 'questions' }),
+      ...((initialType || 'all') === 'coding'
+        ? { sortBy: 'displayOrder', sortOrder: 'asc' }
+        : { topicIds: [], tagIds: [], topicLabels: [], tagLabels: [], uncategorized: false, viewMode: 'questions' }),
     }));
     setPage(1);
   }, [initialType, lockType]);
@@ -1193,6 +1200,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
             </div>
 
             <select value={`${filters.sortBy}:${filters.sortOrder}`} onChange={(event) => { const [sortBy, sortOrder] = event.target.value.split(':'); setFilters((prev) => ({ ...prev, sortBy, sortOrder })); setPage(1); }} className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+              {filters.type === 'coding' && <option value="displayOrder:asc">Question sequence</option>}
               <option value="updatedAt:desc">Recently updated</option>
               <option value="createdAt:desc">Recently created</option>
               <option value="questionText:asc">Question A–Z</option>

@@ -12,6 +12,7 @@ const questionLibrarySchema = new mongoose.Schema({
   sourceAssessmentTitle: { type: String, default: '', trim: true },
   sourceProblemId: { type: mongoose.Schema.Types.ObjectId, ref: 'Problem', index: true },
   sourceProblemTitle: { type: String, default: '', trim: true },
+  displayOrder: { type: Number, min: 1, default: 2147483647, index: true },
   sourceQuestionId: { type: String, default: '', trim: true },
   sectionName: { type: String, default: '', trim: true },
   questionType: { type: String, required: true, trim: true },

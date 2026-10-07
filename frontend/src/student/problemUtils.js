@@ -1,5 +1,11 @@
 ﻿export const PROBLEM_SORT_OPTIONS = [
   {
+    value: 'sequence-asc',
+    label: 'Question Sequence',
+    sortBy: 'displayOrder',
+    sortOrder: 'asc',
+  },
+  {
     value: 'acceptance-desc',
     label: 'Acceptance Rate (High to Low)',
     sortBy: 'acceptanceRate',

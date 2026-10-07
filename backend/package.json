@@ -16,6 +16,8 @@
     "migrate:master-data": "node src/migrations/seed-and-normalize-master-data.js",
     "migrate:coding-taxonomy": "node --env-file=.env src/migrations/backfill-coding-taxonomy.js",
     "sync:leetcode-images": "node --env-file=.env scripts/syncLeetCodeProblemImages.js",
+    "import:hf-leetcode-drafts": "node --env-file=.env scripts/importHuggingFaceLeetCodeDrafts.js",
+    "audit:external-source-coverage": "node --env-file=.env scripts/auditExternalSourceCoverage.js",
     "lint": "echo 'No linter configured'",
     "test": "node --test --test-concurrency=1 \"test/**/*.test.js\""
   },

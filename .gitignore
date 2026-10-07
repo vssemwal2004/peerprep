@@ -55,6 +55,75 @@ mongo-backup.bat
 
 # Local scratch files and generated reports
 /tmp/
+/backend/tmp/
+/frontend/tmp/
+/storage-audit/
+/demo-reel/out/
+
+# Local agent reports, solution dumps and standalone testcase scratch templates
+/.agents/
+/testcase-templates/
+
+# Plain-text scratch files; retain install manifests and redistribution notices.
+*.txt
+!requirements.txt
+!requirements-*.txt
+!constraints.txt
+!constraints-*.txt
+!LICENSE.txt
+!LICENSE-*.txt
+!*-LICENSE.txt
+!NOTICE.txt
+!COPYING.txt
+
+# Editor leftovers, local backups and exported archives
+*.backup
+*.bak
+*.orig
+*.rej
+*.tmp
+*.temp
+*.dump
+*.zip
+*.7z
+*.rar
+*.tar
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+
+# Downloaded local compilers, interpreters and validation tools
+/tools/
+
+# One-off question imports, repairs, validation campaigns and their helpers
+# Keep entry points used by package scripts and dependencies of regression tests.
+/backend/scripts/**
+!/backend/scripts/bootstrapApplication.js
+!/backend/scripts/legacyQueueStatus.js
+!/backend/scripts/migrateAssessmentProtocol.js
+!/backend/scripts/syncLeetCodeProblemImages.js
+!/backend/scripts/importHuggingFaceLeetCodeDrafts.js
+!/backend/scripts/auditExternalSourceCoverage.js
+!/backend/scripts/repairDraftIteratorDownlevels.js
+!/backend/scripts/lib/
+!/backend/scripts/lib/contest-match-finite-domain.js
+!/backend/scripts/lib/external-source-coverage.js
+!/backend/scripts/lib/parentheses-queens-finite-domain.js
+!/backend/scripts/lib/special-grid-finite-domain.js
+!/backend/scripts/lib/hf-content/
+!/backend/scripts/lib/hf-content/fetchVerifiedImage.js
+!/backend/scripts/lib/hf-content/legacyImageAltText.js
+!/backend/scripts/lib/hf-content/normalizeLeetCodeContent.js
+!/backend/scripts/lib/hf-execution/
+!/backend/scripts/lib/hf-execution/candidateValidation.js
+!/backend/scripts/lib/sql-publication/
+!/backend/scripts/lib/sql-publication/candidateValidation.js
+!/backend/scripts/lib/sql-publication/tableFixtures.js
+
+# Local frontend debugging scripts and generated package archives
+/frontend/scripts/*
+!/frontend/scripts/compress-images.mjs
+*.tgz
 
 # Python caches and local virtual environments
 __pycache__/

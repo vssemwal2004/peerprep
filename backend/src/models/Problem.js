@@ -23,12 +23,25 @@ const functionParameterSchema = new mongoose.Schema({
   type: { type: String, required: true, trim: true, maxlength: 120 },
 }, { _id: false });
 
+const statefulOperationSchema = new mongoose.Schema({
+  methodName: { type: String, required: true, trim: true, maxlength: 120 },
+  parameters: { type: [functionParameterSchema], default: [] },
+  returnType: { type: String, required: true, trim: true, maxlength: 120 },
+  cFunctionName: { type: String, default: '', trim: true, maxlength: 120 },
+}, { _id: false });
+
 const problemSchema = new mongoose.Schema({
   title: {
     type: String,
     required: true,
     trim: true,
     maxlength: 200,
+  },
+  displayOrder: {
+    type: Number,
+    min: 1,
+    default: 2147483647,
+    index: true,
   },
   description: {
     type: String,
@@ -78,12 +91,24 @@ const problemSchema = new mongoose.Schema({
     default: 'function',
   },
   functionContract: {
+    kind: { type: String, enum: ['function', 'stateful'], default: 'function' },
     className: { type: String, default: 'Solution', trim: true, maxlength: 120 },
     methodName: { type: String, default: '', trim: true, maxlength: 120 },
     parameters: { type: [functionParameterSchema], default: [] },
     returnType: { type: String, default: '', trim: true, maxlength: 120 },
     outputMode: { type: String, enum: ['return', 'parameter'], default: 'return' },
     outputParameterIndex: { type: Number, min: 0, default: 0 },
+    constructorParameters: { type: [functionParameterSchema], default: [] },
+    operations: { type: [statefulOperationSchema], default: [] },
+    cConstructorName: { type: String, default: '', trim: true, maxlength: 120 },
+    cDestructorName: { type: String, default: '', trim: true, maxlength: 120 },
+    absoluteTolerance: {
+      type: Number, min: 0, max: 0.01, default: 0,
+      validate: {
+        validator(value) { return Number.isFinite(value) && (value === 0 || (this.functionContract?.kind !== 'stateful' && /^(double|float)(\[\]){0,2}$/.test(this.functionContract?.returnType || ''))); },
+        message: 'Absolute tolerance applies only to double or float function returns and arrays of those values.',
+      },
+    },
   },
   showExecutionHarness: {
     type: Boolean,
@@ -127,6 +152,8 @@ const problemSchema = new mongoose.Schema({
     dialect: { type: String, enum: ['sqlite'], default: 'sqlite' },
     schemaSql: { type: String, default: '' },
     seedDataSql: { type: String, default: '' },
+    resultQuery: { type: String, default: '' },
+    requiredStatement: { type: String, enum: ['', 'update', 'delete'], default: '' },
   },
   editorial: {
     type: String,

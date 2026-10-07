@@ -18,7 +18,10 @@ const contract = {
 
 function typeScriptDiagnostics(source) {
   const fileName = 'peerprep-runner.ts';
-  const options = { noEmit: true, target: ts.ScriptTarget.ES5, module: ts.ModuleKind.None };
+  // This source is a standalone Judge0 script. Do not load ambient Node types:
+  // they are not present in Judge0 and can pull optional undici declarations
+  // into this otherwise isolated compiler check.
+  const options = { noEmit: true, target: ts.ScriptTarget.ES2019, lib: ['lib.esnext.d.ts', 'lib.dom.d.ts'], module: ts.ModuleKind.None, types: [] };
   const host = ts.createCompilerHost(options);
   const defaultGetSourceFile = host.getSourceFile.bind(host);
   const defaultFileExists = host.fileExists.bind(host);
@@ -63,6 +66,14 @@ test('TypeScript runner calls a Solution class when the template declares it', (
     functionContract: contract,
     executionHarnesses: { typescript: runner },
   }, 'typescript', starter, 'nums = [2, 7], target = 9');
+  assert.deepEqual(typeScriptDiagnostics(executable), []);
+});
+
+test('TypeScript runner uses standard Map iterators and typed Array.from overloads', () => {
+  const iteratorContract = { className: 'Solution', methodName: 'solve', parameters: [], returnType: 'integer' };
+  const source = `function solve(): number { const values = new Map<string, number>([['a', 2]]); const next = values.values().next(); const sorted = Array.from(values.values()).sort((a, b) => a - b); return next.value + sorted[0]; }`;
+  const runner = generateFunctionRunnerTemplate('typescript', iteratorContract, source);
+  const executable = materializeFunctionInputPlaceholders(runner.replace('{{USER_CODE}}', source), '', iteratorContract);
   assert.deepEqual(typeScriptDiagnostics(executable), []);
 });
 

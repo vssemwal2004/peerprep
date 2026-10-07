@@ -1594,8 +1594,8 @@ export const api = {
     tags = "",
     companies = "",
     ids = "",
-    sortBy = "acceptanceRate",
-    sortOrder = "desc",
+    sortBy = "displayOrder",
+    sortOrder = "asc",
     page = 1,
     limit = 10,
   } = {}) => {
