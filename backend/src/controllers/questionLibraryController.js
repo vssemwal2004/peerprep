@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { randomUUID } from 'node:crypto';
 import QuestionLibrary from '../models/QuestionLibrary.js';
+import { sharedQuestions } from '../platform/sharedContent.js';
 import StudentUploadBatch from '../models/StudentUploadBatch.js';
 import { supabase } from '../utils/supabase.js';
 import {
@@ -249,8 +250,41 @@ const LIBRARY_SUMMARY_AGGREGATION_PROJECTION = Object.fromEntries(
   LIBRARY_SUMMARY_PROJECTION.split(/\s+/).filter(Boolean).map((field) => [field, 1]),
 );
 
+function matchesSharedQuestion(question, query = {}) {
+  const values = queryList(query.types || query.type).filter((value) => value !== 'all');
+  if (values.length && !values.includes(question.questionType)) return false;
+  if (query.status && question.status !== query.status) return false;
+  if (query.visibility && question.visibility !== query.visibility) return false;
+  if (query.sourceType && question.sourceType !== query.sourceType) return false;
+  if (query.sourceAssessmentId && String(question.sourceAssessmentId || '') !== String(query.sourceAssessmentId)) return false;
+  if (query.difficulty && question.difficulty !== query.difficulty) return false;
+  if (query.tag && !(question.tags || []).includes(query.tag)) return false;
+  if (query.search && ![question.questionText, ...(question.tags || [])].some((value) => String(value || '').toLowerCase().includes(String(query.search).toLowerCase()))) return false;
+  if (query.uncategorized === 'true' && (question.topicIds || []).length) return false;
+  const topicIds = queryList(query.topicIds);
+  if (topicIds.length && !topicIds.some((id) => (question.topicIds || []).some((item) => String(item) === id) || (query.topicScope !== 'direct' && (question.topicAncestorIds || []).some((item) => String(item) === id)))) return false;
+  const tagIds = queryList(query.tagIds);
+  if (tagIds.length && !tagIds.some((id) => (question.codingTagIds || []).some((item) => String(item) === id))) return false;
+  return true;
+}
+
+function mergedLibraryResponse(local, shared, query = {}) {
+  const page = Math.max(1, Number(query.page) || 1);
+  const limit = Math.min(100, Math.max(1, Number(query.limit) || 25));
+  const direction = query.sortOrder === 'asc' ? 1 : -1;
+  const sortBy = ['updatedAt', 'createdAt', 'questionText', 'difficulty'].includes(query.sortBy) ? query.sortBy : 'updatedAt';
+  const questions = [...local, ...shared.filter((item) => matchesSharedQuestion(item, query)).map((item) => ({ ...formatLibraryQuestionSummary(item), platformShared: true }))]
+    .sort((a, b) => sortBy === 'questionText' || sortBy === 'difficulty'
+      ? String(a[sortBy] || '').localeCompare(String(b[sortBy] || '')) * direction
+      : (new Date(a[sortBy] || 0).getTime() - new Date(b[sortBy] || 0).getTime()) * direction);
+  const total = questions.length;
+  const all = query.selectAll === 'true';
+  return { questions: all ? questions : questions.slice((page - 1) * limit, page * limit), pagination: { page: all ? 1 : page, limit: all ? total : limit, total, pages: Math.max(1, Math.ceil(total / limit)) } };
+}
+
 export async function listLibraryQuestions(req, res) {
   try {
+    const central = await sharedQuestions();
     await ensureQuestionLibrarySynchronized();
 
     const {
@@ -359,7 +393,7 @@ export async function listLibraryQuestions(req, res) {
       const sortExpression = selectedSort === 'difficulty'
         ? { ...(normalizedSearch ? { __searchRank: 1 } : {}), __difficultyRank: direction, updatedAt: -1, _id: 1 }
         : { ...(normalizedSearch ? { __searchRank: 1 } : {}), [selectedSort]: direction, updatedAt: -1, _id: 1 };
-      const pageStages = includeAllMatches ? [] : [{ $skip: skip }, { $limit: limitNum }];
+      const pageStages = includeAllMatches || central ? [] : [{ $skip: skip }, { $limit: limitNum }];
       const [result = { rows: [], count: [] }] = await QuestionLibrary.aggregate([
         { $match: baseMatch },
         { $project: LIBRARY_SUMMARY_AGGREGATION_PROJECTION },
@@ -454,16 +488,18 @@ export async function listLibraryQuestions(req, res) {
       });
       const total = Number(result.count?.[0]?.total || 0);
 
-      return res.json({
-        questions: rows.map((question) => ({
+      const localRows = rows.map((question) => ({
           ...formatLibraryQuestionSummary(question),
           usedInAssessments: Array.from(assessmentUsage.get(getLibraryUsageKey(question)) || []).sort((a, b) => a.localeCompare(b)),
-        })),
+        }));
+      const merged = central ? mergedLibraryResponse(localRows, central, req.query) : null;
+      return res.json({
+        questions: merged?.questions || localRows,
         pagination: {
-          page: includeAllMatches ? 1 : pageNum,
-          limit: includeAllMatches ? total : limitNum,
-          total,
-          pages: Math.max(1, Math.ceil(total / limitNum)),
+          page: merged?.pagination.page ?? (includeAllMatches ? 1 : pageNum),
+          limit: merged?.pagination.limit ?? (includeAllMatches ? total : limitNum),
+          total: merged?.pagination.total ?? total,
+          pages: merged?.pagination.pages ?? Math.max(1, Math.ceil(total / limitNum)),
         },
         filters: {},
       });
@@ -489,8 +525,9 @@ export async function listLibraryQuestions(req, res) {
     const uniqueBaseQuestions = uniqueLibraryQuestions(baseQuestions);
     const uniqueScopeQuestions = uniqueLibraryQuestions(scopeQuestions);
     const assessmentUsage = buildAssessmentUsageMap(scopeQuestions);
-    const categories = buildCategoryCounts(uniqueScopeQuestions);
-    const statuses = buildStatusCounts(uniqueScopeQuestions);
+    const scopeWithShared = [...uniqueScopeQuestions, ...(central || [])];
+    const categories = buildCategoryCounts(scopeWithShared);
+    const statuses = buildStatusCounts(scopeWithShared);
     const selectedType = normalizeType(type);
     const filteredQuestions = selectedType && selectedType !== 'all'
       ? uniqueBaseQuestions.filter((question) => question.questionType === selectedType)
@@ -520,24 +557,27 @@ export async function listLibraryQuestions(req, res) {
     });
     const total = sortedQuestions.length;
     const includeAllMatches = String(selectAll).trim().toLowerCase() === 'true';
-    const questions = includeAllMatches ? sortedQuestions : sortedQuestions.slice(skip, skip + limitNum);
+    const questions = includeAllMatches || central ? sortedQuestions : sortedQuestions.slice(skip, skip + limitNum);
+
+    const localRows = questions.map((question) => ({
+      ...formatLibraryQuestionSummary(question),
+      usedInAssessments: Array.from(assessmentUsage.get(getLibraryUsageKey(question)) || []).sort((a, b) => a.localeCompare(b)),
+    }));
+    const merged = central ? mergedLibraryResponse(localRows, central, req.query) : null;
 
     res.json({
-      questions: questions.map((question) => ({
-        ...formatLibraryQuestionSummary(question),
-        usedInAssessments: Array.from(assessmentUsage.get(getLibraryUsageKey(question)) || []).sort((a, b) => a.localeCompare(b)),
-      })),
+      questions: merged?.questions || localRows,
       pagination: {
-        page: includeAllMatches ? 1 : pageNum,
-        limit: includeAllMatches ? total : limitNum,
-        total,
-        pages: Math.max(1, Math.ceil(total / limitNum)),
+        page: merged?.pagination.page ?? (includeAllMatches ? 1 : pageNum),
+        limit: merged?.pagination.limit ?? (includeAllMatches ? total : limitNum),
+        total: merged?.pagination.total ?? total,
+        pages: merged?.pagination.pages ?? Math.max(1, Math.ceil(total / limitNum)),
       },
       filters: {
         categories,
         statuses,
-        tags: tags.filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
-        difficulties: difficulties.filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+        tags: [...new Set([...tags, ...(central || []).flatMap((item) => item.tags || [])])].filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+        difficulties: [...new Set([...difficulties, ...(central || []).map((item) => item.difficulty)])].filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
         assessments: Array.from(new Map(scopeQuestions
           .filter((question) => question.sourceAssessmentId && question.sourceAssessmentTitle)
           .map((question) => [String(question.sourceAssessmentId), {
@@ -554,6 +594,7 @@ export async function listLibraryQuestions(req, res) {
 
 export async function getLibraryQuestion(req, res) {
   try {
+    const central = await sharedQuestions();
     await ensureQuestionLibrarySynchronized();
     const { id } = req.params;
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -568,7 +609,11 @@ export async function getLibraryQuestion(req, res) {
     const question = await QuestionLibrary.findOne(query)
       .populate('createdBy', 'name email role coordinatorId')
       .lean();
-    if (!question) return res.status(404).json({ error: 'Library question not found' });
+    if (!question) {
+      const shared = central?.find((item) => String(item._id) === String(id));
+      return shared ? res.json({ question: { ...formatLibraryQuestionSummary(shared), questionData: shared.questionData, platformShared: true } })
+        : res.status(404).json({ error: 'Library question not found' });
+    }
 
     res.json({
       question: {
@@ -722,6 +767,7 @@ export async function deleteLibraryQuestion(req, res) {
 
 export async function resolveLibraryQuestions(req, res) {
   try {
+    const central = await sharedQuestions();
     await ensureQuestionLibrarySynchronized();
     const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
     const validIds = ids.filter((id) => mongoose.Types.ObjectId.isValid(id));
@@ -740,10 +786,11 @@ export async function resolveLibraryQuestions(req, res) {
       .lean();
 
     res.json({
-      questions: questions.map((question) => ({
+      questions: [...questions.map((question) => ({
         ...formatLibraryQuestionSummary(question),
         questionData: question.questionData,
-      })),
+      })), ...(central || []).filter((item) => validIds.some((id) => String(id) === String(item._id)))
+        .map((item) => ({ ...formatLibraryQuestionSummary(item), questionData: item.questionData, platformShared: true }))],
     });
   } catch (err) {
     console.error('Error resolving library questions:', err);

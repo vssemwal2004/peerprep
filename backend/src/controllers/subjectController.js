@@ -1,4 +1,5 @@
 import Semester from '../models/Subject.js';
+import { learningSemesters } from '../platform/sharedContent.js';
 import Progress from '../models/Progress.js';
 import { HttpError } from '../utils/errors.js';
 import { supabase } from '../utils/supabase.js';
@@ -26,7 +27,8 @@ export async function listSemesters(req, res) {
           ]
         }
       : {};
-    const semesters = await Semester.find(ownerFilter).sort({ order: 1 }).lean();
+    const shared = await learningSemesters();
+    const semesters = shared || await Semester.find(ownerFilter).sort({ order: 1 }).lean();
     res.json({ count: semesters.length, semesters });
   } catch (err) {
     console.error('Error listing semesters:', err);

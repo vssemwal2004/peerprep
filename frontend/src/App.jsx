@@ -51,6 +51,7 @@ const StudentResume = lazy(() => import("./student/StudentResume"));
 
 // Admin Pages
 const AdminOverview = lazy(() => import("./admin/AdminOverview"));
+const PlatformControl = lazy(() => import('./admin/PlatformControl'));
 const AdminLearning = lazy(() => import("./admin/AdminLearning"));
 const AdminLearningDetail = lazy(() => import("./admin/AdminLearningDetail"));
 const StudentOnboarding = lazy(() => import("./admin/StudentOnboarding"));
@@ -423,6 +424,7 @@ function AppContent() {
         <Route path="/admin/ai-interviews/*" element={<AdminShell><AIInterviewWorkspace /></AdminShell>} />
         <Route path="/admin/change-password" element={<AdminShell><AdminChangePassword /></AdminShell>} />
         <Route path="/admin/learning" element={<AdminShell><AdminLearning /></AdminShell>} />
+        <Route path="/admin/platform" element={<AdminShell><PlatformControl /></AdminShell>} />
         <Route path="/admin/learning/:semester/:subject/:teacherId" element={<AdminShell><AdminLearningDetail /></AdminShell>} />
         <Route path="/admin/activity" element={<AdminShell><AdminActivity /></AdminShell>} />
         <Route path="/admin/analysis" element={<AdminShell><AdminAnalyticsPage /></AdminShell>} />
@@ -551,10 +553,6 @@ function App() {
 }
 
 export default App;
-
-
-
-
 
 
 

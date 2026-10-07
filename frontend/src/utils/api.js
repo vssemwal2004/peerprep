@@ -200,6 +200,7 @@ async function request(
   } = {},
 ) {
   method = method.toUpperCase();
+  if (import.meta.env.VITE_PEERPREP_DEPLOYMENT_ROLE === 'university' && /^(?:\/admin\/(?:assessment|library)|\/student\/assessment|\/learning|\/subjects)/.test(path)) skipCache = true;
 
   // Check cache for GET requests
   const cacheKey = getCacheKey(path, method);
@@ -372,6 +373,20 @@ async function interviewMediaRequest(path, { method = 'GET', recording, version 
 }
 
 export const api = {
+  platformOverview: () => request('/platform/admin/overview', { skipCache: true }),
+  platformStudents: (id, page = 1, search = '') => request(`/platform/admin/universities/${encodeURIComponent(id)}/students?page=${page}&search=${encodeURIComponent(search)}`, { skipCache: true }),
+  platformStudent: (id, studentId) => request(`/platform/admin/universities/${encodeURIComponent(id)}/students/${encodeURIComponent(studentId)}`, { skipCache: true }),
+  listPracticeQuestions: (params = {}) => request(`/student/questions?${new URLSearchParams(params).toString()}`, { skipCache: true }),
+  getPracticeQuestion: (source, id) => request(`/student/questions/${encodeURIComponent(source)}/${encodeURIComponent(id)}`, { skipCache: true }),
+  submitPracticeAnswer: (source, id, answer, language = '') => request(`/student/questions/${encodeURIComponent(source)}/${encodeURIComponent(id)}/attempts`, { method: 'POST', body: { answer, language }, skipCache: true }),
+  platformPublications: () => request('/platform/admin/publications', { skipCache: true }),
+  createUniversity: (body) => request('/platform/admin/universities', { method: 'POST', body }),
+  updateUniversityDefaults: (body) => request('/platform/admin/defaults', { method: 'PUT', body }),
+  updateUniversity: (id, body) => request(`/platform/admin/universities/${encodeURIComponent(id)}`, { method: 'PATCH', body }),
+  deleteUniversity: (id) => request(`/platform/admin/universities/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  rotateUniversityKey: (id) => request(`/platform/admin/universities/${encodeURIComponent(id)}/rotate-key`, { method: 'POST' }),
+  publishPlatformContent: (kind, id, body) => request(`/platform/admin/publications/${kind}/${encodeURIComponent(id)}`, { method: 'PUT', body }),
+  universityPolicy: () => request('/platform/university/policy', { skipCache: true }),
   aiInterviewRequest: (path = '', options = {}) => request(`/ai-interviews${path}`, { ...options, skipCache: true, skipDedupe: true }),
   listStudentAIInterviews: () => request('/student/ai-interviews', { skipCache: true }),
   startStudentAIInterview: (id, resumeConsent = false) => request(`/student/ai-interviews/${id}/start`, { method: 'POST', body: { resumeConsent }, timeoutMs: 60000, skipQueue: true }),

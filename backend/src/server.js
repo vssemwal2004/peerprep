@@ -19,10 +19,14 @@ import { closeQueueWorkers } from './queues/workerRuntime.js';
 import { closeQueues } from './queues/queueManager.js';
 import { startAssessmentEvaluationDispatcher } from './services/assessmentEvaluationDispatchService.js';
 import { startAssessmentReportSummaryWorker } from './services/assessmentReportSummaryService.js';
+import { validateDeploymentConfig } from './platform/deployment.js';
+import { startUniversityHeartbeat } from './platform/heartbeat.js';
 //fufgv
 const PORT = process.env.PORT || 4000;
+validateDeploymentConfig();
 //new file check
 await connectDb();
+const stopUniversityHeartbeat = startUniversityHeartbeat();
 
 const httpServer = createServer(app);
 
@@ -218,6 +222,7 @@ if (mailWorkerEnabled) startMailQueueWorker();
 const shutdown = async (signal) => {
   if (isShuttingDown) return;
   isShuttingDown = true;
+  stopUniversityHeartbeat();
   app.set('isShuttingDown', true);
 
   console.log(`\n${signal} received. Starting graceful shutdown...`);

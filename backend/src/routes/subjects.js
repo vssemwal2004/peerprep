@@ -21,9 +21,21 @@ import {
   reorderTopics
 } from '../controllers/subjectController.js';
 import { cleanupDuplicateSemesters } from '../controllers/cleanupController.js';
+import { isUniversity } from '../platform/deployment.js';
+import { universityPolicy } from '../platform/client.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
+
+router.use(async (req, res, next) => {
+  if (!isUniversity()) return next();
+  try {
+    const policy = await universityPolicy();
+    if (!policy.permissions?.learning) return res.status(403).json({ error: 'Learning is disabled for this university' });
+    if (req.method !== 'GET' && policy.sources?.learning === 'shared') return res.status(403).json({ error: 'Shared learning is managed by the super admin' });
+    next();
+  } catch (error) { next(error); }
+});
 
 // Semester routes
 router.get('/', requireAuth, requireCoordinatorPermission('coordinator.learning.manage'), listSemesters);

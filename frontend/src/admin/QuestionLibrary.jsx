@@ -630,7 +630,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
 
   const previewQuestion = (question) => {
     setActionMenuId('');
-    if (question?.questionType === 'coding') {
+    if (question?.questionType === 'coding' && !question.platformShared) {
       if (!question.sourceProblemId) {
         toast.error('This coding question has no linked problem preview.');
         return;
@@ -744,6 +744,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   };
 
   const updateQuestionBySource = async (question, body) => {
+    if (question?.platformShared) throw new Error('Shared questions are managed by the super admin.');
     if (question?.questionType === 'coding' && question.sourceProblemId) {
       const operations = [];
       if (body.visibility) operations.push(api.updateCompilerProblemVisibility(question.sourceProblemId, body.visibility));
@@ -818,6 +819,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
 
   const deleteQuestion = async (question) => {
     setActionMenuId('');
+    if (question?.platformShared) { toast.error('Shared questions are managed by the super admin.'); return; }
     if (question?.questionType === 'coding') {
       toast.error('Delete coding problems from Problem management so linked test cases and submissions can be reviewed safely.');
       return;
@@ -853,6 +855,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
     if (!requireSelectedQuestions()) return;
 
     const selectedQuestions = Object.values(selectedMeta);
+    if (selectedQuestions.some((question) => question.platformShared)) { toast.error('Shared questions are managed by the super admin.'); return; }
     openConfirmDialog({
       title,
       message,
@@ -875,6 +878,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
     if (!requireSelectedQuestions()) return;
 
     const selectedQuestions = Object.values(selectedMeta);
+    if (selectedQuestions.some((question) => question.platformShared)) { toast.error('Shared questions are managed by the super admin.'); return; }
     const codingCount = selectedQuestions.filter((question) => question.questionType === 'coding').length;
     if (codingCount > 0) {
       toast.error('Coding problems must be deleted individually from Problem management so test cases and submissions are reviewed safely.');
@@ -1269,7 +1273,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                       {visibleColumns.tags && <div className="flex min-w-0 gap-1 overflow-hidden">{(question.tags || []).slice(0, 2).map((tag) => <span key={`${question._id}-${tag}`} className="max-w-[90px] truncate rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] dark:border-gray-700 dark:bg-gray-800">{tag}</span>)}{(question.tags || []).length > 2 && <button type="button" onClick={(event) => { event.stopPropagation(); openTagsModal(question.questionText || 'Question', question.tags || []); }} className="shrink-0 rounded-full border border-sky-200 bg-white px-2 py-0.5 text-[10px] font-bold text-sky-700 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300">+{question.tags.length - 2}</button>}</div>}
                       {visibleColumns.usedIn && <div className="flex min-w-0 gap-1 overflow-hidden">{(question.usedInAssessments || []).length ? <>{question.usedInAssessments.slice(0, 1).map((assessment) => <span key={`${question._id}-${assessment}`} className="max-w-[100px] truncate rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] text-violet-700 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-300">{assessment}</span>)}{question.usedInAssessments.length > 1 && <button type="button" onClick={(event) => { event.stopPropagation(); setUsageModal({ open: true, questionText: question.questionText || 'Question', assessments: question.usedInAssessments || [] }); }} className="shrink-0 text-[10px] font-bold text-sky-600">+{question.usedInAssessments.length - 1}</button>}</> : <span className="truncate text-xs text-slate-400">Not used yet</span>}</div>}
                       {visibleColumns.updated && <div className="text-xs text-slate-500">{question.updatedAt ? new Date(question.updatedAt).toLocaleDateString() : '-'}</div>}
-                      {!rowSelectionActive ? <div className="flex justify-end gap-1"><button type="button" onClick={(event) => { event.stopPropagation(); previewQuestion(question); }} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-sky-200 bg-white text-sky-700 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300" aria-label={`Preview ${getLibraryQuestionTitle(question)}`}><Eye className="h-4 w-4" /></button><button id={`question-actions-trigger-${question._id}`} data-platform-menu-trigger type="button" aria-haspopup="menu" aria-controls="question-library-action-menu" aria-expanded={actionMenuId === question._id} onClick={(event) => toggleQuestionActions(question, event)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" aria-label={`Actions for ${getLibraryQuestionTitle(question)}`}><MoreVertical className="h-4 w-4" /></button></div> : null}
+                      {!rowSelectionActive ? <div className="flex justify-end gap-1"><button type="button" onClick={(event) => { event.stopPropagation(); previewQuestion(question); }} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-sky-200 bg-white text-sky-700 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300" aria-label={`Preview ${getLibraryQuestionTitle(question)}`}><Eye className="h-4 w-4" /></button>{!question.platformShared && <button id={`question-actions-trigger-${question._id}`} data-platform-menu-trigger type="button" aria-haspopup="menu" aria-controls="question-library-action-menu" aria-expanded={actionMenuId === question._id} onClick={(event) => toggleQuestionActions(question, event)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" aria-label={`Actions for ${getLibraryQuestionTitle(question)}`}><MoreVertical className="h-4 w-4" /></button>}</div> : null}
                     </div>)}
                     {folderQuestionLoading !== folderId && items.length > 0 && <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400"><span>Showing {((Number(questionPagination.page) - 1) * pageSize) + 1}-{Math.min(Number(questionPagination.page) * pageSize, Number(questionPagination.total))} of {questionPagination.total} {allInFolder ? 'folder' : 'matching'} questions</span><div className="flex items-center gap-1.5"><button type="button" disabled={Number(questionPagination.page) <= 1} onClick={() => loadFolderQuestionPage(folder, Number(questionPagination.page) - 1, { allInFolder })} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900"><ChevronLeft className="h-3.5 w-3.5" /></button><span className="min-w-20 text-center font-semibold">Page {questionPagination.page} of {questionPagination.pages}</span><button type="button" disabled={Number(questionPagination.page) >= Number(questionPagination.pages)} onClick={() => loadFolderQuestionPage(folder, Number(questionPagination.page) + 1, { allInFolder })} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900"><ChevronRight className="h-3.5 w-3.5" /></button></div></div>}
                   </div>}
@@ -1323,6 +1327,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                     </span>
                     {isPassageSet(question) && <BookOpenText className="h-4 w-4 shrink-0 text-sky-600" />}
                     <span className="min-w-0 max-w-[calc(100%-3.25rem)] truncate leading-5">{getLibraryQuestionTitle(question)}</span>
+                    {question.platformShared && <span className="shrink-0 rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-sky-700 dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-300">Shared</span>}
                     {questionAlreadyAdded(question) && <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">Added</span>}
                     <button
                       type="button"
@@ -1338,7 +1343,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                   <div className="mt-1.5 flex items-center text-[11px] text-slate-500 dark:text-gray-400">
                     <QuestionStateBadge question={question} />
                     <span className="mx-1.5 text-slate-300">•</span>
-                    <button type="button" onClick={(event) => { event.stopPropagation(); setActorModal(question.createdBy || { role: 'admin', name: 'Administrator' }); }} className="font-semibold text-sky-700 hover:underline dark:text-sky-300">Added by {question.createdBy?.name || (question.createdBy?.role === 'coordinator' ? 'Coordinator' : 'Administrator')}</button>
+                    {question.platformShared ? <span>Added by Super Admin</span> : <button type="button" onClick={(event) => { event.stopPropagation(); setActorModal(question.createdBy || { role: 'admin', name: 'Administrator' }); }} className="font-semibold text-sky-700 hover:underline dark:text-sky-300">Added by {question.createdBy?.name || (question.createdBy?.role === 'coordinator' ? 'Coordinator' : 'Administrator')}</button>}
                   </div>
                 </div>
                 <div className="min-w-0 truncate text-xs font-semibold leading-5 text-slate-700 dark:text-gray-200" title={labelForQuestionType(question)}>{labelForQuestionType(question)}</div>
@@ -1389,7 +1394,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                     >
                       <Eye className="h-4 w-4" />
                     </button>
-                    <button
+                    {!question.platformShared && <button
                       id={`question-actions-trigger-${question._id}`}
                       data-platform-menu-trigger
                       aria-expanded={actionMenuId === question._id}
@@ -1401,7 +1406,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                       aria-label="Question actions"
                     >
                       <MoreVertical className="h-4 w-4" />
-                    </button>
+                    </button>}
                   </div>
                 )}
               </div>
@@ -1509,7 +1514,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="hidden rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-sky-700 sm:inline dark:bg-sky-950/30 dark:text-sky-300">Preview mode</span>
-                    {activeQuestion && <button type="button" onClick={() => { setActiveQuestion(null); startEditQuestion(activeQuestion); }} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 text-xs font-semibold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300"><Edit3 className="h-3.5 w-3.5" />Edit question</button>}
+                    {activeQuestion && !activeQuestion.platformShared && <button type="button" onClick={() => { setActiveQuestion(null); startEditQuestion(activeQuestion); }} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 text-xs font-semibold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300"><Edit3 className="h-3.5 w-3.5" />Edit question</button>}
                   <button
                     type="button"
                     onClick={() => setActiveQuestion(null)}
@@ -1805,4 +1810,3 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
     </div>
   );
 }
-

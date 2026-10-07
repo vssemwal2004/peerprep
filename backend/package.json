@@ -14,6 +14,7 @@
     "queues:legacy-status": "node scripts/legacyQueueStatus.js",
     "migrate:performance-indexes": "node src/migrations/create-performance-indexes.js",
     "migrate:master-data": "node src/migrations/seed-and-normalize-master-data.js",
+    "migrate:platform-indexes": "node --env-file=.env src/migrations/create-platform-indexes.js",
     "migrate:coding-taxonomy": "node --env-file=.env src/migrations/backfill-coding-taxonomy.js",
     "sync:leetcode-images": "node --env-file=.env scripts/syncLeetCodeProblemImages.js",
     "import:hf-leetcode-drafts": "node --env-file=.env scripts/importHuggingFaceLeetCodeDrafts.js",
