@@ -462,6 +462,10 @@ export default function StudentProfile() {
   const isMountedRef = useRef(true);
   const lastMetricsRefreshAtRef = useRef(0);
   const metricsRefreshTimerRef = useRef(null);
+  // Realtime bookkeeping: submissions already reflected optimistically, and a sync mirror of `activity`.
+  const countedSubmissionIdsRef = useRef(new Set());
+  const solvedSubmissionIdsRef = useRef(new Set());
+  const activityRef = useRef({});
 
   const loadActivityData = useCallback(async (showSpinner = false) => {
     if (showSpinner && isMountedRef.current) {
@@ -471,7 +475,8 @@ export default function StudentProfile() {
       // Always bypass the client cache: this runs on realtime events and must show fresh counts.
       const data = await api.getStudentActivity(true);
       if (!isMountedRef.current) return;
-      setActivity(data.activityByDate || {});
+      activityRef.current = data.activityByDate || {};
+      setActivity(activityRef.current);
       setActivityStats(data.stats || null);
     } catch (activityError) {
       console.warn('[StudentProfile] Failed to load activity/streak:', activityError);
@@ -483,11 +488,23 @@ export default function StudentProfile() {
     }
   }, []);
 
-  const loadStats = useCallback(async ({ forceAnalysis = false } = {}) => {
+  // Analysis (assessments/interviews/learning) is slow and rate limited; load it on its own so it
+  // never delays the solved/streak counters.
+  const loadAnalysis = useCallback(async (force = false) => {
     try {
-      const [statsResult, analysisResult, problemsResult] = await Promise.allSettled([
+      const analysisData = await api.getStudentAnalysis(force);
+      if (!isMountedRef.current) return;
+      // Keep the previous analysis if this refresh failed (e.g. rate-limited) instead of blanking sections.
+      setAnalysis((prev) => (analysisData ? (analysisData.analysis || null) : prev));
+    } catch (analysisError) {
+      console.warn('[StudentProfile] Failed to load analysis:', analysisError);
+    }
+  }, []);
+
+  const loadStats = useCallback(async () => {
+    try {
+      const [statsResult, problemsResult] = await Promise.allSettled([
         api.getStudentStats(true),
-        api.getStudentAnalysis(forceAnalysis),
         api.listStudentProblems({ page: 1, limit: 100, sortBy: 'updatedAt', sortOrder: 'desc', skipCache: true }),
       ]);
 
@@ -496,7 +513,6 @@ export default function StudentProfile() {
       }
 
       const data = statsResult.status === 'fulfilled' ? statsResult.value : null;
-      const analysisData = analysisResult.status === 'fulfilled' ? analysisResult.value : null;
       const firstProblemsPage = problemsResult.status === 'fulfilled' ? problemsResult.value : null;
       const problemsLoaded = problemsResult.status === 'fulfilled';
       const statsPayload = data?.stats || null;
@@ -632,8 +648,6 @@ export default function StudentProfile() {
         };
 
       setStats(enrichedStats);
-      // Keep the previous analysis if this refresh failed (e.g. rate-limited) instead of blanking sections.
-      setAnalysis((prev) => (analysisData ? (analysisData.analysis || null) : prev));
       setProblemStatusSummary({
         loaded: problemsLoaded,
         totalProblems: Number(firstProblemsPage?.pagination?.total || 0),
@@ -663,10 +677,11 @@ export default function StudentProfile() {
 
   const refreshMetrics = useCallback(async ({ withActivitySpinner = false, forceAnalysis = false } = {}) => {
     await Promise.all([
-      loadStats({ forceAnalysis }),
+      loadStats(),
       loadActivityData(withActivitySpinner),
+      loadAnalysis(forceAnalysis),
     ]);
-  }, [loadActivityData, loadStats]);
+  }, [loadActivityData, loadAnalysis, loadStats]);
 
   const safeRefreshMetrics = useCallback(({ withActivitySpinner = false, force = false } = {}) => {
     const now = Date.now();
@@ -690,6 +705,75 @@ export default function StudentProfile() {
       safeRefreshMetrics({ withActivitySpinner, force: true });
     }, Math.max(cooldownMs - elapsed + 50, 50));
   }, [refreshMetrics]);
+
+  /**
+   * Instantly reflect a judged "submit" on the profile (Run is never counted):
+   *  - every new submit  -> submissions +1, today's heatmap cell +1, streak +1 on the first activity of the day
+   *  - first accepted    -> solved +1 and the matching Easy/Medium/Hard bucket +1
+   * The server stays the source of truth: the follow-up refetch overwrites these optimistic numbers.
+   */
+  const applyOptimisticSubmission = useCallback((submission) => {
+    if (!isMountedRef.current || submission?.mode !== 'submit') return;
+    const submissionId = String(submission?._id || '');
+    if (!submissionId) return;
+
+    if (!countedSubmissionIdsRef.current.has(submissionId)) {
+      countedSubmissionIdsRef.current.add(submissionId);
+
+      setStats((prev) => (prev ? { ...prev, totalSubmissions: Number(prev.totalSubmissions || 0) + 1 } : prev));
+      setProblemStatusSummary((prev) => ({ ...prev, attemptCount: Number(prev.attemptCount || 0) + 1 }));
+
+      // The backend buckets activity by UTC day. The ref is updated synchronously so two quick
+      // submissions in the same render window can't both claim "first activity of the day".
+      const todayKey = new Date().toISOString().slice(0, 10);
+      const isFirstActivityToday = Number(activityRef.current?.[todayKey] || 0) === 0;
+      activityRef.current = { ...activityRef.current, [todayKey]: Number(activityRef.current?.[todayKey] || 0) + 1 };
+      setActivity(activityRef.current);
+      if (isFirstActivityToday) {
+        setActivityStats((prev) => {
+          const base = prev || {};
+          const currentStreak = Number(base.currentStreak || 0) + 1;
+          return {
+            ...base,
+            currentStreak,
+            bestStreak: Math.max(Number(base.bestStreak || 0), currentStreak),
+            totalActiveDays: Number(base.totalActiveDays || 0) + 1,
+          };
+        });
+      }
+    }
+
+    if (submission?.firstAccepted && !solvedSubmissionIdsRef.current.has(submissionId)) {
+      solvedSubmissionIdsRef.current.add(submissionId);
+      const difficultyKey = String(submission?.problem?.difficulty || '').toLowerCase();
+      const bump = (counts) => (
+        difficultyKey === 'easy' || difficultyKey === 'medium' || difficultyKey === 'hard'
+          ? { ...counts, [difficultyKey]: Number(counts?.[difficultyKey] || 0) + 1 }
+          : counts
+      );
+
+      setStats((prev) => (prev
+        ? {
+          ...prev,
+          totalQuestionsSolved: Number(prev.totalQuestionsSolved || prev.problemsSolved || 0) + 1,
+          solvedByDifficulty: bump(prev.solvedByDifficulty || {}),
+          recentSolvedProblems: [
+            {
+              title: submission?.problem?.title || 'Untitled Problem',
+              difficulty: submission?.problem?.difficulty || 'Easy',
+              acceptedAt: submission?.completedAt || submission?.updatedAt || new Date().toISOString(),
+            },
+            ...(Array.isArray(prev.recentSolvedProblems) ? prev.recentSolvedProblems : []),
+          ].slice(0, 5),
+        }
+        : prev));
+      setProblemStatusSummary((prev) => ({
+        ...prev,
+        solvedCount: Number(prev.solvedCount || 0) + 1,
+        solvedByDifficulty: bump(prev.solvedByDifficulty || {}),
+      }));
+    }
+  }, []);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -742,7 +826,10 @@ export default function StudentProfile() {
     const handleCompilerUpdate = (submission) => {
       if (String(submission?.userId || '') !== String(user._id)) return;
 
-      // Only refresh once the submission is finalized; avoids spam while queued/running.
+      // Bump counters instantly from the event itself; the refetch below then reconciles with the server.
+      applyOptimisticSubmission(submission);
+
+      // Only refetch once the submission is finalized; avoids spam while queued/running.
       const status = String(submission?.status || '').toUpperCase();
       if (status === 'PENDING' || status === 'RUNNING') return;
       safeRefreshMetrics({ force: true });
@@ -755,7 +842,7 @@ export default function StudentProfile() {
       socketService.off('learning-updated', handleLearningUpdate);
       socketService.off('compiler-submission-updated', handleCompilerUpdate);
     };
-  }, [safeRefreshMetrics, user?._id]);
+  }, [applyOptimisticSubmission, safeRefreshMetrics, user?._id]);
 
   useEffect(() => {
     if (!user?._id) return undefined;

@@ -9,7 +9,7 @@ import Submission from '../models/Submission.js';
 import TestCase from '../models/TestCase.js';
 import { HttpError } from '../utils/errors.js';
 import { sanitizeSearchQuery, sanitizeString, validateObjectId, validatePagination } from '../utils/validators.js';
-import { refreshProblemStats, serializeProblem, serializeSubmission, serializeStudentSubmission } from './compilerHelpers.js';
+import { refreshProblemStats, serializeProblem, serializeSubmission, serializeSubmissionForRealtime, serializeStudentSubmission } from './compilerHelpers.js';
 import { runJudge0, buildJudge0Options as sharedJudge0Options } from '../services/executionService.js';
 import { removeProblemFromLibrary, syncProblemToLibrary } from '../services/questionLibraryService.js';
 import { parseBulkCasePair } from '../utils/testcaseBulkParser.js';
@@ -1166,9 +1166,13 @@ function emitSubmissionUpdate(req, submission) {
   const userRoom = String(submission?.user || '');
   if (!userRoom) return;
 
-  io.to(userRoom).to('compiler:monitor').emit('compiler-submission-updated', serializeSubmission(submission, {
-    includeJudgeDetails: false,
-  }));
+  serializeSubmissionForRealtime(submission)
+    .then((payload) => {
+      io.to(userRoom).to('compiler:monitor').emit('compiler-submission-updated', payload);
+    })
+    .catch((error) => {
+      console.warn('[Realtime Submission] emit failed:', error?.message || error);
+    });
 }
 
 async function createTrackedSubmission(req, problem, { mode, language, sourceCode, customInput = '' }) {

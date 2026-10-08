@@ -274,13 +274,40 @@ export const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: getPlatformRateLimitKey,
-  // Skip static health checks
-  skip: (req) => req.path === '/health' || req.path === '/api/health',
+  // Skip static health checks. Execution-result polling (GET /results/:jobId) has its own,
+  // dedicated limiter (resultsPollLimiter); otherwise a few slow Run/Submit jobs polling once a
+  // second would exhaust this shared budget and lock the student out of the whole API.
+  skip: (req) => req.path === '/health'
+    || req.path === '/api/health'
+    || (req.method === 'GET' && req.path.startsWith('/results/')),
   store: buildRateLimitStore('rl:api:'),
   handler: (req, res) => {
     console.warn(`[SECURITY] API rate limit exceeded for ${req.ip} on ${req.path}`);
     res.status(429).json({
       error: 'Rate limit exceeded. Please slow down your requests.'
+    });
+  }
+});
+
+// Execution-result polling limiter. Clients poll every 1-3s while a Run/Submit is in flight, so the
+// cap is per minute (not per 15 minutes) and sized for a couple of open tabs; it blocks scripted
+// hammering without ever counting against the general API budget.
+const RESULTS_POLL_WINDOW_MS = Number(process.env.RESULTS_POLL_WINDOW_MS || 60 * 1000);
+const RESULTS_POLL_MAX = Number(process.env.RESULTS_POLL_MAX || 180);
+
+export const resultsPollLimiter = rateLimit({
+  windowMs: RESULTS_POLL_WINDOW_MS,
+  max: RESULTS_POLL_MAX,
+  message: 'Too many result polling requests',
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: getRateLimitKey,
+  store: buildRateLimitStore('rl:results:poll:'),
+  handler: (req, res) => {
+    console.warn(`[SECURITY] Results polling limit exceeded for ${req.user?._id || req.ip}`);
+    res.set('Retry-After', String(Math.ceil(RESULTS_POLL_WINDOW_MS / 1000)));
+    res.status(429).json({
+      error: 'Checking results too quickly. Please wait a few seconds.'
     });
   }
 });

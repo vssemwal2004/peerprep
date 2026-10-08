@@ -1590,9 +1590,21 @@ export const api = {
     { intervalMs = 1000, timeoutMs = 120000 } = {},
   ) => {
     const startedAt = Date.now();
+    const maxIntervalMs = Math.max(intervalMs, 3000);
+    let polls = 0;
 
     while (Date.now() - startedAt <= timeoutMs) {
-      const result = await request(`/results/${jobId}`, { skipCache: true });
+      let result;
+      try {
+        result = await request(`/results/${jobId}`, { skipCache: true });
+      } catch (error) {
+        // Rate limited while polling: back off and keep waiting instead of failing a job that is still running.
+        if (error?.response?.status === 429) {
+          await sleep(5000);
+          continue;
+        }
+        throw error;
+      }
       const status = String(result?.status || "").toLowerCase();
 
       if (status === "completed") {
@@ -1603,7 +1615,10 @@ export const api = {
         throw new Error(result?.error?.message || "Execution failed.");
       }
 
-      await sleep(intervalMs);
+      // Fast at first (most runs finish in a few seconds), then ease off so a slow or
+      // stuck job doesn't hammer the API once a second for minutes.
+      polls += 1;
+      await sleep(polls <= 5 ? intervalMs : Math.min(intervalMs * (1 + (polls - 5) * 0.25), maxIntervalMs));
     }
 
     throw new Error(

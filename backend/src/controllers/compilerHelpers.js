@@ -176,6 +176,35 @@ export function serializeSubmission(submission, { includeJudgeDetails = true } =
   };
 }
 
+const ACCEPTED_STATUS_PATTERN = /^(ac|accepted|accept)$/i;
+
+/**
+ * Realtime payload for 'compiler-submission-updated'. On top of the normal serialization it
+ * carries `firstAccepted`: true when this is the user's first accepted *submit* for the problem.
+ * The student profile uses it to bump "solved" instantly without waiting for a full refetch.
+ */
+export async function serializeSubmissionForRealtime(submission) {
+  const payload = serializeSubmission(submission, { includeJudgeDetails: false });
+  if (!payload) return payload;
+
+  payload.firstAccepted = false;
+  if (submission.mode === 'submit' && ACCEPTED_STATUS_PATTERN.test(String(submission.status || ''))) {
+    try {
+      const earlier = await Submission.exists({
+        user: submission.user,
+        problem: submission.problem,
+        mode: 'submit',
+        _id: { $ne: submission._id },
+        status: ACCEPTED_STATUS_PATTERN,
+      });
+      payload.firstAccepted = !earlier;
+    } catch (error) {
+      console.warn('[Realtime Submission] firstAccepted lookup failed:', error?.message || error);
+    }
+  }
+  return payload;
+}
+
 export function serializeStudentSubmission(submission) {
   const serialized = serializeSubmission(submission, {
     includeJudgeDetails: submission?.mode === 'run',

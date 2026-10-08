@@ -15,7 +15,7 @@ import { readTestcaseTextObject } from '../utils/testcaseStorage.js';
 import { createNotification } from './notificationService.js';
 import { recordDailyChallengeCompletion } from './codingStreakService.js';
 import { getIo } from '../utils/io.js';
-import { serializeSubmission, refreshProblemStats } from '../controllers/compilerHelpers.js';
+import { serializeSubmissionForRealtime, refreshProblemStats } from '../controllers/compilerHelpers.js';
 import {
   assessmentQueue,
   compilerQueue,
@@ -209,9 +209,14 @@ function emitSubmissionUpdate(submission) {
   if (!io) return;
   const userRoom = String(submission?.user || '');
   if (!userRoom) return;
-  io.to(userRoom).to('compiler:monitor').emit('compiler-submission-updated', serializeSubmission(submission, {
-    includeJudgeDetails: false,
-  }));
+  // Fire-and-forget: the realtime payload also resolves `firstAccepted`; never block or fail the judge flow.
+  serializeSubmissionForRealtime(submission)
+    .then((payload) => {
+      io.to(userRoom).to('compiler:monitor').emit('compiler-submission-updated', payload);
+    })
+    .catch((error) => {
+      console.warn('[Realtime Submission] emit failed:', error?.message || error);
+    });
 }
 
 async function createTrackedSubmission({

@@ -7,7 +7,6 @@ import { formatPercent } from '../admin/compiler/compilerUtils';
 import { buildTagsParam, PROBLEM_SORT_OPTIONS, resolveProblemSort } from './problemUtils';
 import DailyCodingChallenge from './DailyCodingChallenge';
 import { AnviIdentity } from '../components/AnviApproach';
-import QuestionPracticePanel from './QuestionPracticePanel';
 
 const PAGE_SIZE = 15;
 const FAVORITES_KEY = 'peerprep:problem-favorites';
@@ -121,7 +120,6 @@ export default function ProblemsPage() {
   const companyPanel = <section className="rounded-xl bg-white p-4 shadow-[0_2px_10px_rgba(0,0,0,0.05)] dark:bg-[#282828]"><div className="flex items-center gap-2"><Building2 className="h-4 w-4 text-zinc-400" /><h2 className="text-sm font-medium">Companies</h2>{selectedCompany && <button type="button" onClick={() => setSelectedCompany('')} className="ml-auto text-xs text-zinc-400">Clear</button>}</div><label className="relative mt-3 block"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" /><input value={companySearch} onChange={(event) => setCompanySearch(event.target.value)} placeholder="Search companies" className="h-10 w-full rounded-lg border-0 bg-[#f2f2f3] pl-10 pr-9 text-xs outline-none dark:bg-[#333]" />{companiesLoading && <LoaderCircle className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-zinc-400" />}</label><div className="mt-4 flex max-h-72 flex-wrap gap-2 overflow-y-auto">{companyCounts.map(({ company, count }) => <button key={company} type="button" onClick={() => setSelectedCompany((value) => value === company ? '' : company)} className={`rounded-full px-2.5 py-1 text-xs font-medium ${selectedCompany === company ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900' : 'bg-[#f2f2f3] text-zinc-600 dark:bg-[#353535] dark:text-zinc-300'}`}>{company} <span className="ml-1 rounded-full bg-[#ffa116] px-1.5 py-0.5 text-[10px] text-white">{count}</span></button>)}</div>{!companiesLoading && !companyCounts.length && <p className="mt-4 text-xs leading-5 text-zinc-400">No matching company tags. Company filters appear when published problems have company tags.</p>}</section>;
 
   return <div className="min-h-screen bg-white font-sans text-[#262626] dark:bg-[#1a1a1a] dark:text-zinc-100"><main className="mx-auto w-full max-w-[1600px] px-3 pb-10 pt-4 sm:px-5">
-    <QuestionPracticePanel />
     <section className="mb-4 flex items-center justify-between gap-4 overflow-hidden rounded-2xl border border-violet-100 bg-gradient-to-r from-[#0b0714] via-[#160b2b] to-[#071923] px-4 py-3 text-white shadow-[0_12px_34px_rgba(76,29,149,0.14)] dark:border-violet-900/70">
       <AnviIdentity subtitle="Your AI coding guide for a focused next step." />
       <span className="hidden rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-cyan-50 sm:inline-flex">Ask AnvI inside every problem</span>
