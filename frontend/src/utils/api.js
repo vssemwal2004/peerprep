@@ -415,11 +415,18 @@ export const api = {
     fd.append("avatar", file);
     return request("/auth/me/avatar", { method: "PUT", formData: fd });
   },
-  getStudentActivity: () =>
-    request("/auth/activity", { cacheTtlMs: 30 * 1000 }),
+  getStudentActivity: (forceRefresh = false) =>
+    request("/auth/activity", {
+      skipCache: forceRefresh,
+      cacheTtlMs: 30 * 1000,
+    }),
   debugStudentActivity: () =>
     request("/auth/activity/debug", { skipCache: true }),
-  getStudentStats: () => request("/auth/stats", { cacheTtlMs: 60 * 1000 }),
+  getStudentStats: (forceRefresh = false) =>
+    request("/auth/stats", {
+      skipCache: forceRefresh,
+      cacheTtlMs: 60 * 1000,
+    }),
   login: async (identifier, password) => {
     clearApiCache();
     const result = await request("/auth/login", {
@@ -1613,6 +1620,7 @@ export const api = {
     sortOrder = "asc",
     page = 1,
     limit = 10,
+    skipCache = false,
   } = {}) => {
     const params = new URLSearchParams();
     if (search) params.append("search", search);
@@ -1625,6 +1633,7 @@ export const api = {
     params.append("page", String(page));
     params.append("limit", String(limit));
     return request(`/compiler/problems?${params.toString()}`, {
+      skipCache,
       cacheTtlMs: 30 * 1000,
     });
   },

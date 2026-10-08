@@ -60,12 +60,14 @@ function statusClasses(status) {
 
 function AnimatedMetric({ value, suffix = '', decimals = 0, className = '' }) {
   const [displayValue, setDisplayValue] = useState(0);
+  const fromRef = useRef(0);
 
   useEffect(() => {
     const numericValue = Number(value || 0);
     const safeValue = Number.isFinite(numericValue) ? numericValue : 0;
     const duration = 600;
-    const startValue = displayValue;
+    // Tween from the last rendered value; depending on displayValue here would restart the tween every frame.
+    const startValue = fromRef.current;
     const startedAt = performance.now();
     let frameId = 0;
 
@@ -73,6 +75,7 @@ function AnimatedMetric({ value, suffix = '', decimals = 0, className = '' }) {
       const progress = Math.min((now - startedAt) / duration, 1);
       const eased = 1 - ((1 - progress) ** 3);
       const nextValue = startValue + ((safeValue - startValue) * eased);
+      fromRef.current = nextValue;
       setDisplayValue(nextValue);
       if (progress < 1) {
         frameId = requestAnimationFrame(tick);
@@ -81,7 +84,7 @@ function AnimatedMetric({ value, suffix = '', decimals = 0, className = '' }) {
 
     frameId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frameId);
-  }, [displayValue, value]);
+  }, [value]);
 
   return (
     <span className={className}>
@@ -465,14 +468,14 @@ export default function StudentProfile() {
       setLoadingActivity(true);
     }
     try {
-      const data = await api.getStudentActivity();
+      // Always bypass the client cache: this runs on realtime events and must show fresh counts.
+      const data = await api.getStudentActivity(true);
       if (!isMountedRef.current) return;
       setActivity(data.activityByDate || {});
       setActivityStats(data.stats || null);
-    } catch {
-      if (!isMountedRef.current) return;
-      setActivity({});
-      setActivityStats(null);
+    } catch (activityError) {
+      console.warn('[StudentProfile] Failed to load activity/streak:', activityError);
+      // Keep the last good values so a transient failure doesn't wipe the streak tiles.
     } finally {
       if (showSpinner && isMountedRef.current) {
         setLoadingActivity(false);
@@ -480,13 +483,17 @@ export default function StudentProfile() {
     }
   }, []);
 
-  const loadStats = useCallback(async () => {
+  const loadStats = useCallback(async ({ forceAnalysis = false } = {}) => {
     try {
       const [statsResult, analysisResult, problemsResult] = await Promise.allSettled([
-        api.getStudentStats(),
-        api.getStudentAnalysis(true),
-        api.listStudentProblems({ page: 1, limit: 100, sortBy: 'updatedAt', sortOrder: 'desc' }),
+        api.getStudentStats(true),
+        api.getStudentAnalysis(forceAnalysis),
+        api.listStudentProblems({ page: 1, limit: 100, sortBy: 'updatedAt', sortOrder: 'desc', skipCache: true }),
       ]);
+
+      if (statsResult.status === 'rejected') {
+        console.warn('[StudentProfile] Failed to load stats:', statsResult.reason);
+      }
 
       const data = statsResult.status === 'fulfilled' ? statsResult.value : null;
       const analysisData = analysisResult.status === 'fulfilled' ? analysisResult.value : null;
@@ -625,7 +632,8 @@ export default function StudentProfile() {
         };
 
       setStats(enrichedStats);
-      setAnalysis(analysisData?.analysis || null);
+      // Keep the previous analysis if this refresh failed (e.g. rate-limited) instead of blanking sections.
+      setAnalysis((prev) => (analysisData ? (analysisData.analysis || null) : prev));
       setProblemStatusSummary({
         loaded: problemsLoaded,
         totalProblems: Number(firstProblemsPage?.pagination?.total || 0),
@@ -647,23 +655,15 @@ export default function StudentProfile() {
             : Number(statsPayload?.solvedByDifficulty?.hard || 0),
         },
       });
-    } catch {
-      if (!isMountedRef.current) return;
-      setStats(null);
-      setAnalysis(null);
-      setProblemStatusSummary({
-        loaded: false,
-        totalProblems: 0,
-        solvedCount: 0,
-        attemptCount: 0,
-        solvedByDifficulty: { easy: 0, medium: 0, hard: 0 },
-      });
+    } catch (statsError) {
+      console.warn('[StudentProfile] Failed to refresh stats:', statsError);
+      // Keep the last good stats on screen; a failed refresh must not reset the profile to zeros.
     }
   }, []);
 
-  const refreshMetrics = useCallback(async ({ withActivitySpinner = false } = {}) => {
+  const refreshMetrics = useCallback(async ({ withActivitySpinner = false, forceAnalysis = false } = {}) => {
     await Promise.all([
-      loadStats(),
+      loadStats({ forceAnalysis }),
       loadActivityData(withActivitySpinner),
     ]);
   }, [loadActivityData, loadStats]);
@@ -679,7 +679,8 @@ export default function StudentProfile() {
         clearTimeout(metricsRefreshTimerRef.current);
         metricsRefreshTimerRef.current = null;
       }
-      void refreshMetrics({ withActivitySpinner });
+      // The analysis refresh endpoint is rate limited; only force it for finalized submissions.
+      void refreshMetrics({ withActivitySpinner, forceAnalysis: force });
       return;
     }
 
@@ -710,7 +711,7 @@ export default function StudentProfile() {
           githubUrl: me?.githubUrl || '',
           portfolioUrl: me?.portfolioUrl || '',
         });
-        await refreshMetrics({ withActivitySpinner: true });
+        await refreshMetrics({ withActivitySpinner: true, forceAnalysis: true });
       } catch (loadError) {
         if (!isMountedRef.current) return;
         setError(loadError.message || 'Failed to load profile.');
@@ -1223,6 +1224,43 @@ export default function StudentProfile() {
                   />
                 </div>
               </Panel>
+            </section>
+
+            <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Live practice counters">
+              <CompactStatCard
+                label="Current Streak"
+                value={Number(activityStats?.currentStreak || 0)}
+                suffix=" days"
+                helper={Number(activityStats?.currentStreak || 0) > 0 ? 'Keep it going today' : 'Submit a solution to start a streak'}
+                icon={<Flame className="h-4 w-4" />}
+                tone="rose"
+              />
+              <CompactStatCard
+                label="Best Streak"
+                value={Number(activityStats?.bestStreak || 0)}
+                suffix=" days"
+                helper={`${Number(activityStats?.totalActiveDays || 0)} active days tracked`}
+                icon={<Trophy className="h-4 w-4" />}
+                tone="amber"
+              />
+              <CompactStatCard
+                label="Questions Solved"
+                value={problemStatusSummary.loaded
+                  ? Number(problemStatusSummary.solvedCount || 0)
+                  : Number(stats?.totalQuestionsSolved || 0)}
+                helper={`${Number(problemStatusSummary.totalProblems || 0)} problems available`}
+                icon={<CheckCircle2 className="h-4 w-4" />}
+                tone="emerald"
+              />
+              <CompactStatCard
+                label="Submissions"
+                value={problemStatusSummary.loaded
+                  ? Number(problemStatusSummary.attemptCount || 0)
+                  : Number(stats?.totalSubmissions || 0)}
+                helper="Judged submissions (Run is not counted)"
+                icon={<Code2 className="h-4 w-4" />}
+                tone="sky"
+              />
             </section>
 
             <Panel

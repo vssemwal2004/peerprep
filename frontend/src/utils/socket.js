@@ -13,7 +13,12 @@ class SocketService {
   }
 
   connect() {
-    if (this.socket?.connected) {
+    // Reuse the existing socket even while it is still connecting; creating a second io()
+    // here would orphan listeners already attached to the first one.
+    if (this.socket) {
+      if (!this.socket.connected && !this.socket.active) {
+        this.socket.connect();
+      }
       return this.socket;
     }
 
@@ -26,7 +31,8 @@ class SocketService {
       autoConnect: true,
       reconnection: true,
       reconnectionDelay: 1000,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: Infinity,
+      reconnectionDelayMax: 10000,
       withCredentials: true // SECURITY: Send cookies with WebSocket connection
     });
 

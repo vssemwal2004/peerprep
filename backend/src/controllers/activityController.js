@@ -543,16 +543,21 @@ export async function getStudentActivityByAdmin(req, res) {
       let bestStreak = 0;
       let tempStreak = 0;
       
-      let checkDate = new Date(endDate);
-      while (checkDate >= startDate) {
-        const dateStr = checkDate.toISOString().slice(0, 10);
-        if (activityMap[dateStr] && activityMap[dateStr] > 0) {
-          currentStreak++;
-          checkDate.setDate(checkDate.getDate() - 1);
-        } else if (currentStreak > 0) {
-          break;
-        } else {
-          checkDate.setDate(checkDate.getDate() - 1);
+      // Current streak only counts if it includes today or yesterday (matches the student endpoint).
+      const todayKey = new Date().toISOString().slice(0, 10);
+      const yesterdayKey = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      const anchorKey = activityMap[todayKey] > 0 ? todayKey : (activityMap[yesterdayKey] > 0 ? yesterdayKey : null);
+
+      if (anchorKey) {
+        const checkDate = new Date(`${anchorKey}T00:00:00.000Z`);
+        while (checkDate >= startDate) {
+          const dateStr = checkDate.toISOString().slice(0, 10);
+          if (activityMap[dateStr] > 0) {
+            currentStreak++;
+            checkDate.setUTCDate(checkDate.getUTCDate() - 1);
+          } else {
+            break;
+          }
         }
       }
 
@@ -649,16 +654,13 @@ export async function getStudentActivityByAdmin(req, res) {
  */
 export async function getStudentStats(req, res) {
   const user = req.user;
-  let studentId = req.params.studentId;
-
-  // If no studentId in params, use current user (student viewing own profile)
-  if (!studentId && user.role === 'student') {
-    studentId = user._id;
-  }
+  // Normalise to strings: req.user._id may be an ObjectId, and a strict !== against a
+  // string param would always deny access (including students viewing their own profile).
+  const studentId = String(req.params.studentId || (user.role === 'student' ? user._id : ''));
 
   // Authorization check
   if (!studentId) throw new HttpError(400, 'Student ID is required');
-  if (user.role !== 'admin' && user.role !== 'coordinator' && user._id.toString() !== studentId) {
+  if (user.role !== 'admin' && user.role !== 'coordinator' && String(user._id) !== studentId) {
     throw new HttpError(403, 'Access denied');
   }
 
