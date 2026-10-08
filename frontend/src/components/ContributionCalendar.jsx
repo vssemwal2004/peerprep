@@ -79,7 +79,7 @@ export default function ContributionCalendar({
   
   return (
     <div className="w-full">
-      <h3 className="text-base font-semibold text-slate-800 dark:text-gray-100 mb-4">{title}</h3>
+      {title ? <h3 className="text-base font-semibold text-slate-800 dark:text-gray-100 mb-4">{title}</h3> : null}
       
       {/* Stats Grid */}
       {stats && (

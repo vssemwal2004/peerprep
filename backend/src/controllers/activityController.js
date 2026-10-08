@@ -846,12 +846,27 @@ export async function getStudentStats(req, res) {
           },
         },
         {
+          // score is raw marks; percentScore = score / maxMarks (same formula as analyticsEngine),
+          // null when maxMarks is missing so $avg/$max skip it.
+          $addFields: {
+            percentScore: {
+              $cond: [
+                { $and: [{ $ne: ['$score', null] }, { $gt: ['$maxMarks', 0] }] },
+                { $min: [100, { $max: [0, { $multiply: [{ $divide: ['$score', '$maxMarks'] }, 100] }] }] },
+                null,
+              ],
+            },
+          },
+        },
+        {
           $group: {
             _id: null,
             attempts: { $sum: 1 },
             avgScore: { $avg: '$score' },
             avgAccuracy: { $avg: '$accuracy' },
             highestScore: { $max: '$score' },
+            normalizedAvgScore: { $avg: '$percentScore' },
+            normalizedHighestScore: { $max: '$percentScore' },
             latestSubmittedAt: { $max: '$submittedAt' },
           },
         },
@@ -862,7 +877,7 @@ export async function getStudentStats(req, res) {
       })
         .sort({ submittedAt: -1 })
         .limit(5)
-        .select('score accuracy submittedAt assessmentId')
+        .select('score maxMarks accuracy submittedAt assessmentId')
         .lean(),
       Feedback.aggregate([
         {
@@ -1032,11 +1047,22 @@ export async function getStudentStats(req, res) {
           avgScore: Math.round((assessmentSummary.avgScore || 0) * 10) / 10,
           avgAccuracy: Math.round((assessmentSummary.avgAccuracy || 0) * 10) / 10,
           highestScore: Math.round((assessmentSummary.highestScore || 0) * 10) / 10,
+          // Percent of max marks; null when no submission recorded maxMarks.
+          normalizedAvgScore: Number.isFinite(assessmentSummary.normalizedAvgScore)
+            ? Math.round(assessmentSummary.normalizedAvgScore * 10) / 10
+            : null,
+          normalizedHighestScore: Number.isFinite(assessmentSummary.normalizedHighestScore)
+            ? Math.round(assessmentSummary.normalizedHighestScore * 10) / 10
+            : null,
           latestSubmittedAt: assessmentSummary.latestSubmittedAt || null,
         },
         recentAssessments: recentAssessmentsAgg.map((entry) => ({
           assessmentId: entry.assessmentId || null,
           score: Math.round((entry.score || 0) * 10) / 10,
+          maxMarks: Number(entry.maxMarks) > 0 ? Number(entry.maxMarks) : null,
+          percent: Number(entry.maxMarks) > 0 && entry.score !== null && entry.score !== undefined
+            ? Math.round(Math.min(100, Math.max(0, (Number(entry.score) / Number(entry.maxMarks)) * 100)) * 10) / 10
+            : null,
           accuracy: Math.round((entry.accuracy || 0) * 10) / 10,
           submittedAt: entry.submittedAt || null,
         })),

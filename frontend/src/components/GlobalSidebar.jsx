@@ -317,7 +317,7 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
 
 function moduleForNavPath(path = '') {
   if (/\/(?:learning|subjects)(?:\/|$)/.test(path)) return 'learning';
-  if (/^\/problems(?:\/|$)/.test(path)) return 'questions';
+  if (/^\/(?:problems|problem-lists)(?:\/|$)/.test(path)) return 'coding';
   if (/\/library(?:\/|$)/.test(path)) return 'questions';
   if (/\/assessment(?:s|-feedback|\/|$)/.test(path)) return 'assessments';
   if (/\/ai-interviews(?:\/|$)/.test(path)) return 'interviews';
@@ -339,7 +339,11 @@ function applyPlatformPermissions(items, permissions) {
       return children.length ? { ...item, children, to: children[0].to } : null;
     }
     const moduleName = moduleForNavPath(item.to);
-    return moduleName && permissions[moduleName] === false ? null : item;
+    // Policies from before the `coding` permission existed keep coding tied to `questions`.
+    const allowed = moduleName === 'coding' && permissions.coding === undefined
+      ? permissions.questions !== false
+      : permissions[moduleName] !== false;
+    return moduleName && !allowed ? null : item;
   }).filter(Boolean);
 }
 

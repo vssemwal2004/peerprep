@@ -68,6 +68,23 @@ const userSchema = new mongoose.Schema({
   linkedinUrl: { type: String, trim: true },
   githubUrl: { type: String, trim: true },
   portfolioUrl: { type: String, trim: true },
+  // Learner level / awards already celebrated in the student UI. Levels and awards themselves are
+  // computed from activity data; this only records what the student has been shown (and when),
+  // so the level-up celebration appears once across devices and admins can see achievement dates.
+  learnerProgress: {
+    celebratedLevel: { type: Number, min: 1, max: 6 },
+    levelHistory: [{
+      _id: false,
+      level: { type: Number, min: 1, max: 6 },
+      title: { type: String, trim: true, maxlength: 40 },
+      achievedAt: Date,
+    }],
+    awards: [{
+      _id: false,
+      id: { type: String, trim: true, maxlength: 40 },
+      earnedAt: Date,
+    }],
+  },
 }, { timestamps: true });
 
 userSchema.index({ role: 1, semester: 1, createdAt: 1 });

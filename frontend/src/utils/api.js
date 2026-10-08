@@ -376,9 +376,6 @@ export const api = {
   platformOverview: () => request('/platform/admin/overview', { skipCache: true }),
   platformStudents: (id, page = 1, search = '') => request(`/platform/admin/universities/${encodeURIComponent(id)}/students?page=${page}&search=${encodeURIComponent(search)}`, { skipCache: true }),
   platformStudent: (id, studentId) => request(`/platform/admin/universities/${encodeURIComponent(id)}/students/${encodeURIComponent(studentId)}`, { skipCache: true }),
-  listPracticeQuestions: (params = {}) => request(`/student/questions?${new URLSearchParams(params).toString()}`, { skipCache: true }),
-  getPracticeQuestion: (source, id) => request(`/student/questions/${encodeURIComponent(source)}/${encodeURIComponent(id)}`, { skipCache: true }),
-  submitPracticeAnswer: (source, id, answer, language = '') => request(`/student/questions/${encodeURIComponent(source)}/${encodeURIComponent(id)}/attempts`, { method: 'POST', body: { answer, language }, skipCache: true }),
   platformPublications: () => request('/platform/admin/publications', { skipCache: true }),
   createUniversity: (body) => request('/platform/admin/universities', { method: 'POST', body }),
   updateUniversityDefaults: (body) => request('/platform/admin/defaults', { method: 'PUT', body }),
@@ -415,6 +412,11 @@ export const api = {
     fd.append("avatar", file);
     return request("/auth/me/avatar", { method: "PUT", formData: fd });
   },
+  ackLearnerProgress: ({ level, title, awards }) =>
+    request("/auth/me/learner-progress", {
+      method: "PUT",
+      body: { level, title, awards },
+    }),
   getStudentActivity: (forceRefresh = false) =>
     request("/auth/activity", {
       skipCache: forceRefresh,

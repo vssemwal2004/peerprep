@@ -188,22 +188,27 @@ export async function seedAdminIfNeeded() {
 export async function me(req, res) {
   const u = req.user;
   if (!u) return res.status(401).json({ error: 'Unauthorized' });
+  // req.user comes from the auth cache, which does not select the editable profile fields.
+  // Read them fresh so bio/username/links (and learner progress) survive a page reload.
+  const profile = await User.findById(u._id)
+    .select('username bio linkedinUrl githubUrl portfolioUrl learnerProgress')
+    .lean() || {};
   // Return fields based on role
-  const response = { 
-    _id: u._id, 
-    email: u.email, 
-    username: u.username || '',
-    name: u.name, 
-    role: u.role, 
+  const response = {
+    _id: u._id,
+    email: u.email,
+    username: profile.username || '',
+    name: u.name,
+    role: u.role,
     accessScope: u.accessScope || 'full',
     avatarUrl: u.avatarUrl,
     isSpecialStudent: Boolean(u.isSpecialStudent),
-    bio: u.bio || '',
-    linkedinUrl: u.linkedinUrl || '',
-    githubUrl: u.githubUrl || '',
-    portfolioUrl: u.portfolioUrl || '',
+    bio: profile.bio || '',
+    linkedinUrl: profile.linkedinUrl || '',
+    githubUrl: profile.githubUrl || '',
+    portfolioUrl: profile.portfolioUrl || '',
   };
-  
+
   // Add role-specific fields
   if (u.role === 'student') {
     response.studentId = u.studentId;
@@ -211,6 +216,7 @@ export async function me(req, res) {
     response.branch = u.branch;
     response.college = u.college;
     response.semester = u.semester;
+    response.learnerProgress = profile.learnerProgress || null;
     
     // Fetch coordinator names from teacherIds
     if (Array.isArray(u.teacherIds) && u.teacherIds.length > 0) {
@@ -235,6 +241,55 @@ export async function me(req, res) {
   }
   
   res.json(response);
+}
+
+// Award ids the student UI can report (mirror of frontend/src/student/profile/achievements.js).
+const LEARNER_AWARD_IDS = new Set([
+  'first-accept', 'solver-10', 'solver-50', 'hard-1', 'streak-7',
+  'streak-30', 'active-30', 'polyglot', 'assessment-1', 'interview-1',
+]);
+
+/**
+ * Record that the student has been shown a level-up / award celebration. Idempotent: only new
+ * levels and new award ids are added, each stamped with the server time. Level and awards are
+ * cosmetic and recomputed from activity data everywhere they are displayed; this endpoint only
+ * remembers what was already celebrated so the popup shows once across devices.
+ */
+export async function acknowledgeLearnerProgress(req, res) {
+  const u = req.user;
+  if (!u) return res.status(401).json({ error: 'Unauthorized' });
+  if (u.role !== 'student') throw new HttpError(403, 'Only students have learner progress');
+
+  const level = Number(req.body?.level);
+  const title = typeof req.body?.title === 'string' ? req.body.title.trim().slice(0, 40) : '';
+  const awardIds = Array.isArray(req.body?.awards)
+    ? [...new Set(req.body.awards.map((id) => String(id || '').trim()).filter((id) => LEARNER_AWARD_IDS.has(id)))]
+    : [];
+  if (!Number.isInteger(level) || level < 1 || level > 6) throw new HttpError(400, 'Invalid level');
+
+  const userDoc = await User.findById(u._id).select('learnerProgress');
+  if (!userDoc) throw new HttpError(404, 'User not found');
+
+  const now = new Date();
+  const progress = userDoc.learnerProgress || {};
+  const history = Array.isArray(progress.levelHistory) ? [...progress.levelHistory] : [];
+  const highestRecorded = Math.max(Number(progress.celebratedLevel) || 0, ...history.map((entry) => Number(entry.level) || 0));
+  if (level > highestRecorded) {
+    history.push({ level, title, achievedAt: now });
+  }
+  const existingAwards = Array.isArray(progress.awards) ? [...progress.awards] : [];
+  const known = new Set(existingAwards.map((award) => award.id));
+  awardIds.forEach((id) => {
+    if (!known.has(id)) existingAwards.push({ id, earnedAt: now });
+  });
+
+  userDoc.learnerProgress = {
+    celebratedLevel: Math.max(highestRecorded, level),
+    levelHistory: history,
+    awards: existingAwards,
+  };
+  await userDoc.save();
+  res.json({ learnerProgress: userDoc.learnerProgress });
 }
 
 // Update current user's profile (students, coordinators, and admins can update their name)

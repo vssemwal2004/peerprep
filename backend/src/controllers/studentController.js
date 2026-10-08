@@ -485,7 +485,7 @@ export async function getStudentById(req, res) {
       : { _id: studentId, role: 'student' };
 
     const student = await User.findOne(query)
-      .select('name email studentId course branch college semester group teacherIds avatarUrl createdAt isSpecialStudent bio linkedinUrl githubUrl portfolioUrl')
+      .select('name email username studentId course branch college semester group teacherIds avatarUrl createdAt isSpecialStudent isActive bio linkedinUrl githubUrl portfolioUrl learnerProgress')
       .lean();
 
     if (!student) {

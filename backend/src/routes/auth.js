@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { login, forcePasswordChange, me, changePassword, changeAdminPassword, requestPasswordReset, resetPassword, updateMe, updateMyAvatar } from '../controllers/authController.js';
+import { login, forcePasswordChange, me, changePassword, changeAdminPassword, requestPasswordReset, resetPassword, updateMe, updateMyAvatar, acknowledgeLearnerProgress } from '../controllers/authController.js';
 import { getStudentActivity, getStudentStats, debugStudentActivity } from '../controllers/activityController.js';
 import { requireAuth } from '../middleware/auth.js';
 import { authLimiter, passwordResetLimiter, uploadLimiter } from '../middleware/rateLimiter.js';
@@ -33,6 +33,7 @@ router.post('/password/reset', passwordResetLimiter, resetPassword);
 router.get('/me', requireAuth, me);
 router.put('/me', requireAuth, updateMe);
 router.put('/me/avatar', requireAuth, uploadLimiter, upload.single('avatar'), updateMyAvatar);
+router.put('/me/learner-progress', requireAuth, acknowledgeLearnerProgress);
 router.get('/activity/debug', requireAuth, debugStudentActivity);
 router.get('/activity', requireAuth, getStudentActivity);
 router.get('/stats', requireAuth, getStudentStats);
