@@ -488,6 +488,74 @@ export async function listLibraryQuestions(req, res) {
       });
       const total = Number(result.count?.[0]?.total || 0);
 
+      // Keep the paginated path genuinely bounded.  The previous UI request used
+      // the legacy metadata path, which materialized every matching question in
+      // Node before taking a page.  Build navigation/filter metadata in MongoDB
+      // instead so large draft and published banks do not exhaust memory or hit
+      // the request timeout.
+      const scopeMatch = req.user?.role === 'coordinator' && req.user.coordinatorDataScope !== 'all'
+        ? { createdBy: req.user._id }
+        : {};
+      const metadataIdentity = {
+        $cond: [
+          { $and: [{ $eq: ['$questionType', 'coding'] }, { $ne: [{ $ifNull: ['$sourceProblemId', null] }, null] }] },
+          { $concat: ['problem:', { $toString: '$sourceProblemId' }] },
+          { $concat: ['source:', { $toString: { $cond: [{ $ne: [{ $ifNull: ['$sourceKey', ''] }, ''] }, '$sourceKey', '$_id'] } }] },
+        ],
+      };
+      const [metadata = {}, tags, difficulties, assessments] = await Promise.all([
+        QuestionLibrary.aggregate([
+          { $match: scopeMatch },
+          { $project: { questionType: 1, status: 1, sourceType: 1, sourceProblemId: 1, sourceKey: 1, updatedAt: 1 } },
+          { $addFields: {
+            __identity: metadataIdentity,
+            __sourcePriority: {
+              $switch: {
+                branches: [
+                  { case: { $eq: ['$sourceType', 'compiler'] }, then: 0 },
+                  { case: { $eq: ['$sourceType', 'manual'] }, then: 1 },
+                  { case: { $eq: ['$sourceType', 'assessment'] }, then: 2 },
+                ],
+                default: 9,
+              },
+            },
+          } },
+          { $sort: { __sourcePriority: 1, updatedAt: -1, _id: 1 } },
+          { $group: { _id: '$__identity', document: { $first: '$$ROOT' } } },
+          { $replaceRoot: { newRoot: '$document' } },
+          { $facet: {
+            categories: [
+              { $group: { _id: { $ifNull: ['$questionType', 'other'] }, count: { $sum: 1 } } },
+              { $project: { _id: 0, type: '$_id', count: 1 } },
+              { $sort: { type: 1 } },
+            ],
+            statuses: [
+              { $group: { _id: { $ifNull: ['$status', 'published'] }, count: { $sum: 1 } } },
+              { $project: { _id: 0, status: '$_id', count: 1 } },
+              { $sort: { status: 1 } },
+            ],
+          } },
+        ]).allowDiskUse(true).then(([value]) => value || {}),
+        QuestionLibrary.distinct('tags', baseMatch),
+        QuestionLibrary.distinct('difficulty', { ...baseMatch, difficulty: { $ne: '' } }),
+        QuestionLibrary.aggregate([
+          { $match: { ...scopeMatch, sourceAssessmentId: { $ne: null }, sourceAssessmentTitle: { $nin: [null, ''] } } },
+          { $group: { _id: '$sourceAssessmentId', title: { $first: '$sourceAssessmentTitle' } } },
+          { $project: { _id: 0, id: { $toString: '$_id' }, title: 1 } },
+          { $sort: { title: 1 } },
+        ]),
+      ]);
+
+      const scopeWithShared = [...(central || [])];
+      const categoryCounts = new Map((metadata.categories || []).map((entry) => [entry.type, Number(entry.count) || 0]));
+      const statusMetadata = new Map((metadata.statuses || []).map((entry) => [normalizeLibraryStatus(entry.status), Number(entry.count) || 0]));
+      scopeWithShared.forEach((question) => {
+        const type = question.questionType || 'other';
+        categoryCounts.set(type, (categoryCounts.get(type) || 0) + 1);
+        const questionStatus = normalizeLibraryStatus(question.status);
+        statusMetadata.set(questionStatus, (statusMetadata.get(questionStatus) || 0) + 1);
+      });
+
       const localRows = rows.map((question) => ({
           ...formatLibraryQuestionSummary(question),
           usedInAssessments: Array.from(assessmentUsage.get(getLibraryUsageKey(question)) || []).sort((a, b) => a.localeCompare(b)),
@@ -501,7 +569,17 @@ export async function listLibraryQuestions(req, res) {
           total: merged?.pagination.total ?? total,
           pages: merged?.pagination.pages ?? Math.max(1, Math.ceil(total / limitNum)),
         },
-        filters: {},
+        filters: {
+          categories: Array.from(categoryCounts, ([type, count]) => ({ type, count }))
+            .sort((a, b) => String(a.type).localeCompare(String(b.type))),
+          statuses: Array.from(statusMetadata, ([status, count]) => ({ status, count }))
+            .sort((a, b) => String(a.status).localeCompare(String(b.status))),
+          tags: [...new Set([...tags, ...(central || []).flatMap((item) => item.tags || [])])]
+            .filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+          difficulties: [...new Set([...difficulties, ...(central || []).map((item) => item.difficulty)])]
+            .filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+          assessments,
+        },
       });
     }
 

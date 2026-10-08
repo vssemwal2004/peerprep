@@ -362,6 +362,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
           uncategorized: filters.uncategorized || undefined,
           page,
           limit: pageSize,
+          includeMeta: false,
           skipCache: reloadKey > 0,
         });
         if (!mounted) return;
