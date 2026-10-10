@@ -52,12 +52,26 @@ test('university student sees and answers shared questions; university admin can
     const admin = await cookieFor('admin', 'admin@test.example');
     await QuestionLibrary.collection.insertOne({ sourceKey: 'manual:draft', sourceType: 'manual', status: 'draft',
       visibility: 'private', questionType: 'mcq', questionText: 'Local draft', questionData: { options: ['A', 'B'] } });
+    await QuestionLibrary.collection.insertOne({ sourceKey: 'manual:published', sourceType: 'manual', status: 'published',
+      visibility: 'public', questionType: 'mcq', questionText: 'Campus MCQ', tags: ['Arrays'], difficulty: 'Easy',
+      questionData: { options: ['A', 'B'], correctOptionIndex: 0 } });
     server = await new Promise((resolve) => { const listener = app.listen(0, '127.0.0.1', () => resolve(listener)); });
     const url = `http://127.0.0.1:${server.address().port}/api`;
     const list = await priorFetch(`${url}/student/questions`, { headers: { Cookie: student.cookie } });
     assert.equal(list.status, 200);
-    assert.deepEqual((await list.json()).questions.map(({ questionText, source }) => ({ questionText, source })),
-      [{ questionText: 'Shared MCQ', source: 'shared' }]);
+    const catalog = await list.json();
+    assert.deepEqual(catalog.questions.map(({ questionText }) => questionText).sort(), ['Campus MCQ', 'Shared MCQ']);
+    assert.equal(catalog.filters.totalProblems, 2);
+    const filtered = await priorFetch(`${url}/student/questions?search=campus&difficulty=Easy`, { headers: { Cookie: student.cookie } });
+    assert.equal(filtered.status, 200);
+    assert.deepEqual((await filtered.json()).questions.map(({ questionText }) => questionText), ['Campus MCQ']);
+    const createList = await priorFetch(`${url}/problem-lists`, { method: 'POST',
+      headers: { Cookie: student.cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Practice' }) });
+    assert.equal(createList.status, 201);
+    const practiceList = (await createList.json()).list;
+    const saveQuestion = await priorFetch(`${url}/problem-lists/${practiceList._id}/problems/${questionId}`, { method: 'PATCH',
+      headers: { Cookie: student.cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ included: true }) });
+    assert.equal(saveQuestion.status, 200);
     const attempt = await priorFetch(`${url}/student/questions/shared/${questionId}/attempts`, {
       method: 'POST', headers: { Cookie: student.cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ answer: [1] }),
     });

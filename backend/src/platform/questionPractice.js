@@ -5,6 +5,7 @@ import { HttpError } from '../utils/errors.js';
 import QuestionLibrary from '../models/QuestionLibrary.js';
 import QuestionPracticeAttempt from '../models/QuestionPracticeAttempt.js';
 import Problem from '../models/Problem.js';
+import Submission from '../models/Submission.js';
 import { loadHiddenExecutionTestCases } from '../controllers/problemController.js';
 import { runJudge0, KEY_TO_LANGUAGE_ID, normalizeComparableOutput } from '../services/executionService.js';
 import { prepareFunctionSourceForExecution } from '../services/functionProblemAdapterService.js';
@@ -32,6 +33,8 @@ export const publicShape = (question, source) => ({
   questionText: question.questionText,
   difficulty: question.difficulty,
   tags: question.tags || [],
+  companyTags: question.keywords || question.questionData?.problemDataSnapshot?.companyTags || [],
+  displayOrder: question.displayOrder || 2147483647,
   options: Array.isArray(question.questionData?.options)
     ? question.questionData.options.map((option) => typeof option === 'string' ? option : String(option?.text || option?.label || ''))
     : [],
@@ -91,23 +94,66 @@ export function gradePracticeAnswer(question, answer) {
 router.get('/', asyncRoute(async (req, res) => {
   const search = String(req.query.search || '').trim().toLowerCase().slice(0, 100);
   const type = String(req.query.type || '').trim().toLowerCase();
+  const difficulty = String(req.query.difficulty || '').trim().toLowerCase();
+  const tags = String(req.query.tags || '').split(',').map((value) => value.trim().toLowerCase()).filter(Boolean);
+  const companies = String(req.query.companies || '').split(',').map((value) => value.trim().toLowerCase()).filter(Boolean);
+  const ids = req.query.ids === undefined ? null : new Set(String(req.query.ids).split(',').filter(Boolean));
+  const sortBy = String(req.query.sortBy || 'displayOrder');
+  const sortOrder = req.query.sortOrder === 'desc' ? -1 : 1;
   const page = Math.max(1, Number(req.query.page) || 1);
-  const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 20));
   const visible = await visibleQuestions();
-  const all = visible.questions.filter(({ question }) =>
-    (!type || question.questionType === type) && (!search || String(question.questionText || '').toLowerCase().includes(search)));
-  all.sort((a, b) => new Date(b.question.updatedAt || 0) - new Date(a.question.updatedAt || 0));
+  const available = visible.questions;
+  const all = available.filter(({ question }) => {
+    const questionTags = (question.tags || []).map((value) => String(value).toLowerCase());
+    const questionCompanies = (question.keywords || question.questionData?.problemDataSnapshot?.companyTags || []).map((value) => String(value).toLowerCase());
+    return (!type || question.questionType === type)
+      && (!difficulty || String(question.difficulty || '').toLowerCase() === difficulty)
+      && (!tags.length || tags.some((value) => questionTags.includes(value)))
+      && (!companies.length || companies.some((value) => questionCompanies.includes(value)))
+      && (!ids || ids.has(String(question._id)) || ids.has(String(question.sourceProblemId || '')))
+      && (!search || [question.questionText, ...questionTags, ...questionCompanies].some((value) => String(value || '').toLowerCase().includes(search)));
+  });
+  all.sort((left, right) => {
+    const a = left.question;
+    const b = right.question;
+    if (sortBy === 'title') return sortOrder * String(a.questionText || '').localeCompare(String(b.questionText || ''));
+    if (sortBy === 'difficulty') {
+      const rank = { easy: 1, medium: 2, hard: 3 };
+      return sortOrder * ((rank[String(a.difficulty || '').toLowerCase()] || 4) - (rank[String(b.difficulty || '').toLowerCase()] || 4));
+    }
+    if (sortBy === 'createdAt' || sortBy === 'updatedAt') return sortOrder * (new Date(a[sortBy] || 0) - new Date(b[sortBy] || 0));
+    return sortOrder * ((Number(a.displayOrder) || 2147483647) - (Number(b.displayOrder) || 2147483647))
+      || String(a._id).localeCompare(String(b._id));
+  });
   const selected = all.slice((page - 1) * limit, page * limit);
-  const ids = selected.map(({ question }) => question._id);
-  const attempts = await QuestionPracticeAttempt.find({ studentId: req.user._id, questionId: { $in: ids } })
+  const selectedIds = selected.map(({ question }) => question._id);
+  const attempts = await QuestionPracticeAttempt.find({ studentId: req.user._id, questionId: { $in: selectedIds } })
     .sort({ createdAt: -1 }).lean();
+  const localProblemIds = selected.filter(({ question, source }) => source === 'university'
+    && question.questionType === 'coding' && mongoose.isValidObjectId(question.sourceProblemId))
+    .map(({ question }) => question.sourceProblemId);
+  const solvedProblemIds = localProblemIds.length ? await Submission.distinct('problem', {
+    user: req.user._id, problem: { $in: localProblemIds }, mode: 'submit', status: 'AC',
+  }) : [];
+  const solvedProblems = new Set(solvedProblemIds.map(String));
   const latest = new Map();
   attempts.forEach((attempt) => {
     const key = `${attempt.source}:${attempt.questionId}`;
     if (!latest.has(key)) latest.set(key, attempt.result);
   });
-  res.json({ warning: visible.warning, questions: selected.map(({ question, source }) => ({ ...publicShape(question, source), result: latest.get(`${source}:${question._id}`) || null })),
-    pagination: { page, limit, total: all.length, pages: Math.max(1, Math.ceil(all.length / limit)) } });
+  res.json({ warning: visible.warning, questions: selected.map(({ question, source }) => ({ ...publicShape(question, source),
+    result: solvedProblems.has(String(question.sourceProblemId)) ? 'correct' : latest.get(`${source}:${question._id}`) || null })),
+    pagination: { page, limit, total: all.length, pages: Math.max(1, Math.ceil(all.length / limit)) },
+    filters: { totalProblems: available.length,
+      availableTags: [...new Set(available.flatMap(({ question }) => question.tags || []))].sort(),
+      tagCounts: Object.entries(available.flatMap(({ question }) => question.tags || []).reduce((acc, value) => {
+        acc[value] = (acc[value] || 0) + 1; return acc;
+      }, {})).map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count),
+      companyCounts: Object.entries(available.flatMap(({ question }) => question.keywords || question.questionData?.problemDataSnapshot?.companyTags || []).reduce((acc, value) => {
+        acc[value] = (acc[value] || 0) + 1; return acc;
+      }, {})).map(([company, count]) => ({ company, count })).sort((a, b) => b.count - a.count),
+    } });
 }));
 
 router.get('/:source/:id', asyncRoute(async (req, res) => {

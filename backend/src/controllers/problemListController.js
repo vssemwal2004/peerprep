@@ -1,6 +1,8 @@
 import mongoose from 'mongoose';
 import Problem from '../models/Problem.js';
 import ProblemList from '../models/ProblemList.js';
+import QuestionLibrary from '../models/QuestionLibrary.js';
+import { sharedQuestions } from '../platform/sharedContent.js';
 import { HttpError } from '../utils/errors.js';
 
 const MAX_LISTS_PER_STUDENT = 30;
@@ -88,16 +90,19 @@ export async function setProblemListMembership(req, res) {
     throw new HttpError(400, 'Invalid list or problem ID.');
   }
 
-  const [list, problemExists] = await Promise.all([
+  const [list, problemExists, localQuestionExists] = await Promise.all([
     ProblemList.findOne({ _id: id, userId: req.user._id }),
     Problem.exists({
       _id: problemId,
       status: { $in: ['published', 'Active', 'active'] },
       $or: [{ visibility: 'public' }, { visibility: { $exists: false } }],
     }),
+    QuestionLibrary.exists({ _id: problemId, status: 'published', visibility: { $ne: 'private' }, sourceType: { $ne: 'assessment' } }),
   ]);
   if (!list) throw new HttpError(404, 'List not found.');
-  if (!problemExists) throw new HttpError(404, 'Problem not found.');
+  if (!problemExists && !localQuestionExists && !(await sharedQuestions() || []).some((question) => String(question._id) === problemId)) {
+    throw new HttpError(404, 'Problem not found.');
+  }
 
   const included = req.body?.included !== false;
   const containsProblem = list.problemIds.some((value) => String(value) === problemId);

@@ -984,7 +984,7 @@ function AcceptancePanel({ submissions, selectedId, onBack }) {
 export default function ProblemSolver() {
   const { id } = useParams();
   const location = useLocation();
-  const isSharedProblem = location.pathname.includes('/problems/shared/');
+  const isSharedRoute = location.pathname.includes('/problems/shared/');
   const navigate = useNavigate();
   const toast = useToast();
   const splitContainerRef = useRef(null);
@@ -993,6 +993,7 @@ export default function ProblemSolver() {
   const submissionTrackerRef = useRef(null);
   const isMountedRef = useRef(true);
   const [problem, setProblem] = useState(null);
+  const isSharedProblem = isSharedRoute || problem?.platformShared === true;
   const [loading, setLoading] = useState(true);
   const [activeLeftTab, setActiveLeftTab] = useState('description');
   const [activeConsoleTab, setActiveConsoleTab] = useState('testcase');
@@ -1172,7 +1173,15 @@ export default function ProblemSolver() {
     const loadProblem = async () => {
       try {
         setLoading(true);
-        const response = isSharedProblem ? await api.getSharedStudentProblem(id) : await api.getStudentProblem(id);
+        let response;
+        if (isSharedRoute) response = await api.getSharedStudentProblem(id);
+        else {
+          try { response = await api.getStudentProblem(id); }
+          catch (error) {
+            if (error.response?.status !== 404) throw error;
+            response = await api.getSharedStudentProblem(id);
+          }
+        }
         if (!isMounted) {
           return;
         }
@@ -1214,21 +1223,26 @@ export default function ProblemSolver() {
     return () => {
       isMounted = false;
     };
-  }, [id, isSharedProblem, toast]);
+  }, [id, isSharedRoute, toast]);
 
   useEffect(() => {
     let isMounted = true;
 
     const loadProblemList = async () => {
       try {
-        const response = await api.listStudentProblems({
+        const response = await api.listPracticeQuestions({
+          type: 'coding',
           sortBy: 'displayOrder',
           sortOrder: 'asc',
           page: 1,
           limit: 200,
         });
         if (isMounted) {
-          setProblemList(response.problems || []);
+          setProblemList((response.questions || []).filter((question) => question.sourceProblemId).map((question) => ({
+            _id: question.source === 'university' ? question.sourceProblemId : question._id,
+            title: question.questionText,
+            difficulty: question.difficulty,
+          })));
         }
       } catch {
         if (isMounted) {
