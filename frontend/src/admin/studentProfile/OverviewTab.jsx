@@ -158,13 +158,19 @@ export default function OverviewTab({
   learnerProgress,
   onOpenGallery,
   peerPrep,
+  visible = {},
 }) {
-  const timeline = useMemo(() => buildTimeline({ stats, videos }), [stats, videos]);
+  const timeline = useMemo(() => buildTimeline({ stats, videos }).filter((item) => ({
+    solved: visible.questions !== false,
+    assessment: visible.assessments !== false,
+    feedback: visible.interviews !== false,
+    video: visible.learning !== false,
+  })[item.type]), [stats, videos, visible.questions, visible.assessments, visible.interviews, visible.learning]);
 
   return (
     <div className="space-y-4">
       <div className="grid gap-4 xl:grid-cols-2">
-        <CodingProgress
+        {visible.questions !== false && <CodingProgress
           className="h-full"
           totalSolved={overallCoding.totalSolved}
           totalProblems={overallCoding.attempted}
@@ -176,22 +182,23 @@ export default function OverviewTab({
           activity={activity}
           description="Solved of attempted problems, by difficulty"
           action={null}
-        />
-        <BadgesCard
+        />}
+        {visible.questions !== false && <BadgesCard
           className="h-full"
           level={level}
           awards={awards}
           learnerProgress={rawLearnerProgress}
           onOpenGallery={onOpenGallery}
-        />
+        />}
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <PeerPrepProgress className="h-full" {...peerPrep} />
+        {(visible.assessments !== false || visible.interviews !== false || visible.learning !== false)
+          && <PeerPrepProgress className="h-full" {...peerPrep} visible={visible} />}
         <TimelineCard className="h-full" timeline={timeline} />
       </div>
 
-      <MilestonesCard learnerProgress={learnerProgress} awards={awards} />
+      {visible.questions !== false && <MilestonesCard learnerProgress={learnerProgress} awards={awards} />}
     </div>
   );
 }

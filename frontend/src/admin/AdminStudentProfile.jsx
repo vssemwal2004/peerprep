@@ -12,6 +12,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import { api } from '../utils/api';
+import { useUniversityPolicy } from '../platform/UniversityPolicyContext';
 import { getLearnerLevel } from '../student/profileBadge';
 import { computeAwards } from '../student/profile/achievements';
 import { focusRing, languageLabel } from '../student/profile/format';
@@ -57,6 +58,14 @@ function lastSevenDays(activity) {
 const PAGE_ROOT = "relative min-h-screen bg-white font-['Inter',ui-sans-serif,system-ui,sans-serif] antialiased dark:bg-[#1a1a1a]";
 
 export default function AdminStudentProfile() {
+  const { allowsModule } = useUniversityPolicy();
+  const visible = {
+    questions: allowsModule('questions'),
+    assessments: allowsModule('assessments'),
+    interviews: allowsModule('interviews'),
+    learning: allowsModule('learning'),
+    resumes: allowsModule('resumes'),
+  };
   const { studentId } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -75,7 +84,10 @@ export default function AdminStudentProfile() {
   const closeBadgesGallery = useCallback(() => setBadgesGallery(null), []);
 
   const requestedTab = searchParams.get('tab');
-  const activeTab = TAB_IDS.has(requestedTab) ? requestedTab : 'overview';
+  const activeTab = TAB_IDS.has(requestedTab) && (
+    !['coding', 'assessments', 'interviews', 'learning'].includes(requestedTab)
+    || visible[{ coding: 'questions' }[requestedTab] || requestedTab]
+  ) ? requestedTab : 'overview';
   const panelRef = useRef(null);
   const tabBarRef = useRef(null);
   const previousTabRef = useRef(activeTab);
@@ -386,7 +398,8 @@ export default function AdminStudentProfile() {
     return parts.join(' · ');
   }, [activeDays, currentStreak, levelSolved, stats?.mostUsedLanguage]);
 
-  const tabs = TABS.map((tab) => {
+  const tabs = TABS.filter((tab) => !['coding', 'assessments', 'interviews', 'learning'].includes(tab.id)
+    || visible[{ coding: 'questions' }[tab.id] || tab.id]).map((tab) => {
     if (tab.id === 'coding') return { ...tab, count: compiler?.attemptedProblems?.length ?? null };
     if (tab.id === 'assessments') return { ...tab, count: num(assessmentMetrics.attempts) };
     if (tab.id === 'interviews') return { ...tab, count: num(interviewMetrics.totalPairs) };
@@ -468,17 +481,18 @@ export default function AdminStudentProfile() {
               handle={handle}
               bio={shortBio}
               hasCustomBio={hasCustomBio}
-              level={level}
-              levelNote={levelNote}
+              level={visible.questions ? level : null}
+              levelNote={visible.questions ? levelNote : null}
               socialLinks={socialLinks}
-              onViewResume={() => navigate(`${rolePrefix}/students/${studentId}/resume`)}
+              onViewResume={visible.resumes ? () => navigate(`${rolePrefix}/students/${studentId}/resume`) : undefined}
               onOpenLevels={() => setBadgesGallery('levels')}
             />
           </StickySidebar>
 
           <main className="min-w-0 space-y-4">
             <OverviewStrip
-              headline={headline}
+              visible={visible}
+              headline={visible.questions ? headline : 'Student performance in enabled modules'}
               lastActive={lastCodingActive}
               coding={{ totalSolved: codingTotals.totalSolved, attempted: codingTotals.totalProblems, scoped: codingTotals.scoped }}
               acceptance={acceptance}
@@ -493,6 +507,7 @@ export default function AdminStudentProfile() {
             <div ref={panelRef} role="tabpanel" id={panelId(activeTab)} aria-labelledby={tabId(activeTab)} tabIndex={0} className="min-w-0 scroll-mt-20 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/60">
               {activeTab === 'overview' ? (
                 <OverviewTab
+                  visible={visible}
                   stats={stats}
                   videos={videos}
                   activity={activity}

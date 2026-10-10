@@ -172,14 +172,14 @@ export default function AdminProfileSidebar({
           </p>
 
           <div className="mt-4 flex w-full gap-2">
-            <button
+            {onViewResume && <button
               type="button"
               onClick={onViewResume}
               className={`inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-[13px] font-semibold text-white shadow-sm transition-colors hover:bg-sky-700 dark:hover:bg-sky-500 ${focusRing}`}
             >
               <FileText className="h-3.5 w-3.5" aria-hidden="true" />
               View Resume
-            </button>
+            </button>}
             {student?.email ? (
               <a
                 href={`mailto:${student.email}`}

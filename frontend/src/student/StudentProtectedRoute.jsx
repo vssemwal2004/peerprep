@@ -1,6 +1,7 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { PageSkeleton } from '../components/Skeletons';
+import UniversityFeatureGate from '../platform/UniversityFeatureGate';
 
 export default function StudentProtectedRoute({ children }) {
   const { user, loading, authChecked } = useAuth();
@@ -28,5 +29,5 @@ export default function StudentProtectedRoute({ children }) {
     if (!assessmentPath) return <Navigate to="/student/assessments" replace />;
   }
 
-  return children;
+  return <UniversityFeatureGate role="student">{children}</UniversityFeatureGate>;
 }

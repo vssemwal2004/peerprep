@@ -21,6 +21,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import NotificationBell from './NotificationBell';
+import { useUniversityPolicy } from '../platform/UniversityPolicyContext';
 
 const modules = [
   { label: 'Dashboard', hint: 'Your placement overview', to: '/student/dashboard', icon: LayoutDashboard },
@@ -49,6 +50,7 @@ function InitialAvatar({ name, avatarUrl, className = '' }) {
 export default function StudentDashboardHeader({ sidebarPinned = false, onToggleSidebar = () => {} }) {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const { allowsPath } = useUniversityPolicy();
   const { theme, toggleTheme } = useTheme();
   const [query, setQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -61,11 +63,12 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
   const displayName = user?.name || 'Student';
   const displayEmail = user?.email || '';
   const avatarUrl = user?.avatarUrl || '';
+  const visibleModules = useMemo(() => modules.filter((item) => allowsPath(item.to, 'student')), [allowsPath]);
   const results = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    if (!normalized) return modules.slice(0, 5);
-    return modules.filter((item) => `${item.label} ${item.hint}`.toLowerCase().includes(normalized));
-  }, [query]);
+    if (!normalized) return visibleModules.slice(0, 5);
+    return visibleModules.filter((item) => `${item.label} ${item.hint}`.toLowerCase().includes(normalized));
+  }, [query, visibleModules]);
 
   useEffect(() => {
     const closeMenus = (event) => {
@@ -147,7 +150,7 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
         <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
           <div ref={appsRef} className="relative">
             <button type="button" onClick={() => { setAppsOpen((open) => !open); setProfileOpen(false); }} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200" aria-label="Open module launcher" aria-expanded={appsOpen}><Grid2X2 className="h-4 w-4" /></button>
-            {appsOpen && <div className="absolute right-0 top-[calc(100%+0.65rem)] w-[19rem] rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_18px_50px_rgba(15,23,42,0.16)] dark:border-slate-700 dark:bg-slate-900"><div className="mb-2 px-1 text-xs font-bold text-slate-800 dark:text-white">Quick access</div><div className="grid grid-cols-3 gap-1.5">{modules.slice(0, 6).map(({ label, to, icon: Icon }) => <button key={to} type="button" onClick={() => goTo(to)} className="flex min-h-[76px] flex-col items-center justify-center gap-2 rounded-xl px-1.5 text-center text-[11px] font-semibold leading-tight text-slate-600 transition hover:bg-sky-50 hover:text-sky-800 dark:text-slate-300 dark:hover:bg-sky-950/40 dark:hover:text-sky-200"><span className="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300"><Icon className="h-4 w-4" /></span>{label}</button>)}</div></div>}
+            {appsOpen && <div className="absolute right-0 top-[calc(100%+0.65rem)] w-[19rem] rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_18px_50px_rgba(15,23,42,0.16)] dark:border-slate-700 dark:bg-slate-900"><div className="mb-2 px-1 text-xs font-bold text-slate-800 dark:text-white">Quick access</div><div className="grid grid-cols-3 gap-1.5">{visibleModules.slice(0, 6).map(({ label, to, icon: Icon }) => <button key={to} type="button" onClick={() => goTo(to)} className="flex min-h-[76px] flex-col items-center justify-center gap-2 rounded-xl px-1.5 text-center text-[11px] font-semibold leading-tight text-slate-600 transition hover:bg-sky-50 hover:text-sky-800 dark:text-slate-300 dark:hover:bg-sky-950/40 dark:hover:text-sky-200"><span className="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300"><Icon className="h-4 w-4" /></span>{label}</button>)}</div></div>}
           </div>
 
           <button type="button" onClick={toggleTheme} className="hidden h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 sm:flex" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} title="Change theme">{theme === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}</button>

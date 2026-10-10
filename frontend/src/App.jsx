@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Routes, Route, useLocation } from "react-route
 import { lazy as reactLazy, Suspense, useEffect, useCallback, useLayoutEffect, useRef, useState } from "react";
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
+import { UniversityPolicyProvider } from './platform/UniversityPolicyContext';
 import { ToastProvider } from './components/CustomToast';
 import AdminLayout from './admin/AdminLayout';
 import AdminProtectedRoute from './admin/AdminProtectedRoute';
@@ -545,18 +546,19 @@ function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <ToastProvider>
-          <BrowserRouter>
-            <AppContent />
-          </BrowserRouter>
-        </ToastProvider>
+        <UniversityPolicyProvider>
+          <ToastProvider>
+            <BrowserRouter>
+              <AppContent />
+            </BrowserRouter>
+          </ToastProvider>
+        </UniversityPolicyProvider>
       </AuthProvider>
     </ThemeProvider>
   );
 }
 
 export default App;
-
 
 
 

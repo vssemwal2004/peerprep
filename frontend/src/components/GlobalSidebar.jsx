@@ -40,7 +40,7 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { api } from '../utils/api';
+import { useUniversityPolicy } from '../platform/UniversityPolicyContext';
 import { useTheme } from '../context/ThemeContext';
 import { hasPermission } from '../admin/coordinatorPermissions';
 import { getInterviewNavigation, getInterviewSection } from './interviews/interviewNavigation';
@@ -315,38 +315,17 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
   ];
 };
 
-function moduleForNavPath(path = '') {
-  if (/\/(?:learning|subjects)(?:\/|$)/.test(path)) return 'learning';
-  if (/^\/(?:problems|problem-lists)(?:\/|$)/.test(path)) return 'coding';
-  if (/\/library(?:\/|$)/.test(path)) return 'questions';
-  if (/\/assessment(?:s|-feedback|\/|$)/.test(path)) return 'assessments';
-  if (/\/ai-interviews(?:\/|$)/.test(path)) return 'interviews';
-  if (/\/(?:events|event|interviews|schedule)(?:\/|$)/.test(path)) return 'events';
-  if (/\/resume(?:\/|$)/.test(path)) return 'resumes';
-  if (/\/(?:analytics|analysis)(?:\/|$)/.test(path)) return 'analysis';
-  return null;
-}
-
-function applyPlatformPermissions(items, permissions, role) {
-  if (!permissions) return items;
+function applyPlatformPermissions(items, allowsPath, role) {
   return items.map((item) => {
     if (item.items) {
-      const children = applyPlatformPermissions(item.items, permissions, role);
+      const children = applyPlatformPermissions(item.items, allowsPath, role);
       return children.length ? { ...item, items: children } : null;
     }
     if (item.children) {
-      const children = applyPlatformPermissions(item.children, permissions, role);
+      const children = applyPlatformPermissions(item.children, allowsPath, role);
       return children.length ? { ...item, children, to: children[0].to } : null;
     }
-    const moduleName = moduleForNavPath(item.to);
-    // Policies from before the `coding` permission existed keep coding tied to `questions`.
-    const allowed = moduleName === 'analysis'
-      ? (role === 'student' ? ['questions', 'assessments', 'interviews', 'learning'] : ['questions', 'assessments', 'learning'])
-        .some((name) => permissions[name] === true)
-      : moduleName === 'coding' && permissions.coding === undefined
-        ? permissions.questions !== false
-        : permissions[moduleName] !== false;
-    return moduleName && !allowed ? null : item;
+    return allowsPath(item.to, role) ? item : null;
   }).filter(Boolean);
 }
 
@@ -354,17 +333,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const [platformPermissions, setPlatformPermissions] = useState(null);
-  useEffect(() => {
-    if (import.meta.env.VITE_PEERPREP_DEPLOYMENT_ROLE !== 'university' || !user) return undefined;
-    let mounted = true;
-    const refresh = () => api.universityPolicy().then((policy) => {
-      if (mounted) setPlatformPermissions(policy.permissions);
-    }).catch(() => { if (mounted) setPlatformPermissions(null); });
-    refresh();
-    const timer = setInterval(refresh, 30_000);
-    return () => { mounted = false; clearInterval(timer); };
-  }, [user]);
+  const { allowsPath } = useUniversityPolicy();
   const { theme, toggleTheme } = useTheme();
   const profileOpenRef = useRef(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -381,7 +350,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
   const accent = isCoordinator ? 'emerald' : 'sky';
   const navItems = useMemo(() => {
     const items = buildNavItems(role, user?.accessScope);
-    if (role !== 'coordinator') return applyPlatformPermissions(items, platformPermissions, role);
+    if (role !== 'coordinator') return applyPlatformPermissions(items, allowsPath, role);
     return applyPlatformPermissions(items
       .map((item) => {
         if (item.type === 'group') {
@@ -396,8 +365,8 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
         }
         return hasPermission(user, item.permissionKey) ? item : null;
       })
-      .filter(Boolean), platformPermissions, role);
-  }, [role, user, platformPermissions]);
+      .filter(Boolean), allowsPath, role);
+  }, [role, user, allowsPath]);
   const [openGroup, setOpenGroup] = useState(null);
   const [openNestedGroup, setOpenNestedGroup] = useState(null);
   const hoverTimerRef = useRef(null);

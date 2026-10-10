@@ -18,6 +18,7 @@ import { api } from "../utils/api";
 import socketService from "../utils/socket";
 import { useAuth } from "../context/AuthContext";
 import RequirePasswordChange from "./RequirePasswordChange";
+import { useUniversityPolicy } from '../platform/UniversityPolicyContext';
 
 function RocketFlightScene() {
   return (
@@ -321,7 +322,7 @@ function WeeklyHeatmap({ data }) {
   );
 }
 
-function QuickNav({ navigate }) {
+function QuickNav({ navigate, canPath }) {
   const items = [
     { label: "Interview", Icon: Calendar, to: "/student/interview" },
     { label: "Assessment", Icon: ClipboardList, to: "/student/assessments" },
@@ -330,7 +331,7 @@ function QuickNav({ navigate }) {
   ];
   return (
     <div className="flex flex-wrap gap-2">
-      {items.map((item) => (
+      {items.filter((item) => canPath(item.to)).map((item) => (
         <button
           key={item.label}
           onClick={() => navigate(item.to)}
@@ -542,7 +543,7 @@ function HeroWeeklyWidget({ weeklyActivity, weeklyActiveDays, weeklyGoal, weekly
   );
 }
 
-function HeroInsightPanel({ displayAnnouncements, announcementIndex, fallbackThoughts, thoughtIndex, navigate }) {
+function HeroInsightPanel({ displayAnnouncements, announcementIndex, fallbackThoughts, thoughtIndex, navigate, canAnalysis }) {
   const hasAnnouncement = displayAnnouncements.length > 0;
   const activeAnnouncement = hasAnnouncement ? displayAnnouncements[announcementIndex] : null;
   const activeTitle = hasAnnouncement
@@ -613,7 +614,7 @@ function HeroInsightPanel({ displayAnnouncements, announcementIndex, fallbackTho
             <Megaphone className="h-4 w-4 text-sky-600 dark:text-sky-300" />
             {activeAnnouncement?.priority || "normal"} priority
           </div>
-        ) : (
+        ) : canAnalysis ? (
           <motion.button
             type="button"
             onClick={() => navigate("/student/analysis")}
@@ -627,7 +628,7 @@ function HeroInsightPanel({ displayAnnouncements, announcementIndex, fallbackTho
             <span className="relative">Check Performance</span>
             <ArrowRight className="relative h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
           </motion.button>
-        )}
+        ) : null}
       </div>
     </motion.div>
   );
@@ -665,6 +666,12 @@ function StudentDashboardSkeleton() {
 export default function StudentDashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { allowsPath } = useUniversityPolicy();
+  const canPath = (path) => allowsPath(path, 'student');
+  const canEvents = canPath('/student/interview');
+  const canAssessments = canPath('/student/assessments');
+  const canQuestions = canPath('/problems');
+  const canAnalysis = canPath('/student/analysis');
   const [events, setEvents] = useState([]);
   const [assessments, setAssessments] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
@@ -676,8 +683,8 @@ export default function StudentDashboard() {
   useEffect(() => {
     let mounted = true;
     Promise.allSettled([
-      api.listEvents(),
-      api.listStudentAssessments ? api.listStudentAssessments() : Promise.resolve(null)
+      canEvents ? api.listEvents() : Promise.resolve([]),
+      canAssessments && api.listStudentAssessments ? api.listStudentAssessments() : Promise.resolve(null)
     ]).then((results) => {
       if (!mounted) return;
       setEvents(results[0]?.status === "fulfilled" ? results[0].value || [] : []);
@@ -688,7 +695,7 @@ export default function StudentDashboard() {
       if (mounted) setDashboardLoading(false);
     });
     return () => { mounted = false; };
-  }, []);
+  }, [canEvents, canAssessments]);
 
   useEffect(() => {
     let mounted = true;
@@ -741,16 +748,16 @@ export default function StudentDashboard() {
 
   const fallbackThoughts = useMemo(
     () => [
-      {
+      ...(canEvents ? [{
         area: "Interview practice",
         text: "Treat every session like a real interview: clarify the problem, state assumptions, then code with intention.",
-      },
+      }] : []),
       {
         area: "Placement prep",
         text: "Consistency beats intensity. One focused session daily compounds faster than last‑minute marathons.",
       },
     ],
-    []
+    [canEvents]
   );
 
   useEffect(() => {
@@ -879,7 +886,7 @@ export default function StudentDashboard() {
       path: "/student/resume",
       tone: "indigo",
     },
-  ];
+  ].filter((card) => canPath(card.path));
 
   const sectionFade = {
     initial: { opacity: 0, y: 24 },
@@ -962,7 +969,7 @@ export default function StudentDashboard() {
                     transition={{ delay: 0.2, duration: 0.55 }}
                     className="mt-5 max-w-2xl text-base font-medium leading-7 text-slate-600 dark:text-slate-300 sm:text-lg"
                   >
-                    Your home for interviews, assessments, learning modules, and coding practice, tuned for consistent placement momentum.
+                    Your preparation space for the tools enabled by your university.
                   </motion.p>
 
                   <motion.div
@@ -971,7 +978,7 @@ export default function StudentDashboard() {
                     transition={{ delay: 0.28, duration: 0.55 }}
                     className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center"
                   >
-                    <motion.button
+                    {canQuestions && <motion.button
                       type="button"
                       onClick={() => navigate("/problems")}
                       whileHover={{ y: -2, scale: 1.025 }}
@@ -983,9 +990,9 @@ export default function StudentDashboard() {
                       <Code2 className="relative h-4 w-4" />
                       <span className="relative">Start Practice</span>
                       <ArrowRight className="relative h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
-                    </motion.button>
+                    </motion.button>}
 
-                    <motion.button
+                    {canAssessments && <motion.button
                       type="button"
                       onClick={() => navigate("/student/assessments")}
                       whileHover={{ y: -2, scale: 1.018 }}
@@ -995,7 +1002,7 @@ export default function StudentDashboard() {
                     >
                       <ClipboardList className="h-4 w-4" />
                       View Assessments
-                    </motion.button>
+                    </motion.button>}
                   </motion.div>
 
                   <motion.div
@@ -1004,26 +1011,26 @@ export default function StudentDashboard() {
                     transition={{ delay: 0.36, duration: 0.58 }}
                     className="mt-6"
                   >
-                    <QuickNav navigate={navigate} />
+                    <QuickNav navigate={navigate} canPath={canPath} />
                   </motion.div>
                 </div>
 
                 <div className="min-w-0 space-y-4">
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-                    <HeroMetricCard
+                    {canEvents && <HeroMetricCard
                       icon={Calendar}
                       label="Interviews"
                       value={upcomingInterviews}
                       helper="Upcoming joined sessions"
                       delay={0.2}
-                    />
-                    <HeroMetricCard
+                    />}
+                    {canAssessments && <HeroMetricCard
                       icon={ClipboardList}
                       label="Assessments"
                       value={activeAssessments}
                       helper="Pending assessment actions"
                       delay={0.26}
-                    />
+                    />}
                   </div>
                   <HeroWeeklyWidget
                     weeklyActivity={weeklyActivity}
@@ -1035,13 +1042,14 @@ export default function StudentDashboard() {
                 </div>
               </div>
 
-              <HeroInsightPanel
+              {(displayAnnouncements.length > 0 || canAnalysis) && <HeroInsightPanel
                 displayAnnouncements={displayAnnouncements}
                 announcementIndex={announcementIndex}
                 fallbackThoughts={fallbackThoughts}
                 thoughtIndex={thoughtIndex}
                 navigate={navigate}
-              />
+                canAnalysis={canAnalysis}
+              />}
             </div>
           </div>
         </motion.section>
@@ -1060,7 +1068,7 @@ export default function StudentDashboard() {
                         Grow your skills. Build your future.
                       </h2>
                       <p className="mt-3 text-sm sm:text-base text-slate-600 dark:text-gray-300 leading-relaxed max-w-xl mx-auto lg:mx-0">
-                        A complete platform for interviews, assessments, learning, and coding practice.
+                        Explore the tools enabled for your university.
                       </p>
                     </div>
 
@@ -1117,7 +1125,7 @@ export default function StudentDashboard() {
               </div>
 
               <div className="mt-7 space-y-4">
-                <div>
+                {canEvents && <div>
                   <div className="flex justify-between text-xs mb-2">
                     <span className="text-slate-500 dark:text-gray-400">Interview participation</span>
                     <span className="font-semibold text-slate-700 dark:text-gray-200">{progressPercent}%</span>
@@ -1131,9 +1139,9 @@ export default function StudentDashboard() {
                         className="h-full rounded-full bg-gradient-to-r from-sky-500 to-blue-600"
                     />
                   </div>
-                </div>
+                </div>}
 
-                <div>
+                {canAssessments && <div>
                   <div className="flex justify-between text-xs mb-2">
                     <span className="text-slate-500 dark:text-gray-400">Assessments completed</span>
                     <span className="font-semibold text-slate-700 dark:text-gray-200">
@@ -1153,7 +1161,7 @@ export default function StudentDashboard() {
                       className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-teal-500"
                     />
                   </div>
-                </div>
+                </div>}
               </div>
 
               <div className="mt-7">
@@ -1202,7 +1210,7 @@ export default function StudentDashboard() {
                 )}
               </div>
 
-              <div className="mt-6 rounded-2xl bg-slate-50 dark:bg-gray-900/40 border border-slate-200 dark:border-gray-700 px-5 py-4">
+              {canQuestions && <div className="mt-6 rounded-2xl bg-slate-50 dark:bg-gray-900/40 border border-slate-200 dark:border-gray-700 px-5 py-4">
                 <div className="text-sm font-bold text-slate-900 dark:text-gray-100">
                   {weeklyRemaining === 0
                     ? "Weekly goal completed"
@@ -1218,12 +1226,12 @@ export default function StudentDashboard() {
                   Start a quick practice
                   <ArrowRight className="h-4 w-4" />
                 </button>
-              </div>
+              </div>}
             </div>
           </motion.section>
 
           {/* ── 4. FINAL CTA ── */}
-          <motion.section {...sectionFade} style={{ contentVisibility: "auto", containIntrinsicSize: "260px" }}>
+          {canQuestions && <motion.section {...sectionFade} style={{ contentVisibility: "auto", containIntrinsicSize: "260px" }}>
             <div className="relative overflow-hidden rounded-2xl p-8 sm:p-12 flex flex-col sm:flex-row items-start sm:items-center gap-6 sm:gap-0 sm:justify-between">
               <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900" />
               <div className="absolute inset-0 bg-sky-500/10" />
@@ -1245,7 +1253,7 @@ export default function StudentDashboard() {
                 <ArrowRight className="w-4 h-4" />
               </motion.button>
             </div>
-          </motion.section>
+          </motion.section>}
 
         </div>
 

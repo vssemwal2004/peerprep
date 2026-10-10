@@ -1,12 +1,14 @@
 import { isUniversity } from './deployment.js';
 import { universityPolicy } from './client.js';
 
-function routeModule(path) {
+export function routeModule(path, { assessmentId } = {}) {
   if (/^\/(?:learning|subjects)(?:\/|$)/.test(path)) return 'learning';
   if (/^\/admin\/library(?:\/|$)/.test(path)) return 'questions';
   if (/^\/student\/questions(?:\/|$)/.test(path)) return 'questions';
-  if (/^\/(?:admin\/assessment|student\/assessments?|assessment-feedback)(?:\/|$)/.test(path)) return 'assessments';
-  if (/^\/(?:events|schedule|pairing)(?:\/|$)/.test(path)) return 'events';
+  if (/^\/(?:compiler|execute)(?:\/|$)/.test(path)) return assessmentId ? 'assessments' : 'questions';
+  if (/^\/problem-lists(?:\/|$)/.test(path)) return 'questions';
+  if (/^\/(?:admin\/assessment(?:\/|-|$)|student\/assessments?(?:\/|-|$)|assessment-feedback(?:\/|$))/.test(path)) return 'assessments';
+  if (/^\/(?:events|schedule|pairing|feedback)(?:\/|$)/.test(path)) return 'events';
   if (/^\/(?:ai-interviews|student\/ai-interviews)(?:\/|$)/.test(path)) return 'interviews';
   if (/^\/resume(?:\/|$)/.test(path)) return 'resumes';
   return null;
@@ -21,7 +23,7 @@ function hasAnalysisAccess(path, permissions = {}) {
 
 export async function enforceUniversityPolicy(req, res, next) {
   if (!isUniversity()) return next();
-  const moduleName = routeModule(req.path);
+  const moduleName = routeModule(req.path, { assessmentId: req.body?.assessmentId || req.query?.assessmentId });
   const analysisRoute = /^\/(?:admin\/analytics|student\/analysis)(?:\/|$)/.test(req.path);
   if (!moduleName && !analysisRoute) return next();
   try {

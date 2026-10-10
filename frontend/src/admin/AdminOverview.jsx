@@ -25,6 +25,8 @@ import {
   Zap,
 } from 'lucide-react';
 import { api } from '../utils/api';
+import { useUniversityPolicy } from '../platform/UniversityPolicyContext';
+import { isUniversityDeployment, moduleEnabled, pathAllowed } from '../platform/universityPermissions';
 
 const emptyDashboard = {
   students: [],
@@ -222,6 +224,11 @@ function QuickLink({ to, Icon, label, tone = 'sky', badge }) {
 }
 
 export default function AdminOverview() {
+  const { permissions } = useUniversityPolicy();
+  const canAssessments = !isUniversityDeployment || moduleEnabled(permissions, 'assessments');
+  const canEvents = !isUniversityDeployment || moduleEnabled(permissions, 'events');
+  const canQuestions = !isUniversityDeployment || moduleEnabled(permissions, 'questions');
+  const canPath = (to) => !isUniversityDeployment || pathAllowed(to, permissions, 'admin');
   const [coreLoading, setCoreLoading] = useState(true);
   const [secondaryLoading, setSecondaryLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -235,8 +242,8 @@ export default function AdminOverview() {
 
     const coreResults = await Promise.allSettled([
       api.listAllStudents({ page: 1, limit: 8, sortOrder: 'desc' }),
-      api.listEvents({ view: 'dashboard' }),
-      api.listAssessments({ view: 'dashboard' }),
+      canEvents ? api.listEvents({ view: 'dashboard' }) : Promise.resolve({}),
+      canAssessments ? api.listAssessments({ view: 'dashboard' }) : Promise.resolve({}),
       api.listAllCoordinators({ page: 1, limit: 8 }),
     ]);
     const studentsRes = settledValue(coreResults, 0, {});
@@ -260,9 +267,9 @@ export default function AdminOverview() {
       api.getActivityStats(),
       api.getActivities('limit=5'),
       api.listAnnouncementsAdmin({}),
-      api.getCompilerOverview(),
-      api.getAssessmentReports({ page: 1, limit: 5, view: 'dashboard' }),
-      api.getCompilerAnalyticsOverview({ view: 'dashboard' }),
+      canQuestions ? api.getCompilerOverview() : Promise.resolve(null),
+      canAssessments ? api.getAssessmentReports({ page: 1, limit: 5, view: 'dashboard' }) : Promise.resolve(null),
+      canQuestions ? api.getCompilerAnalyticsOverview({ view: 'dashboard' }) : Promise.resolve(null),
     ]);
     const activityStats = settledValue(secondaryResults, 0, {});
     const activityRes = settledValue(secondaryResults, 1, {});
@@ -284,7 +291,7 @@ export default function AdminOverview() {
     const failed = [...coreResults, ...secondaryResults].filter((result) => result.status === 'rejected');
     setError(failed.length ? `${failed.length} dashboard source${failed.length > 1 ? 's' : ''} could not be reached. Showing the rest.` : null);
     setSecondaryLoading(false);
-  }, []);
+  }, [canAssessments, canEvents, canQuestions]);
 
   const loading = coreLoading || secondaryLoading;
 
@@ -403,10 +410,10 @@ export default function AdminOverview() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Link to="/admin/assessment/create" className="inline-flex h-9 items-center gap-1.5 rounded-md bg-sky-600 px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-sky-700">
+            {canAssessments && <Link to="/admin/assessment/create" className="inline-flex h-9 items-center gap-1.5 rounded-md bg-sky-600 px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-sky-700">
               <Plus className="h-4 w-4" />
               New Assessment
-            </Link>
+            </Link>}
             <Link to="/admin/onboarding" className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-800 dark:text-slate-200 dark:hover:bg-gray-700">
               <UserPlus className="h-4 w-4" />
               Add Students
@@ -430,13 +437,13 @@ export default function AdminOverview() {
         ) : null}
 
         <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
-          {metrics.map((item) => (
+          {metrics.filter((item) => canPath(item.to)).map((item) => (
             <MetricCard key={item.label} {...item} loading={['Students', 'Assessments', 'Interviews'].includes(item.label) ? coreLoading : secondaryLoading} />
           ))}
         </div>
 
         <div className="mt-3 grid items-start gap-3 xl:grid-cols-12">
-          <Panel title="Assessment performance" Icon={BarChart3} action={<Link to="/admin/assessment/reports" className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">Full report</Link>} className="xl:col-span-7">
+          {canAssessments && <Panel title="Assessment performance" Icon={BarChart3} action={<Link to="/admin/assessment/reports" className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">Full report</Link>} className="xl:col-span-7">
             <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_180px]">
               <DistributionChart values={model.scoreDistribution} loading={secondaryLoading} />
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-1">
@@ -444,43 +451,43 @@ export default function AdminOverview() {
                 <div className="rounded-md bg-emerald-50 p-3 dark:bg-emerald-400/10"><span className="text-2xl font-semibold text-emerald-800 dark:text-emerald-200">{model.assessmentPasses}</span><p className="text-[10px] font-medium text-emerald-700 dark:text-emerald-300">Passed submissions</p></div>
               </div>
             </div>
-          </Panel>
+          </Panel>}
 
-          <Panel title="Coding performance" Icon={Code2} action={<Link to="/admin/analysis?source=coding" className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">Open analysis</Link>} className="xl:col-span-5">
+          {canQuestions && <Panel title="Coding performance" Icon={Code2} action={<Link to="/admin/analysis?source=coding" className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">Open analysis</Link>} className="xl:col-span-5">
             <DifficultyChart data={codingDifficulty} loading={secondaryLoading} />
             <div className="mt-4 grid grid-cols-3 divide-x divide-slate-200 dark:divide-gray-700"><div><b className="block text-lg text-slate-950 dark:text-white">{model.activeCoders}</b><span className="text-[10px] text-slate-500">Active students</span></div><div className="pl-3"><b className="block text-lg text-slate-950 dark:text-white">{model.codingAcceptance.toFixed(0)}%</b><span className="text-[10px] text-slate-500">Acceptance</span></div><div className="pl-3"><b className="block text-lg text-slate-950 dark:text-white">{formatNumber(model.codingAttempts)}</b><span className="text-[10px] text-slate-500">Attempts</span></div></div>
-          </Panel>
+          </Panel>}
         </div>
 
         <div className="mt-3 grid items-start gap-3 xl:grid-cols-12">
           <Panel title="Action center" Icon={Zap} className="xl:col-span-4">
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">{controlQueue.map((item) => <ActionLink key={item.label} to={item.to} icon={item.Icon} label={item.label} detail={item.detail} tone={item.tone} />)}</div>
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">{controlQueue.filter((item) => canPath(item.to)).map((item) => <ActionLink key={item.label} to={item.to} icon={item.Icon} label={item.label} detail={item.detail} tone={item.tone} />)}</div>
           </Panel>
 
-          <Panel title="Recent assessments" Icon={ClipboardList} action={<Link to="/admin/assessment" className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">View all</Link>} className="xl:col-span-5">
+          {canAssessments && <Panel title="Recent assessments" Icon={ClipboardList} action={<Link to="/admin/assessment" className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">View all</Link>} className="xl:col-span-5">
             <div className="divide-y divide-slate-100 dark:divide-gray-700">{secondaryLoading ? [1,2,3,4].map((item) => <div key={item} className="my-2 h-9 animate-pulse rounded bg-slate-100 dark:bg-gray-800" />) : recentAssessments.length ? recentAssessments.map((item) => <Link key={item._id || item.id} to="/admin/assessment/reports" className="grid grid-cols-[minmax(0,1fr)_52px_52px] items-center gap-2 py-2"><span className="truncate text-[11px] font-semibold text-slate-800 dark:text-white">{item.title || 'Untitled assessment'}</span><span className="text-right text-[10px] text-slate-500">{item.submissionCount || 0} tries</span><span className="text-right text-[10px] font-semibold text-slate-700 dark:text-slate-300">{Math.round(Number(item.avgScore || 0))}%</span></Link>) : <p className="py-6 text-center text-xs text-slate-500">No assessment results yet.</p>}</div>
-          </Panel>
+          </Panel>}
 
-          <Panel title="Upcoming interviews" Icon={Clock3} action={<Link to="/admin/interviews/scheduled" className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">Calendar</Link>} className="xl:col-span-3">
+          {canEvents && <Panel title="Upcoming interviews" Icon={Clock3} action={<Link to="/admin/interviews/scheduled" className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">Calendar</Link>} className="xl:col-span-3">
             <div className="divide-y divide-slate-100 dark:divide-gray-700">{coreLoading ? [1,2,3].map((item) => <div key={item} className="my-2 h-9 animate-pulse rounded bg-slate-100 dark:bg-gray-800" />) : upcomingSchedule.length ? upcomingSchedule.slice(0, 4).map((event) => <Link key={event._id || event.id} to={`/admin/event/${event._id || event.id}`} className="block py-2"><span className="block truncate text-[11px] font-semibold text-slate-800 dark:text-white">{event.title || event.name || 'Interview'}</span><span className="text-[10px] text-slate-500">{formatDateTime(eventStart(event))}</span></Link>) : <div className="py-6 text-center"><p className="text-xs text-slate-500">No interviews scheduled.</p><Link to="/admin/event" className="mt-2 inline-block text-[11px] font-semibold text-sky-700">Create interview</Link></div>}</div>
-          </Panel>
+          </Panel>}
         </div>
 
         <div className="mt-3 grid items-start gap-3 xl:grid-cols-12">
-          <Panel title="Student engagement" Icon={Users} className="xl:col-span-3"><div className="flex items-end justify-between"><div><span className="text-3xl font-semibold text-slate-950 dark:text-white">{model.totalStudents ? Math.round((model.activeCoders / model.totalStudents) * 100) : 0}%</span><p className="text-[10px] text-slate-500">coded in the last 7 days</p></div><span className="text-xs font-semibold text-slate-600 dark:text-slate-300">{model.activeCoders}/{model.totalStudents}</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-gray-700"><div className="h-full rounded-full bg-indigo-500" style={{ width: `${model.totalStudents ? Math.min(100, (model.activeCoders / model.totalStudents) * 100) : 0}%` }} /></div><Link to="/admin/students" className="mt-3 inline-flex text-[11px] font-semibold text-sky-700 dark:text-sky-300">View students <ArrowRight className="ml-1 h-3.5 w-3.5" /></Link></Panel>
+          {canQuestions && <Panel title="Student engagement" Icon={Users} className="xl:col-span-3"><div className="flex items-end justify-between"><div><span className="text-3xl font-semibold text-slate-950 dark:text-white">{model.totalStudents ? Math.round((model.activeCoders / model.totalStudents) * 100) : 0}%</span><p className="text-[10px] text-slate-500">coded in the last 7 days</p></div><span className="text-xs font-semibold text-slate-600 dark:text-slate-300">{model.activeCoders}/{model.totalStudents}</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-gray-700"><div className="h-full rounded-full bg-indigo-500" style={{ width: `${model.totalStudents ? Math.min(100, (model.activeCoders / model.totalStudents) * 100) : 0}%` }} /></div><Link to="/admin/students" className="mt-3 inline-flex text-[11px] font-semibold text-sky-700 dark:text-sky-300">View students <ArrowRight className="ml-1 h-3.5 w-3.5" /></Link></Panel>}
 
-          <Panel title="Assessment integrity" Icon={ShieldCheck} className="xl:col-span-3"><div className="grid grid-cols-3 divide-x divide-slate-200 text-center dark:divide-gray-700"><div><b className="block text-xl text-emerald-700">{model.assessmentPasses}</b><span className="text-[10px] text-slate-500">Passed</span></div><div><b className="block text-xl text-rose-700">{model.assessmentFails}</b><span className="text-[10px] text-slate-500">Failed</span></div><div><b className="block text-xl text-amber-700">{model.assessmentViolations}</b><span className="text-[10px] text-slate-500">Flags</span></div></div><Link to="/admin/assessment/reports" className="mt-4 inline-flex text-[11px] font-semibold text-sky-700 dark:text-sky-300">Review reports <ArrowRight className="ml-1 h-3.5 w-3.5" /></Link></Panel>
+          {canAssessments && <Panel title="Assessment integrity" Icon={ShieldCheck} className="xl:col-span-3"><div className="grid grid-cols-3 divide-x divide-slate-200 text-center dark:divide-gray-700"><div><b className="block text-xl text-emerald-700">{model.assessmentPasses}</b><span className="text-[10px] text-slate-500">Passed</span></div><div><b className="block text-xl text-rose-700">{model.assessmentFails}</b><span className="text-[10px] text-slate-500">Failed</span></div><div><b className="block text-xl text-amber-700">{model.assessmentViolations}</b><span className="text-[10px] text-slate-500">Flags</span></div></div><Link to="/admin/assessment/reports" className="mt-4 inline-flex text-[11px] font-semibold text-sky-700 dark:text-sky-300">Review reports <ArrowRight className="ml-1 h-3.5 w-3.5" /></Link></Panel>}
 
           <Panel title="Recent changes" Icon={Activity} action={<Link to="/admin/activity" className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">Audit log</Link>} className="xl:col-span-6"><div className="divide-y divide-slate-100 dark:divide-gray-700">{secondaryLoading ? [1,2,3,4].map((item) => <div key={item} className="my-2 h-9 animate-pulse rounded bg-slate-100 dark:bg-gray-800" />) : activityItems.slice(0,4).map((item) => <div key={item.id} className="grid grid-cols-[minmax(0,1fr)_110px] items-center gap-3 py-2"><span className="truncate text-[11px] font-medium text-slate-800 dark:text-white">{item.title}</span><span className="text-right text-[10px] text-slate-400">{item.time}</span></div>)}</div></Panel>
         </div>
 
         <Panel title="Shortcuts" action={<SectionHelp text="Direct links to the most-used administration areas." />} className="mt-3">
           <div className="grid grid-cols-4 gap-1 md:grid-cols-6 xl:grid-cols-10">
-            <QuickLink to="/admin/assessment/create" Icon={Plus} label="New assessment" tone="sky" />
-            <QuickLink to="/admin/event" Icon={CalendarDays} label="New interview" tone="emerald" />
-            <QuickLink to="/admin/learning" Icon={BookOpen} label="Learning" tone="sky" />
-            <QuickLink to="/admin/library" Icon={Library} label="Questions" tone="amber" />
-            <QuickLink to="/admin/assessment/reports" Icon={ClipboardList} label="Reports" tone="amber" />
+            {canAssessments && <QuickLink to="/admin/assessment/create" Icon={Plus} label="New assessment" tone="sky" />}
+            {canEvents && <QuickLink to="/admin/event" Icon={CalendarDays} label="New interview" tone="emerald" />}
+            {canPath('/admin/learning') && <QuickLink to="/admin/learning" Icon={BookOpen} label="Learning" tone="sky" />}
+            {canQuestions && <QuickLink to="/admin/library" Icon={Library} label="Questions" tone="amber" />}
+            {canAssessments && <QuickLink to="/admin/assessment/reports" Icon={ClipboardList} label="Reports" tone="amber" />}
             <QuickLink to="/admin/coordinator-access" Icon={ShieldCheck} label="Access" tone="indigo" />
             <QuickLink to="/admin/announcements/manage" Icon={Megaphone} label="Notices" tone="rose" badge={model.announcements || null} />
             <QuickLink to="/admin/email-queue" Icon={Mail} label="Email queue" tone="sky" />

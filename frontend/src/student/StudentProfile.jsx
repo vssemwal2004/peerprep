@@ -18,6 +18,7 @@ import PeerPrepProgress from './profile/PeerPrepProgress';
 import PracticeHistory from './profile/SubmissionsSection';
 import { EditProfileModal, PhotoModal } from './profile/ProfileModals';
 import { focusRing, languageLabel } from './profile/format';
+import { useUniversityPolicy } from '../platform/UniversityPolicyContext';
 
 const MotionDiv = motion.div;
 
@@ -28,6 +29,11 @@ function nullableNumber(value) {
 }
 
 export default function StudentProfile() {
+  const { allowsModule } = useUniversityPolicy();
+  const canQuestions = allowsModule('questions');
+  const canAssessments = allowsModule('assessments');
+  const canInterviews = allowsModule('interviews');
+  const canLearning = allowsModule('learning');
   const [user, setUser] = useState(null);
   const [avatarFile, setAvatarFile] = useState(null);
   const [avatarPreview, setAvatarPreview] = useState(null);
@@ -936,9 +942,9 @@ export default function StudentProfile() {
             <ProfileSidebar
               user={user}
               handle={handle}
-              badge={performanceTitle}
-              level={performanceTitle}
-              onOpenBadges={setBadgesGallery}
+              badge={canQuestions ? performanceTitle : null}
+              level={canQuestions ? performanceTitle : null}
+              onOpenBadges={canQuestions ? setBadgesGallery : undefined}
               bio={shortBio}
               hasCustomBio={hasCustomBio}
               socialLinks={socialLinks}
@@ -952,7 +958,7 @@ export default function StudentProfile() {
               then the daily challenge and the tabbed practice history. */}
           <main className="min-w-0 space-y-4">
             <div className="grid gap-4 xl:grid-cols-2">
-              <StudentSummary
+              {canQuestions && <StudentSummary
                 className="h-full"
                 firstName={firstName}
                 coding={codingSummary}
@@ -961,43 +967,44 @@ export default function StudentProfile() {
                 assessments={assessments}
                 mostUsedLanguage={mostUsedLanguage}
                 languagesCount={languages.length}
-              />
-              <CodingProgress
+              />}
+              {canQuestions && <CodingProgress
                 className="h-full"
                 {...codingTotals}
                 attemptedProblems={attemptedProblems}
                 streak={streakSummary}
                 activity={activity}
-              />
+              />}
             </div>
 
             <div className="grid gap-4 xl:grid-cols-2">
-              <BadgesCard
+              {canQuestions && <BadgesCard
                 className="h-full"
                 level={performanceTitle}
                 awards={awards}
                 learnerProgress={learnerProgress}
                 onOpenGallery={setBadgesGallery}
-              />
-              <PeerPrepProgress
+              />}
+              {(canAssessments || canInterviews || canLearning) && <PeerPrepProgress
                 className="h-full"
                 assessments={assessments}
                 interviews={interviews}
                 learning={learning}
                 content={learningContent}
-              />
+                visible={{ assessments: canAssessments, interviews: canInterviews, learning: canLearning }}
+              />}
             </div>
 
             <ActivitySection activity={activity} activityStats={activityStats} loading={loadingActivity} />
 
-            <DailyCodingChallenge className="!rounded-xl shadow-sm" />
+            {canQuestions && <DailyCodingChallenge className="!rounded-xl shadow-sm" />}
 
-            <PracticeHistory
+            {canQuestions && <PracticeHistory
               solved={stats?.recentSolvedProblems}
               submissions={stats?.recentSubmissions}
               statusBreakdown={stats?.statusBreakdown}
               languages={languages}
-            />
+            />}
           </main>
         </div>
       </MotionDiv>

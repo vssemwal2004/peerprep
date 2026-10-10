@@ -23,7 +23,7 @@ function StreakDots({ week, best }) {
  * Headline KPIs for admins in one structured strip. A dash (not 0%) marks data that does not
  * exist yet, so an empty record is never mistaken for a poor score.
  */
-export default function OverviewStrip({ headline, lastActive, coding, acceptance, assessments, interviews, learning, streak }) {
+export default function OverviewStrip({ headline, lastActive, coding, acceptance, assessments, interviews, learning, streak, visible = {} }) {
   const hasAttempts = coding.attempted > 0;
   const hasAcceptance = acceptance.total > 0 && acceptance.rate !== null;
   // avgScore is percent of max marks; null when the server could not normalize it.
@@ -33,6 +33,7 @@ export default function OverviewStrip({ headline, lastActive, coding, acceptance
 
   const items = [
     {
+      module: 'questions',
       label: coding.scoped ? 'Solved · your problems' : 'Problems solved',
       icon: <CheckCircle2 className="h-3.5 w-3.5" />,
       tone: 'emerald',
@@ -45,6 +46,7 @@ export default function OverviewStrip({ headline, lastActive, coding, acceptance
       helper: hasAttempts ? 'of attempted problems' : 'No attempts yet',
     },
     {
+      module: 'questions',
       label: 'Acceptance',
       icon: <Percent className="h-3.5 w-3.5" />,
       tone: 'sky',
@@ -54,6 +56,7 @@ export default function OverviewStrip({ headline, lastActive, coding, acceptance
         : 'No submissions yet',
     },
     {
+      module: 'assessments',
       label: 'Assessment avg',
       icon: <ClipboardList className="h-3.5 w-3.5" />,
       tone: 'amber',
@@ -61,6 +64,7 @@ export default function OverviewStrip({ headline, lastActive, coding, acceptance
       helper: assessments.attempts > 0 ? plural(assessments.attempts, 'attempt') : 'Not taken yet',
     },
     {
+      module: 'interviews',
       label: 'Interview avg',
       icon: <MessageSquare className="h-3.5 w-3.5" />,
       tone: 'indigo',
@@ -68,6 +72,7 @@ export default function OverviewStrip({ headline, lastActive, coding, acceptance
       helper: hasInterview ? `${plural(interviews.feedbackReceived, 'review')} received` : 'No feedback yet',
     },
     {
+      module: 'learning',
       label: learning.label,
       icon: <BookOpenCheck className="h-3.5 w-3.5" />,
       tone: 'violet',
@@ -75,6 +80,7 @@ export default function OverviewStrip({ headline, lastActive, coding, acceptance
       helper: hasLearning ? learning.detail : 'No course progress yet',
     },
     {
+      module: 'questions',
       label: 'Current streak',
       icon: <Flame className="h-3.5 w-3.5" />,
       tone: 'orange',
@@ -95,15 +101,15 @@ export default function OverviewStrip({ headline, lastActive, coding, acceptance
           </h2>
           <p className="truncate text-xs text-slate-500 dark:text-zinc-400" title={headline}>{headline}</p>
         </div>
-        <span
+        {visible.questions !== false && <span
           title={lastActive ? fmtDateTime(lastActive) : undefined}
           className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-600 ring-1 ring-inset ring-slate-200 dark:bg-zinc-900 dark:text-zinc-300 dark:ring-zinc-700"
         >
           <Clock3 className="h-3 w-3 text-slate-400" aria-hidden="true" />
           Last coding activity: {lastActive ? fmtRelative(lastActive) : 'none yet'}
-        </span>
+        </span>}
       </header>
-      <StatStrip items={items} cols="grid-cols-2 sm:grid-cols-3" label="Key performance indicators" />
+      <StatStrip items={items.filter((item) => visible[item.module] !== false)} cols="grid-cols-2 sm:grid-cols-3" label="Key performance indicators" />
     </section>
   );
 }

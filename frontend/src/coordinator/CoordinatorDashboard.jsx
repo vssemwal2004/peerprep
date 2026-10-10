@@ -24,6 +24,8 @@ import {
 import { api } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { hasPermission } from '../admin/coordinatorPermissions';
+import { useUniversityPolicy } from '../platform/UniversityPolicyContext';
+import { isUniversityDeployment, moduleEnabled } from '../platform/universityPermissions';
 
 const asArray = (value, keys = []) => {
   if (Array.isArray(value)) return value;
@@ -95,6 +97,7 @@ function SectionHelp({ text }) {
 
 export default function CoordinatorDashboard() {
   const { user } = useAuth();
+  const { permissions } = useUniversityPolicy();
   const [coreLoading, setCoreLoading] = useState(true);
   const [secondaryLoading, setSecondaryLoading] = useState(true);
   const [warning, setWarning] = useState('');
@@ -102,12 +105,21 @@ export default function CoordinatorDashboard() {
     students: [], studentCount: 0, events: [], assessments: [], feedback: [], feedbackCount: 0, compiler: null, activityStats: {}, activities: [],
   });
 
-  const allowed = useCallback((permission) => hasPermission(user, permission), [user]);
+  const allowed = useCallback((permission) => {
+    if (!hasPermission(user, permission)) return false;
+    const moduleName = /^coordinator\.(?:assessment)/.test(permission) ? 'assessments'
+      : /^coordinator\.(?:interviews|feedback)/.test(permission) ? 'events'
+        : /^coordinator\.learning/.test(permission) ? 'learning'
+          : /^coordinator\.(?:compiler|library)/.test(permission) ? 'questions' : null;
+    return !moduleName || !isUniversityDeployment || moduleEnabled(permissions, moduleName);
+  }, [user, permissions]);
 
   const loadDashboard = useCallback(async () => {
     setCoreLoading(true);
     setSecondaryLoading(true);
     setWarning('');
+    setData({ students: [], studentCount: 0, events: [], assessments: [], feedback: [], feedbackCount: 0,
+      compiler: null, activityStats: {}, activities: [] });
     const coreSources = [
       allowed('coordinator.students.view') && ['students', () => api.listAllStudents({ page: 1, limit: 8, sortOrder: 'desc' })],
       allowed('coordinator.interviews.view') && ['events', () => api.listEvents({ view: 'dashboard' })],
@@ -184,7 +196,7 @@ export default function CoordinatorDashboard() {
   }, [data]);
 
   const updates = useMemo(() => [
-    ...data.events.map((item) => ({
+    ...(allowed('coordinator.interviews.view') ? data.events : []).map((item) => ({
       id: `event-${item._id || item.id}`,
       title: item.name || item.title || 'Interview',
       type: 'Interview',
@@ -192,7 +204,7 @@ export default function CoordinatorDashboard() {
       date: dateOf(item),
       to: `/coordinator/event/${item._id || item.id}`,
     })),
-    ...data.assessments.map((item) => ({
+    ...(allowed('coordinator.assessment.view') ? data.assessments : []).map((item) => ({
       id: `assessment-${item._id || item.id}`,
       title: item.title || item.name || 'Assessment',
       type: 'Assessment',
@@ -200,7 +212,7 @@ export default function CoordinatorDashboard() {
       date: dateOf(item),
       to: '/coordinator/assessment',
     })),
-  ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5), [data]);
+  ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5), [data, allowed]);
 
   const activityTrend = useMemo(() => {
     const days = Array.from({ length: 7 }, (_, index) => {
@@ -319,15 +331,15 @@ export default function CoordinatorDashboard() {
         </div>
 
         <div className="mt-3 grid items-start gap-3 xl:grid-cols-[minmax(300px,0.7fr)_minmax(0,1.3fr)]">
-          <Panel title="Upcoming schedule" subtitle="Next interview events." action={allowed('coordinator.interviews.view') && <Link to="/coordinator/interviews/one-to-one/scheduled" className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">View all</Link>}>
+          {allowed('coordinator.interviews.view') && <Panel title="Upcoming schedule" subtitle="Next interview events." action={<Link to="/coordinator/interviews/one-to-one/scheduled" className="text-[11px] font-semibold text-sky-700 dark:text-sky-300">View all</Link>}>
             {coreLoading ? <div className="space-y-2">{[1, 2, 3].map((item) => <div key={item} className="h-10 animate-pulse rounded bg-slate-100 dark:bg-gray-800" />)}</div> : upcomingSchedule.length ? (
               <div className="divide-y divide-slate-100 dark:divide-gray-700">
                 {upcomingSchedule.map((event) => <Link key={event._id || event.id} to={`/coordinator/event/${event._id || event.id}`} className="flex items-center justify-between gap-3 py-2.5 hover:text-sky-700"><span className="min-w-0"><span className="block truncate text-xs font-bold text-slate-900 dark:text-white">{event.name || event.title || 'Interview event'}</span><span className="block text-[10px] text-slate-500">{formatDate(event.startDate || event.start)}</span></span><Clock3 className="h-3.5 w-3.5 shrink-0 text-slate-400" /></Link>)}
               </div>
             ) : <p className="py-4 text-xs text-slate-500">No upcoming interviews are scheduled.</p>}
-          </Panel>
+          </Panel>}
 
-          <Panel title="Latest updates" subtitle="Last five record changes.">
+          {(allowed('coordinator.interviews.view') || allowed('coordinator.assessment.view')) && <Panel title="Latest updates" subtitle="Last five record changes.">
             <div className="divide-y divide-slate-100 overflow-hidden rounded-md border border-slate-200 dark:divide-gray-700 dark:border-gray-700">
               {coreLoading ? (
                 <div className="space-y-2 p-3">{[1, 2, 3, 4].map((item) => <div key={item} className="h-10 animate-pulse rounded bg-slate-100 dark:bg-gray-800" />)}</div>
@@ -343,7 +355,7 @@ export default function CoordinatorDashboard() {
                 <div className="p-5 text-sm font-semibold text-slate-500">No interview or assessment updates yet.</div>
               )}
             </div>
-          </Panel>
+          </Panel>}
         </div>
 
         <div className="mt-3">

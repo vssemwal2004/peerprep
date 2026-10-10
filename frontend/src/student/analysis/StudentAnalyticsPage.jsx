@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef } from "react";
 import { AnimatePresence } from "framer-motion";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ErrorBanner, LoadingScreen } from "./AnalyticsPrimitives";
@@ -12,7 +12,7 @@ import {
   toInterviewCategoryData,
 } from "./analyticsUtils";
 import { useStudentAnalyticsData } from "./useStudentAnalyticsData";
-import { api } from "../../utils/api";
+import { useUniversityPolicy } from '../../platform/UniversityPolicyContext';
 
 const AssessmentAnalyticsPage = lazy(() => import("./pages/AssessmentAnalyticsPage"));
 const CodingAnalyticsPage = lazy(() => import("./pages/CodingAnalyticsPage"));
@@ -133,17 +133,7 @@ export default function StudentAnalyticsPage() {
   const navigate = useNavigate();
   const activeSection = normalizeSection(section);
   const previousIndexRef = useRef(0);
-  const [platformPermissions, setPlatformPermissions] = useState(null);
-  useEffect(() => {
-    if (import.meta.env.VITE_PEERPREP_DEPLOYMENT_ROLE !== 'university') return undefined;
-    let mounted = true;
-    const refresh = () => api.universityPolicy().then((policy) => {
-      if (mounted) setPlatformPermissions(policy.permissions);
-    }).catch(() => {});
-    refresh();
-    const timer = setInterval(refresh, 30_000);
-    return () => { mounted = false; clearInterval(timer); };
-  }, []);
+  const { permissions: platformPermissions } = useUniversityPolicy();
   const availableSections = useMemo(() => {
     if (!platformPermissions) return ANALYTICS_SECTION_IDS;
     const all = ['questions', 'assessments', 'interviews', 'learning'].every((name) => platformPermissions[name] === true);

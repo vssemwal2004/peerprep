@@ -10,7 +10,7 @@ import FilterDrawer from "./components/FilterDrawer";
 import GraphCard from "./components/GraphCard";
 import SummaryCards from "./components/SummaryCards";
 import ActionableInsightsPanel from "./components/ActionableInsightsPanel";
-import { api } from "../../utils/api";
+import { useUniversityPolicy } from '../../platform/UniversityPolicyContext';
 
 const GraphDetailModal = lazy(() => import("./components/GraphDetailModal"));
 
@@ -35,18 +35,12 @@ function EmptyCanvas({ onFilters }) {
 export default function AdminAnalyticsPage() {
   const initialQuery = useMemo(buildInitialQuery, []);
   const { query, data, loading, refreshing, error, apply, refresh } = useAdminAnalytics(initialQuery);
-  const [platformPermissions, setPlatformPermissions] = useState(null);
+  const { permissions: platformPermissions } = useUniversityPolicy();
   const allowedSources = useMemo(() => platformPermissions && [
     ...(platformPermissions.questions ? ['coding'] : []),
     ...(platformPermissions.assessments ? ['assessments'] : []),
     ...(platformPermissions.learning ? ['learning'] : []),
   ], [platformPermissions]);
-  useEffect(() => {
-    if (import.meta.env.VITE_PEERPREP_DEPLOYMENT_ROLE !== 'university') return undefined;
-    let mounted = true;
-    api.universityPolicy().then((policy) => { if (mounted) setPlatformPermissions(policy.permissions); }).catch(() => {});
-    return () => { mounted = false; };
-  }, []);
   useEffect(() => {
     if (!allowedSources?.length) return;
     const sources = (query.activity.sources || []).filter((source) => allowedSources.includes(source));

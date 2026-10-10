@@ -21,7 +21,7 @@ function TrackTile({ icon, title, ringValue, ringColor, ringLabel, value, meta, 
   );
 }
 
-export default function PeerPrepProgress({ assessments, interviews, learning, content, className = '' }) {
+export default function PeerPrepProgress({ assessments, interviews, learning, content, visible = {}, className = '' }) {
   const hasAssessmentScore = assessments.attempts > 0 && assessments.avgScore !== null;
   const hasInterviewScore = interviews.total > 0;
   const videosPercent = content.videosTotal > 0 ? (content.videosWatched / content.videosTotal) * 100 : 0;
@@ -30,14 +30,12 @@ export default function PeerPrepProgress({ assessments, interviews, learning, co
     <Card
       id="peerprep-progress"
       title="PeerPrep Progress"
-      description={interviews.pending > 0
-        ? `Assessments, interviews, learning · ${interviews.pending} upcoming ${interviews.pending === 1 ? 'interview' : 'interviews'}`
-        : 'Assessments, interviews and learning'}
+      description="Your enabled modules"
       icon={<Layers className="h-4 w-4" />}
       className={className}
     >
       <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <TrackTile
+        {visible.assessments !== false && <TrackTile
           icon={<ClipboardList className="h-4 w-4" />}
           title="Assessments"
           ringValue={assessments.avgScore}
@@ -48,8 +46,8 @@ export default function PeerPrepProgress({ assessments, interviews, learning, co
             ? `${assessments.attempts} ${assessments.attempts === 1 ? 'attempt' : 'attempts'}${assessments.highestScore !== null ? ` · best ${formatPercent(assessments.highestScore)}` : ''}`
             : 'Not taken yet'}
           empty={!hasAssessmentScore}
-        />
-        <TrackTile
+        />}
+        {visible.interviews !== false && <TrackTile
           icon={<MessageSquare className="h-4 w-4" />}
           title="Interview feedback"
           ringValue={interviews.avgScore}
@@ -60,8 +58,8 @@ export default function PeerPrepProgress({ assessments, interviews, learning, co
             ? `${interviews.total} ${interviews.total === 1 ? 'report' : 'reports'}`
             : 'No feedback yet'}
           empty={!hasInterviewScore}
-        />
-        <TrackTile
+        />}
+        {visible.learning !== false && <TrackTile
           icon={<BookOpen className="h-4 w-4" />}
           title="Learning modules"
           ringValue={learning.completionPercent}
@@ -72,8 +70,8 @@ export default function PeerPrepProgress({ assessments, interviews, learning, co
             ? `${learning.completedTopics} of ${learning.totalTopics} topics`
             : `${learning.completedTopics} topics done`}
           empty={learning.completionPercent <= 0}
-        />
-        <TrackTile
+        />}
+        {visible.learning !== false && <TrackTile
           icon={<PlayCircle className="h-4 w-4" />}
           title="Videos watched"
           ringValue={videosPercent}
@@ -85,7 +83,7 @@ export default function PeerPrepProgress({ assessments, interviews, learning, co
             content.watchTimeHours > 0 ? `${content.watchTimeHours} h watched` : null,
           ].filter(Boolean).join(' · ')}
           empty={content.videosWatched <= 0}
-        />
+        />}
       </ul>
 
     </Card>
