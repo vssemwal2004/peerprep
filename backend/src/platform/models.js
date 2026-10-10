@@ -15,7 +15,6 @@ const universitySchema = new mongoose.Schema({
     events: { type: Boolean, default: true },
     interviews: { type: Boolean, default: true },
     resumes: { type: Boolean, default: true },
-    analytics: { type: Boolean, default: true },
   },
   sources: {
     learning: { type: String, enum: ['university', 'shared'], default: 'university' },
@@ -53,7 +52,6 @@ const settingsSchema = new mongoose.Schema({
     events: { type: Boolean, default: true },
     interviews: { type: Boolean, default: true },
     resumes: { type: Boolean, default: true },
-    analytics: { type: Boolean, default: true },
   },
   sources: {
     learning: { type: String, enum: ['university', 'shared'], default: 'university' },

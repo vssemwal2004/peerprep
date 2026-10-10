@@ -19,7 +19,7 @@ const router = Router();
 const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
 const keyHash = (value) => crypto.createHash('sha256').update(value).digest('hex');
 const idPattern = /^[a-z0-9][a-z0-9-]{1,62}$/;
-const moduleNames = ['learning', 'assessments', 'questions', 'events', 'interviews', 'resumes', 'analytics'];
+const moduleNames = ['learning', 'assessments', 'questions', 'events', 'interviews', 'resumes'];
 const sourceNames = ['learning', 'questions'];
 const clean = (doc) => {
   const value = doc.toObject ? doc.toObject() : { ...doc };
@@ -28,6 +28,13 @@ const clean = (doc) => {
 };
 const audit = (req, action, universityId, details = {}) => PlatformAudit.create({ actor: String(req.user?._id || universityId), action, universityId, details });
 const loadDefaults = async () => await PlatformSettings.findById('defaults') || new PlatformSettings({ _id: 'defaults' });
+
+async function clearUniversityAssignments(universityId) {
+  await Publication.updateMany(
+    { $or: [{ universityIds: universityId }, { everUniversityIds: universityId }] },
+    { $pull: { universityIds: universityId, everUniversityIds: universityId } },
+  );
+}
 
 function inspectionOrigin(value) {
   if (!value) return '';
@@ -127,7 +134,13 @@ router.post('/admin/universities', masterOnly, asyncRoute(async (req, res) => {
   const universityId = String(req.body?.universityId || '').trim().toLowerCase();
   const name = String(req.body?.name || '').trim();
   if (!idPattern.test(universityId) || name.length < 2 || name.length > 160) throw new HttpError(400, 'Valid university ID and name are required');
-  if (await University.exists({ universityId })) throw new HttpError(409, 'University ID already exists');
+  const previous = await University.findOne({ universityId });
+  if (previous) {
+    if (!previous.deletedAt) throw new HttpError(409, 'University ID already exists');
+    // Older deployments archived registrations instead of removing them.
+    await clearUniversityAssignments(universityId);
+    await University.deleteOne({ _id: previous._id, deletedAt: { $ne: null } });
+  }
   const defaults = await loadDefaults();
   const apiKey = crypto.randomBytes(32).toString('base64url');
   const defaultValues = defaults.toObject();
@@ -199,14 +212,15 @@ router.get('/admin/universities/:id/students/:studentId', masterOnly, asyncRoute
 
 router.delete('/admin/universities/:id', masterOnly, asyncRoute(async (req, res) => {
   const university = await University.findOneAndUpdate(
-    { universityId: req.params.id, deletedAt: null },
+    { universityId: req.params.id },
     { $set: { active: false, deletedAt: new Date(), apiKeyHash: keyHash(crypto.randomBytes(32).toString('base64url')) } },
     { new: true },
   );
   if (!university) throw new HttpError(404, 'University not found');
-  await Publication.updateMany({ universityIds: university.universityId }, { $pull: { universityIds: university.universityId } });
-  await audit(req, 'university.archived', university.universityId);
-  res.json({ university: clean(university) });
+  await clearUniversityAssignments(university.universityId);
+  await University.deleteOne({ _id: university._id });
+  await audit(req, 'university.deleted', university.universityId, { registrationId: String(university._id) });
+  res.json({ universityId: university.universityId, deleted: true });
 }));
 
 router.get('/admin/publications', masterOnly, asyncRoute(async (req, res) => {

@@ -54,5 +54,10 @@ export async function sharedQuestions() {
   const policy = await universityPolicy();
   if (!policy.permissions?.questions) return [];
   const { questions } = await controlRequest('questions');
+  if (!Array.isArray(questions)) {
+    const error = new Error('Central question feed returned an invalid response');
+    error.status = 503;
+    throw error;
+  }
   return questions.map((question) => ({ ...question, platformShared: true }));
 }

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useMemo, useRef } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence } from "framer-motion";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ErrorBanner, LoadingScreen } from "./AnalyticsPrimitives";
@@ -12,6 +12,7 @@ import {
   toInterviewCategoryData,
 } from "./analyticsUtils";
 import { useStudentAnalyticsData } from "./useStudentAnalyticsData";
+import { api } from "../../utils/api";
 
 const AssessmentAnalyticsPage = lazy(() => import("./pages/AssessmentAnalyticsPage"));
 const CodingAnalyticsPage = lazy(() => import("./pages/CodingAnalyticsPage"));
@@ -95,7 +96,7 @@ function buildReadinessHistory(points = [], contractVersion) {
     });
 }
 
-function useEdgeSwipe(activeSection, onSectionChange) {
+function useEdgeSwipe(activeSection, onSectionChange, sections) {
   const startRef = useRef(null);
 
   const onTouchStart = useCallback((event) => {
@@ -118,10 +119,10 @@ function useEdgeSwipe(activeSection, onSectionChange) {
     const dy = touch.clientY - start.y;
     if (Math.abs(dx) < 64 || Math.abs(dx) < Math.abs(dy) * 1.35) return;
 
-    const index = ANALYTICS_SECTION_IDS.indexOf(activeSection);
-    if (start.fromLeft && dx > 0 && index > 0) onSectionChange(ANALYTICS_SECTION_IDS[index - 1]);
-    if (!start.fromLeft && dx < 0 && index < ANALYTICS_SECTION_IDS.length - 1) onSectionChange(ANALYTICS_SECTION_IDS[index + 1]);
-  }, [activeSection, onSectionChange]);
+    const index = sections.indexOf(activeSection);
+    if (start.fromLeft && dx > 0 && index > 0) onSectionChange(sections[index - 1]);
+    if (!start.fromLeft && dx < 0 && index < sections.length - 1) onSectionChange(sections[index + 1]);
+  }, [activeSection, onSectionChange, sections]);
 
   return { onTouchStart, onTouchEnd };
 }
@@ -132,6 +133,25 @@ export default function StudentAnalyticsPage() {
   const navigate = useNavigate();
   const activeSection = normalizeSection(section);
   const previousIndexRef = useRef(0);
+  const [platformPermissions, setPlatformPermissions] = useState(null);
+  useEffect(() => {
+    if (import.meta.env.VITE_PEERPREP_DEPLOYMENT_ROLE !== 'university') return undefined;
+    let mounted = true;
+    const refresh = () => api.universityPolicy().then((policy) => {
+      if (mounted) setPlatformPermissions(policy.permissions);
+    }).catch(() => {});
+    refresh();
+    const timer = setInterval(refresh, 30_000);
+    return () => { mounted = false; clearInterval(timer); };
+  }, []);
+  const availableSections = useMemo(() => {
+    if (!platformPermissions) return ANALYTICS_SECTION_IDS;
+    const all = ['questions', 'assessments', 'interviews', 'learning'].every((name) => platformPermissions[name] === true);
+    return ANALYTICS_SECTION_IDS.filter((name) => {
+      if (name === 'overview' || name === 'placement') return all;
+      return platformPermissions[name === 'coding' ? 'questions' : name] === true;
+    });
+  }, [platformPermissions]);
 
   const {
     analysis: rawAnalysis,
@@ -175,14 +195,20 @@ export default function StudentAnalyticsPage() {
   const overallStatus = statusLabel(readinessScore);
 
   const basePath = location.pathname.startsWith("/student/analytics") ? "/student/analytics" : "/student/analysis";
+  useEffect(() => {
+    if (platformPermissions && availableSections.length && !availableSections.includes(activeSection)) {
+      navigate(`${basePath}/${availableSections[0]}`, { replace: true });
+    }
+  }, [activeSection, availableSections, basePath, navigate, platformPermissions]);
   const changeSection = useCallback((nextSection) => {
     const normalized = normalizeSection(nextSection);
+    if (!availableSections.includes(normalized)) return -1;
     const nextIndex = ANALYTICS_SECTION_IDS.indexOf(normalized);
     previousIndexRef.current = ANALYTICS_SECTION_IDS.indexOf(activeSection);
     navigate(`${basePath}/${normalized}`);
     return nextIndex;
-  }, [activeSection, basePath, navigate]);
-  const swipeHandlers = useEdgeSwipe(activeSection, changeSection);
+  }, [activeSection, availableSections, basePath, navigate]);
+  const swipeHandlers = useEdgeSwipe(activeSection, changeSection, availableSections);
   const activeIndex = ANALYTICS_SECTION_IDS.indexOf(activeSection);
   const direction = activeIndex - previousIndexRef.current;
 
@@ -222,6 +248,7 @@ export default function StudentAnalyticsPage() {
     <div className="min-h-screen bg-slate-50 text-slate-950 transition-colors dark:bg-slate-950 dark:text-white">
       <WorkspaceHeader
         activeSection={activeSection}
+        availableSections={availableSections}
         onSectionChange={changeSection}
         refreshing={refreshing}
         onRefresh={() => reload({ forceRefresh: true })}

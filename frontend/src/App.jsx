@@ -389,6 +389,7 @@ function AppContent() {
         <Route path="/student/analysis" element={<StudentProtectedRoute><StudentAnalytics /></StudentProtectedRoute>} />
         <Route path="/student/analysis/:section" element={<StudentProtectedRoute><StudentAnalytics /></StudentProtectedRoute>} />
         <Route path="/problems" element={<StudentProtectedRoute><ProblemsPage /></StudentProtectedRoute>} />
+        <Route path="/problems/shared/:id" element={<StudentProtectedRoute><ProblemSolver /></StudentProtectedRoute>} />
         <Route path="/problems/:id" element={<StudentProtectedRoute><ProblemSolver /></StudentProtectedRoute>} />
         
         {/* Admin Routes - Protected */}
@@ -442,6 +443,7 @@ function AppContent() {
         <Route path="/admin/library/coding/create" element={<AdminShell><LibraryWorkspace view="create-coding" /></AdminShell>} />
         <Route path="/admin/library/coding/problems" element={<Navigate to="/admin/library?type=coding" replace />} />
         <Route path="/admin/library/coding/:id/edit" element={<AdminShell><LibraryWorkspace view="edit-coding" /></AdminShell>} />
+        <Route path="/admin/library/coding/shared/:id/preview" element={<AdminShell><LibraryWorkspace view="preview-coding" /></AdminShell>} />
         <Route path="/admin/library/coding/:id/preview" element={<AdminShell><LibraryWorkspace view="preview-coding" /></AdminShell>} />
         <Route path="/admin/library/coding/analytics" element={<Navigate to="/admin/analysis?source=coding" replace />} />
         <Route path="/admin/assessment/select-problem" element={<AdminShell><SelectProblemFromLibrary /></AdminShell>} />
@@ -511,6 +513,7 @@ function AppContent() {
         <Route path="/coordinator/library/coding/create" element={<CoordinatorShell permission="coordinator.compiler.create"><LibraryWorkspace view="create-coding" /></CoordinatorShell>} />
         <Route path="/coordinator/library/coding/problems" element={<Navigate to="/coordinator/library?type=coding" replace />} />
         <Route path="/coordinator/library/coding/:id/edit" element={<CoordinatorShell permission="coordinator.compiler.manage"><LibraryWorkspace view="edit-coding" /></CoordinatorShell>} />
+        <Route path="/coordinator/library/coding/shared/:id/preview" element={<CoordinatorShell permission="coordinator.library.view"><LibraryWorkspace view="preview-coding" /></CoordinatorShell>} />
         <Route path="/coordinator/library/coding/:id/preview" element={<CoordinatorShell permission="coordinator.compiler.manage"><LibraryWorkspace view="preview-coding" /></CoordinatorShell>} />
         <Route path="/coordinator/library/coding/analytics" element={<CoordinatorShell permission="coordinator.compiler.analytics"><LibraryWorkspace view="coding-analytics" /></CoordinatorShell>} />
         <Route path="/coordinator/announcements/add" element={<CoordinatorShell permission="coordinator.announcements.create"><AnnouncementCreate /></CoordinatorShell>} />
@@ -553,8 +556,6 @@ function App() {
 }
 
 export default App;
-
-
 
 
 

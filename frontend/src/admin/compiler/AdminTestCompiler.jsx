@@ -370,7 +370,7 @@ function normalizeSubmitResult(response) {
   };
 }
 
-export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', editLabel = 'Back to Edit', headerTargetId = '' } = {}) {
+export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', editLabel = 'Back to Edit', headerTargetId = '', sharedQuestionId = '' } = {}) {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
@@ -411,7 +411,15 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
     const loadProblem = async () => {
       try {
         setLoading(true);
-        const response = await api.getCompilerProblemPreview(id);
+        const response = sharedQuestionId
+          ? await api.getLibraryQuestion(sharedQuestionId).then(({ question }) => ({
+            ...(question?.questionData?.problemDataSnapshot || question?.questionData?.coding || {}),
+            _id: sharedQuestionId,
+            title: question?.questionText || 'Shared coding question',
+            status: 'published',
+            previewValidated: true,
+          }))
+          : await api.getCompilerProblemPreview(id);
         if (!isMounted) return;
 
         const nextCases = createPreviewTestCases(response);
@@ -434,7 +442,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
     return () => {
       isMounted = false;
     };
-  }, [id, toast]);
+  }, [id, sharedQuestionId, toast]);
 
   const activeCode = drafts[language] || '';
   const activeTestCase = useMemo(() => {
@@ -515,11 +523,13 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
 
       const responses = await Promise.all(
         runnableCases.map(async (testCase, index) => {
-          const response = await api.runCompilerProblem(problem._id, {
+          const response = await (sharedQuestionId ? api.runSharedCodingPreview(sharedQuestionId, {
+            language, sourceCode, customInput: testCase?.input || '',
+          }) : api.runCompilerProblem(problem._id, {
             language,
             sourceCode,
             customInput: testCase?.input || '',
-          });
+          }));
 
           return {
             ...normalizeRunResult(response, testCase),
@@ -554,10 +564,12 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
     setActiveConsoleTab('result');
 
     try {
-      const response = await api.submitCompilerProblem(problem._id, {
+      const response = await (sharedQuestionId ? api.submitSharedCodingPreview(sharedQuestionId, {
+        language, sourceCode,
+      }) : api.submitCompilerProblem(problem._id, {
         language,
         sourceCode,
-      });
+      }));
       const normalized = normalizeSubmitResult(response);
       setResult(normalized);
       toast.success(`Submission finished with verdict ${normalized.status}.`);
@@ -569,6 +581,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
   };
 
   const handleApproveToPublish = async () => {
+    if (sharedQuestionId) return;
     if (!problem?._id) return;
     if (!isAcceptedSubmission && !previewValidated) {
       toast.error('Submit an Accepted solution in preview before approving to publish.');
@@ -704,7 +717,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
       <div className="flex min-w-0 items-center gap-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-bold text-slate-950 dark:text-white">{problem.title}</p>
-          <p className="text-[11px] text-slate-500 dark:text-gray-400">Coding preview · validate before publishing</p>
+          <p className="text-[11px] text-slate-500 dark:text-gray-400">{sharedQuestionId ? 'Shared coding preview · source stays with the super admin' : 'Coding preview · validate before publishing'}</p>
         </div>
         <span className={`hidden rounded-full px-2.5 py-1 text-[11px] font-semibold sm:inline-flex ${statusBadgeClass}`}>
           {verdictStatus || (previewValidated ? 'All Languages Passed' : `Validation Pending · ${validationProgress}`)}
@@ -712,8 +725,13 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <button type="button" onClick={() => navigate(backTo || `${rolePrefix}/library/coding/problems`)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800">{backLabel}</button>
-        <button type="button" onClick={() => navigate(editTo || `${rolePrefix}/library/coding/${problem._id}/edit`, { state: { returnTo: backTo } })} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:border-sky-300 hover:text-sky-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">{editLabel}</button>
-        <button
+        {sharedQuestionId ? rolePrefix === '/admin' && <button type="button" onClick={async () => {
+          try {
+            const copy = await api.copySharedQuestion(sharedQuestionId);
+            navigate(`${rolePrefix}/library/coding/${copy.problemId}/edit`, { state: { returnTo: backTo } });
+          } catch (error) { toast.error(error.message || 'Could not make a local copy.'); }
+        }} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">Make local copy</button> : <button type="button" onClick={() => navigate(editTo || `${rolePrefix}/library/coding/${problem._id}/edit`, { state: { returnTo: backTo } })} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:border-sky-300 hover:text-sky-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">{editLabel}</button>}
+        {!sharedQuestionId && <button
           type="button"
           onClick={canApprovePublish ? handleApproveToPublish : undefined}
           disabled={!canApprovePublish || isApprovingPublish || isSubmitting || isRunning}
@@ -721,7 +739,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
           className={`min-w-24 rounded-lg px-3 py-2 text-xs font-bold transition-colors ${isPublished ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : canApprovePublish ? 'bg-sky-600 text-white hover:bg-sky-500' : 'cursor-not-allowed bg-slate-200 text-slate-500 dark:bg-gray-700 dark:text-gray-400'}`}
         >
           {isPublished ? 'Published' : isApprovingPublish ? 'Validating...' : previewValidated ? 'Publish' : languageValidated ? 'Validated' : 'Validate language'}
-        </button>
+        </button>}
         <button
           type="button"
           onClick={() => navigate(backTo || `${rolePrefix}/library/coding/problems`)}

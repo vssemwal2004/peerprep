@@ -185,7 +185,32 @@ export async function getStudentAnalysis(req, res) {
     auditAnalyticsAccess(req, 'forced-refresh', { cacheStatus: meta.cacheStatus, cacheReason: meta.cacheReason });
   }
   res.set('Cache-Control', 'private, max-age=30');
-  res.json({ analysis: redactSensitiveAnalytics(analysis), meta });
+  res.json({ analysis: scopeStudentAnalysis(redactSensitiveAnalytics(analysis), req.platformPermissions), meta });
+}
+
+export function scopeStudentAnalysis(analysis, permissions) {
+  if (!permissions) return analysis;
+  const enabled = {
+    problems: permissions.questions === true,
+    assessments: permissions.assessments === true,
+    interviews: permissions.interviews === true,
+    learning: permissions.learning === true,
+  };
+  if (Object.values(enabled).every(Boolean)) return analysis;
+  return {
+    contractVersion: analysis.contractVersion,
+    generatedAt: analysis.generatedAt,
+    problems: enabled.problems ? analysis.problems : {},
+    assessments: enabled.assessments ? analysis.assessments : {},
+    interviews: enabled.interviews ? analysis.interviews : {},
+    learning: enabled.learning ? analysis.learning : {},
+    explanations: {
+      coding: enabled.problems ? analysis.explanations?.coding || [] : [],
+      assessment: enabled.assessments ? analysis.explanations?.assessment || [] : [],
+      interview: enabled.interviews ? analysis.explanations?.interview || [] : [],
+      learning: enabled.learning ? analysis.explanations?.learning || [] : [],
+    },
+  };
 }
 
 export async function getStudentAnalysisHistory(req, res) {
@@ -216,7 +241,8 @@ export async function getStudentAnalysisHistory(req, res) {
 
   res.set('Cache-Control', 'private, max-age=60');
   res.json({
-    history,
+    history: req.platformPermissions && ['questions', 'assessments', 'interviews', 'learning']
+      .some((moduleName) => req.platformPermissions[moduleName] !== true) ? [] : history,
     meta: {
       days,
       count: history.length,
@@ -227,6 +253,10 @@ export async function getStudentAnalysisHistory(req, res) {
 }
 
 export async function getCompanyReadiness(req, res) {
+  if (req.platformPermissions && ['questions', 'assessments', 'interviews', 'learning']
+    .some((moduleName) => req.platformPermissions[moduleName] !== true)) {
+    throw new HttpError(403, 'Placement analysis requires all contributing modules.');
+  }
   const studentId = req.user?._id;
   const companyId = req.query.companyId || req.body?.companyId;
   if (!companyId) throw new HttpError(400, 'Company ID is required');

@@ -12,10 +12,11 @@ import { compilerExecutionLimiter } from '../middleware/rateLimiter.js';
 import { sharedQuestions } from './sharedContent.js';
 import { isUniversity } from './deployment.js';
 import { universityPolicy, controlRequest } from './client.js';
+import { serializeProblem } from '../controllers/compilerHelpers.js';
 
 const router = Router();
 const published = { status: 'published', visibility: { $ne: 'private' }, sourceType: { $ne: 'assessment' } };
-const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
+const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
 router.use(requireAuth, asyncRoute(async (req, res, next) => {
   if (req.user?.role !== 'student') throw new HttpError(403, 'Student access required');
@@ -27,6 +28,7 @@ export const publicShape = (question, source) => ({
   _id: question._id,
   source,
   questionType: question.questionType,
+  sourceProblemId: question.sourceProblemId || question.questionData?.problemId || null,
   questionText: question.questionText,
   difficulty: question.difficulty,
   tags: question.tags || [],
@@ -53,11 +55,15 @@ export const publicShape = (question, source) => ({
 });
 
 async function visibleQuestions() {
-  const [local, central] = await Promise.all([QuestionLibrary.find(published).lean(), sharedQuestions()]);
-  return [
+  const [localResult, centralResult] = await Promise.allSettled([QuestionLibrary.find(published).lean(), sharedQuestions()]);
+  if (localResult.status === 'rejected') throw localResult.reason;
+  const local = localResult.value;
+  const central = centralResult.status === 'fulfilled' ? centralResult.value : [];
+  if (centralResult.status === 'rejected' && !local.length) throw centralResult.reason;
+  return { warning: centralResult.status === 'rejected' ? 'Shared questions are temporarily unavailable.' : '', questions: [
     ...local.map((question) => ({ question, source: 'university' })),
     ...(central || []).map((question) => ({ question, source: 'shared' })),
-  ];
+  ] };
 }
 
 export function gradePracticeAnswer(question, answer) {
@@ -87,7 +93,8 @@ router.get('/', asyncRoute(async (req, res) => {
   const type = String(req.query.type || '').trim().toLowerCase();
   const page = Math.max(1, Number(req.query.page) || 1);
   const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
-  const all = (await visibleQuestions()).filter(({ question }) =>
+  const visible = await visibleQuestions();
+  const all = visible.questions.filter(({ question }) =>
     (!type || question.questionType === type) && (!search || String(question.questionText || '').toLowerCase().includes(search)));
   all.sort((a, b) => new Date(b.question.updatedAt || 0) - new Date(a.question.updatedAt || 0));
   const selected = all.slice((page - 1) * limit, page * limit);
@@ -99,13 +106,54 @@ router.get('/', asyncRoute(async (req, res) => {
     const key = `${attempt.source}:${attempt.questionId}`;
     if (!latest.has(key)) latest.set(key, attempt.result);
   });
-  res.json({ questions: selected.map(({ question, source }) => ({ ...publicShape(question, source), result: latest.get(`${source}:${question._id}`) || null })),
+  res.json({ warning: visible.warning, questions: selected.map(({ question, source }) => ({ ...publicShape(question, source), result: latest.get(`${source}:${question._id}`) || null })),
     pagination: { page, limit, total: all.length, pages: Math.max(1, Math.ceil(all.length / limit)) } });
 }));
 
 router.get('/:source/:id', asyncRoute(async (req, res) => {
   const found = await findVisible(req.params.source, req.params.id);
   res.json({ question: publicShape(found, req.params.source) });
+}));
+
+router.get('/shared/:id/problem', asyncRoute(async (req, res) => {
+  const question = await findVisible('shared', req.params.id);
+  if (question.questionType !== 'coding') throw new HttpError(404, 'Coding problem not found');
+  const snapshot = question.questionData?.problemDataSnapshot || question.questionData?.coding?.problemData;
+  if (!snapshot) throw new HttpError(404, 'Coding problem details unavailable');
+  res.json({ ...serializeProblem({ ...snapshot, _id: question._id, status: 'published', visibility: 'public' },
+    { sampleTestCases: snapshot.sampleTestCases || [] }), platformShared: true });
+}));
+
+router.get('/shared/:id/submissions', asyncRoute(async (req, res) => {
+  await findVisible('shared', req.params.id);
+  const attempts = await QuestionPracticeAttempt.find({ studentId: req.user._id, source: 'shared', questionId: req.params.id, questionType: 'coding' })
+    .sort({ createdAt: -1 }).limit(50).lean();
+  res.json({ submissions: attempts.map((item) => ({ _id: item._id, problemId: item.questionId,
+    mode: 'submit', status: item.result === 'correct' ? 'AC' : item.result === 'incorrect' ? 'WA' : 'PENDING',
+    language: item.language, sourceCode: item.answer, createdAt: item.createdAt,
+    totalTestCases: 0, passedTestCases: item.result === 'correct' ? 1 : 0 })) });
+}));
+
+router.post('/shared/:id/run', compilerExecutionLimiter, asyncRoute(async (req, res) => {
+  const question = await findVisible('shared', req.params.id);
+  if (question.questionType !== 'coding') throw new HttpError(404, 'Coding problem not found');
+  const { problem } = await controlRequest(`questions/${encodeURIComponent(String(question._id))}/judge-data`);
+  const language = String(req.body?.language || '').toLowerCase();
+  const sourceCode = String(req.body?.sourceCode || '');
+  if (!sourceCode.trim() || sourceCode.length > 50000 || !KEY_TO_LANGUAGE_ID[language]
+    || (problem.supportedLanguages?.length && !problem.supportedLanguages.includes(language))) throw new HttpError(400, 'Valid source code and language are required');
+  const input = String(req.body?.customInput || '').slice(0, 65536);
+  const result = await runJudge0(prepareFunctionSourceForExecution(problem, language, sourceCode, input),
+    KEY_TO_LANGUAGE_ID[language], input, { cpuTimeLimitSeconds: problem.timeLimitSeconds || 2,
+      memoryLimitKb: Number(problem.memoryLimitMb || 256) * 1024,
+      sqlSetupCode: [problem.sqlConfig?.schemaSql, problem.sqlConfig?.seedDataSql].filter(Boolean).join('\n') });
+  const sample = (question.questionData?.problemDataSnapshot?.sampleTestCases || []).find((item) => item.input === input);
+  res.json({ status: result.compile_output ? 'Compilation Error' : result.stderr ? 'Runtime Error'
+    : result.status?.id !== 3 ? result.status?.description || 'Run failed'
+      : sample && normalizeComparableOutput(result.stdout) !== normalizeComparableOutput(sample.output) ? 'Wrong Answer'
+        : sample ? 'Accepted' : 'Run completed',
+  output: result.stdout || '', stdout: result.stdout || '', stderr: result.stderr || '',
+  compileOutput: result.compile_output || '', input, language, sourceCode });
 }));
 
 async function judgeCodingQuestion(question, source, answer, language) {

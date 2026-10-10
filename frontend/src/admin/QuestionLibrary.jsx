@@ -631,6 +631,12 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
 
   const previewQuestion = (question) => {
     setActionMenuId('');
+    if (question?.questionType === 'coding' && question.platformShared && question.sourceProblemId) {
+      navigate(`${rolePrefix}/library/coding/shared/${question._id}/preview`, {
+        state: { returnTo: `${location.pathname}${location.search}` },
+      });
+      return;
+    }
     if (question?.questionType === 'coding' && !question.platformShared) {
       if (!question.sourceProblemId) {
         toast.error('This coding question has no linked problem preview.');
@@ -694,6 +700,20 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
     navigate(`${rolePrefix}/library/question/${question._id}/edit?type=${question.questionType}`, {
       state: { returnTo: `${location.pathname}${location.search}` },
     });
+  };
+
+  const makeLocalCopy = async (question) => {
+    setActionMenuId('');
+    try {
+      const copy = await api.copySharedQuestion(question._id);
+      toast.success('Local draft created. You can now edit it.');
+      const route = copy.problemId
+        ? `${rolePrefix}/library/coding/${copy.problemId}/edit`
+        : `${rolePrefix}/library/question/${copy.questionId}/edit?type=${copy.questionType}`;
+      navigate(route, { state: { returnTo: `${location.pathname}${location.search}` } });
+    } catch (error) {
+      toast.error(error.message || 'Could not make a local copy.');
+    }
   };
 
   const saveEditedQuestion = async (event) => {
@@ -1274,7 +1294,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                       {visibleColumns.tags && <div className="flex min-w-0 gap-1 overflow-hidden">{(question.tags || []).slice(0, 2).map((tag) => <span key={`${question._id}-${tag}`} className="max-w-[90px] truncate rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] dark:border-gray-700 dark:bg-gray-800">{tag}</span>)}{(question.tags || []).length > 2 && <button type="button" onClick={(event) => { event.stopPropagation(); openTagsModal(question.questionText || 'Question', question.tags || []); }} className="shrink-0 rounded-full border border-sky-200 bg-white px-2 py-0.5 text-[10px] font-bold text-sky-700 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300">+{question.tags.length - 2}</button>}</div>}
                       {visibleColumns.usedIn && <div className="flex min-w-0 gap-1 overflow-hidden">{(question.usedInAssessments || []).length ? <>{question.usedInAssessments.slice(0, 1).map((assessment) => <span key={`${question._id}-${assessment}`} className="max-w-[100px] truncate rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] text-violet-700 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-300">{assessment}</span>)}{question.usedInAssessments.length > 1 && <button type="button" onClick={(event) => { event.stopPropagation(); setUsageModal({ open: true, questionText: question.questionText || 'Question', assessments: question.usedInAssessments || [] }); }} className="shrink-0 text-[10px] font-bold text-sky-600">+{question.usedInAssessments.length - 1}</button>}</> : <span className="truncate text-xs text-slate-400">Not used yet</span>}</div>}
                       {visibleColumns.updated && <div className="text-xs text-slate-500">{question.updatedAt ? new Date(question.updatedAt).toLocaleDateString() : '-'}</div>}
-                      {!rowSelectionActive ? <div className="flex justify-end gap-1"><button type="button" onClick={(event) => { event.stopPropagation(); previewQuestion(question); }} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-sky-200 bg-white text-sky-700 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300" aria-label={`Preview ${getLibraryQuestionTitle(question)}`}><Eye className="h-4 w-4" /></button>{!question.platformShared && <button id={`question-actions-trigger-${question._id}`} data-platform-menu-trigger type="button" aria-haspopup="menu" aria-controls="question-library-action-menu" aria-expanded={actionMenuId === question._id} onClick={(event) => toggleQuestionActions(question, event)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" aria-label={`Actions for ${getLibraryQuestionTitle(question)}`}><MoreVertical className="h-4 w-4" /></button>}</div> : null}
+                      {!rowSelectionActive ? <div className="flex justify-end gap-1"><button type="button" onClick={(event) => { event.stopPropagation(); previewQuestion(question); }} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-sky-200 bg-white text-sky-700 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300" aria-label={`Preview ${getLibraryQuestionTitle(question)}`}><Eye className="h-4 w-4" /></button>{(!question.platformShared || rolePrefix === '/admin') && <button id={`question-actions-trigger-${question._id}`} data-platform-menu-trigger type="button" aria-haspopup="menu" aria-controls="question-library-action-menu" aria-expanded={actionMenuId === question._id} onClick={(event) => toggleQuestionActions(question, event)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" aria-label={`Actions for ${getLibraryQuestionTitle(question)}`}><MoreVertical className="h-4 w-4" /></button>}</div> : null}
                     </div>)}
                     {folderQuestionLoading !== folderId && items.length > 0 && <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400"><span>Showing {((Number(questionPagination.page) - 1) * pageSize) + 1}-{Math.min(Number(questionPagination.page) * pageSize, Number(questionPagination.total))} of {questionPagination.total} {allInFolder ? 'folder' : 'matching'} questions</span><div className="flex items-center gap-1.5"><button type="button" disabled={Number(questionPagination.page) <= 1} onClick={() => loadFolderQuestionPage(folder, Number(questionPagination.page) - 1, { allInFolder })} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900"><ChevronLeft className="h-3.5 w-3.5" /></button><span className="min-w-20 text-center font-semibold">Page {questionPagination.page} of {questionPagination.pages}</span><button type="button" disabled={Number(questionPagination.page) >= Number(questionPagination.pages)} onClick={() => loadFolderQuestionPage(folder, Number(questionPagination.page) + 1, { allInFolder })} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900"><ChevronRight className="h-3.5 w-3.5" /></button></div></div>}
                   </div>}
@@ -1395,7 +1415,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                     >
                       <Eye className="h-4 w-4" />
                     </button>
-                    {!question.platformShared && <button
+                    {(!question.platformShared || rolePrefix === '/admin') && <button
                       id={`question-actions-trigger-${question._id}`}
                       data-platform-menu-trigger
                       aria-expanded={actionMenuId === question._id}
@@ -1460,11 +1480,13 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
           className="fixed z-[1000] w-48 overflow-hidden rounded-2xl border border-slate-200 bg-white py-1 text-xs font-semibold text-slate-600 shadow-[0_18px_46px_rgba(15,23,42,0.18)] dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
           style={{ top: actionMenuPopup.top, left: actionMenuPopup.left }}
         >
+          {actionMenuPopup.question.platformShared ? <button type="button" role="menuitem" onClick={() => makeLocalCopy(actionMenuPopup.question)} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-gray-800"><Edit3 className="h-3.5 w-3.5" /> Make local copy</button> : <>
           <button type="button" role="menuitem" onClick={() => startEditQuestion(actionMenuPopup.question)} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-gray-800"><Edit3 className="h-3.5 w-3.5" /> Edit</button>
           {actionMenuPopup.question.status === 'draft' && <button type="button" role="menuitem" onClick={() => publishDraft(actionMenuPopup.question)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-900/20"><CheckSquare className="h-3.5 w-3.5" /> Publish</button>}
           <button type="button" role="menuitem" onClick={() => toggleVisibility(actionMenuPopup.question)} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-gray-800">{actionMenuPopup.question.visibility === 'private' ? <Globe2 className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}{actionMenuPopup.question.visibility === 'private' ? 'Make Public' : 'Make Private'}</button>
           <button type="button" role="menuitem" onClick={() => toggleHiddenStatus(actionMenuPopup.question)} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-gray-800"><EyeOff className="h-3.5 w-3.5" />{actionMenuPopup.question.status === 'hidden' ? 'Unhide' : 'Hide'}</button>
           <button type="button" role="menuitem" onClick={() => deleteQuestion(actionMenuPopup.question)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"><Trash2 className="h-3.5 w-3.5" /> Delete</button>
+          </>}
         </div>,
         document.body,
       )}

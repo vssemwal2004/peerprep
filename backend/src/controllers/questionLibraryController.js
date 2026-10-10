@@ -1,7 +1,13 @@
 import mongoose from 'mongoose';
 import { randomUUID } from 'node:crypto';
 import QuestionLibrary from '../models/QuestionLibrary.js';
+import Problem from '../models/Problem.js';
+import TestCase from '../models/TestCase.js';
 import { sharedQuestions } from '../platform/sharedContent.js';
+import { controlRequest } from '../platform/client.js';
+import { isUniversity } from '../platform/deployment.js';
+import { runJudge0, KEY_TO_LANGUAGE_ID, normalizeComparableOutput } from '../services/executionService.js';
+import { prepareFunctionSourceForExecution } from '../services/functionProblemAdapterService.js';
 import StudentUploadBatch from '../models/StudentUploadBatch.js';
 import { supabase } from '../utils/supabase.js';
 import {
@@ -9,7 +15,104 @@ import {
   ensureQuestionLibrarySynchronized,
   formatLibraryQuestionSummary,
   buildSearchPrefixes,
+  syncProblemToLibrary,
 } from '../services/questionLibraryService.js';
+
+export async function copySharedQuestion(req, res) {
+  try {
+    if (!isUniversity()) return res.status(404).json({ error: 'Shared question not found' });
+    const shared = (await sharedQuestions() || []).find((item) => String(item._id) === String(req.params.id));
+    if (!shared) return res.status(404).json({ error: 'Shared question not found' });
+    const copyKey = new mongoose.Types.ObjectId();
+    if (shared.questionType !== 'coding') {
+      const data = structuredClone(shared.questionData || {});
+      data.questionId = `local-${copyKey}`;
+      const question = await QuestionLibrary.create({
+        sourceKey: `manual:${copyKey}`, sourceType: 'manual', questionType: shared.questionType,
+        questionText: shared.questionText, questionData: data, tags: shared.tags || [],
+        keywords: shared.keywords || [], difficulty: shared.difficulty || '', status: 'draft',
+        visibility: 'private', createdBy: req.user._id,
+        searchPrefixes: buildSearchPrefixes([shared.questionText, ...(shared.tags || [])]),
+      });
+      return res.status(201).json({ questionId: question._id, questionType: question.questionType });
+    }
+    let source;
+    let hidden = [];
+    try {
+      ({ problem: source, testCases: hidden } = await controlRequest(`questions/${encodeURIComponent(String(shared._id))}/judge-data`));
+    } catch (error) {
+      if (error.status !== 404) throw error;
+      source = shared.questionData?.problemDataSnapshot || shared.questionData?.coding?.problemData || shared.questionData?.coding || {};
+    }
+    if (!source || !Array.isArray(hidden)) return res.status(503).json({ error: 'Shared coding problem is unavailable' });
+    const sample = shared.questionData?.problemDataSnapshot?.sampleTestCases || source.sampleTestCases || [];
+    const { _id, id, createdAt, updatedAt, __v, ...fields } = source;
+    const problem = await Problem.create({ ...fields,
+      title: `${String(source.title || shared.questionText).slice(0, 155)} (Copy ${String(copyKey).slice(-6)})`,
+      description: source.description || source.statement || shared.questionText || '',
+      status: 'draft', visibility: 'private', createdBy: req.user._id, updatedBy: req.user._id,
+      topicIds: [], topicAncestorIds: [], codingTagIds: [],
+      previewValidated: false, previewTested: false, validatedLanguages: [], publishedAt: undefined,
+      stats: {}, hiddenTestSource: { provider: 'db', caseCount: hidden.length },
+    });
+    try {
+      const cases = [
+        ...sample.map((item, index) => ({ kind: 'sample', position: index + 1, input: item.input || '', output: item.output || '', explanation: item.explanation || '', marks: item.marks || 1 })),
+        ...hidden.map((item, index) => ({ kind: 'hidden', position: index + 1, input: item.input || '', output: item.output || '', marks: item.marks || 1 })),
+      ];
+      if (cases.length) await TestCase.insertMany(cases.map((item) => ({ ...item, problem: problem._id, createdBy: req.user._id })));
+      await syncProblemToLibrary(await Problem.findById(problem._id).select('+executionHarnesses').lean());
+      const question = await QuestionLibrary.findOne({ sourceKey: `problem:${problem._id}` }).select('_id');
+      return res.status(201).json({ questionId: question?._id, problemId: problem._id, questionType: 'coding' });
+    } catch (error) {
+      await Promise.all([TestCase.deleteMany({ problem: problem._id }), QuestionLibrary.deleteMany({ sourceKey: `problem:${problem._id}` }), Problem.findByIdAndDelete(problem._id)]);
+      throw error;
+    }
+  } catch (error) {
+    console.error('Error copying shared question:', error);
+    res.status(error.status || 500).json({ error: error.status ? error.message : 'Failed to copy shared question' });
+  }
+}
+
+export async function executeSharedCodingPreview(req, res) {
+  try {
+    if (!isUniversity() || !['run', 'submit'].includes(req.params.action)) return res.status(404).json({ error: 'Shared coding question not found' });
+    const question = (await sharedQuestions() || []).find((item) => String(item._id) === String(req.params.id) && item.questionType === 'coding');
+    if (!question) return res.status(404).json({ error: 'Shared coding question not found' });
+    const { problem, testCases } = await controlRequest(`questions/${encodeURIComponent(String(question._id))}/judge-data`);
+    const language = String(req.body?.language || '').toLowerCase();
+    const sourceCode = String(req.body?.sourceCode || '');
+    if (!sourceCode.trim() || sourceCode.length > 50000 || !KEY_TO_LANGUAGE_ID[language]
+      || (problem.supportedLanguages?.length && !problem.supportedLanguages.includes(language))) {
+      return res.status(400).json({ error: 'Valid source code and language are required' });
+    }
+    const runCase = async (input, expectedOutput) => {
+      const output = await runJudge0(prepareFunctionSourceForExecution(problem, language, sourceCode, input),
+        KEY_TO_LANGUAGE_ID[language], input, { cpuTimeLimitSeconds: problem.timeLimitSeconds || 2,
+          memoryLimitKb: Number(problem.memoryLimitMb || 256) * 1024,
+          sqlSetupCode: [problem.sqlConfig?.schemaSql, problem.sqlConfig?.seedDataSql].filter(Boolean).join('\n') });
+      const status = output.compile_output ? 'CE' : output.stderr ? 'RE'
+        : output.status?.id !== 3 ? 'RE'
+          : expectedOutput !== undefined && normalizeComparableOutput(output.stdout) !== normalizeComparableOutput(expectedOutput) ? 'WA' : 'AC';
+      return { status, output: output.stdout || '', stderr: output.stderr || '', compileOutput: output.compile_output || '' };
+    };
+    if (req.params.action === 'run') {
+      const input = String(req.body?.customInput || '').slice(0, 65536);
+      const sample = (question.questionData?.problemDataSnapshot?.sampleTestCases || []).find((item) => item.input === input);
+      return res.json(await runCase(input, sample?.output));
+    }
+    let passed = 0;
+    for (const item of testCases) {
+      const result = await runCase(item.input || '', item.output || '');
+      if (result.status !== 'AC') return res.json({ ...result, totalTestCases: testCases.length, passedTestCases: passed });
+      passed += 1;
+    }
+    return res.json({ status: 'AC', totalTestCases: testCases.length, passedTestCases: passed });
+  } catch (error) {
+    console.error('Error previewing shared coding question:', error);
+    res.status(error.status || 500).json({ error: error.status ? error.message : 'Shared coding preview failed' });
+  }
+}
 
 function normalizeType(type = '') {
   return String(type || '').trim().toLowerCase();

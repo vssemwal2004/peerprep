@@ -323,26 +323,29 @@ function moduleForNavPath(path = '') {
   if (/\/ai-interviews(?:\/|$)/.test(path)) return 'interviews';
   if (/\/(?:events|event|interviews|schedule)(?:\/|$)/.test(path)) return 'events';
   if (/\/resume(?:\/|$)/.test(path)) return 'resumes';
-  if (/\/(?:analytics|analysis)(?:\/|$)/.test(path)) return 'analytics';
+  if (/\/(?:analytics|analysis)(?:\/|$)/.test(path)) return 'analysis';
   return null;
 }
 
-function applyPlatformPermissions(items, permissions) {
+function applyPlatformPermissions(items, permissions, role) {
   if (!permissions) return items;
   return items.map((item) => {
     if (item.items) {
-      const children = applyPlatformPermissions(item.items, permissions);
+      const children = applyPlatformPermissions(item.items, permissions, role);
       return children.length ? { ...item, items: children } : null;
     }
     if (item.children) {
-      const children = applyPlatformPermissions(item.children, permissions);
+      const children = applyPlatformPermissions(item.children, permissions, role);
       return children.length ? { ...item, children, to: children[0].to } : null;
     }
     const moduleName = moduleForNavPath(item.to);
     // Policies from before the `coding` permission existed keep coding tied to `questions`.
-    const allowed = moduleName === 'coding' && permissions.coding === undefined
-      ? permissions.questions !== false
-      : permissions[moduleName] !== false;
+    const allowed = moduleName === 'analysis'
+      ? (role === 'student' ? ['questions', 'assessments', 'interviews', 'learning'] : ['questions', 'assessments', 'learning'])
+        .some((name) => permissions[name] === true)
+      : moduleName === 'coding' && permissions.coding === undefined
+        ? permissions.questions !== false
+        : permissions[moduleName] !== false;
     return moduleName && !allowed ? null : item;
   }).filter(Boolean);
 }
@@ -378,7 +381,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
   const accent = isCoordinator ? 'emerald' : 'sky';
   const navItems = useMemo(() => {
     const items = buildNavItems(role, user?.accessScope);
-    if (role !== 'coordinator') return applyPlatformPermissions(items, platformPermissions);
+    if (role !== 'coordinator') return applyPlatformPermissions(items, platformPermissions, role);
     return applyPlatformPermissions(items
       .map((item) => {
         if (item.type === 'group') {
@@ -393,7 +396,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
         }
         return hasPermission(user, item.permissionKey) ? item : null;
       })
-      .filter(Boolean), platformPermissions);
+      .filter(Boolean), platformPermissions, role);
   }, [role, user, platformPermissions]);
   const [openGroup, setOpenGroup] = useState(null);
   const [openNestedGroup, setOpenNestedGroup] = useState(null);

@@ -149,6 +149,7 @@ export default function LibraryWorkspace({ view = 'questions' }) {
   const canViewCodingAnalytics = rolePrefix === '/coordinator'
     && hasPermission(user, 'coordinator.compiler.analytics');
   const isPreviewPage = view === 'preview-coding';
+  const isSharedCodingPreview = isPreviewPage && location.pathname.includes('/coding/shared/');
   const isDrawerView = ['create-question', 'edit-question', 'create-coding', 'edit-coding'].includes(view);
 
   const displayedQuestionCounts = useMemo(() => {
@@ -308,6 +309,7 @@ export default function LibraryWorkspace({ view = 'questions' }) {
       <div className="h-[100dvh] min-h-[720px] bg-slate-100 pt-[var(--app-navbar-height,5rem)] font-['Manrope'] dark:bg-gray-950">
         <Suspense fallback={<LoadingPanel />}>
           <AdminTestCompiler
+            sharedQuestionId={isSharedCodingPreview ? codingProblemId : ''}
             backTo={mode === 'assessment' ? editorRoute : (requestedReturnTo || `${libraryRoot}?type=coding`)}
             editTo={mode === 'assessment' ? editorRoute : `${libraryRoot}/coding/${codingProblemId}/edit`}
             backLabel={mode === 'assessment' ? 'Back to editor' : 'Back to library'}

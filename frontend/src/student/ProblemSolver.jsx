@@ -1,5 +1,5 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   ChevronLeft,
   ChevronRight,
@@ -983,6 +983,8 @@ function AcceptancePanel({ submissions, selectedId, onBack }) {
 
 export default function ProblemSolver() {
   const { id } = useParams();
+  const location = useLocation();
+  const isSharedProblem = location.pathname.includes('/problems/shared/');
   const navigate = useNavigate();
   const toast = useToast();
   const splitContainerRef = useRef(null);
@@ -1042,7 +1044,9 @@ export default function ProblemSolver() {
       if (!silent) {
         setSubmissionsLoading(true);
       }
-      const response = await api.listStudentProblemSubmissions(id, { page: 1, limit: 50 });
+      const response = isSharedProblem
+        ? await api.listSharedStudentSubmissions(id)
+        : await api.listStudentProblemSubmissions(id, { page: 1, limit: 50 });
       const next = response.submissions || [];
       setSubmissions(next);
 
@@ -1063,7 +1067,7 @@ export default function ProblemSolver() {
         setSubmissionsLoading(false);
       }
     }
-  }, [id, toast]);
+  }, [id, isSharedProblem, toast]);
 
   const syncSubmissionResult = useCallback((submission) => {
     if (!submission || !isMountedRef.current) {
@@ -1168,7 +1172,7 @@ export default function ProblemSolver() {
     const loadProblem = async () => {
       try {
         setLoading(true);
-        const response = await api.getStudentProblem(id);
+        const response = isSharedProblem ? await api.getSharedStudentProblem(id) : await api.getStudentProblem(id);
         if (!isMounted) {
           return;
         }
@@ -1210,7 +1214,7 @@ export default function ProblemSolver() {
     return () => {
       isMounted = false;
     };
-  }, [id, toast]);
+  }, [id, isSharedProblem, toast]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1379,12 +1383,14 @@ export default function ProblemSolver() {
     setIsRunning(true);
     setActiveConsoleTab('result');
     try {
-      const queuedJob = await api.runStudentProblem(problem._id, {
+      const queuedJob = await (isSharedProblem ? api.runSharedStudentProblem(problem._id, {
+        language, sourceCode: activeCode, customInput: runInput,
+      }) : api.runStudentProblem(problem._id, {
         language,
         sourceCode: activeCode,
         customInput: runInput,
         testCases: runCases,
-      });
+      }));
 
       let completedRun = queuedJob;
       if (queuedJob?.jobId) {
@@ -1440,6 +1446,21 @@ export default function ProblemSolver() {
 
     stopSubmissionPolling();
     setIsSubmitting(true);
+
+    if (isSharedProblem) {
+      void api.submitSharedStudentProblem(problem._id, { language, sourceCode: activeCode })
+        .then(async (response) => {
+          if (!isMountedRef.current) return;
+          setResult({ mode: 'submit', status: response.result === 'correct' ? 'Accepted'
+            : response.result === 'incorrect' ? 'Wrong Answer' : 'Submitted', message: response.feedback || '' });
+          setActiveConsoleTab('result');
+          await loadSubmissions({ silent: true, selectLatest: true });
+          toast.success(response.feedback || 'Submission saved.');
+        }).catch((error) => {
+          if (isMountedRef.current) { setResult(createTerminalExecutionResult(error, { mode: 'submit', language, sourceCode: activeCode })); setActiveConsoleTab('result'); }
+        }).finally(() => { if (isMountedRef.current) setIsSubmitting(false); });
+      return;
+    }
 
     void api.submitStudentProblem(problem._id, {
       language,

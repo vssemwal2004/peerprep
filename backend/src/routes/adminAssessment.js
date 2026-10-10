@@ -3,7 +3,7 @@ import multer from 'multer';
 import { requireAuth, requireAdmin, requireCoordinatorPermission } from '../middleware/auth.js';
 import { isUniversity } from '../platform/deployment.js';
 import { universityPolicy } from '../platform/client.js';
-import { bulkOperationLimiter, uploadLimiter } from '../middleware/rateLimiter.js';
+import { bulkOperationLimiter, uploadLimiter, compilerExecutionLimiter } from '../middleware/rateLimiter.js';
 import { cacheJsonResponse, invalidateResponseCache } from '../middleware/responseCache.js';
 import {
   createAssessment,
@@ -44,6 +44,8 @@ import {
   updateLibraryQuestion,
   deleteLibraryQuestion,
   uploadLibraryAsset,
+  copySharedQuestion,
+  executeSharedCodingPreview,
 } from '../controllers/questionLibraryController.js';
 import {
   archiveCodingTopic,
@@ -91,6 +93,8 @@ router.post('/library/questions', requireAuth, requireCoordinatorPermission('coo
 router.post('/library/questions/bulk', requireAuth, requireCoordinatorPermission('coordinator.library.create'), createLibraryQuestionsBulk);
 router.post('/library/assets', requireAuth, requireCoordinatorPermission('coordinator.library.create'), uploadLimiter, questionAssetUpload.single('image'), uploadLibraryAsset);
 router.post('/library/questions/resolve', requireAuth, requireCoordinatorPermission('coordinator.library.create'), resolveLibraryQuestions);
+router.post('/library/questions/:id/copy', requireAuth, requireAdmin, copySharedQuestion);
+router.post('/library/questions/:id/shared-coding/:action', requireAuth, requireCoordinatorPermission('coordinator.library.view'), compilerExecutionLimiter, executeSharedCodingPreview);
 router.get('/library/questions/:id', requireAuth, requireCoordinatorPermission('coordinator.library.view'), getLibraryQuestion);
 router.patch('/library/questions/:id', requireAuth, requireCoordinatorPermission('coordinator.library.create'), updateLibraryQuestion);
 router.delete('/library/questions/:id', requireAuth, requireCoordinatorPermission('coordinator.library.create'), deleteLibraryQuestion);

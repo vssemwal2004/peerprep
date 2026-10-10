@@ -24,8 +24,6 @@ const ANALYTICS_SECTIONS = [
   { id: "placement", label: "Placement", Icon: BriefcaseBusiness },
 ];
 
-const SECTION_COUNT = ANALYTICS_SECTION_IDS.length;
-
 const SECTION_COPY = {
   overview: "Your readiness, activity, and next priority.",
   coding: "Accuracy, topic coverage, and practice priorities.",
@@ -48,20 +46,21 @@ function formatUpdatedAt(value) {
   return `Updated ${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
 }
 
-export function WorkspaceHeader({ activeSection, onSectionChange, refreshing, onRefresh, generatedAt }) {
+export function WorkspaceHeader({ activeSection, onSectionChange, refreshing, onRefresh, generatedAt, availableSections = ANALYTICS_SECTION_IDS }) {
   const reduceMotion = useReducedMotion();
-  const activeIndex = Math.max(0, ANALYTICS_SECTIONS.findIndex((item) => item.id === activeSection));
+  const sections = ANALYTICS_SECTIONS.filter((item) => availableSections.includes(item.id));
+  const activeIndex = Math.max(0, sections.findIndex((item) => item.id === activeSection));
 
   const handleKeyDown = (event, index) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
     let nextIndex = index;
-    if (event.key === "ArrowLeft") nextIndex = (index - 1 + ANALYTICS_SECTIONS.length) % ANALYTICS_SECTIONS.length;
-    if (event.key === "ArrowRight") nextIndex = (index + 1) % ANALYTICS_SECTIONS.length;
+    if (event.key === "ArrowLeft") nextIndex = (index - 1 + sections.length) % sections.length;
+    if (event.key === "ArrowRight") nextIndex = (index + 1) % sections.length;
     if (event.key === "Home") nextIndex = 0;
-    if (event.key === "End") nextIndex = ANALYTICS_SECTIONS.length - 1;
-    onSectionChange(ANALYTICS_SECTIONS[nextIndex].id);
-    requestAnimationFrame(() => document.getElementById(`analytics-tab-${ANALYTICS_SECTIONS[nextIndex].id}`)?.focus());
+    if (event.key === "End") nextIndex = sections.length - 1;
+    onSectionChange(sections[nextIndex].id);
+    requestAnimationFrame(() => document.getElementById(`analytics-tab-${sections[nextIndex].id}`)?.focus());
   };
 
   return (
@@ -97,7 +96,7 @@ export function WorkspaceHeader({ activeSection, onSectionChange, refreshing, on
         </div>
 
         <nav className="no-scrollbar mt-5 flex gap-1 overflow-x-auto" role="tablist" aria-label="Analytics sections">
-          {ANALYTICS_SECTIONS.map(({ id, label, Icon }, index) => {
+          {sections.map(({ id, label, Icon }, index) => {
             const active = id === activeSection;
             return (
               <button
@@ -129,7 +128,7 @@ export function WorkspaceHeader({ activeSection, onSectionChange, refreshing, on
             );
           })}
         </nav>
-        <span className="sr-only">Section {activeIndex + 1} of {SECTION_COUNT}</span>
+        <span className="sr-only">Section {activeIndex + 1} of {sections.length}</span>
       </div>
     </header>
   );
