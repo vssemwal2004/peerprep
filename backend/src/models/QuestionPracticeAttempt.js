@@ -11,4 +11,5 @@ const schema = new mongoose.Schema({
 }, { timestamps: true });
 
 schema.index({ studentId: 1, source: 1, questionId: 1, createdAt: -1 });
+schema.index({ studentId: 1, source: 1, questionType: 1, createdAt: -1 });
 export default mongoose.model('QuestionPracticeAttempt', schema);

@@ -6,7 +6,7 @@ import { verifyDeploymentDatabaseIdentity } from '../platform/dbIdentity.js';
 
 let memServer;
 
-export async function connectDb() {
+export async function connectDb({ allowMemoryFallback = true } = {}) {
   const uri = process.env.MONGODB_URI || 'memory';
   mongoose.set('strictQuery', true);
   let connectUri = uri;
@@ -59,7 +59,7 @@ export async function connectDb() {
     console.error('If you are in development, you can set MONGODB_URI=memory to run with an in-memory MongoDB fallback.');
 
     // In non-production, optionally fall back to in-memory server to allow local dev to continue
-    const allowFallback = process.env.NODE_ENV !== 'production' && deploymentRole() === 'standalone';
+    const allowFallback = allowMemoryFallback && process.env.NODE_ENV !== 'production' && deploymentRole() === 'standalone';
     if (allowFallback) {
       console.warn('Falling back to in-memory MongoDB for development (NODE_ENV !== "production").');
       const { MongoMemoryServer } = await import('mongodb-memory-server');

@@ -6,13 +6,13 @@ import socketService from '../utils/socket';
 import { getLearnerLevel } from './profileBadge';
 import { computeAwards } from './profile/achievements';
 import useStickySidebar from './profile/useStickySidebar';
-import BadgesCard from './profile/BadgesCard';
+import { ChallengeGoalsCard, DailyChallengeCard, LevelBadgesCard } from './engagement/EngagementCards';
 import LevelUpCelebration from './profile/LevelUpCelebration';
 import BadgesGallery from './profile/BadgesGallery';
-import DailyCodingChallenge from './DailyCodingChallenge';
 import ProfileSidebar from './profile/ProfileSidebar';
 import StudentSummary from './profile/StudentSummary';
 import CodingProgress from './profile/CodingProgress';
+import UniversityRankCard from './profile/UniversityRankCard';
 import ActivitySection from './profile/ActivitySection';
 import PeerPrepProgress from './profile/PeerPrepProgress';
 import PracticeHistory from './profile/SubmissionsSection';
@@ -53,23 +53,29 @@ export default function StudentProfile() {
   const [activity, setActivity] = useState({});
   const [activityStats, setActivityStats] = useState(null);
   const [stats, setStats] = useState(null);
+  const [ranking, setRanking] = useState(null);
+  const [engagement, setEngagement] = useState({ data: null, loading: true, error: false });
+  const [loadingRanking, setLoadingRanking] = useState(true);
+  const [rankingFailed, setRankingFailed] = useState(false);
   const [analysis, setAnalysis] = useState(null);
   const [problemStatusSummary, setProblemStatusSummary] = useState({
     loaded: false,
-    totalProblems: 0,
+    totalProblems: null,
     solvedCount: 0,
     attemptCount: 0,
     solvedByDifficulty: { easy: 0, medium: 0, hard: 0 },
+    totalsByDifficulty: null,
   });
   const [loading, setLoading] = useState(true);
   const [loadingActivity, setLoadingActivity] = useState(false);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
-  // Learner level / awards celebration state. `metricsReady` gates detection until the first full
-  // load (stats + activity + analysis) finished, so a half-loaded page never fires a false level-up.
+  // Rank metrics use the same verified evidence as university points. Wait for both the initial
+  // profile load and the latest rank request before detecting a level-up or acknowledging awards.
   const [learnerProgress, setLearnerProgress] = useState(null);
-  const [metricsReady, setMetricsReady] = useState(false);
+  const [metricsLoaded, setMetricsLoaded] = useState(false);
+  const metricsReady = metricsLoaded && !loadingRanking;
   const [celebration, setCelebration] = useState(null);
   const [badgesGallery, setBadgesGallery] = useState(null); // null | 'awards' | 'levels'
   const celebratingRef = useRef(false);
@@ -81,6 +87,7 @@ export default function StudentProfile() {
   const countedSubmissionIdsRef = useRef(new Set());
   const solvedSubmissionIdsRef = useRef(new Set());
   const activityRef = useRef({});
+  const rankingRequestRef = useRef(0);
 
   const loadActivityData = useCallback(async (showSpinner = false) => {
     if (showSpinner && isMountedRef.current) {
@@ -116,6 +123,44 @@ export default function StudentProfile() {
     }
   }, []);
 
+  const loadRanking = useCallback(async () => {
+    const requestId = ++rankingRequestRef.current;
+    if (isMountedRef.current) {
+      setLoadingRanking(true);
+      setRankingFailed(false);
+      setEngagement((previous) => ({ ...previous, loading: previous.data === null }));
+    }
+    try {
+      const challengeData = await api.refreshStudentEngagement();
+      if (isMountedRef.current && requestId === rankingRequestRef.current) setEngagement({ data: challengeData, loading: false, error: false });
+    } catch {
+      if (isMountedRef.current && requestId === rankingRequestRef.current) setEngagement((previous) => ({ ...previous, loading: false, error: true }));
+    }
+    try {
+      const data = await api.getStudentRanking(true);
+      if (isMountedRef.current && requestId === rankingRequestRef.current) {
+        setRanking(data?.ranking || null);
+      }
+    } catch (rankingError) {
+      if (isMountedRef.current && requestId === rankingRequestRef.current) setRankingFailed(true);
+      console.warn('[StudentProfile] Failed to load university rank:', rankingError);
+    } finally {
+      if (isMountedRef.current && requestId === rankingRequestRef.current) setLoadingRanking(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const deadlines = [engagement.data?.daily?.endsAt, ...(engagement.data?.periods || []).map((period) => period.endsAt)]
+      .filter(Boolean).map((value) => new Date(value).getTime()).filter(Number.isFinite);
+    if (!deadlines.length) return undefined;
+    const deadline = Math.min(...deadlines);
+    let refreshed = false;
+    const timer = setInterval(() => {
+      if (!refreshed && Date.now() >= deadline) { refreshed = true; void loadRanking(); }
+    }, 60000);
+    return () => clearInterval(timer);
+  }, [engagement.data, loadRanking]);
+
   const loadStats = useCallback(async () => {
     try {
       const [statsResult, problemsResult] = await Promise.allSettled([
@@ -135,6 +180,7 @@ export default function StudentProfile() {
       let fallbackSolvedCount = 0;
       let fallbackAttemptCount = 0;
       let fallbackSolvedByDifficulty = { easy: 0, medium: 0, hard: 0 };
+      let fallbackTotalsByDifficulty = null;
       let fallbackRecentSolvedProblems = [];
       let fallbackRecentSubmissions = [];
 
@@ -168,6 +214,14 @@ export default function StudentProfile() {
         }
 
         const solvedProblems = allProblems.filter((problem) => problem?.studentStatus === 'Solved');
+        // Only use catalogue counts when every page was retrieved; partial pages are not totals.
+        if (allProblems.length === Number(firstProblemsPage?.pagination?.total || 0)) {
+          fallbackTotalsByDifficulty = allProblems.reduce((acc, problem) => {
+            const key = String(problem?.difficulty || '').toLowerCase();
+            if (key === 'easy' || key === 'medium' || key === 'hard') acc[key] += 1;
+            return acc;
+          }, { easy: 0, medium: 0, hard: 0 });
+        }
         fallbackSolvedCount = solvedProblems.length;
         fallbackSolvedByDifficulty = solvedProblems.reduce((acc, problem) => {
           const key = String(problem?.difficulty || '').toLowerCase();
@@ -265,7 +319,8 @@ export default function StudentProfile() {
       setStats(enrichedStats);
       setProblemStatusSummary({
         loaded: problemsLoaded,
-        totalProblems: Number(firstProblemsPage?.pagination?.total || 0),
+        totalProblems: nullableNumber(statsPayload?.totalProblems) ?? nullableNumber(firstProblemsPage?.pagination?.total),
+        totalsByDifficulty: statsPayload?.totalProblemsByDifficulty || fallbackTotalsByDifficulty,
         solvedCount: shouldUseProblemFallback
           ? fallbackSolvedCount
           : Number(statsPayload?.totalQuestionsSolved || statsPayload?.problemsSolved || 0),
@@ -295,8 +350,9 @@ export default function StudentProfile() {
       loadStats(),
       loadActivityData(withActivitySpinner),
       loadAnalysis(forceAnalysis),
+      loadRanking(),
     ]);
-  }, [loadActivityData, loadAnalysis, loadStats]);
+  }, [loadActivityData, loadAnalysis, loadRanking, loadStats]);
 
   const safeRefreshMetrics = useCallback(({ withActivitySpinner = false, force = false } = {}) => {
     const now = Date.now();
@@ -412,7 +468,7 @@ export default function StudentProfile() {
         });
         setLearnerProgress(me?.learnerProgress || null);
         await refreshMetrics({ withActivitySpinner: true, forceAnalysis: true });
-        if (isMountedRef.current) setMetricsReady(true);
+        if (isMountedRef.current) setMetricsLoaded(true);
       } catch (loadError) {
         if (!isMountedRef.current) return;
         setError(loadError.message || 'Failed to load profile.');
@@ -634,6 +690,7 @@ export default function StudentProfile() {
   const analysisLearning = analysis?.learning || {};
 
   const performanceTitle = useMemo(() => {
+    if (ranking?.levelMetrics) return getLearnerLevel(ranking.levelMetrics);
     const solved = problemStatusSummary.loaded
       ? Number(problemStatusSummary.solvedCount || 0)
       : Number(stats?.totalQuestionsSolved || 0);
@@ -653,6 +710,7 @@ export default function StudentProfile() {
     analysisInterviews?.avgScore,
     problemStatusSummary.loaded,
     problemStatusSummary.solvedCount,
+    ranking?.levelMetrics,
     stats?.totalQuestionsSolved,
   ]);
 
@@ -703,9 +761,7 @@ export default function StudentProfile() {
         Number(analysis?.problems?.solved || 0),
       );
 
-    const totalProblems = problemStatusSummary.loaded
-      ? Math.max(Number(problemStatusSummary.totalProblems || 0), totalSolved, 1)
-      : Math.max(Number(totalSolved || 0), 1);
+    const totalProblems = nullableNumber(problemStatusSummary.totalProblems) ?? nullableNumber(stats?.totalProblems);
     const totalAttempts = problemStatusSummary.loaded
       ? Math.max(Number(problemStatusSummary.attemptCount || 0), totalSolved, 0)
       : Math.max(
@@ -721,6 +777,7 @@ export default function StudentProfile() {
       easySolved,
       mediumSolved,
       hardSolved,
+      totalsByDifficulty: problemStatusSummary.totalsByDifficulty || stats?.totalProblemsByDifficulty,
     };
   }, [
     analysis?.problems?.attempts,
@@ -732,6 +789,9 @@ export default function StudentProfile() {
     problemStatusSummary.solvedByDifficulty?.medium,
     problemStatusSummary.solvedByDifficulty?.hard,
     problemStatusSummary.solvedCount,
+    problemStatusSummary.totalsByDifficulty,
+    stats?.totalProblems,
+    stats?.totalProblemsByDifficulty,
     stats?.solvedByDifficulty?.easy,
     stats?.solvedByDifficulty?.hard,
     stats?.solvedByDifficulty?.medium,
@@ -814,7 +874,7 @@ export default function StudentProfile() {
     hardSolved: codingTotals.hardSolved,
   };
 
-  const awards = computeAwards({
+  const awards = computeAwards(ranking?.badgeMetrics || {
     solved: codingTotals.totalSolved,
     hardSolved: codingTotals.hardSolved,
     bestStreak: Math.max(streakSummary.best, streakSummary.current),
@@ -830,12 +890,13 @@ export default function StudentProfile() {
   // already celebrated, shows the popup once, and records it immediately so a refresh or another
   // device does not repeat it.
   const currentLevel = performanceTitle.level;
+  const hasAuthoritativeRankMetrics = Boolean(ranking?.badgeMetrics && ranking?.levelMetrics);
   const earnedAwardKey = awards.awards.filter((award) => award.earned).map((award) => award.id).join(',');
   const celebrationInputRef = useRef({ awards, level: performanceTitle });
   celebrationInputRef.current = { awards, level: performanceTitle };
 
   useEffect(() => {
-    if (!metricsReady || user?.role !== 'student' || celebration || celebratingRef.current) return;
+    if (!metricsReady || rankingFailed || !hasAuthoritativeRankMetrics || user?.role !== 'student' || celebration || celebratingRef.current) return;
     const { awards: latestAwards, level: latestLevel } = celebrationInputRef.current;
     const celebratedLevel = Math.max(1, Number(learnerProgress?.celebratedLevel || 0));
     const seenAwards = new Set((learnerProgress?.awards || []).map((entry) => entry.id));
@@ -869,7 +930,7 @@ export default function StudentProfile() {
       .catch((ackError) => {
         console.warn('[StudentProfile] Could not save learner progress:', ackError);
       });
-  }, [celebration, currentLevel, earnedAwardKey, learnerProgress, metricsReady, user?.role]);
+  }, [celebration, currentLevel, earnedAwardKey, hasAuthoritativeRankMetrics, learnerProgress, metricsReady, rankingFailed, user?.role]);
 
   const closeBadgesGallery = useCallback(() => setBadgesGallery(null), []);
 
@@ -951,6 +1012,7 @@ export default function StudentProfile() {
               onChangePhoto={openPhotoModal}
               onEditProfile={openEditModal}
             />
+            <UniversityRankCard ranking={ranking} loading={loadingRanking} className="mt-4" />
           </aside>
 
           {/* Right column: each module appears exactly once.
@@ -971,6 +1033,7 @@ export default function StudentProfile() {
               {canQuestions && <CodingProgress
                 className="h-full"
                 {...codingTotals}
+                loading={!metricsReady && loading}
                 attemptedProblems={attemptedProblems}
                 streak={streakSummary}
                 activity={activity}
@@ -978,11 +1041,13 @@ export default function StudentProfile() {
             </div>
 
             <div className="grid gap-4 xl:grid-cols-2">
-              {canQuestions && <BadgesCard
+              {(canQuestions || canLearning) && <LevelBadgesCard
                 className="h-full"
-                level={performanceTitle}
-                awards={awards}
-                learnerProgress={learnerProgress}
+                ranking={ranking}
+                loading={loadingRanking}
+                error={rankingFailed}
+                section={engagement}
+                onRetry={loadRanking}
                 onOpenGallery={setBadgesGallery}
               />}
               {(canAssessments || canInterviews || canLearning) && <PeerPrepProgress
@@ -995,9 +1060,12 @@ export default function StudentProfile() {
               />}
             </div>
 
-            <ActivitySection activity={activity} activityStats={activityStats} loading={loadingActivity} />
+            {(canQuestions || canLearning) && <div className="grid gap-4 xl:grid-cols-2">
+              <ChallengeGoalsCard section={engagement} onRetry={loadRanking} canQuestions={canQuestions} canLearning={canLearning} />
+              {canQuestions && <DailyChallengeCard section={engagement} onRetry={loadRanking} autoRefresh={false} />}
+            </div>}
 
-            {canQuestions && <DailyCodingChallenge className="!rounded-xl shadow-sm" />}
+            <ActivitySection activity={activity} activityStats={activityStats} loading={loadingActivity} />
 
             {canQuestions && <PracticeHistory
               solved={stats?.recentSolvedProblems}

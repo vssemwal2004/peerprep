@@ -45,6 +45,10 @@ const progressSchema = new mongoose.Schema({
   lastAccessedAt: {
     type: Date,
     default: Date.now
+  },
+  lastViewedContentType: {
+    type: String,
+    enum: ['video', 'notes', 'questions', 'topic'],
   }
 }, {
   timestamps: true
@@ -54,6 +58,8 @@ const progressSchema = new mongoose.Schema({
 progressSchema.index({ studentId: 1, topicId: 1 }, { unique: true });
 progressSchema.index({ studentId: 1, subjectId: 1 });
 progressSchema.index({ studentId: 1, semesterId: 1 });
+progressSchema.index({ studentId: 1, completed: 1, lastAccessedAt: -1 });
+progressSchema.index({ studentId: 1, completed: 1, completedAt: -1 });
 
 attachAdminAnalyticsInvalidation(progressSchema, {
   source: 'learning-progress',

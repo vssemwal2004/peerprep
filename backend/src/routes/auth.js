@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { login, forcePasswordChange, me, changePassword, changeAdminPassword, requestPasswordReset, resetPassword, updateMe, updateMyAvatar, acknowledgeLearnerProgress } from '../controllers/authController.js';
 import { getStudentActivity, getStudentStats, debugStudentActivity } from '../controllers/activityController.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireStudent, requireFullStudent } from '../middleware/auth.js';
+import { getStudentDashboard, getStudentRanking, recordStudentProblemView, recordStudentTopicView, refreshStudentChallenges, getStudentChallengeBadges } from '../controllers/studentDashboardController.js';
 import { authLimiter, passwordResetLimiter, uploadLimiter } from '../middleware/rateLimiter.js';
 import multer from 'multer';
 const upload = multer();
@@ -37,5 +38,11 @@ router.put('/me/learner-progress', requireAuth, acknowledgeLearnerProgress);
 router.get('/activity/debug', requireAuth, debugStudentActivity);
 router.get('/activity', requireAuth, getStudentActivity);
 router.get('/stats', requireAuth, getStudentStats);
+router.get('/dashboard', requireAuth, requireStudent, requireFullStudent, getStudentDashboard);
+router.get('/ranking', requireAuth, requireStudent, requireFullStudent, getStudentRanking);
+router.post('/engagement/refresh', requireAuth, requireStudent, requireFullStudent, refreshStudentChallenges);
+router.get('/engagement/badges', requireAuth, requireStudent, requireFullStudent, getStudentChallengeBadges);
+router.post('/dashboard/problem-view', requireAuth, requireStudent, requireFullStudent, recordStudentProblemView);
+router.post('/dashboard/topic-view', requireAuth, requireStudent, requireFullStudent, recordStudentTopicView);
 
 export default router;

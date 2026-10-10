@@ -44,7 +44,7 @@ export default function DailyCodingChallenge({ variant = 'card', className = '',
 
   const countdown = timeRemaining(data?.nextResetAt);
   if (!data?.enabled || !data?.challenge) return null;
-  const open = () => navigate(`/problems/${data.challenge._id}`);
+  const open = () => navigate(data.challenge.href || `/problems/${data.challenge._id}`);
 
   if (variant === 'header') {
     return <button type="button" onClick={open} title={`Daily challenge resets in ${countdown}`} className={`inline-flex h-8 items-center gap-2 rounded-lg px-2.5 text-xs font-medium transition hover:bg-zinc-200 dark:hover:bg-zinc-700 ${className}`}>

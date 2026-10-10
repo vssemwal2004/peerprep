@@ -1,0 +1,83 @@
+.student-engagement { --engagement-ink: #182533; --engagement-muted: #647684; --engagement-line: #e5ebf0; --engagement-surface: #fff; --engagement-soft: #f0f9ff; --engagement-blue: #0284c7; border: 1px solid var(--engagement-line); border-radius: 12px; padding: 17px; min-width: 0; background: var(--engagement-surface); color: var(--engagement-ink); }
+.student-engagement a:focus-visible, .student-engagement button:focus-visible, .student-engagement summary:focus-visible { outline: 2px solid #38bdf8; outline-offset: 3px; border-radius: 4px; }
+.engagement-card-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
+.engagement-card-heading h2 { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; letter-spacing: -.025em; }
+.engagement-card-heading > svg { color: var(--engagement-muted); }
+.engagement-text-link { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: var(--engagement-blue); }
+.engagement-text-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.engagement-emblem { width: 58px; height: 66px; flex-shrink: 0; color: #94a3b8; }
+.engagement-ribbon { fill: #f1f5f9; stroke: #cbd5e1; }.engagement-shield { fill: #f8fafc; stroke: #cbd5e1; }.engagement-shield-inner { stroke: #e2e8f0; }
+.engagement-emblem.is-earned { color: #0284c7; }.is-earned > .engagement-ribbon { fill: #e0f2fe; stroke: #7dd3fc; }.is-earned > .engagement-shield { fill: #f0f9ff; stroke: #38bdf8; }.is-earned > .engagement-shield-inner { stroke: #bae6fd; }
+.engagement-level-header { display: flex; align-items: center; gap: 15px; }.engagement-level-header > div { min-width: 0; }
+.engagement-kicker { display: block; color: var(--engagement-blue); font-size: 10px; font-weight: 600; letter-spacing: .035em; }
+.engagement-level-header h3 { margin-top: 3px; font-size: 17px; font-weight: 600; letter-spacing: -.035em; line-height: 1.4; }
+.engagement-level-header p { margin-top: 4px; color: var(--engagement-muted); font-size: 11px; }
+.engagement-level-track, .engagement-goal-track { height: 4px; border-radius: 3px; background: #edf2f6; overflow: hidden; }
+.engagement-level-track { margin-top: 18px; }.engagement-level-track > span, .engagement-goal-track > span { display: block; height: 100%; background: #0ea5e9; }
+.engagement-level-caption { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 7px; color: var(--engagement-muted); font-size: 10px; }.engagement-level-caption strong { color: var(--engagement-blue); font-weight: 600; font-variant-numeric: tabular-nums; }
+.engagement-badge-preview { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; border-top: 1px solid var(--engagement-line); margin-top: 17px; padding-top: 15px; }
+.engagement-small-badge { display: flex; align-items: center; flex-direction: column; gap: 3px; min-width: 0; }.engagement-small-badge .engagement-emblem { width: 41px; height: 47px; }.engagement-small-badge strong { font-size: 10px; font-weight: 600; text-align: center; line-height: 1.5; }.engagement-small-badge > span { display: inline-flex; gap: 3px; align-items: center; color: var(--engagement-muted); font-size: 10px; font-variant-numeric: tabular-nums; }.engagement-small-badge.is-earned > span { color: var(--engagement-blue); }
+.engagement-loading { height: 145px; border-radius: 7px; background: #f1f5f9; }
+.engagement-failure { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 18px 0; color: var(--engagement-muted); font-size: 12px; }.engagement-failure button { display: inline-flex; align-items: center; gap: 4px; color: var(--engagement-blue); }
+.engagement-daily-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; }.engagement-difficulty { font-weight: 600; }.difficulty-easy { color: #43866a; }.difficulty-medium { color: #9c7a34; }.difficulty-hard { color: #88465b; }
+.engagement-reward { display: inline-flex; align-items: center; gap: 4px; color: var(--engagement-blue); font-size: 11px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.engagement-daily-title { margin-top: 12px; font-size: 16px; font-weight: 600; letter-spacing: -.025em; line-height: 1.65; overflow-wrap: anywhere; }
+.engagement-daily-status { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 7px; margin-top: 10px; color: var(--engagement-muted); font-size: 10px; }.engagement-daily-status > span:first-child { display: inline-flex; align-items: center; gap: 4px; }
+.engagement-primary-link { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid #b9def1; border-radius: 7px; margin-top: 17px; padding: 9px 11px; background: var(--engagement-soft); color: var(--engagement-blue); font-size: 12px; font-weight: 600; }.engagement-primary-link:hover { border-color: #38bdf8; }.engagement-primary-link.is-completed { background: transparent; border-color: var(--engagement-line); }
+.engagement-daily-empty { display: flex; align-items: center; gap: 10px; }.engagement-daily-empty svg { width: 90px; height: auto; flex-shrink: 0; }.engagement-daily-empty p { color: var(--engagement-muted); font-size: 12px; line-height: 1.6; }
+.engagement-period-tabs { display: flex; gap: 15px; border-bottom: 1px solid var(--engagement-line); margin-top: -5px; margin-bottom: 12px; }.engagement-period-tabs button { padding: 3px 0 9px; font-size: 12px; font-weight: 500; color: var(--engagement-muted); border-bottom: 2px solid transparent; }.engagement-period-tabs [aria-selected="true"] { color: var(--engagement-blue); border-color: #0ea5e9; }
+.engagement-period-header { display: flex; align-items: center; gap: 10px; }.engagement-period-header .engagement-emblem { width: 44px; height: 50px; }.engagement-period-header > div { flex: 1; min-width: 0; }.engagement-period-header h3 { font-size: 13px; font-weight: 600; line-height: 1.5; }.engagement-period-header p { margin-top: 3px; color: var(--engagement-muted); font-size: 10px; }.engagement-period-header .engagement-reward { flex-direction: column; gap: 2px; font-size: 15px; }.engagement-reward small { color: var(--engagement-muted); font-size: 9px; font-weight: 400; }
+.engagement-goals { margin-top: 15px; display: grid; gap: 13px; }.engagement-goal-line { display: flex; align-items: center; gap: 6px; font-size: 11px; }.engagement-goal-line > svg { color: var(--engagement-muted); flex-shrink: 0; }.engagement-goal-line > span { flex: 1; }.engagement-goal-line strong { font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums; }.engagement-goal.is-completed .engagement-goal-line > svg { color: var(--engagement-blue); }.engagement-goal-track { margin-top: 6px; height: 3px; }
+.engagement-period-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--engagement-line); font-size: 10px; color: var(--engagement-muted); }.engagement-earned-caption { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: var(--engagement-blue); }
+.engagement-goals-empty { display: flex; align-items: center; gap: 13px; color: var(--engagement-muted); font-size: 12px; line-height: 1.6; }
+.engagement-rules, .engagement-collection { margin-top: 12px; color: var(--engagement-muted); font-size: 10px; line-height: 1.8; }.engagement-rules summary, .engagement-collection summary { width: fit-content; cursor: pointer; }.engagement-rules p, .engagement-collection p { margin-top: 8px; }.engagement-collection { padding-top: 12px; border-top: 1px solid var(--engagement-line); }.engagement-collection summary { color: var(--engagement-blue); font-weight: 600; }.engagement-collection summary span { display: inline-block; margin-left: 5px; font-variant-numeric: tabular-nums; }
+.engagement-collected-badges { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding-top: 14px; }.engagement-collected-badges > div { display: flex; align-items: center; flex-direction: column; min-width: 0; text-align: center; }.engagement-collected-badges .engagement-emblem { width: 44px; height: 51px; }.engagement-collected-badges strong { color: var(--engagement-ink); font-size: 10px; font-weight: 600; }.engagement-collected-badges span { font-size: 9px; }
+.engagement-award-update { display: flex; align-items: center; gap: 4px; margin-top: 12px; font-size: 10px; color: var(--engagement-blue); line-height: 1.6; }
+.engagement-muted { color: var(--engagement-muted); }.dashboard-engagement-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(290px, 100%), 1fr)); gap: 14px; margin-bottom: 28px; align-items: start; }
+.engagement-more-editions { margin-top: 12px; }.engagement-more-editions:disabled { opacity: .6; cursor: wait; }
+/* Each activity has a visual identity; blue is reserved for navigation. */
+.student-engagement { --engagement-tone: #7658ad; --engagement-tint: #f5f1fc; --engagement-tone-line: #e2d8f1; --engagement-emblem-fill: #ede5f9; --engagement-emblem-line: #b49bcf; box-shadow: 0 2px 7px #18253303; }
+.engagement-heading-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 29px; height: 29px; border-radius: 8px; background: var(--engagement-tint); color: var(--engagement-tone); }
+.engagement-level-card { border-color: #e7dfef; }
+.engagement-level-header { padding: 13px 12px; border-radius: 9px; background: var(--engagement-tint); }
+.engagement-kicker, .engagement-level-caption strong { color: var(--engagement-tone); }
+.engagement-level-track > span, .engagement-goal-track > span { background: var(--engagement-tone); }
+.engagement-emblem.is-earned { color: var(--engagement-tone); }
+.is-earned > .engagement-ribbon { fill: var(--engagement-emblem-fill); stroke: var(--engagement-emblem-line); }
+.is-earned > .engagement-shield { fill: var(--engagement-tint); stroke: var(--engagement-emblem-line); }
+.is-earned > .engagement-shield-inner { stroke: var(--engagement-tone-line); }
+.engagement-small-badge.is-earned > span { color: var(--engagement-tone); }
+.engagement-small-badge { padding: 7px 3px; border-radius: 8px; background: #faf9fc; }
+.engagement-small-badge:not(.is-earned) .engagement-emblem { opacity: .8; }
+.engagement-daily-card { --engagement-tone: #9c6520; --engagement-tint: #fff3d9; --engagement-tone-line: #ead5ac; background: #fffdf7; border-color: #eedeC3; }
+.engagement-daily-card.is-completed { --engagement-tone: #257966; --engagement-tint: #e7f6ef; background: #fbfefc; border-color: #cce4da; }
+.engagement-daily-empty { --illustration-line: #dac493; --illustration-accent: #b58b41; --illustration-ink: #946821; --illustration-soft: #fff5df; }
+.engagement-today-tag { color: var(--engagement-tone); font-size: 9px; letter-spacing: .09em; font-weight: 600; }
+.engagement-daily-meta .engagement-reward { color: var(--engagement-tone); padding: 4px 7px; border-radius: 5px; background: var(--engagement-tint); }
+.engagement-daily-question { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
+.engagement-code-tile { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 44px; height: 44px; border: 1px solid var(--engagement-tone-line); border-radius: 10px; color: var(--engagement-tone); background: var(--engagement-tint); transform: rotate(-4deg); }
+.engagement-daily-title { margin-top: 0; flex: 1; min-width: 0; }
+.engagement-daily-card .engagement-primary-link { background: #0284c7; border-color: #0284c7; color: white; padding: 10px 12px; }
+.engagement-daily-card .engagement-primary-link:hover { background: #0369a1; border-color: #0369a1; }
+.engagement-daily-card .engagement-primary-link.is-completed { background: transparent; color: var(--engagement-blue); border-color: var(--engagement-tone-line); }
+.engagement-goals-card { --engagement-tone: #397a70; --engagement-tint: #eef8f4; --engagement-tone-line: #d0e7dc; --engagement-emblem-fill: #def0e7; --engagement-emblem-line: #96c2b2; border-color: #dce9e4; }
+.engagement-period-monthly { --engagement-tone: #946821; --engagement-tint: #fff6e3; --engagement-tone-line: #eee0bd; --engagement-emblem-fill: #fae9c0; --engagement-emblem-line: #cfaf6c; border-color: #e9dfc9; }
+.engagement-period-tabs { gap: 4px; padding: 3px; border: 0; background: #f4f6f7; border-radius: 7px; }
+.engagement-period-tabs button { flex: 1; padding: 7px 9px; border: 0; border-radius: 5px; }
+.engagement-period-tabs [aria-selected="true"] { color: var(--engagement-tone); background: var(--engagement-surface); box-shadow: 0 1px 4px #18253312; }
+.engagement-period-header { padding: 9px 10px; background: var(--engagement-tint); border-radius: 8px; }
+.engagement-period-header .engagement-emblem { color: var(--engagement-tone); }
+.engagement-period-header .engagement-shield { fill: var(--engagement-surface); stroke: var(--engagement-emblem-line); }
+.engagement-period-header .engagement-reward, .engagement-earned-caption, .engagement-award-update { color: var(--engagement-tone); }
+.engagement-goal-line > svg { padding: 4px; width: 24px; height: 24px; border-radius: 6px; background: var(--engagement-tint); color: var(--engagement-tone); }
+.engagement-goal-track { margin-left: 30px; height: 4px; }
+.engagement-goal.is-completed .engagement-goal-line > svg { color: #257966; background: #e7f6ef; }
+.engagement-collected-badges > div { padding: 8px 3px; border-radius: 7px; background: var(--engagement-tint); }
+.dark .student-engagement { --engagement-ink: #e5edf4; --engagement-muted: #93a4b1; --engagement-line: #343c44; --engagement-surface: #242424; --engagement-soft: #22323d; --engagement-blue: #7dd3fc; }
+.dark .engagement-loading, .dark .engagement-level-track, .dark .engagement-goal-track { background: #333c43; }.dark .engagement-primary-link { border-color: #355466; }.dark .engagement-ribbon { fill: #303c45; stroke: #54616b; }.dark .engagement-shield { fill: #29323a; stroke: #54616b; }.dark .engagement-shield-inner { stroke: #46515b; }
+.dark .engagement-level-card { --engagement-tone: #c4afe8; --engagement-tint: #342d42; --engagement-tone-line: #554767; --engagement-emblem-fill: #3e324e; --engagement-emblem-line: #937db1; border-color: #483e56; }
+.dark .engagement-goals-card { --engagement-tone: #9cd0bf; --engagement-tint: #263b35; --engagement-tone-line: #435e54; --engagement-emblem-fill: #304b40; --engagement-emblem-line: #6e9d8c; border-color: #3e5149; }
+.dark .engagement-period-monthly, .dark .engagement-daily-card { --engagement-tone: #e0bd7d; --engagement-tint: #403625; --engagement-tone-line: #655336; --engagement-emblem-fill: #51422b; --engagement-emblem-line: #a68a52; border-color: #594b35; }
+.dark .engagement-daily-card { background: #2d2922; }.dark .engagement-daily-card.is-completed { --engagement-tone: #9cd0bf; --engagement-tint: #263b35; --engagement-tone-line: #435e54; background: #242d28; border-color: #3e5149; }
+.dark .engagement-small-badge, .dark .engagement-period-tabs { background: #2a2d32; }
+@media (max-width: 480px) { .student-engagement { padding: 15px; }.engagement-level-header { gap: 12px; }.engagement-daily-status { font-size: 10px; }.dashboard-engagement-grid { gap: 14px; margin-bottom: 26px; } }

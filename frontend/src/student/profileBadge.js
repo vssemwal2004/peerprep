@@ -16,6 +16,7 @@ export const LEVEL_POINTS_FORMULA = [
   { label: 'Day of current streak', points: 1.75 },
   { label: 'Assessment average (per %)', points: 0.35 },
   { label: 'Interview average (per point)', points: 0.2 },
+  { label: 'Challenge bonus (per point)', points: 0.1 },
 ];
 
 /**
@@ -48,11 +49,12 @@ const TIER_SAMPLE_INPUT = [
   { solvedCount: 260 },
 ];
 
-function blendedLearnerScore({ solvedCount = 0, streak = 0, assessmentScore = 0, interviewScore = 0 }) {
+function blendedLearnerScore({ solvedCount = 0, streak = 0, assessmentScore = 0, interviewScore = 0, challengePoints = 0 }) {
   return (Number(solvedCount || 0) * 0.5)
     + (Number(streak || 0) * 1.75)
     + (Number(assessmentScore || 0) * 0.35)
-    + (Number(interviewScore || 0) * 0.2);
+    + (Number(interviewScore || 0) * 0.2)
+    + (Number(challengePoints || 0) * 0.1);
 }
 
 /**
@@ -82,6 +84,7 @@ export function getLearnerBadge({
   streak = 0,
   assessmentScore = 0,
   interviewScore = 0,
+  challengePoints = 0,
 }) {
   const solved = Number(solvedCount || 0);
   const safeStreak = Number(streak || 0);
@@ -91,7 +94,8 @@ export function getLearnerBadge({
   const blendedScore = (solved * 0.5)
     + (safeStreak * 1.75)
     + (safeAssessmentScore * 0.35)
-    + (safeInterviewScore * 0.2);
+    + (safeInterviewScore * 0.2)
+    + (Math.max(0, Number(challengePoints) || 0) * 0.1);
 
   if (solved >= 260 || blendedScore >= 220) {
     return { title: 'Elite Coder', helper: 'Outstanding solving depth and platform performance.' };

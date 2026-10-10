@@ -439,6 +439,25 @@ export const api = {
       skipCache: forceRefresh,
       cacheTtlMs: 60 * 1000,
     }),
+  getStudentDashboard: (forceRefresh = false) =>
+    request("/auth/dashboard", {
+      skipCache: forceRefresh,
+      cacheTtlMs: 30 * 1000,
+    }),
+  getStudentRanking: (forceRefresh = false) =>
+    request("/auth/ranking", {
+      skipCache: forceRefresh,
+      cacheTtlMs: 30 * 1000,
+    }),
+  refreshStudentEngagement: () => request('/auth/engagement/refresh', { method: 'POST' }),
+  getStudentChallengeBadges: (cursor) => request(`/auth/engagement/badges${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`, { skipCache: true }),
+  recordStudentProblemView: (problemId, source = 'university') =>
+    request("/auth/dashboard/problem-view", {
+      method: "POST",
+      body: { problemId, source },
+    }),
+  recordStudentTopicView: (body) =>
+    request("/auth/dashboard/topic-view", { method: "POST", body }),
   login: async (identifier, password) => {
     clearApiCache();
     const result = await request("/auth/login", {

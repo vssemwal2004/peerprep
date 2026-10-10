@@ -1191,6 +1191,8 @@ export default function ProblemSolver() {
         const nextLanguage = response.supportedLanguages?.[0] || 'python';
 
         setProblem(response);
+        // Keep recently opened, unfinished practice available on the dashboard.
+        void api.recordStudentProblemView(response._id || id, response.platformShared || isSharedRoute ? 'shared' : 'university').catch(() => {});
         setDrafts(nextDrafts);
         setLanguage((previous) => (
           response.supportedLanguages?.includes(previous) ? previous : nextLanguage

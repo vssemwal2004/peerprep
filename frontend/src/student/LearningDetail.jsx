@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -62,7 +62,14 @@ export default function LearningDetail() {
   const { teacherId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const { semesterId, subjectId, coordinatorName: initialCoordinatorName, coordinatorId: initialCoordinatorId } = location.state || {};
+  const resumeParams = new URLSearchParams(location.search);
+  const semesterId = location.state?.semesterId || resumeParams.get('semesterId');
+  const subjectId = location.state?.subjectId || resumeParams.get('subjectId');
+  const initialCoordinatorName = location.state?.coordinatorName;
+  const initialCoordinatorId = location.state?.coordinatorId || teacherId;
+  const resumeTopicId = resumeParams.get('topicId');
+  const resumeContentType = resumeParams.get('contentType');
+  const resumedTopicRef = useRef(null);
 
   const [allSubjects, setAllSubjects] = useState([]);
   const [selectedSubject, setSelectedSubject] = useState(null);
@@ -77,6 +84,7 @@ export default function LearningDetail() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalContent, setModalContent] = useState(null);
   const [modalType, setModalType] = useState(null); // 'video', 'notes', 'pdf'
+  const [modalTitle, setModalTitle] = useState('');
   
   // Progress tracking
   const [progress, setProgress] = useState({});
@@ -338,8 +346,20 @@ export default function LearningDetail() {
     };
   }, [modalOpen, modalType, currentVideoUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const openModal = async (type, content, topic) => {
+  const openModal = useCallback(async (type, content, topic) => {
+    if (!content) return;
     setModalType(type);
+    setModalTitle(type === 'video' ? 'Video Lesson' : type === 'notes' || content === topic?.notesPDF ? 'Study Notes' : content === topic?.questionPDF ? 'Practice Questions' : 'Learning Document');
+    if (topic?._id && topic?.chapterId && subjectDetails?.semesterId && subjectDetails?.subjectId) {
+      void api.recordStudentTopicView({
+        topicId: topic._id,
+        chapterId: topic.chapterId,
+        semesterId: subjectDetails.semesterId,
+        subjectId: subjectDetails.subjectId,
+        coordinatorId: currentCoordinatorId || subjectDetails.coordinatorId,
+        contentType: type === 'video' ? 'video' : content === topic.questionPDF ? 'questions' : 'notes',
+      }).catch(() => {});
+    }
     
     // Convert URLs to viewable format
     let embedContent = content;
@@ -374,7 +394,25 @@ export default function LearningDetail() {
     
     setModalContent(embedContent);
     setModalOpen(true);
-  };
+  }, [currentCoordinatorId, subjectDetails]);
+
+  useEffect(() => {
+    if (!resumeTopicId || !subjectDetails?.chapters || String(subjectDetails.subjectId) !== String(subjectId)) return;
+    const resumeKey = `${subjectId}:${resumeTopicId}:${resumeContentType || ''}`;
+    if (resumedTopicRef.current === resumeKey) return;
+    for (const chapter of subjectDetails.chapters) {
+      const topic = (chapter.topics || []).find((item) => String(item._id) === resumeTopicId);
+      if (!topic) continue;
+      resumedTopicRef.current = resumeKey;
+      setExpandedChapters((previous) => ({ ...previous, [chapter._id]: true }));
+      const resumedTopic = { ...topic, chapterId: chapter._id };
+      if (resumeContentType === 'notes' && topic.notesPDF) void openModal('pdf', topic.notesPDF, resumedTopic);
+      else if (resumeContentType === 'questions' && topic.questionPDF) void openModal('pdf', topic.questionPDF, resumedTopic);
+      else if (topic.topicVideoLink) void openModal('video', topic.topicVideoLink, resumedTopic);
+      else if (topic.notesPDF) void openModal('pdf', topic.notesPDF, resumedTopic);
+      return;
+    }
+  }, [resumeTopicId, resumeContentType, subjectDetails, subjectId, openModal]);
 
   const closeModal = () => {
     clearInterval(watchIntervalRef.current);
@@ -398,6 +436,7 @@ export default function LearningDetail() {
     setModalOpen(false);
     setModalContent(null);
     setModalType(null);
+    setModalTitle('');
     setCurrentVideoUrl(null);
   };
 
@@ -840,7 +879,7 @@ export default function LearningDetail() {
                                       <td className="py-3 px-4 text-center">
                                         {topic.notesPDF ? (
                                           <button
-                                            onClick={() => openModal('pdf', topic.notesPDF, topic)}
+                                            onClick={() => openModal('pdf', topic.notesPDF, { ...topic, chapterId: chapter._id })}
                                             className="inline-flex items-center justify-center w-9 h-9 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-sm"
                                             title="View Notes"
                                           >
@@ -855,7 +894,7 @@ export default function LearningDetail() {
                                       <td className="py-3 px-4 text-center">
                                         {topic.questionPDF ? (
                                           <button
-                                            onClick={() => openModal('pdf', topic.questionPDF, topic)}
+                                            onClick={() => openModal('pdf', topic.questionPDF, { ...topic, chapterId: chapter._id })}
                                             className="inline-flex items-center justify-center w-9 h-9 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors shadow-sm"
                                             title="View Questions"
                                           >
@@ -917,9 +956,7 @@ export default function LearningDetail() {
               {/* Modal Header */}
               <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800">
                 <h3 className="text-base font-bold text-slate-800 dark:text-gray-100">
-                  {modalType === 'video' && '📹 Video Lesson'}
-                  {modalType === 'notes' && '📄 Study Notes'}
-                  {modalType === 'pdf' && '📝 Practice Questions'}
+                  {modalTitle}
                 </h3>
                 <div className="flex items-center space-x-1.5">
                   <button

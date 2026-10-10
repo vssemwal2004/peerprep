@@ -44,7 +44,7 @@ function InitialAvatar({ name, avatarUrl, className = '' }) {
     .toUpperCase();
 
   if (avatarUrl) return <img src={avatarUrl} alt="" className={`object-cover ${className}`} />;
-  return <span className={`flex items-center justify-center bg-sky-100 text-xs font-bold text-sky-700 dark:bg-sky-950 dark:text-sky-300 ${className}`}>{initials}</span>;
+  return <span className={`flex items-center justify-center bg-slate-100 text-xs font-semibold text-slate-700 dark:bg-zinc-800 dark:text-zinc-200 ${className}`}>{initials}</span>;
 }
 
 export default function StudentDashboardHeader({ sidebarPinned = false, onToggleSidebar = () => {} }) {
@@ -106,7 +106,7 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
   };
 
   return (
-    <header className="sticky top-0 z-[60] border-b border-sky-100 bg-[#f8fbff]/95 px-3 shadow-[0_8px_28px_-26px_rgba(14,116,144,0.45)] backdrop-blur-xl dark:border-sky-950 dark:bg-slate-950/95 sm:px-5">
+    <header className="sticky top-0 z-[60] border-b border-slate-200 bg-white px-3 dark:border-zinc-800 dark:bg-[#202020] sm:px-5">
       <div className="mx-auto flex h-16 w-full max-w-[1600px] items-center gap-2 sm:gap-3">
         {!sidebarPinned && <button
           type="button"
