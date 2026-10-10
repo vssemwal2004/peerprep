@@ -97,6 +97,7 @@ export default function CodingProgress({
   action,
   compact = false,
   loading = false,
+  showActivity = true,
 }) {
   const headingId = useId();
   const [selected, setSelected] = useState('all');
@@ -169,7 +170,7 @@ export default function CodingProgress({
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 dark:border-zinc-800">
+      {showActivity ? <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 dark:border-zinc-800">
         <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-zinc-400">
           <Flame className={`h-4 w-4 ${currentStreak > 0 ? 'text-[#b08c3e]' : 'text-slate-400 dark:text-zinc-500'}`} aria-hidden="true" />
           <span><strong className="font-semibold tabular-nums text-slate-800 dark:text-zinc-100">{loading ? '—' : currentStreak}</strong> day streak</span>
@@ -182,7 +183,7 @@ export default function CodingProgress({
               className={`h-1.5 w-3 rounded-full ${!loading && day.active ? 'bg-[#43866a]' : 'bg-slate-100 dark:bg-zinc-800'}`} />
           ))}
         </div>
-      </div>
+      </div> : null}
       {attempting > 0 && !loading ? <p className="mt-2 text-[11px] text-slate-500 dark:text-zinc-400">{attempting} {attempting === 1 ? 'question' : 'questions'} attempted and still to solve.</p> : null}
     </section>
   );

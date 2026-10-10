@@ -9,17 +9,18 @@ const GAP = 16;
  * fixed while the main column keeps scrolling. Nothing is clipped and no scrollbar is shown.
  *
  * Returns a callback ref (the sidebar mounts only after the profile loads) and the style to apply.
+ * `offset` reserves space for a sticky page header above the sidebar.
  */
-export default function useStickySidebar() {
+export default function useStickySidebar(offset = 0) {
   const [node, setNode] = useState(null);
-  const [top, setTop] = useState(GAP);
+  const [top, setTop] = useState(GAP + offset);
 
   useEffect(() => {
     if (!node) return undefined;
 
     const update = () => {
       const viewport = window.innerHeight || document.documentElement.clientHeight || 0;
-      setTop(Math.min(GAP, viewport - node.offsetHeight - GAP));
+      setTop(Math.min(GAP + offset, viewport - node.offsetHeight - GAP));
     };
 
     update();
@@ -30,7 +31,7 @@ export default function useStickySidebar() {
       observer?.disconnect();
       window.removeEventListener('resize', update);
     };
-  }, [node]);
+  }, [node, offset]);
 
   return { ref: setNode, style: { top } };
 }

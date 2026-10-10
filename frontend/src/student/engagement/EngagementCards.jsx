@@ -1,8 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, ArrowUpRight, Award, BookOpen, CalendarDays, Check, Clock3, Code2, Flag, LockKeyhole, RefreshCw, Sparkles, Trophy } from 'lucide-react';
-import { computeAwards } from '../profile/achievements';
-import { getLearnerLevel } from '../profileBadge';
+import { ArrowRight, BookOpen, CalendarDays, Check, Clock3, Code2, Flag, LockKeyhole, RefreshCw, Sparkles, Trophy } from 'lucide-react';
 import { api } from '../../utils/api';
 import { CodingStartIllustration } from '../dashboard/DashboardIllustrations';
 import './studentEngagement.css';
@@ -14,13 +12,22 @@ const date = (value, options) => {
 };
 const edition = (kind, key) => date(`${key}${kind === 'monthly' ? '-01' : ''}T12:00:00Z`, kind === 'monthly' ? { month: 'short', year: 'numeric' } : { month: 'short', day: 'numeric' });
 
+// Round gradient medal, matching the profile's milestone badges (BadgesCard) so every badge on
+// PeerPrep shares one visual language. Weekly editions are sky, monthly editions amber.
+const EMBLEM_TONES = { W: ['#38bdf8', '#0369a1'], M: ['#fbbf24', '#b45309'], default: ['#818cf8', '#4338ca'] };
+
 export function BadgeEmblem({ mark, earned = false, className = '' }) {
-  return <svg viewBox="0 0 72 82" fill="none" className={`engagement-emblem ${earned ? 'is-earned' : ''} ${className}`} aria-hidden="true" focusable="false">
-    <path d="m23 51-6 25 17-8 6 10 9-27" className="engagement-ribbon" strokeWidth="1.4" strokeLinejoin="round" />
-    <path d="m48 51 7 25-17-8-6 10-8-27" className="engagement-ribbon" strokeWidth="1.4" strokeLinejoin="round" />
-    <path d="m36 4 25 14v29L36 62 11 47V18L36 4Z" className="engagement-shield" strokeWidth="1.5" strokeLinejoin="round" />
-    <path d="m36 11 19 11v21L36 54 17 43V22l19-11Z" className="engagement-shield-inner" strokeWidth="1" />
-    {mark ? <text x="36" y="38" textAnchor="middle" fontSize="19" fontWeight="600" fill="currentColor">{mark}</text> : <path d="m36 23 3.1 6.2 6.9 1-5 4.8 1.2 6.8-6.2-3.2-6.2 3.2 1.2-6.8-5-4.8 6.9-1L36 23Z" fill="currentColor" opacity=".8" />}
+  const gradientId = useId();
+  const [from, to] = EMBLEM_TONES[mark] || EMBLEM_TONES.default;
+  return <svg viewBox="0 0 64 64" fill="none" className={`engagement-emblem ${earned ? 'is-earned' : ''} ${className}`} aria-hidden="true" focusable="false">
+    <defs><linearGradient id={gradientId} x1="10" y1="6" x2="54" y2="58" gradientUnits="userSpaceOnUse"><stop stopColor={from} /><stop offset="1" stopColor={to} /></linearGradient></defs>
+    {earned && <circle cx="32" cy="34" r="25" fill={to} opacity=".18" />}
+    <circle cx="32" cy="31" r="25" fill={earned ? `url(#${gradientId})` : '#f1f5f9'} stroke={earned ? 'none' : '#e2e8f0'} strokeWidth="1.5" />
+    <circle cx="32" cy="31" r="19.5" stroke={earned ? '#ffffff' : '#cbd5e1'} strokeOpacity={earned ? 0.45 : 1} strokeWidth="1.2" strokeDasharray={earned ? 'none' : '2.5 3'} />
+    {mark
+      ? <text x="32" y="38" textAnchor="middle" fontSize="19" fontWeight="700" fill={earned ? '#ffffff' : '#94a3b8'}>{mark}</text>
+      : <path d="m32 20 3.4 6.9 7.6 1.1-5.5 5.4 1.3 7.6L32 37.4 25.2 41l1.3-7.6-5.5-5.4 7.6-1.1L32 20Z" fill={earned ? '#ffffff' : '#cbd5e1'} />}
+    {!earned && <g><circle cx="47" cy="47" r="7" fill="#ffffff" stroke="#e2e8f0" /><path d="M44.5 47h5v3.5h-5zM45.5 47v-1.5a1.5 1.5 0 0 1 3 0V47" stroke="#94a3b8" strokeWidth="1.2" strokeLinejoin="round" /></g>}
   </svg>;
 }
 
@@ -60,32 +67,6 @@ function BadgeCollection({ data }) {
     finally { if (requestVersion === version.current) setLoading(false); }
   };
   return <details className="engagement-collection" id="challenge-collection"><summary>Collected editions <span>{data.lifetime.badges}</span></summary><div className="engagement-collected-badges">{badges.map((badge) => <div key={badge.id} title={`${badge.title} · earned ${date(badge.earnedAt, { month: 'short', day: 'numeric', year: 'numeric' })}`}><BadgeEmblem mark={badge.kind === 'weekly' ? 'W' : 'M'} earned /><strong>{edition(badge.kind, badge.periodKey)}</strong><span>{badge.kind === 'weekly' ? 'Weekly' : 'Monthly'}</span></div>)}</div>{cursor && <button type="button" className="engagement-text-link engagement-more-editions" onClick={more} disabled={loading}>{loading ? 'Loading…' : error ? 'Retry older editions' : 'More editions'}<ArrowRight size={12} aria-hidden="true" /></button>}{error && <p role="status">Older editions could not be loaded.</p>}<p>Earned editions stay in your collection.</p></details>;
-}
-
-export function LevelBadgesCard({ ranking, loading = false, error = false, section, onRetry, onOpenGallery, className = '' }) {
-  const hasMetrics = Boolean(ranking?.levelMetrics && ranking?.badgeMetrics);
-  const level = hasMetrics ? getLearnerLevel(ranking.levelMetrics) : null;
-  const awards = hasMetrics ? computeAwards(ranking.badgeMetrics) : null;
-  const badges = finite(awards?.earnedCount) + finite(section?.data?.lifetime?.badges ?? ranking?.challengeBadges);
-  const featured = awards ? [...awards.awards.filter((award) => award.earned).slice(-2), ...awards.awards.filter((award) => !award.earned).sort((a, b) => b.progress - a.progress)].slice(0, 3) : [];
-  const action = onOpenGallery
-    ? <button type="button" className="engagement-text-link" onClick={() => onOpenGallery('awards')}>All badges<ArrowUpRight size={12} aria-hidden="true" /></button>
-    : <Link to="/student/profile" className="engagement-text-link">My badges<ArrowUpRight size={12} aria-hidden="true" /></Link>;
-  return <Card title="Level & badges" icon={Award} action={action} loading={loading} className={`engagement-level-card ${className}`}>
-    {loading ? <Loading /> : error || !hasMetrics ? <Failure onRetry={onRetry} /> : <>
-      <div className="engagement-level-header">
-        <BadgeEmblem mark={level.level} earned />
-        <div><span className="engagement-kicker">Level {level.level} of {level.totalLevels}</span><h3>{level.title}</h3><p>{badges} {badges === 1 ? 'badge' : 'badges'} earned</p></div>
-      </div>
-      <div className="engagement-level-track" role="progressbar" aria-label="Next level progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(level.progress)}><span style={{ width: `${level.progress}%` }} /></div>
-      <div className="engagement-level-caption"><span>{level.next ? `Next: ${level.next.title}` : 'Highest level reached'}</span><strong>{Math.round(level.progress)}%</strong></div>
-      <div className="engagement-badge-preview">{featured.map((award) => <div key={award.id} className={`engagement-small-badge ${award.earned ? 'is-earned' : ''}`}>
-        <BadgeEmblem earned={award.earned} />
-        <strong>{award.title}</strong>
-        <span>{award.earned ? <><Check size={10} aria-hidden="true" />Earned</> : <><LockKeyhole size={9} aria-hidden="true" />{Math.min(award.value, award.target)}/{award.target}</>}</span>
-      </div>)}</div>
-    </>}
-  </Card>;
 }
 
 export function DailyChallengeCard({ section, onRetry, autoRefresh = true }) {

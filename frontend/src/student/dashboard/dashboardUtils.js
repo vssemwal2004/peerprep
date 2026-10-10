@@ -55,3 +55,8 @@ export function formatWatchTime(seconds) {
   const value = Math.max(0, Math.floor(Number(seconds) || 0));
   return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, '0')}`;
 }
+
+export const numeric = (value) => Number.isFinite(Number(value)) ? Math.max(0, Math.floor(Number(value))) : 0;
+
+export const isImportantAnnouncement = (item) => item?.priority === 'high' || item?.type === 'alert';
+

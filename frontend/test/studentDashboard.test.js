@@ -182,29 +182,37 @@ test('continue cards link to the student’s actual saved question and last lear
   }
 });
 
-test('accessible document order follows greeting, coding and recent work, with priorities in a separate rail', async () => {
+test('accessible document order follows greeting and recent work, then the progress rail, then discovery', async () => {
   announcements = announcements.map((announcement) => ({ ...announcement, priority: 'normal' }));
   await mount();
   const main = document.querySelector('[data-dashboard-main]');
   const greeting = document.querySelector('.dashboard-greeting');
-  const coding = document.querySelector('aside[aria-label="Your coding progress"]');
   const rail = document.querySelector('aside[aria-label="Your progress and priorities"]');
-  assert.ok(main, 'Personal work has a dedicated primary column');
-  assert.ok(greeting?.querySelector('h1'), 'Greeting precedes the progress and recent work sections');
-  assert.ok(coding?.querySelector('h2'), 'Coding has its own top-level section');
   const recent = section('Continue where you left off');
-  assert.ok(greeting.compareDocumentPosition(coding) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING,
-    'Reading and keyboard order puts greeting before coding');
-  assert.ok(coding.compareDocumentPosition(recent) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING,
-    'Reading and keyboard order puts coding before recent work');
-  assert.equal(coding.querySelector('h2').textContent, 'Coding progress');
-  assert.deepEqual([...main.querySelectorAll('h2')].map((heading) => heading.textContent), [
-    'Continue where you left off', 'University standing', 'Level & badges', 'Your challenges', 'Explore your learning', 'Next in practice',
-  ]);
+  assert.ok(greeting?.querySelector('h1'), 'The greeting heads the page');
+  assert.ok(main, 'Discovery has a dedicated primary column');
   assert.ok(rail, 'Progress and notices have a compact secondary rail');
+  assert.ok(greeting.compareDocumentPosition(recent) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING,
+    'Reading and keyboard order puts the greeting before recent work');
+  assert.ok(recent.compareDocumentPosition(rail) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING,
+    'Recent work comes before the rail, which comes before discovery on small screens');
+  assert.ok(rail.compareDocumentPosition(main) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
   assert.deepEqual([...rail.querySelectorAll('h2')].map((heading) => heading.textContent), [
-    'Daily challenge', 'Coming up', 'Announcements',
+    'Coding progress', 'University standing', 'Daily challenge', 'Coming up', 'Announcements',
   ]);
+  assert.deepEqual([...main.querySelectorAll('h2')].map((heading) => heading.textContent), [
+    'Your challenges', 'Next in practice', 'Explore your learning',
+  ]);
+});
+
+test('the dashboard leaves badges and levels to the profile', async () => {
+  engagement = engagementFixture();
+  engagement.badges = [{ id: 'weekly:2035-01-08', kind: 'weekly', periodKey: '2035-01-08', title: 'Weekly momentum', earnedAt: iso(8) }];
+  engagement.lifetime.badges = 1;
+  await mount();
+  assert.equal(section('Level & badges'), undefined);
+  assert.doesNotMatch(text(), /Collected editions|Level & badges|Earned badges|badges? collected/);
+  assert.match(section('Your challenges').textContent, /Weekly momentum/, 'Actionable goals remain on the dashboard');
 });
 
 test('learning and practice discovery show only server-provided subjects and questions with working navigation', async () => {
@@ -394,8 +402,8 @@ test('admin announcement updates replace the displayed notices and remove listen
   assert.match(section('Announcements').textContent, /Placement registration closes Friday/);
   assert.equal(listeners.get('announcement_update')?.size, 1);
   assert.deepEqual([...document.querySelectorAll('aside[aria-label="Your progress and priorities"] h2')].map((heading) => heading.textContent), [
-    'Announcements', 'Daily challenge', 'Coming up',
-  ], 'An important announcement is brought ahead of routine upcoming items');
+    'Coding progress', 'Announcements', 'University standing', 'Daily challenge', 'Coming up',
+  ], 'An important announcement is brought ahead of routine rail items');
   const beforeCount = calls.filter(([name]) => name === 'announcements').length;
   announcements = [{ _id: 'notice-2', title: 'Drive postponed', message: 'The updated schedule will be shared tomorrow.', priority: 'high', createdAt: iso(9) }];
   await emit('announcement_update');
@@ -423,16 +431,16 @@ test('disabled university modules hide their cards and resume links and skip the
   assert.equal(calls.filter(([name]) => name === 'engagement').length, 0);
 });
 
-test('sections have distinct icons, palettes and visual layouts rather than identical blue cards', async () => {
+test('progress cues come from real data: subject icons, difficulty tags and announcement priority', async () => {
   await mount();
-  assert.ok(section('Level & badges').classList.contains('engagement-level-card'));
-  assert.ok(section('Daily challenge').classList.contains('engagement-daily-card'));
-  assert.ok(section('Your challenges').classList.contains('engagement-period-weekly'));
-  assert.ok(section('Announcements').classList.contains('dashboard-announcements-section'));
-  assert.ok(document.querySelector('.dashboard-heading-icon.tone-mint svg'));
-  assert.ok(document.querySelector('.dashboard-subject-icon.tone-mint svg'));
-  assert.ok(document.querySelector('.dashboard-subject-icon.tone-lavender svg'));
-  assert.ok(section('Daily challenge').querySelector('.engagement-code-tile svg'));
+  for (const subject of dashboard.learningSubjects) {
+    const link = links().find((entry) => entry.getAttribute('href') === subject.href);
+    assert.ok(link.querySelector('svg'), `${subject.title} has a subject icon`);
+  }
+  const practice = section('Next in practice');
+  assert.match(practice.textContent, /Balanced Brackets.*Easy.*Linked List Reversal.*Medium/);
+  assert.match(section('Announcements').textContent, /Important.*Placement registration closes Friday/);
+  assert.match(section('Daily challenge').textContent, /Easy/);
 });
 
 test('daily challenge uses its real destination and switches to review only after server-verified completion', async () => {
@@ -464,7 +472,7 @@ test('weekly and monthly tabs support keyboard navigation and show their separat
   assert.equal(weekly.tabIndex, -1);
   assert.equal(card.querySelector('[role="tabpanel"]').getAttribute('aria-labelledby'), monthly.id);
   assert.match(card.textContent, /Monthly explorer/);
-  assert.ok(card.classList.contains('engagement-period-monthly'));
+  assert.equal(card.getAttribute('data-period-active'), 'monthly');
   assert.equal(card.querySelector('[role="progressbar"]').getAttribute('aria-valuemax'), '10');
   await act(async () => monthly.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Home', bubbles: true })));
   assert.equal(document.activeElement, weekly);
@@ -511,7 +519,8 @@ test('collected editions load older badges with deduplication, safe retries and 
     if (requests === 1) throw new Error('Offline');
     return { badges: [badge, older], nextCursor: null };
   };
-  await mount();
+  // Badge editions are collected on the profile's challenge card.
+  await act(async () => root.render(h(MemoryRouter, null, h(ChallengeGoalsCard, { section: { data: engagement, loading: false, error: false }, onRetry: () => {} }))));
   const collection = section('Your challenges').querySelector('.engagement-collection');
   assert.equal(collection.querySelectorAll('.engagement-collected-badges > div').length, 1);
   await act(async () => collection.querySelector('button').click());

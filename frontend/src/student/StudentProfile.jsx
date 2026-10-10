@@ -6,7 +6,8 @@ import socketService from '../utils/socket';
 import { getLearnerLevel } from './profileBadge';
 import { computeAwards } from './profile/achievements';
 import useStickySidebar from './profile/useStickySidebar';
-import { ChallengeGoalsCard, DailyChallengeCard, LevelBadgesCard } from './engagement/EngagementCards';
+import { ChallengeGoalsCard, DailyChallengeCard } from './engagement/EngagementCards';
+import BadgesCard from './profile/BadgesCard';
 import LevelUpCelebration from './profile/LevelUpCelebration';
 import BadgesGallery from './profile/BadgesGallery';
 import ProfileSidebar from './profile/ProfileSidebar';
@@ -1041,13 +1042,11 @@ export default function StudentProfile() {
             </div>
 
             <div className="grid gap-4 xl:grid-cols-2">
-              {(canQuestions || canLearning) && <LevelBadgesCard
+              {canQuestions && <BadgesCard
                 className="h-full"
-                ranking={ranking}
-                loading={loadingRanking}
-                error={rankingFailed}
-                section={engagement}
-                onRetry={loadRanking}
+                level={performanceTitle}
+                awards={awards}
+                learnerProgress={learnerProgress}
                 onOpenGallery={setBadgesGallery}
               />}
               {(canAssessments || canInterviews || canLearning) && <PeerPrepProgress
@@ -1060,7 +1059,7 @@ export default function StudentProfile() {
               />}
             </div>
 
-            {(canQuestions || canLearning) && <div className="grid gap-4 xl:grid-cols-2">
+            {(canQuestions || canLearning) && <div className="grid items-start gap-4 xl:grid-cols-2">
               <ChallengeGoalsCard section={engagement} onRetry={loadRanking} canQuestions={canQuestions} canLearning={canLearning} />
               {canQuestions && <DailyChallengeCard section={engagement} onRetry={loadRanking} autoRefresh={false} />}
             </div>}
