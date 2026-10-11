@@ -1,18 +1,24 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bookmark, Building2, Check, ChevronDown, ChevronLeft, ChevronRight, Code2, Flame, Layers3, ListFilter, LoaderCircle, Lock, Plus, Search, Shuffle, SlidersHorizontal, Sparkles, Star, Trash2, X } from 'lucide-react';
+import { Building2, ChevronLeft, ChevronRight, Layers3, LoaderCircle, Search, Shapes, Shuffle, SlidersHorizontal, Star, X } from 'lucide-react';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import { buildTagsParam, PROBLEM_SORT_OPTIONS } from './problemUtils';
-import DailyCodingChallenge from './DailyCodingChallenge';
-import { AnviIdentity } from '../components/AnviApproach';
 import QuestionPracticeDialog from './QuestionPracticeDialog';
+import AnviHero from './problems/AnviHero';
+import CompanyStrip from './problems/CompanyStrip';
+import LibrarySidebar from './problems/LibrarySidebar';
+import TopicsPanel from './problems/TopicsPanel';
+import PracticeCalendar from './problems/PracticeCalendar';
+import ProblemRow, { ProblemRowsSkeleton } from './problems/ProblemRow';
+import { CreateListModal, SaveToListsModal } from './problems/ProblemListModals';
+import { DIFFICULTY, fieldBase, focusRing, problemStatus } from './problems/problemsUi';
 
 const PAGE_SIZE = 15;
 const QUESTION_SORT_OPTIONS = [...PROBLEM_SORT_OPTIONS.filter((option) => !option.value.startsWith('acceptance')),
   { value: 'latest-asked', label: 'Recently Asked', sortBy: 'latestInterviewDate', sortOrder: 'desc' }];
 const FAVORITES_KEY = 'peerprep:problem-favorites';
-const difficultyStyles = { Easy: 'text-[#00b8a3]', Medium: 'text-[#ffb800]', Hard: 'text-[#ff375f]' };
+const DIFFICULTY_OPTIONS = ['', 'Easy', 'Medium', 'Hard'];
 
 function readFavorites() {
   try {
@@ -21,35 +27,58 @@ function readFavorites() {
   } catch { return []; }
 }
 
-function ProblemsSkeleton() {
-  return <div className="space-y-1" aria-label="Loading problems">{Array.from({ length: 9 }, (_, index) => <div key={index} className="grid h-[58px] grid-cols-[28px_minmax(0,1fr)_76px_68px_28px] items-center gap-3 rounded-lg px-4 odd:bg-[#f7f7f8] dark:odd:bg-[#282828]"><span className="h-4 w-4 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" /><span className="h-4 w-2/5 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" /><span className="h-3 w-12 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" /><span className="h-3 w-10 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" /><span className="h-4 w-4 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" /></div>)}</div>;
-}
-
-function MiniCalendar() {
-  const today = new Date();
-  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).getDay();
-  const days = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-  const cells = Array.from({ length: firstDay }, () => null).concat(Array.from({ length: days }, (_, index) => index + 1));
-  return <><section className="rounded-xl bg-white p-4 shadow-[0_2px_10px_rgba(0,0,0,0.05)] dark:bg-[#282828]"><div className="flex items-center justify-between"><div><div className="text-sm font-medium">Daily practice</div><div className="mt-0.5 text-xs text-zinc-400">{today.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</div></div><span className="flex h-9 w-9 items-center justify-center rounded-full bg-orange-50 text-orange-500 dark:bg-orange-500/10"><Flame className="h-4 w-4" /></span></div><div className="mt-4 grid grid-cols-7 text-center text-[11px] text-zinc-400">{['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}</div><div className="mt-2 grid grid-cols-7 gap-y-1 text-center text-xs">{cells.map((day, index) => <span key={`${day}-${index}`} className={`mx-auto flex h-7 w-7 items-center justify-center rounded-full ${day === today.getDate() ? 'bg-[#2cbb5d] font-semibold text-white' : 'text-zinc-500 dark:text-zinc-400'}`}>{day}</span>)}</div><div className="mt-4 flex items-center justify-between rounded-lg bg-orange-50 px-3 py-3 dark:bg-orange-500/10"><span className="text-xs font-medium text-orange-500">Coding day resets</span><span className="text-xs text-zinc-400">2:00 AM IST</span></div></section><DailyCodingChallenge variant="compact" /></>;
-}
-
-function Pagination({ pagination, loading, onPage }) {
+function Pagination({ pagination, loading, solvedOnPage, shown, onPage }) {
   const current = pagination.page || 1;
   const pages = pagination.pages || 1;
   const visible = Array.from(new Set([1, current - 1, current, current + 1, pages])).filter((value) => value >= 1 && value <= pages);
-  return <div className="flex flex-wrap items-center justify-between gap-3 py-5 text-xs text-zinc-400"><span>{pagination.total || 0} problems · Page {current} of {pages}</span><div className="flex items-center gap-1"><button type="button" onClick={() => onPage(current - 1)} disabled={loading || current <= 1} className="flex h-8 w-8 items-center justify-center rounded-md disabled:opacity-30" aria-label="Previous page"><ChevronLeft className="h-4 w-4" /></button>{visible.map((value, index) => <span key={value} className="flex items-center gap-1">{index > 0 && value - visible[index - 1] > 1 && <span>…</span>}<button type="button" onClick={() => onPage(value)} disabled={loading} className={`h-8 min-w-8 rounded-md px-2 ${value === current ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900' : 'hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>{value}</button></span>)}<button type="button" onClick={() => onPage(current + 1)} disabled={loading || current >= pages} className="flex h-8 w-8 items-center justify-center rounded-md disabled:opacity-30" aria-label="Next page"><ChevronRight className="h-4 w-4" /></button></div></div>;
+  const pageButton = `flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-[12.5px] tabular-nums disabled:opacity-30 ${focusRing}`;
+  return <div className="flex flex-wrap items-center justify-between gap-3 pt-4 text-[12.5px] text-slate-500 dark:text-zinc-400">
+    <span><strong className="font-semibold text-slate-800 dark:text-zinc-100">{solvedOnPage}</strong> of {shown} solved on this page · Page {current} of {pages}</span>
+    <nav className="flex items-center gap-1" aria-label="Pagination">
+      <button type="button" onClick={() => onPage(current - 1)} disabled={loading || current <= 1} className={`${pageButton} hover:bg-[#f3f4f6] dark:hover:bg-white/[0.06]`} aria-label="Previous page"><ChevronLeft className="h-4 w-4" /></button>
+      {visible.map((value, index) => <span key={value} className="flex items-center gap-1">
+        {index > 0 && value - visible[index - 1] > 1 && <span aria-hidden="true">…</span>}
+        <button type="button" onClick={() => onPage(value)} disabled={loading} aria-current={value === current ? 'page' : undefined}
+          className={`${pageButton} ${value === current ? 'bg-slate-900 font-semibold text-white dark:bg-white dark:text-slate-900' : 'hover:bg-[#f3f4f6] dark:hover:bg-white/[0.06]'}`}>{value}</button>
+      </span>)}
+      <button type="button" onClick={() => onPage(current + 1)} disabled={loading || current >= pages} className={`${pageButton} hover:bg-[#f3f4f6] dark:hover:bg-white/[0.06]`} aria-label="Next page"><ChevronRight className="h-4 w-4" /></button>
+    </nav>
+  </div>;
 }
 
-function CreateListModal({ busy, onClose, onCreate }) {
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [isPrivate, setIsPrivate] = useState(true);
-  return <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/35 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}><form onSubmit={(event) => { event.preventDefault(); if (title.trim()) onCreate({ title: title.trim(), description: description.trim(), isPrivate }); }} className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl dark:bg-[#282828]"><div className="flex items-center justify-between"><h2 className="text-xl font-semibold">Create new list</h2><button type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-2 hover:bg-zinc-100 dark:hover:bg-zinc-700"><X className="h-5 w-5" /></button></div><label className="mt-6 block text-sm font-medium">Title<div className="relative mt-2"><input autoFocus value={title} maxLength={30} onChange={(event) => setTitle(event.target.value)} placeholder="Enter a list name" className="h-12 w-full rounded-xl border border-zinc-200 bg-transparent px-4 pr-16 outline-none focus:border-zinc-400 dark:border-zinc-700" /><span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-zinc-400">{title.length}/30</span></div></label><label className="mt-5 block text-sm font-medium">Description<div className="relative mt-2"><textarea value={description} maxLength={150} onChange={(event) => setDescription(event.target.value)} placeholder="Describe your list" rows={4} className="w-full resize-none rounded-xl border border-zinc-200 bg-transparent px-4 py-3 pb-8 outline-none focus:border-zinc-400 dark:border-zinc-700" /><span className="absolute bottom-3 right-4 text-xs text-zinc-400">{description.length}/150</span></div></label><label className="mt-5 flex items-center gap-3 text-sm font-medium"><input type="checkbox" checked={isPrivate} onChange={(event) => setIsPrivate(event.target.checked)} className="h-5 w-5" /><Lock className="h-4 w-4 text-zinc-400" />Private</label><div className="mt-7 flex justify-end gap-3"><button type="button" onClick={onClose} className="rounded-xl bg-zinc-100 px-5 py-2.5 text-sm font-medium dark:bg-zinc-700">Cancel</button><button type="submit" disabled={busy || !title.trim()} className="rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-zinc-900">{busy ? 'Creating…' : 'Create'}</button></div></form></div>;
+function FilterChip({ label, onRemove }) {
+  return <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 py-1 pl-2.5 pr-1 text-[12px] font-medium text-sky-800 ring-1 ring-inset ring-sky-100 dark:bg-sky-500/10 dark:text-sky-200 dark:ring-sky-400/15">
+    {label}
+    <button type="button" onClick={onRemove} aria-label={`Remove filter: ${label}`} className={`rounded-full p-0.5 hover:bg-sky-100 dark:hover:bg-sky-500/20 ${focusRing}`}><X className="h-3 w-3" /></button>
+  </span>;
 }
 
-function SaveToListsModal({ problem, favorites, lists, busyListId, onClose, onFavorite, onMembership, onNewList }) {
-  const problemId = String(problem.listId || problem._id);
-  return <div className="fixed inset-0 z-[145] flex items-center justify-center bg-black/30 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl dark:bg-[#282828]"><div className="flex items-center justify-between"><div className="min-w-0"><h2 className="text-lg font-semibold">Save to a list</h2><p className="mt-1 truncate text-xs text-zinc-400">{problem.title}</p></div><button type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-2 hover:bg-zinc-100 dark:hover:bg-zinc-700"><X className="h-5 w-5" /></button></div><div className="mt-5 max-h-72 space-y-1 overflow-y-auto"><button type="button" onClick={onFavorite} className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-zinc-100 dark:hover:bg-zinc-700"><Star className={`h-5 w-5 ${favorites.includes(problemId) ? 'fill-amber-400 text-amber-400' : 'text-zinc-400'}`} /><span className="flex-1 text-sm font-medium">Favorite</span>{favorites.includes(problemId) && <Check className="h-4 w-4 text-emerald-500" />}</button>{lists.map((list) => { const included = list.problemIds.includes(problemId); return <button key={list._id} type="button" disabled={busyListId === list._id} onClick={() => onMembership(list, !included)} className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-zinc-100 disabled:opacity-50 dark:hover:bg-zinc-700"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-50 text-violet-500 dark:bg-violet-500/10"><Layers3 className="h-4 w-4" /></span><span className="min-w-0 flex-1 truncate text-sm font-medium">{list.title}</span>{busyListId === list._id ? <LoaderCircle className="h-4 w-4 animate-spin" /> : included ? <Check className="h-4 w-4 text-emerald-500" /> : null}</button>; })}{!lists.length && <p className="px-3 py-5 text-center text-sm text-zinc-400">Create your first custom practice list.</p>}</div><button type="button" onClick={onNewList} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-zinc-300 py-3 text-sm font-medium dark:border-zinc-600"><Plus className="h-4 w-4" />New list</button></div></div>;
+const SELECTION_TONES = {
+  topic: { icon: Shapes, tile: 'bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300', wash: 'from-violet-50/80', label: 'Topic', noun: 'in this topic' },
+  company: { icon: Building2, tile: 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300', wash: 'from-orange-50/80', label: 'Company', noun: 'tagged with this company' },
+  list: { icon: Layers3, tile: 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300', wash: 'from-sky-50/80', label: 'Your list', noun: 'in this list' },
+  favorites: { icon: Star, tile: 'bg-amber-100 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300', wash: 'from-amber-50/80', label: 'Favorites', noun: 'saved as favorites' },
+};
+
+/** What the list is focused on, with the real size of that topic, company or list. */
+function SelectionHeader({ kind, title, description, catalogCount, shownCount, filtered, loading, onClear }) {
+  const tone = SELECTION_TONES[kind];
+  const Icon = tone.icon;
+  return <section aria-labelledby="selection-title" className={`mb-4 flex flex-wrap items-center gap-4 rounded-2xl border border-[#e9eaee] bg-gradient-to-r ${tone.wash} via-white to-white px-5 py-4 dark:border-white/[0.07] dark:from-white/[0.04] dark:via-[#232325] dark:to-[#232325]`}>
+    <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${tone.tile}`} aria-hidden="true"><Icon className="h-6 w-6" /></span>
+    <div className="min-w-0 flex-1">
+      <p className="text-[11.5px] font-medium text-slate-500 dark:text-zinc-400">{tone.label}</p>
+      <h2 id="selection-title" className="truncate text-[22px] font-semibold leading-tight tracking-[-0.02em] text-slate-950 dark:text-zinc-50" title={title}>{title}</h2>
+      <p className="mt-1 text-[13px] text-slate-500 dark:text-zinc-400">
+        <strong className="font-semibold tabular-nums text-slate-900 dark:text-zinc-100">{catalogCount == null ? '—' : Number(catalogCount).toLocaleString()}</strong> {catalogCount === 1 ? 'question' : 'questions'} {tone.noun}
+        {filtered && !loading && <> · <strong className="font-semibold tabular-nums text-slate-900 dark:text-zinc-100">{Number(shownCount).toLocaleString()}</strong> match your other filters</>}
+        {description ? <> · {description}</> : null}
+      </p>
+    </div>
+    <button type="button" onClick={onClear} className={`inline-flex items-center gap-1 rounded-xl border border-[#e4e7ec] bg-white px-3 py-1.5 text-[12.5px] font-medium text-slate-600 hover:bg-[#f6f7f9] dark:border-white/10 dark:bg-transparent dark:text-zinc-300 dark:hover:bg-white/[0.05] ${focusRing}`}>
+      <X className="h-3.5 w-3.5" aria-hidden="true" />{kind === 'topic' ? 'Clear topic' : kind === 'company' ? 'Clear company' : 'Back to all questions'}
+    </button>
+  </section>;
 }
 
 export default function ProblemsPage() {
@@ -57,9 +86,7 @@ export default function ProblemsPage() {
   const toast = useToast();
   const navigationTimerRef = useRef(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [companySearch, setCompanySearch] = useState('');
   const [difficulty, setDifficulty] = useState('');
-  const [questionType, setQuestionType] = useState('');
   const [activeQuestion, setActiveQuestion] = useState(null);
   const [refreshQuestions, setRefreshQuestions] = useState(0);
   const [selectedTags, setSelectedTags] = useState([]);
@@ -68,8 +95,6 @@ export default function ProblemsPage() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [companiesLoading, setCompaniesLoading] = useState(true);
-  const [topicsExpanded, setTopicsExpanded] = useState(false);
-  const [listsExpanded, setListsExpanded] = useState(true);
   const [showFavorites, setShowFavorites] = useState(false);
   const [favorites, setFavorites] = useState(readFavorites);
   const [lists, setLists] = useState([]);
@@ -82,7 +107,6 @@ export default function ProblemsPage() {
   const [companyCounts, setCompanyCounts] = useState([]);
   const [response, setResponse] = useState({ problems: [], pagination: { page: 1, pages: 1, total: 0 }, filters: { availableTags: [], tagCounts: [] } });
   const deferredSearch = useDeferredValue(searchQuery);
-  const deferredCompanySearch = useDeferredValue(companySearch);
   const resolvedSort = useMemo(() => QUESTION_SORT_OPTIONS.find((option) => option.value === sortValue) || QUESTION_SORT_OPTIONS[0], [sortValue]);
   const selectedList = useMemo(() => lists.find((list) => list._id === selectedListId), [lists, selectedListId]);
   const filteredIds = showFavorites ? favorites : (selectedList ? selectedList.problemIds : null);
@@ -90,35 +114,39 @@ export default function ProblemsPage() {
   useEffect(() => () => window.clearTimeout(navigationTimerRef.current), []);
   useEffect(() => { window.localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites)); }, [favorites]);
   useEffect(() => { let mounted = true; api.listProblemLists().then((result) => { if (mounted) setLists(result.lists || []); }).catch((error) => { if (mounted) toast.error(error.message || 'Could not load your lists.'); }); return () => { mounted = false; }; }, [toast]);
-  useEffect(() => { setPage(1); }, [deferredSearch, difficulty, questionType, resolvedSort.sortBy, resolvedSort.sortOrder, selectedTags, selectedCompany, showFavorites, selectedListId]);
+  useEffect(() => { setPage(1); }, [deferredSearch, difficulty, resolvedSort.sortBy, resolvedSort.sortOrder, selectedTags, selectedCompany, showFavorites, selectedListId]);
   useEffect(() => {
     let mounted = true;
     const load = async () => {
       try {
         setLoading(true);
-        const result = await api.listPracticeQuestions({ search: deferredSearch, difficulty, type: questionType, tags: buildTagsParam(selectedTags), companies: selectedCompany, ...(filteredIds ? { ids: filteredIds.join(',') || '__none__' } : {}), sortBy: resolvedSort.sortBy, sortOrder: resolvedSort.sortOrder, page, limit: PAGE_SIZE });
+        const result = await api.listPracticeQuestions({ search: deferredSearch, difficulty, tags: buildTagsParam(selectedTags), companies: selectedCompany, ...(filteredIds ? { ids: filteredIds.join(',') || '__none__' } : {}), sortBy: resolvedSort.sortBy, sortOrder: resolvedSort.sortOrder, page, limit: PAGE_SIZE });
         if (mounted) { setResponse(result); setCompanyCounts(result.filters?.companyCounts || []); setCompaniesLoading(false); }
       } catch (error) { if (mounted) toast.error(error.message || 'Failed to load questions.'); }
       finally { if (mounted) { setLoading(false); setCompaniesLoading(false); } }
     };
     load();
     return () => { mounted = false; };
-  }, [deferredSearch, difficulty, questionType, filteredIds, page, refreshQuestions, resolvedSort.sortBy, resolvedSort.sortOrder, selectedTags, selectedCompany, toast]);
+  }, [deferredSearch, difficulty, filteredIds, page, refreshQuestions, resolvedSort.sortBy, resolvedSort.sortOrder, selectedTags, selectedCompany, toast]);
 
-  const problems = (response.questions || []).map((question) => ({ ...question, title: question.questionText, listId: question.source === 'university' && question.questionType === 'coding' && question.sourceProblemId ? question.sourceProblemId : question._id, studentStatus: question.result === 'correct' ? 'Solved' : null }));
+  const problems = (response.questions || []).map((question) => ({ ...question, title: question.questionText, listId: question.source === 'university' && question.questionType === 'coding' && question.sourceProblemId ? question.sourceProblemId : question._id }));
   const pagination = response.pagination || { page: 1, pages: 1, total: 0 };
   const topicCounts = response.filters?.tagCounts?.length ? response.filters.tagCounts : (response.filters?.availableTags || []).map((tag) => ({ tag, count: null }));
   const totalProblems = response.filters?.totalProblems ?? pagination.total ?? 0;
+  // Before the first response the counts are unknown, not zero.
+  const initialLoad = loading && !response.questions && response.filters?.totalProblems == null;
   const selectedTopic = selectedTags[0] || '';
-  const solvedOnPage = problems.filter((problem) => String(problem.studentStatus).toLowerCase() === 'solved').length;
-  const hasFilters = Boolean(searchQuery || difficulty || questionType || selectedTags.length || selectedCompany || showFavorites || selectedListId);
-  const selectTopic = (tag) => { setSelectedTags(tag ? [tag] : []); setTopicsExpanded(false); };
-  const clearFilters = () => { setSearchQuery(''); setDifficulty(''); setQuestionType(''); setSelectedTags([]); setSelectedCompany(''); setSortValue('sequence-asc'); setShowFavorites(false); setSelectedListId(''); };
+  const solvedOnPage = problems.filter((problem) => problemStatus(problem) === 'solved').length;
+  const view = showFavorites ? { kind: 'favorites' } : selectedListId ? { kind: 'list', id: selectedListId } : { kind: 'all' };
+
+  const selectTopic = (tag) => setSelectedTags(tag ? [tag] : []);
   const selectCompany = (company) => {
     const next = selectedCompany === company ? '' : company;
     setSelectedCompany(next);
     setSortValue(next ? 'latest-asked' : 'sequence-asc');
   };
+  const selectView = (next) => { setShowFavorites(next.kind === 'favorites'); setSelectedListId(next.kind === 'list' ? next.id : ''); };
+  const clearFilters = () => { setSearchQuery(''); setDifficulty(''); setSelectedTags([]); setSelectedCompany(''); setSortValue('sequence-asc'); selectView({ kind: 'all' }); };
   const toggleFavorite = (problemId) => setFavorites((previous) => previous.includes(String(problemId)) ? previous.filter((id) => id !== String(problemId)) : [...previous, String(problemId)]);
   const openProblem = (problem) => {
     if (openingProblemId) return;
@@ -127,29 +155,121 @@ export default function ProblemsPage() {
     const destination = problem.source === 'shared' ? problem._id : problem.sourceProblemId;
     navigationTimerRef.current = window.setTimeout(() => navigate(`/problems/${destination}`), 120);
   };
-  const createList = async (payload) => { try { setCreatingList(true); const result = await api.createProblemList(payload); setLists((previous) => [result.list, ...previous]); setSelectedListId(result.list._id); setShowFavorites(false); setCreateListOpen(false); toast.success('List created.'); } catch (error) { toast.error(error.message || 'Could not create the list.'); } finally { setCreatingList(false); } };
-  const deleteList = async (event, list) => { event.stopPropagation(); if (!window.confirm(`Delete “${list.title}”?`)) return; try { setBusyListId(list._id); await api.deleteProblemList(list._id); setLists((previous) => previous.filter((item) => item._id !== list._id)); if (selectedListId === list._id) setSelectedListId(''); toast.success('List deleted.'); } catch (error) { toast.error(error.message || 'Could not delete the list.'); } finally { setBusyListId(''); } };
+  const createList = async (payload) => { try { setCreatingList(true); const result = await api.createProblemList(payload); setLists((previous) => [result.list, ...previous]); selectView({ kind: 'list', id: result.list._id }); setCreateListOpen(false); toast.success('List created.'); } catch (error) { toast.error(error.message || 'Could not create the list.'); } finally { setCreatingList(false); } };
+  const deleteList = async (list) => { if (!window.confirm(`Delete “${list.title}”?`)) return; try { setBusyListId(list._id); await api.deleteProblemList(list._id); setLists((previous) => previous.filter((item) => item._id !== list._id)); if (selectedListId === list._id) setSelectedListId(''); toast.success('List deleted.'); } catch (error) { toast.error(error.message || 'Could not delete the list.'); } finally { setBusyListId(''); } };
   const setMembership = async (list, included) => { if (!listPickerProblem) return; try { setBusyListId(list._id); const result = await api.setProblemListMembership(list._id, listPickerProblem.listId, included); setLists((previous) => previous.map((item) => item._id === result.list._id ? result.list : item)); toast.success(included ? `Saved to ${list.title}.` : `Removed from ${list.title}.`); } catch (error) { toast.error(error.message || 'Could not update the list.'); } finally { setBusyListId(''); } };
 
-  const listPanel = <div className="border-r border-zinc-200 pr-5 dark:border-zinc-800"><div className="flex items-center justify-between border-t border-zinc-200 pt-4 dark:border-zinc-800"><button type="button" onClick={() => setListsExpanded((value) => !value)} className="flex items-center gap-1 text-sm font-medium text-zinc-500"><ChevronDown className={`h-4 w-4 transition ${listsExpanded ? '' : '-rotate-90'}`} />My Lists</button><button type="button" onClick={() => setCreateListOpen(true)} aria-label="Create a new list" className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><Plus className="h-4 w-4" /></button></div>{listsExpanded && <div className="mt-3 space-y-1"><button type="button" onClick={() => { setShowFavorites(true); setSelectedListId(''); }} className={`flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left text-sm font-medium ${showFavorites ? 'bg-zinc-100 dark:bg-zinc-800' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/60'}`}><span className="flex h-7 w-7 items-center justify-center rounded bg-zinc-100 dark:bg-zinc-800"><Star className="h-4 w-4 fill-amber-400 text-amber-400" /></span><span className="min-w-0 flex-1 truncate">Favorite</span><span className="text-xs text-zinc-400">{favorites.length}</span></button>{lists.map((list) => <button key={list._id} type="button" onClick={() => { setSelectedListId(list._id); setShowFavorites(false); }} className={`group flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm font-medium ${selectedListId === list._id ? 'bg-zinc-100 dark:bg-zinc-800' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/60'}`}><span className="flex h-7 w-7 items-center justify-center rounded bg-violet-50 text-violet-500 dark:bg-violet-500/10"><Layers3 className="h-4 w-4" /></span><span className="min-w-0 flex-1 truncate">{list.title}</span><span className="text-xs text-zinc-400 group-hover:hidden">{list.problemCount}</span><span onClick={(event) => deleteList(event, list)} role="button" tabIndex={0} aria-label={`Delete ${list.title}`} className="hidden rounded p-1 text-zinc-400 hover:text-rose-500 group-hover:block">{busyListId === list._id ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}</span></button>)}<button type="button" onClick={() => { setShowFavorites(false); setSelectedListId(''); }} className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left text-sm font-medium hover:bg-zinc-50 dark:hover:bg-zinc-800/60"><span className="flex h-7 w-7 items-center justify-center rounded bg-zinc-100 dark:bg-zinc-800"><ListFilter className="h-4 w-4" /></span>All problems</button></div>}</div>;
-  const companyPanel = <section className="rounded-xl bg-white p-4 shadow-[0_2px_10px_rgba(0,0,0,0.05)] dark:bg-[#282828]"><div className="flex items-center gap-2"><Building2 className="h-4 w-4 text-zinc-400" /><h2 className="text-sm font-medium">Companies</h2>{selectedCompany && <button type="button" onClick={() => selectCompany(selectedCompany)} className="ml-auto text-xs text-zinc-400">Clear</button>}</div><label className="relative mt-3 block"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" /><input value={companySearch} onChange={(event) => setCompanySearch(event.target.value)} placeholder="Search companies" className="h-10 w-full rounded-lg border-0 bg-[#f2f2f3] pl-10 pr-9 text-xs outline-none dark:bg-[#333]" />{companiesLoading && <LoaderCircle className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-zinc-400" />}</label><div className="mt-4 flex max-h-72 flex-wrap gap-2 overflow-y-auto">{companyCounts.filter(({ company }) => company.toLowerCase().includes(deferredCompanySearch.toLowerCase())).map(({ company, count }) => <button key={company} type="button" onClick={() => selectCompany(company)} className={`rounded-full px-2.5 py-1 text-xs font-medium ${selectedCompany === company ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900' : 'bg-[#f2f2f3] text-zinc-600 dark:bg-[#353535] dark:text-zinc-300'}`}>{company} <span className="ml-1 rounded-full bg-[#ffa116] px-1.5 py-0.5 text-[10px] text-white">{count}</span></button>)}</div>{!companiesLoading && !companyCounts.length && <p className="mt-4 text-xs leading-5 text-zinc-400">No matching company tags. Company filters appear when published problems have company tags.</p>}</section>;
+  const activeFilters = [
+    showFavorites && { key: 'favorites', label: 'Favorites', clear: () => selectView({ kind: 'all' }) },
+    selectedList && { key: 'list', label: `List: ${selectedList.title}`, clear: () => selectView({ kind: 'all' }) },
+    selectedTopic && { key: 'topic', label: `Topic: ${selectedTopic}`, clear: () => selectTopic('') },
+    selectedCompany && { key: 'company', label: `Company: ${selectedCompany}`, clear: () => selectCompany(selectedCompany) },
+    difficulty && { key: 'difficulty', label: difficulty, clear: () => setDifficulty('') },
+    searchQuery && { key: 'search', label: `“${searchQuery}”`, clear: () => setSearchQuery('') },
+  ].filter(Boolean);
+  // The header follows the most specific focus: a topic, then a company, then a saved list.
+  const topicCount = topicCounts.find(({ tag }) => tag === selectedTopic)?.count;
+  const companyCount = companyCounts.find(({ company }) => company === selectedCompany)?.count;
+  const selection = selectedTopic ? { kind: 'topic', title: selectedTopic, catalogCount: topicCount, clear: () => selectTopic('') }
+    : selectedCompany ? { kind: 'company', title: selectedCompany, catalogCount: companyCount, clear: () => selectCompany(selectedCompany) }
+      : selectedList ? { kind: 'list', title: selectedList.title, description: selectedList.description, catalogCount: selectedList.problemCount ?? selectedList.problemIds?.length, clear: () => selectView({ kind: 'all' }) }
+        : showFavorites ? { kind: 'favorites', title: 'Favorites', catalogCount: favorites.length, clear: () => selectView({ kind: 'all' }) } : null;
+  const narrowed = selection && activeFilters.length > 1;
 
-  return <div className="min-h-screen bg-white font-sans text-[#262626] dark:bg-[#1a1a1a] dark:text-zinc-100"><main className="mx-auto w-full max-w-[1600px] px-3 pb-10 pt-4 sm:px-5">
-    <section className="mb-4 flex items-center justify-between gap-4 overflow-hidden rounded-2xl border border-violet-100 bg-gradient-to-r from-[#0b0714] via-[#160b2b] to-[#071923] px-4 py-3 text-white shadow-[0_12px_34px_rgba(76,29,149,0.14)] dark:border-violet-900/70">
-      <AnviIdentity subtitle="Your AI coding guide for a focused next step." />
-      <span className="hidden rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-cyan-50 sm:inline-flex">Ask AnvI inside every problem</span>
-    </section>
-    <h1 className="mb-3 text-xl font-semibold">All Questions</h1>
-    <section className="relative border-b border-zinc-200/80 pb-3 dark:border-zinc-800"><div className="flex items-center gap-7 overflow-x-auto pr-24 [scrollbar-width:none]">{topicCounts.slice(0, 10).map(({ tag, count }) => <button key={tag} type="button" onClick={() => selectTopic(tag)} className={`shrink-0 py-2 text-sm ${selectedTopic === tag ? 'font-semibold' : 'text-zinc-600 dark:text-zinc-300'}`}>{tag} <span className="ml-1 rounded-full bg-zinc-100 px-2 py-1 text-xs text-zinc-400 dark:bg-zinc-800">{count ?? '—'}</span></button>)}</div><button type="button" onClick={() => setTopicsExpanded((value) => !value)} className="absolute right-0 top-1 flex items-center gap-1 bg-white px-2 py-2 text-sm text-zinc-500 dark:bg-[#1a1a1a]">Expand <ChevronDown className={`h-4 w-4 transition ${topicsExpanded ? 'rotate-180' : ''}`} /></button>{topicsExpanded && <div className="absolute inset-x-0 top-full z-30 mt-2 rounded-xl border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-700 dark:bg-[#282828]"><div className="flex max-h-64 flex-wrap gap-2 overflow-y-auto"><button type="button" onClick={() => selectTopic('')} className="rounded-full bg-zinc-900 px-3 py-1.5 text-xs text-white">All topics · {totalProblems}</button>{topicCounts.map(({ tag, count }) => <button key={tag} type="button" onClick={() => selectTopic(tag)} className="rounded-full bg-zinc-100 px-3 py-1.5 text-xs dark:bg-zinc-800">{tag} · {count ?? '—'}</button>)}</div></div>}</section>
-    <div className="mt-4 grid gap-4 xl:hidden">{listPanel}{companyPanel}</div>
-    <div className="mt-5 grid gap-7 xl:grid-cols-[200px_minmax(0,1fr)_286px]"><aside className="hidden xl:block"><div className="sticky top-5">{listPanel}</div></aside><div className="min-w-0">
-      <div className="mb-5 grid gap-3 sm:grid-cols-3"><button type="button" onClick={() => selectTopic('')} className="flex items-center gap-3 rounded-full bg-[#262626] px-5 py-3 text-left text-sm text-white"><ListFilter className="h-4 w-4" />All Topics</button><button type="button" onClick={() => selectTopic(topicCounts[0]?.tag || '')} className="flex items-center gap-3 rounded-full bg-[#f2f2f3] px-5 py-3 text-left text-sm text-zinc-600 dark:bg-[#282828] dark:text-zinc-300"><Code2 className="h-4 w-4 text-orange-500" />Algorithms</button><button type="button" onClick={() => selectTopic(topicCounts.find(({ tag }) => /database|sql/i.test(tag))?.tag || '')} className="flex items-center gap-3 rounded-full bg-[#f2f2f3] px-5 py-3 text-left text-sm text-zinc-600 dark:bg-[#282828] dark:text-zinc-300"><Sparkles className="h-4 w-4 text-blue-500" />Database</button></div>
-      {(selectedTopic || selectedList || showFavorites) && <section className="mb-5 rounded-xl border border-zinc-200 p-5 dark:border-zinc-800"><div className="flex items-center gap-3"><span className="flex h-12 w-12 items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800">{showFavorites ? <Star className="h-6 w-6 fill-amber-400 text-amber-400" /> : <Layers3 className="h-6 w-6" />}</span><div><h1 className="text-2xl font-semibold">{showFavorites ? 'Favorite' : selectedList?.title || selectedTopic}</h1><p className="mt-1 text-xs text-zinc-400">{pagination.total} questions{selectedList?.description ? ` · ${selectedList.description}` : ''}</p></div></div></section>}
-      <div className="flex flex-col gap-3 border-t border-zinc-200 py-4 dark:border-zinc-800 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 flex-1 items-center gap-2"><label className="relative block w-full max-w-[320px]"><Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" /><input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search questions" className="h-11 w-full rounded-full border-0 bg-[#f2f2f3] pl-11 pr-10 text-sm outline-none dark:bg-[#282828]" />{searchQuery && <button type="button" onClick={() => setSearchQuery('')} className="absolute right-4 top-1/2 -translate-y-1/2"><X className="h-4 w-4" /></button>}</label><select value={difficulty} onChange={(event) => setDifficulty(event.target.value)} className="h-11 rounded-full border-0 bg-[#f2f2f3] px-4 text-xs dark:bg-[#282828]"><option value="">Difficulty</option><option>Easy</option><option>Medium</option><option>Hard</option></select><select value={questionType} onChange={(event) => setQuestionType(event.target.value)} aria-label="Question type" className="h-11 rounded-full border-0 bg-[#f2f2f3] px-4 text-xs dark:bg-[#282828]"><option value="">All types</option><option value="coding">Coding</option><option value="mcq">Multiple choice</option><option value="short">Short answer</option><option value="one_line">One line</option></select><div className="relative hidden md:block"><SlidersHorizontal className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" /><select value={sortValue} onChange={(event) => setSortValue(event.target.value)} className="h-11 rounded-full border-0 bg-[#f2f2f3] pl-9 pr-4 text-xs dark:bg-[#282828]">{QUESTION_SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div></div><div className="flex items-center gap-3 text-xs text-zinc-500">{hasFilters && <button type="button" onClick={clearFilters}>Clear</button>}<span>{solvedOnPage}/{problems.length} solved</span><button type="button" onClick={() => problems.length && openProblem(problems[Math.floor(Math.random() * problems.length)])}><Shuffle className="h-4 w-4" /></button></div></div>
-      {loading && !problems.length ? <ProblemsSkeleton /> : !problems.length ? <div className="rounded-xl bg-zinc-50 px-6 py-16 text-center dark:bg-[#242424]"><Search className="mx-auto h-6 w-6 text-zinc-300" /><h2 className="mt-3 text-sm font-semibold">No matching questions</h2><p className="mt-1 text-xs text-zinc-400">Try another topic, difficulty, search, or list.</p></div> : <section className="relative">{loading && <div className="absolute inset-x-0 top-0 z-20 h-0.5 bg-amber-400" />}<div className="space-y-1">{problems.map((problem, index) => { const solved = String(problem.studentStatus).toLowerCase() === 'solved'; const saved = favorites.includes(String(problem.listId)) || lists.some((list) => list.problemIds.includes(String(problem.listId))); return <div key={problem._id} role="button" tabIndex={0} onClick={() => openProblem(problem)} onKeyDown={(event) => { if (event.key === 'Enter') openProblem(problem); }} className={`grid min-h-[58px] cursor-pointer grid-cols-[28px_minmax(0,1fr)_76px_68px_28px] items-center gap-3 rounded-lg px-4 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 ${index % 2 === 0 ? 'bg-[#f7f7f8] dark:bg-[#282828]' : ''}`}><span>{solved && <Check className="h-4 w-4 text-[#2cbb5d]" />}</span><div className="min-w-0"><div className="flex items-center gap-2"><span className="text-xs text-zinc-400">{((pagination.page - 1) * PAGE_SIZE) + index + 1}.</span><span className="truncate font-medium">{problem.title}</span>{openingProblemId === problem._id && <LoaderCircle className="h-4 w-4 animate-spin text-amber-500" />}</div><div className="mt-1 hidden truncate text-[11px] text-zinc-400 sm:block">{(problem.tags || []).slice(0, 3).join(' · ') || 'General'}</div>{Boolean(problem.reportedCompanies?.length) && <div className="mt-1 flex flex-wrap gap-1">{problem.reportedCompanies.slice(0, 3).map(({ company, latestDate }) => <button key={company} type="button" onClick={(event) => { event.stopPropagation(); selectCompany(company); }} title={`Last reported ${new Date(latestDate).toLocaleDateString()}`} className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-medium text-orange-700 hover:bg-orange-200 dark:bg-orange-500/15 dark:text-orange-300">{company}</button>)}</div>}</div><span className="text-xs text-zinc-500">{problem.questionType?.replace('_', ' ') || 'Question'}</span><span className={`text-xs ${difficultyStyles[problem.difficulty]}`}>{problem.difficulty === 'Medium' ? 'Med.' : problem.difficulty}</span><button type="button" onClick={(event) => { event.stopPropagation(); setListPickerProblem(problem); }} className={saved ? 'text-amber-400' : 'text-zinc-300'} aria-label="Save to a list"><Bookmark className={`h-4 w-4 ${saved ? 'fill-current' : ''}`} /></button></div>; })}</div><Pagination pagination={pagination} loading={loading} onPage={setPage} /></section>}
-    </div><aside className="hidden space-y-5 xl:block"><MiniCalendar />{companyPanel}</aside></div>
-    {activeQuestion && <QuestionPracticeDialog question={activeQuestion} onClose={() => setActiveQuestion(null)} onAnswered={() => setRefreshQuestions((value) => value + 1)} />}
-    {createListOpen && <CreateListModal busy={creatingList} onClose={() => setCreateListOpen(false)} onCreate={createList} />}{listPickerProblem && <SaveToListsModal problem={listPickerProblem} favorites={favorites} lists={lists} busyListId={busyListId} onClose={() => setListPickerProblem(null)} onFavorite={() => toggleFavorite(listPickerProblem.listId)} onMembership={setMembership} onNewList={() => { setListPickerProblem(null); setCreateListOpen(true); }} />}
-    {openingProblemId && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/20"><div className="flex items-center gap-3 rounded-xl bg-[#262626] px-5 py-4 text-white"><LoaderCircle className="h-5 w-5 animate-spin text-[#ffa116]" />Opening coding workspace</div></div>}
-  </main></div>;
+  return <div className="min-h-screen bg-[#f6f7f9] font-dmsans text-slate-900 antialiased dark:bg-[#1a1a1a] dark:text-zinc-100">
+    <main className="mx-auto w-full max-w-[1600px] space-y-3.5 px-3 pb-12 pt-4 sm:px-5 lg:px-8">
+      <AnviHero />
+
+      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+          <h1 className="text-[20px] font-semibold tracking-[-0.02em] text-slate-950 dark:text-zinc-50">Practice questions</h1>
+          <p className="text-[13px] text-slate-500 dark:text-zinc-400">
+            {initialLoad
+              ? <span className="inline-block h-3 w-52 animate-pulse rounded bg-slate-200/80 align-middle dark:bg-white/[0.08]" aria-label="Loading counts" />
+              : <>{Number(totalProblems).toLocaleString()} questions · {topicCounts.length.toLocaleString()} topics · {companyCounts.length.toLocaleString()} companies</>}
+          </p>
+        </div>
+        <button type="button" disabled={!problems.length} onClick={() => openProblem(problems[Math.floor(Math.random() * problems.length)])}
+          className={`group inline-flex items-center gap-2 rounded-xl border border-[#e4e7ec] bg-white px-3 py-1.5 text-[13px] font-medium text-slate-700 shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition-colors hover:border-sky-200 hover:text-sky-700 disabled:opacity-40 dark:border-white/10 dark:bg-[#232325] dark:text-zinc-200 dark:hover:text-sky-300 ${focusRing}`}>
+          <Shuffle className="h-4 w-4 transition-transform group-hover:rotate-12" aria-hidden="true" />Surprise me
+        </button>
+      </header>
+
+      <CompanyStrip companies={companyCounts} loading={companiesLoading} selected={selectedCompany} onSelect={selectCompany} />
+
+      <div className="grid gap-5 xl:grid-cols-[232px_minmax(0,1fr)_312px] xl:gap-6">
+        <aside aria-label="Library" className="order-2 xl:order-1">
+          <div className="xl:sticky xl:top-5">
+            <LibrarySidebar view={view} totalProblems={totalProblems} favoritesCount={favorites.length} lists={lists} busyListId={busyListId}
+              onView={selectView} onCreateList={() => setCreateListOpen(true)} onDeleteList={deleteList} />
+          </div>
+        </aside>
+
+        <section aria-labelledby="question-list-title" className="order-1 min-w-0 xl:order-2">
+          <h2 id="question-list-title" className="sr-only">Questions</h2>
+          {selection && <SelectionHeader kind={selection.kind} title={selection.title} description={selection.description} catalogCount={selection.catalogCount}
+            shownCount={pagination.total || 0} filtered={narrowed} loading={loading} onClear={selection.clear} />}
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="relative block min-w-[220px] flex-1">
+              <span className="sr-only">Search questions</span>
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+              <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search by title, topic or company" className={`w-full pl-10 pr-9 ${fieldBase}`} />
+              {searchQuery && <button type="button" onClick={() => setSearchQuery('')} aria-label="Clear search" className={`absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:text-slate-700 ${focusRing}`}><X className="h-4 w-4" /></button>}
+            </label>
+            <div role="radiogroup" aria-label="Difficulty" className="flex h-10 items-center rounded-xl border border-[#e4e7ec] bg-white p-1 dark:border-white/10 dark:bg-[#1f1f21]">
+              {DIFFICULTY_OPTIONS.map((value) => {
+                const active = difficulty === value;
+                return <button key={value || 'all'} type="button" role="radio" aria-checked={active} onClick={() => setDifficulty(value)}
+                  className={`inline-flex h-full items-center gap-1.5 rounded-lg px-2.5 text-[12.5px] font-medium transition-colors ${focusRing} ${active ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-600 hover:bg-[#f3f4f6] dark:text-zinc-300 dark:hover:bg-white/[0.06]'}`}>
+                  {value && <span className={`h-1.5 w-1.5 rounded-full ${DIFFICULTY[value].dot}`} aria-hidden="true" />}{value || 'All'}
+                </button>;
+              })}
+            </div>
+            <label className="relative">
+              <span className="sr-only">Sort questions</span>
+              <SlidersHorizontal className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+              <select value={sortValue} onChange={(event) => setSortValue(event.target.value)} className={`pl-9 pr-8 ${fieldBase}`}>
+                {QUESTION_SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+          </div>
+
+          <div className="mt-3 flex min-h-[28px] flex-wrap items-center gap-2 text-[12.5px] text-slate-500 dark:text-zinc-400">
+            <span><strong className="font-semibold tabular-nums text-slate-800 dark:text-zinc-100">{Number(pagination.total || 0).toLocaleString()}</strong> {pagination.total === 1 ? 'question' : 'questions'}</span>
+            {activeFilters.map((filter) => <FilterChip key={filter.key} label={filter.label} onRemove={filter.clear} />)}
+            {activeFilters.length > 1 && <button type="button" onClick={clearFilters} className={`rounded font-medium text-slate-600 underline-offset-2 hover:underline dark:text-zinc-300 ${focusRing}`}>Clear all</button>}
+            {loading && problems.length > 0 && <LoaderCircle className="h-3.5 w-3.5 animate-spin text-sky-500" aria-label="Updating" />}
+          </div>
+
+          <div className="mt-3">
+            {loading && !problems.length ? <ProblemRowsSkeleton />
+              : !problems.length ? <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-16 text-center dark:border-white/10 dark:bg-[#232325]">
+                <Search className="mx-auto h-6 w-6 text-slate-300" aria-hidden="true" />
+                <h3 className="mt-3 text-[14px] font-semibold">No matching questions</h3>
+                <p className="mt-1 text-[12.5px] text-slate-500 dark:text-zinc-400">Try another topic, company, difficulty or list.</p>
+                {activeFilters.length > 0 && <button type="button" onClick={clearFilters} className={`mt-4 rounded-xl bg-slate-900 px-4 py-2 text-[12.5px] font-medium text-white dark:bg-white dark:text-slate-900 ${focusRing}`}>Clear filters</button>}
+              </div>
+                : <>
+                  <ul className="space-y-2">
+                    {problems.map((problem, index) => <ProblemRow key={problem._id} problem={problem} number={((pagination.page - 1) * PAGE_SIZE) + index + 1}
+                      saved={favorites.includes(String(problem.listId)) || lists.some((list) => list.problemIds.includes(String(problem.listId)))}
+                      opening={openingProblemId === problem._id} onOpen={openProblem} onSave={setListPickerProblem} onCompany={selectCompany} />)}
+                  </ul>
+                  <Pagination pagination={pagination} loading={loading} solvedOnPage={solvedOnPage} shown={problems.length} onPage={setPage} />
+                </>}
+          </div>
+        </section>
+
+        <aside aria-label="Practice calendar and topics" className="order-3 space-y-4">
+          <PracticeCalendar />
+          <TopicsPanel topics={topicCounts} selected={selectedTopic} onSelect={selectTopic} totalProblems={totalProblems} />
+        </aside>
+      </div>
+
+      {activeQuestion && <QuestionPracticeDialog question={activeQuestion} onClose={() => setActiveQuestion(null)} onAnswered={() => setRefreshQuestions((value) => value + 1)} />}
+      {createListOpen && <CreateListModal busy={creatingList} onClose={() => setCreateListOpen(false)} onCreate={createList} />}
+      {listPickerProblem && <SaveToListsModal problem={listPickerProblem} favorites={favorites} lists={lists} busyListId={busyListId} onClose={() => setListPickerProblem(null)} onFavorite={() => toggleFavorite(listPickerProblem.listId)} onMembership={setMembership} onNewList={() => { setListPickerProblem(null); setCreateListOpen(true); }} />}
+      {openingProblemId && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/25 backdrop-blur-[1px]"><div className="flex items-center gap-3 rounded-xl bg-slate-900 px-5 py-4 text-[13.5px] text-white shadow-xl"><LoaderCircle className="h-5 w-5 animate-spin text-sky-400" />Opening coding workspace</div></div>}
+    </main>
+  </div>;
 }

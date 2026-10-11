@@ -1,5 +1,5 @@
 import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { Play, RotateCcw, Send, TerminalSquare } from 'lucide-react';
+import { CloudUpload, LoaderCircle, Play, RotateCcw, Send, TerminalSquare } from 'lucide-react';
 import { formatDuration, getLanguageLabel } from '../admin/compiler/compilerUtils';
 import {
   isRunExecutionResult,
@@ -154,6 +154,8 @@ function CodeEditor({
   onSubmit,
   onReset,
   showToolbar = true,
+  // Places Run and Submit at the end of the Testcase / Test Result row, next to the results they open.
+  consoleActions = false,
   internalClipboardOnly = false,
   blockContextMenu = false,
   clipboardScope = 'assessment-editor',
@@ -708,7 +710,8 @@ function CodeEditor({
         className="relative z-20 flex min-h-0 flex-col overflow-hidden bg-white px-3 pb-2 pt-0.5 dark:bg-[#282828]"
         style={{ height: consoleHeight }}
       >
-        <div className="flex flex-none items-center gap-5 overflow-x-auto bg-transparent [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex flex-none items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-5 overflow-x-auto bg-transparent [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <button
             type="button"
             onClick={() => onConsoleTabChange('testcase')}
@@ -731,6 +734,29 @@ function CodeEditor({
           >
             Test Result
           </button>
+        </div>
+        {consoleActions && <div className="flex shrink-0 items-center gap-2 py-1.5" role="group" aria-label="Run and submit">
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={isRunning || isSubmitting}
+            title={isSqlMode ? 'Run the query on the dataset' : 'Run your code on the selected test cases'}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-[0_1px_2px_rgba(16,24,40,0.05)] transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
+          >
+            {isRunning ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Play className="h-3.5 w-3.5 fill-current" aria-hidden="true" />}
+            {isRunning ? 'Running…' : 'Run'}
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={isRunning || isSubmitting}
+            title={isSqlMode ? 'Submit the query for full evaluation' : 'Submit for evaluation on all test cases'}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-gradient-to-b from-emerald-500 to-emerald-600 px-3.5 text-xs font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_2px_0_#047857,0_6px_14px_-6px_rgba(5,150,105,0.6)] transition-[transform,box-shadow,filter] hover:brightness-105 active:translate-y-px active:shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_1px_0_#047857] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-60 disabled:active:translate-y-0"
+          >
+            {isSubmitting ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <CloudUpload className="h-3.5 w-3.5" aria-hidden="true" />}
+            {isSubmitting ? 'Submitting…' : 'Submit'}
+          </button>
+        </div>}
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto scroll-smooth pt-2">
@@ -1017,6 +1043,7 @@ function codeEditorPropsEqual(previous, next) {
     && previous.isRunning === next.isRunning
     && previous.isSubmitting === next.isSubmitting
     && previous.showToolbar === next.showToolbar
+    && previous.consoleActions === next.consoleActions
     && previous.internalClipboardOnly === next.internalClipboardOnly
     && previous.blockContextMenu === next.blockContextMenu
     && previous.clipboardScope === next.clipboardScope

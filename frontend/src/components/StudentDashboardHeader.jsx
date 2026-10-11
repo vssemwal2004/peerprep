@@ -10,6 +10,7 @@ import {
   ChevronsRight,
   Grid2X2,
   LayoutDashboard,
+  LockKeyhole,
   LogOut,
   Moon,
   Search,
@@ -208,7 +209,18 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
               <span className="hidden max-w-28 text-left lg:block"><span className="block truncate text-xs font-bold text-slate-800 dark:text-white">{displayName}</span><span className="block text-[10px] font-medium text-slate-500 dark:text-slate-400">Student</span></span>
               <ChevronDown className={`hidden h-3.5 w-3.5 text-slate-400 transition-transform lg:block ${profileOpen ? 'rotate-180' : ''}`} />
             </button>
-            {profileOpen && <div className="absolute right-0 top-[calc(100%+0.65rem)] w-64 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.16)] dark:border-slate-700 dark:bg-slate-900"><div className="flex items-center gap-3 border-b border-slate-100 p-3 dark:border-slate-800"><InitialAvatar name={displayName} avatarUrl={avatarUrl} className="h-10 w-10 shrink-0 rounded-xl" /><div className="min-w-0"><div className="truncate text-sm font-bold text-slate-900 dark:text-white">{displayName}</div><div className="truncate text-xs text-slate-500 dark:text-slate-400">{displayEmail || 'Student account'}</div></div></div><div className="p-1.5"><button type="button" onClick={() => goTo('/student/profile')} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-sky-50 hover:text-sky-800 dark:text-slate-200 dark:hover:bg-sky-950/40"><User className="h-4 w-4" />My profile</button><button type="button" onClick={toggleTheme} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-sky-50 hover:text-sky-800 dark:text-slate-200 dark:hover:bg-sky-950/40 sm:hidden">{theme === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}Change theme</button><button type="button" onClick={handleLogout} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-sky-50 hover:text-sky-800 dark:text-slate-200 dark:hover:bg-sky-950/40"><LogOut className="h-4 w-4" />Sign out</button></div></div>}
+            {profileOpen && <div className="absolute right-0 top-[calc(100%+0.65rem)] w-64 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.16)] dark:border-slate-700 dark:bg-slate-900">
+              <div className="flex items-center gap-3 border-b border-slate-100 p-3 dark:border-slate-800">
+                <InitialAvatar name={displayName} avatarUrl={avatarUrl} className="h-10 w-10 shrink-0 rounded-xl" />
+                <div className="min-w-0"><div className="truncate text-sm font-bold text-slate-900 dark:text-white">{displayName}</div><div className="truncate text-xs text-slate-500 dark:text-slate-400">{displayEmail || 'Student account'}</div></div>
+              </div>
+              <div className="p-1.5">
+                <button type="button" onClick={() => goTo('/student/profile')} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-sky-50 hover:text-sky-800 dark:text-slate-200 dark:hover:bg-sky-950/40"><User className="h-4 w-4" />My profile</button>
+                <button type="button" onClick={() => goTo('/student/change-password')} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-sky-50 hover:text-sky-800 dark:text-slate-200 dark:hover:bg-sky-950/40"><LockKeyhole className="h-4 w-4" aria-hidden="true" />Change password</button>
+                <button type="button" onClick={toggleTheme} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-sky-50 hover:text-sky-800 dark:text-slate-200 dark:hover:bg-sky-950/40 sm:hidden">{theme === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}Change theme</button>
+                <button type="button" onClick={handleLogout} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-sky-50 hover:text-sky-800 dark:text-slate-200 dark:hover:bg-sky-950/40"><LogOut className="h-4 w-4" />Sign out</button>
+              </div>
+            </div>}
           </div>
         </div>
       </div>

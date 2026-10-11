@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { act, createElement as h } from 'react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { JSDOM } from 'jsdom';
 import { createServer } from 'vite';
 import { dailyGoalStatus, dailyPlanProgress } from '../src/student/engagement/dailyChallengeModel.js';
@@ -60,11 +60,28 @@ const click = async node => { assert.ok(node, 'Control exists'); await act(async
 async function mount(path = '/student/challenges') {
   await act(async () => root.render(h(MemoryRouter, { initialEntries: [path] }, h(AuthContext.Provider, { value: { user, authChecked: true } }, h(UniversityPolicyProvider, null, h(Challenges))))));
 }
+function LocationProbe() {
+  return h('output', { 'aria-label': 'Current route' }, useLocation().pathname);
+}
 async function mountHeader(currentUser = user) {
-  await act(async () => root.render(h(MemoryRouter, { initialEntries: ['/student/profile'] }, h(AuthContext.Provider, { value: { user: currentUser, authChecked: true } }, h(UniversityPolicyProvider, null, h(ThemeProvider, null, h(PopupDismissManager), h('main', { 'data-app-scroll-container': true }, h(Header))))))));
+  await act(async () => root.render(h(MemoryRouter, { initialEntries: ['/student/profile'] }, h(AuthContext.Provider, { value: { user: currentUser, authChecked: true } }, h(UniversityPolicyProvider, null, h(ThemeProvider, null, h(PopupDismissManager), h('main', { 'data-app-scroll-container': true }, h(Header), h(LocationProbe))))))));
 }
 const control = name => document.querySelector(`[aria-label="${name}"]`);
 const drawer = () => document.querySelector('[role="dialog"]');
+
+for (const accessScope of ['full', 'assessment_only']) {
+  test(`profile dropdown opens change password and closes for ${accessScope} students`, async () => {
+    permissions = {};
+    await mountHeader({ ...user, accessScope });
+    await click(control('Open profile menu'));
+    assert.ok(button('My profile'));
+    await click(button('Change password'));
+    assert.equal(control('Current route').textContent, '/student/change-password');
+    assert.equal(control('Open profile menu').getAttribute('aria-expanded'), 'false');
+    assert.equal(button('Change password'), undefined);
+    assert.deepEqual(calls, [], 'Account security navigation does not request challenge data');
+  });
+}
 
 test('all schedules are visible, deep linking and keyboard navigation work, and the whole month is shown', async () => {
   await mount('/student/challenges?period=monthly');

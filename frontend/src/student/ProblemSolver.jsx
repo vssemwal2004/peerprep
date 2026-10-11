@@ -1,17 +1,15 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
   Play,
-  Send,
   RotateCcw,
   Tag,
   Building2,
   PanelLeftOpen,
   PanelRightOpen,
-  Clock3,
   Maximize2,
   BookOpenText,
 } from 'lucide-react';
@@ -20,6 +18,7 @@ import { useToast } from '../components/CustomToast';
 import ProblemAssetImages from '../components/ProblemAssetImages';
 import CodeEditor from './CodeEditor';
 import DailyCodingChallenge from './DailyCodingChallenge';
+import WorkspaceTimer from './WorkspaceTimer';
 import InterviewQuestionPrompt from './InterviewQuestionPrompt';
 import AnviApproach, { ANVI_ASK_EVENT, AnviMark } from '../components/AnviApproach';
 import { DifficultyBadge, EmptyState, LoadingPanel } from '../admin/compiler/CompilerUi';
@@ -1016,14 +1015,6 @@ export default function ProblemSolver() {
   const [isRunning, setIsRunning] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showInterviewPrompt, setShowInterviewPrompt] = useState(false);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setElapsedSeconds((value) => value + 1), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  const elapsedLabel = `${String(Math.floor(elapsedSeconds / 3600)).padStart(2, '0')}:${String(Math.floor((elapsedSeconds % 3600) / 60)).padStart(2, '0')}:${String(elapsedSeconds % 60).padStart(2, '0')}`;
 
   const stopSubmissionPolling = useCallback(() => {
     if (submissionPollRef.current) {
@@ -1366,13 +1357,15 @@ export default function ProblemSolver() {
     setResult(null);
   };
 
-  const handleRun = async () => {
+  // The editor passes its latest text (including keystrokes not yet saved to drafts); fall back to the draft.
+  const handleRun = async (codeOverride) => {
     if (!problem) {
       return;
     }
+    const sourceCode = typeof codeOverride === 'string' ? codeOverride : activeCode;
 
     const validationMessage = getCodeValidationMessage(
-      activeCode,
+      sourceCode,
       getStarterCodeForLanguage(problem, language),
       'run',
     );
@@ -1403,10 +1396,10 @@ export default function ProblemSolver() {
     setActiveConsoleTab('result');
     try {
       const queuedJob = await (isSharedProblem ? api.runSharedStudentProblem(problem._id, {
-        language, sourceCode: activeCode, customInput: runInput,
+        language, sourceCode, customInput: runInput,
       }) : api.runStudentProblem(problem._id, {
         language,
-        sourceCode: activeCode,
+        sourceCode,
         customInput: runInput,
         testCases: runCases,
       }));
@@ -1439,7 +1432,7 @@ export default function ProblemSolver() {
         mode: 'run',
         language,
         input: runInput,
-        sourceCode: activeCode,
+        sourceCode,
         fallbackMessage: 'Failed to run code.',
       }));
       setActiveConsoleTab('result');
@@ -1448,13 +1441,14 @@ export default function ProblemSolver() {
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = (codeOverride) => {
     if (!problem) {
       return;
     }
+    const sourceCode = typeof codeOverride === 'string' ? codeOverride : activeCode;
 
     const validationMessage = getCodeValidationMessage(
-      activeCode,
+      sourceCode,
       getStarterCodeForLanguage(problem, language),
       'submit',
     );
@@ -1467,7 +1461,7 @@ export default function ProblemSolver() {
     setIsSubmitting(true);
 
     if (isSharedProblem) {
-      void api.submitSharedStudentProblem(problem._id, { language, sourceCode: activeCode })
+      void api.submitSharedStudentProblem(problem._id, { language, sourceCode })
         .then(async (response) => {
           if (!isMountedRef.current) return;
           setResult({ mode: 'submit', status: response.result === 'correct' ? 'AC'
@@ -1486,14 +1480,14 @@ export default function ProblemSolver() {
           if (isMountedRef.current) setActiveLeftTab('acceptance');
           toast.success(response.feedback || 'Submission saved.');
         }).catch((error) => {
-          if (isMountedRef.current) { setResult(createTerminalExecutionResult(error, { mode: 'submit', language, sourceCode: activeCode })); setActiveConsoleTab('result'); }
+          if (isMountedRef.current) { setResult(createTerminalExecutionResult(error, { mode: 'submit', language, sourceCode })); setActiveConsoleTab('result'); }
         }).finally(() => { if (isMountedRef.current) setIsSubmitting(false); });
       return;
     }
 
     void api.submitStudentProblem(problem._id, {
       language,
-      sourceCode: activeCode,
+      sourceCode,
     }).then(async (queuedJob) => {
       if (!isMountedRef.current) {
         return;
@@ -1529,13 +1523,21 @@ export default function ProblemSolver() {
         setResult(createTerminalExecutionResult(error, {
           mode: 'submit',
           language,
-          sourceCode: activeCode,
+          sourceCode,
           fallbackMessage: 'Failed to submit code.',
         }));
         setActiveConsoleTab('result');
       }
     });
   };
+
+  // The memoised editor keeps the callbacks it first received; route them to the latest handlers.
+  const runHandlerRef = useRef(handleRun);
+  const submitHandlerRef = useRef(handleSubmit);
+  runHandlerRef.current = handleRun;
+  submitHandlerRef.current = handleSubmit;
+  const runFromEditor = useCallback((code) => runHandlerRef.current(code), []);
+  const submitFromEditor = useCallback((code) => submitHandlerRef.current(code), []);
 
   const handleResizeStart = (event) => {
     if (!splitContainerRef.current) {
@@ -1614,7 +1616,7 @@ export default function ProblemSolver() {
   return (
     <div className="h-screen overflow-hidden bg-[#f2f2f2] font-sans dark:bg-[#1a1a1a]">
       <div className="flex h-full min-h-0 flex-col">
-        <header className="sticky top-0 z-40 grid min-h-[56px] grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-zinc-200 bg-[#f7f7f7] px-3 py-2 dark:border-zinc-800 dark:bg-[#282828]">
+        <header className="sticky top-0 z-40 grid min-h-[56px] grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-slate-200/80 bg-white/90 px-3 py-2 backdrop-blur dark:border-white/[0.07] dark:bg-[#202022]/95">
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -1654,9 +1656,8 @@ export default function ProblemSolver() {
             </div>
           </div>
 
-          <div className="flex items-center justify-center gap-1 rounded-lg bg-zinc-200/70 p-1 dark:bg-[#333]">
-            <button type="button" onClick={handleRun} disabled={isRunning || isSubmitting} className="inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium text-zinc-700 hover:bg-white disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-zinc-700"><Play className="h-3.5 w-3.5 fill-current" />{isRunning ? 'Running...' : 'Run'}</button>
-            <button type="button" onClick={handleSubmit} disabled={isRunning || isSubmitting} className="inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-semibold text-[#00a83e] hover:bg-white disabled:opacity-40 dark:text-[#2cbb5d] dark:hover:bg-zinc-700"><Send className="h-3.5 w-3.5" />{isSubmitting ? 'Submitting...' : 'Submit'}</button>
+          <div className="flex items-center justify-center">
+            <WorkspaceTimer />
           </div>
 
           <div className="flex items-center justify-end gap-2">
@@ -1692,8 +1693,7 @@ export default function ProblemSolver() {
               <RotateCcw className="h-3.5 w-3.5" />
             </button>
 
-            <div className="hidden items-center gap-1 rounded-lg bg-zinc-200/70 px-2.5 py-2 text-xs font-medium tabular-nums text-blue-500 dark:bg-[#333] sm:flex"><Clock3 className="h-3.5 w-3.5" />{elapsedLabel}</div>
-            <DailyCodingChallenge variant="header" />
+            <DailyCodingChallenge variant="header" className="hidden xl:inline-flex" />
             <button type="button" onClick={() => document.documentElement.requestFullscreen?.()} className="hidden h-8 w-8 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700 md:inline-flex" aria-label="Enter fullscreen"><Maximize2 className="h-4 w-4" /></button>
 
             <div className="flex items-center gap-1 rounded-2xl bg-white/90 p-1 shadow-[0_8px_20px_rgba(15,23,42,0.04)] dark:bg-gray-900 lg:hidden">
@@ -1853,10 +1853,11 @@ export default function ProblemSolver() {
               result={result}
               isRunning={isRunning}
               isSubmitting={isSubmitting}
-              onRun={handleRun}
-              onSubmit={handleSubmit}
+              onRun={runFromEditor}
+              onSubmit={submitFromEditor}
               onReset={resetCode}
               showToolbar={false}
+              consoleActions
               valueVersion={codeValueVersion}
               executionMode={problem?.category === 'SQL' ? 'sql' : 'code'}
             />
@@ -1915,10 +1916,11 @@ export default function ProblemSolver() {
               result={result}
               isRunning={isRunning}
               isSubmitting={isSubmitting}
-              onRun={handleRun}
-              onSubmit={handleSubmit}
+              onRun={runFromEditor}
+              onSubmit={submitFromEditor}
               onReset={resetCode}
               showToolbar={false}
+              consoleActions
               valueVersion={codeValueVersion}
               executionMode={problem?.category === 'SQL' ? 'sql' : 'code'}
             />
