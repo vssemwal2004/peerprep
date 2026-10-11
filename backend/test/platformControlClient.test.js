@@ -17,6 +17,21 @@ test('university configuration rejects missing identity and weak shared key', ()
   } finally { process.env = previous; }
 });
 
+test('production university requires an explicitly configured Judge0 service', () => {
+  const previous = { ...process.env };
+  try {
+    Object.assign(process.env, { PEERPREP_DEPLOYMENT_ROLE: 'university', PEERPREP_UNIVERSITY_ID: 'university-one',
+      PEERPREP_CONTROL_URL: 'https://control.example.com', PEERPREP_SHARED_API_KEY: 'a'.repeat(40),
+      MONGODB_URI: 'mongodb://127.0.0.1:27017/university', NODE_ENV: 'production' });
+    delete process.env.JUDGE0_URL;
+    delete process.env.JUDGE0_BASE_URLS;
+    delete process.env.JUDGE0_BASE_URL;
+    assert.throws(validateDeploymentConfig, /JUDGE0_URL/);
+    process.env.JUDGE0_URL = 'http://127.0.0.1:2358';
+    assert.doesNotThrow(validateDeploymentConfig);
+  } finally { process.env = previous; }
+});
+
 test('university central request sends its identity and key only to the configured central host', async () => {
   const previous = { ...process.env };
   const originalFetch = globalThis.fetch;

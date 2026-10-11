@@ -4,6 +4,31 @@ import Problem from '../models/Problem.js';
 import { controlRequest, universityPolicy } from './client.js';
 import { isUniversity } from './deployment.js';
 
+const QUESTION_CACHE_MS = 30_000;
+let questionCache = null;
+let questionCacheUntil = 0;
+let questionRequest = null;
+const judgeDataCache = new Map();
+
+export async function sharedJudgeData(question) {
+  if (!isUniversity() || !question?._id) throw new Error('Shared judge data requires a university question');
+  const cacheKey = `${question._id}:${question.updatedAt || ''}`;
+  const cached = judgeDataCache.get(cacheKey);
+  if (cached && cached.until > Date.now()) return cached.value;
+  if (cached?.request) return cached.request;
+  const request = controlRequest(`questions/${encodeURIComponent(String(question._id))}/judge-data`);
+  judgeDataCache.set(cacheKey, { request });
+  try {
+    const value = await request;
+    if (judgeDataCache.size > 100) judgeDataCache.clear();
+    judgeDataCache.set(cacheKey, { value, until: Date.now() + QUESTION_CACHE_MS });
+    return value;
+  } catch (error) {
+    judgeDataCache.delete(cacheKey);
+    throw error;
+  }
+}
+
 export async function sharedAssessments() {
   if (!isUniversity()) return [];
   const policy = await universityPolicy();
@@ -53,11 +78,18 @@ export async function sharedQuestions() {
   if (!isUniversity()) return null;
   const policy = await universityPolicy();
   if (!policy.permissions?.questions) return [];
-  const { questions } = await controlRequest('questions');
-  if (!Array.isArray(questions)) {
-    const error = new Error('Central question feed returned an invalid response');
-    error.status = 503;
-    throw error;
-  }
-  return questions.map((question) => ({ ...question, platformShared: true }));
+  if (questionCache && questionCacheUntil > Date.now()) return questionCache;
+  if (questionRequest) return questionRequest;
+  questionRequest = controlRequest('questions').then(({ questions }) => {
+    if (!Array.isArray(questions)) {
+      const error = new Error('Central question feed returned an invalid response');
+      error.status = 503;
+      throw error;
+    }
+    questionCache = questions.map((question) => ({ ...question, platformShared: true }));
+    questionCacheUntil = Date.now() + QUESTION_CACHE_MS;
+    return questionCache;
+  });
+  try { return await questionRequest; }
+  finally { questionRequest = null; }
 }

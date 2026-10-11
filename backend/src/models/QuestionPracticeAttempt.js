@@ -8,8 +8,14 @@ const schema = new mongoose.Schema({
   answer: { type: mongoose.Schema.Types.Mixed, required: true },
   language: { type: String, default: '' },
   result: { type: String, enum: ['correct', 'incorrect', 'submitted'], required: true },
+  totalTestCases: { type: Number, min: 0, default: 0 },
+  passedTestCases: { type: Number, min: 0, default: 0 },
+  executionTimeMs: { type: Number, min: 0, default: 0 },
+  memoryUsedKb: { type: Number, min: 0, default: 0 },
+  failureStatus: { type: String, enum: ['WA', 'CE', 'RE', 'TLE'], default: undefined },
 }, { timestamps: true });
 
 schema.index({ studentId: 1, source: 1, questionId: 1, createdAt: -1 });
 schema.index({ studentId: 1, source: 1, questionType: 1, createdAt: -1 });
+schema.index({ source: 1, questionId: 1, questionType: 1, result: 1 });
 export default mongoose.model('QuestionPracticeAttempt', schema);

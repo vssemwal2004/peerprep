@@ -1470,11 +1470,19 @@ export default function ProblemSolver() {
       void api.submitSharedStudentProblem(problem._id, { language, sourceCode: activeCode })
         .then(async (response) => {
           if (!isMountedRef.current) return;
-          setResult({ mode: 'submit', status: response.result === 'correct' ? 'Accepted'
-            : response.result === 'incorrect' ? 'Wrong Answer' : 'Submitted', message: response.feedback || '' });
+          setResult({ mode: 'submit', status: response.result === 'correct' ? 'AC'
+            : response.result === 'incorrect' ? response.failureStatus || 'WA' : 'PENDING',
+          message: response.feedback || '' });
+          setProblem((previous) => previous ? { ...previous,
+            studentStatus: response.result === 'correct' ? 'Solved' : previous.studentStatus,
+            totalSubmissions: response.totalSubmissions ?? previous.totalSubmissions,
+            acceptedSubmissions: response.acceptedSubmissions ?? previous.acceptedSubmissions,
+            acceptanceRate: response.acceptanceRate ?? previous.acceptanceRate,
+          } : previous);
           if (response.result === 'correct') setShowInterviewPrompt(true);
           setActiveConsoleTab('result');
           await loadSubmissions({ silent: true, selectLatest: true });
+          if (isMountedRef.current) setActiveLeftTab('acceptance');
           toast.success(response.feedback || 'Submission saved.');
         }).catch((error) => {
           if (isMountedRef.current) { setResult(createTerminalExecutionResult(error, { mode: 'submit', language, sourceCode: activeCode })); setActiveConsoleTab('result'); }
