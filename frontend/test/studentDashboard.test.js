@@ -169,18 +169,22 @@ for (const [hour, greeting] of [[8, 'Good morning'], [12, 'Good afternoon'], [16
   });
 }
 
-test('continue cards link to the student’s actual saved question and last learning topic', async () => {
-  await mount();
-  const resume = section('Continue where you left off');
-  assert.ok(resume, 'Resume section is shown');
-  for (const item of dashboard.resumeItems) {
-    const link = [...resume.querySelectorAll('a')].find((entry) => entry.textContent.includes(item.title));
-    assert.ok(link, `Saved ${item.type} activity appears`);
-    assert.equal(link.getAttribute('href'), item.href);
-    await act(async () => link.click());
+for (const latest of ['coding', 'learning']) {
+  test(`continue shows only the most recent activity when it was ${latest}`, async () => {
+    if (latest === 'learning') dashboard.resumeItems.reverse();
+    const [item, older] = dashboard.resumeItems;
+    await mount();
+    const resume = section('Continue where you left off');
+    assert.ok(resume, 'Resume section is shown');
+    const resumeLinks = [...resume.querySelectorAll('a')];
+    assert.equal(resumeLinks.length, 1, 'One card keeps the section focused');
+    assert.match(resumeLinks[0].textContent, new RegExp(item.title));
+    assert.doesNotMatch(resume.textContent, new RegExp(older.title), 'Older activity is not repeated');
+    assert.equal(resumeLinks[0].getAttribute('href'), item.href);
+    await act(async () => resumeLinks[0].click());
     assert.equal(document.getElementById('location').textContent, item.href);
-  }
-});
+  });
+}
 
 test('accessible document order follows greeting and recent work, then the progress rail, then discovery', async () => {
   announcements = announcements.map((announcement) => ({ ...announcement, priority: 'normal' }));
@@ -198,8 +202,8 @@ test('accessible document order follows greeting and recent work, then the progr
     'Recent work comes before the rail, which comes before discovery on small screens');
   assert.ok(rail.compareDocumentPosition(main) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
   assert.deepEqual([...rail.querySelectorAll('h2')].map((heading) => heading.textContent), [
-    'Coding progress', 'University standing', 'Daily challenge', 'Coming up', 'Announcements',
-  ]);
+    'Announcements', 'Coding progress', 'University standing', 'Daily challenge', 'Coming up',
+  ], 'Any announcement leads the rail');
   assert.deepEqual([...main.querySelectorAll('h2')].map((heading) => heading.textContent), [
     'Your challenges', 'Next in practice', 'Explore your learning',
   ]);
@@ -262,7 +266,7 @@ for (const disabledModule of [null, 'learning', 'questions']) {
     assert.equal(section('Next in practice'), undefined);
     assert.match(section('University standing').textContent, /Not ranked yet/);
     assert.match(section('Coming up').textContent, /Nothing scheduled yet/);
-    assert.match(section('Announcements').textContent, /No new announcements/);
+    assert.equal(section('Announcements'), undefined, 'An empty announcements card is not shown');
     for (const [module, label, path] of [['questions', 'Start coding', '/problems'], ['learning', 'Start learning', '/student/learning']]) {
       const link = [...start.querySelectorAll('a')].find((entry) => entry.textContent.includes(label));
       if (module === disabledModule) {
@@ -402,8 +406,8 @@ test('admin announcement updates replace the displayed notices and remove listen
   assert.match(section('Announcements').textContent, /Placement registration closes Friday/);
   assert.equal(listeners.get('announcement_update')?.size, 1);
   assert.deepEqual([...document.querySelectorAll('aside[aria-label="Your progress and priorities"] h2')].map((heading) => heading.textContent), [
-    'Coding progress', 'Announcements', 'University standing', 'Daily challenge', 'Coming up',
-  ], 'An important announcement is brought ahead of routine rail items');
+    'Announcements', 'Coding progress', 'University standing', 'Daily challenge', 'Coming up',
+  ], 'Announcements are brought ahead of routine rail items');
   const beforeCount = calls.filter(([name]) => name === 'announcements').length;
   announcements = [{ _id: 'notice-2', title: 'Drive postponed', message: 'The updated schedule will be shared tomorrow.', priority: 'high', createdAt: iso(9) }];
   await emit('announcement_update');
@@ -413,6 +417,31 @@ test('admin announcement updates replace the displayed notices and remove listen
   await act(async () => root.unmount());
   root = null;
   assert.equal(listeners.get('announcement_update')?.size, 0);
+});
+
+test('the notification bar shows the highest-priority announcement and stays dismissed until a newer one arrives', async () => {
+  announcements = [
+    { _id: 'routine', title: 'Library hours extended', message: 'Open till 10 PM this week.', priority: 'normal', createdAt: iso(9) },
+    { _id: 'urgent', title: 'Placement registration closes Friday', message: 'Register before 5 PM.', priority: 'high', createdAt: iso(7) },
+  ];
+  await mount();
+  const bar = () => document.querySelector('[aria-label="Latest announcement"]');
+  assert.ok(bar(), 'Announcements are also surfaced as a notification bar');
+  assert.match(bar().textContent, /Important.*Placement registration closes Friday/);
+  assert.match(bar().textContent, /View all 2/);
+  assert.ok(bar().compareDocumentPosition(document.querySelector('.dashboard-greeting')) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING,
+    'The bar comes before the greeting');
+  await act(async () => bar().querySelector('button[aria-label="Dismiss announcement"]').click());
+  assert.equal(bar(), null);
+  assert.match(section('Announcements').textContent, /Placement registration closes Friday/, 'The rail card keeps every notice');
+
+  await act(async () => root.unmount());
+  root = createRoot(document.getElementById('app'));
+  await mount();
+  assert.equal(bar(), null, 'A dismissed notice stays closed for this viewer');
+  announcements = [{ _id: 'newer', title: 'Drive postponed', message: '', priority: 'high', createdAt: iso(9) }];
+  await emit('announcement_update');
+  assert.match(bar().textContent, /Drive postponed/, 'A newer announcement brings the bar back');
 });
 
 test('disabled university modules hide their cards and resume links and skip their list APIs', async () => {
@@ -576,7 +605,8 @@ test('empty personal activity does not invent unfinished questions, notices, or 
   assert.match(document.querySelector('.dashboard-greeting').textContent, /Start here/);
   assert.equal(section('Explore your learning'), undefined);
   assert.equal(section('Next in practice'), undefined);
-  assert.match(section('Announcements').textContent, /no|nothing|up to date/i);
+  assert.equal(section('Announcements'), undefined);
+  assert.equal(document.querySelector('[aria-label="Latest announcement"]'), null, 'No notification bar without announcements');
   assert.ok(section('Coding progress').querySelector('[role="img"][aria-label="All problems: 0 solved out of 0"]'));
   assert.equal(section('University standing').querySelector('[role="progressbar"]'), null);
   assert.doesNotMatch(section('University standing').textContent, /#1/);

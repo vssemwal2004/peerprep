@@ -29,12 +29,12 @@ export default function ChallengeGoals({ section, onRetry, canQuestions, canLear
     select(event.key === 'Home' ? 'weekly' : event.key === 'End' ? 'monthly' : tab === 'weekly' ? 'monthly' : 'weekly', true);
   };
 
-  return <section aria-labelledby={`${tabsId}-title`} aria-busy={Boolean(section?.loading)} data-period-active={tab} className={`flex flex-col p-4 ${card}`}>
+  return <section aria-labelledby={`${tabsId}-title`} aria-busy={Boolean(section?.loading)} data-period-active={tab} className={`flex flex-col p-5 ${card}`}>
     <header className="flex items-center justify-between gap-3">
-      <h2 id={`${tabsId}-title`} className="text-[14px] font-semibold tracking-[-0.01em] text-slate-900 dark:text-zinc-100">Your challenges</h2>
-      <div ref={tabsRef} role="tablist" aria-label="Challenge period" onKeyDown={onKeyDown} className="flex rounded-lg bg-slate-100 p-0.5 dark:bg-zinc-800">
+      <h2 id={`${tabsId}-title`} className="text-[15px] font-medium tracking-[-0.01em] text-slate-900 dark:text-zinc-100">Your challenges</h2>
+      <div ref={tabsRef} role="tablist" aria-label="Challenge period" onKeyDown={onKeyDown} className="flex rounded-[10px] bg-[#f1f2f5] p-0.5 dark:bg-white/[0.06]">
         {PERIODS.map(([kind, label]) => <button key={kind} type="button" role="tab" data-period={kind} id={`${tabsId}-${kind}`} aria-controls={`${tabsId}-panel`} aria-selected={tab === kind} tabIndex={tab === kind ? 0 : -1} onClick={() => select(kind)}
-          className={`rounded-md px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${focusRing} ${tab === kind ? 'bg-white text-slate-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-100' : 'text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-200'}`}>{label}</button>)}
+          className={`rounded-lg px-2.5 py-1 text-[12px] font-medium transition-colors ${focusRing} ${tab === kind ? 'bg-white text-slate-900 shadow-[0_1px_2px_rgba(16,24,40,0.08)] dark:bg-zinc-950 dark:text-zinc-100' : 'text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-200'}`}>{label}</button>)}
       </div>
     </header>
 

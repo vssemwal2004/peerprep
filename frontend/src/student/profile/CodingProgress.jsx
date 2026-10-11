@@ -95,6 +95,7 @@ export default function CodingProgress({
   className = '',
   description = 'A clear view of your coding practice.',
   action,
+  titleIcon = null,
   compact = false,
   loading = false,
   showActivity = true,
@@ -127,7 +128,7 @@ export default function CodingProgress({
     <section aria-labelledby={headingId} aria-busy={loading} className={`rounded-xl border border-slate-200/90 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.025)] dark:border-zinc-800 dark:bg-[#242424] ${className}`}>
       <header className="flex items-start justify-between gap-3">
         <div>
-          <h2 id={headingId} className="text-[14px] font-semibold tracking-tight text-slate-950 dark:text-zinc-50">Coding progress</h2>
+          <h2 id={headingId} className={titleIcon ? 'flex items-center gap-2.5 text-[15.5px] font-semibold tracking-[-0.015em] text-slate-900 dark:text-zinc-50' : 'text-[14px] font-semibold tracking-tight text-slate-950 dark:text-zinc-50'}>{titleIcon}Coding progress</h2>
           {description ? <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500 dark:text-zinc-400">{description}</p> : null}
         </div>
         {action === undefined ? (

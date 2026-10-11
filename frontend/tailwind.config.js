@@ -11,6 +11,7 @@ export default {
         sans: ['Manrope', 'ui-sans-serif', 'system-ui', 'sans-serif'],
         display: ['Fraunces', 'ui-serif', 'Georgia', 'serif'],
         jakarta: ['"Plus Jakarta Sans"', 'Manrope', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        dmsans: ['"DM Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
       },
     },
   },

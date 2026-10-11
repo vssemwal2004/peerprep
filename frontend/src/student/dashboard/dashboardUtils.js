@@ -60,3 +60,9 @@ export const numeric = (value) => Number.isFinite(Number(value)) ? Math.max(0, M
 
 export const isImportantAnnouncement = (item) => item?.priority === 'high' || item?.type === 'alert';
 
+const PRIORITY = { high: 0, normal: 1, low: 2 };
+
+/** High priority first, then newest. The bar and the rail card share this order. */
+export const sortAnnouncements = (items = []) => [...items].sort((a, b) =>
+  (PRIORITY[a.priority] ?? 1) - (PRIORITY[b.priority] ?? 1) || new Date(b.createdAt) - new Date(a.createdAt));
+

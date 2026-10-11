@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,650;9..144,750&family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,650;9..144,750&family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -78,6 +78,21 @@
 }
 
 @layer utilities {
+  /* Student dashboard: the name underline draws in once, then stays. */
+  .dashboard-underline {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: dashboard-underline-draw 0.9s 0.15s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+  }
+
+  .dashboard-underline-late {
+    animation-delay: 0.55s;
+  }
+
+  @keyframes dashboard-underline-draw {
+    to { stroke-dashoffset: 0; }
+  }
+
   /* Custom animations */
   .animate-pulse-slow {
     animation: pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
