@@ -33,14 +33,15 @@ const fixture = { user, permissions, engagement, settings: DEFAULT_POLICY, badge
 let fixtureModule = '';
 let bundledFixture;
 const assets = `${root}/dist/assets`;
-const css = await readFile(`${assets}/${(await readdir(assets)).find((file) => /^index-.*\.css$/.test(file))}`, 'utf8');
+const cssFiles = (await readdir(assets)).filter((file) => /^(index|StudentProfile)-.*\.css$/.test(file));
+const css = (await Promise.all(cssFiles.map((file) => readFile(`${assets}/${file}`, 'utf8')))).join('\n');
 const server = await createServer({ root, configFile: false, server: { host: '127.0.0.1', port: 5177, strictPort: true, open: false, hmr: false, ws: false } });
 let browser;
 try {
   await server.listen();
   const base = `http://127.0.0.1:${server.httpServer.address().port}`;
   browser = await chromium.launch({ headless: true, channel: 'msedge' });
-  const page = await browser.newPage({ viewport: { width: 1366, height: 900 }, reducedMotion: 'reduce' });
+  const page = await browser.newPage({ viewport: { width: 1366, height: 768 }, reducedMotion: 'reduce' });
   page.setDefaultTimeout(20000);
   const errors = [];
   page.on('pageerror', (error) => { errors.push(error.message); console.error(error.message); });
@@ -55,7 +56,11 @@ try {
       import { MemoryRouter } from 'react-router-dom';
       import '/src/index.css';
       import AuthContext from '/src/context/AuthContext.jsx';
+      import { ThemeProvider } from '/src/context/ThemeContext.jsx';
       import { UniversityPolicyProvider } from '/src/platform/UniversityPolicyContext.jsx';
+      import StudentHeader from '/src/components/StudentDashboardHeader.jsx';
+      import GlobalSidebar from '/src/components/GlobalSidebar.jsx';
+      import { STUDENT_SIDEBAR_PANEL_WIDTH, STUDENT_SIDEBAR_RAIL_WIDTH } from '/src/components/sidebarLayout.js';
       import Profile from '/src/student/StudentProfile.jsx';
       import Settings from '/src/admin/EngagementSettings.jsx';
       import { api } from '/src/utils/api.js';
@@ -65,7 +70,9 @@ try {
       window.__saved = null; window.__claimCount = 0;
       const currentUser = { ...f.user, role: admin ? 'admin' : 'student' };
       api.me = async () => currentUser;
-      api.universityPolicy = async () => ({ active: true, permissions: f.permissions });
+      api.universityPolicy = async () => ({ active: true, permissions: params.has('restricted') ? { ...f.permissions, questions: false, learning: false } : f.permissions });
+      api.getNotifications = async () => ({ notifications: [], unreadCount: 0 });
+      api.listStudentAnnouncements = async () => ({ announcements: [] });
       api.refreshStudentEngagement = async () => structuredClone(f.engagement);
       api.getStudentRanking = async () => ({ ranking: { universityName: 'PeerPrep University', rank: 8, totalStudents: 120, score: 420, level: f.engagement.level, hasProgress: true } });
       api.getStudentStats = async () => ({ stats: { totalQuestionsSolved: 12, totalSubmissions: 20, totalProblems: 100, solvedByDifficulty: { easy: 8, medium: 4, hard: 0 }, totalProblemsByDifficulty: { easy: 50, medium: 35, hard: 15 }, recentSubmissions: [], languagesUsed: [{ language: 'python', count: 20 }] } });
@@ -77,8 +84,25 @@ try {
       api.getEngagementPolicy = async () => ({ settings: f.settings, permissions: { ...f.permissions, events: false }, badges: f.badges, levels: f.levels });
       api.getEngagementAnalytics = async () => ({ activeStudents: 23, xp: 860, missions: [{ _id: 'daily', assigned: 45, completed: 31 }] });
       api.updateEngagementPolicy = async (value) => { window.__saved = value; return { settings: value.settings }; };
-      socket.connect = () => {}; socket.on = () => {}; socket.off = () => {};
-      ReactDOMClient.createRoot(document.getElementById('root')).render(React.createElement(MemoryRouter, null, React.createElement(AuthContext.Provider, { value: { user: currentUser, authChecked: true } }, React.createElement(UniversityPolicyProvider, null, React.createElement('div', { style: { paddingTop: '65px' } }, React.createElement(admin ? Settings : Profile))))));
+      socket.connect = () => {}; socket.on = () => {}; socket.off = () => {}; socket.emit = () => {};
+      function StudentShell() {
+        const [pinned, setPinned] = React.useState(false);
+        const toggle = () => setPinned(value => !value);
+        return <div className="h-screen overflow-hidden" style={{ '--admin-sidebar-width': pinned ? STUDENT_SIDEBAR_PANEL_WIDTH : STUDENT_SIDEBAR_RAIL_WIDTH, '--app-navbar-height': '0rem' }}>
+          <GlobalSidebar role="student" isExpanded={pinned} isPinned={pinned} onTogglePin={toggle} />
+          <main data-app-scroll-container className="h-screen min-h-0 overflow-y-auto overscroll-contain" style={{ paddingLeft: 'var(--admin-sidebar-width)', scrollPaddingTop: 'calc(5rem + 1px)' }}>
+            <StudentHeader sidebarPinned={pinned} onToggleSidebar={toggle} />
+            <Profile />
+          </main>
+        </div>;
+      }
+      ReactDOMClient.createRoot(document.getElementById('root')).render(
+        <MemoryRouter initialEntries={[admin ? '/admin/settings/student-progression' : '/student/profile']}>
+          <AuthContext.Provider value={{ user: currentUser, authChecked: true, isAuthenticated: true }}>
+            <UniversityPolicyProvider><ThemeProvider>{admin ? <Settings /> : <StudentShell />}</ThemeProvider></UniversityPolicyProvider>
+          </AuthContext.Provider>
+        </MemoryRouter>
+      );
     `;
     if (!bundledFixture) {
       const result = await build({ stdin: { contents: fixtureModule, resolveDir: root, sourcefile: 'engagement-smoke.jsx', loader: 'jsx' }, bundle: true, write: false, format: 'iife', platform: 'browser', jsx: 'automatic', loader: { '.css': 'empty', '.svg': 'dataurl' },
@@ -92,20 +116,48 @@ try {
   await page.goto(`${base}/__engagement-fixture`, { waitUntil: 'commit' });
   await page.locator('#activity').waitFor();
   await page.locator('#missions').waitFor();
+  const header = page.locator('header[aria-label="Student header"]');
+  assert.equal(await header.count(), 1, 'Profile reuses exactly one student header');
+  assert.equal((await header.boundingBox()).y, 0);
   const activity = await page.locator('#activity').boundingBox();
-  assert.ok(activity.y + activity.height < 900, 'Desktop heatmap must be visible without scrolling');
+  assert.ok(activity.y + activity.height < 768, 'Desktop heatmap must be visible below the real header without scrolling');
   const order = await page.locator('main h2').allTextContents();
   assert.ok(order.indexOf('Activity') < order.indexOf('Badges'));
   assert.ok(order.indexOf('Badges') < order.indexOf("Today's missions"));
   await page.screenshot({ path: `${output}/profile-light.png` });
-  await page.evaluate(() => document.documentElement.classList.add('dark'));
+  await header.getByRole('button', { name: 'Switch to dark theme' }).click();
+  assert.ok(await page.locator('html').evaluate(node => node.classList.contains('dark')));
+  await page.waitForTimeout(350); // Let existing theme color transitions settle before the visual snapshot.
   await page.screenshot({ path: `${output}/profile-dark.png` });
+  await header.getByRole('textbox', { name: 'Search student modules' }).fill('coding');
+  await header.getByRole('button', { name: 'Coding Problems Practice problem solving' }).waitFor();
+  await page.keyboard.press('Escape');
+  await header.getByRole('button', { name: 'Open profile menu' }).click();
+  await header.getByRole('button', { name: 'My profile', exact: true }).click();
+  assert.equal(await header.getByRole('button', { name: 'Open profile menu' }).getAttribute('aria-expanded'), 'false', 'Selecting the current profile closes the menu');
+  await page.locator('#badges').evaluate(node => node.scrollIntoView({ block: 'start' }));
+  assert.equal((await header.boundingBox()).y, 0, 'Header stays visible while profile scrolls');
+  assert.ok((await page.locator('#badges').boundingBox()).y >= 65, 'Section anchors clear the sticky header');
   await page.locator('#badges').getByRole('button', { name: 'View all', exact: true }).click();
   await page.getByRole('tab', { name: 'Levels', exact: true }).click();
   assert.equal(await page.getByText('Complete all requirements', { exact: true }).count(), 6);
   await page.screenshot({ path: `${output}/level-ladder.png` });
   await page.getByRole('button', { name: 'Close badges' }).click();
+  await header.getByRole('button', { name: 'Expand and pin navigation' }).click();
+  assert.equal((await header.boundingBox()).x, 232, 'Pinned navigation reserves space beside the profile header');
+  await page.getByRole('button', { name: 'Collapse navigation', exact: true }).click();
+  assert.equal((await header.boundingBox()).x, 68);
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator('[data-app-scroll-container]').evaluate(node => { node.scrollTop = 0; });
+  await header.getByRole('button', { name: 'Open module launcher' }).click();
+  const launcher = await header.getByText('Quick access', { exact: true }).locator('..').boundingBox();
+  assert.ok(launcher.x >= (await header.boundingBox()).x && launcher.x + launcher.width <= 390, 'Mobile launcher stays inside the content area');
+  await page.keyboard.press('Escape');
+  await header.getByRole('textbox', { name: 'Search student modules' }).fill('coding');
+  const searchResults = await header.getByText('Student modules', { exact: true }).locator('..').boundingBox();
+  assert.ok(searchResults.x >= (await header.boundingBox()).x && searchResults.x + searchResults.width <= 390 && searchResults.width > 250, 'Mobile search uses a readable dropdown within the content area');
+  await page.keyboard.press('Escape');
+  await page.screenshot({ path: `${output}/profile-header-mobile.png` });
   await page.locator('#missions').scrollIntoViewIfNeeded();
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'No page-level mobile overflow');
   await page.screenshot({ path: `${output}/missions-mobile.png` });
@@ -120,6 +172,13 @@ try {
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
   await page.waitForTimeout(700);
   assert.equal(await page.getByRole('dialog').count(), 0, 'Consumed celebration does not replay');
+  await page.goto(`${base}/__engagement-fixture?restricted`, { waitUntil: 'commit' });
+  await page.locator('#activity').waitFor();
+  await header.getByRole('textbox', { name: 'Search student modules' }).fill('coding');
+  assert.equal(await header.getByRole('button', { name: 'Coding Problems Practice problem solving' }).count(), 0, 'Profile header respects university feature allocations');
+  await page.keyboard.press('Escape');
+  await header.getByRole('button', { name: 'Open module launcher' }).click();
+  assert.equal(await header.getByRole('button', { name: 'Learning', exact: true }).count(), 0);
   await page.goto(`${base}/__engagement-fixture?admin`, { waitUntil: 'commit' });
   await page.getByRole('heading', { name: 'Student progression', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Save progression policy' }).waitFor();

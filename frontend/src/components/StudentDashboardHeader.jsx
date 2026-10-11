@@ -94,6 +94,7 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
     setQuery('');
     setSearchOpen(false);
     setAppsOpen(false);
+    setProfileOpen(false);
     navigate(path);
   };
 
@@ -106,7 +107,7 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
   };
 
   return (
-    <header className="sticky top-0 z-[60] border-b border-slate-200 bg-white px-3 dark:border-zinc-800 dark:bg-[#202020] sm:px-5">
+    <header aria-label="Student header" className="sticky top-0 z-[60] border-b border-slate-200 bg-white px-3 dark:border-zinc-800 dark:bg-[#202020] sm:px-5">
       <div className="mx-auto flex h-16 w-full max-w-[1600px] items-center gap-2 sm:gap-3">
         {!sidebarPinned && <button
           type="button"
@@ -118,7 +119,7 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
           <ChevronsRight className="h-[18px] w-[18px]" />
         </button>}
 
-        <div ref={searchRef} className="relative ml-0 min-w-0 flex-1 sm:ml-2">
+        <div ref={searchRef} className="ml-0 min-w-0 flex-1 sm:relative sm:ml-2">
           <label className="relative mx-auto block w-full max-w-xl">
             <span className="sr-only">Search student modules</span>
             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-slate-400" />
@@ -133,7 +134,7 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
           </label>
 
           {searchOpen && (
-            <div className="absolute left-1/2 top-[calc(100%+0.65rem)] w-full max-w-xl -translate-x-1/2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.16)] dark:border-slate-700 dark:bg-slate-900">
+            <div className="absolute left-3 right-3 top-[calc(100%+0.65rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.16)] dark:border-slate-700 dark:bg-slate-900 sm:left-1/2 sm:right-auto sm:w-full sm:max-w-xl sm:-translate-x-1/2">
               <div className="border-b border-slate-100 px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 dark:border-slate-800">Student modules</div>
               <div className="max-h-80 overflow-y-auto p-1.5">
                 {results.length ? results.map(({ label, hint, to, icon: Icon }) => (
@@ -148,9 +149,12 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
         </div>
 
         <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
-          <div ref={appsRef} className="relative">
+          <div ref={appsRef} className="sm:relative">
             <button type="button" onClick={() => { setAppsOpen((open) => !open); setProfileOpen(false); }} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200" aria-label="Open module launcher" aria-expanded={appsOpen}><Grid2X2 className="h-4 w-4" /></button>
-            {appsOpen && <div className="absolute right-0 top-[calc(100%+0.65rem)] w-[19rem] rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_18px_50px_rgba(15,23,42,0.16)] dark:border-slate-700 dark:bg-slate-900"><div className="mb-2 px-1 text-xs font-bold text-slate-800 dark:text-white">Quick access</div><div className="grid grid-cols-3 gap-1.5">{visibleModules.slice(0, 6).map(({ label, to, icon: Icon }) => <button key={to} type="button" onClick={() => goTo(to)} className="flex min-h-[76px] flex-col items-center justify-center gap-2 rounded-xl px-1.5 text-center text-[11px] font-semibold leading-tight text-slate-600 transition hover:bg-sky-50 hover:text-sky-800 dark:text-slate-300 dark:hover:bg-sky-950/40 dark:hover:text-sky-200"><span className="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300"><Icon className="h-4 w-4" /></span>{label}</button>)}</div></div>}
+            {appsOpen && <div className="absolute left-3 right-3 top-[calc(100%+0.65rem)] rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_18px_50px_rgba(15,23,42,0.16)] dark:border-slate-700 dark:bg-slate-900 sm:left-auto sm:right-0 sm:w-[19rem]">
+              <div className="mb-2 px-1 text-xs font-bold text-slate-800 dark:text-white">Quick access</div>
+              <div className="grid grid-cols-3 gap-1.5">{visibleModules.slice(0, 6).map(({ label, to, icon: Icon }) => <button key={to} type="button" onClick={() => goTo(to)} className="flex min-h-[76px] flex-col items-center justify-center gap-2 rounded-xl px-1.5 text-center text-[11px] font-semibold leading-tight text-slate-600 transition hover:bg-sky-50 hover:text-sky-800 dark:text-slate-300 dark:hover:bg-sky-950/40 dark:hover:text-sky-200"><span className="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300"><Icon className="h-4 w-4" /></span>{label}</button>)}</div>
+            </div>}
           </div>
 
           <button type="button" onClick={toggleTheme} className="hidden h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 sm:flex" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} title="Change theme">{theme === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}</button>

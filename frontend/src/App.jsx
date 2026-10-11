@@ -313,7 +313,7 @@ function AppContent() {
     && !isFeedbackForm
     && !isAssessmentAttempt
     && !isProblemSolver;
-  const showStudentDashboardHeader = isStudentShell && location.pathname === '/student/dashboard';
+  const showStudentHeader = isStudentShell && /^\/student\/(dashboard|profile)\/?$/.test(location.pathname);
   const isLoginPage = isMain || isStudentLogin || isResetPassword;
   return (
     <div
@@ -343,8 +343,8 @@ function AppContent() {
       {/* Main content: Each route section gets a role-appropriate skeleton.
           This is the "streaming rendering" pattern - the page structure appears 
           immediately as skeleton shapes, then real content swaps in when loaded */}
-      <main data-app-scroll-container={isStudentShell ? true : undefined} tabIndex="-1" className={gradientBg + ` dark:bg-gray-900 flex-grow outline-none transition-[padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${isStudentShell ? 'h-screen min-h-0 overflow-y-auto overscroll-contain' : ''}`} style={isStudentShell ? { paddingLeft: 'var(--admin-sidebar-width)' } : undefined}>
-        {showStudentDashboardHeader && (
+      <main data-app-scroll-container={isStudentShell ? true : undefined} tabIndex="-1" className={gradientBg + ` dark:bg-gray-900 flex-grow outline-none transition-[padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${isStudentShell ? 'h-screen min-h-0 overflow-y-auto overscroll-contain' : ''}`} style={isStudentShell ? { paddingLeft: 'var(--admin-sidebar-width)', scrollPaddingTop: showStudentHeader ? 'calc(5rem + 1px)' : undefined } : undefined}>
+        {showStudentHeader && (
           <StudentDashboardHeader
             sidebarPinned={isStudentSidebarPinned}
             onToggleSidebar={toggleStudentSidebarPin}

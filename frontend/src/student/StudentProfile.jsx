@@ -83,7 +83,8 @@ export default function StudentProfile() {
   const metricsReady = metricsLoaded && !loadingRanking;
   const [badgesGallery, setBadgesGallery] = useState(null); // null | 'awards' | 'levels'
   const isMountedRef = useRef(true);
-  const sidebarSticky = useStickySidebar();
+  // Reserve the shared student header (h-16 plus its bottom border).
+  const sidebarSticky = useStickySidebar(65);
   const lastMetricsRefreshAtRef = useRef(0);
   const metricsRefreshTimerRef = useRef(null);
   // Realtime bookkeeping: submissions already reflected optimistically, and a sync mirror of `activity`.
