@@ -20,6 +20,7 @@ import { useToast } from '../components/CustomToast';
 import ProblemAssetImages from '../components/ProblemAssetImages';
 import CodeEditor from './CodeEditor';
 import DailyCodingChallenge from './DailyCodingChallenge';
+import InterviewQuestionPrompt from './InterviewQuestionPrompt';
 import AnviApproach, { ANVI_ASK_EVENT, AnviMark } from '../components/AnviApproach';
 import { DifficultyBadge, EmptyState, LoadingPanel } from '../admin/compiler/CompilerUi';
 import {
@@ -1014,6 +1015,7 @@ export default function ProblemSolver() {
   const [selectedSubmissionId, setSelectedSubmissionId] = useState(null);
   const [isRunning, setIsRunning] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showInterviewPrompt, setShowInterviewPrompt] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   useEffect(() => {
@@ -1093,6 +1095,7 @@ export default function ProblemSolver() {
     }
 
     syncSubmissionResult(submission);
+    if (['AC', 'ACCEPTED'].includes(String(submission.status || '').toUpperCase())) setShowInterviewPrompt(true);
     stopSubmissionPolling();
     void loadSubmissions({ silent: true, selectLatest: true }).catch(() => {
       // The submission row is already finalized; the UI can still use the current snapshot.
@@ -1469,6 +1472,7 @@ export default function ProblemSolver() {
           if (!isMountedRef.current) return;
           setResult({ mode: 'submit', status: response.result === 'correct' ? 'Accepted'
             : response.result === 'incorrect' ? 'Wrong Answer' : 'Submitted', message: response.feedback || '' });
+          if (response.result === 'correct') setShowInterviewPrompt(true);
           setActiveConsoleTab('result');
           await loadSubmissions({ silent: true, selectLatest: true });
           toast.success(response.feedback || 'Submission saved.');
@@ -1914,6 +1918,9 @@ export default function ProblemSolver() {
 
         {/* Intentionally no below-fold cards here to keep the workspace fixed-height. */}
       </div>
+      {showInterviewPrompt && problem && <InterviewQuestionPrompt source={isSharedProblem ? 'shared' : 'problem'}
+        questionId={problem._id} knownCompanies={problem.companyTags || []}
+        onClose={() => setShowInterviewPrompt(false)} />}
     </div>
   );
 }

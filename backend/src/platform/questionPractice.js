@@ -15,6 +15,7 @@ import { sharedQuestions } from './sharedContent.js';
 import { isUniversity } from './deployment.js';
 import { universityPolicy, controlRequest } from './client.js';
 import { serializeProblem } from '../controllers/compilerHelpers.js';
+import { interviewReportOptions, interviewReportSummaries, reporterKey, saveInterviewReport } from './interviewQuestionReports.js';
 
 const router = Router();
 const published = { status: 'published', visibility: { $ne: 'private' }, sourceType: { $ne: 'assessment' } };
@@ -70,6 +71,41 @@ async function visibleQuestions() {
   ] };
 }
 
+const scopeFor = (source) => isUniversity() && source === 'university'
+  ? `university:${process.env.PEERPREP_UNIVERSITY_ID}` : 'control';
+
+async function reportSummaries() {
+  if (isUniversity()) return (await controlRequest('question-interviews/summaries')).summaries || [];
+  return interviewReportSummaries(['control']);
+}
+
+router.get('/interview-options', asyncRoute(async (req, res) => {
+  res.json(isUniversity() ? await controlRequest('question-interviews/options') : await interviewReportOptions());
+}));
+
+router.post('/:source/:id/interview-reports', asyncRoute(async (req, res) => {
+  const source = req.params.source;
+  if (!mongoose.isValidObjectId(req.params.id)) throw new HttpError(400, 'Invalid question');
+  const question = source === 'problem'
+    ? await QuestionLibrary.findOne({ ...published, sourceType: 'compiler', sourceProblemId: req.params.id }).lean()
+    : await findVisible(source, req.params.id);
+  if (!question) throw new HttpError(404, 'Question not found');
+  const practiceSource = source === 'shared' ? 'shared' : 'university';
+  const [practiceSolved, codingSolved] = await Promise.all([
+    QuestionPracticeAttempt.exists({ studentId: req.user._id, source: practiceSource, questionId: question._id, result: 'correct' }),
+    source !== 'shared' && question.sourceProblemId ? Submission.exists({ user: req.user._id,
+      problem: question.sourceProblemId, mode: 'submit', status: 'AC' }) : null,
+  ]);
+  if (!practiceSolved && !codingSolved) throw new HttpError(403, 'Solve this question before reporting an interview');
+  const scopeKey = scopeFor(practiceSource);
+  const reporter = reporterKey(isUniversity() ? process.env.PEERPREP_UNIVERSITY_ID : 'control', req.user._id);
+  const payload = { ...req.body, scopeKey, questionId: String(question._id), reporterKey: reporter };
+  const saved = isUniversity()
+    ? await controlRequest('question-interviews', { method: 'POST', body: payload })
+    : await saveInterviewReport({ scopeKey, questionId: question._id, reporter, body: req.body });
+  res.status(201).json(saved);
+}));
+
 export function gradePracticeAnswer(question, answer) {
   const data = question.questionData || {};
   if (data.libraryItemKind === 'passage_set' && Array.isArray(data.questions)) {
@@ -105,9 +141,20 @@ router.get('/', asyncRoute(async (req, res) => {
   const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 20));
   const visible = await visibleQuestions();
   const available = visible.questions;
-  const all = available.filter(({ question }) => {
+  const summariesResult = await Promise.allSettled([reportSummaries()]);
+  const summaries = summariesResult[0].status === 'fulfilled' ? summariesResult[0].value : [];
+  const reportMap = new Map();
+  for (const row of summaries) {
+    const reportKey = `${row.scopeKey}:${row.questionId}`;
+    if (!reportMap.has(reportKey)) reportMap.set(reportKey, []);
+    reportMap.get(reportKey).push({ company: row.company, companyKey: row.companyKey,
+      latestDate: row.latestDate, reports: row.reports });
+  }
+  const reportsFor = ({ question, source }) => reportMap.get(`${scopeFor(source)}:${question._id}`) || [];
+  const all = available.filter(({ question, source }) => {
     const questionTags = (question.tags || []).map((value) => String(value).toLowerCase());
-    const questionCompanies = (question.keywords || question.questionData?.problemDataSnapshot?.companyTags || []).map((value) => String(value).toLowerCase());
+    const questionCompanies = [...(question.keywords || question.questionData?.problemDataSnapshot?.companyTags || []),
+      ...reportsFor({ question, source }).map((row) => row.company)].map((value) => String(value).toLowerCase());
     return (!type || question.questionType === type)
       && (!difficulty || String(question.difficulty || '').toLowerCase() === difficulty)
       && (!tags.length || tags.some((value) => questionTags.includes(value)))
@@ -118,6 +165,12 @@ router.get('/', asyncRoute(async (req, res) => {
   all.sort((left, right) => {
     const a = left.question;
     const b = right.question;
+    if (sortBy === 'latestInterviewDate') {
+      const latest = (item) => Math.max(0, ...reportsFor(item)
+        .filter((row) => !companies.length || companies.includes(row.companyKey))
+        .map((row) => new Date(row.latestDate).getTime()));
+      return latest(right) - latest(left) || (Number(a.displayOrder) || 2147483647) - (Number(b.displayOrder) || 2147483647);
+    }
     if (sortBy === 'title') return sortOrder * String(a.questionText || '').localeCompare(String(b.questionText || ''));
     if (sortBy === 'difficulty') {
       const rank = { easy: 1, medium: 2, hard: 3 };
@@ -143,7 +196,8 @@ router.get('/', asyncRoute(async (req, res) => {
     const key = `${attempt.source}:${attempt.questionId}`;
     if (!latest.has(key)) latest.set(key, attempt.result);
   });
-  res.json({ warning: visible.warning, questions: selected.map(({ question, source }) => ({ ...publicShape(question, source),
+  res.json({ warning: visible.warning || (summariesResult[0].status === 'rejected' ? 'Interview history is temporarily unavailable.' : ''), questions: selected.map(({ question, source }) => ({ ...publicShape(question, source),
+    reportedCompanies: reportsFor({ question, source }),
     result: solvedProblems.has(String(question.sourceProblemId)) ? 'correct' : latest.get(`${source}:${question._id}`) || null })),
     pagination: { page, limit, total: all.length, pages: Math.max(1, Math.ceil(all.length / limit)) },
     filters: { totalProblems: available.length,
@@ -151,9 +205,17 @@ router.get('/', asyncRoute(async (req, res) => {
       tagCounts: Object.entries(available.flatMap(({ question }) => question.tags || []).reduce((acc, value) => {
         acc[value] = (acc[value] || 0) + 1; return acc;
       }, {})).map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count),
-      companyCounts: Object.entries(available.flatMap(({ question }) => question.keywords || question.questionData?.problemDataSnapshot?.companyTags || []).reduce((acc, value) => {
-        acc[value] = (acc[value] || 0) + 1; return acc;
-      }, {})).map(([company, count]) => ({ company, count })).sort((a, b) => b.count - a.count),
+      companyCounts: Object.values(available.reduce((acc, item) => {
+        const names = [...(item.question.keywords || item.question.questionData?.problemDataSnapshot?.companyTags || []),
+          ...reportsFor(item).map((row) => row.company)];
+        for (const name of new Map(names.map((value) => [String(value).trim().toLowerCase(), value])).values()) {
+          const companyKey = String(name).trim().toLowerCase();
+          if (!companyKey) continue;
+          if (!acc[companyKey]) acc[companyKey] = { company: String(name), count: 0 };
+          acc[companyKey].count += 1;
+        }
+        return acc;
+      }, {})).sort((a, b) => b.count - a.count),
     } });
 }));
 

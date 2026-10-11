@@ -14,6 +14,7 @@ import { controlRequest } from './client.js';
 import { signInspection, verifyInspection } from './inspectionAuth.js';
 import User from '../models/User.js';
 import AssessmentSubmission from '../models/AssessmentSubmission.js';
+import { interviewReportOptions, interviewReportSummaries, saveInterviewReport } from './interviewQuestionReports.js';
 
 const router = Router();
 const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
@@ -307,6 +308,21 @@ router.get('/tenant/questions/:id/judge-data', requireModule('questions'), async
   const problem = await Problem.findById(problemId).select('+executionHarnesses').lean();
   if (!problem) throw new HttpError(404, 'Linked coding problem not found');
   res.set('Cache-Control', 'no-store').json({ problem, testCases: await loadHiddenExecutionTestCases(problem) });
+}));
+router.get('/tenant/question-interviews/summaries', requireModule('questions'), asyncRoute(async (req, res) => {
+  res.json({ summaries: await interviewReportSummaries(['control', `university:${req.platformUniversity.universityId}`]) });
+}));
+router.get('/tenant/question-interviews/options', requireModule('questions'), asyncRoute(async (req, res) => {
+  res.json(await interviewReportOptions());
+}));
+router.post('/tenant/question-interviews', requireModule('questions'), asyncRoute(async (req, res) => {
+  const scopeKey = String(req.body?.scopeKey || '');
+  if (!['control', `university:${req.platformUniversity.universityId}`].includes(scopeKey)) throw new HttpError(403, 'Question is not available');
+  if (!mongoose.isValidObjectId(req.body?.questionId)) throw new HttpError(400, 'Invalid question report');
+  if (scopeKey === 'control' && !(await QuestionLibrary.exists({ _id: req.body?.questionId, status: 'published',
+    visibility: { $ne: 'private' }, sourceType: { $ne: 'assessment' } }))) throw new HttpError(404, 'Question not found');
+  res.status(201).json(await saveInterviewReport({ scopeKey, questionId: req.body?.questionId,
+    reporter: req.body?.reporterKey, body: req.body }));
 }));
 router.get('/tenant/learning/semesters', requireModule('learning'), asyncRoute(async (req, res) => {
   if (req.platformUniversity.sources.learning !== 'shared') throw new HttpError(403, 'Shared learning is disabled');
