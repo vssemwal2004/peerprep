@@ -4,7 +4,6 @@ import { requireAuth } from '../middleware/auth.js';
 import { HttpError } from '../utils/errors.js';
 import QuestionLibrary from '../models/QuestionLibrary.js';
 import QuestionPracticeAttempt from '../models/QuestionPracticeAttempt.js';
-import { recordDailyChallengeCompletion } from '../services/codingStreakService.js';
 import Problem from '../models/Problem.js';
 import Submission from '../models/Submission.js';
 import { loadHiddenExecutionTestCases } from '../controllers/problemController.js';
@@ -390,9 +389,6 @@ router.post('/:source/:id/attempts', compilerExecutionLimiter, asyncRoute(async 
     executionTimeMs: graded.executionTimeMs || 0, memoryUsedKb: graded.memoryUsedKb || 0,
     failureStatus: graded.failureStatus, testCaseResults: graded.testCaseResults || [],
     compileOutput: graded.compileOutput || '' });
-  if (req.params.source === 'shared' && question.questionType === 'coding' && graded.result === 'correct') {
-    void recordDailyChallengeCompletion({ userId: req.user._id, problemId: question._id, source: 'shared' }).catch((error) => console.warn('[Daily challenge] Shared reward sync failed:', error.message));
-  }
   if (req.params.source === 'shared' && question.questionType === 'coding') {
     const [totalSubmissions, acceptedSubmissions] = await Promise.all([
       QuestionPracticeAttempt.countDocuments({ source: 'shared', questionId: question._id, questionType: 'coding' }),

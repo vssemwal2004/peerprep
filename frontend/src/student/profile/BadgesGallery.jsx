@@ -6,6 +6,7 @@ import { awardIcon, awardTone } from './awardVisuals';
 import { levelTheme } from './levelTheme';
 import LevelMedallion from './LevelMedallion';
 import { focusRing } from './format';
+import BadgeEmblem from './BadgeEmblem';
 
 const MotionDiv = motion.div;
 
@@ -30,7 +31,7 @@ function AwardTile({ award, earnedAt }) {
       ? 'border-slate-200 bg-white dark:border-zinc-700 dark:bg-zinc-900'
       : 'border-dashed border-slate-200 bg-slate-50/60 dark:border-zinc-800 dark:bg-zinc-900/40'}`}
     >
-      <span
+      {award.category ? <BadgeEmblem badge={award} className="h-16 w-14" /> : <span
         className={`relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${award.earned
           ? `bg-gradient-to-br text-white shadow-md ${awardTone(award)}`
           : 'bg-slate-200/70 text-slate-400 dark:bg-zinc-800 dark:text-zinc-600'}`}
@@ -42,7 +43,7 @@ function AwardTile({ award, earnedAt }) {
             <Lock className="h-2.5 w-2.5 text-slate-400" />
           </span>
         ) : null}
-      </span>
+      </span>}
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
           <h3 className="truncate text-[13px] font-semibold text-slate-900 dark:text-zinc-100">{award.title}</h3>
@@ -58,9 +59,10 @@ function AwardTile({ award, earnedAt }) {
           )}
         </div>
         <p className="mt-0.5 text-[12px] text-slate-500 dark:text-zinc-400">{award.description}</p>
+        {award.category && <p className="mt-1 text-[10px] capitalize text-sky-600 dark:text-sky-400">{award.category} · {award.rarity} · Level {award.minimumLevel || 1}+{award.rewardXp ? ` · ${award.rewardXp} XP` : ''}</p>}
         {award.earned ? (
           <p className="mt-1.5 text-[11px] text-slate-400 dark:text-zinc-500">
-            {earnedAt ? `Earned on ${earnedAt}` : 'Unlocked'}
+            {award.evidence?.imported && award.metric === 'legacy' ? 'Preserved legacy achievement' : earnedAt ? `Earned on ${earnedAt}` : 'Unlocked'}
           </p>
         ) : (
           <>
@@ -74,7 +76,7 @@ function AwardTile({ award, earnedAt }) {
             >
               <div className="h-full rounded-full bg-gradient-to-r from-sky-400 to-sky-600" style={{ width: `${award.progress}%` }} />
             </div>
-            <p className="mt-1 text-[11px] text-slate-400 dark:text-zinc-500">{remaining} more to unlock</p>
+            <p className="mt-1 text-[11px] text-slate-400 dark:text-zinc-500">{remaining > 0 ? `${remaining} more to unlock` : `Activity target met · reach Level ${award.minimumLevel || 1} to unlock`}</p>
           </>
         )}
       </div>
@@ -82,7 +84,7 @@ function AwardTile({ award, earnedAt }) {
   );
 }
 
-function LevelRow({ tier, currentLevel, progress, achievedAt, isLast, hereLabel = 'You are here' }) {
+function LevelRow({ tier, currentLevel, progress, achievedAt, isLast, allRequirements, hereLabel = 'You are here' }) {
   const theme = levelTheme(tier.level);
   const reached = tier.level <= currentLevel;
   const isCurrent = tier.level === currentLevel;
@@ -120,7 +122,7 @@ function LevelRow({ tier, currentLevel, progress, achievedAt, isLast, hereLabel 
         </div>
         <p className="mt-1 text-[12px] text-slate-500 dark:text-zinc-400">{tier.helper}</p>
         <p className="mt-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-zinc-500">
-          {tier.level === 1 ? 'Requirement' : 'Reach it with any one of'}
+          {tier.level === 1 ? 'Requirement' : allRequirements ? 'Complete all requirements' : 'Reach it with any one of'}
         </p>
         <ul className="mt-1 flex flex-wrap gap-1.5">
           {tier.requirements.map((requirement) => (
@@ -147,7 +149,7 @@ function LevelRow({ tier, currentLevel, progress, achievedAt, isLast, hereLabel 
  * LeetCode-style badges gallery: every award (how to earn it, progress, earned date) and the full
  * level ladder (requirements, where the student is, progress to the next level).
  */
-export default function BadgesGallery({ open, onClose, level, awards, learnerProgress, initialTab = 'awards', subjectName = '' }) {
+export default function BadgesGallery({ open, onClose, level, awards, learnerProgress, initialTab = 'awards', subjectName = '', levelLadder }) {
   const reduceMotion = useReducedMotion();
   // subjectName set = someone else (admin/coordinator) is viewing this student's badges.
   const viewer = subjectName
@@ -169,14 +171,16 @@ export default function BadgesGallery({ open, onClose, level, awards, learnerPro
     };
   const [tab, setTab] = useState(initialTab);
   const [filter, setFilter] = useState('all');
+  const [category, setCategory] = useState('all');
   const closeRef = useRef(null);
   const dialogRef = useRef(null);
-  const ladder = useMemo(() => getLearnerLevelLadder(), []);
+  const ladder = useMemo(() => levelLadder || getLearnerLevelLadder(), [levelLadder]);
 
   useEffect(() => {
     if (!open) return undefined;
     setTab(initialTab);
     setFilter('all');
+    setCategory('all');
     // Remember the opener so focus returns to it on close.
     const opener = document.activeElement;
     closeRef.current?.focus();
@@ -202,7 +206,8 @@ export default function BadgesGallery({ open, onClose, level, awards, learnerPro
 
   const earnedDates = new Map((learnerProgress?.awards || []).map((entry) => [entry.id, shortDate(entry.earnedAt)]));
   const levelDates = new Map((learnerProgress?.levelHistory || []).map((entry) => [entry.level, shortDate(entry.achievedAt)]));
-  const list = awards.awards.filter((award) => (filter === 'all' ? true : filter === 'earned' ? award.earned : !award.earned));
+  const list = awards.awards.filter((award) => (category === 'all' || award.category === category) && (filter === 'all' ? true : filter === 'earned' ? award.earned : !award.earned));
+  const categories = [...new Set(awards.awards.map((award) => award.category).filter(Boolean))];
   const currentLevel = level?.level || 1;
 
   return (
@@ -236,7 +241,7 @@ export default function BadgesGallery({ open, onClose, level, awards, learnerPro
                 type="button"
                 onClick={onClose}
                 aria-label="Close badges"
-                className={`absolute right-3 top-3 rounded-lg p-1.5 text-white/90 hover:bg-white/15 ${focusRing}`}
+                className={`absolute right-3 top-3 z-10 rounded-lg p-1.5 text-white/90 hover:bg-white/15 ${focusRing}`}
               >
                 <X className="h-4 w-4" aria-hidden="true" />
               </button>
@@ -248,7 +253,7 @@ export default function BadgesGallery({ open, onClose, level, awards, learnerPro
                     Level {currentLevel} · {level?.title}
                   </h2>
                   <p className="text-[12px] text-white/85">
-                    {awards.earnedCount} of {awards.awards.length} awards earned · {level?.score ?? 0} level points
+                    {awards.earnedCount} of {awards.awards.length} awards earned · {level?.score ?? 0} {levelLadder ? 'XP' : 'level points'}
                   </p>
                 </div>
               </div>
@@ -296,15 +301,16 @@ export default function BadgesGallery({ open, onClose, level, awards, learnerPro
                       ))}
                     </div>
                   </div>
+                  {categories.length > 0 && <div className="mt-3 flex flex-wrap gap-1" role="group" aria-label="Badge categories">{['all', ...categories].map((value) => <button key={value} type="button" aria-pressed={category === value} onClick={() => setCategory(value)} className={`rounded-full px-2.5 py-1 text-[11px] capitalize ${focusRing} ${category === value ? 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800'}`}>{value}</button>)}</div>}
                   {list.length > 0 ? (
                     <ul className="mt-3 grid gap-2.5 sm:grid-cols-2">
                       {list.map((award) => (
-                        <AwardTile key={award.id} award={award} earnedAt={earnedDates.get(award.id)} />
+                        <AwardTile key={award.id} award={award} earnedAt={shortDate(award.earnedAt) || earnedDates.get(award.id)} />
                       ))}
                     </ul>
                   ) : (
                     <p className="mt-6 text-center text-[13px] text-slate-500 dark:text-zinc-400">
-                      {filter === 'earned' ? viewer.none : 'Every award is unlocked!'}
+                      {filter === 'earned' ? viewer.none : 'No badges match this filter.'}
                     </p>
                   )}
                 </div>
@@ -313,7 +319,7 @@ export default function BadgesGallery({ open, onClose, level, awards, learnerPro
                   <div className="mb-4 flex gap-2 rounded-xl bg-slate-50 p-3 text-[12px] text-slate-600 dark:bg-zinc-900/60 dark:text-zinc-300">
                     <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-500" aria-hidden="true" />
                     <div>
-                      <p>
+                      {levelLadder ? <p>Every level requires <strong>all three</strong>: lifetime XP, demonstrated mastery and verified active days. Your earned level is permanent. Monthly journeys reset; your XP and badges stay with you.</p> : <><p>
                         {viewer.rule} <span className="font-semibold">any one</span> of its requirements.
                         Level points are calculated as:
                       </p>
@@ -323,9 +329,9 @@ export default function BadgesGallery({ open, onClose, level, awards, learnerPro
                             {item.label} <span className="font-semibold text-sky-600 dark:text-sky-400">+{item.points}</span>
                           </li>
                         ))}
-                      </ul>
+                      </ul></>}
                       <p className="mt-1.5 text-[11px] text-slate-500 dark:text-zinc-400">
-                        {viewer.points} <span className="font-semibold text-slate-700 dark:text-zinc-200">{level?.score ?? 0}</span> level points.
+                        {viewer.points} <span className="font-semibold text-slate-700 dark:text-zinc-200">{level?.score ?? 0}</span> {levelLadder ? `XP · ${level?.mastery || 0}% mastery · ${level?.activeDays || 0} active days` : 'level points'}.
                       </p>
                     </div>
                   </div>
@@ -338,6 +344,7 @@ export default function BadgesGallery({ open, onClose, level, awards, learnerPro
                         progress={level?.progress || 0}
                         achievedAt={levelDates.get(tier.level)}
                         isLast={index === ladder.length - 1}
+                        allRequirements={Boolean(levelLadder)}
                         hereLabel={viewer.here}
                       />
                     ))}

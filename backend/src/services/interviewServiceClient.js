@@ -35,6 +35,10 @@ export async function forwardInterviewRequest(req, res) {
       signal: req.abortSignal || AbortSignal.timeout(65000),
     });
     const payload = await response.json();
+    if (response.ok && payload?.id && !Array.isArray(payload)) {
+      const { observeVerifiedInterview } = await import('./interviewEngagementService.js');
+      await observeVerifiedInterview(req, payload).catch((error) => console.warn('[Engagement] Interview receipt pending:', error.message));
+    }
     res.set("Cache-Control", "no-store");
     return res.status(response.status).json(payload);
   } catch {

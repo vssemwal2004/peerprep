@@ -3,6 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { PartyPopper, X } from 'lucide-react';
 import LevelMedallion from './LevelMedallion';
 import { focusRing } from './format';
+import BadgeEmblem from './BadgeEmblem';
 
 const MotionDiv = motion.div;
 const MotionSpan = motion.span;
@@ -38,16 +39,26 @@ export default function LevelUpCelebration({ open, level, awards = [], onClose }
   const reduceMotion = useReducedMotion();
   const confetti = useConfetti();
   const closeButtonRef = useRef(null);
+  const dialogRef = useRef(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
 
   useEffect(() => {
     if (!open) return undefined;
+    const opener = document.activeElement;
     closeButtonRef.current?.focus();
     const onKey = (event) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') closeRef.current();
+      if (event.key === 'Tab') {
+        const buttons = [...(dialogRef.current?.querySelectorAll('button, a[href]') || [])];
+        const first = buttons[0], last = buttons.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, open]);
+    return () => { window.removeEventListener('keydown', onKey); if (document.contains(opener)) opener?.focus?.(); };
+  }, [open]);
 
   const heading = level
     ? `You reached Level ${level.level}!`
@@ -82,11 +93,12 @@ export default function LevelUpCelebration({ open, level, awards = [], onClose }
           ) : null}
 
           <MotionDiv
+            ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby="level-up-title"
             aria-describedby="level-up-description"
-            className="relative w-full max-w-sm overflow-hidden rounded-2xl border border-white/20 bg-white text-center shadow-2xl dark:border-zinc-700 dark:bg-[#1f1f22]"
+            className="relative max-h-[90dvh] w-full max-w-sm overflow-y-auto rounded-2xl border border-white/20 bg-white text-center shadow-2xl dark:border-zinc-700 dark:bg-[#1f1f22]"
             initial={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.85, y: 24 }}
             animate={reduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
             exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.92, y: 12 }}
@@ -99,7 +111,7 @@ export default function LevelUpCelebration({ open, level, awards = [], onClose }
                 type="button"
                 onClick={onClose}
                 aria-label="Close celebration"
-                className={`absolute right-3 top-3 rounded-lg p-1.5 text-white/90 hover:bg-white/15 ${focusRing}`}
+                className={`absolute right-3 top-3 z-10 rounded-lg p-1.5 text-white/90 hover:bg-white/15 ${focusRing}`}
               >
                 <X className="h-4 w-4" aria-hidden="true" />
               </button>
@@ -141,9 +153,11 @@ export default function LevelUpCelebration({ open, level, awards = [], onClose }
                   <ul className="mt-2 space-y-1.5">
                     {awards.map((award) => (
                       <li key={award.id} className="flex items-center gap-2 text-[13px]">
-                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" aria-hidden="true" />
-                        <span className="font-semibold text-slate-800 dark:text-zinc-200">{award.title}</span>
-                        <span className="truncate text-slate-500 dark:text-zinc-400">· {award.description}</span>
+                        {award.category ? <BadgeEmblem badge={{ ...award, earned: true }} className="h-10 w-9" /> : <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" aria-hidden="true" />}
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-slate-800 dark:text-zinc-200">{award.title}</p>
+                          <p className="mt-0.5 text-xs leading-relaxed text-slate-500 dark:text-zinc-400">{award.description}</p>
+                        </div>
                       </li>
                     ))}
                   </ul>

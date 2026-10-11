@@ -39,6 +39,7 @@ const FeedbackForm = lazy(() => import("./student/FeedbackForm"));
 const StudentLearning = lazy(() => import("./student/StudentLearning"));
 const LearningDetail = lazy(() => import("./student/LearningDetail"));
 const StudentProfile = lazy(() => import("./student/StudentProfile"));
+const EngagementSettings = lazy(() => import('./admin/EngagementSettings'));
 const HelpAndSupport = lazy(() => import("./student/HelpAndSupport"));
 const ProblemsPage = lazy(() => import("./student/ProblemsPage"));
 const ProblemSolver = lazy(() => import("./student/ProblemSolver"));
@@ -409,6 +410,7 @@ function AppContent() {
         <Route path="/admin/coordinator-access/:coordinatorId" element={<AdminShell><CoordinatorAccessDetails /></AdminShell>} />
         <Route path="/admin/event" element={<AdminShell><EventManagement /></AdminShell>} />
         <Route path="/admin/event/create" element={<AdminShell><EventManagement /></AdminShell>} />
+        <Route path="/admin/settings/student-progression" element={<AdminShell><EngagementSettings /></AdminShell>} />
         <Route path="/admin/event/:id" element={<AdminShell><EventDetail /></AdminShell>} />
         <Route path="/admin/interviews" element={<Navigate to="/admin/interviews/one-to-one" replace />} />
         <Route path="/admin/interviews/:id" element={<AdminShell><EventDetail /></AdminShell>} />

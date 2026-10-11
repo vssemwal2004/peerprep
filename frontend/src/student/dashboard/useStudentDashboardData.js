@@ -5,7 +5,7 @@ import socketService from '../../utils/socket';
 const initialSection = () => ({ data: null, loading: true, error: false });
 const unwrap = (value, key) => Array.isArray(value) ? value : Array.isArray(value?.[key]) ? value[key] : [];
 
-export default function useStudentDashboardData({ userId, canQuestions, canLearning, canEvents, canAssessments }) {
+export default function useStudentDashboardData({ userId, canQuestions, canLearning, canEvents, canAssessments, canInterviews }) {
   const [sections, setSections] = useState(() => ({ dashboard: initialSection(), engagement: initialSection(), events: initialSection(), assessments: initialSection(), announcements: initialSection() }));
   const [revision, setRevision] = useState(0);
   const refreshedAt = useRef(0);
@@ -28,7 +28,7 @@ export default function useStudentDashboardData({ userId, canQuestions, canLearn
     const loadDashboard = () => load('dashboard', () => api.getStudentDashboard(true));
     let nextChallengeReset = Infinity;
     const loadEngagement = () => load('engagement', async () => {
-      const value = canQuestions || canLearning ? await api.refreshStudentEngagement() : { periods: [], badges: [], lifetime: { points: 0, badges: 0 } };
+      const value = canQuestions || canLearning || canEvents || canAssessments || canInterviews ? await api.refreshStudentEngagement() : { periods: [], badges: [], lifetime: { points: 0, badges: 0 } };
       nextChallengeReset = Math.min(...[value.daily?.endsAt, ...(value.periods || []).map((period) => period.endsAt)].filter(Boolean).map((date) => new Date(date).getTime()).filter(Number.isFinite));
       if (alive && value.lifetime?.points > 0 && (value.lifetime.points !== challengePoints.current || value.newAwards?.length)) {
         // Wait out a potentially older in-flight snapshot, then reload verified rank and level.
@@ -52,7 +52,7 @@ export default function useStudentDashboardData({ userId, canQuestions, canLearn
     if (differentUser) challengePoints.current = null;
     setSections((previous) => differentUser
       ? { dashboard: initialSection(), engagement: initialSection(), events: initialSection(), assessments: initialSection(), announcements: initialSection() }
-      : Object.fromEntries(Object.entries(previous).map(([key, section]) => [key, { ...section, loading: section.data === null }])));
+      : Object.fromEntries(Object.entries(previous).map(([key, section]) => [key, key === 'engagement' ? initialSection() : { ...section, loading: section.data === null }])));
     void loadAll();
     socketService.connect();
     const updates = [
@@ -71,7 +71,7 @@ export default function useStudentDashboardData({ userId, canQuestions, canLearn
       window.removeEventListener('focus', onFocus);
       clearInterval(rollover);
     };
-  }, [userId, canQuestions, canLearning, canEvents, canAssessments, revision]);
+  }, [userId, canQuestions, canLearning, canEvents, canAssessments, canInterviews, revision]);
 
   return { ...sections, refresh: () => setRevision((value) => value + 1) };
 }

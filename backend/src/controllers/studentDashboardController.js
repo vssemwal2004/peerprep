@@ -3,12 +3,13 @@ import Problem from '../models/Problem.js';
 import StudentProblemView from '../models/StudentProblemView.js';
 import Progress from '../models/Progress.js';
 import { HttpError } from '../utils/errors.js';
-import { refreshStudentEngagement, listStudentChallengeBadges } from '../services/studentEngagementService.js';
+import { listStudentChallengeBadges } from '../services/studentEngagementService.js';
+import { refreshAdaptiveEngagement } from '../services/adaptiveEngagementService.js';
 
 export async function refreshStudentChallenges(req, res) {
   // No client-supplied metrics, award IDs, dates or point values are trusted.
   res.set('Cache-Control', 'private, no-store');
-  res.json(await refreshStudentEngagement(req.user));
+  res.json(await refreshAdaptiveEngagement(req.user));
 }
 
 export async function getStudentChallengeBadges(req, res) {

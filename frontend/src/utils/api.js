@@ -451,7 +451,13 @@ export const api = {
       skipCache: forceRefresh,
       cacheTtlMs: 30 * 1000,
     }),
-  refreshStudentEngagement: () => request('/auth/engagement/refresh', { method: 'POST' }),
+  refreshStudentEngagement: () => request('/engagement/refresh', { method: 'POST' }),
+  claimAchievements: () => request('/engagement/achievements/claim', { method: 'POST' }),
+  acknowledgeAchievements: (ids) => request('/engagement/achievements/acknowledge', { method: 'POST', body: { ids } }),
+  engagementHistory: () => request('/engagement/history', { skipCache: true }),
+  getEngagementPolicy: (query = '') => request(`/engagement/policy${query}`, { skipCache: true }),
+  updateEngagementPolicy: (body, query = '') => request(`/engagement/policy${query}`, { method: 'PATCH', body }),
+  getEngagementAnalytics: (query = '') => request(`/engagement/analytics${query}`, { skipCache: true }),
   getStudentChallengeBadges: (cursor) => request(`/auth/engagement/badges${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`, { skipCache: true }),
   recordStudentProblemView: (problemId, source = 'university') =>
     request("/auth/dashboard/problem-view", {

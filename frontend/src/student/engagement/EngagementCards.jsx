@@ -4,6 +4,7 @@ import { ArrowRight, BookOpen, CalendarDays, Check, Clock3, Code2, Flag, LockKey
 import { api } from '../../utils/api';
 import { CodingStartIllustration } from '../dashboard/DashboardIllustrations';
 import './studentEngagement.css';
+import { AdaptiveDailyCard, AdaptiveJourneyCard } from './AdaptiveMissionCards';
 
 const finite = (value) => Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : 0;
 const date = (value, options) => {
@@ -69,7 +70,10 @@ function BadgeCollection({ data }) {
   return <details className="engagement-collection" id="challenge-collection"><summary>Collected editions <span>{data.lifetime.badges}</span></summary><div className="engagement-collected-badges">{badges.map((badge) => <div key={badge.id} title={`${badge.title} · earned ${date(badge.earnedAt, { month: 'short', day: 'numeric', year: 'numeric' })}`}><BadgeEmblem mark={badge.kind === 'weekly' ? 'W' : 'M'} earned /><strong>{edition(badge.kind, badge.periodKey)}</strong><span>{badge.kind === 'weekly' ? 'Weekly' : 'Monthly'}</span></div>)}</div>{cursor && <button type="button" className="engagement-text-link engagement-more-editions" onClick={more} disabled={loading}>{loading ? 'Loading…' : error ? 'Retry older editions' : 'More editions'}<ArrowRight size={12} aria-hidden="true" /></button>}{error && <p role="status">Older editions could not be loaded.</p>}<p>Earned editions stay in your collection.</p></details>;
 }
 
-export function DailyChallengeCard({ section, onRetry, autoRefresh = true }) {
+export function DailyChallengeCard(props) {
+  return props.section?.data?.version === 2 ? <AdaptiveDailyCard {...props} /> : <LegacyDailyChallengeCard {...props} />;
+}
+function LegacyDailyChallengeCard({ section, onRetry, autoRefresh = true }) {
   const [now, setNow] = useState(() => Date.now());
   const retryRef = useRef(onRetry);
   retryRef.current = onRetry;
@@ -97,7 +101,10 @@ export function DailyChallengeCard({ section, onRetry, autoRefresh = true }) {
   </Card>;
 }
 
-export function ChallengeGoalsCard({ section, onRetry, canQuestions = true, canLearning = true }) {
+export function ChallengeGoalsCard(props) {
+  return props.section?.data?.version === 2 ? <AdaptiveJourneyCard {...props} /> : <LegacyChallengeGoalsCard {...props} />;
+}
+function LegacyChallengeGoalsCard({ section, onRetry, canQuestions = true, canLearning = true }) {
   const tabsId = useId();
   const [tab, setTab] = useState('weekly');
   const tabsRef = useRef(null);

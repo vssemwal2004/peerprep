@@ -1,8 +1,8 @@
 import React, { useMemo, useRef, useEffect } from 'react';
 
 // Helper to generate rolling 365 days from today backwards
-function getRolling365Days() {
-  const today = new Date();
+function getRolling365Days(endingDayKey) {
+  const today = endingDayKey ? new Date(`${endingDayKey}T12:00:00`) : new Date();
   today.setHours(0, 0, 0, 0);
   
   const startDate = new Date(today);
@@ -59,6 +59,7 @@ export default function ContributionCalendar({
   title = 'Contribution Calendar',
   stats = null,
   tooltipFormatter = null,
+  endingDayKey = null,
   legendLabels = {
     none: 'No activity',
     low: '1-2 activities',
@@ -67,7 +68,7 @@ export default function ContributionCalendar({
     highest: '8+ activities',
   },
 }) {
-  const months = useMemo(() => getRolling365Days(), []);
+  const months = useMemo(() => getRolling365Days(endingDayKey), [endingDayKey]);
   const scrollContainerRef = useRef(null);
 
   // Scroll to the right (current month) on mount

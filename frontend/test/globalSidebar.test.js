@@ -9,6 +9,7 @@ import { createServer } from 'vite';
 let dom, server, root, createRoot, Sidebar, Dismiss, AuthContext, ThemeProvider;
 let AdminLayout, CoordinatorLayout, permissions;
 let AssessmentModuleLayout;
+let UniversityPolicyProvider;
 const globals = ['window', 'document', 'navigator', 'HTMLElement', 'localStorage', 'IS_REACT_ACT_ENVIRONMENT'];
 const originals = new Map(globals.map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
 
@@ -23,6 +24,7 @@ before(async () => {
   Dismiss = (await server.ssrLoadModule('/src/components/PopupDismissManager.jsx')).default;
   AuthContext = (await server.ssrLoadModule('/src/context/AuthContext.jsx')).default;
   ({ ThemeProvider } = await server.ssrLoadModule('/src/context/ThemeContext.jsx'));
+  ({ UniversityPolicyProvider } = await server.ssrLoadModule('/src/platform/UniversityPolicyContext.jsx'));
   AdminLayout = (await server.ssrLoadModule('/src/admin/AdminLayout.jsx')).default;
   CoordinatorLayout = (await server.ssrLoadModule('/src/coordinator/CoordinatorLayout.jsx')).default;
   AssessmentModuleLayout = (await server.ssrLoadModule('/src/student/assessment-dashboard/AssessmentModuleLayout.jsx')).default;
@@ -59,7 +61,7 @@ function Shell({ role }) {
 async function mount(role = 'admin', Layout, accessScope = 'full') {
   await act(async () => root.render(h(MemoryRouter, { initialEntries: [`/${role}/overview`] },
     h(AuthContext.Provider, { value: { user: { role, accessScope, name: 'Test User', permissions }, logout: async () => {} } },
-      h(ThemeProvider, null, h(Dismiss), Layout ? h(Layout) : h(Shell, { role }), h(Location), h('button', { id: 'outside' }, 'Outside'))))));
+      h(UniversityPolicyProvider, null, h(ThemeProvider, null, h(Dismiss), Layout ? h(Layout) : h(Shell, { role }), h(Location), h('button', { id: 'outside' }, 'Outside')))))));
 }
 
 // Model the real pointer sequence: the global capture listener runs before click.
@@ -131,6 +133,8 @@ for (const role of ['admin', 'coordinator']) {
     await act(async () => sidebar.dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true })));
     assert.equal(layout.style.getPropertyValue('--admin-sidebar-width'), '13.6rem');
     await act(async () => sidebar.dispatchEvent(new dom.window.MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })));
+    // Collapse is scheduled, even when the admin delay is zero.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
     assert.equal(layout.style.getPropertyValue('--admin-sidebar-width'), '4rem');
   });
 }

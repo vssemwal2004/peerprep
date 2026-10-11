@@ -4,11 +4,10 @@ import { RefreshCw, UserRound } from 'lucide-react';
 import { api } from '../utils/api';
 import socketService from '../utils/socket';
 import { getLearnerLevel } from './profileBadge';
-import { computeAwards } from './profile/achievements';
 import useStickySidebar from './profile/useStickySidebar';
 import { ChallengeGoalsCard, DailyChallengeCard } from './engagement/EngagementCards';
 import BadgesCard from './profile/BadgesCard';
-import LevelUpCelebration from './profile/LevelUpCelebration';
+import AchievementCelebration from './engagement/AchievementCelebration';
 import BadgesGallery from './profile/BadgesGallery';
 import ProfileSidebar from './profile/ProfileSidebar';
 import StudentSummary from './profile/StudentSummary';
@@ -20,6 +19,7 @@ import PracticeHistory from './profile/SubmissionsSection';
 import { EditProfileModal, PhotoModal } from './profile/ProfileModals';
 import { focusRing, languageLabel } from './profile/format';
 import { useUniversityPolicy } from '../platform/UniversityPolicyContext';
+import { scopeEngagement } from './engagement/scopeEngagement';
 
 const MotionDiv = motion.div;
 
@@ -35,6 +35,8 @@ export default function StudentProfile() {
   const canAssessments = allowsModule('assessments');
   const canInterviews = allowsModule('interviews');
   const canLearning = allowsModule('learning');
+  const canEvents = allowsModule('events');
+  const canEngage = canQuestions || canLearning || canAssessments || canInterviews || canEvents;
   const [user, setUser] = useState(null);
   const [avatarFile, setAvatarFile] = useState(null);
   const [avatarPreview, setAvatarPreview] = useState(null);
@@ -55,9 +57,11 @@ export default function StudentProfile() {
   const [activityStats, setActivityStats] = useState(null);
   const [stats, setStats] = useState(null);
   const [ranking, setRanking] = useState(null);
-  const [engagement, setEngagement] = useState({ data: null, loading: true, error: false });
+  const [rawEngagement, setEngagement] = useState({ data: null, loading: true, error: false });
+  const scopedEngagement = useMemo(() => scopeEngagement(rawEngagement.data, allowsModule), [rawEngagement.data, allowsModule]);
+  const engagement = { ...rawEngagement, data: scopedEngagement };
   const [loadingRanking, setLoadingRanking] = useState(true);
-  const [rankingFailed, setRankingFailed] = useState(false);
+  const [, setRankingFailed] = useState(false);
   const [analysis, setAnalysis] = useState(null);
   const [problemStatusSummary, setProblemStatusSummary] = useState({
     loaded: false,
@@ -77,9 +81,7 @@ export default function StudentProfile() {
   const [learnerProgress, setLearnerProgress] = useState(null);
   const [metricsLoaded, setMetricsLoaded] = useState(false);
   const metricsReady = metricsLoaded && !loadingRanking;
-  const [celebration, setCelebration] = useState(null);
   const [badgesGallery, setBadgesGallery] = useState(null); // null | 'awards' | 'levels'
-  const celebratingRef = useRef(false);
   const isMountedRef = useRef(true);
   const sidebarSticky = useStickySidebar();
   const lastMetricsRefreshAtRef = useRef(0);
@@ -149,6 +151,11 @@ export default function StudentProfile() {
       if (isMountedRef.current && requestId === rankingRequestRef.current) setLoadingRanking(false);
     }
   }, []);
+
+  useEffect(() => {
+    setEngagement({ data: null, loading: true, error: false });
+    void loadRanking();
+  }, [canQuestions, canLearning, canAssessments, canInterviews, canEvents, loadRanking]);
 
   useEffect(() => {
     const deadlines = [engagement.data?.daily?.endsAt, ...(engagement.data?.periods || []).map((period) => period.endsAt)]
@@ -691,6 +698,7 @@ export default function StudentProfile() {
   const analysisLearning = analysis?.learning || {};
 
   const performanceTitle = useMemo(() => {
+    if (engagement.data?.level) return engagement.data.level;
     if (ranking?.levelMetrics) return getLearnerLevel(ranking.levelMetrics);
     const solved = problemStatusSummary.loaded
       ? Number(problemStatusSummary.solvedCount || 0)
@@ -706,6 +714,7 @@ export default function StudentProfile() {
       interviewScore,
     });
   }, [
+    engagement.data?.level,
     activityStats?.currentStreak,
     analysisAssessments?.avgScore,
     analysisInterviews?.avgScore,
@@ -875,70 +884,10 @@ export default function StudentProfile() {
     hardSolved: codingTotals.hardSolved,
   };
 
-  const awards = computeAwards(ranking?.badgeMetrics || {
-    solved: codingTotals.totalSolved,
-    hardSolved: codingTotals.hardSolved,
-    bestStreak: Math.max(streakSummary.best, streakSummary.current),
-    activeDays: streakSummary.activeDays,
-    languages: languages.length,
-    assessments: assessments.attempts,
-    interviews: interviews.total,
-  });
-
-  // ---- Level-up / award celebration ----
-  // Runs after the first full load and again whenever the level or earned set changes (including
-  // live optimistic bumps from realtime submissions). Compares against what the server says was
-  // already celebrated, shows the popup once, and records it immediately so a refresh or another
-  // device does not repeat it.
-  const currentLevel = performanceTitle.level;
-  const hasAuthoritativeRankMetrics = Boolean(ranking?.badgeMetrics && ranking?.levelMetrics);
-  const earnedAwardKey = awards.awards.filter((award) => award.earned).map((award) => award.id).join(',');
-  const celebrationInputRef = useRef({ awards, level: performanceTitle });
-  celebrationInputRef.current = { awards, level: performanceTitle };
-
-  useEffect(() => {
-    if (!metricsReady || rankingFailed || !hasAuthoritativeRankMetrics || user?.role !== 'student' || celebration || celebratingRef.current) return;
-    const { awards: latestAwards, level: latestLevel } = celebrationInputRef.current;
-    const celebratedLevel = Math.max(1, Number(learnerProgress?.celebratedLevel || 0));
-    const seenAwards = new Set((learnerProgress?.awards || []).map((entry) => entry.id));
-    const newAwards = latestAwards.awards.filter((award) => award.earned && !seenAwards.has(award.id));
-    const levelUp = currentLevel > celebratedLevel;
-    if (!levelUp && newAwards.length === 0) return;
-
-    celebratingRef.current = true;
-    setCelebration({ level: levelUp ? latestLevel : null, awards: newAwards });
-
-    // Record locally first so closing the popup before the request returns cannot re-trigger it;
-    // the server response (with timestamps) then replaces this.
-    const nowIso = new Date().toISOString();
-    setLearnerProgress((prev) => ({
-      ...(prev || {}),
-      celebratedLevel: Math.max(currentLevel, Number(prev?.celebratedLevel || 0)),
-      levelHistory: levelUp
-        ? [...(prev?.levelHistory || []), { level: currentLevel, title: latestLevel.title, achievedAt: nowIso }]
-        : (prev?.levelHistory || []),
-      awards: [
-        ...(prev?.awards || []),
-        ...newAwards.map((award) => ({ id: award.id, earnedAt: nowIso })),
-      ],
-    }));
-
-    const earnedIds = earnedAwardKey ? earnedAwardKey.split(',') : [];
-    api.ackLearnerProgress({ level: currentLevel, title: latestLevel.title, awards: earnedIds })
-      .then((response) => {
-        if (isMountedRef.current && response?.learnerProgress) setLearnerProgress(response.learnerProgress);
-      })
-      .catch((ackError) => {
-        console.warn('[StudentProfile] Could not save learner progress:', ackError);
-      });
-  }, [celebration, currentLevel, earnedAwardKey, hasAuthoritativeRankMetrics, learnerProgress, metricsReady, rankingFailed, user?.role]);
+  // Only server-issued, allocation-scoped badge definitions may enter the new gallery.
+  const awards = engagement.data?.awards || { awards: [], earnedCount: 0, nextAward: null };
 
   const closeBadgesGallery = useCallback(() => setBadgesGallery(null), []);
-
-  const closeCelebration = useCallback(() => {
-    celebratingRef.current = false;
-    setCelebration(null);
-  }, []);
 
   if (loading && !user) {
     return (
@@ -1004,9 +953,9 @@ export default function StudentProfile() {
             <ProfileSidebar
               user={user}
               handle={handle}
-              badge={canQuestions ? performanceTitle : null}
-              level={canQuestions ? performanceTitle : null}
-              onOpenBadges={canQuestions ? setBadgesGallery : undefined}
+              badge={canEngage ? performanceTitle : null}
+              level={canEngage ? performanceTitle : null}
+              onOpenBadges={canEngage ? setBadgesGallery : undefined}
               bio={shortBio}
               hasCustomBio={hasCustomBio}
               socialLinks={socialLinks}
@@ -1016,9 +965,7 @@ export default function StudentProfile() {
             <UniversityRankCard ranking={ranking} loading={loadingRanking} className="mt-4" />
           </aside>
 
-          {/* Right column: each module appears exactly once.
-              Row 1 Summary | Coding (incl. streak) · Row 2 Badges | PeerPrep · Row 3 Activity ·
-              then the daily challenge and the tabbed practice history. */}
+          {/* Summary and Coding keep their existing design. Activity is immediately below them. */}
           <main className="min-w-0 space-y-4">
             <div className="grid gap-4 xl:grid-cols-2">
               {canQuestions && <StudentSummary
@@ -1041,12 +988,19 @@ export default function StudentProfile() {
               />}
             </div>
 
+            <ActivitySection activity={engagement.data?.activity?.activityByDate || (canQuestions ? activity : {})}
+              activityStats={engagement.data?.activity?.stats || (canQuestions ? activityStats : null)} loading={engagement.loading || loadingActivity}
+              breakdown={engagement.data?.activity?.breakdownByDate} domains={engagement.data?.domains} verified={engagement.data?.version === 2} />
+
             <div className="grid gap-4 xl:grid-cols-2">
-              {canQuestions && <BadgesCard
+              {canEngage && <BadgesCard
                 className="h-full"
                 level={performanceTitle}
                 awards={awards}
-                learnerProgress={learnerProgress}
+                loading={engagement.loading}
+                error={engagement.error}
+                onRetry={loadRanking}
+                learnerProgress={engagement.data?.learnerProgress || learnerProgress}
                 onOpenGallery={setBadgesGallery}
               />}
               {(canAssessments || canInterviews || canLearning) && <PeerPrepProgress
@@ -1059,12 +1013,10 @@ export default function StudentProfile() {
               />}
             </div>
 
-            {(canQuestions || canLearning) && <div className="grid items-start gap-4 xl:grid-cols-2">
+            {canEngage && <div className="grid items-start gap-4 xl:grid-cols-2">
+              <DailyChallengeCard section={engagement} onRetry={loadRanking} autoRefresh={false} />
               <ChallengeGoalsCard section={engagement} onRetry={loadRanking} canQuestions={canQuestions} canLearning={canLearning} />
-              {canQuestions && <DailyChallengeCard section={engagement} onRetry={loadRanking} autoRefresh={false} />}
             </div>}
-
-            <ActivitySection activity={activity} activityStats={activityStats} loading={loadingActivity} />
 
             {canQuestions && <PracticeHistory
               solved={stats?.recentSolvedProblems}
@@ -1105,15 +1057,11 @@ export default function StudentProfile() {
         onClose={closeBadgesGallery}
         level={performanceTitle}
         awards={awards}
-        learnerProgress={learnerProgress}
+        learnerProgress={engagement.data?.learnerProgress || learnerProgress}
+        levelLadder={engagement.data?.ladder}
       />
 
-      <LevelUpCelebration
-        open={Boolean(celebration)}
-        level={celebration?.level || null}
-        awards={celebration?.awards || []}
-        onClose={closeCelebration}
-      />
+      <AchievementCelebration revision={engagement.data?.generatedAt} enabled={!engagement.error && engagement.data?.version === 2 && !showEditModal && !showPhotoModal && !badgesGallery} />
     </div>
   );
 }

@@ -310,6 +310,7 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
         { label: 'Email Templates', to: '/admin/settings/email-templates', icon: Mail },
         { label: 'Email Queue', to: '/admin/email-queue', icon: Mail },
         { label: 'Promote Students', to: '/admin/settings/promote-students', icon: GraduationCap },
+        { label: 'Student Progression', to: '/admin/settings/student-progression', icon: Activity },
       ],
     },
   ];

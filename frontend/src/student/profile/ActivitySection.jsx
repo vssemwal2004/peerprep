@@ -8,8 +8,8 @@ import { focusRing } from './format';
 const TREND_DAYS = 30;
 
 /** Last 30 UTC days (the backend buckets activity by UTC day), oldest first. */
-function buildTrend(activity) {
-  const today = new Date();
+function buildTrend(activity, endingDayKey) {
+  const today = endingDayKey ? new Date(`${endingDayKey}T12:00:00Z`) : new Date();
   return Array.from({ length: TREND_DAYS }, (_, index) => {
     const date = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - (TREND_DAYS - 1 - index)));
     const key = date.toISOString().slice(0, 10);
@@ -41,14 +41,18 @@ const VIEWS = [
 ];
 
 /** Heatmap + 30-day trend in one card. Streak figures live in Coding Progress (not repeated here). */
-export default function ActivitySection({ activity, activityStats, loading }) {
+export default function ActivitySection({ activity, activityStats, loading, breakdown, domains = [], verified = false }) {
   const [view, setView] = useState('year');
-  const activeDays = Number(activityStats?.totalActiveDays || 0);
-  const trend = useMemo(() => buildTrend(activity), [activity]);
+  const [domain, setDomain] = useState('all');
+  const selectedDomain = domains.includes(domain) ? domain : 'all';
+  const filtered = useMemo(() => selectedDomain === 'all' || !breakdown ? activity : Object.fromEntries(Object.entries(breakdown).map(([key, counts]) => [key, counts[selectedDomain] || 0])), [activity, breakdown, selectedDomain]);
+  const endingDayKey = verified ? new Date(Date.now() + 3.5 * 3600000).toISOString().slice(0, 10) : null;
+  const activeDays = selectedDomain === 'all' ? Number(activityStats?.totalActiveDays || 0) : Object.values(filtered).filter((value) => value > 0).length;
+  const trend = useMemo(() => buildTrend(filtered, endingDayKey), [filtered, endingDayKey]);
   const trendTotal = trend.reduce((sum, point) => sum + point.count, 0);
   const yearTotal = useMemo(
-    () => Object.values(activity || {}).reduce((sum, value) => sum + (Number(value) || 0), 0),
-    [activity],
+    () => Object.values(filtered || {}).reduce((sum, value) => sum + (Number(value) || 0), 0),
+    [filtered],
   );
 
   const toggle = (
@@ -80,6 +84,7 @@ export default function ActivitySection({ activity, activityStats, loading }) {
       icon={<CalendarDays className="h-4 w-4" />}
       action={toggle}
     >
+      {verified && domains.length > 1 && <div className="mb-2 flex flex-wrap gap-1" role="group" aria-label="Activity features">{['all', ...domains].map((key) => <button key={key} type="button" aria-pressed={selectedDomain === key} onClick={() => setDomain(key)} className={`rounded-md px-2 py-1 text-[10px] capitalize ${focusRing} ${selectedDomain === key ? 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800'}`}>{key === 'all' ? 'All activity' : key === 'events' ? 'Peer interviews' : key === 'interviews' ? 'AI interviews' : key}</button>)}</div>}
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-10 text-xs text-slate-500 dark:text-zinc-400" role="status">
           <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-sky-500 border-t-transparent" aria-hidden="true" />
@@ -88,15 +93,16 @@ export default function ActivitySection({ activity, activityStats, loading }) {
       ) : view === 'year' ? (
         <ContributionCalendar
           title=""
-          activity={activity}
+          activity={filtered}
+          endingDayKey={endingDayKey}
           stats={null}
-          tooltipFormatter={({ value, formattedDate }) => `${value} tracked activities on ${formattedDate}`}
+          tooltipFormatter={({ value, formattedDate, key }) => `${value} ${verified ? 'verified' : 'tracked'} activities on ${formattedDate}${breakdown?.[key] ? ' · ' + Object.entries(breakdown[key]).map(([type, count]) => `${count} ${type}`).join(', ') : ''}`}
           legendLabels={{
-            none: 'No submissions',
-            low: '1-2 submissions',
-            medium: '3-4 submissions',
-            high: '5-7 submissions',
-            highest: '8+ submissions',
+            none: 'No activity',
+            low: '1-2 activities',
+            medium: '3-4 activities',
+            high: '5-7 activities',
+            highest: '8+ activities',
           }}
         />
       ) : (

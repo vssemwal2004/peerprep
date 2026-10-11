@@ -60,6 +60,55 @@ export const numeric = (value) => Number.isFinite(Number(value)) ? Math.max(0, M
 
 export const isImportantAnnouncement = (item) => item?.priority === 'high' || item?.type === 'alert';
 
+const SMALL_WORDS = new Set(['a', 'an', 'and', 'as', 'at', 'by', 'for', 'in', 'of', 'on', 'or', 'the', 'to', 'with']);
+const ACRONYMS = new Set(['ai', 'api', 'coa', 'cn', 'cse', 'css', 'cv', 'daa', 'dbms', 'dl', 'ds', 'dsa', 'html', 'iot', 'it', 'js', 'ml', 'nlp', 'oop', 'oops', 'os', 'sql', 'toc', 'ui', 'ux']);
+
+/**
+ * Curriculum names sometimes arrive in ALL CAPS ("DESIGN ANALYSIS AND ALGORITHM"). Show those in
+ * title case while keeping known acronyms ("OS", "DBMS"). Mixed-case names are left exactly as typed.
+ */
+export function displayTitle(value) {
+  const text = String(value || '').trim().replace(/\s+/g, ' ');
+  if (!text || /[a-z]/.test(text) || !/\s/.test(text)) return text;
+  return text.split(' ').map((word, index) => {
+    const lower = word.toLowerCase();
+    const bare = lower.replace(/[^a-z0-9+#]/g, '');
+    if (ACRONYMS.has(bare) || /\d/.test(bare)) return word;
+    if (index > 0 && SMALL_WORDS.has(bare)) return lower;
+    return lower.replace(/^([^a-z]*)([a-z])/, (_, lead, first) => lead + first.toUpperCase());
+  }).join(' ');
+}
+
+// Six calm, distinguishable accents. A subject keeps the same one on every visit.
+const SUBJECT_THEMES = [
+  { key: 'sky', band: 'from-sky-500 to-sky-600', soft: 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300', ring: '#0284c7' },
+  { key: 'indigo', band: 'from-indigo-500 to-indigo-600', soft: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300', ring: '#4f46e5' },
+  { key: 'violet', band: 'from-violet-500 to-violet-600', soft: 'bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300', ring: '#7c3aed' },
+  { key: 'emerald', band: 'from-emerald-500 to-teal-600', soft: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300', ring: '#059669' },
+  { key: 'amber', band: 'from-amber-500 to-orange-500', soft: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300', ring: '#d97706' },
+  { key: 'rose', band: 'from-rose-500 to-pink-600', soft: 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300', ring: '#e11d48' },
+];
+
+export function subjectTheme(seed) {
+  let hash = 0;
+  for (const char of String(seed || '')) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return SUBJECT_THEMES[hash % SUBJECT_THEMES.length];
+}
+
+const LANGUAGES = { python: 'Python', javascript: 'JavaScript', typescript: 'TypeScript', java: 'Java', cpp: 'C++', c: 'C', csharp: 'C#', php: 'PHP', go: 'Go', rust: 'Rust', kotlin: 'Kotlin', ruby: 'Ruby', swift: 'Swift', r: 'R', sql: 'SQL' };
+export const languageLabel = (value) => LANGUAGES[String(value || '').toLowerCase()] || null;
+
+const VERDICTS = {
+  AC: { label: 'Passed last run', tone: 'good' },
+  WA: { label: 'Wrong answer', tone: 'bad' },
+  TLE: { label: 'Time limit exceeded', tone: 'warn' },
+  RE: { label: 'Runtime error', tone: 'bad' },
+  CE: { label: 'Compilation error', tone: 'bad' },
+  PENDING: { label: 'Awaiting result', tone: 'neutral' },
+  RUNNING: { label: 'Running', tone: 'neutral' },
+};
+export const verdictInfo = (value) => VERDICTS[String(value || '').toUpperCase()] || null;
+
 const PRIORITY = { high: 0, normal: 1, low: 2 };
 
 /** High priority first, then newest. The bar and the rail card share this order. */

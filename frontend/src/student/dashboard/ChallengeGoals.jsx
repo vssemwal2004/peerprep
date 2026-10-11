@@ -2,6 +2,7 @@ import { useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, BookOpen, CalendarDays, Check, Code2, LockKeyhole } from 'lucide-react';
 import { card, focusRing, Skeleton, textLink, Unavailable } from './ui';
+import { AdaptiveJourneyCard } from '../engagement/AdaptiveMissionCards';
 
 const shortDate = (value) => {
   const parsed = new Date(value);
@@ -10,7 +11,10 @@ const shortDate = (value) => {
 const PERIODS = [['weekly', 'This week'], ['monthly', 'This month']];
 
 /** Weekly and monthly goals with their rank-point reward. Badge editions live on the profile. */
-export default function ChallengeGoals({ section, onRetry, canQuestions, canLearning }) {
+export default function ChallengeGoals(props) {
+  return props.section?.data?.version === 2 ? <AdaptiveJourneyCard {...props} /> : <LegacyChallengeGoals {...props} />;
+}
+function LegacyChallengeGoals({ section, onRetry, canQuestions, canLearning }) {
   const tabsId = useId();
   const tabsRef = useRef(null);
   const [tab, setTab] = useState('weekly');

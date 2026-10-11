@@ -9,6 +9,9 @@ import Pair from '../models/Pair.js';
 import StudentActivity from '../models/StudentActivity.js';
 import StudentProblemView from '../models/StudentProblemView.js';
 import StudentChallenge from '../models/StudentChallenge.js';
+import { EngagementReward, StudentProgression } from '../models/AdaptiveEngagement.js';
+import { LEVELS } from './adaptiveEngagementRules.js';
+import { engagementTenant } from './engagementPolicyService.js';
 import QuestionPracticeAttempt from '../models/QuestionPracticeAttempt.js';
 import Semester from '../models/Subject.js';
 import { learningSemesters, sharedQuestions } from '../platform/sharedContent.js';
@@ -128,7 +131,7 @@ export function scoreStudentProgress(metrics = {}, now = new Date()) {
     milestoneBadges: earned.length,
     challengeBadges: count(metrics.challengeBadges),
     badgeMetrics, levelMetrics,
-    level: learnerLevel({ solved: levelMetrics.solvedCount, streak: levelMetrics.streak, assessmentScore: levelMetrics.assessmentScore ?? 0, interviewScore: levelMetrics.interviewScore, challengePoints: levelMetrics.challengePoints }),
+    level: metrics.adaptiveLevel || learnerLevel({ solved: levelMetrics.solvedCount, streak: levelMetrics.streak, assessmentScore: levelMetrics.assessmentScore ?? 0, interviewScore: levelMetrics.interviewScore, challengePoints: levelMetrics.challengePoints }),
     hasProgress: verifiedProgress,
   };
 }
@@ -300,8 +303,9 @@ export async function getStudentActivitySummary(student, now = new Date()) {
 async function loadProgressRows(students, permissions, semesters, now, sharedCatalog = [], includeActivity = true, includeDiscovery = false) {
   const ids = students.map((student) => objectId(student._id));
   if (!ids.length) return [];
+  const adaptiveScopes = students.map((student) => ({ studentId: objectId(student._id), tenantKey: engagementTenant(student) }));
   const curriculumTopicIds = permissions.learning ? [...buildCurriculumTopicMap(semesters).keys()].map(objectId) : [];
-  const [coding, learning, assessments, interviews, activities, sharedCoding, challenges] = await Promise.all([
+  const [coding, learning, assessments, interviews, activities, sharedCoding, challenges, missionRewards, progressions] = await Promise.all([
     permissions.questions ? aggregate(Submission, [
       { $match: { user: { $in: ids }, mode: 'submit' } },
       { $group: { _id: { studentId: '$user', problem: '$problem' }, accepted: { $max: { $cond: [acceptedExpression, 1, 0] } }, languages: { $addToSet: '$language' } } },
@@ -326,9 +330,16 @@ async function loadProgressRows(students, permissions, semesters, now, sharedCat
       { $group: { _id: { studentId: '$studentId', questionId: '$questionId' }, accepted: { $max: { $cond: [{ $eq: ['$result', 'correct'] }, 1, 0] } }, languages: { $addToSet: '$language' } } },
     ]) : [],
     aggregate(StudentChallenge, [{ $match: { studentId: { $in: ids }, earnedAt: { $ne: null } } }, { $group: { _id: '$studentId', challengePoints: { $sum: '$rewardPoints' }, challengeBadges: { $sum: { $cond: [{ $in: ['$kind', ['weekly', 'monthly']] }, 1, 0] } } } }]),
+    aggregate(EngagementReward, [{ $match: { $or: adaptiveScopes } }, { $group: { _id: '$studentId', points: { $sum: '$points' } } }]),
+    StudentProgression.find({ $or: adaptiveScopes }).select('studentId level').maxTimeMS(QUERY_TIMEOUT_MS).lean(),
   ]);
   const maps = [coding, assessments, interviews].map((source) => new Map(source.map((entry) => [String(entry._id), entry])));
   const challengeMap = new Map(challenges.map((entry) => [String(entry._id), entry]));
+  for (const reward of missionRewards) {
+    const key = String(reward._id), row = challengeMap.get(key) || {};
+    challengeMap.set(key, { ...row, challengePoints: count(row.challengePoints) + reward.points });
+  }
+  const progressionMap = new Map(progressions.map((row) => [String(row.studentId), LEVELS[row.level - 1]]));
   const completedByStudent = new Map();
   const sharedByStudent = new Map();
   const sharedMap = new Map(sharedCatalog.map((question) => [String(question._id), question]));
@@ -358,6 +369,7 @@ async function loadProgressRows(students, permissions, semesters, now, sharedCat
     const completedTopics = completedTopicIds.length;
     return {
       studentId: id, ...codingRow, ...maps[1].get(id), ...maps[2].get(id), ...challengeMap.get(id),
+      adaptiveLevel: progressionMap.get(id),
       languages: languages.size,
       completedTopics, totalTopics: topics.size, activityByDate: activities.get(id) || {},
       ...(includeDiscovery ? { completedTopicIds, acceptedSharedQuestionIds } : {}),
@@ -374,7 +386,7 @@ async function loadRankRows(student, permissions, semesters, now, sharedCatalog 
   if (cached && now.getTime() - cached.at < cacheLifetimeMs) return cached.value;
   if (rankLoads.has(key)) return rankLoads.get(key);
   const pending = (async () => {
-    const students = await User.find(scope).select('_id semester').maxTimeMS(QUERY_TIMEOUT_MS).lean();
+    const students = await User.find(scope).select('_id semester college').maxTimeMS(QUERY_TIMEOUT_MS).lean();
     const rows = await loadProgressRows(students, permissions, semesters, now, sharedCatalog);
     // Keep only compact scores and metrics for the cohort snapshot. Calendars are sorted once
     // here, rather than retained and recalculated for every student's dashboard request.
@@ -416,12 +428,54 @@ export async function getStudentCodingSummary(student, now = new Date()) {
   };
 }
 
+/** Language and test counts from the student's most recent run, only when that run was judged. */
+function lastRunDetails(attempt) {
+  if (!attempt) return {};
+  const total = count(attempt.total);
+  return {
+    language: attempt.language || null,
+    ...(total > 0 ? { passedTests: Math.min(total, count(attempt.passed)), totalTests: total } : {}),
+  };
+}
+
+const PREVIEW_SKIP = /^\s*(#include|import\s|from\s+\S+\s+import|using\s+namespace|package\s|#!|\/\/\s*@|'use strict'|"use strict")/;
+
+/**
+ * A few meaningful lines of the student's own last code for the resume card. Boilerplate headers
+ * are skipped, lines are capped in width, and nothing is returned for empty or binary-looking input.
+ */
+export function codePreviewLines(source, maxLines = 6, maxWidth = 72) {
+  const text = String(source || '');
+  if (!text.trim() || text.includes('\u0000')) return null;
+  const lines = text.replace(/\r\n?/g, '\n').replace(/\t/g, '    ').split('\n');
+  let start = lines.findIndex((line) => line.trim() && !PREVIEW_SKIP.test(line));
+  if (start < 0) start = 0;
+  const preview = lines.slice(start).filter((line, index, all) => line.trim() || (index > 0 && all[index - 1].trim()))
+    .slice(0, maxLines).map((line) => (line.length > maxWidth ? `${line.slice(0, maxWidth - 1)}…` : line).replace(/\s+$/, ''));
+  while (preview.length && !preview[preview.length - 1].trim()) preview.pop();
+  return preview.length ? { lines: preview, startLine: start + 1 } : null;
+}
+
+/** Only the newest resume item needs code, so one indexed lookup replaces carrying source for all. */
+async function attachCodePreview(item, studentId) {
+  const match = /^\/problems\/([a-f\d]{24})$/i.exec(item?.href || '');
+  if (!item || item.type !== 'coding' || item.status !== 'in_progress' || !match) return item;
+  try {
+    const latest = await Submission.findOne({ user: studentId, problem: objectId(match[1]), assessmentId: null })
+      .sort({ createdAt: -1, _id: -1 }).select('sourceCode language').maxTimeMS(QUERY_TIMEOUT_MS).lean();
+    const preview = codePreviewLines(latest?.sourceCode);
+    return preview ? { ...item, codePreview: { ...preview, language: latest.language || item.language || null } } : item;
+  } catch {
+    return item; // The preview is decoration; the resume card still works without it.
+  }
+}
+
 async function codingResumeItems(studentId) {
   const [attempts, visits] = await Promise.all([
     aggregate(Submission, [
       { $match: { user: studentId, assessmentId: null } },
       { $sort: { createdAt: -1, _id: -1 } },
-      { $group: { _id: '$problem', updatedAt: { $first: '$createdAt' }, status: { $first: '$status' }, passed: { $first: '$passedTestCases' }, total: { $first: '$totalTestCases' }, solved: { $max: { $cond: [{ $and: [{ $eq: ['$mode', 'submit'] }, acceptedExpression] }, 1, 0] } } } },
+      { $group: { _id: '$problem', updatedAt: { $first: '$createdAt' }, status: { $first: '$status' }, language: { $first: '$language' }, passed: { $first: '$passedTestCases' }, total: { $first: '$totalTestCases' }, solved: { $max: { $cond: [{ $and: [{ $eq: ['$mode', 'submit'] }, acceptedExpression] }, 1, 0] } } } },
       { $match: { solved: 0 } }, { $sort: { updatedAt: -1, _id: 1 } }, { $limit: 12 },
     ]),
     StudentProblemView.find({ studentId, source: { $ne: 'shared' } }).sort({ lastViewedAt: -1, _id: 1 }).limit(12).select('problemId lastViewedAt').maxTimeMS(QUERY_TIMEOUT_MS).lean(),
@@ -448,6 +502,7 @@ async function codingResumeItems(studentId) {
       updatedAt: visit && (!attempt || new Date(visit.lastViewedAt) > new Date(attempt.updatedAt)) ? visit.lastViewedAt : attempt.updatedAt,
       progressPercent: count(attempt?.total) > 0 ? Math.min(99, Math.round((count(attempt.passed) / count(attempt.total)) * 100)) : null,
       status: attempt ? 'in_progress' : 'viewed', lastVerdict: attempt?.status || null,
+      ...lastRunDetails(attempt),
     }];
   });
 }
@@ -458,7 +513,7 @@ async function sharedCodingResumeItems(studentId, sharedCatalog) {
     aggregate(QuestionPracticeAttempt, [
       { $match: { studentId, source: 'shared', questionType: 'coding', questionId: { $in: sharedCatalog.map((row) => objectId(row._id)) } } },
       { $sort: { createdAt: -1, _id: -1 } },
-      { $group: { _id: '$questionId', updatedAt: { $first: '$createdAt' }, result: { $first: '$result' }, solved: { $max: { $cond: [{ $eq: ['$result', 'correct'] }, 1, 0] } } } },
+      { $group: { _id: '$questionId', updatedAt: { $first: '$createdAt' }, result: { $first: '$result' }, language: { $first: '$language' }, passed: { $first: '$passedTestCases' }, total: { $first: '$totalTestCases' }, solved: { $max: { $cond: [{ $eq: ['$result', 'correct'] }, 1, 0] } } } },
       { $match: { solved: 0 } }, { $sort: { updatedAt: -1, _id: 1 } }, { $limit: 12 },
     ]),
     StudentProblemView.find({ studentId, source: 'shared' }).sort({ lastViewedAt: -1, _id: 1 }).limit(12).select('problemId lastViewedAt').maxTimeMS(QUERY_TIMEOUT_MS).lean(),
@@ -478,7 +533,8 @@ async function sharedCodingResumeItems(studentId, sharedCatalog) {
     return [{ id: `coding:shared:${key}`, type: 'coding', title: question.questionData?.problemDataSnapshot?.title || question.questionText,
       subtitle: `${difficulty} · Shared coding practice`, difficulty, href: `/problems/shared/${key}`,
       updatedAt: visit && (!attempt || new Date(visit.lastViewedAt) > new Date(attempt.updatedAt)) ? visit.lastViewedAt : attempt.updatedAt,
-      progressPercent: null, status: attempt ? 'in_progress' : 'viewed', lastVerdict: attempt ? (attempt.result === 'incorrect' ? 'WA' : 'PENDING') : null }];
+      progressPercent: null, status: attempt ? 'in_progress' : 'viewed', lastVerdict: attempt ? (attempt.result === 'incorrect' ? 'WA' : 'PENDING') : null,
+      ...lastRunDetails(attempt) }];
   });
 }
 
@@ -530,21 +586,33 @@ export function buildLearningSubjectCards(accessibleTopics, completedTopicIds = 
       const query = new URLSearchParams({ semesterId: topic.semesterId, subjectId: topic.subjectId });
       subjects.set(key, {
         id: `learning:${key}`, title: topic.subjectName, semesterName: topic.semesterName,
-        coordinatorId: topic.coordinatorId, totalTopics: 0, completedTopics: 0,
+        coordinatorId: topic.coordinatorId, totalTopics: 0, completedTopics: 0, videoCount: 0, notesCount: 0, chapterIds: new Set(), nextTopic: null,
         href: `/student/learning/${encodeURIComponent(topic.semesterName)}/${encodeURIComponent(topic.subjectName)}/${encodeURIComponent(topic.coordinatorId)}?${query}`,
         state: { semesterId: topic.semesterId, subjectId: topic.subjectId, coordinatorId: topic.coordinatorId },
       });
     }
     const subject = subjects.get(key);
     subject.totalTopics += 1;
+    subject.chapterIds.add(topic.chapterId);
+    if (topic.hasVideo) subject.videoCount += 1;
+    if (topic.hasNotes) subject.notesCount += 1;
     if (completed.has(topic.topicId)) subject.completedTopics += 1;
+    // Curriculum order is preserved by the topic map, so the first unfinished topic is what comes next.
+    else if (!subject.nextTopic) {
+      const contentType = topic.hasVideo ? 'video' : 'topic';
+      const query = new URLSearchParams({ semesterId: topic.semesterId, subjectId: topic.subjectId, topicId: topic.topicId, contentType });
+      subject.nextTopic = {
+        id: topic.topicId, title: topic.title || 'Untitled topic', chapterName: topic.chapterName || null, contentType,
+        href: `/student/learning/${encodeURIComponent(topic.semesterName)}/${encodeURIComponent(topic.subjectName)}/${encodeURIComponent(topic.coordinatorId)}?${query}`,
+      };
+    }
   }
   const sectionOrder = (subject) => subject.completedTopics > 0 && subject.completedTopics < subject.totalTopics ? 0 : subject.completedTopics === 0 ? 1 : 2;
   const semesterNumber = (subject) => Number(String(subject.semesterName || '').match(/\d+/)?.[0]) || 0;
   return [...subjects.values()]
     .sort((a, b) => sectionOrder(a) - sectionOrder(b) || semesterNumber(b) - semesterNumber(a) || a.title.localeCompare(b.title) || a.id.localeCompare(b.id))
     .slice(0, limit)
-    .map((subject) => ({ ...subject, progressPercent: Math.round((subject.completedTopics / subject.totalTopics) * 100) }));
+    .map(({ chapterIds, ...subject }) => ({ ...subject, chapterCount: chapterIds.size, progressPercent: Math.round((subject.completedTopics / subject.totalTopics) * 100) }));
 }
 
 export async function getStudentDashboardData(student, now = new Date()) {
@@ -567,6 +635,7 @@ export async function getStudentDashboardData(student, now = new Date()) {
   // Compute the current student fresh even while the cohort cache is still within its short TTL.
   const rankingRows = refreshRankingRows(rankData.rows, own, student);
   const resumeItems = combineResumeItems([...codingResume, ...sharedResume, ...learningResume]);
+  if (resumeItems[0]) resumeItems[0] = await attachCodePreview(resumeItems[0], objectId(student._id));
   const suggestedPractice = permissions.questions ? await suggestedPracticeItems(own, sharedCatalog, resumeItems) : [];
   const learningSubjects = permissions.learning ? buildLearningSubjectCards(accessibleTopics, own.completedTopicIds) : [];
   return {

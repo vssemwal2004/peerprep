@@ -122,6 +122,8 @@ beforeEach(async () => {
   api.getStudentDashboard = async (forceRefresh = false) => { calls.push(['dashboard', forceRefresh]); return structuredClone(dashboard); };
   api.refreshStudentEngagement = async () => { calls.push(['engagement']); return structuredClone(engagement || engagementFixture()); };
   api.getStudentChallengeBadges = async () => { throw new Error('Badge pagination must be mocked explicitly'); };
+  api.claimAchievements = async () => ({ events: [] });
+  api.acknowledgeAchievements = async () => ({ acknowledged: true });
   api.listStudentAnnouncements = async () => { calls.push(['announcements']); return { announcements: structuredClone(announcements) }; };
   api.listEvents = async () => { calls.push(['events']); return structuredClone(events); };
   api.listStudentAssessments = async () => { calls.push(['assessments']); return { assessments: structuredClone(assessments) }; };
@@ -186,6 +188,79 @@ for (const latest of ['coding', 'learning']) {
   });
 }
 
+test('the resume card shows the real last run: verdict, passing tests, language and the student’s own code', async () => {
+  Object.assign(dashboard.resumeItems[0], {
+    language: 'python', lastVerdict: 'WA', passedTests: 3, totalTests: 8, difficulty: 'Easy',
+    codePreview: { language: 'python', startLine: 2, lines: ['def two_sum(nums, target):', '    seen = {}  # value -> index', '    return []'] },
+  });
+  await mount();
+  const resume = section('Continue where you left off');
+  assert.match(resume.textContent, /Two Sum/);
+  assert.match(resume.textContent, /Wrong answer/);
+  assert.match(resume.textContent, /Python/);
+  assert.match(resume.textContent, /3\/8 tests passing/);
+  assert.match(resume.textContent, /Resume in Python/);
+  assert.equal(resume.querySelector('[role="img"][aria-label="3 of 8 test cases passing"]').children.length, 8);
+  const code = resume.querySelector('[aria-label="Preview of your last code"]');
+  assert.match(code.textContent, /2def two_sum\(nums, target\):/, 'Line numbers continue from where the snippet starts');
+  assert.match(code.textContent, /# value -> index/);
+  assert.equal(code.querySelector('script, img'), null, 'Code is rendered as text only');
+  assert.doesNotMatch(resume.textContent, /NaN|undefined/);
+});
+
+test('an opened but unattempted problem says so instead of showing invented progress', async () => {
+  dashboard.resumeItems = [{ id: 'viewed', type: 'coding', title: 'Valid Anagram', difficulty: 'Easy', href: '/problems/valid-anagram', updatedAt: iso(8), progressPercent: null, status: 'viewed' }];
+  await mount();
+  const resume = section('Continue where you left off');
+  assert.match(resume.textContent, /Not attempted yet/);
+  assert.match(resume.textContent, /Start solving/);
+  assert.equal(resume.querySelector('[aria-label="Preview of your last code"]'), null);
+  assert.equal(resume.querySelector('[aria-label*="test cases passing"]'), null);
+});
+
+test('today pairs the real streak with the daily challenge beside recent work', async () => {
+  await mount();
+  const today = section('Today');
+  assert.ok(today, 'Today sits next to the resume card');
+  assert.ok(today.closest('.dashboard-greeting') === null && !today.closest('aside'), 'It belongs to the head row, not the rail');
+  assert.match(today.textContent, /3day streak/);
+  assert.match(today.textContent, /Done for today · Best 9/, 'Today already has activity in the fixture');
+  assert.ok(today.querySelector('svg .streak-flicker'), 'An active streak with today done shows the burning mark');
+  const chain = today.querySelector('ol[aria-label]');
+  assert.equal(chain.querySelectorAll(':scope > li').length, 7);
+  assert.match(chain.lastElementChild.textContent, /Today/);
+  assert.match(chain.getAttribute('aria-label'), /active.*active$/, 'Yesterday and today are both active, so they are linked');
+  assert.ok(section('Daily challenge').closest('section[aria-labelledby="today-title"]'), 'The daily challenge lives in Today');
+  assert.equal(document.querySelector('aside[aria-label="Your progress and priorities"]').textContent.includes('Daily challenge'), false);
+});
+
+test('a live streak with no activity yet today shows a half-filled waiting flame and a nudge', async () => {
+  dashboard.activityByDate = { '2035-01-16': 1 };
+  await mount();
+  const today = section('Today');
+  assert.match(today.textContent, /Keep it alive today · Best 9/);
+  assert.equal(today.querySelector('svg .streak-flicker'), null, 'The flame only burns once today is done');
+  assert.ok(today.querySelector('svg clipPath'), 'The waiting flame is filled halfway');
+});
+
+test('subject cards show real content counts, link straight to the next topic and tidy ALL-CAPS names', async () => {
+  dashboard.learningSubjects[0] = { ...dashboard.learningSubjects[0], title: 'DESIGN ANALYSIS AND ALGORITHM', videoCount: 6, notesCount: 4,
+    nextTopic: { id: 'topic-3', title: 'Binary Search', chapterName: 'Searching', contentType: 'video', href: '/student/learning/Semester%202/Algorithms/teacher-1?semesterId=semester-2&subjectId=subject-algorithms&topicId=topic-3&contentType=video' } };
+  dashboard.learningSubjects[1] = { ...dashboard.learningSubjects[1], title: 'OS AND DBMS LAB' };
+  await mount();
+  const learning = section('Explore your learning');
+  assert.match(learning.textContent, /Design Analysis and Algorithm/);
+  assert.match(learning.textContent, /OS and DBMS Lab/, 'Acronyms stay upper case');
+  assert.match(learning.textContent, /6 videos/);
+  assert.match(learning.textContent, /4 notes/);
+  const next = links().find((link) => link.getAttribute('href') === dashboard.learningSubjects[0].nextTopic.href);
+  assert.ok(next, 'Next topic opens directly');
+  assert.match(next.textContent, /Next up.*Binary Search/);
+  await act(async () => next.click());
+  assert.equal(document.getElementById('location').textContent, dashboard.learningSubjects[0].nextTopic.href);
+  assert.doesNotMatch(learning.textContent, /0 videos|0 notes/, 'Missing content counts are omitted, not shown as zero');
+});
+
 test('accessible document order follows greeting and recent work, then the progress rail, then discovery', async () => {
   announcements = announcements.map((announcement) => ({ ...announcement, priority: 'normal' }));
   await mount();
@@ -202,7 +277,7 @@ test('accessible document order follows greeting and recent work, then the progr
     'Recent work comes before the rail, which comes before discovery on small screens');
   assert.ok(rail.compareDocumentPosition(main) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
   assert.deepEqual([...rail.querySelectorAll('h2')].map((heading) => heading.textContent), [
-    'Announcements', 'Coding progress', 'University standing', 'Daily challenge', 'Coming up',
+    'Announcements', 'Coding progress', 'University standing', 'Coming up',
   ], 'Any announcement leads the rail');
   assert.deepEqual([...main.querySelectorAll('h2')].map((heading) => heading.textContent), [
     'Your challenges', 'Next in practice', 'Explore your learning',
@@ -406,7 +481,7 @@ test('admin announcement updates replace the displayed notices and remove listen
   assert.match(section('Announcements').textContent, /Placement registration closes Friday/);
   assert.equal(listeners.get('announcement_update')?.size, 1);
   assert.deepEqual([...document.querySelectorAll('aside[aria-label="Your progress and priorities"] h2')].map((heading) => heading.textContent), [
-    'Announcements', 'Coding progress', 'University standing', 'Daily challenge', 'Coming up',
+    'Announcements', 'Coding progress', 'University standing', 'Coming up',
   ], 'Announcements are brought ahead of routine rail items');
   const beforeCount = calls.filter(([name]) => name === 'announcements').length;
   announcements = [{ _id: 'notice-2', title: 'Drive postponed', message: 'The updated schedule will be shared tomorrow.', priority: 'high', createdAt: iso(9) }];
@@ -446,6 +521,7 @@ test('the notification bar shows the highest-priority announcement and stays dis
 
 test('disabled university modules hide their cards and resume links and skip their list APIs', async () => {
   permissions = { ...allPermissions, questions: false, coding: false, learning: false, events: false, assessments: true };
+  engagement = { version: 2, enabled: true, domains: ['assessments', 'interviews'], daily: { goals: [] }, periods: [], lifetime: { points: 0 } };
   await mount();
   assert.equal(section('Coding progress'), undefined);
   assert.ok(links().every((link) => !link.getAttribute('href')?.startsWith('/problems')));
@@ -456,8 +532,8 @@ test('disabled university modules hide their cards and resume links and skip the
   assert.ok(calls.some(([name]) => name === 'assessments'));
   assert.ok(section('Announcements'), 'Announcements remain available when unrelated modules are disabled');
   assert.equal(section('Daily challenge'), undefined);
-  assert.equal(section('Your challenges'), undefined);
-  assert.equal(calls.filter(([name]) => name === 'engagement').length, 0);
+  assert.ok(section('Your challenges'), 'Allocated assessments and AI interviews can have challenge plans');
+  assert.ok(calls.some(([name]) => name === 'engagement'));
 });
 
 test('progress cues come from real data: subject icons, difficulty tags and announcement priority', async () => {
@@ -610,6 +686,29 @@ test('empty personal activity does not invent unfinished questions, notices, or 
   assert.ok(section('Coding progress').querySelector('[role="img"][aria-label="All problems: 0 solved out of 0"]'));
   assert.equal(section('University standing').querySelector('[role="progressbar"]'), null);
   assert.doesNotMatch(section('University standing').textContent, /#1/);
+});
+
+test('adaptive daily plans work for learning-only universities and hide stale coding tasks', async () => {
+  permissions = { learning: true };
+  engagement = { version: 2, enabled: true, domains: ['learning'], daily: { rewardPoints: 20, goals: [
+    { id: 'core', slot: 'core', domain: 'learning', title: 'Complete Foundations', href: '/student/learning', difficulty: 'Easy', minutes: 10, target: 1 },
+    { id: 'stale', slot: 'choice', domain: 'coding', title: 'Unauthorized coding task', href: '/problems/private', target: 1 },
+  ] }, periods: [], lifetime: { points: 0 }, rules: 'Verified completions only.' };
+  await mount();
+  assert.match(section("Today's missions").textContent, /Complete Foundations/);
+  assert.doesNotMatch(text(), /Unauthorized coding task/);
+  assert.ok(links().every((link) => !link.getAttribute('href')?.startsWith('/problems')));
+});
+
+test('adaptive missions render for assessments-only allocated features', async () => {
+  permissions = { assessments: true };
+  engagement = { version: 2, enabled: true, domains: ['assessments'], daily: { rewardPoints: 20, goals: [
+    { id: 'core', slot: 'core', domain: 'assessments', title: 'Complete assigned aptitude test', href: '/student/assessments', minutes: 20, target: 1 },
+  ] }, periods: [], lifetime: { points: 0 } };
+  await mount();
+  assert.match(section("Today's missions").textContent, /Complete assigned aptitude test/);
+  assert.ok(calls.some(([kind]) => kind === 'engagement'));
+  assert.equal(section('Coding progress'), undefined);
 });
 
 test('a dashboard failure is explicit and independent notices still load', async () => {

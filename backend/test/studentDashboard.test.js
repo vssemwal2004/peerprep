@@ -15,7 +15,7 @@ import { getStudentStats, getStudentActivity } from '../src/controllers/activity
 import { recordStudentTopicView, recordStudentProblemView } from '../src/controllers/studentDashboardController.js';
 import {
   calculateActivityStreak, scoreStudentProgress, rankStudentProgress, universityCohort,
-  buildCurriculumTopicMap, learningResumeItem, combineResumeItems, getStudentDashboardData, getStudentUniversityRanking, buildLearningSubjectCards,
+  buildCurriculumTopicMap, learningResumeItem, combineResumeItems, getStudentDashboardData, getStudentUniversityRanking, buildLearningSubjectCards, codePreviewLines,
 } from '../src/services/studentDashboardService.js';
 import { computeAwards } from '../../frontend/src/student/profile/achievements.js';
 import { getLearnerLevel } from '../../frontend/src/student/profileBadge.js';
@@ -129,6 +129,38 @@ test('learning discovery counts real topic completion, stays bounded, and builds
   assert.match(cards[0].href, /\/student\/learning\/Semester%201\/Arrays%20and%20Lists\/teacher-one\?/);
   assert.deepEqual(cards[0].state, { semesterId: 'semester-1', subjectId: 'arrays', coordinatorId: 'teacher-one' });
   assert.equal(buildLearningSubjectCards(topics, [], 1).length, 1);
+});
+
+test('subject cards report real content counts and point at the first unfinished topic in curriculum order', () => {
+  const semesters = [{ _id: 's1', semesterName: 'Semester 1', coordinatorId: 'teacher', subjects: [{ _id: 'graphs', subjectName: 'Graphs', chapters: [
+    { _id: 'basics', chapterName: 'Basics', topics: [{ _id: 'bfs', topicName: 'BFS', topicVideoLink: 'v', notesPDF: 'n' }, { _id: 'dfs', topicName: 'DFS', notesPDF: 'n' }] },
+    { _id: 'paths', chapterName: 'Shortest paths', topics: [{ _id: 'dijkstra', topicName: 'Dijkstra', topicVideoLink: 'v' }] },
+  ] }] }];
+  const topics = buildCurriculumTopicMap(semesters, { semester: 1 });
+  const [graphs] = buildLearningSubjectCards(topics, ['bfs']);
+  assert.equal(graphs.videoCount, 2);
+  assert.equal(graphs.notesCount, 2);
+  assert.equal(graphs.chapterCount, 2);
+  assert.equal(graphs.nextTopic.title, 'DFS');
+  assert.equal(graphs.nextTopic.chapterName, 'Basics');
+  assert.equal(graphs.nextTopic.contentType, 'topic', 'A topic without a video does not open the video player');
+  assert.match(graphs.nextTopic.href, /topicId=dfs/);
+  assert.equal(graphs.chapterIds, undefined, 'Internal bookkeeping is not sent to the client');
+  const [done] = buildLearningSubjectCards(topics, ['bfs', 'dfs', 'dijkstra']);
+  assert.equal(done.nextTopic, null, 'A finished subject has no invented next topic');
+});
+
+test('code previews keep the student’s own logic, skip boilerplate, and stay bounded', () => {
+  const preview = codePreviewLines('#include <bits/stdc++.h>\r\nusing namespace std;\n\nint main() {\n\tint n; cin >> n;\n' + 'x'.repeat(200) + '\n  return 0;\n}\n\n\n');
+  assert.equal(preview.startLine, 4);
+  assert.equal(preview.lines[0], 'int main() {');
+  assert.equal(preview.lines[1], '    int n; cin >> n;');
+  assert.ok(preview.lines.every((line) => line.length <= 72));
+  assert.ok(preview.lines.length <= 6);
+  assert.equal(codePreviewLines(''), null);
+  assert.equal(codePreviewLines('   \n\n'), null);
+  assert.equal(codePreviewLines('a\u0000b'), null);
+  assert.equal(codePreviewLines('import os\nimport sys').lines[0], 'import os', 'All-boilerplate code still previews from the top');
 });
 
 let mongo;
@@ -387,6 +419,26 @@ test('practice discovery falls back to actual unsolved Hard problems after Easy 
   assert.equal(dashboard.suggestedPractice.length, 1);
   assert.equal(dashboard.suggestedPractice[0].difficulty, 'Hard');
   assert.equal(dashboard.suggestedPractice[0].href, `/problems/${problems.hard}`);
+});
+
+test('the newest coding resume carries the last run and only the student’s own latest code', async () => {
+  const studentId = id(), otherId = id();
+  const learner = { _id: studentId, role: 'student', college: 'Resume Preview University', semester: 1, isActive: true, accessScope: 'full' };
+  await User.collection.insertMany([learner, { ...learner, _id: otherId }]);
+  await Submission.collection.insertMany([
+    { user: studentId, problem: problems.medium, mode: 'run', status: 'WA', language: 'cpp', sourceCode: 'int old() {}', passedTestCases: 1, totalTestCases: 8, createdAt: new Date('2026-10-11T08:00:00Z') },
+    { user: studentId, problem: problems.medium, mode: 'run', status: 'TLE', language: 'python', sourceCode: 'import sys\ndef solve(n):\n    return n * 2\n', passedTestCases: 3, totalTestCases: 8, createdAt: new Date('2026-10-11T09:00:00Z') },
+    { user: otherId, problem: problems.medium, mode: 'run', status: 'WA', language: 'java', sourceCode: 'class Secret {}', passedTestCases: 0, totalTestCases: 8, createdAt: new Date('2026-10-11T10:00:00Z') },
+    { user: studentId, problem: problems.medium, mode: 'run', status: 'WA', language: 'java', sourceCode: 'class AssessmentOnly {}', assessmentId: id(), passedTestCases: 0, totalTestCases: 8, createdAt: new Date('2026-10-11T11:00:00Z') },
+  ]);
+  const [latest] = (await getStudentDashboardData(learner, now)).resumeItems;
+  assert.equal(latest.href, `/problems/${problems.medium}`);
+  assert.equal(latest.language, 'python');
+  assert.equal(latest.lastVerdict, 'TLE');
+  assert.equal(latest.passedTests, 3);
+  assert.equal(latest.totalTests, 8);
+  assert.deepEqual(latest.codePreview, { lines: ['def solve(n):', '    return n * 2'], startLine: 2, language: 'python' });
+  assert.ok(!JSON.stringify(latest).includes('Secret') && !JSON.stringify(latest).includes('AssessmentOnly'));
 });
 
 test('assessment badge metrics exclude violations and level average ignores unscored submitted attempts', async () => {

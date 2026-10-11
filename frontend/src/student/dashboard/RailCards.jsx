@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, ArrowUpRight, CalendarClock, Check, ChevronDown, Clock3, Megaphone, Sparkles, Trophy } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, CalendarClock, ChevronDown, Megaphone, Trophy } from 'lucide-react';
 import { formatRelativeTime, formatSchedule, isImportantAnnouncement, numeric } from './dashboardUtils';
-import { card, CardTitle, DifficultyTag, focusRing, Skeleton, textLink, Unavailable } from './ui';
+import { card, CardTitle, focusRing, Skeleton, textLink, Unavailable } from './ui';
 
 // Rail cards are kept compact so the whole rail fits beside the scrolling main column.
 const railCard = `p-4 ${card}`;
@@ -61,48 +61,6 @@ export function RankCard({ ranking, loading, error, onRetry }) {
         {ranking?.methodology || 'Based on completed coding, learning and assessments. Equal points share the same rank.'}
       </p>}
     </>}
-  </section>;
-}
-
-function useMinuteClock() {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 60000);
-    return () => clearInterval(timer);
-  }, []);
-  return now;
-}
-
-export function DailyChallengeCard({ section, onRetry }) {
-  const now = useMinuteClock();
-  const daily = section?.data?.daily;
-  const deadline = new Date(daily?.endsAt || '').getTime();
-  const minutes = Number.isFinite(deadline) ? Math.max(0, Math.ceil((deadline - now) / 60000)) : null;
-  const done = Boolean(daily?.completed);
-  return <section aria-labelledby="daily-title" aria-busy={Boolean(section?.loading)} className={`${railCard} ${done ? 'is-completed' : ''}`}>
-    <CardTitle id="daily-title" title="Daily challenge" icon={Sparkles} tone="violet"
-      action={daily?.problem && daily.rewardPoints ? <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-[11.5px] font-semibold tabular-nums text-amber-700 ring-1 ring-inset ring-amber-200/70 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-400/20">+{daily.rewardPoints} pts</span> : null} />
-    {section?.loading ? <Skeleton className="mt-3 h-[68px]" />
-      : section?.error || !section?.data ? <Unavailable className="mt-3" message="Progress unavailable" onRetry={onRetry} />
-        : !daily?.problem ? <p className="mt-3 flex items-center gap-2 rounded-xl bg-[#f6f7f9] px-3.5 py-2.5 text-[13px] text-slate-600 dark:bg-white/[0.04] dark:text-zinc-300">
-          <Clock3 className="h-4 w-4 shrink-0 text-violet-500 dark:text-violet-300" aria-hidden="true" />{daily?.enabled === false ? 'Daily challenge is paused' : 'New challenge coming soon'}
-        </p>
-          : <>
-            <h3 className="mt-3 truncate text-[14px] font-semibold text-slate-900 dark:text-zinc-100" title={daily.problem.title}>{daily.problem.title}</h3>
-            <div className="mt-2.5 flex items-center justify-between gap-2">
-              <div className="flex min-w-0 flex-wrap items-center gap-2 text-[12px] text-slate-500 dark:text-zinc-400">
-                <DifficultyTag difficulty={daily.problem.difficulty} />
-                {done
-                  ? <span className="inline-flex items-center gap-1 font-medium text-[#326f55] dark:text-[#83bd9e]"><Check className="h-3.5 w-3.5" aria-hidden="true" />Completed today</span>
-                  : minutes !== null && <span className="inline-flex items-center gap-1 tabular-nums"><Clock3 className="h-3 w-3" aria-hidden="true" />{Math.floor(minutes / 60)}h {minutes % 60}m left</span>}
-              </div>
-              <Link to={daily.problem.href} className={`group inline-flex shrink-0 items-center gap-1 rounded-[10px] px-3 py-1.5 text-[12.5px] font-medium transition-colors ${focusRing} ${done
-                ? 'bg-[#f1f2f5] text-slate-700 hover:bg-slate-200 dark:bg-white/[0.07] dark:text-zinc-200 dark:hover:bg-white/[0.12]'
-                : 'bg-sky-600 text-white hover:bg-sky-700'}`}>
-                {done ? 'Review solution' : 'Solve challenge'}<ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
-              </Link>
-            </div>
-          </>}
   </section>;
 }
 

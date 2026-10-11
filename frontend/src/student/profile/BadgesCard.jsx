@@ -4,6 +4,7 @@ import { levelTheme } from './levelTheme';
 import LevelMedallion from './LevelMedallion';
 import { awardIcon, awardTone } from './awardVisuals';
 import { focusRing } from './format';
+import BadgeEmblem from './BadgeEmblem';
 
 function shortDate(value) {
   if (!value) return null;
@@ -25,7 +26,7 @@ function MiniMedal({ award, onClick }) {
         className={`group flex w-full justify-center rounded-lg ${focusRing}`}
       >
         {/* 32px + shrink-0: ten medals fit a half-width card (xl) without squashing into ovals. */}
-        <span
+        {award.category ? <BadgeEmblem badge={award} className="h-10 w-9" /> : <span
           className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-transform duration-200 group-hover:-translate-y-0.5 ${award.earned
             ? `bg-gradient-to-br text-white shadow-md ${awardTone(award)}`
             : 'bg-slate-100 text-slate-300 dark:bg-zinc-800 dark:text-zinc-600'}`}
@@ -37,7 +38,7 @@ function MiniMedal({ award, onClick }) {
               <Lock className="h-2 w-2 text-slate-400" />
             </span>
           ) : null}
-        </span>
+        </span>}
       </button>
     </li>
   );
@@ -47,7 +48,7 @@ function MiniMedal({ award, onClick }) {
  * LeetCode-style badges card: level block + every award (earned in colour, locked faded).
  * "View all" (or any medal / the level block) calls onOpenGallery('awards' | 'levels').
  */
-export default function BadgesCard({ level, awards, learnerProgress, onOpenGallery, className = '' }) {
+export default function BadgesCard({ level, awards, learnerProgress, onOpenGallery, className = '', loading = false, error = false, onRetry }) {
   const setGallery = onOpenGallery;
   const theme = levelTheme(level?.level);
   const levelEntry = (learnerProgress?.levelHistory || []).filter((entry) => entry.level === level?.level).slice(-1)[0];
@@ -64,7 +65,7 @@ export default function BadgesCard({ level, awards, learnerProgress, onOpenGalle
     <Card
       id="badges"
       title="Badges"
-      description={`${awards.earnedCount} of ${awards.awards.length} earned`}
+      description={loading ? 'Loading your verified achievements…' : error ? 'Achievement sync unavailable' : `${awards.earnedCount} of ${awards.awards.length} earned`}
       icon={<Medal className="h-4 w-4" />}
       className={className}
       action={(
@@ -78,6 +79,7 @@ export default function BadgesCard({ level, awards, learnerProgress, onOpenGalle
         </button>
       )}
     >
+        {error && <p role="status" className="mb-3 text-xs text-slate-500">Your earned badges are safe. <button type="button" onClick={onRetry} className={`text-sky-600 underline ${focusRing}`}>Retry sync</button></p>}
         <div className="flex flex-col gap-2.5">
           <button
             type="button"
@@ -106,7 +108,7 @@ export default function BadgesCard({ level, awards, learnerProgress, onOpenGalle
           </button>
 
           <ul className="grid grid-cols-5 gap-x-0.5 gap-y-1.5 sm:grid-cols-10">
-            {ordered.map((award) => (
+            {ordered.slice(0, 10).map((award) => (
               <MiniMedal key={award.id} award={award} onClick={() => setGallery('awards')} />
             ))}
           </ul>

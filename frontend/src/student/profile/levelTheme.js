@@ -3,6 +3,7 @@ import { Crown, Gem, Sprout, Target, Trophy, Zap } from 'lucide-react';
 // Visual identity per learner level (1-6, matching getLearnerLevel). Full class strings so
 // Tailwind keeps them.
 const LEVEL_THEMES = {
+  7: { Icon: Trophy, gradient: 'from-amber-300 via-rose-500 to-violet-700', glow: 'shadow-amber-500/40', soft: 'bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/30' },
   1: { Icon: Sprout, gradient: 'from-sky-400 to-sky-600', glow: 'shadow-sky-500/40', soft: 'bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-500/30' },
   2: { Icon: Zap, gradient: 'from-cyan-400 to-blue-600', glow: 'shadow-cyan-500/40', soft: 'bg-cyan-50 text-cyan-700 ring-cyan-200 dark:bg-cyan-500/10 dark:text-cyan-300 dark:ring-cyan-500/30' },
   3: { Icon: Target, gradient: 'from-emerald-400 to-teal-600', glow: 'shadow-emerald-500/40', soft: 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/30' },
