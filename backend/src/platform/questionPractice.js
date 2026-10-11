@@ -8,7 +8,8 @@ import { recordDailyChallengeCompletion } from '../services/codingStreakService.
 import Problem from '../models/Problem.js';
 import Submission from '../models/Submission.js';
 import { loadHiddenExecutionTestCases } from '../controllers/problemController.js';
-import { runJudge0, KEY_TO_LANGUAGE_ID, normalizeComparableOutput } from '../services/executionService.js';
+import { runJudge0, KEY_TO_LANGUAGE_ID } from '../services/executionService.js';
+import { evaluateProblemSubmissionResult } from '../services/problemSubmissionEvaluationService.js';
 import { prepareFunctionSourceForExecution } from '../services/functionProblemAdapterService.js';
 import { compilerExecutionLimiter } from '../middleware/rateLimiter.js';
 import { sharedQuestions, sharedJudgeData } from './sharedContent.js';
@@ -252,7 +253,8 @@ router.get('/shared/:id/submissions', asyncRoute(async (req, res) => {
     mode: 'submit', status: item.result === 'correct' ? 'AC' : item.result === 'incorrect' ? item.failureStatus || 'WA' : 'PENDING',
     language: item.language, sourceCode: item.answer, createdAt: item.createdAt,
     totalTestCases: item.totalTestCases || 0, passedTestCases: item.passedTestCases || 0,
-    executionTimeMs: item.executionTimeMs || 0, memoryUsedKb: item.memoryUsedKb || 0 })) });
+    executionTimeMs: item.executionTimeMs || 0, memoryUsedKb: item.memoryUsedKb || 0,
+    testCaseResults: item.testCaseResults || [] })) });
 }));
 
 router.post('/shared/:id/run', compilerExecutionLimiter, asyncRoute(async (req, res) => {
@@ -263,18 +265,37 @@ router.post('/shared/:id/run', compilerExecutionLimiter, asyncRoute(async (req, 
   const sourceCode = String(req.body?.sourceCode || '');
   if (!sourceCode.trim() || sourceCode.length > 50000 || !KEY_TO_LANGUAGE_ID[language]
     || (problem.supportedLanguages?.length && !problem.supportedLanguages.includes(language))) throw new HttpError(400, 'Valid source code and language are required');
-  const input = String(req.body?.customInput || '').slice(0, 65536);
-  const result = await runJudge0(prepareFunctionSourceForExecution(problem, language, sourceCode, input),
-    KEY_TO_LANGUAGE_ID[language], input, { cpuTimeLimitSeconds: problem.timeLimitSeconds || 2,
-      memoryLimitKb: Number(problem.memoryLimitMb || 256) * 1024,
-      sqlSetupCode: [problem.sqlConfig?.schemaSql, problem.sqlConfig?.seedDataSql].filter(Boolean).join('\n') });
-  const sample = (question.questionData?.problemDataSnapshot?.sampleTestCases || []).find((item) => item.input === input);
-  res.json({ status: result.compile_output ? 'Compilation Error' : result.stderr ? 'Runtime Error'
-    : result.status?.id !== 3 ? result.status?.description || 'Run failed'
-      : sample && normalizeComparableOutput(result.stdout) !== normalizeComparableOutput(sample.output) ? 'Wrong Answer'
-        : sample ? 'Accepted' : 'Run completed',
-  output: result.stdout || '', stdout: result.stdout || '', stderr: result.stderr || '',
-  compileOutput: result.compile_output || '', input, language, sourceCode });
+  const samples = (question.questionData?.problemDataSnapshot?.sampleTestCases
+    || question.questionData?.coding?.problemData?.sampleTestCases || problem.sampleTestCases || []).slice(0, 12);
+  const cases = samples.length ? samples : [{ input: String(req.body?.customInput || '').slice(0, 65536) }];
+  const options = { cpuTimeLimitSeconds: problem.timeLimitSeconds || 2,
+    memoryLimitKb: Number(problem.memoryLimitMb || 256) * 1024,
+    sqlSetupCode: [problem.sqlConfig?.schemaSql, problem.sqlConfig?.seedDataSql].filter(Boolean).join('\n') };
+  const caseResults = [];
+  let totalTime = 0;
+  let peakMemory = 0;
+  for (const [index, sample] of cases.entries()) {
+    const input = String(sample.input || '');
+    const output = await runJudge0(prepareFunctionSourceForExecution(problem, language, sourceCode, input),
+      KEY_TO_LANGUAGE_ID[language], input, options);
+    const evaluation = samples.length
+      ? evaluateProblemSubmissionResult(problem, output, { input, output: sample.output || '' })
+      : null;
+    const status = evaluation?.internalStatus || (output.compile_output ? 'CE' : output.stderr ? 'RE'
+      : output.status?.id === 5 ? 'TLE' : output.status?.id === 3 ? 'AC' : 'RE');
+    const time = Number(output.time || 0);
+    const memory = Number(output.memory || 0);
+    totalTime += Number.isFinite(time) ? time : 0;
+    peakMemory = Math.max(peakMemory, Number.isFinite(memory) ? memory : 0);
+    caseResults.push({ id: `sample-${index + 1}`, label: `Case ${index + 1}`, status,
+      input, ...(samples.length ? { expectedOutput: String(sample.output || '') } : {}),
+      output: output.stdout || '', time, memory,
+      stderr: output.stderr || evaluation?.error || '', compileOutput: output.compile_output || '' });
+    if (status === 'CE') break;
+  }
+  const passed = caseResults.filter((item) => item.status === 'AC').length;
+  res.json({ mode: 'run', status: passed === caseResults.length ? 'Passed' : 'Failed',
+    passed, total: caseResults.length, time: totalTime, memory: peakMemory, caseResults });
 }));
 
 async function judgeCodingQuestion(question, source, answer, language) {
@@ -293,7 +314,8 @@ async function judgeCodingQuestion(question, source, answer, language) {
   let passedTestCases = 0;
   let executionTimeMs = 0;
   let memoryUsedKb = 0;
-  for (const testCase of testCases) {
+  const testCaseResults = [];
+  for (const [index, testCase] of testCases.entries()) {
     const output = await runJudge0(
       prepareFunctionSourceForExecution(problem, language, answer, testCase.input || ''),
       languageId, testCase.input || '', {
@@ -306,16 +328,19 @@ async function judgeCodingQuestion(question, source, answer, language) {
     const caseMemoryKb = Number(output.memory || 0);
     if (Number.isFinite(caseTimeMs)) executionTimeMs += Math.max(0, caseTimeMs);
     if (Number.isFinite(caseMemoryKb)) memoryUsedKb = Math.max(memoryUsedKb, caseMemoryKb);
-    if (output.compile_output || output.stderr || output.status?.id !== 3
-      || normalizeComparableOutput(output.stdout) !== normalizeComparableOutput(testCase.output)) {
+    const evaluation = evaluateProblemSubmissionResult(problem, output, testCase);
+    const failureStatus = evaluation.internalStatus === 'AC' ? null : evaluation.internalStatus;
+    testCaseResults.push({ index: index + 1, status: failureStatus || 'AC',
+      executionTimeMs: Number.isFinite(caseTimeMs) ? Math.max(0, caseTimeMs) : 0 });
+    if (failureStatus) {
       return { result: 'incorrect', feedback: output.compile_output ? 'Compilation failed' : output.stderr ? 'Runtime error' : 'A test case failed',
-        totalTestCases: testCases.length, passedTestCases, executionTimeMs, memoryUsedKb,
-        failureStatus: output.compile_output ? 'CE' : output.status?.id === 5 ? 'TLE' : output.stderr ? 'RE' : 'WA' };
+        totalTestCases: testCases.length, passedTestCases, executionTimeMs, memoryUsedKb, testCaseResults,
+        failureStatus };
     }
     passedTestCases += 1;
   }
   return { result: 'correct', feedback: 'All test cases passed', totalTestCases: testCases.length,
-    passedTestCases, executionTimeMs, memoryUsedKb };
+    passedTestCases, executionTimeMs, memoryUsedKb, testCaseResults };
 }
 
 async function findVisible(source, id) {
@@ -350,7 +375,7 @@ router.post('/:source/:id/attempts', compilerExecutionLimiter, asyncRoute(async 
     source: req.params.source, questionType: question.questionType, answer, language, result: graded.result,
     totalTestCases: graded.totalTestCases || 0, passedTestCases: graded.passedTestCases || 0,
     executionTimeMs: graded.executionTimeMs || 0, memoryUsedKb: graded.memoryUsedKb || 0,
-    failureStatus: graded.failureStatus });
+    failureStatus: graded.failureStatus, testCaseResults: graded.testCaseResults || [] });
   if (req.params.source === 'shared' && question.questionType === 'coding' && graded.result === 'correct') {
     void recordDailyChallengeCompletion({ userId: req.user._id, problemId: question._id, source: 'shared' }).catch((error) => console.warn('[Daily challenge] Shared reward sync failed:', error.message));
   }

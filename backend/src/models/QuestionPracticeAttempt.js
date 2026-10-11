@@ -13,6 +13,8 @@ const schema = new mongoose.Schema({
   executionTimeMs: { type: Number, min: 0, default: 0 },
   memoryUsedKb: { type: Number, min: 0, default: 0 },
   failureStatus: { type: String, enum: ['WA', 'CE', 'RE', 'TLE'], default: undefined },
+  testCaseResults: [{ _id: false, index: Number,
+    status: { type: String, enum: ['AC', 'WA', 'CE', 'RE', 'TLE'] }, executionTimeMs: Number }],
 }, { timestamps: true });
 
 schema.index({ studentId: 1, source: 1, questionId: 1, createdAt: -1 });

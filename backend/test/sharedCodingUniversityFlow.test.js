@@ -22,7 +22,7 @@ test('shared coding uses university Judge0 and university attempts for normal pr
   const questionId = new mongoose.Types.ObjectId();
   const problemId = new mongoose.Types.ObjectId();
   const snapshot = { _id: problemId, title: 'Add numbers', executionMode: 'full_program',
-    supportedLanguages: ['python'], sampleTestCases: [{ input: '1 2', output: '42' }] };
+    supportedLanguages: ['python'], sampleTestCases: [{ input: '1 2', output: '42' }, { input: '8 9', output: '42' }] };
   const question = { _id: questionId, sourceType: 'compiler', sourceProblemId: problemId,
     questionType: 'coding', questionText: 'Add numbers', status: 'published', visibility: 'public',
     updatedAt: '2026-10-11T00:00:00.000Z', questionData: { problemId, problemDataSnapshot: snapshot } };
@@ -73,7 +73,14 @@ test('shared coding uses university Judge0 and university attempts for normal pr
       headers: { Cookie: cookie, 'Content-Type': 'application/json' },
       body: JSON.stringify({ language: 'python', sourceCode: 'print(42)', customInput: '1 2' }) });
     assert.equal(run.status, 200);
-    assert.equal((await run.json()).status, 'Accepted');
+    const runResult = await run.json();
+    assert.equal(runResult.mode, 'run');
+    assert.equal(runResult.status, 'Passed');
+    assert.equal(runResult.total, 2);
+    assert.equal(runResult.passed, 2);
+    assert.deepEqual(runResult.caseResults.map((row) => row.input), ['1 2', '8 9']);
+    assert.deepEqual(runResult.caseResults.map((row) => row.expectedOutput), ['42', '42']);
+    assert.equal(JSON.stringify(runResult).includes('3 4'), false);
     assert.equal(judgeDataRequests, 1);
     const afterRun = await priorFetch(`${base}/problem`, { headers: { Cookie: cookie } });
     assert.equal((await afterRun.json()).totalSubmissions, 0);
@@ -86,7 +93,7 @@ test('shared coding uses university Judge0 and university attempts for normal pr
     assert.equal(verdict.totalSubmissions, 1);
     assert.equal(verdict.acceptanceRate, 100);
     assert.equal(judgeDataRequests, 1);
-    assert.equal(judgeRuns, 3);
+    assert.equal(judgeRuns, 4);
     assert.equal(await QuestionPracticeAttempt.countDocuments({ studentId: user._id, questionId, source: 'shared' }), 1);
     const afterSubmit = await priorFetch(`${base}/problem`, { headers: { Cookie: cookie } });
     const progress = await afterSubmit.json();
@@ -95,7 +102,10 @@ test('shared coding uses university Judge0 and university attempts for normal pr
     assert.equal(progress.acceptanceRate, 100);
     const history = await priorFetch(`${base}/submissions`, { headers: { Cookie: cookie } });
     assert.equal(history.status, 200);
-    assert.equal((await history.json()).submissions[0].passedTestCases, 2);
+    const savedSubmission = (await history.json()).submissions[0];
+    assert.equal(savedSubmission.passedTestCases, 2);
+    assert.deepEqual(savedSubmission.testCaseResults.map((row) => row.status), ['AC', 'AC']);
+    assert.equal(JSON.stringify(savedSubmission).includes('3 4'), false);
     judgeOutput = '0';
     const wrong = await priorFetch(`${base}/attempts`, { method: 'POST',
       headers: { Cookie: cookie, 'Content-Type': 'application/json' },
