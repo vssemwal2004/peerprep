@@ -29,11 +29,19 @@ test('shared coding uses university Judge0 and university attempts for normal pr
   let judgeDataRequests = 0;
   let judgeRuns = 0;
   let judgeOutput = '42';
+  let judgeMode = 'success';
   let questionsEnabled = true;
   globalThis.fetch = (input, options) => {
     const url = String(input);
     if (url.startsWith('http://judge.north-campus.test/')) {
       judgeRuns += 1;
+      if (judgeMode === 'compile-error') {
+        const input = Buffer.from(JSON.parse(options.body).stdin, 'base64').toString('utf8');
+        const diagnostic = input === '9 9' ? 'private fixture 9 9' : 'Main.java:3: error: cannot find symbol';
+        return Promise.resolve(new Response(JSON.stringify({ status: { id: 6, description: 'Compilation Error' },
+          compile_output: Buffer.from(diagnostic).toString('base64'), time: '0.01', memory: 512 }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }));
+      }
       return Promise.resolve(new Response(JSON.stringify({ status: { id: 3 },
         stdout: Buffer.from(judgeOutput).toString('base64'), time: '0.02', memory: 512 }),
       { status: 200, headers: { 'Content-Type': 'application/json' } }));
@@ -44,7 +52,7 @@ test('shared coding uses university Judge0 and university attempts for normal pr
     else if (url.endsWith('/questions')) data = { questions: [question] };
     else if (url.endsWith(`/questions/${questionId}/judge-data`)) {
       judgeDataRequests += 1;
-      data = { problem: snapshot, testCases: [{ input: '1 2', output: '42' }, { input: '3 4', output: '42' }] };
+      data = { problem: snapshot, testCases: [{ input: '9 9', output: '42' }, { input: '3 4', output: '42' }] };
     } else data = {};
     return Promise.resolve(new Response(JSON.stringify(data), { status: 200,
       headers: { 'Content-Type': 'application/json' } }));
@@ -119,6 +127,20 @@ test('shared coding uses university Judge0 and university attempts for normal pr
     assert.equal(refreshedProgress.studentStatus, 'Solved');
     assert.equal(refreshedProgress.totalSubmissions, 2);
     assert.equal(refreshedProgress.acceptanceRate, 50);
+    judgeMode = 'compile-error';
+    const compiled = await priorFetch(`${base}/attempts`, { method: 'POST',
+      headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ language: 'python', answer: 'broken code' }) });
+    assert.equal(compiled.status, 201);
+    const compilation = await compiled.json();
+    assert.equal(compilation.failureStatus, 'CE');
+    assert.match(compilation.compileOutput, /cannot find symbol/);
+    assert.equal(JSON.stringify(compilation).includes('private fixture'), false);
+    const compilationHistory = await priorFetch(`${base}/submissions`, { headers: { Cookie: cookie } });
+    const compilationRow = (await compilationHistory.json()).submissions[0];
+    assert.equal(compilationRow.status, 'CE');
+    assert.match(compilationRow.compileOutput, /cannot find symbol/);
+    assert.equal(JSON.stringify(compilationRow).includes('private fixture'), false);
     questionsEnabled = false;
     const denied = await priorFetch(`${base}/problem`, { headers: { Cookie: cookie } });
     assert.equal(denied.status, 403);

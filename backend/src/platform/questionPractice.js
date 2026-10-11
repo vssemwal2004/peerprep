@@ -8,7 +8,7 @@ import { recordDailyChallengeCompletion } from '../services/codingStreakService.
 import Problem from '../models/Problem.js';
 import Submission from '../models/Submission.js';
 import { loadHiddenExecutionTestCases } from '../controllers/problemController.js';
-import { runJudge0, KEY_TO_LANGUAGE_ID } from '../services/executionService.js';
+import { runJudge0, buildJudge0Options, KEY_TO_LANGUAGE_ID } from '../services/executionService.js';
 import { evaluateProblemSubmissionResult } from '../services/problemSubmissionEvaluationService.js';
 import { prepareFunctionSourceForExecution } from '../services/functionProblemAdapterService.js';
 import { compilerExecutionLimiter } from '../middleware/rateLimiter.js';
@@ -254,7 +254,7 @@ router.get('/shared/:id/submissions', asyncRoute(async (req, res) => {
     language: item.language, sourceCode: item.answer, createdAt: item.createdAt,
     totalTestCases: item.totalTestCases || 0, passedTestCases: item.passedTestCases || 0,
     executionTimeMs: item.executionTimeMs || 0, memoryUsedKb: item.memoryUsedKb || 0,
-    testCaseResults: item.testCaseResults || [] })) });
+    testCaseResults: item.testCaseResults || [], compileOutput: item.compileOutput || '' })) });
 }));
 
 router.post('/shared/:id/run', compilerExecutionLimiter, asyncRoute(async (req, res) => {
@@ -268,9 +268,7 @@ router.post('/shared/:id/run', compilerExecutionLimiter, asyncRoute(async (req, 
   const samples = (question.questionData?.problemDataSnapshot?.sampleTestCases
     || question.questionData?.coding?.problemData?.sampleTestCases || problem.sampleTestCases || []).slice(0, 12);
   const cases = samples.length ? samples : [{ input: String(req.body?.customInput || '').slice(0, 65536) }];
-  const options = { cpuTimeLimitSeconds: problem.timeLimitSeconds || 2,
-    memoryLimitKb: Number(problem.memoryLimitMb || 256) * 1024,
-    sqlSetupCode: [problem.sqlConfig?.schemaSql, problem.sqlConfig?.seedDataSql].filter(Boolean).join('\n') };
+  const options = buildJudge0Options(problem);
   const caseResults = [];
   let totalTime = 0;
   let peakMemory = 0;
@@ -298,6 +296,24 @@ router.post('/shared/:id/run', compilerExecutionLimiter, asyncRoute(async (req, 
     passed, total: caseResults.length, time: totalTime, memory: peakMemory, caseResults });
 }));
 
+async function publicSampleCompileOutput(question, problem, language, answer) {
+  const sample = (question.questionData?.problemDataSnapshot?.sampleTestCases
+    || question.questionData?.coding?.problemData?.sampleTestCases || problem.sampleTestCases || [])[0];
+  if (!sample) return 'Compilation failed on a private test case. Run the visible examples to inspect your code.';
+  try {
+    const input = String(sample.input || '');
+    const output = await runJudge0(prepareFunctionSourceForExecution(problem, language, answer, input),
+      KEY_TO_LANGUAGE_ID[language], input, buildJudge0Options(problem));
+    const evaluation = evaluateProblemSubmissionResult(problem, output, sample);
+    if (evaluation.internalStatus === 'CE') {
+      return String(output.compile_output || output.message || evaluation.error || 'Compilation failed.').slice(0, 8192);
+    }
+  } catch {
+    // The original verdict is still valid when a diagnostic replay is unavailable.
+  }
+  return 'Compilation failed on a private test case. Run the visible examples to inspect your code.';
+}
+
 async function judgeCodingQuestion(question, source, answer, language) {
   const problemId = question.sourceProblemId || question.questionData?.problemId || question.questionData?.coding?.problemId;
   if (!mongoose.isValidObjectId(problemId)) return { result: 'submitted', feedback: 'Code saved. This question has no linked judge.' };
@@ -318,11 +334,7 @@ async function judgeCodingQuestion(question, source, answer, language) {
   for (const [index, testCase] of testCases.entries()) {
     const output = await runJudge0(
       prepareFunctionSourceForExecution(problem, language, answer, testCase.input || ''),
-      languageId, testCase.input || '', {
-        cpuTimeLimitSeconds: Number(problem.timeLimitSeconds || 2),
-        memoryLimitKb: Math.trunc(Number(problem.memoryLimitMb || 256) * 1024),
-        sqlSetupCode: [problem.sqlConfig?.schemaSql, problem.sqlConfig?.seedDataSql].filter(Boolean).join('\n'),
-      },
+      languageId, testCase.input || '', buildJudge0Options(problem),
     );
     const caseTimeMs = Number(output.time || 0) * 1000;
     const caseMemoryKb = Number(output.memory || 0);
@@ -333,9 +345,10 @@ async function judgeCodingQuestion(question, source, answer, language) {
     testCaseResults.push({ index: index + 1, status: failureStatus || 'AC',
       executionTimeMs: Number.isFinite(caseTimeMs) ? Math.max(0, caseTimeMs) : 0 });
     if (failureStatus) {
-      return { result: 'incorrect', feedback: output.compile_output ? 'Compilation failed' : output.stderr ? 'Runtime error' : 'A test case failed',
+      return { result: 'incorrect', feedback: failureStatus === 'CE' ? 'Compilation failed'
+        : failureStatus === 'RE' ? 'Runtime error' : failureStatus === 'TLE' ? 'Time limit exceeded' : 'A test case failed',
         totalTestCases: testCases.length, passedTestCases, executionTimeMs, memoryUsedKb, testCaseResults,
-        failureStatus };
+        failureStatus, ...(failureStatus === 'CE' ? { compileOutput: await publicSampleCompileOutput(question, problem, language, answer) } : {}) };
     }
     passedTestCases += 1;
   }
@@ -375,7 +388,8 @@ router.post('/:source/:id/attempts', compilerExecutionLimiter, asyncRoute(async 
     source: req.params.source, questionType: question.questionType, answer, language, result: graded.result,
     totalTestCases: graded.totalTestCases || 0, passedTestCases: graded.passedTestCases || 0,
     executionTimeMs: graded.executionTimeMs || 0, memoryUsedKb: graded.memoryUsedKb || 0,
-    failureStatus: graded.failureStatus, testCaseResults: graded.testCaseResults || [] });
+    failureStatus: graded.failureStatus, testCaseResults: graded.testCaseResults || [],
+    compileOutput: graded.compileOutput || '' });
   if (req.params.source === 'shared' && question.questionType === 'coding' && graded.result === 'correct') {
     void recordDailyChallengeCompletion({ userId: req.user._id, problemId: question._id, source: 'shared' }).catch((error) => console.warn('[Daily challenge] Shared reward sync failed:', error.message));
   }

@@ -941,9 +941,9 @@ function AcceptancePanel({ submissions, selectedId, onBack }) {
         </div>
       )}
 
-      {isCompileError && (compileText || stderrText) && (
+      {isCompileError && (
         <div className="rounded-[24px] bg-rose-50 px-5 py-4 text-sm text-rose-800 shadow-[0_12px_24px_rgba(244,63,94,0.06)] dark:bg-rose-900/10 dark:text-rose-200">
-          <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">{compileText || stderrText}</pre>
+          <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">{compileText || stderrText || 'Compiler details were not saved for this earlier submission.'}</pre>
         </div>
       )}
 
@@ -1472,7 +1472,8 @@ export default function ProblemSolver() {
           if (!isMountedRef.current) return;
           setResult({ mode: 'submit', status: response.result === 'correct' ? 'AC'
             : response.result === 'incorrect' ? response.failureStatus || 'WA' : 'PENDING',
-          message: response.feedback || '' });
+          message: response.feedback || '', compileOutput: response.compileOutput || '',
+          total: response.totalTestCases || 0, passed: response.passedTestCases || 0 });
           setProblem((previous) => previous ? { ...previous,
             studentStatus: response.result === 'correct' ? 'Solved' : previous.studentStatus,
             totalSubmissions: response.totalSubmissions ?? previous.totalSubmissions,
