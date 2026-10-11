@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import NotificationItem from './NotificationItem';
+import { isProgressNotification } from './notificationKinds';
 
 function NotificationSidebar({
   isOpen,
@@ -26,10 +27,20 @@ function NotificationSidebar({
   const [announcementIndex, setAnnouncementIndex] = useState(0);
   const [activeFilter, setActiveFilter] = useState('all');
 
+  const progressItems = useMemo(() => listItems.filter(isProgressNotification), [listItems]);
   const filteredItems = useMemo(
-    () => activeFilter === 'unread' ? listItems.filter((item) => !item?.isRead) : listItems,
-    [activeFilter, listItems],
+    () => activeFilter === 'unread' ? listItems.filter((item) => !item?.isRead)
+      : activeFilter === 'progress' ? progressItems : listItems,
+    [activeFilter, listItems, progressItems],
   );
+  const filters = [
+    ['all', 'All', listItems.length],
+    ['unread', 'Unread', unreadCount],
+    ['progress', 'Progress', progressItems.length],
+  ];
+  const emptyMessage = activeFilter === 'unread' ? 'You are all caught up'
+    : activeFilter === 'progress' ? 'Completed targets, new badges and level-ups will appear here'
+      : 'No notifications yet';
 
   useEffect(() => {
     // Reset when opening or when the list changes.
@@ -118,7 +129,10 @@ function NotificationSidebar({
               </div>
 
               <div className="flex shrink-0 gap-1 border-b border-slate-200 bg-white px-5 py-2 dark:border-slate-800 dark:bg-slate-950">
-                {[['all', `All (${listItems.length})`], ['unread', `Unread (${unreadCount})`]].map(([value, label]) => <button key={value} type="button" onClick={() => setActiveFilter(value)} className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${activeFilter === value ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'}`}>{label}</button>)}
+                {filters.map(([value, label, count]) => <button key={value} type="button" aria-pressed={activeFilter === value} onClick={() => setActiveFilter(value)} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition ${activeFilter === value ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'}`}>
+                  {label}
+                  <span className={`rounded-full px-1.5 py-px text-[10.5px] tabular-nums ${activeFilter === value ? 'bg-white/20 dark:bg-slate-900/10' : value === 'progress' && count > 0 ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' : 'bg-slate-100 dark:bg-slate-800'}`}>{count}</span>
+                </button>)}
               </div>
 
               {/* Announcement highlight (auto-fades every 5s) */}
@@ -165,9 +179,7 @@ function NotificationSidebar({
               <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain bg-white px-5 py-4 [scrollbar-gutter:stable] dark:bg-slate-950">
                 {filteredItems.length === 0 ? (
                   <div className="flex h-full items-center justify-center">
-                    <div className="text-sm text-slate-500 dark:text-slate-400">
-                      {activeFilter === 'unread' ? 'You are all caught up' : 'No notifications yet'}
-                    </div>
+                    <div className="max-w-[260px] text-center text-sm text-slate-500 dark:text-slate-400">{emptyMessage}</div>
                   </div>
                 ) : (
                   filteredItems.map((notif) => (

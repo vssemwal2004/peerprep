@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   BarChart3,
   BookOpen,
@@ -13,6 +13,7 @@ import {
   LogOut,
   Moon,
   Search,
+  Sparkles,
   Sun,
   User,
   UserCog,
@@ -22,9 +23,11 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import NotificationBell from './NotificationBell';
 import { useUniversityPolicy } from '../platform/UniversityPolicyContext';
+import DailyChallengeDrawer from '../student/engagement/DailyChallengeDrawer';
 
 const modules = [
   { label: 'Dashboard', hint: 'Your placement overview', to: '/student/dashboard', icon: LayoutDashboard },
+  { label: 'Challenges', hint: 'Daily, weekly and monthly plans', to: '/student/challenges', icon: Sparkles },
   { label: 'Analysis', hint: 'Progress and skill insights', to: '/student/analysis', icon: BarChart3 },
   { label: 'Interviews', hint: 'Peer interview sessions', to: '/student/interview', icon: User },
   { label: 'AI Interviews', hint: 'Practice with AI', to: '/student/ai-interviews', icon: Bot },
@@ -33,6 +36,17 @@ const modules = [
   { label: 'Coding Problems', hint: 'Practice problem solving', to: '/problems', icon: Code2 },
   { label: 'Resume Builder', hint: 'Build your placement resume', to: '/student/resume', icon: UserCog },
 ];
+
+/** PeerPrep's daily-challenge mark: a ticket for the day (as on the dashboard's Today card) with a gold star. */
+function DailyTicketIcon() {
+  return <svg viewBox="0 0 24 24" className="relative h-[19px] w-[19px] shrink-0 drop-shadow-[0_1px_0_rgba(3,105,161,0.5)]" fill="none" aria-hidden="true">
+    <path d="M4.5 5h15A2.5 2.5 0 0 1 22 7.5v2.1a2.4 2.4 0 0 0 0 4.8v2.1a2.5 2.5 0 0 1-2.5 2.5h-15A2.5 2.5 0 0 1 2 16.5v-2.1a2.4 2.4 0 0 0 0-4.8V7.5A2.5 2.5 0 0 1 4.5 5Z"
+      fill="white" fillOpacity=".22" stroke="white" strokeWidth="1.7" strokeLinejoin="round" />
+    <path d="M16 7.6v8.8" stroke="white" strokeOpacity=".75" strokeWidth="1.5" strokeLinecap="round" strokeDasharray="1.2 2.1" />
+    <path d="M9 7.9l1.15 2.7 2.75 1.4-2.75 1.4L9 16.1l-1.15-2.7L5.1 12l2.75-1.4Z" fill="#fde047" stroke="#f59e0b" strokeWidth=".6" strokeLinejoin="round"
+      className="origin-[9px_12px] transition-transform duration-300 group-hover:rotate-[20deg] group-hover:scale-110 motion-reduce:transition-none" />
+  </svg>;
+}
 
 function InitialAvatar({ name, avatarUrl, className = '' }) {
   const initials = String(name || 'Student')
@@ -49,6 +63,7 @@ function InitialAvatar({ name, avatarUrl, className = '' }) {
 
 export default function StudentDashboardHeader({ sidebarPinned = false, onToggleSidebar = () => {} }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, logout } = useAuth();
   const { allowsPath } = useUniversityPolicy();
   const { theme, toggleTheme } = useTheme();
@@ -56,9 +71,16 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
   const [searchOpen, setSearchOpen] = useState(false);
   const [appsOpen, setAppsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [challengeRoute, setChallengeRoute] = useState(null);
+  const challengeId = useId();
+  const challengeRef = useRef(null);
+  const mobileSearchRef = useRef(null);
   const searchRef = useRef(null);
   const appsRef = useRef(null);
   const profileRef = useRef(null);
+  const canShowChallenges = user?.role === 'student' && user?.accessScope !== 'assessment_only' && allowsPath('/student/challenges', 'student');
+  const challengesOpen = canShowChallenges && challengeRoute === location.key;
+  const closeChallenges = useCallback(() => setChallengeRoute(null), []);
 
   const displayName = user?.name || 'Student';
   const displayEmail = user?.email || '';
@@ -71,6 +93,14 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
   }, [query, visibleModules]);
 
   useEffect(() => {
+    if (searchOpen && window.matchMedia('(max-width: 639px)').matches) mobileSearchRef.current?.focus();
+  }, [searchOpen]);
+
+  useEffect(() => {
+    setChallengeRoute(null);
+  }, [location.key, canShowChallenges]);
+
+  useEffect(() => {
     const closeMenus = (event) => {
       if (!searchRef.current?.contains(event.target)) setSearchOpen(false);
       if (!appsRef.current?.contains(event.target)) setAppsOpen(false);
@@ -78,6 +108,7 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
     };
     const closeOnEscape = (event) => {
       if (event.key !== 'Escape') return;
+      if (searchRef.current?.contains(document.activeElement) && window.matchMedia('(max-width: 639px)').matches) searchRef.current.querySelector('button[aria-label="Open module search"]')?.focus();
       setSearchOpen(false);
       setAppsOpen(false);
       setProfileOpen(false);
@@ -120,7 +151,8 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
         </button>}
 
         <div ref={searchRef} className="ml-0 min-w-0 flex-1 sm:relative sm:ml-2">
-          <label className="relative mx-auto block w-full max-w-xl">
+          <button type="button" aria-label="Open module search" aria-expanded={searchOpen} onClick={() => { setSearchOpen(open => !open); setAppsOpen(false); setProfileOpen(false); }} className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 hover:bg-sky-50 hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-slate-300 dark:hover:bg-sky-950/50 sm:hidden"><Search size={18} /></button>
+          <label className="relative mx-auto hidden w-full max-w-xl sm:block">
             <span className="sr-only">Search student modules</span>
             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-slate-400" />
             <input
@@ -135,6 +167,7 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
 
           {searchOpen && (
             <div className="absolute left-3 right-3 top-[calc(100%+0.65rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.16)] dark:border-slate-700 dark:bg-slate-900 sm:left-1/2 sm:right-auto sm:w-full sm:max-w-xl sm:-translate-x-1/2">
+              <label className="block p-3 pb-0 sm:hidden"><span className="sr-only">Search student modules</span><input ref={mobileSearchRef} value={query} onChange={event => setQuery(event.target.value)} placeholder="Search modules" className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-800 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:focus:ring-sky-950" /></label>
               <div className="border-b border-slate-100 px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 dark:border-slate-800">Student modules</div>
               <div className="max-h-80 overflow-y-auto p-1.5">
                 {results.length ? results.map(({ label, hint, to, icon: Icon }) => (
@@ -149,7 +182,14 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
         </div>
 
         <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
-          <div ref={appsRef} className="sm:relative">
+          {canShowChallenges && <button ref={challengeRef} type="button" aria-label="Open daily challenges" title="Daily challenges" aria-haspopup="dialog" aria-expanded={challengesOpen} aria-controls={challengeId} onClick={() => { setChallengeRoute(challengesOpen ? null : location.key); setSearchOpen(false); setAppsOpen(false); setProfileOpen(false); }} className={`group relative mb-[3px] flex h-9 w-9 shrink-0 items-center justify-center gap-2 overflow-hidden rounded-xl bg-gradient-to-b from-sky-400 to-sky-600 text-white transition-[transform,box-shadow] duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 focus-visible:ring-offset-2 dark:from-sky-500 dark:to-sky-700 xl:w-auto xl:pl-2.5 xl:pr-3.5 ${challengesOpen
+            ? 'translate-y-[3px] shadow-[inset_0_1px_0_rgba(255,255,255,0.35),inset_0_2px_6px_rgba(3,105,161,0.45),0_0_0_#0369a1]'
+            : 'shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_3px_0_#0369a1,0_8px_16px_-6px_rgba(2,132,199,0.6)] hover:-translate-y-px hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.5),0_4px_0_#0369a1,0_12px_20px_-8px_rgba(2,132,199,0.65)] active:translate-y-[3px] active:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_0_0_#0369a1,0_2px_6px_-2px_rgba(2,132,199,0.5)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_3px_0_#075985,0_8px_16px_-6px_rgba(0,0,0,0.6)]'}`}>
+            <span className="pointer-events-none absolute inset-y-0 -left-1/2 w-1/3 -skew-x-12 bg-gradient-to-r from-transparent via-white/45 to-transparent transition-transform duration-700 ease-out group-hover:translate-x-[520%] motion-reduce:hidden" aria-hidden="true" />
+            <DailyTicketIcon />
+            <span className="relative hidden text-[12.5px] font-semibold tracking-[-0.005em] [text-shadow:0_1px_0_rgba(3,105,161,0.45)] xl:inline">Daily challenges</span>
+          </button>}
+          <div ref={appsRef} className="hidden sm:relative sm:block">
             <button type="button" onClick={() => { setAppsOpen((open) => !open); setProfileOpen(false); }} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200" aria-label="Open module launcher" aria-expanded={appsOpen}><Grid2X2 className="h-4 w-4" /></button>
             {appsOpen && <div className="absolute left-3 right-3 top-[calc(100%+0.65rem)] rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_18px_50px_rgba(15,23,42,0.16)] dark:border-slate-700 dark:bg-slate-900 sm:left-auto sm:right-0 sm:w-[19rem]">
               <div className="mb-2 px-1 text-xs font-bold text-slate-800 dark:text-white">Quick access</div>
@@ -172,6 +212,7 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
           </div>
         </div>
       </div>
+      {challengesOpen && <DailyChallengeDrawer id={challengeId} onClose={closeChallenges} returnFocusRef={challengeRef} />}
     </header>
   );
 }

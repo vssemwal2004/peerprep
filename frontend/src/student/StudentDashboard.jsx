@@ -14,7 +14,8 @@ import ChallengeGoals from './dashboard/ChallengeGoals';
 import { LearningSubjects, PracticeSuggestions } from './dashboard/DiscoverySections';
 import { AnnouncementsCard, ComingUpCard, RankCard } from './dashboard/RailCards';
 import { card, CardTitle, TitleIcon, Unavailable } from './dashboard/ui';
-import { getGreeting, getUpcomingItems, getWeekActivity, numeric, sortAnnouncements } from './dashboard/dashboardUtils';
+import BadgeShelf from './dashboard/BadgeShelf';
+import { badgeShelfData, getGreeting, getUpcomingItems, getWeekActivity, numeric, sortAnnouncements } from './dashboard/dashboardUtils';
 import AchievementCelebration from './engagement/AchievementCelebration';
 
 // The student shell's sticky header is 64px tall plus a 1px border. The rail sticks 16px below
@@ -82,6 +83,7 @@ export default function StudentDashboard() {
   const showPractice = canQuestions && (progress.loading || progress.error || suggestions.length > 0);
   const showResume = !firstSession && (canQuestions || canLearning) && (progress.loading || progress.error || resumeItems.length > 0);
   const showToday = canQuestions || canLearning || showDaily;
+  const shelf = badgeShelfData(sections.engagement.error ? null : sections.engagement.data, data?.ranking);
   const nudge = sections.engagement.data?.version === 2
     ? sections.engagement.data.daily?.completed ? 'Your daily plan is complete. Your progress is saved.' : 'Your personalized missions are ready. Every completed step counts.'
     : dashboardNudge({ data, loading: progress.loading, firstSession, week, daily: sections.engagement.data?.daily, resumeItems, canQuestions });
@@ -94,7 +96,8 @@ export default function StudentDashboard() {
       <div className={`mx-auto grid max-w-[1360px] grid-cols-1 gap-x-8 gap-y-8 px-4 py-6 [grid-template-areas:'head'_'rail'_'body'] sm:px-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:grid-rows-[auto_1fr] lg:px-10 lg:[grid-template-areas:'head_rail'_'body_rail'] xl:grid-cols-[minmax(0,1fr)_356px] ${showNoticeBar ? 'lg:pb-8 lg:pt-6' : 'lg:py-8'}`}>
         <div className="min-w-0 space-y-7 [grid-area:head]">
           <GreetingHeader greeting={getGreeting(now)} name={name} nudge={nudge} section={progress}
-            firstSession={firstSession} canQuestions={canQuestions} canLearning={canLearning} onRetry={sections.refresh} />
+            firstSession={firstSession} canQuestions={canQuestions} canLearning={canLearning} onRetry={sections.refresh}
+            aside={!progress.error && <BadgeShelf shelf={shelf} loading={progress.loading || sections.engagement.loading} />} />
           {(showResume || showToday) && <div className={`grid grid-cols-1 items-stretch gap-4 ${showResume && showToday ? 'xl:grid-cols-[minmax(0,1.55fr)_minmax(300px,1fr)]' : ''}`}>
             {showResume && <ContinueSection items={resumeItems} section={progress} now={now} onRetry={sections.refresh} {...rise(1)} />}
             {showToday && <TodayCard now={now} week={week} streak={data?.coding?.streak} loading={progress.loading} engagement={sections.engagement}

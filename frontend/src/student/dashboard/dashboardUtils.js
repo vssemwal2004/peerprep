@@ -1,3 +1,5 @@
+import { computeAwards } from '../profile/achievements';
+
 export function getGreeting(now = new Date()) {
   const hour = now.getHours();
   return hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
@@ -108,6 +110,25 @@ const VERDICTS = {
   RUNNING: { label: 'Running', tone: 'neutral' },
 };
 export const verdictInfo = (value) => VERDICTS[String(value || '').toUpperCase()] || null;
+
+/**
+ * Badges and level for the greeting shelf. Server-issued adaptive badges win; otherwise the
+ * dashboard's verified badge metrics produce the classic award set (the same contract the profile
+ * and backend tests share). Nothing is shown when neither source is available.
+ */
+export function badgeShelfData(engagement, ranking) {
+  if (engagement?.version === 2 && Array.isArray(engagement.awards?.awards)) {
+    const awards = engagement.awards.awards;
+    const earned = awards.filter((award) => award.earned).sort((a, b) => new Date(b.earnedAt || 0) - new Date(a.earnedAt || 0));
+    return { earned, total: awards.length, nextAward: engagement.awards.nextAward || null, level: engagement.level || ranking?.level || null };
+  }
+  if (ranking?.badgeMetrics) {
+    const { awards, nextAward } = computeAwards(ranking.badgeMetrics);
+    // Classic awards have no earned dates; later definitions are the harder ones, so show those first.
+    return { earned: awards.filter((award) => award.earned).reverse(), total: awards.length, nextAward, level: ranking.level || null };
+  }
+  return null;
+}
 
 const PRIORITY = { high: 0, normal: 1, low: 2 };
 

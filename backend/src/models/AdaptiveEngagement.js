@@ -25,6 +25,7 @@ const missionSchema = new Schema({
   startsAt: { type: Date, required: true },
   endsAt: { type: Date, required: true },
   assignedAt: { type: Date, required: true },
+  acceptedAt: { type: Date, default: null },
   ruleVersion: { type: Number, default: 2 },
   policyRevision: { type: String, required: true },
   goals: { type: [Schema.Types.Mixed], default: [] },

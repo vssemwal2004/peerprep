@@ -19,12 +19,13 @@ const badges = BADGES.map((b, index) => ({ ...b, earned: index < 3, value: index
 const engagement = { version: 2, enabled: true, generatedAt: new Date().toISOString(), domains: DEFAULT_POLICY.domains, level: progressionView(2, 180, 38, 7), ladder: LEVELS, badges,
   awards: { awards: badges, earnedCount: 3, nextAward: badges[3] }, learnerProgress: {}, lifetime: { points: 180, badges: 3 },
   activity: { activityByDate: { [today]: 3 }, breakdownByDate: { [today]: { coding: 1, learning: 2 } }, stats: { totalActiveDays: 1 } },
-  daily: { completed: false, rewardPoints: 20, endsAt: new Date(Date.now() + 86400000).toISOString(), goals: [
+  month: { key: today.slice(0, 7), dailyPlans: [{ dayKey: today, completed: false }] },
+  daily: { periodKey: today, completed: false, rewardPoints: 20, endsAt: new Date(Date.now() + 86400000).toISOString(), goals: [
     { id: 'core', domain: 'coding', slot: 'core', title: 'Solve Balanced Brackets', target: 1, value: 0, progress: 0, difficulty: 'Easy', minutes: 10, href: '/problems/brackets', reason: 'Selected for your current coding practice level.' },
     { id: 'choice', domain: 'learning', slot: 'choice', title: 'Complete Binary Search Foundations', target: 1, value: 0, progress: 0, difficulty: 'Easy', minutes: 10, href: '/student/learning' },
     { id: 'stretch', domain: 'coding', slot: 'stretch', title: 'Try Sliding Window', target: 1, difficulty: 'Medium', minutes: 20, rewardXp: 5, href: '/problems/window' },
   ] },
-  periods: ['weekly', 'monthly'].map((kind) => ({ kind, title: kind === 'weekly' ? 'Weekly momentum' : 'Monthly journey', rewardPoints: kind === 'weekly' ? 40 : 150, endsAt: new Date(Date.now() + 5 * 86400000).toISOString(), goals: [
+  periods: ['weekly', 'monthly'].map((kind) => ({ kind, periodKey: kind === 'monthly' ? today.slice(0, 7) : today, title: kind === 'weekly' ? 'Weekly momentum' : 'Monthly journey', rewardPoints: kind === 'weekly' ? 40 : 150, endsAt: new Date(Date.now() + 5 * 86400000).toISOString(), goals: [
     { id: 'coding', domain: 'coding', label: 'Coding completions', target: 4, value: 2, progress: 50, href: '/problems' },
     { id: 'learning', domain: 'learning', label: 'Learning completions', target: 3, value: 1, progress: 33, href: '/student/learning' },
     { id: 'days', domain: 'momentum', label: 'Verified active days', target: 5, value: 3, progress: 60 },
@@ -33,7 +34,7 @@ const fixture = { user, permissions, engagement, settings: DEFAULT_POLICY, badge
 let fixtureModule = '';
 let bundledFixture;
 const assets = `${root}/dist/assets`;
-const cssFiles = (await readdir(assets)).filter((file) => /^(index|StudentProfile)-.*\.css$/.test(file));
+const cssFiles = (await readdir(assets)).filter((file) => /^(index|StudentProfile|StudentChallenges)-.*\.css$/.test(file));
 const css = (await Promise.all(cssFiles.map((file) => readFile(`${assets}/${file}`, 'utf8')))).join('\n');
 const server = await createServer({ root, configFile: false, server: { host: '127.0.0.1', port: 5177, strictPort: true, open: false, hmr: false, ws: false } });
 let browser;
@@ -59,9 +60,11 @@ try {
       import { ThemeProvider } from '/src/context/ThemeContext.jsx';
       import { UniversityPolicyProvider } from '/src/platform/UniversityPolicyContext.jsx';
       import StudentHeader from '/src/components/StudentDashboardHeader.jsx';
+      import PopupDismissManager from '/src/components/PopupDismissManager.jsx';
       import GlobalSidebar from '/src/components/GlobalSidebar.jsx';
       import { STUDENT_SIDEBAR_PANEL_WIDTH, STUDENT_SIDEBAR_RAIL_WIDTH } from '/src/components/sidebarLayout.js';
       import Profile from '/src/student/StudentProfile.jsx';
+      import Challenges from '/src/student/StudentChallenges.jsx';
       import Settings from '/src/admin/EngagementSettings.jsx';
       import { api } from '/src/utils/api.js';
       import socket from '/src/utils/socket.js';
@@ -74,7 +77,18 @@ try {
       api.getNotifications = async () => ({ notifications: [], unreadCount: 0 });
       api.listStudentAnnouncements = async () => ({ announcements: [] });
       api.refreshStudentEngagement = async () => structuredClone(f.engagement);
-      api.getStudentRanking = async () => ({ ranking: { universityName: 'PeerPrep University', rank: 8, totalStudents: 120, score: 420, level: f.engagement.level, hasProgress: true } });
+      api.acceptStudentChallenge = async (kind, periodKey) => {
+        const plan = kind === 'daily' ? f.engagement.daily : f.engagement.periods.find(plan => plan.kind === kind);
+        plan.acceptedAt ||= new Date().toISOString();
+        return { kind, periodKey, acceptedAt: plan.acceptedAt };
+      };
+      window.__completeDaily = () => {
+        f.engagement.daily.completed = true;
+        f.engagement.daily.goals.forEach(goal => { if (goal.slot !== 'stretch') goal.completed = true; });
+        f.engagement.lifetime.points = 200;
+        f.engagement.month.dailyPlans[0].completed = true;
+      };
+      api.getStudentRanking = async () => ({ ranking: { universityName: 'PeerPrep University', rank: f.engagement.daily.completed ? 7 : 8, totalStudents: 120, score: 240 + f.engagement.lifetime.points, level: f.engagement.level, hasProgress: true } });
       api.getStudentStats = async () => ({ stats: { totalQuestionsSolved: 12, totalSubmissions: 20, totalProblems: 100, solvedByDifficulty: { easy: 8, medium: 4, hard: 0 }, totalProblemsByDifficulty: { easy: 50, medium: 35, hard: 15 }, recentSubmissions: [], languagesUsed: [{ language: 'python', count: 20 }] } });
       api.listStudentProblems = async () => ({ problems: [], total: 100, statusSummary: { solved: 12, attempted: 15, total: 100 } });
       api.getStudentActivity = async () => ({ activityByDate: f.engagement.activity.activityByDate, stats: { totalActiveDays: 7, currentStreak: 3, longestStreak: 7 } });
@@ -92,14 +106,14 @@ try {
           <GlobalSidebar role="student" isExpanded={pinned} isPinned={pinned} onTogglePin={toggle} />
           <main data-app-scroll-container className="h-screen min-h-0 overflow-y-auto overscroll-contain" style={{ paddingLeft: 'var(--admin-sidebar-width)', scrollPaddingTop: 'calc(5rem + 1px)' }}>
             <StudentHeader sidebarPinned={pinned} onToggleSidebar={toggle} />
-            <Profile />
+            {params.has('hub') ? <Challenges /> : <Profile />}
           </main>
         </div>;
       }
       ReactDOMClient.createRoot(document.getElementById('root')).render(
-        <MemoryRouter initialEntries={[admin ? '/admin/settings/student-progression' : '/student/profile']}>
+        <MemoryRouter initialEntries={[admin ? '/admin/settings/student-progression' : params.has('hub') ? '/student/challenges' : '/student/profile']}>
           <AuthContext.Provider value={{ user: currentUser, authChecked: true, isAuthenticated: true }}>
-            <UniversityPolicyProvider><ThemeProvider>{admin ? <Settings /> : <StudentShell />}</ThemeProvider></UniversityPolicyProvider>
+            <UniversityPolicyProvider><ThemeProvider><PopupDismissManager />{admin ? <Settings /> : <StudentShell />}</ThemeProvider></UniversityPolicyProvider>
           </AuthContext.Provider>
         </MemoryRouter>
       );
@@ -129,6 +143,40 @@ try {
   assert.ok(await page.locator('html').evaluate(node => node.classList.contains('dark')));
   await page.waitForTimeout(350); // Let existing theme color transitions settle before the visual snapshot.
   await page.screenshot({ path: `${output}/profile-dark.png` });
+  await header.getByRole('button', { name: 'Open daily challenges', exact: true }).click();
+  const dailyDrawer = page.getByRole('dialog', { name: 'Daily challenges', exact: true });
+  const drawerSnapshot = async name => {
+    await dailyDrawer.locator('.overflow-y-auto').evaluate(node => { node.scrollTop = 0; });
+    await page.waitForTimeout(350); // Settle slide-in and the shared theme/color transitions.
+    const box = await dailyDrawer.boundingBox();
+    assert.ok(box.x >= 0 && box.x + box.width <= page.viewportSize().width + 1, 'Settled drawer stays inside the viewport');
+    await page.screenshot({ path: `${output}/${name}.png` });
+  };
+  await dailyDrawer.getByRole('button', { name: 'Accept daily challenge', exact: true }).waitFor();
+  assert.equal(await page.locator('[data-app-scroll-container]').evaluate(node => node.style.overflow), 'hidden', 'Drawer locks the actual app scroller');
+  await dailyDrawer.getByRole('button', { name: 'Completed 0', exact: true }).click();
+  await dailyDrawer.getByText('Your first win is waiting.', { exact: false }).waitFor();
+  await dailyDrawer.getByRole('button', { name: 'Pending 3', exact: true }).click();
+  assert.equal(await dailyDrawer.getByRole('list', { name: 'Daily tasks' }).locator('li').count(), 3);
+  await dailyDrawer.getByRole('button', { name: 'Accept daily challenge', exact: true }).click();
+  const acceptancePopup = page.getByRole('dialog', { name: 'daily challenge accepted', exact: true });
+  await acceptancePopup.waitFor();
+  assert.equal(await acceptancePopup.locator('.challenge-celebration__confetti').evaluate(node => getComputedStyle(node).display), 'none', 'Reduced motion removes confetti');
+  await page.keyboard.press('Escape');
+  await acceptancePopup.waitFor({ state: 'hidden' });
+  assert.equal(await dailyDrawer.count(), 1, 'Escape dismisses only the top celebration, not its parent drawer');
+  await dailyDrawer.getByText('Challenge accepted', { exact: true }).waitFor();
+  assert.equal(await header.getByRole('button', { name: 'Open daily challenges' }).getAttribute('aria-expanded'), 'true', 'Portaled interactions survive the global popup manager');
+  await dailyDrawer.getByRole('button', { name: 'Close daily challenges' }).focus();
+  await page.keyboard.press('Shift+Tab');
+  assert.equal(await dailyDrawer.getByRole('link', { name: /View all challenges/ }).evaluate(node => node === document.activeElement), true, 'Focus wraps backwards inside the drawer');
+  await page.keyboard.press('Tab');
+  assert.equal(await dailyDrawer.getByRole('button', { name: 'Close daily challenges' }).evaluate(node => node === document.activeElement), true);
+  await drawerSnapshot('daily-drawer-dark');
+  await page.keyboard.press('Escape');
+  await dailyDrawer.waitFor({ state: 'hidden' });
+  assert.equal(await header.getByRole('button', { name: 'Open daily challenges' }).evaluate(node => node === document.activeElement), true, 'Focus returns to the header trigger');
+  assert.equal(await page.locator('[data-app-scroll-container]').evaluate(node => node.style.overflow), '');
   await header.getByRole('textbox', { name: 'Search student modules' }).fill('coding');
   await header.getByRole('button', { name: 'Coding Problems Practice problem solving' }).waitFor();
   await page.keyboard.press('Escape');
@@ -149,15 +197,25 @@ try {
   assert.equal((await header.boundingBox()).x, 68);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator('[data-app-scroll-container]').evaluate(node => { node.scrollTop = 0; });
-  await header.getByRole('button', { name: 'Open module launcher' }).click();
-  const launcher = await header.getByText('Quick access', { exact: true }).locator('..').boundingBox();
-  assert.ok(launcher.x >= (await header.boundingBox()).x && launcher.x + launcher.width <= 390, 'Mobile launcher stays inside the content area');
-  await page.keyboard.press('Escape');
+  await header.getByRole('button', { name: 'Open module search' }).click();
   await header.getByRole('textbox', { name: 'Search student modules' }).fill('coding');
   const searchResults = await header.getByText('Student modules', { exact: true }).locator('..').boundingBox();
   assert.ok(searchResults.x >= (await header.boundingBox()).x && searchResults.x + searchResults.width <= 390 && searchResults.width > 250, 'Mobile search uses a readable dropdown within the content area');
   await page.keyboard.press('Escape');
   await page.screenshot({ path: `${output}/profile-header-mobile.png` });
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    const profileButton = await header.getByRole('button', { name: 'Open profile menu' }).boundingBox();
+    assert.ok(profileButton.x + profileButton.width <= width, 'Header controls fit the smallest supported screen');
+    await header.getByRole('button', { name: 'Open daily challenges' }).click();
+    await dailyDrawer.getByRole('progressbar', { name: 'Daily plan progress' }).waitFor();
+    const box = await dailyDrawer.boundingBox();
+    assert.ok(box.x >= 0 && box.width <= width, 'Daily drawer fits the mobile viewport');
+    assert.ok(await dailyDrawer.evaluate(node => node.scrollWidth <= node.clientWidth), 'Drawer has no horizontal overflow');
+    await page.screenshot({ path: `${output}/daily-drawer-mobile-${width}.png` });
+    await dailyDrawer.getByRole('button', { name: 'Close daily challenges' }).click();
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.locator('#missions').scrollIntoViewIfNeeded();
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'No page-level mobile overflow');
   await page.screenshot({ path: `${output}/missions-mobile.png` });
@@ -179,6 +237,88 @@ try {
   await page.keyboard.press('Escape');
   await header.getByRole('button', { name: 'Open module launcher' }).click();
   assert.equal(await header.getByRole('button', { name: 'Learning', exact: true }).count(), 0);
+  await header.getByRole('button', { name: 'Open daily challenges' }).click();
+  await dailyDrawer.getByText('Your next challenge is on its way', { exact: true }).waitFor();
+  assert.equal(await dailyDrawer.getByText('Solve Balanced Brackets', { exact: true }).count(), 0);
+  await page.keyboard.press('Escape');
+  await page.goto(`${base}/__engagement-fixture?hub`, { waitUntil: 'commit' });
+  await page.getByRole('button', { name: 'Accept daily challenge', exact: true }).waitFor();
+  await header.getByRole('button', { name: 'Switch to light theme' }).click();
+  await page.waitForTimeout(350);
+  await page.screenshot({ path: `${output}/challenges-daily.png` });
+  await header.getByRole('button', { name: 'Open daily challenges' }).click();
+  await dailyDrawer.getByRole('button', { name: 'Accept daily challenge', exact: true }).waitFor();
+  await drawerSnapshot('daily-drawer-light');
+  await page.mouse.click(200, 100);
+  await dailyDrawer.waitFor({ state: 'hidden' });
+  await page.getByRole('button', { name: 'Accept daily challenge', exact: true }).click();
+  await acceptancePopup.waitFor();
+  assert.equal(await acceptancePopup.locator('.challenge-celebration__confetti span').count(), 40);
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${output}/challenge-accepted-daily.png` });
+  await acceptancePopup.getByRole('button', { name: 'Close challenge celebration' }).focus();
+  await page.keyboard.press('Shift+Tab');
+  assert.equal(await acceptancePopup.getByRole('link', { name: 'Let’s get started' }).evaluate(node => node === document.activeElement), true, 'Acceptance popup contains keyboard focus');
+  await page.keyboard.press('Escape');
+  await acceptancePopup.waitFor({ state: 'hidden' });
+  await page.getByText('Challenge accepted', { exact: true }).waitFor();
+  assert.equal(await page.getByText('#8 / 120', { exact: true }).count(), 1, 'Acceptance does not fabricate a rank increase');
+  await page.getByRole('tab', { name: /^Monthly/ }).click();
+  await page.getByRole('button', { name: 'Accept monthly challenge', exact: true }).click();
+  const monthlyPopup = page.getByRole('dialog', { name: 'monthly challenge accepted', exact: true });
+  await monthlyPopup.waitFor();
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${output}/challenge-accepted-monthly.png` });
+  await monthlyPopup.getByRole('button', { name: 'Close challenge celebration' }).click();
+  await page.getByText('Challenge accepted', { exact: true }).waitFor();
+  await page.screenshot({ path: `${output}/challenges-monthly.png` });
+  await page.getByRole('tab', { name: /^Weekly/ }).click();
+  await page.getByRole('button', { name: 'Accept weekly challenge', exact: true }).click();
+  const weeklyPopup = page.getByRole('dialog', { name: 'weekly challenge accepted', exact: true });
+  await weeklyPopup.waitFor();
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${output}/challenge-accepted-weekly.png` });
+  await page.keyboard.press('Escape');
+  await page.getByRole('tab', { name: /^Monthly/ }).click();
+  assert.equal(await page.getByRole('dialog').count(), 0, 'Returning to accepted plans does not replay a popup');
+  await header.getByRole('button', { name: 'Switch to dark theme' }).click();
+  await page.waitForTimeout(350);
+  await page.screenshot({ path: `${output}/challenges-redesign-dark.png` });
+  await header.getByRole('button', { name: 'Switch to light theme' }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Challenge hub has no mobile horizontal overflow');
+  await page.screenshot({ path: `${output}/challenges-mobile.png` });
+  await page.setViewportSize({ width: 320, height: 844 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Redesigned challenge page fits 320px screens');
+  assert.ok(await page.locator('.challenge-studio').evaluate(node => node.scrollWidth <= node.clientWidth), 'No internal studio overflow');
+  await page.screenshot({ path: `${output}/challenges-mobile-320.png` });
+  await page.setViewportSize({ width: 1366, height: 900 });
+  await page.getByRole('tab', { name: /^Daily/ }).click();
+  await page.evaluate(() => window.__completeDaily());
+  await page.getByRole('button', { name: 'Refresh progress' }).click();
+  await page.getByText('20 XP added to rank points', { exact: true }).waitFor();
+  await page.getByText('#7 / 120', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('dialog').count(), 0, 'Automatic level/award celebrations stay on dashboard/profile only');
+  await header.getByRole('button', { name: 'Open daily challenges' }).click();
+  await dailyDrawer.getByText('20 XP added to rank points', { exact: true }).waitFor();
+  assert.equal(await dailyDrawer.getByRole('progressbar', { name: 'Daily plan progress' }).getAttribute('aria-valuenow'), '100');
+  await dailyDrawer.getByRole('button', { name: 'Completed 2', exact: true }).click();
+  assert.equal(await dailyDrawer.getByRole('list', { name: 'Daily tasks' }).locator('li').count(), 2);
+  await drawerSnapshot('daily-drawer-completed');
+  await dailyDrawer.getByRole('link', { name: /View all challenges/ }).click();
+  await dailyDrawer.waitFor({ state: 'hidden' });
+  await page.setViewportSize({ width: 320, height: 650 });
+  await page.goto(`${base}/__engagement-fixture?hub&mobile-celebration`, { waitUntil: 'commit' });
+  await page.getByRole('button', { name: 'Accept daily challenge', exact: true }).click();
+  await acceptancePopup.waitFor();
+  const popupBounds = await acceptancePopup.boundingBox();
+  assert.ok(popupBounds.x >= 0 && popupBounds.x + popupBounds.width <= 320 && popupBounds.y >= 0 && popupBounds.y + popupBounds.height <= 650, 'Acceptance popup fits a small mobile screen');
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${output}/challenge-accepted-mobile.png` });
+  await acceptancePopup.getByRole('link', { name: 'Let’s get started' }).click();
+  await acceptancePopup.waitFor({ state: 'hidden' });
+  assert.equal(await page.locator('body').evaluate(node => node.style.overflow), '', 'Starting a mission restores scrolling');
+  await page.setViewportSize({ width: 1366, height: 900 });
   await page.goto(`${base}/__engagement-fixture?admin`, { waitUntil: 'commit' });
   await page.getByRole('heading', { name: 'Student progression', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Save progression policy' }).waitFor();

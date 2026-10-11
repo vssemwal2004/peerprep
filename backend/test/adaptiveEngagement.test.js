@@ -12,15 +12,17 @@ import AssessmentSubmission from '../src/models/AssessmentSubmission.js';
 import Pair from '../src/models/Pair.js';
 import Feedback from '../src/models/Feedback.js';
 import StudentChallenge from '../src/models/StudentChallenge.js';
+import Notification from '../src/models/Notification.js';
 import { adaptiveModels, MissionAssignment, EngagementReward, EngagementActivity, EngagementPolicy, StudentProgression, AchievementEvent, MonthlyProgressSnapshot } from '../src/models/AdaptiveEngagement.js';
-import { refreshAdaptiveEngagement, claimAchievement, acknowledgeAchievement, createAchievement, engagementScope } from '../src/services/adaptiveEngagementService.js';
+import { refreshAdaptiveEngagement, claimAchievement, acknowledgeAchievement, createAchievement, engagementScope, acceptChallenge } from '../src/services/adaptiveEngagementService.js';
+import { getStudentUniversityRanking } from '../src/services/studentDashboardService.js';
 import { DEFAULT_POLICY, enabledDomains, selectDailyMissions, selectPeriodGoals, abilityFrom, periodsAt, evaluateGoals, assignmentComplete } from '../src/services/adaptiveEngagementRules.js';
 import { validatePolicy } from '../src/services/engagementPolicyService.js';
 import { observeVerifiedInterview } from '../src/services/interviewEngagementService.js';
 
 const at = new Date('2026-10-15T08:00:00Z');
 const oid = () => new mongoose.Types.ObjectId();
-const models = [User, Problem, Submission, Semester, Progress, Assessment, AssessmentSubmission, Pair, Feedback, StudentChallenge, ...adaptiveModels];
+const models = [User, Problem, Submission, Semester, Progress, Assessment, AssessmentSubmission, Pair, Feedback, StudentChallenge, Notification, ...adaptiveModels];
 const keys = ['NODE_ENV', 'PEERPREP_DEPLOYMENT_ROLE', 'PEERPREP_UNIVERSITY_ID', 'PEERPREP_CONTROL_URL'];
 const oldEnv = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
 const oldFetch = globalThis.fetch;
@@ -83,6 +85,61 @@ test('first visit creates personalized frozen assignments without invented credi
   assert.equal(await MissionAssignment.countDocuments({ studentId: student._id }), 3);
   assert.equal(await EngagementReward.countDocuments({}), 0);
 });
+
+test('accepting daily, weekly and monthly plans is persistent and idempotent, never an XP reward', async () => {
+  const initial = await refreshAdaptiveEngagement(student, at);
+  for (const plan of [initial.daily, ...initial.periods]) {
+    const kind = plan.kind;
+    const [first, second] = await Promise.all([
+      acceptChallenge(student, kind, plan.periodKey, at), acceptChallenge(student, kind, plan.periodKey, at),
+    ]);
+    assert.equal(first.acceptedAt.toISOString(), at.toISOString());
+    assert.equal(second.acceptedAt.toISOString(), first.acceptedAt.toISOString());
+  }
+  const refreshed = await refreshAdaptiveEngagement(student, at);
+  assert.equal(refreshed.daily.acceptedAt.toISOString(), at.toISOString());
+  assert.ok(refreshed.periods.every(plan => plan.acceptedAt));
+  assert.equal(refreshed.lifetime.points, 0);
+  assert.equal(await EngagementReward.countDocuments({}), 0);
+  assert.equal(refreshed.month.key, '2026-10');
+  assert.equal(refreshed.month.dailyPlans[0].completed, false);
+  assert.equal(refreshed.month.dailyPlans[0].dayKey, initial.daily.periodKey);
+});
+
+test('acceptance rejects expired, foreign and disabled plans without changing rewards', async () => {
+  const initial = await refreshAdaptiveEngagement(student, at);
+  const { periodKey } = initial.daily;
+  await assert.rejects(acceptChallenge(student, 'yearly', periodKey, at), /Invalid challenge/);
+  await assert.rejects(acceptChallenge(student, 'daily', '2020-01-01', at), /ended/);
+  await assert.rejects(acceptChallenge({ ...student, _id: oid() }, 'daily', periodKey, at), /No assigned/);
+  await assert.rejects(acceptChallenge({ ...student, college: 'Other University' }, 'daily', periodKey, at), /No assigned/);
+  const { tenantKey } = engagementScope(student);
+  await EngagementPolicy.create({ tenantKey, cohort: 'all', settings: { enabled: false } });
+  await assert.rejects(acceptChallenge(student, 'daily', periodKey, at), /paused/);
+  await EngagementPolicy.updateOne({ tenantKey }, { $set: { settings: { domains: ['learning'] } } });
+  await assert.rejects(acceptChallenge(student, 'daily', periodKey, at), /access has changed/);
+  assert.equal(await EngagementReward.countDocuments({}), 0);
+  assert.equal(await MissionAssignment.countDocuments({ acceptedAt: { $ne: null } }), 0);
+});
+
+test('verified challenge completion adds rank points once and marks the monthly calendar', async () => {
+  const first = await refreshAdaptiveEngagement(student, at);
+  const before = await getStudentUniversityRanking(student, null, at);
+  await acceptChallenge(student, 'daily', first.daily.periodKey, at);
+  const accepted = await getStudentUniversityRanking(student, null, at);
+  assert.equal(accepted.score, before.score);
+  const core = first.daily.goals.find(goal => goal.slot === 'core');
+  const completedAt = new Date(at.getTime() + 60000);
+  await solve(new mongoose.Types.ObjectId(core.key.split(':').at(-1)), completedAt);
+  const done = await refreshAdaptiveEngagement(student, completedAt);
+  const after = await getStudentUniversityRanking(student, null, completedAt);
+  assert.equal(after.scoreBreakdown.challenges, first.daily.rewardPoints);
+  assert.ok(after.score >= before.score + first.daily.rewardPoints);
+  assert.equal(done.month.dailyPlans[0].completed, true);
+  await acceptChallenge(student, 'daily', first.daily.periodKey, completedAt);
+  await refreshAdaptiveEngagement(student, completedAt);
+  assert.equal((await getStudentUniversityRanking(student, null, completedAt)).score, after.score);
+});
 test('verified solutions complete missions once under concurrent refreshes; runs and other students do not', async () => {
   const first = await refreshAdaptiveEngagement(student, at);
   const core = first.daily.goals.find((g) => g.slot === 'core');
@@ -100,6 +157,58 @@ test('verified solutions complete missions once under concurrent refreshes; runs
   await solve(problem, new Date(completedAt.getTime() + 1000));
   assert.equal((await refreshAdaptiveEngagement(student, new Date(completedAt.getTime() + 2000))).lifetime.points, 20);
 });
+const noticesFor = (studentId = student._id) => Notification.find({ userId: studentId }).sort({ createdAt: 1, title: 1 }).lean();
+
+test('new weekly and monthly targets are announced once; daily plans are not', async () => {
+  await Promise.all(Array.from({ length: 4 }, () => refreshAdaptiveEngagement(student, at)));
+  await refreshAdaptiveEngagement(student, new Date(at.getTime() + 60000));
+  const notices = await noticesFor();
+  assert.deepEqual(notices.map((notice) => notice.title).sort(), ['New monthly target', 'New weekly target']);
+  assert.ok(notices.every((notice) => notice.type === 'CHALLENGE' && notice.actionUrl === '/student/challenges' && !notice.isRead));
+  assert.match(notices.find((notice) => notice.title === 'New weekly target').message, /^\d+ goals to finish by .+\. Complete them for \+\d+ XP\.$/);
+  assert.equal(await EngagementReward.countDocuments({}), 0, 'Announcing a target never awards XP');
+});
+
+test('a completed daily plan and its badges notify once and appear on the heatmap as challenge activity', async () => {
+  const first = await refreshAdaptiveEngagement(student, at);
+  const core = first.daily.goals.find((g) => g.slot === 'core');
+  const completedAt = new Date(at.getTime() + 60000);
+  await solve(new mongoose.Types.ObjectId(core.key.split(':').at(-1)), completedAt);
+  const results = await Promise.all(Array.from({ length: 5 }, () => refreshAdaptiveEngagement(student, completedAt)));
+  await refreshAdaptiveEngagement(student, new Date(completedAt.getTime() + 1000));
+  const notices = await noticesFor();
+  const titles = notices.map((notice) => notice.title);
+  assert.equal(titles.filter((title) => title === 'Daily plan complete').length, 1);
+  assert.match(notices.find((notice) => notice.title === 'Daily plan complete').message, /^\+20 XP earned/);
+  assert.ok(titles.includes('Badge earned: Code Initiate') && titles.includes('Badge earned: First Step'));
+  assert.equal(new Set(notices.map((notice) => notice.dedupeKey)).size, notices.length, 'No duplicate notices under concurrent refreshes');
+  assert.ok(notices.filter((notice) => notice.type === 'BADGE').every((notice) => notice.actionUrl === '/student/profile#badges'));
+
+  const day = results[0].daily.periodKey;
+  const { breakdownByDate, activityByDate } = results.at(-1).activity;
+  assert.equal(breakdownByDate[day].coding, 1, 'The verified solve still counts once as coding');
+  assert.equal(breakdownByDate[day].challenges, 3, 'Plan completion and two badges are challenge milestones');
+  assert.equal(activityByDate[day], 4);
+});
+
+test('an unfinished weekly target gets one closing reminder near its deadline', async () => {
+  const first = await refreshAdaptiveEngagement(student, at);
+  const weekly = first.periods.find((period) => period.kind === 'weekly');
+  const nearEnd = new Date(new Date(weekly.endsAt).getTime() - 36 * 3600000);
+  await refreshAdaptiveEngagement(student, nearEnd);
+  await refreshAdaptiveEngagement(student, new Date(nearEnd.getTime() + 3600000));
+  const reminders = (await noticesFor()).filter((notice) => notice.title === 'Weekly target ends soon');
+  assert.equal(reminders.length, 1);
+  assert.match(reminders[0].message, /^0% done with 2 days left\. Finish it for \+\d+ XP\.$/);
+  assert.equal((await noticesFor(oid())).length, 0, 'Notices belong only to the student who earned them');
+});
+
+test('badges recognised from work before joining are added quietly', async () => {
+  await solve(problems[0]._id, new Date(at.getTime() - 86400000));
+  await refreshAdaptiveEngagement(student, at);
+  assert.ok((await noticesFor()).every((notice) => notice.type !== 'BADGE'), 'Historical badges are not announced as new');
+});
+
 test('feature revocation hides tasks, badges and activity and cannot grant a reward', async () => {
   process.env.PEERPREP_DEPLOYMENT_ROLE = 'university'; process.env.PEERPREP_UNIVERSITY_ID = 'test-campus'; process.env.PEERPREP_CONTROL_URL = 'http://127.0.0.1';
   let allowed = true;

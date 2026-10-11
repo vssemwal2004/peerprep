@@ -41,10 +41,16 @@ const VIEWS = [
 ];
 
 /** Heatmap + 30-day trend in one card. Streak figures live in Coding Progress (not repeated here). */
+const CATEGORY_LABELS = { events: 'Peer interviews', interviews: 'AI interviews', challenges: 'Challenges' };
+const categoryLabel = (key) => CATEGORY_LABELS[key] || key;
+
 export default function ActivitySection({ activity, activityStats, loading, breakdown, domains = [], verified = false }) {
   const [view, setView] = useState('year');
   const [domain, setDomain] = useState('all');
-  const selectedDomain = domains.includes(domain) ? domain : 'all';
+  // Completed plans and targets, badges and level-ups get their own filter once any exist.
+  const hasChallenges = useMemo(() => Object.values(breakdown || {}).some((counts) => counts?.challenges > 0), [breakdown]);
+  const categories = hasChallenges ? [...domains, 'challenges'] : domains;
+  const selectedDomain = categories.includes(domain) ? domain : 'all';
   const filtered = useMemo(() => selectedDomain === 'all' || !breakdown ? activity : Object.fromEntries(Object.entries(breakdown).map(([key, counts]) => [key, counts[selectedDomain] || 0])), [activity, breakdown, selectedDomain]);
   const endingDayKey = verified ? new Date(Date.now() + 3.5 * 3600000).toISOString().slice(0, 10) : null;
   const activeDays = selectedDomain === 'all' ? Number(activityStats?.totalActiveDays || 0) : Object.values(filtered).filter((value) => value > 0).length;
@@ -84,7 +90,7 @@ export default function ActivitySection({ activity, activityStats, loading, brea
       icon={<CalendarDays className="h-4 w-4" />}
       action={toggle}
     >
-      {verified && domains.length > 1 && <div className="mb-2 flex flex-wrap gap-1" role="group" aria-label="Activity features">{['all', ...domains].map((key) => <button key={key} type="button" aria-pressed={selectedDomain === key} onClick={() => setDomain(key)} className={`rounded-md px-2 py-1 text-[10px] capitalize ${focusRing} ${selectedDomain === key ? 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800'}`}>{key === 'all' ? 'All activity' : key === 'events' ? 'Peer interviews' : key === 'interviews' ? 'AI interviews' : key}</button>)}</div>}
+      {verified && categories.length > 1 && <div className="mb-2 flex flex-wrap gap-1" role="group" aria-label="Activity features">{['all', ...categories].map((key) => <button key={key} type="button" aria-pressed={selectedDomain === key} onClick={() => setDomain(key)} className={`rounded-md px-2 py-1 text-[10px] capitalize ${focusRing} ${selectedDomain === key ? key === 'challenges' ? 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300' : 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800'}`}>{key === 'all' ? 'All activity' : categoryLabel(key)}</button>)}</div>}
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-10 text-xs text-slate-500 dark:text-zinc-400" role="status">
           <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-sky-500 border-t-transparent" aria-hidden="true" />
@@ -96,7 +102,7 @@ export default function ActivitySection({ activity, activityStats, loading, brea
           activity={filtered}
           endingDayKey={endingDayKey}
           stats={null}
-          tooltipFormatter={({ value, formattedDate, key }) => `${value} ${verified ? 'verified' : 'tracked'} activities on ${formattedDate}${breakdown?.[key] ? ' · ' + Object.entries(breakdown[key]).map(([type, count]) => `${count} ${type}`).join(', ') : ''}`}
+          tooltipFormatter={({ value, formattedDate, key }) => `${value} ${verified ? 'verified' : 'tracked'} activities on ${formattedDate}${breakdown?.[key] ? ' · ' + Object.entries(breakdown[key]).map(([type, count]) => `${count} ${type === 'challenges' ? (count === 1 ? 'challenge milestone' : 'challenge milestones') : categoryLabel(type).toLowerCase()}`).join(', ') : ''}`}
           legendLabels={{
             none: 'No activity',
             low: '1-2 activities',

@@ -5,6 +5,15 @@ import { moduleForPath, pathAllowed } from '../src/platform/universityPermission
 const university = { university: true };
 const policy = { questions: false, assessments: true, events: false, interviews: true, learning: false, resumes: false };
 
+test('challenge navigation requires at least one allocated supported module', () => {
+  assert.equal(moduleForPath('/student/challenges?period=monthly'), 'challenges');
+  assert.equal(pathAllowed('/student/challenges', {}, 'student', '', university), false);
+  for (const name of ['questions', 'learning', 'assessments', 'events', 'interviews']) {
+    assert.equal(pathAllowed('/student/challenges', { [name]: true }, 'student', '', university), true);
+  }
+  assert.equal(pathAllowed('/student/challenges', { resumes: true }, 'student', '', university), false);
+});
+
 test('disabled university modules are hidden on admin, coordinator and student routes', () => {
   for (const path of ['/admin/library', '/coordinator/library/coding/create', '/problems/shared/abc',
     '/admin/event/create', '/coordinator/interviews/scheduled', '/student/interview',

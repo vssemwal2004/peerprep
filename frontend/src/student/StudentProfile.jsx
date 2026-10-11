@@ -890,6 +890,16 @@ export default function StudentProfile() {
 
   const closeBadgesGallery = useCallback(() => setBadgesGallery(null), []);
 
+  // Links such as the dashboard's /student/profile#badges land on that card once it has rendered.
+  const hashHandled = useRef(false);
+  useEffect(() => {
+    if (hashHandled.current || loading || !window.location.hash) return;
+    const target = document.getElementById(decodeURIComponent(window.location.hash.slice(1)));
+    if (!target) return;
+    hashHandled.current = true;
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  });
+
   if (loading && !user) {
     return (
       <div className="min-h-screen bg-white pt-3 dark:bg-[#1a1a1a]" aria-busy="true">

@@ -2,6 +2,7 @@ export const isUniversityDeployment = import.meta.env?.VITE_PEERPREP_DEPLOYMENT_
 
 export function moduleForPath(pathname = '') {
   const path = pathname.split('?')[0];
+  if (/^\/student\/challenges(?:\/|$)/.test(path)) return 'challenges';
   if (/^\/(?:admin|student)\/ai-interviews(?:\/|$)|^\/coordinator\/ai-interviews(?:\/|$)/.test(path)) return 'interviews';
   if (/^\/(?:admin|student)\/learning(?:\/|$)|^\/coordinator\/subjects(?:\/|$)/.test(path)) return 'learning';
   if (/^\/(?:admin|coordinator)\/library(?:\/|$)|^\/(?:admin|coordinator)\/compiler(?:\/|$)|^\/problems(?:\/|$)/.test(path)) return 'questions';
@@ -14,6 +15,7 @@ export function moduleForPath(pathname = '') {
 
 export function moduleEnabled(permissions, moduleName) {
   if (!permissions) return !isUniversityDeployment;
+  if (moduleName === 'challenges') return ['questions', 'learning', 'assessments', 'interviews', 'events'].some(name => permissions[name] === true);
   if (moduleName === 'coding') return permissions.coding === undefined
     ? permissions.questions === true : permissions.coding === true;
   return permissions[moduleName] === true;

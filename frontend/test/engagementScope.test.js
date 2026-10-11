@@ -15,6 +15,15 @@ test('revoked module badges and heatmap evidence disappear before the next API r
   assert.equal(input.badges.length, 2, 'The original response is not mutated');
 });
 
+test('challenge milestones stay on the heatmap while any feature is allowed and vanish when none are', () => {
+  const input = { version: 2, domains: ['coding'], badges: [], activity: { breakdownByDate: { '2026-10-10': { coding: 1, challenges: 2 } } } };
+  const allowed = scopeEngagement(input, () => true);
+  assert.deepEqual(allowed.activity.breakdownByDate, { '2026-10-10': { coding: 1, challenges: 2 } });
+  assert.deepEqual(allowed.activity.activityByDate, { '2026-10-10': 3 });
+  const revoked = scopeEngagement(input, () => false);
+  assert.deepEqual(revoked.activity.activityByDate, {}, 'No feature, no challenge activity');
+});
+
 test('legacy and pending payloads remain compatible with the scope adapter', () => {
   assert.equal(scopeEngagement(null, () => false), null);
   const old = { daily: { completed: false } };

@@ -452,6 +452,7 @@ export const api = {
       cacheTtlMs: 30 * 1000,
     }),
   refreshStudentEngagement: () => request('/engagement/refresh', { method: 'POST' }),
+  acceptStudentChallenge: (kind, periodKey) => request(`/engagement/challenges/${encodeURIComponent(kind)}/accept`, { method: 'POST', body: { periodKey } }),
   claimAchievements: () => request('/engagement/achievements/claim', { method: 'POST' }),
   acknowledgeAchievements: (ids) => request('/engagement/achievements/acknowledge', { method: 'POST', body: { ids } }),
   engagementHistory: () => request('/engagement/history', { skipCache: true }),

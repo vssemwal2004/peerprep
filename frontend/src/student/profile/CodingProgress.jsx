@@ -19,17 +19,45 @@ function availableCount(value, solved) {
   return Number.isFinite(numeric) ? Math.max(count(numeric), solved) : null;
 }
 
-function SolvedGauge({ solved, available, values, difficulty, loading, compact }) {
+const SEGMENT_GAP = 5;
+// Every difficulty keeps at least this share of the ring, so a small bucket (often Hard) stays visible.
+const MIN_SEGMENT_SHARE = 0.14;
+
+/**
+ * Three arcs, one per difficulty, sized by how many problems each has. Each arc shows its track in
+ * a soft tint and fills by solved / available for that difficulty. Without known totals the arcs
+ * are equal, track-only: the ring never draws progress it cannot back with data.
+ */
+function difficultySegments(values, totals, arcLength) {
+  const known = totals.every((total) => total !== null) && totals.some((total) => total > 0);
+  const weights = known ? totals : [1, 1, 1];
+  const weightSum = weights.reduce((sum, value) => sum + value, 0) || 1;
+  const floored = weights.map((value) => Math.max(MIN_SEGMENT_SHARE, value / weightSum));
+  const flooredSum = floored.reduce((sum, value) => sum + value, 0);
+  const usable = arcLength - SEGMENT_GAP * (DIFFICULTIES.length - 1);
+  let cursor = 0;
+  return DIFFICULTIES.map((item, index) => {
+    const length = usable * (floored[index] / flooredSum);
+    const start = cursor;
+    cursor += length + SEGMENT_GAP;
+    const ratio = known && totals[index] > 0 ? Math.min(1, values[index] / totals[index]) : 0;
+    return { ...item, start, length, fill: values[index] > 0 ? length * ratio : 0 };
+  });
+}
+
+function SolvedGauge({ solved, available, values, totals, difficulty, loading, compact }) {
   const size = compact ? 116 : 124;
   const stroke = 7;
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   const arcLength = circumference * 0.75;
-  const filled = available > 0 ? arcLength * Math.min(1, solved / available) : 0;
   const difficultyIndex = DIFFICULTIES.findIndex((item) => item.key === difficulty);
-  const visibleValues = difficultyIndex < 0 ? values : values.map((value, index) => (index === difficultyIndex ? value : 0));
-  const bucketTotal = visibleValues.reduce((total, value) => total + value, 0);
-  let cursor = 0;
+  const segments = difficultySegments(values, totals, arcLength);
+  // Round caps add half the stroke at each end, so dashes are shortened to keep the gaps exact.
+  const dash = (start, length) => ({
+    strokeDasharray: `${Math.max(0.01, length - stroke)} ${circumference}`,
+    strokeDashoffset: -(start + stroke / 2),
+  });
   const label = difficultyIndex < 0 ? 'All problems' : `${DIFFICULTIES[difficultyIndex].label} problems`;
   const accessibleValue = loading
     ? 'Loading coding progress'
@@ -38,24 +66,18 @@ function SolvedGauge({ solved, available, values, difficulty, loading, compact }
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }} role="img" aria-label={accessibleValue}>
       <svg viewBox={`0 0 ${size} ${size}`} className="h-full w-full rotate-[135deg]" aria-hidden="true">
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" strokeWidth={stroke} strokeLinecap="round"
-          strokeDasharray={`${arcLength} ${circumference}`} className="stroke-slate-100 dark:stroke-zinc-800" />
-        {!loading && visibleValues.map((value, index) => {
-          if (!value || !bucketTotal || filled <= 0) return null;
-          const length = filled * (value / bucketTotal);
-          const offset = cursor;
-          cursor += length;
-          return (
-            <circle key={DIFFICULTIES[index].key} cx={size / 2} cy={size / 2} r={radius} fill="none"
-              stroke={DIFFICULTIES[index].stroke} strokeWidth={stroke} strokeLinecap="round"
-              strokeDasharray={`${Math.max(0, length - (bucketTotal === value ? 0 : Math.min(3, length / 2)))} ${circumference}`}
-              strokeDashoffset={-offset} className="transition-[stroke-dasharray,stroke-dashoffset] duration-300 motion-reduce:transition-none" />
-          );
-        })}
-        {!loading && !bucketTotal && filled > 0 ? (
-          <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#475569" strokeWidth={stroke}
-            strokeLinecap="round" strokeDasharray={`${filled} ${circumference}`} />
-        ) : null}
+        {segments.map((segment, index) => (
+          <g key={segment.key} data-segment={segment.key} className="transition-opacity duration-200 motion-reduce:transition-none"
+            opacity={loading ? 0.5 : difficultyIndex < 0 || difficultyIndex === index ? 1 : 0.28}>
+            <circle data-track cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={segment.stroke} strokeOpacity={0.18}
+              strokeWidth={stroke} strokeLinecap="round" {...dash(segment.start, segment.length)} className="dark:[stroke-opacity:0.3]" />
+            {!loading && segment.fill > 0 && (
+              <circle data-fill cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={segment.stroke}
+                strokeWidth={stroke} strokeLinecap="round" {...dash(segment.start, segment.fill)}
+                className="transition-[stroke-dasharray] duration-500 motion-reduce:transition-none" />
+            )}
+          </g>
+        ))}
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center pb-1 text-center">
         <p className="leading-none tabular-nums">
@@ -139,7 +161,7 @@ export default function CodingProgress({
       </header>
 
       <div className={`flex items-center gap-3 ${compact ? 'mt-3' : 'mt-4'}`}>
-        <SolvedGauge solved={solved} available={available} values={values} difficulty={active} loading={loading} compact={compact} />
+        <SolvedGauge solved={solved} available={available} values={values} totals={totals} difficulty={active} loading={loading} compact={compact} />
         <div className="min-w-0 flex-1" role="group" aria-label="Coding difficulty filter"
           onMouseLeave={() => setHovered(null)}
           onKeyDown={(event) => {

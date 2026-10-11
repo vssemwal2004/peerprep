@@ -6,6 +6,7 @@ import { loadEvidenceAndCandidates } from './engagementEvidenceService.js';
 import { BADGES, LEVELS, DOMAIN_ACCESS, dayKey, periodsAt, enabledDomains, abilityFrom, selectDailyMissions, selectPeriodGoals, evaluateGoals, assignmentComplete, assignmentCompletedAt, assignmentPaused, progressionView } from './adaptiveEngagementRules.js';
 import { invalidateChallengeRanking, getStudentUniversityRanking } from './studentDashboardService.js';
 import { requireEngagementUniqueIndex } from '../utils/engagementIndexes.js';
+import { notifyOnce } from './notificationService.js';
 import { HttpError } from '../utils/errors.js';
 
 const pending = new Map();
@@ -25,6 +26,23 @@ export async function createAchievement(scope, key, payload, deliveredAt = null)
   return insertOnce(AchievementEvent, { ...scope, key }, { payload, deliveredAt });
 }
 const pct = (goals) => Math.round(goals.reduce((sum, goal) => sum + goal.progress, 0) / Math.max(1, goals.length));
+
+const PERIOD_NAMES = { daily: 'Daily plan', weekly: 'Weekly target', monthly: 'Monthly target' };
+// Remind once when this little time is left on an unfinished weekly or monthly target.
+const CLOSING_WINDOW_DAYS = { weekly: 2, monthly: 3 };
+const shortDay = (date) => new Date(date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
+
+/**
+ * Milestones become bell notifications. Each notice has a stable key, so repeated or concurrent
+ * refreshes deliver it once. Delivery is best effort: it never blocks or fails the refresh.
+ */
+async function deliverNotices(scope, notices, now) {
+  if (!notices.length) return;
+  const results = await Promise.allSettled(notices.map(({ key, ...notice }) => notifyOnce({
+    ...notice, userId: scope.studentId, dedupeKey: `engagement:${scope.tenantKey}:${key}`, now,
+  })));
+  for (const result of results) if (result.status === 'rejected') console.warn('[engagement] notification failed:', result.reason?.message || result.reason);
+}
 
 async function refresh(student, now) {
   const scope = engagementScope(student);
@@ -76,7 +94,7 @@ async function refresh(student, now) {
   const periods = periodsAt(now);
   const latest = events.reduce((max, e) => Math.max(max, new Date(e.occurredAt).getTime()), 0);
   const returning = latest > 0 && now.getTime() - latest > 7 * 86400000;
-  const current = [];
+  const current = [], notices = [];
   if (enabled) for (const kind of ['daily', 'weekly', 'monthly']) {
     const period = periods[kind];
     const daysAvailable = Math.ceil((period.endsAt - now) / 86400000);
@@ -84,9 +102,15 @@ async function refresh(student, now) {
     const seed = `${scope.tenantKey}:${scope.studentId}:${kind}:${period.periodKey}:${policy.revision}`;
     const goals = kind === 'daily' ? selectDailyMissions(candidates, ability, policy, seed, returning) : selectPeriodGoals(kind, candidates, ability, policy, now, seed);
     let row = await MissionAssignment.findOne({ ...scope, kind, periodKey: period.periodKey }).maxTimeMS(8000).lean();
-    if (!row && goals.length) row = await insertOnce(MissionAssignment, { ...scope, kind, periodKey: period.periodKey }, {
-      ...period, assignedAt: now, policyRevision: policy.revision, goals, rewardPoints: Math.round(policy[`${kind}Xp`] * rewardRatio),
-    });
+    if (!row && goals.length) {
+      row = await insertOnce(MissionAssignment, { ...scope, kind, periodKey: period.periodKey }, {
+        ...period, assignedAt: now, policyRevision: policy.revision, goals, rewardPoints: Math.round(policy[`${kind}Xp`] * rewardRatio),
+      });
+      // A new daily plan arrives every day; only the longer targets are worth a notification.
+      if (kind !== 'daily' && row) notices.push({ key: `new:${kind}:${row.periodKey}`, type: 'CHALLENGE', actionUrl: '/student/challenges',
+        title: `New ${kind} target`,
+        message: `${row.goals.filter((goal) => goal.slot !== 'stretch').length} goals to finish by ${shortDay(row.endsAt)}. Complete them for +${row.rewardPoints} XP.` });
+    }
     if (row) current.push(row);
   }
   const older = enabled ? await MissionAssignment.find({ ...scope, $or: [{ earnedAt: null }, { settledAt: null }, { endsAt: { $gte: new Date(now.getTime() - 7 * 86400000) } }], endsAt: { $lte: now }, closedAt: null }).sort({ endsAt: 1 }).limit(100).maxTimeMS(8000).lean() : [];
@@ -98,7 +122,14 @@ async function refresh(student, now) {
       const earnedAt = row.earnedAt || assignmentCompletedAt(row, goals);
       await MissionAssignment.updateOne({ _id: row._id, earnedAt: null }, { $set: { earnedAt } }).maxTimeMS(8000);
       row.earnedAt = earnedAt;
-      if (await awardXp(scope, `${row.kind}:${row.periodKey}`, row.rewardPoints, row.kind, earnedAt)) newAwards.push({ kind: row.kind, periodKey: row.periodKey, rewardPoints: row.rewardPoints });
+      if (await awardXp(scope, `${row.kind}:${row.periodKey}`, row.rewardPoints, row.kind, earnedAt)) {
+        newAwards.push({ kind: row.kind, periodKey: row.periodKey, rewardPoints: row.rewardPoints });
+        notices.push({ key: `done:${row.kind}:${row.periodKey}`, type: 'CHALLENGE', actionUrl: '/student/challenges',
+          title: row.kind === 'daily' ? 'Daily plan complete' : `${PERIOD_NAMES[row.kind]} reached`,
+          message: row.kind === 'daily'
+            ? `+${row.rewardPoints} XP earned. A fresh plan arrives at 2 AM.`
+            : `+${row.rewardPoints} XP and the ${row.kind === 'weekly' ? 'Weekly Momentum' : 'Monthly Explorer'} badge for ${row.periodKey}.` });
+      }
       if (row.kind !== 'daily') {
         const definition = { id: `edition-${row.kind}-${row.periodKey}`, title: `${row.kind === 'weekly' ? 'Weekly Momentum' : 'Monthly Explorer'} · ${row.periodKey}`,
           category: 'momentum', rarity: row.kind === 'monthly' ? 'Epic' : 'Rare', metric: 'edition', target: 1, minimumLevel: 1, rewardXp: row.rewardPoints,
@@ -113,9 +144,18 @@ async function refresh(student, now) {
     // Written last: an interrupted award resumes even after the period rolls over.
     if (row.earnedAt) await MissionAssignment.updateOne({ _id: row._id, settledAt: null }, { $set: { settledAt: now } }).maxTimeMS(8000);
     if (new Date(row.endsAt).getTime() < now.getTime() - 7 * 86400000) await MissionAssignment.updateOne({ _id: row._id }, { $set: { closedAt: now } });
-    if (current.some((item) => String(item._id) === String(row._id))) cards.push({
+    const isCurrent = current.some((item) => String(item._id) === String(row._id));
+    if (isCurrent && row.kind !== 'daily' && !row.earnedAt && !paused) {
+      const daysLeft = Math.ceil((new Date(row.endsAt).getTime() - now.getTime()) / 86400000);
+      const progress = pct(goals.filter((g) => g.slot !== 'stretch'));
+      if (daysLeft > 0 && daysLeft <= CLOSING_WINDOW_DAYS[row.kind] && progress < 100) notices.push({
+        key: `closing:${row.kind}:${row.periodKey}`, type: 'CHALLENGE', actionUrl: '/student/challenges',
+        title: `${PERIOD_NAMES[row.kind]} ends soon`,
+        message: `${progress}% done with ${daysLeft} ${daysLeft === 1 ? 'day' : 'days'} left. Finish it for +${row.rewardPoints} XP.` });
+    }
+    if (isCurrent) cards.push({
       kind: row.kind, periodKey: row.periodKey, title: row.kind === 'daily' ? "Today's missions" : row.kind === 'weekly' ? 'Weekly momentum' : 'Monthly journey',
-      endsAt: row.endsAt, startsAt: row.startsAt, rewardPoints: row.rewardPoints, earned: Boolean(row.earnedAt), completed: Boolean(row.earnedAt), earnedAt: row.earnedAt,
+      endsAt: row.endsAt, startsAt: row.startsAt, acceptedAt: row.acceptedAt || null, rewardPoints: row.rewardPoints, earned: Boolean(row.earnedAt), completed: Boolean(row.earnedAt), earnedAt: row.earnedAt,
       goals: goals.map(({ contentKeys, priority, ...goal }) => goal), progress: row.earnedAt ? 100 : pct(goals.filter((g) => g.slot !== 'stretch')),
       paused, enabled: true,
     });
@@ -135,7 +175,11 @@ async function refresh(student, now) {
   const eligible = enabled ? [...LEVELS].reverse().find((level) => xp >= level.xp && mastery >= level.mastery && days.size >= level.days) : null;
   if (eligible && eligible.level > progression.level) {
     const updated = await StudentProgression.findOneAndUpdate({ ...scope, level: { $lt: eligible.level } }, { $set: { level: eligible.level }, $push: { levelHistory: { level: eligible.level, title: eligible.title, achievedAt: now, mastery, xp } } }, { new: true }).lean();
-    if (updated) progression = updated;
+    if (updated) {
+      progression = updated;
+      notices.push({ key: `level:${eligible.level}`, type: 'LEVEL', actionUrl: '/student/profile#badges',
+        title: `Level ${eligible.level} unlocked: ${eligible.title}`, message: `${xp} XP and ${mastery}% demonstrated mastery got you here.` });
+    }
   }
   // The unique event key repairs a crash between promoting and publishing the celebration.
   for (const entry of progression.levelHistory || []) if (!entry.imported) await createAchievement(scope, `level:${entry.level}`, { type: 'level', level: { ...LEVELS[entry.level - 1], helper: `${entry.xp} XP and ${entry.mastery}% demonstrated mastery.` } });
@@ -155,6 +199,9 @@ async function refresh(student, now) {
       const historical = relevant.length && relevant.every((e) => new Date(e.occurredAt) < new Date(progression.joinedAt));
       earned = await insertOnce(StudentBadge, { ...scope, badgeId: def.id }, { definition: def, earnedAt: now, evidence: { metric: def.metric, value: metrics[def.metric], imported: Boolean(historical) } });
       badgeMap.set(def.id, earned);
+      // Badges recognised from work done before joining are added quietly, like their celebrations.
+      if (!earned.evidence?.imported) notices.push({ key: `badge:${def.id}`, type: 'BADGE', actionUrl: '/student/profile#badges',
+        title: `Badge earned: ${earned.definition?.title || def.title}`, message: earned.definition?.description || def.description || 'A new badge was added to your collection.' });
     }
     await createAchievement(scope, `badge:${def.id}`, { type: 'badge', award: { ...earned.definition, earned: true } }, earned.evidence?.imported ? now : null);
   }
@@ -169,6 +216,22 @@ async function refresh(student, now) {
     breakdownByDate[event.dayKey] ||= {};
     breakdownByDate[event.dayKey][event.domain] = (breakdownByDate[event.dayKey][event.domain] || 0) + 1;
   }
+  // Challenge milestones (plans and targets completed, badges, level-ups) are their own heatmap
+  // category. Imported history and edition badges (already counted as a completed target) are left
+  // out, and nothing is added once every feature is switched off.
+  const milestoneDates = domains.length ? [
+    ...rewards.filter((reward) => ['daily', 'weekly', 'monthly'].includes(reward.kind)).map((reward) => reward.earnedAt),
+    ...[...badgeMap.values()].filter((badge) => !badge.evidence?.imported && !String(badge.badgeId).startsWith('edition-')
+      && (!DOMAIN_ACCESS[badge.definition?.category] || domains.includes(badge.definition.category))).map((badge) => badge.earnedAt),
+    ...(progression.levelHistory || []).filter((entry) => !entry.imported).map((entry) => entry.achievedAt),
+  ] : [];
+  for (const date of milestoneDates) {
+    if (!date || new Date(date) < yearStart) continue;
+    const key = dayKey(date);
+    activityByDate[key] = (activityByDate[key] || 0) + 1;
+    breakdownByDate[key] ||= {};
+    breakdownByDate[key].challenges = (breakdownByDate[key].challenges || 0) + 1;
+  }
   const month = periods.monthly.periodKey;
   if (progression.lastMonth && progression.lastMonth !== month) {
     const monthEvents = events.filter((e) => e.dayKey.startsWith(progression.lastMonth));
@@ -179,9 +242,13 @@ async function refresh(student, now) {
   await StudentProgression.updateOne(scope, { $set: { ability, syncedAt: now, lastMonth: month,
     ...Object.fromEntries(Object.entries(evidence.domainSyncedAt).map(([domain, date]) => [`domainSyncedAt.${domain}`, date])) } });
   const level = progressionView(progression.level, xp, mastery, days.size);
+  const monthPlans = await MissionAssignment.find({ ...scope, kind: 'daily', periodKey: { $gte: `${month}-01`, $lte: `${month}-31` }, 'goals.domain': { $in: domains } })
+    .select('periodKey acceptedAt earnedAt rewardPoints').sort({ periodKey: 1 }).limit(31).maxTimeMS(8000).lean();
   const daily = cards.find((card) => card.kind === 'daily') || { enabled, completed: false, goals: [], endsAt: periods.daily.endsAt, rewardPoints: policy.dailyXp };
+  await deliverNotices(scope, notices, now);
   return { version: 2, enabled, domains, timezone: 'Asia/Kolkata', rolloverHour: 2, daily, periods: cards.filter((card) => card.kind !== 'daily'),
     lifetime: { points: xp, badges: badgeMap.size, dailyCompleted: metrics.dailyCompleted },
+    month: { key: month, dailyPlans: monthPlans.map((plan) => ({ dayKey: plan.periodKey, acceptedAt: plan.acceptedAt || null, completed: Boolean(plan.earnedAt), rewardPoints: plan.rewardPoints })) },
     level, ladder: LEVELS, ability: Object.fromEntries(domains.map((domain) => [domain, ability[domain]])), badges,
     awards: { awards: badges, earnedCount: badges.filter((b) => b.earned).length, nextAward: badges.filter((b) => !b.earned).sort((a, b) => b.progress - a.progress)[0] || null },
     learnerProgress: { levelHistory: progression.levelHistory, awards: badges.filter((b) => b.earned).map((b) => ({ id: b.id, earnedAt: b.earnedAt })) },
@@ -198,6 +265,28 @@ export function refreshAdaptiveEngagement(student, now = new Date()) {
   const promise = refresh(student, now).finally(() => pending.delete(key));
   pending.set(key, promise);
   return promise;
+}
+
+// Accepting records intent only. Existing automatic completion and immutable XP receipts
+// remain authoritative, including work completed before the student explicitly accepts.
+export async function acceptChallenge(student, kind, periodKey, now = new Date()) {
+  if (!['daily', 'weekly', 'monthly'].includes(kind) || typeof periodKey !== 'string') throw new HttpError(400, 'Invalid challenge period');
+  if (periodsAt(now)[kind].periodKey !== periodKey) throw new HttpError(409, 'This challenge has ended. Refresh to see your current plan.');
+  const scope = engagementScope(student);
+  const [permissions, policy] = await Promise.all([engagementPermissions(student), getEngagementPolicy(scope.tenantKey, student.semester)]);
+  if (!policy.enabled || (policy.pauseUntil && new Date(policy.pauseUntil) > now)) throw new HttpError(409, 'Challenges are paused by your university.');
+  const domains = enabledDomains(permissions, policy);
+  const filter = { ...scope, kind, periodKey, startsAt: { $lte: now }, endsAt: { $gt: now } };
+  let assignment = await MissionAssignment.findOne(filter).maxTimeMS(8000).lean();
+  if (!assignment) throw new HttpError(404, 'No assigned challenge is available. Refresh your challenges.');
+  const goals = assignment.goals.map((goal) => ({ ...goal, paused: goal.domain !== 'momentum' && !domains.includes(goal.domain) }));
+  if (!domains.length || assignmentPaused(assignment, goals)) throw new HttpError(409, 'Challenge access has changed. Refresh your challenges.');
+  if (!assignment.acceptedAt && !assignment.earnedAt) {
+    assignment = await MissionAssignment.findOneAndUpdate({ ...filter, acceptedAt: null, earnedAt: null },
+      { $set: { acceptedAt: now } }, { new: true }).maxTimeMS(8000).lean()
+      || await MissionAssignment.findOne(filter).maxTimeMS(8000).lean();
+  }
+  return { kind, periodKey, acceptedAt: assignment.acceptedAt || null, completed: Boolean(assignment.earnedAt) };
 }
 export async function claimAchievement(student) {
   const scope = engagementScope(student);

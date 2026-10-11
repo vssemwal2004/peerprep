@@ -284,14 +284,45 @@ test('accessible document order follows greeting and recent work, then the progr
   ]);
 });
 
-test('the dashboard leaves badges and levels to the profile', async () => {
+test('the greeting shows a compact badge shelf; the full collection stays on the profile', async () => {
   engagement = engagementFixture();
   engagement.badges = [{ id: 'weekly:2035-01-08', kind: 'weekly', periodKey: '2035-01-08', title: 'Weekly momentum', earnedAt: iso(8) }];
   engagement.lifetime.badges = 1;
   await mount();
+  const shelf = document.querySelector('.dashboard-greeting a[href="/student/profile#badges"]');
+  assert.ok(shelf, 'Level and badges sit beside the greeting and open the profile collection');
+  // Classic awards from the fixture's verified metrics: 11 solved, 1 hard, best streak 9.
+  assert.match(shelf.getAttribute('aria-label'), /Level 2, Builder\. 4 of 10 badges earned\. Next: /);
+  assert.match(shelf.textContent, /Builder/);
+  assert.match(shelf.textContent, /4\/10/);
   assert.equal(section('Level & badges'), undefined);
-  assert.doesNotMatch(text(), /Collected editions|Level & badges|Earned badges|badges? collected/);
+  assert.doesNotMatch(text(), /Collected editions|Level & badges/, 'Editions and history stay on the profile');
   assert.match(section('Your challenges').textContent, /Weekly momentum/, 'Actionable goals remain on the dashboard');
+});
+
+test('adaptive badges on the shelf are the server’s earned set, newest first, with the level’s progress', async () => {
+  engagement = { ...engagementFixture(), version: 2, enabled: true, domains: ['coding'], periods: [],
+    daily: { rewardPoints: 20, goals: [] },
+    level: { level: 3, title: 'Consistent Performer', totalLevels: 7, progress: 40, next: { title: 'Skill Champion' } },
+    awards: { earnedCount: 2, nextAward: { id: 'locked', title: 'Hard Hitter', category: 'coding', value: 0, target: 1 }, awards: [
+      { id: 'older', title: 'First Steps', category: 'coding', rarity: 'Common', earned: true, earnedAt: iso(1) },
+      { id: 'newer', title: 'Week Warrior', category: 'momentum', rarity: 'Rare', earned: true, earnedAt: iso(8) },
+      { id: 'locked', title: 'Hard Hitter', category: 'coding', earned: false },
+    ] } };
+  await mount();
+  const shelf = document.querySelector('.dashboard-greeting a[href="/student/profile#badges"]');
+  assert.match(shelf.getAttribute('aria-label'), /Level 3, Consistent Performer\. 2 of 3 badges earned/);
+  assert.deepEqual([...shelf.querySelectorAll('[title]')].map((node) => node.getAttribute('title')).filter((title) => !title.includes('%')),
+    ['Week Warrior', 'First Steps'], 'Newest earned badge leads; locked ones are not shown as earned');
+  assert.ok(shelf.querySelector('[title="40% to Skill Champion"]'), 'Real level progress is shown');
+});
+
+test('a student with no badges sees the next one to earn instead of an empty shelf', async () => {
+  dashboard.ranking.badgeMetrics = { solved: 0, hardSolved: 0, bestStreak: 0, activeDays: 0, languages: 0, assessments: 0, interviews: 0 };
+  await mount();
+  const shelf = document.querySelector('.dashboard-greeting a[href="/student/profile#badges"]');
+  assert.match(shelf.textContent, /0\/10/);
+  assert.match(shelf.textContent, /Next: First Accept/);
 });
 
 test('learning and practice discovery show only server-provided subjects and questions with working navigation', async () => {
@@ -432,6 +463,27 @@ test('the shared coding gauge previews difficulty totals on hover and keyboard f
   assert.equal(gauge().getAttribute('aria-label'), 'All problems: 11 solved out of 100');
 });
 
+test('the coding ring shows three difficulty arcs sized by catalogue and filled by real solves', async () => {
+  // A large catalogue with very few solves: the case that used to collapse into one stray dot.
+  await act(async () => root.render(h(MemoryRouter, null, h(CodingProgress, {
+    totalSolved: 4, easySolved: 4, totalProblems: 3863, totalsByDifficulty: { easy: 1500, medium: 1900, hard: 463 },
+  }))));
+  const progress = section('Coding progress');
+  const arcs = Object.fromEntries([...progress.querySelectorAll('svg [data-segment]')].map((node) => [node.getAttribute('data-segment'), node]));
+  assert.deepEqual(Object.keys(arcs), ['easy', 'medium', 'hard']);
+  assert.ok(arcs.easy.querySelector('[data-fill]'), 'Easy solves fill the Easy arc');
+  assert.equal(arcs.medium.querySelector('[data-fill]'), null, 'Unsolved difficulties show only their track');
+  assert.equal(arcs.hard.querySelector('[data-fill]'), null);
+  const length = (node) => Number(node.querySelector('[data-track]').getAttribute('stroke-dasharray').split(' ')[0]);
+  assert.ok(length(arcs.medium) > length(arcs.easy) && length(arcs.easy) > length(arcs.hard), 'Arcs follow catalogue size');
+  assert.ok(length(arcs.hard) > 20, 'A small difficulty keeps a readable minimum arc');
+
+  const hard = progress.querySelector('button[aria-label^="Hard:"]');
+  await act(async () => hard.click());
+  assert.equal(arcs.hard.getAttribute('opacity'), '1');
+  assert.equal(arcs.easy.getAttribute('opacity'), '0.28', 'Selecting a difficulty highlights its arc');
+});
+
 test('progress stays visibly loading and difficulty selectors are disabled until the personal request completes', async () => {
   let resolveRequest;
   const pending = new Promise((resolve) => { resolveRequest = resolve; });
@@ -456,7 +508,8 @@ test('shared gauge distinguishes missing totals from zero and safely handles inv
     const progress = section('Coding progress');
     assert.ok(progress.querySelector(`[role="img"][aria-label="${expected}"]`));
     assert.doesNotMatch(progress.textContent, /NaN|Infinity|∞/);
-    assert.equal(progress.querySelectorAll('svg circle[stroke]').length, 0, 'Unknown or zero totals cannot show a fabricated filled arc');
+    assert.equal(progress.querySelectorAll('svg [data-fill]').length, 0, 'Unknown or zero totals cannot show a fabricated filled arc');
+    assert.equal(progress.querySelectorAll('svg [data-track]').length, 3, 'All three difficulty arcs stay visible as tracks');
   }
 });
 

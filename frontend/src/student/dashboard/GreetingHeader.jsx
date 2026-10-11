@@ -32,17 +32,22 @@ function NameUnderline() {
   </svg>;
 }
 
-/** Greeting and one short line of context. Progress numbers live in the rail. */
-export default function GreetingHeader({ greeting, name, nudge, section, firstSession, canQuestions, canLearning, onRetry }) {
+/** Greeting and one short line of context, with the student's level and badges alongside. */
+export default function GreetingHeader({ greeting, name, nudge, section, firstSession, canQuestions, canLearning, onRetry, aside }) {
   return <header className="dashboard-greeting pt-1">
-    <h1 className="text-[28px] font-medium leading-[1.2] tracking-[-0.03em] text-slate-900 dark:text-zinc-50 sm:text-[34px]">
-      {greeting},{' '}
-      <span className="relative inline-block break-words">
-        <span className="font-bold text-sky-600 dark:text-sky-400">{name}</span>
-        <NameUnderline />
-      </span>
-    </h1>
-    {nudge && <p className="mt-4 max-w-xl text-[14.5px] leading-relaxed text-slate-500 dark:text-zinc-400">{nudge}</p>}
+    <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between lg:gap-8">
+      <div className="min-w-0">
+        <h1 className="text-[28px] font-medium leading-[1.2] tracking-[-0.03em] text-slate-900 dark:text-zinc-50 sm:text-[34px]">
+          {greeting},{' '}
+          <span className="relative inline-block break-words">
+            <span className="font-bold text-sky-600 dark:text-sky-400">{name}</span>
+            <NameUnderline />
+          </span>
+        </h1>
+        {nudge && <p className="mt-4 max-w-xl text-[14.5px] leading-relaxed text-slate-500 dark:text-zinc-400">{nudge}</p>}
+      </div>
+      {aside && <div className="shrink-0">{aside}</div>}
+    </div>
     {section.error && <Unavailable className="mt-5" message="Your progress could not be loaded." onRetry={onRetry} />}
     {firstSession && <StartGuide canQuestions={canQuestions} canLearning={canLearning} />}
   </header>;

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../utils/api';
 import socketService from '../../utils/socket';
+import { PROGRESS_TYPES } from '../../components/notificationKinds';
 
 const initialSection = () => ({ data: null, loading: true, error: false });
 const unwrap = (value, key) => Array.isArray(value) ? value : Array.isArray(value?.[key]) ? value[key] : [];
@@ -59,7 +60,8 @@ export default function useStudentDashboardData({ userId, canQuestions, canLearn
       ['announcement_update', loadAnnouncements],
       ['compiler-submission-updated', () => Promise.allSettled([loadDashboard(), loadEngagement()])],
       ['learning-updated', () => Promise.allSettled([loadDashboard(), loadEngagement()])],
-      ['new_notification', (notification) => { if (notification?.type === 'STREAK') void Promise.allSettled([loadDashboard(), loadEngagement()]); }],
+      // Challenge, badge and level notices can come from a refresh in another tab; resync XP and rank.
+      ['new_notification', (notification) => { if (PROGRESS_TYPES.has(notification?.type)) void Promise.allSettled([loadDashboard(), loadEngagement()]); }],
     ];
     updates.forEach(([event, handler]) => socketService.on(event, handler));
     const onFocus = () => { if (Date.now() - refreshedAt.current > 30000) void loadAll(); };

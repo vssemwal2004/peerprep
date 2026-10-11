@@ -104,6 +104,21 @@
     to { opacity: 1; transform: none; }
   }
 
+  /* Notification bell: one short swing when something new arrives. */
+  .bell-ring {
+    transform-origin: 50% 2px;
+    animation: bell-ring 1.1s ease-in-out;
+  }
+
+  @keyframes bell-ring {
+    0%, 100% { transform: rotate(0); }
+    12% { transform: rotate(16deg); }
+    28% { transform: rotate(-13deg); }
+    44% { transform: rotate(9deg); }
+    60% { transform: rotate(-6deg); }
+    76% { transform: rotate(3deg); }
+  }
+
   /* Streak mark: a slow, uneven flicker anchored at the flame's base. */
   .streak-flicker {
     transform-box: fill-box;

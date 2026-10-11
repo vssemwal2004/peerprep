@@ -39,6 +39,7 @@ const FeedbackForm = lazy(() => import("./student/FeedbackForm"));
 const StudentLearning = lazy(() => import("./student/StudentLearning"));
 const LearningDetail = lazy(() => import("./student/LearningDetail"));
 const StudentProfile = lazy(() => import("./student/StudentProfile"));
+const StudentChallenges = lazy(() => import("./student/StudentChallenges"));
 const EngagementSettings = lazy(() => import('./admin/EngagementSettings'));
 const HelpAndSupport = lazy(() => import("./student/HelpAndSupport"));
 const ProblemsPage = lazy(() => import("./student/ProblemsPage"));
@@ -313,7 +314,7 @@ function AppContent() {
     && !isFeedbackForm
     && !isAssessmentAttempt
     && !isProblemSolver;
-  const showStudentHeader = isStudentShell && /^\/student\/(dashboard|profile)\/?$/.test(location.pathname);
+  const showStudentHeader = isStudentShell && /^\/student\/(dashboard|profile|challenges)\/?$/.test(location.pathname);
   const isLoginPage = isMain || isStudentLogin || isResetPassword;
   return (
     <div
@@ -368,6 +369,7 @@ function AppContent() {
         {/* Student Routes - Protected */}
         <Route path="/student/change-password" element={<StudentProtectedRoute><ChangePassword /></StudentProtectedRoute>} />
         <Route path="/student/profile" element={<StudentProtectedRoute><StudentProfile /></StudentProtectedRoute>} />
+        <Route path="/student/challenges" element={<StudentProtectedRoute><StudentChallenges /></StudentProtectedRoute>} />
         <Route path="/student/resume" element={<StudentProtectedRoute><StudentResume /></StudentProtectedRoute>} />
         <Route path="/student/dashboard" element={<StudentProtectedRoute><StudentDashboard /></StudentProtectedRoute>} />
         <Route path="/student/interview" element={<StudentProtectedRoute><StudentInterview /></StudentProtectedRoute>} />

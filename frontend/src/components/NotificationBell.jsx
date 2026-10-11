@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { isProgressNotification } from './notificationKinds';
 import { Bell } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../utils/api';
@@ -143,16 +144,36 @@ function NotificationBell({ buttonClassName = '' }) {
     socketService.emit('register', user._id);
   }, [user?._id]);
 
+  // The same notification can arrive from both the socket push and a refetch; count it once.
+  const knownIds = useRef(new Set());
+  useEffect(() => {
+    knownIds.current = new Set(notifications.map((n) => String(n._id)));
+  }, [notifications]);
+
+  const [ringing, setRinging] = useState(false);
+  useEffect(() => {
+    if (!ringing) return undefined;
+    const timer = setTimeout(() => setRinging(false), 1200);
+    return () => clearTimeout(timer);
+  }, [ringing]);
+
   useEffect(() => {
     const handleNewNotification = (notif) => {
+      const id = String(notif?._id || '');
+      if (!id || knownIds.current.has(id)) return;
+      knownIds.current.add(id);
       setNotifications((prev) => [notif, ...prev]);
       setServerUnreadCount((prev) => prev + 1);
+      setRinging(true);
     };
     socketService.on('new_notification', handleNewNotification);
     return () => {
       socketService.off('new_notification', handleNewNotification);
     };
   }, []);
+
+  const latestUnread = mergedSortedNotifications.find((n) => !n.isRead);
+  const progressPending = isProgressNotification(latestUnread);
 
   useEffect(() => {
     const handleAnnouncementUpdate = () => {
@@ -236,9 +257,10 @@ function NotificationBell({ buttonClassName = '' }) {
         aria-expanded={isOpen}
         aria-controls="notification-panel"
       >
-        <Bell className="h-4 w-4" />
+        <Bell className={`h-4 w-4 ${ringing ? 'bell-ring' : ''}`} />
         {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full bg-red-500 text-white text-[10px] font-semibold flex items-center justify-center px-1">
+          <span className={`absolute -top-1 -right-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-semibold text-white ring-2 ring-white dark:ring-slate-900 ${progressPending ? 'bg-gradient-to-br from-amber-400 to-orange-500' : 'bg-red-500'}`}
+            title={progressPending ? 'New progress update' : undefined}>
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}

@@ -1,0 +1,34 @@
+.challenge-celebration { --celebrate: #0284c7; position: fixed; inset: 0; width: min(440px, calc(100% - 32px)); max-width: none; max-height: calc(100dvh - 32px); margin: auto; border: 0; padding: 0; background: transparent; color: #0f172a; overflow: auto; border-radius: 28px; box-shadow: 0 30px 100px #02061740; }
+.challenge-celebration--weekly { --celebrate: #7c3aed; }
+.challenge-celebration--monthly { --celebrate: #b45309; }
+.challenge-celebration::backdrop { background: #0f172a66; backdrop-filter: blur(6px); }
+.challenge-celebration__card { position: relative; overflow: hidden; background: #fff; border: 1px solid #e2e8f0; border-radius: inherit; animation: challenge-popup-in 260ms ease-out both; }
+.challenge-celebration__close { position: absolute; z-index: 2; right: 14px; top: 14px; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; color: #64748b; background: #ffffffb3; }
+.challenge-celebration__close:hover { background: #e2e8f0; }
+.challenge-celebration__scene { position: relative; height: 175px; color: var(--celebrate); }
+.challenge-celebration__wave { position: absolute; inset: 0; width: 100%; height: 100%; }
+.challenge-celebration__emblem { position: absolute; left: calc(50% - 56px); top: 40px; width: 112px; height: 112px; animation: challenge-emblem-in 500ms cubic-bezier(.2,.8,.2,1.2) both; }
+.challenge-celebration__popper { position: absolute; top: 103px; color: var(--celebrate); }
+.challenge-celebration__popper--left { left: 44px; transform: rotate(-15deg); }
+.challenge-celebration__popper--right { right: 44px; transform: scaleX(-1) rotate(-15deg); }
+.challenge-celebration__confetti { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.challenge-celebration__confetti span { position: absolute; left: 50%; top: 115px; width: 7px; height: 5px; animation: challenge-confetti 1700ms var(--delay) ease-out both; }
+.challenge-celebration__body { padding: 0 28px 25px; text-align: center; }
+.challenge-celebration__eyebrow { color: var(--celebrate); text-transform: uppercase; letter-spacing: .13em; font-size: 10px; font-weight: 750; }
+.challenge-celebration__body h2 { margin: 10px 0 7px; font-size: 27px; line-height: 1.2; font-weight: 750; letter-spacing: -.04em; }
+.challenge-celebration__body > p:not(.challenge-celebration__eyebrow) { color: #64748b; font-size: 13px; }
+.challenge-celebration__reward { display: inline-flex; margin-top: 18px; padding: 7px 15px; border-radius: 50px; background: #f1f5f9; color: var(--celebrate); font-size: 12px; font-weight: 700; }
+.challenge-celebration__action { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; margin: 22px 0 12px; padding: 12px 16px; border-radius: 13px; background: var(--celebrate); color: white; font-size: 13px; font-weight: 650; }
+.challenge-celebration__body > p.challenge-celebration__note { font-size: 10px; }
+.challenge-celebration :is(button,a):focus-visible { outline: 3px solid #38bdf8; outline-offset: 3px; }
+.dark .challenge-celebration { color: #f4f4f5; --celebrate: #38bdf8; }
+.dark .challenge-celebration--weekly { --celebrate: #a78bfa; }
+.dark .challenge-celebration--monthly { --celebrate: #fbbf24; }
+.dark .challenge-celebration__card { background: #242424; border-color: #3f3f46; }
+.dark .challenge-celebration__close, .dark .challenge-celebration__reward { background: #303034; color: #d4d4d8; }
+.dark .challenge-celebration__body > p:not(.challenge-celebration__eyebrow) { color: #a1a1aa; }
+.dark .challenge-celebration__action { color: #18181b; }
+@keyframes challenge-popup-in { from { opacity: 0; transform: translateY(12px) scale(.95); } to { opacity: 1; transform: none; } }
+@keyframes challenge-emblem-in { from { opacity: 0; transform: scale(.7) rotate(-15deg); } to { opacity: 1; transform: none; } }
+@keyframes challenge-confetti { 0% { opacity: 0; transform: translate(var(--origin), 20px); } 12% { opacity: 1; } 45% { opacity: 1; transform: translate(var(--dx), var(--dy)) rotate(var(--turn)); } 100% { opacity: 0; transform: translate(var(--dx), 100px) rotate(calc(var(--turn) + 120deg)); } }
+@media (prefers-reduced-motion: reduce) { .challenge-celebration__card, .challenge-celebration__emblem { animation: none; } .challenge-celebration__confetti { display: none; } }
