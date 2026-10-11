@@ -283,14 +283,19 @@ export function summarizeExecutionResult(result) {
 
   switch (result.status) {
     case 'Accepted':
+    case 'AC':
       return 'All test cases passed.';
     case 'Wrong Answer':
+    case 'WA':
       return 'One of the judge test cases did not match the expected output.';
     case 'Compilation Error':
+    case 'CE':
       return 'Compilation failed before execution could start.';
     case 'Runtime Error':
+    case 'RE':
       return 'The program crashed while the compiler service was executing it.';
     case 'Time Limit Exceeded':
+    case 'TLE':
       return 'The program exceeded the allowed execution time.';
     default:
       return 'Execution finished with judge feedback.';

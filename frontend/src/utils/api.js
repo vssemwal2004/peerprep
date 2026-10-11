@@ -377,6 +377,8 @@ export const api = {
   platformStudents: (id, page = 1, search = '') => request(`/platform/admin/universities/${encodeURIComponent(id)}/students?page=${page}&search=${encodeURIComponent(search)}`, { skipCache: true }),
   platformStudent: (id, studentId) => request(`/platform/admin/universities/${encodeURIComponent(id)}/students/${encodeURIComponent(studentId)}`, { skipCache: true }),
   listPracticeQuestions: (params = {}) => request(`/student/questions?${new URLSearchParams(params).toString()}`, { skipCache: true }),
+  questionInterviewOptions: () => request('/student/questions/interview-options', { skipCache: true }),
+  reportQuestionInterview: (source, id, body) => request(`/student/questions/${encodeURIComponent(source)}/${encodeURIComponent(id)}/interview-reports`, { method: 'POST', body, skipCache: true }),
   getPracticeQuestion: (source, id) => request(`/student/questions/${encodeURIComponent(source)}/${encodeURIComponent(id)}`, { skipCache: true }),
   submitPracticeAnswer: (source, id, answer, language = '') => request(`/student/questions/${encodeURIComponent(source)}/${encodeURIComponent(id)}/attempts`, { method: 'POST', body: { answer, language }, skipCache: true }),
   getSharedStudentProblem: (id) => request(`/student/questions/shared/${encodeURIComponent(id)}/problem`, { skipCache: true }),

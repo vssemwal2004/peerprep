@@ -20,6 +20,7 @@ import { useToast } from '../components/CustomToast';
 import ProblemAssetImages from '../components/ProblemAssetImages';
 import CodeEditor from './CodeEditor';
 import DailyCodingChallenge from './DailyCodingChallenge';
+import InterviewQuestionPrompt from './InterviewQuestionPrompt';
 import AnviApproach, { ANVI_ASK_EVENT, AnviMark } from '../components/AnviApproach';
 import { DifficultyBadge, EmptyState, LoadingPanel } from '../admin/compiler/CompilerUi';
 import {
@@ -940,9 +941,9 @@ function AcceptancePanel({ submissions, selectedId, onBack }) {
         </div>
       )}
 
-      {isCompileError && (compileText || stderrText) && (
+      {isCompileError && (
         <div className="rounded-[24px] bg-rose-50 px-5 py-4 text-sm text-rose-800 shadow-[0_12px_24px_rgba(244,63,94,0.06)] dark:bg-rose-900/10 dark:text-rose-200">
-          <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">{compileText || stderrText}</pre>
+          <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">{compileText || stderrText || 'Compiler details were not saved for this earlier submission.'}</pre>
         </div>
       )}
 
@@ -1014,6 +1015,7 @@ export default function ProblemSolver() {
   const [selectedSubmissionId, setSelectedSubmissionId] = useState(null);
   const [isRunning, setIsRunning] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showInterviewPrompt, setShowInterviewPrompt] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   useEffect(() => {
@@ -1093,6 +1095,7 @@ export default function ProblemSolver() {
     }
 
     syncSubmissionResult(submission);
+    if (['AC', 'ACCEPTED'].includes(String(submission.status || '').toUpperCase())) setShowInterviewPrompt(true);
     stopSubmissionPolling();
     void loadSubmissions({ silent: true, selectLatest: true }).catch(() => {
       // The submission row is already finalized; the UI can still use the current snapshot.
@@ -1467,10 +1470,20 @@ export default function ProblemSolver() {
       void api.submitSharedStudentProblem(problem._id, { language, sourceCode: activeCode })
         .then(async (response) => {
           if (!isMountedRef.current) return;
-          setResult({ mode: 'submit', status: response.result === 'correct' ? 'Accepted'
-            : response.result === 'incorrect' ? 'Wrong Answer' : 'Submitted', message: response.feedback || '' });
+          setResult({ mode: 'submit', status: response.result === 'correct' ? 'AC'
+            : response.result === 'incorrect' ? response.failureStatus || 'WA' : 'PENDING',
+          message: response.feedback || '', compileOutput: response.compileOutput || '',
+          total: response.totalTestCases || 0, passed: response.passedTestCases || 0 });
+          setProblem((previous) => previous ? { ...previous,
+            studentStatus: response.result === 'correct' ? 'Solved' : previous.studentStatus,
+            totalSubmissions: response.totalSubmissions ?? previous.totalSubmissions,
+            acceptedSubmissions: response.acceptedSubmissions ?? previous.acceptedSubmissions,
+            acceptanceRate: response.acceptanceRate ?? previous.acceptanceRate,
+          } : previous);
+          if (response.result === 'correct') setShowInterviewPrompt(true);
           setActiveConsoleTab('result');
           await loadSubmissions({ silent: true, selectLatest: true });
+          if (isMountedRef.current) setActiveLeftTab('acceptance');
           toast.success(response.feedback || 'Submission saved.');
         }).catch((error) => {
           if (isMountedRef.current) { setResult(createTerminalExecutionResult(error, { mode: 'submit', language, sourceCode: activeCode })); setActiveConsoleTab('result'); }
@@ -1914,6 +1927,9 @@ export default function ProblemSolver() {
 
         {/* Intentionally no below-fold cards here to keep the workspace fixed-height. */}
       </div>
+      {showInterviewPrompt && problem && <InterviewQuestionPrompt source={isSharedProblem ? 'shared' : 'problem'}
+        questionId={problem._id} knownCompanies={problem.companyTags || []}
+        onClose={() => setShowInterviewPrompt(false)} />}
     </div>
   );
 }

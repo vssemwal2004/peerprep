@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../utils/api';
+import InterviewQuestionPrompt from './InterviewQuestionPrompt';
 
 export default function QuestionPracticeDialog({ question, onClose, onAnswered }) {
   const [detail, setDetail] = useState(null);
@@ -10,6 +11,7 @@ export default function QuestionPracticeDialog({ question, onClose, onAnswered }
   const [feedback, setFeedback] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [showInterviewPrompt, setShowInterviewPrompt] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -39,6 +41,7 @@ export default function QuestionPracticeDialog({ question, onClose, onAnswered }
         detail.subquestions?.length ? subAnswers : detail.questionType === 'mcq' ? answer.split(',').filter(Boolean).map(Number) : answer, language);
       setResult(response.result);
       setFeedback(response.feedback || '');
+      if (response.result === 'correct') setShowInterviewPrompt(true);
       onAnswered?.();
     } catch (failure) { setError(failure.message || 'Could not submit answer.'); }
     finally { setBusy(false); }
@@ -47,7 +50,7 @@ export default function QuestionPracticeDialog({ question, onClose, onAnswered }
     ? Object.keys(subAnswers).length === detail.subquestions.length
     : Boolean(answer.trim());
 
-  return <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/60 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+  return <><div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/60 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <form onSubmit={submit} role="dialog" aria-modal="true" aria-label="Solve question" className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 text-zinc-900 dark:bg-[#282828] dark:text-white">
       <div className="flex items-center justify-between gap-3"><span className="text-xs font-semibold uppercase text-zinc-500">{detail?.questionType?.replace('_', ' ') || 'Question'}</span><button type="button" onClick={onClose} aria-label="Close question">✕</button></div>
       {!detail && !error && <p className="mt-4 text-sm text-zinc-500">Loading question…</p>}
@@ -64,5 +67,7 @@ export default function QuestionPracticeDialog({ question, onClose, onAnswered }
       {result && <p className={`mt-4 text-sm font-semibold ${result === 'correct' ? 'text-emerald-600' : result === 'incorrect' ? 'text-rose-600' : 'text-sky-600'}`}>{feedback || (result === 'submitted' ? 'Answer submitted' : result === 'correct' ? 'Correct' : 'Try again')}</p>}
       {detail && <div className="mt-5 flex justify-end"><button type="submit" disabled={busy || !ready} className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">{busy ? 'Submitting…' : 'Submit answer'}</button></div>}
     </form>
-  </div>;
+  </div>{showInterviewPrompt && <InterviewQuestionPrompt source={question.source} questionId={question._id}
+    knownCompanies={detail?.companyTags || []}
+    onClose={() => setShowInterviewPrompt(false)} onSaved={onAnswered} />}</>;
 }

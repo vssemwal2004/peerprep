@@ -16,6 +16,9 @@ export function validateDeploymentConfig() {
     if (centralUrl.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(centralUrl.hostname)) throw new Error('Insecure central URLs are allowed only on localhost');
     if (!process.env.PEERPREP_SHARED_API_KEY || process.env.PEERPREP_SHARED_API_KEY.length < 32) throw new Error('PEERPREP_SHARED_API_KEY must contain at least 32 characters');
     if (!process.env.MONGODB_URI || process.env.MONGODB_URI === 'memory') throw new Error('University deployments require their own persistent MONGODB_URI');
+    if (process.env.NODE_ENV === 'production' && ![
+      process.env.JUDGE0_URL, process.env.JUDGE0_BASE_URLS, process.env.JUDGE0_BASE_URL,
+    ].some((value) => String(value || '').trim())) throw new Error('University deployments require their own JUDGE0_URL');
   }
   if (role === 'control' && (!process.env.MONGODB_URI || process.env.MONGODB_URI === 'memory')) throw new Error('Control plane requires a persistent MONGODB_URI');
 }

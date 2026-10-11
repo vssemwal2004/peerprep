@@ -8,13 +8,15 @@ import { recordDailyChallengeCompletion } from '../services/codingStreakService.
 import Problem from '../models/Problem.js';
 import Submission from '../models/Submission.js';
 import { loadHiddenExecutionTestCases } from '../controllers/problemController.js';
-import { runJudge0, KEY_TO_LANGUAGE_ID, normalizeComparableOutput } from '../services/executionService.js';
+import { runJudge0, buildJudge0Options, KEY_TO_LANGUAGE_ID } from '../services/executionService.js';
+import { evaluateProblemSubmissionResult } from '../services/problemSubmissionEvaluationService.js';
 import { prepareFunctionSourceForExecution } from '../services/functionProblemAdapterService.js';
 import { compilerExecutionLimiter } from '../middleware/rateLimiter.js';
-import { sharedQuestions } from './sharedContent.js';
+import { sharedQuestions, sharedJudgeData } from './sharedContent.js';
 import { isUniversity } from './deployment.js';
 import { universityPolicy, controlRequest } from './client.js';
 import { serializeProblem } from '../controllers/compilerHelpers.js';
+import { interviewReportOptions, interviewReportSummaries, reporterKey, saveInterviewReport } from './interviewQuestionReports.js';
 
 const router = Router();
 const published = { status: 'published', visibility: { $ne: 'private' }, sourceType: { $ne: 'assessment' } };
@@ -70,6 +72,41 @@ async function visibleQuestions() {
   ] };
 }
 
+const scopeFor = (source) => isUniversity() && source === 'university'
+  ? `university:${process.env.PEERPREP_UNIVERSITY_ID}` : 'control';
+
+async function reportSummaries() {
+  if (isUniversity()) return (await controlRequest('question-interviews/summaries')).summaries || [];
+  return interviewReportSummaries(['control']);
+}
+
+router.get('/interview-options', asyncRoute(async (req, res) => {
+  res.json(isUniversity() ? await controlRequest('question-interviews/options') : await interviewReportOptions());
+}));
+
+router.post('/:source/:id/interview-reports', asyncRoute(async (req, res) => {
+  const source = req.params.source;
+  if (!mongoose.isValidObjectId(req.params.id)) throw new HttpError(400, 'Invalid question');
+  const question = source === 'problem'
+    ? await QuestionLibrary.findOne({ ...published, sourceType: 'compiler', sourceProblemId: req.params.id }).lean()
+    : await findVisible(source, req.params.id);
+  if (!question) throw new HttpError(404, 'Question not found');
+  const practiceSource = source === 'shared' ? 'shared' : 'university';
+  const [practiceSolved, codingSolved] = await Promise.all([
+    QuestionPracticeAttempt.exists({ studentId: req.user._id, source: practiceSource, questionId: question._id, result: 'correct' }),
+    source !== 'shared' && question.sourceProblemId ? Submission.exists({ user: req.user._id,
+      problem: question.sourceProblemId, mode: 'submit', status: 'AC' }) : null,
+  ]);
+  if (!practiceSolved && !codingSolved) throw new HttpError(403, 'Solve this question before reporting an interview');
+  const scopeKey = scopeFor(practiceSource);
+  const reporter = reporterKey(isUniversity() ? process.env.PEERPREP_UNIVERSITY_ID : 'control', req.user._id);
+  const payload = { ...req.body, scopeKey, questionId: String(question._id), reporterKey: reporter };
+  const saved = isUniversity()
+    ? await controlRequest('question-interviews', { method: 'POST', body: payload })
+    : await saveInterviewReport({ scopeKey, questionId: question._id, reporter, body: req.body });
+  res.status(201).json(saved);
+}));
+
 export function gradePracticeAnswer(question, answer) {
   const data = question.questionData || {};
   if (data.libraryItemKind === 'passage_set' && Array.isArray(data.questions)) {
@@ -105,9 +142,20 @@ router.get('/', asyncRoute(async (req, res) => {
   const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 20));
   const visible = await visibleQuestions();
   const available = visible.questions;
-  const all = available.filter(({ question }) => {
+  const summariesResult = await Promise.allSettled([reportSummaries()]);
+  const summaries = summariesResult[0].status === 'fulfilled' ? summariesResult[0].value : [];
+  const reportMap = new Map();
+  for (const row of summaries) {
+    const reportKey = `${row.scopeKey}:${row.questionId}`;
+    if (!reportMap.has(reportKey)) reportMap.set(reportKey, []);
+    reportMap.get(reportKey).push({ company: row.company, companyKey: row.companyKey,
+      latestDate: row.latestDate, reports: row.reports });
+  }
+  const reportsFor = ({ question, source }) => reportMap.get(`${scopeFor(source)}:${question._id}`) || [];
+  const all = available.filter(({ question, source }) => {
     const questionTags = (question.tags || []).map((value) => String(value).toLowerCase());
-    const questionCompanies = (question.keywords || question.questionData?.problemDataSnapshot?.companyTags || []).map((value) => String(value).toLowerCase());
+    const questionCompanies = [...(question.keywords || question.questionData?.problemDataSnapshot?.companyTags || []),
+      ...reportsFor({ question, source }).map((row) => row.company)].map((value) => String(value).toLowerCase());
     return (!type || question.questionType === type)
       && (!difficulty || String(question.difficulty || '').toLowerCase() === difficulty)
       && (!tags.length || tags.some((value) => questionTags.includes(value)))
@@ -118,6 +166,12 @@ router.get('/', asyncRoute(async (req, res) => {
   all.sort((left, right) => {
     const a = left.question;
     const b = right.question;
+    if (sortBy === 'latestInterviewDate') {
+      const latest = (item) => Math.max(0, ...reportsFor(item)
+        .filter((row) => !companies.length || companies.includes(row.companyKey))
+        .map((row) => new Date(row.latestDate).getTime()));
+      return latest(right) - latest(left) || (Number(a.displayOrder) || 2147483647) - (Number(b.displayOrder) || 2147483647);
+    }
     if (sortBy === 'title') return sortOrder * String(a.questionText || '').localeCompare(String(b.questionText || ''));
     if (sortBy === 'difficulty') {
       const rank = { easy: 1, medium: 2, hard: 3 };
@@ -139,21 +193,33 @@ router.get('/', asyncRoute(async (req, res) => {
   }) : [];
   const solvedProblems = new Set(solvedProblemIds.map(String));
   const latest = new Map();
+  const solvedPractice = new Set();
   attempts.forEach((attempt) => {
     const key = `${attempt.source}:${attempt.questionId}`;
+    if (attempt.result === 'correct') solvedPractice.add(key);
     if (!latest.has(key)) latest.set(key, attempt.result);
   });
-  res.json({ warning: visible.warning, questions: selected.map(({ question, source }) => ({ ...publicShape(question, source),
-    result: solvedProblems.has(String(question.sourceProblemId)) ? 'correct' : latest.get(`${source}:${question._id}`) || null })),
+  res.json({ warning: visible.warning || (summariesResult[0].status === 'rejected' ? 'Interview history is temporarily unavailable.' : ''), questions: selected.map(({ question, source }) => ({ ...publicShape(question, source),
+    reportedCompanies: reportsFor({ question, source }),
+    result: solvedProblems.has(String(question.sourceProblemId)) || solvedPractice.has(`${source}:${question._id}`)
+      ? 'correct' : latest.get(`${source}:${question._id}`) || null })),
     pagination: { page, limit, total: all.length, pages: Math.max(1, Math.ceil(all.length / limit)) },
     filters: { totalProblems: available.length,
       availableTags: [...new Set(available.flatMap(({ question }) => question.tags || []))].sort(),
       tagCounts: Object.entries(available.flatMap(({ question }) => question.tags || []).reduce((acc, value) => {
         acc[value] = (acc[value] || 0) + 1; return acc;
       }, {})).map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count),
-      companyCounts: Object.entries(available.flatMap(({ question }) => question.keywords || question.questionData?.problemDataSnapshot?.companyTags || []).reduce((acc, value) => {
-        acc[value] = (acc[value] || 0) + 1; return acc;
-      }, {})).map(([company, count]) => ({ company, count })).sort((a, b) => b.count - a.count),
+      companyCounts: Object.values(available.reduce((acc, item) => {
+        const names = [...(item.question.keywords || item.question.questionData?.problemDataSnapshot?.companyTags || []),
+          ...reportsFor(item).map((row) => row.company)];
+        for (const name of new Map(names.map((value) => [String(value).trim().toLowerCase(), value])).values()) {
+          const companyKey = String(name).trim().toLowerCase();
+          if (!companyKey) continue;
+          if (!acc[companyKey]) acc[companyKey] = { company: String(name), count: 0 };
+          acc[companyKey].count += 1;
+        }
+        return acc;
+      }, {})).sort((a, b) => b.count - a.count),
     } });
 }));
 
@@ -167,8 +233,16 @@ router.get('/shared/:id/problem', asyncRoute(async (req, res) => {
   if (question.questionType !== 'coding') throw new HttpError(404, 'Coding problem not found');
   const snapshot = question.questionData?.problemDataSnapshot || question.questionData?.coding?.problemData;
   if (!snapshot) throw new HttpError(404, 'Coding problem details unavailable');
+  const [totalSubmissions, acceptedSubmissions, solved] = await Promise.all([
+    QuestionPracticeAttempt.countDocuments({ source: 'shared', questionId: question._id, questionType: 'coding' }),
+    QuestionPracticeAttempt.countDocuments({ source: 'shared', questionId: question._id, questionType: 'coding', result: 'correct' }),
+    QuestionPracticeAttempt.exists({ studentId: req.user._id, source: 'shared', questionId: question._id,
+      questionType: 'coding', result: 'correct' }),
+  ]);
   res.json({ ...serializeProblem({ ...snapshot, _id: question._id, status: 'published', visibility: 'public' },
-    { sampleTestCases: snapshot.sampleTestCases || [] }), platformShared: true });
+    { sampleTestCases: snapshot.sampleTestCases || [] }), platformShared: true,
+  studentStatus: solved ? 'Solved' : 'Unsolved', totalSubmissions, acceptedSubmissions,
+  acceptanceRate: totalSubmissions ? Number((acceptedSubmissions * 100 / totalSubmissions).toFixed(1)) : 0 });
 }));
 
 router.get('/shared/:id/submissions', asyncRoute(async (req, res) => {
@@ -176,38 +250,75 @@ router.get('/shared/:id/submissions', asyncRoute(async (req, res) => {
   const attempts = await QuestionPracticeAttempt.find({ studentId: req.user._id, source: 'shared', questionId: req.params.id, questionType: 'coding' })
     .sort({ createdAt: -1 }).limit(50).lean();
   res.json({ submissions: attempts.map((item) => ({ _id: item._id, problemId: item.questionId,
-    mode: 'submit', status: item.result === 'correct' ? 'AC' : item.result === 'incorrect' ? 'WA' : 'PENDING',
+    mode: 'submit', status: item.result === 'correct' ? 'AC' : item.result === 'incorrect' ? item.failureStatus || 'WA' : 'PENDING',
     language: item.language, sourceCode: item.answer, createdAt: item.createdAt,
-    totalTestCases: 0, passedTestCases: item.result === 'correct' ? 1 : 0 })) });
+    totalTestCases: item.totalTestCases || 0, passedTestCases: item.passedTestCases || 0,
+    executionTimeMs: item.executionTimeMs || 0, memoryUsedKb: item.memoryUsedKb || 0,
+    testCaseResults: item.testCaseResults || [], compileOutput: item.compileOutput || '' })) });
 }));
 
 router.post('/shared/:id/run', compilerExecutionLimiter, asyncRoute(async (req, res) => {
   const question = await findVisible('shared', req.params.id);
   if (question.questionType !== 'coding') throw new HttpError(404, 'Coding problem not found');
-  const { problem } = await controlRequest(`questions/${encodeURIComponent(String(question._id))}/judge-data`);
+  const { problem } = await sharedJudgeData(question);
   const language = String(req.body?.language || '').toLowerCase();
   const sourceCode = String(req.body?.sourceCode || '');
   if (!sourceCode.trim() || sourceCode.length > 50000 || !KEY_TO_LANGUAGE_ID[language]
     || (problem.supportedLanguages?.length && !problem.supportedLanguages.includes(language))) throw new HttpError(400, 'Valid source code and language are required');
-  const input = String(req.body?.customInput || '').slice(0, 65536);
-  const result = await runJudge0(prepareFunctionSourceForExecution(problem, language, sourceCode, input),
-    KEY_TO_LANGUAGE_ID[language], input, { cpuTimeLimitSeconds: problem.timeLimitSeconds || 2,
-      memoryLimitKb: Number(problem.memoryLimitMb || 256) * 1024,
-      sqlSetupCode: [problem.sqlConfig?.schemaSql, problem.sqlConfig?.seedDataSql].filter(Boolean).join('\n') });
-  const sample = (question.questionData?.problemDataSnapshot?.sampleTestCases || []).find((item) => item.input === input);
-  res.json({ status: result.compile_output ? 'Compilation Error' : result.stderr ? 'Runtime Error'
-    : result.status?.id !== 3 ? result.status?.description || 'Run failed'
-      : sample && normalizeComparableOutput(result.stdout) !== normalizeComparableOutput(sample.output) ? 'Wrong Answer'
-        : sample ? 'Accepted' : 'Run completed',
-  output: result.stdout || '', stdout: result.stdout || '', stderr: result.stderr || '',
-  compileOutput: result.compile_output || '', input, language, sourceCode });
+  const samples = (question.questionData?.problemDataSnapshot?.sampleTestCases
+    || question.questionData?.coding?.problemData?.sampleTestCases || problem.sampleTestCases || []).slice(0, 12);
+  const cases = samples.length ? samples : [{ input: String(req.body?.customInput || '').slice(0, 65536) }];
+  const options = buildJudge0Options(problem);
+  const caseResults = [];
+  let totalTime = 0;
+  let peakMemory = 0;
+  for (const [index, sample] of cases.entries()) {
+    const input = String(sample.input || '');
+    const output = await runJudge0(prepareFunctionSourceForExecution(problem, language, sourceCode, input),
+      KEY_TO_LANGUAGE_ID[language], input, options);
+    const evaluation = samples.length
+      ? evaluateProblemSubmissionResult(problem, output, { input, output: sample.output || '' })
+      : null;
+    const status = evaluation?.internalStatus || (output.compile_output ? 'CE' : output.stderr ? 'RE'
+      : output.status?.id === 5 ? 'TLE' : output.status?.id === 3 ? 'AC' : 'RE');
+    const time = Number(output.time || 0);
+    const memory = Number(output.memory || 0);
+    totalTime += Number.isFinite(time) ? time : 0;
+    peakMemory = Math.max(peakMemory, Number.isFinite(memory) ? memory : 0);
+    caseResults.push({ id: `sample-${index + 1}`, label: `Case ${index + 1}`, status,
+      input, ...(samples.length ? { expectedOutput: String(sample.output || '') } : {}),
+      output: output.stdout || '', time, memory,
+      stderr: output.stderr || evaluation?.error || '', compileOutput: output.compile_output || '' });
+    if (status === 'CE') break;
+  }
+  const passed = caseResults.filter((item) => item.status === 'AC').length;
+  res.json({ mode: 'run', status: passed === caseResults.length ? 'Passed' : 'Failed',
+    passed, total: caseResults.length, time: totalTime, memory: peakMemory, caseResults });
 }));
+
+async function publicSampleCompileOutput(question, problem, language, answer) {
+  const sample = (question.questionData?.problemDataSnapshot?.sampleTestCases
+    || question.questionData?.coding?.problemData?.sampleTestCases || problem.sampleTestCases || [])[0];
+  if (!sample) return 'Compilation failed on a private test case. Run the visible examples to inspect your code.';
+  try {
+    const input = String(sample.input || '');
+    const output = await runJudge0(prepareFunctionSourceForExecution(problem, language, answer, input),
+      KEY_TO_LANGUAGE_ID[language], input, buildJudge0Options(problem));
+    const evaluation = evaluateProblemSubmissionResult(problem, output, sample);
+    if (evaluation.internalStatus === 'CE') {
+      return String(output.compile_output || output.message || evaluation.error || 'Compilation failed.').slice(0, 8192);
+    }
+  } catch {
+    // The original verdict is still valid when a diagnostic replay is unavailable.
+  }
+  return 'Compilation failed on a private test case. Run the visible examples to inspect your code.';
+}
 
 async function judgeCodingQuestion(question, source, answer, language) {
   const problemId = question.sourceProblemId || question.questionData?.problemId || question.questionData?.coding?.problemId;
   if (!mongoose.isValidObjectId(problemId)) return { result: 'submitted', feedback: 'Code saved. This question has no linked judge.' };
   const { problem, testCases } = source === 'shared'
-    ? await controlRequest(`questions/${encodeURIComponent(String(question._id))}/judge-data`)
+    ? await sharedJudgeData(question)
     : await (async () => {
       const localProblem = await Problem.findById(problemId).select('+executionHarnesses').lean();
       if (!localProblem) throw new HttpError(404, 'Linked coding problem not found');
@@ -216,21 +327,33 @@ async function judgeCodingQuestion(question, source, answer, language) {
   const languageId = KEY_TO_LANGUAGE_ID[language];
   if (!languageId || (problem.supportedLanguages?.length && !problem.supportedLanguages.includes(language))) throw new HttpError(400, 'Choose a supported language');
   if (!Array.isArray(testCases) || !testCases.length) throw new HttpError(503, 'Coding judge has no test cases');
-  for (const testCase of testCases) {
+  let passedTestCases = 0;
+  let executionTimeMs = 0;
+  let memoryUsedKb = 0;
+  const testCaseResults = [];
+  for (const [index, testCase] of testCases.entries()) {
     const output = await runJudge0(
       prepareFunctionSourceForExecution(problem, language, answer, testCase.input || ''),
-      languageId, testCase.input || '', {
-        cpuTimeLimitSeconds: Number(problem.timeLimitSeconds || 2),
-        memoryLimitKb: Math.trunc(Number(problem.memoryLimitMb || 256) * 1024),
-        sqlSetupCode: [problem.sqlConfig?.schemaSql, problem.sqlConfig?.seedDataSql].filter(Boolean).join('\n'),
-      },
+      languageId, testCase.input || '', buildJudge0Options(problem),
     );
-    if (output.compile_output || output.stderr || output.status?.id !== 3
-      || normalizeComparableOutput(output.stdout) !== normalizeComparableOutput(testCase.output)) {
-      return { result: 'incorrect', feedback: output.compile_output ? 'Compilation failed' : output.stderr ? 'Runtime error' : 'A test case failed' };
+    const caseTimeMs = Number(output.time || 0) * 1000;
+    const caseMemoryKb = Number(output.memory || 0);
+    if (Number.isFinite(caseTimeMs)) executionTimeMs += Math.max(0, caseTimeMs);
+    if (Number.isFinite(caseMemoryKb)) memoryUsedKb = Math.max(memoryUsedKb, caseMemoryKb);
+    const evaluation = evaluateProblemSubmissionResult(problem, output, testCase);
+    const failureStatus = evaluation.internalStatus === 'AC' ? null : evaluation.internalStatus;
+    testCaseResults.push({ index: index + 1, status: failureStatus || 'AC',
+      executionTimeMs: Number.isFinite(caseTimeMs) ? Math.max(0, caseTimeMs) : 0 });
+    if (failureStatus) {
+      return { result: 'incorrect', feedback: failureStatus === 'CE' ? 'Compilation failed'
+        : failureStatus === 'RE' ? 'Runtime error' : failureStatus === 'TLE' ? 'Time limit exceeded' : 'A test case failed',
+        totalTestCases: testCases.length, passedTestCases, executionTimeMs, memoryUsedKb, testCaseResults,
+        failureStatus, ...(failureStatus === 'CE' ? { compileOutput: await publicSampleCompileOutput(question, problem, language, answer) } : {}) };
     }
+    passedTestCases += 1;
   }
-  return { result: 'correct', feedback: 'All test cases passed' };
+  return { result: 'correct', feedback: 'All test cases passed', totalTestCases: testCases.length,
+    passedTestCases, executionTimeMs, memoryUsedKb, testCaseResults };
 }
 
 async function findVisible(source, id) {
@@ -262,9 +385,22 @@ router.post('/:source/:id/attempts', compilerExecutionLimiter, asyncRoute(async 
     ? await judgeCodingQuestion(question, req.params.source, answer, language)
     : { result: gradePracticeAnswer(question, answer) };
   await QuestionPracticeAttempt.create({ studentId: req.user._id, questionId: question._id,
-    source: req.params.source, questionType: question.questionType, answer, language, result: graded.result });
+    source: req.params.source, questionType: question.questionType, answer, language, result: graded.result,
+    totalTestCases: graded.totalTestCases || 0, passedTestCases: graded.passedTestCases || 0,
+    executionTimeMs: graded.executionTimeMs || 0, memoryUsedKb: graded.memoryUsedKb || 0,
+    failureStatus: graded.failureStatus, testCaseResults: graded.testCaseResults || [],
+    compileOutput: graded.compileOutput || '' });
   if (req.params.source === 'shared' && question.questionType === 'coding' && graded.result === 'correct') {
     void recordDailyChallengeCompletion({ userId: req.user._id, problemId: question._id, source: 'shared' }).catch((error) => console.warn('[Daily challenge] Shared reward sync failed:', error.message));
+  }
+  if (req.params.source === 'shared' && question.questionType === 'coding') {
+    const [totalSubmissions, acceptedSubmissions] = await Promise.all([
+      QuestionPracticeAttempt.countDocuments({ source: 'shared', questionId: question._id, questionType: 'coding' }),
+      QuestionPracticeAttempt.countDocuments({ source: 'shared', questionId: question._id, questionType: 'coding', result: 'correct' }),
+    ]);
+    res.status(201).json({ ...graded, totalSubmissions, acceptedSubmissions,
+      acceptanceRate: Number((acceptedSubmissions * 100 / totalSubmissions).toFixed(1)) });
+    return;
   }
   res.status(201).json(graded);
 }));

@@ -23,9 +23,22 @@ test('university student sees and answers shared questions; university admin can
   process.env.JWT_SECRET = 'test-secret-abcdefghijklmnopqrstuvwxyz-123456';
   const questionId = new mongoose.Types.ObjectId();
   let policyPermissions = { questions: true, assessments: true, learning: true, interviews: true };
+  const interviewReports = [];
   globalThis.fetch = (input, options) => {
     const url = String(input);
     if (!url.startsWith('https://control.example.test/')) return priorFetch(input, options);
+    if (url.endsWith('/question-interviews') && options?.method === 'POST') {
+      interviewReports.push(JSON.parse(options.body));
+      return Promise.resolve(new Response(JSON.stringify({ saved: true }), { status: 201,
+        headers: { 'Content-Type': 'application/json' } }));
+    }
+    if (url.endsWith('/question-interviews/summaries')) return Promise.resolve(new Response(JSON.stringify({ summaries: interviewReports.map((report) => ({
+      scopeKey: report.scopeKey, questionId: report.questionId, company: report.company,
+      companyKey: report.company.toLowerCase(), latestDate: report.interviewDate, reports: 1,
+    })) }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    if (url.endsWith('/question-interviews/options')) return Promise.resolve(new Response(JSON.stringify({
+      companies: ['Example Labs'], jobTitles: ['Software Engineer'],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     const body = url.endsWith('/policy')
       ? { permissions: policyPermissions }
       : { questions: [{ _id: questionId.toString(), sourceType: 'manual', questionType: 'mcq', questionText: 'Shared MCQ',
@@ -40,6 +53,7 @@ test('university student sees and answers shared questions; university admin can
     const { default: User } = await import('../src/models/User.js');
     const { default: QuestionLibrary } = await import('../src/models/QuestionLibrary.js');
     const { default: QuestionPracticeAttempt } = await import('../src/models/QuestionPracticeAttempt.js');
+    const { default: Submission } = await import('../src/models/Submission.js');
     const { signToken } = await import('../src/utils/jwt.js');
     const cookieFor = async (role, email) => {
       const user = await User.create({ role, email, name: role, passwordHash: 'unused' });
@@ -72,11 +86,55 @@ test('university student sees and answers shared questions; university admin can
     const saveQuestion = await priorFetch(`${url}/problem-lists/${practiceList._id}/problems/${questionId}`, { method: 'PATCH',
       headers: { Cookie: student.cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ included: true }) });
     assert.equal(saveQuestion.status, 200);
+    const earlyReport = await priorFetch(`${url}/student/questions/shared/${questionId}/interview-reports`, {
+      method: 'POST', headers: { Cookie: student.cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company: 'Example Labs', jobTitle: 'Software Engineer', interviewDate: '2025-01-15' }),
+    });
+    assert.equal(earlyReport.status, 403);
     const attempt = await priorFetch(`${url}/student/questions/shared/${questionId}/attempts`, {
       method: 'POST', headers: { Cookie: student.cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ answer: [1] }),
     });
     assert.equal(attempt.status, 201);
     assert.equal(await QuestionPracticeAttempt.countDocuments({ studentId: student.user._id, source: 'shared' }), 1);
+    const report = await priorFetch(`${url}/student/questions/shared/${questionId}/interview-reports`, {
+      method: 'POST', headers: { Cookie: student.cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company: 'Example Labs', jobTitle: 'Software Engineer', interviewDate: '2025-01-15' }),
+    });
+    assert.equal(report.status, 201);
+    assert.equal(interviewReports.length, 1);
+    assert.equal(interviewReports[0].scopeKey, 'control');
+    assert.equal(interviewReports[0].questionId, String(questionId));
+    assert.equal(interviewReports[0].reporterKey.length, 64);
+    const campusQuestionId = catalog.questions.find(({ questionText }) => questionText === 'Campus MCQ')._id;
+    const campusAttempt = await priorFetch(`${url}/student/questions/university/${campusQuestionId}/attempts`, {
+      method: 'POST', headers: { Cookie: student.cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answer: [0] }),
+    });
+    assert.equal(campusAttempt.status, 201);
+    const campusReport = await priorFetch(`${url}/student/questions/university/${campusQuestionId}/interview-reports`, {
+      method: 'POST', headers: { Cookie: student.cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company: 'Example Labs', jobTitle: 'Developer', interviewDate: '2025-02-10' }),
+    });
+    assert.equal(campusReport.status, 201);
+    assert.equal(interviewReports[1].scopeKey, 'university:north-campus');
+    const linkedProblemId = new mongoose.Types.ObjectId();
+    await QuestionLibrary.collection.insertOne({ sourceKey: `problem:${linkedProblemId}`, sourceType: 'compiler',
+      sourceProblemId: linkedProblemId, status: 'published', visibility: 'public', questionType: 'coding',
+      questionText: 'Campus coding', questionData: { coding: { statement: 'Solve it' } } });
+    await Submission.collection.insertOne({ user: student.user._id, problem: linkedProblemId, mode: 'submit',
+      status: 'AC', language: 'python', sourceCode: 'print(1)' });
+    const codingReport = await priorFetch(`${url}/student/questions/problem/${linkedProblemId}/interview-reports`, {
+      method: 'POST', headers: { Cookie: student.cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company: 'Example Labs', jobTitle: 'Developer', interviewDate: '2025-03-10' }),
+    });
+    assert.equal(codingReport.status, 201);
+    assert.equal(interviewReports[2].scopeKey, 'university:north-campus');
+    const recent = await priorFetch(`${url}/student/questions?companies=Example%20Labs&sortBy=latestInterviewDate`, {
+      headers: { Cookie: student.cookie },
+    });
+    assert.equal(recent.status, 200);
+    assert.deepEqual((await recent.json()).questions.map(({ questionText }) => questionText),
+      ['Campus coding', 'Campus MCQ', 'Shared MCQ']);
     const library = await priorFetch(`${url}/admin/library/questions`, { headers: { Cookie: admin.cookie } });
     assert.equal(library.status, 200);
     assert.equal((await library.json()).questions.some((item) => item.questionText === 'Shared MCQ'), true);
