@@ -40,8 +40,10 @@ import {
   Sun,
   User,
   X,
+  BadgeCheck,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { canManageInterviewCompanies, SUGGESTED_COMPANIES_PATH } from '../platform/universityPermissions';
 import { useUniversityPolicy } from '../platform/UniversityPolicyContext';
 import { useTheme } from '../context/ThemeContext';
 import { hasPermission } from '../admin/coordinatorPermissions';
@@ -323,6 +325,7 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
       items: [
         { label: 'Bulk Uploads', to: '/admin/settings/bulk-uploads', icon: FileSpreadsheet },
         { label: 'Master Data', to: '/admin/settings/master-data', icon: Database },
+        ...(canManageInterviewCompanies ? [{ label: 'Suggested Companies', to: SUGGESTED_COMPANIES_PATH, icon: BadgeCheck }] : []),
         { label: 'Email Templates', to: '/admin/settings/email-templates', icon: Mail },
         { label: 'Email Queue', to: '/admin/email-queue', icon: Mail },
         { label: 'Promote Students', to: '/admin/settings/promote-students', icon: GraduationCap },

@@ -7,6 +7,12 @@ function StatusMark({ status }) {
   return <span title="Not attempted" className="h-6 w-6 rounded-full border-2 border-[#e2e5ea] dark:border-white/10"><span className="sr-only">Not attempted</span></span>;
 }
 
+function companyTooltip(company, reports, latestDate) {
+  const count = Number(reports) || 0;
+  return [`Asked at ${company}`, count > 0 && `confirmed by ${count} student${count === 1 ? '' : 's'}`,
+    latestDate && `last reported ${new Date(latestDate).toLocaleDateString()}`].filter(Boolean).join(' · ');
+}
+
 /** One question. The whole card opens it; company tags filter the list; the bookmark saves it. */
 export default function ProblemRow({ problem, number, saved, opening, onOpen, onSave, onCompany }) {
   const difficulty = DIFFICULTY[problem.difficulty];
@@ -26,8 +32,8 @@ export default function ProblemRow({ problem, number, saved, opening, onOpen, on
         </div>
         {(tags.length > 0 || companies.length > 0) && <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           {tags.map((tag) => <span key={tag} className="rounded-md bg-[#f3f4f6] px-1.5 py-0.5 text-[11px] text-slate-500 dark:bg-white/[0.05] dark:text-zinc-400">{tag}</span>)}
-          {companies.map(({ company, latestDate }) => <button key={company} type="button" onClick={(event) => { event.stopPropagation(); onCompany(company); }}
-            title={latestDate ? `Last reported ${new Date(latestDate).toLocaleDateString()}` : `Filter by ${company}`}
+          {companies.map(({ company, latestDate, reports, voters }) => <button key={company} type="button" onClick={(event) => { event.stopPropagation(); onCompany(company); }}
+            title={companyTooltip(company, reports ?? voters, latestDate)}
             className={`inline-flex items-center gap-1 rounded-md bg-orange-50 px-1.5 py-0.5 text-[11px] font-medium text-orange-700 hover:bg-orange-100 dark:bg-orange-500/10 dark:text-orange-300 dark:hover:bg-orange-500/20 ${focusRing}`}>
             <Building2 className="h-3 w-3" aria-hidden="true" />{company}
           </button>)}

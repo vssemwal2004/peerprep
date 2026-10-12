@@ -34,6 +34,7 @@ import problemListRoutes from './problemLists.js';
 import adminAnalyticsRoutes from '../modules/adminAnalytics/adminAnalytics.routes.js';
 import platformRoutes from '../platform/routes.js';
 import questionPracticeRoutes from '../platform/questionPractice.js';
+import interviewCompanyRoutes from './interviewCompanies.js';
 import { requireAuth, requireFullStudent } from '../middleware/auth.js';
 
 const router = Router();
@@ -47,6 +48,7 @@ router.use('/bulk-uploads', bulkUploadRoutes);
 router.use('/auth', authRoutes);
 router.use('/engagement', engagementRoutes);
 router.use('/quests', questRoutes);
+router.use('/interview-companies', interviewCompanyRoutes);
 router.use('/students', requireAuth, requireFullStudent, studentRoutes);
 router.use('/events', requireAuth, requireFullStudent, eventRoutes);
 router.use('/pairing', requireAuth, requireFullStudent, pairingRoutes);

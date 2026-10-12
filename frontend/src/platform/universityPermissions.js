@@ -3,6 +3,10 @@ export const isControlDeployment = import.meta.env?.VITE_PEERPREP_DEPLOYMENT_ROL
 // QuickPreps are designed only by the super admin (central platform) or a standalone install's admin.
 export const canAuthorQuickPrep = !isUniversityDeployment;
 const QUICKPREP_ADMIN_PATH = /^\/admin\/(?:quests|quickprep)(?:\/|$)/;
+// Student-reported interview companies are moderated once, centrally (or by a standalone install's admin).
+export const canManageInterviewCompanies = !isUniversityDeployment;
+export const SUGGESTED_COMPANIES_PATH = '/admin/settings/suggested-companies';
+const SUGGESTED_COMPANIES_ADMIN_PATH = /^\/admin\/settings\/suggested-companies(?:\/|$)/;
 
 export function moduleForPath(pathname = '') {
   const path = pathname.split('?')[0];
@@ -29,7 +33,7 @@ export function moduleEnabled(permissions, moduleName) {
 export function pathAllowed(pathname, permissions, role = 'admin', search = '', { university = isUniversityDeployment } = {}) {
   if (!university) return true;
   // University admins neither see nor manage QuickPreps; the super admin designs them centrally.
-  if (QUICKPREP_ADMIN_PATH.test(pathname)) return false;
+  if (QUICKPREP_ADMIN_PATH.test(pathname) || SUGGESTED_COMPANIES_ADMIN_PATH.test(pathname)) return false;
   if (!permissions) return false;
   if (pathname.startsWith('/admin/platform')) return false;
   const moduleName = moduleForPath(pathname);

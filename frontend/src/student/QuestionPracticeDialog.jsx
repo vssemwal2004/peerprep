@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../utils/api';
-import InterviewQuestionPrompt from './InterviewQuestionPrompt';
+import AcceptedCelebration from './celebration/AcceptedCelebration';
 
 export default function QuestionPracticeDialog({ question, onClose, onAnswered }) {
   const [detail, setDetail] = useState(null);
@@ -11,7 +11,7 @@ export default function QuestionPracticeDialog({ question, onClose, onAnswered }
   const [feedback, setFeedback] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [showInterviewPrompt, setShowInterviewPrompt] = useState(false);
+  const [celebration, setCelebration] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -41,7 +41,10 @@ export default function QuestionPracticeDialog({ question, onClose, onAnswered }
         detail.subquestions?.length ? subAnswers : detail.questionType === 'mcq' ? answer.split(',').filter(Boolean).map(Number) : answer, language);
       setResult(response.result);
       setFeedback(response.feedback || '');
-      if (response.result === 'correct') setShowInterviewPrompt(true);
+      if (response.result === 'correct') {
+        setCelebration({ key: Date.now(), stats: Number(response.totalTestCases) > 0 ? { passed: response.passedTestCases, total: response.totalTestCases,
+          runtimeMs: response.executionTimeMs, memoryKb: response.memoryUsedKb, language: detail.questionType === 'coding' ? language : '' } : null });
+      }
       onAnswered?.();
     } catch (failure) { setError(failure.message || 'Could not submit answer.'); }
     finally { setBusy(false); }
@@ -67,7 +70,7 @@ export default function QuestionPracticeDialog({ question, onClose, onAnswered }
       {result && <p className={`mt-4 text-sm font-semibold ${result === 'correct' ? 'text-emerald-600' : result === 'incorrect' ? 'text-rose-600' : 'text-sky-600'}`}>{feedback || (result === 'submitted' ? 'Answer submitted' : result === 'correct' ? 'Correct' : 'Try again')}</p>}
       {detail && <div className="mt-5 flex justify-end"><button type="submit" disabled={busy || !ready} className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">{busy ? 'Submitting…' : 'Submit answer'}</button></div>}
     </form>
-  </div>{showInterviewPrompt && <InterviewQuestionPrompt source={question.source} questionId={question._id}
-    knownCompanies={detail?.companyTags || []}
-    onClose={() => setShowInterviewPrompt(false)} onSaved={onAnswered} />}</>;
+  </div><AcceptedCelebration key={celebration?.key} open={Boolean(celebration)} onClose={() => setCelebration(null)}
+    kind={celebration?.stats ? 'coding' : 'practice'} stats={celebration?.stats} title={detail?.questionText || detail?.passage?.title || ''}
+    report={{ source: question.source, questionId: question._id }} onReported={onAnswered} /></>;
 }

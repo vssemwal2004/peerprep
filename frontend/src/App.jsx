@@ -4,6 +4,7 @@ import { lazy as reactLazy, Suspense, useEffect, useCallback, useLayoutEffect, u
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
 import { UniversityPolicyProvider } from './platform/UniversityPolicyContext';
+import { canManageInterviewCompanies, SUGGESTED_COMPANIES_PATH } from './platform/universityPermissions';
 import { ToastProvider } from './components/CustomToast';
 import AdminLayout from './admin/AdminLayout';
 import AdminProtectedRoute from './admin/AdminProtectedRoute';
@@ -48,6 +49,7 @@ const QuickPrepWizard = lazy(() => import("./admin/quickprep/QuickPrepWizard"));
 const QuickPrepView = lazy(() => import("./admin/quickprep/QuickPrepView"));
 const QuickPrepInsights = lazy(() => import("./admin/quickprep/QuickPrepInsights"));
 const EngagementSettings = lazy(() => import('./admin/EngagementSettings'));
+const SuggestedCompanies = lazy(() => import('./admin/companies/SuggestedCompanies'));
 const HelpAndSupport = lazy(() => import("./student/HelpAndSupport"));
 const ProblemsPage = lazy(() => import("./student/ProblemsPage"));
 const ProblemSolver = lazy(() => import("./student/ProblemSolver"));
@@ -495,6 +497,7 @@ function AppContent() {
         <Route path="/admin/company-insights/add" element={<AdminShell><AdminCompanyBenchmarkAdd /></AdminShell>} />
         <Route path="/admin/settings/email-templates" element={<AdminShell><AdminEmailTemplates /></AdminShell>} />
         <Route path="/admin/settings/master-data" element={<AdminShell><MasterData /></AdminShell>} />
+        <Route path={SUGGESTED_COMPANIES_PATH} element={canManageInterviewCompanies ? <AdminShell><SuggestedCompanies /></AdminShell> : <Navigate to="/admin/dashboard" replace />} />
         <Route path="/admin/settings/master-data/:category" element={<AdminShell><MasterData /></AdminShell>} />
         <Route path="/admin/settings/bulk-uploads" element={<AdminShell><BulkUploads /></AdminShell>} />
         <Route path="/admin/email-queue" element={<AdminShell><AdminEmailQueue /></AdminShell>} />

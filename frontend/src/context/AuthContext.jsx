@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { api, clearApiCache } from '../utils/api';
 
-const AuthContext = createContext(null);
+export const AuthContext = createContext(null);
 
 // Cache duration: 30 minutes - avoid re-fetching to prevent backend session conflicts
 const CACHE_DURATION = 30 * 60 * 1000;
@@ -102,6 +102,11 @@ export function AuthProvider({ children }) {
       {children}
     </AuthContext.Provider>
   );
+}
+
+/** Auth state when an AuthProvider is mounted, otherwise null (for components that also render outside the app shell). */
+export function useOptionalAuth() {
+  return useContext(AuthContext);
 }
 
 export function useAuth() {

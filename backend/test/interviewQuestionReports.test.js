@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import Problem from '../src/models/Problem.js';
 import { interviewReportSummaries, reporterKey, saveInterviewReport } from '../src/platform/interviewQuestionReports.js';
+import { resetCompanyCatalogCache, setVoteThreshold } from '../src/platform/interviewCompanies.js';
 
 test('interview reports from different universities produce one global company tag and latest date', async (t) => {
   let mongo;
@@ -13,6 +15,10 @@ test('interview reports from different universities produce one global company t
   }
   try {
     await mongoose.connect(mongo.getUri());
+    // A catalog company (problem tag) and a two-student threshold so this file keeps testing aggregation.
+    await Problem.collection.insertOne({ title: 'Tagged', status: 'published', visibility: 'public', companyTags: ['Example Labs'] });
+    await setVoteThreshold(2);
+    resetCompanyCatalogCache();
     const questionId = new mongoose.Types.ObjectId();
     const first = { scopeKey: 'control', questionId,
       reporter: reporterKey('campus-one', new mongoose.Types.ObjectId()),
@@ -20,7 +26,7 @@ test('interview reports from different universities produce one global company t
     const second = { ...first, reporter: reporterKey('campus-two', new mongoose.Types.ObjectId()),
       body: { company: 'example labs', jobTitle: 'Engineer', interviewDate: '2025-03-01' } };
     await saveInterviewReport(first);
-    await saveInterviewReport(first);
+    assert.deepEqual((await saveInterviewReport(first)).company, { name: 'Example Labs', status: 'listed' });
     await saveInterviewReport(second);
     await saveInterviewReport({ ...first, scopeKey: 'university:campus-one',
       reporter: reporterKey('campus-one', new mongoose.Types.ObjectId()),

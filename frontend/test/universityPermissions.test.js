@@ -23,6 +23,15 @@ test('university admins never see QuickPrep management; only the super admin or 
   assert.equal(pathAllowed('/student/quickprep', everything, 'student', '', university), true, 'Students still receive the central QuickPreps');
 });
 
+test('suggested interview companies are moderated only by the super admin or a standalone admin', () => {
+  const everything = { questions: true, coding: true, assessments: true, events: true, interviews: true, learning: true, resumes: true };
+  for (const path of ['/admin/settings/suggested-companies', '/admin/settings/suggested-companies/']) {
+    assert.equal(pathAllowed(path, everything, 'admin', '', university), false, `${path} is hidden on a university`);
+    assert.equal(pathAllowed(path, everything, 'admin', '', { university: false }), true, `${path} stays available centrally and on standalone`);
+  }
+  assert.equal(pathAllowed('/admin/settings/master-data', everything, 'admin', '', university), true, 'Other settings pages are unaffected');
+});
+
 test('challenge navigation requires at least one allocated supported module', () => {
   assert.equal(moduleForPath('/student/challenges?period=monthly'), 'challenges');
   assert.equal(pathAllowed('/student/challenges', {}, 'student', '', university), false);

@@ -323,7 +323,9 @@ router.get('/tenant/questions/:id/judge-data', requireModule('questions'), async
   res.set('Cache-Control', 'no-store').json({ problem, testCases: await loadHiddenExecutionTestCases(problem) });
 }));
 router.get('/tenant/question-interviews/summaries', requireModule('questions'), asyncRoute(async (req, res) => {
-  res.json({ summaries: await interviewReportSummaries(['control', `university:${req.platformUniversity.universityId}`]) });
+  // ?questionId= narrows the aggregation to one question for the per-problem companies panel.
+  res.json({ summaries: await interviewReportSummaries(['control', `university:${req.platformUniversity.universityId}`],
+    req.query.questionId === undefined ? null : String(req.query.questionId)) });
 }));
 router.get('/tenant/question-interviews/options', requireModule('questions'), asyncRoute(async (req, res) => {
   res.json(await interviewReportOptions());
@@ -335,7 +337,7 @@ router.post('/tenant/question-interviews', requireModule('questions'), asyncRout
   if (scopeKey === 'control' && !(await QuestionLibrary.exists({ _id: req.body?.questionId, status: 'published',
     visibility: { $ne: 'private' }, sourceType: { $ne: 'assessment' } }))) throw new HttpError(404, 'Question not found');
   res.status(201).json(await saveInterviewReport({ scopeKey, questionId: req.body?.questionId,
-    reporter: req.body?.reporterKey, body: req.body }));
+    reporter: req.body?.reporterKey, body: req.body, origin: `university:${req.platformUniversity.universityId}` }));
 }));
 router.get('/tenant/learning/semesters', requireModule('learning'), asyncRoute(async (req, res) => {
   if (req.platformUniversity.sources.learning !== 'shared') throw new HttpError(403, 'Shared learning is disabled');

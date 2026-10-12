@@ -20,7 +20,8 @@ import ProblemAssetImages from '../components/ProblemAssetImages';
 import CodeEditor from './CodeEditor';
 import DailyCodingChallenge from './DailyCodingChallenge';
 import WorkspaceTimer from './WorkspaceTimer';
-import InterviewQuestionPrompt from './InterviewQuestionPrompt';
+import AcceptedCelebration from './celebration/AcceptedCelebration';
+import { mergeCompanyTags } from './celebration/companyMatch';
 import AnviApproach, { ANVI_ASK_EVENT, AnviMark } from '../components/AnviApproach';
 import { DifficultyBadge, EmptyState, LoadingPanel } from '../admin/compiler/CompilerUi';
 import {
@@ -38,6 +39,9 @@ import {
   saveProblemDrafts,
   studentStatusBadgeClass,
 } from './problemUtils';
+
+const NO_COMPANIES = [];
+
 function StudentProgressBadge({ status }) {
   return (
     <span className={`rounded-full px-3 py-1 text-xs font-semibold ${studentStatusBadgeClass(status)}`}>
@@ -357,12 +361,12 @@ function ReadingSectionTitle({ children, meta }) {
   return <div className="flex items-center justify-between gap-3"><h2 className="text-base font-semibold text-slate-900 dark:text-gray-100">{children}</h2>{meta ? <span className="text-xs text-slate-400 dark:text-gray-500">{meta}</span> : null}</div>;
 }
 
-function ProblemDescriptionPanel({ problem, language }) {
+function ProblemDescriptionPanel({ problem, language, verifiedCompanies }) {
   const [activeMetaPanel, setActiveMetaPanel] = useState('');
   const [anviRequestKey, setAnviRequestKey] = useState(0);
 
   const topics = problem.tags || [];
-  const companies = problem.companyTags || [];
+  const companies = useMemo(() => mergeCompanyTags(verifiedCompanies, problem.companyTags), [verifiedCompanies, problem.companyTags]);
   const approaches = Array.isArray(problem.hints) ? problem.hints.filter((approach) => String(approach || '').trim()).slice(0, 10) : [];
   const faqs = Array.isArray(problem.faqs)
     ? problem.faqs.filter((faq) => String(faq?.question || '').trim() || String(faq?.answer || '').trim())
@@ -431,7 +435,10 @@ function ProblemDescriptionPanel({ problem, language }) {
             )}
             {activeMetaPanel === 'companies' && (
               <div className="flex flex-wrap gap-2">
-                {companies.length ? companies.map((company) => <span key={company} className="rounded-full bg-amber-100 px-3 py-1.5 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">{company}</span>) : <p className="text-sm text-zinc-500">No company tags are available for this problem.</p>}
+                {companies.length ? companies.map(({ name, voters, verified }) => <span key={name} title={verified ? `Confirmed by ${voters} student${voters === 1 ? '' : 's'}` : undefined}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium ${verified ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-300 dark:bg-amber-900/40 dark:text-amber-100 dark:ring-amber-700' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200'}`}>
+                  {verified && <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-emerald-500 text-white"><Check className="h-2.5 w-2.5" strokeWidth={3} aria-hidden="true" /><span className="sr-only">Verified: </span></span>}{name}
+                </span>) : <p className="text-sm text-zinc-500">No company tags are available for this problem.</p>}
               </div>
             )}
           </div>
@@ -1015,7 +1022,23 @@ export default function ProblemSolver() {
   const [selectedSubmissionId, setSelectedSubmissionId] = useState(null);
   const [isRunning, setIsRunning] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showInterviewPrompt, setShowInterviewPrompt] = useState(false);
+  const [celebration, setCelebration] = useState(null);
+  const [verifiedCompanies, setVerifiedCompanies] = useState({ key: '', companies: [] });
+  const reportSource = isSharedProblem ? 'shared' : 'problem';
+  const problemId = problem?._id;
+  const verifiedKey = problemId ? `${reportSource}:${problemId}` : '';
+  const closeCelebration = useCallback(() => setCelebration(null), []);
+  const celebrate = useCallback((stats) => setCelebration({ key: Date.now(), stats }), []);
+
+  useEffect(() => {
+    if (!problemId) return undefined;
+    let active = true;
+    api.questionInterviewCompanies(reportSource, problemId)
+      .then((data) => { if (active) setVerifiedCompanies({ key: `${reportSource}:${problemId}`, companies: Array.isArray(data?.companies) ? data.companies : [] }); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [problemId, reportSource]);
+  const confirmedCompanies = verifiedCompanies.key === verifiedKey ? verifiedCompanies.companies : NO_COMPANIES;
 
   const stopSubmissionPolling = useCallback(() => {
     if (submissionPollRef.current) {
@@ -1087,19 +1110,23 @@ export default function ProblemSolver() {
     }
 
     syncSubmissionResult(submission);
-    if (['AC', 'ACCEPTED'].includes(String(submission.status || '').toUpperCase())) setShowInterviewPrompt(true);
+    const accepted = ['AC', 'ACCEPTED'].includes(String(submission.status || '').toUpperCase());
+    if (accepted) {
+      celebrate({ passed: submission.passedTestCases, total: submission.totalTestCases, runtimeMs: submission.executionTimeMs,
+        memoryKb: submission.memoryUsedKb, language: submission.language ? getLanguageLabel(submission.language) : '' });
+    }
     stopSubmissionPolling();
     void loadSubmissions({ silent: true, selectLatest: true }).catch(() => {
       // The submission row is already finalized; the UI can still use the current snapshot.
     });
     setIsSubmitting(false);
 
-    if (successMessage) {
+    if (successMessage && !accepted) {
       toast.success(successMessage);
     } else if (errorMessage) {
       toast.error(errorMessage);
     }
-  }, [loadSubmissions, stopSubmissionPolling, syncSubmissionResult, toast]);
+  }, [celebrate, loadSubmissions, stopSubmissionPolling, syncSubmissionResult, toast]);
 
   const findTrackedSubmission = useCallback((submissionsList) => {
     const tracker = submissionTrackerRef.current;
@@ -1510,11 +1537,15 @@ export default function ProblemSolver() {
             acceptedSubmissions: response.acceptedSubmissions ?? previous.acceptedSubmissions,
             acceptanceRate: response.acceptanceRate ?? previous.acceptanceRate,
           } : previous);
-          if (response.result === 'correct') setShowInterviewPrompt(true);
+          const accepted = response.result === 'correct';
+          if (accepted) {
+            celebrate({ passed: response.passedTestCases, total: response.totalTestCases, runtimeMs: response.executionTimeMs,
+              memoryKb: response.memoryUsedKb, language: getLanguageLabel(language) });
+          }
           setActiveConsoleTab('result');
           await loadSubmissions({ silent: true, selectLatest: true });
           if (isMountedRef.current) setActiveLeftTab('acceptance');
-          toast.success(response.feedback || 'Submission saved.');
+          if (!accepted) toast.success(response.feedback || 'Submission saved.');
         }).catch((error) => {
           if (isMountedRef.current) { setResult(createTerminalExecutionResult(error, { mode: 'submit', language, sourceCode })); setActiveConsoleTab('result'); }
         }).finally(() => { if (isMountedRef.current) setIsSubmitting(false); });
@@ -1870,7 +1901,7 @@ export default function ProblemSolver() {
             />
             <div className="min-h-0 flex-1 overflow-y-auto scroll-smooth">
               {activeLeftTab === 'description' ? (
-                <ProblemDescriptionPanel problem={problem} language={language} />
+                <ProblemDescriptionPanel problem={problem} language={language} verifiedCompanies={confirmedCompanies} />
               ) : activeLeftTab === 'editorial' ? (
                 <EditorialPanel editorial={problem.editorial} />
               ) : activeLeftTab === 'submissions' ? (
@@ -1942,7 +1973,7 @@ export default function ProblemSolver() {
             />
             <div className="max-h-[calc(100vh-14rem)] overflow-y-auto scroll-smooth">
               {activeLeftTab === 'description' ? (
-                <ProblemDescriptionPanel problem={problem} language={language} />
+                <ProblemDescriptionPanel problem={problem} language={language} verifiedCompanies={confirmedCompanies} />
               ) : activeLeftTab === 'editorial' ? (
                 <EditorialPanel editorial={problem.editorial} />
               ) : activeLeftTab === 'submissions' ? (
@@ -1994,9 +2025,9 @@ export default function ProblemSolver() {
 
         {/* Intentionally no below-fold cards here to keep the workspace fixed-height. */}
       </div>
-      {showInterviewPrompt && problem && <InterviewQuestionPrompt source={isSharedProblem ? 'shared' : 'problem'}
-        questionId={problem._id} knownCompanies={problem.companyTags || []}
-        onClose={() => setShowInterviewPrompt(false)} />}
+      <AcceptedCelebration key={celebration?.key} open={Boolean(celebration && problem)} onClose={closeCelebration}
+        kind="coding" title={problem?.title} stats={celebration?.stats}
+        report={problemId ? { source: reportSource, questionId: problemId } : null} />
     </div>
   );
 }

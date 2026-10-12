@@ -74,21 +74,40 @@ async function visibleQuestions() {
 const scopeFor = (source) => isUniversity() && source === 'university'
   ? `university:${process.env.PEERPREP_UNIVERSITY_ID}` : 'control';
 
-async function reportSummaries() {
-  if (isUniversity()) return (await controlRequest('question-interviews/summaries')).summaries || [];
-  return interviewReportSummaries(['control']);
+async function reportSummaries(questionId = null) {
+  if (isUniversity()) {
+    const query = questionId ? `?questionId=${encodeURIComponent(String(questionId))}` : '';
+    return (await controlRequest(`question-interviews/summaries${query}`)).summaries || [];
+  }
+  return interviewReportSummaries(['control'], questionId && String(questionId));
 }
 
 router.get('/interview-options', asyncRoute(async (req, res) => {
   res.json(isUniversity() ? await controlRequest('question-interviews/options') : await interviewReportOptions());
 }));
 
+async function reportableQuestion(source, id) {
+  if (!mongoose.isValidObjectId(id)) throw new HttpError(400, 'Invalid question');
+  return source === 'problem'
+    ? QuestionLibrary.findOne({ ...published, sourceType: 'compiler', sourceProblemId: id }).lean()
+    : findVisible(source, id);
+}
+
+// Verified companies only: the central summaries already apply the super admin's vote threshold.
+router.get('/:source/:id/interview-companies', asyncRoute(async (req, res) => {
+  const question = await reportableQuestion(req.params.source, req.params.id);
+  if (!question) return res.json({ companies: [] });
+  const scopeKey = scopeFor(req.params.source === 'shared' ? 'shared' : 'university');
+  const companies = (await reportSummaries(question._id))
+    .filter((row) => row.scopeKey === scopeKey && String(row.questionId) === String(question._id))
+    .map(({ company, companyKey, voters, reports, latestDate }) => ({ company, companyKey, voters: voters ?? reports, latestDate }))
+    .sort((a, b) => b.voters - a.voters || new Date(b.latestDate) - new Date(a.latestDate));
+  res.json({ companies });
+}));
+
 router.post('/:source/:id/interview-reports', asyncRoute(async (req, res) => {
   const source = req.params.source;
-  if (!mongoose.isValidObjectId(req.params.id)) throw new HttpError(400, 'Invalid question');
-  const question = source === 'problem'
-    ? await QuestionLibrary.findOne({ ...published, sourceType: 'compiler', sourceProblemId: req.params.id }).lean()
-    : await findVisible(source, req.params.id);
+  const question = await reportableQuestion(source, req.params.id);
   if (!question) throw new HttpError(404, 'Question not found');
   const practiceSource = source === 'shared' ? 'shared' : 'university';
   const [practiceSolved, codingSolved] = await Promise.all([
