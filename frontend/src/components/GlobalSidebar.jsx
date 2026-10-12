@@ -291,7 +291,8 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
       items: [
         { label: 'All QuickPreps', to: '/admin/quickprep', icon: ListChecks, match: (loc) => /^\/admin\/quickprep(\/(?!new$|insights$)[^/]+(\/(edit|questions\/add))?)?\/?$/.test(loc.pathname) },
         { label: 'Create QuickPrep', to: '/admin/quickprep/new', icon: CirclePlus },
-        { label: 'Insights', to: '/admin/quickprep/insights', icon: BarChart3 },
+        // Student progress lives in each university, so the central platform has no QuickPrep insights.
+        ...(import.meta.env.VITE_PEERPREP_DEPLOYMENT_ROLE === 'control' ? [] : [{ label: 'Insights', to: '/admin/quickprep/insights', icon: BarChart3 }]),
       ],
     },
     {

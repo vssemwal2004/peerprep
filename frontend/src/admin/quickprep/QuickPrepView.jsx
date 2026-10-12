@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
-  Award, Building2, CalendarDays, CircleCheck, Download, Eye, EyeOff, Gauge, GraduationCap, Layers, LibraryBig, Pencil, Rocket, Sparkles, Tags, TriangleAlert, Users, UsersRound,
+  Award, Building2, CalendarDays, CircleCheck, Download, Eye, EyeOff, Gauge, Globe2, GraduationCap, Layers, LibraryBig, Pencil, Rocket, Sparkles, Tags, TriangleAlert, Users, UsersRound,
 } from 'lucide-react';
 import { api } from '../../utils/api';
 import { questCategory, questTheme } from '../../student/quests/questTheme';
@@ -51,6 +51,7 @@ export default function QuickPrepView() {
   const theme = questTheme(quest.theme);
   const type = questCategory(quest.category);
   const TypeIcon = type.icon;
+  const central = Boolean(quest.central);
   const issues = visibility(quest, summary);
   const reach = summary.audience ? Math.round((summary.started / summary.audience) * 100) : 0;
 
@@ -84,7 +85,7 @@ export default function QuickPrepView() {
       <dl className="grid gap-x-6 gap-y-4 px-5 py-4 text-sm sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
         <div><dt className="flex items-center gap-1.5 text-[12px] font-medium text-slate-500"><Building2 className="h-3.5 w-3.5" />Companies</dt><dd className="mt-1"><Chips values={quest.companies} max={4} empty="All companies" /></dd></div>
         <div><dt className="flex items-center gap-1.5 text-[12px] font-medium text-slate-500"><Tags className="h-3.5 w-3.5" />Topics</dt><dd className="mt-1"><Chips values={quest.topics} max={4} empty="All topics" /></dd></div>
-        <div><dt className="flex items-center gap-1.5 text-[12px] font-medium text-slate-500"><GraduationCap className="h-3.5 w-3.5" />Audience</dt><dd className="mt-1 font-semibold">{quest.semesters?.length ? `Semester ${quest.semesters.join(', ')}` : 'All semesters'} <span className="font-normal text-slate-500">· {plural(summary.audience, 'student')}</span></dd></div>
+        <div><dt className="flex items-center gap-1.5 text-[12px] font-medium text-slate-500"><GraduationCap className="h-3.5 w-3.5" />Audience</dt><dd className="mt-1 font-semibold">{quest.semesters?.length ? `Semester ${quest.semesters.join(', ')}` : 'All semesters'} <span className="font-normal text-slate-500">· {central ? 'every university' : plural(summary.audience, 'student')}</span></dd></div>
         <div><dt className="flex items-center gap-1.5 text-[12px] font-medium text-slate-500"><Award className="h-3.5 w-3.5" />Reward</dt><dd className="mt-1 font-semibold">{quest.rewardXp} XP <span className="font-normal text-slate-500">· {quest.badgeTitle || `${quest.title} Finisher`}</span></dd></div>
         <div><dt className="flex items-center gap-1.5 text-[12px] font-medium text-slate-500"><CalendarDays className="h-3.5 w-3.5" />Created</dt><dd className="mt-1">{formatDate(quest.createdAt)}</dd></div>
         <div><dt className="flex items-center gap-1.5 text-[12px] font-medium text-slate-500"><Rocket className="h-3.5 w-3.5" />Published</dt><dd className="mt-1">{quest.publishedAt ? formatDate(quest.publishedAt) : 'Not yet'}</dd></div>
@@ -96,27 +97,32 @@ export default function QuickPrepView() {
     {issues.length ? <Notice tone="warning">
       <p className="flex items-center gap-1.5 font-semibold"><TriangleAlert className="h-4 w-4" />Students cannot see this QuickPrep yet</p>
       <ul className="mt-1 list-disc space-y-0.5 pl-6">{issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>
-    </Notice> : <Notice tone="info"><span className="inline-flex items-center gap-1.5"><Eye className="h-4 w-4" />Live: {plural(summary.audience, 'student')} can see it on their QuickPrep page{quest.unavailableCount ? `. ${plural(quest.unavailableCount, 'question')} unpublished in the library ${quest.unavailableCount === 1 ? 'is' : 'are'} hidden.` : '.'}</span></Notice>}
+    </Notice> : <Notice tone="info"><span className="inline-flex items-center gap-1.5"><Eye className="h-4 w-4" />{central ? 'Live for every university with coding enabled' : `Live: ${plural(summary.audience, 'student')} can see it on their QuickPrep page`}{quest.unavailableCount ? `. ${plural(quest.unavailableCount, 'question')} unpublished in the library ${quest.unavailableCount === 1 ? 'is' : 'are'} hidden.` : '.'}</span></Notice>}
 
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+    {central ? <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <StatCard icon={Layers} label="Questions" value={quest.questionCount} hint={quest.unavailableCount ? `${quest.unavailableCount} unavailable` : 'All available'} tone="sky" />
+      <StatCard icon={Globe2} label="Delivered to" value="All" hint="Universities with coding enabled" tone="emerald" />
+      <StatCard icon={Sparkles} label="Reward" value={`${quest.rewardXp} XP`} hint={quest.badgeTitle || `${quest.title} Finisher`} tone="rose" />
+    </div> : <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
       <StatCard icon={Layers} label="Questions" value={quest.questionCount} hint={quest.unavailableCount ? `${quest.unavailableCount} unavailable` : 'All available'} tone="sky" />
       <StatCard icon={UsersRound} label="Audience" value={summary.audience} hint="Students who can see it" tone="slate" />
       <StatCard icon={Users} label="Started" value={summary.started} hint={`${reach}% of audience`} tone="violet" />
       <StatCard icon={CircleCheck} label="Completed" value={summary.completed} hint={`${summary.completionRate}% of starters`} tone="emerald" />
       <StatCard icon={Gauge} label="Avg. progress" value={`${summary.averageProgress}%`} hint={`${summary.inProgress} in progress`} tone="amber" />
       <StatCard icon={Sparkles} label="XP awarded" value={summary.xpAwarded} hint={`${quest.rewardXp} XP each`} tone="rose" />
-    </div>
+    </div>}
+    {central && <p className="text-[12.5px] text-slate-500 dark:text-zinc-400">Each university keeps its own students’ progress privately, so student numbers are not shown on the central platform.</p>}
 
     <section className={card} aria-label="Details">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4 dark:border-zinc-800">
+      {!central && <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4 dark:border-zinc-800">
         <Segmented label="Show" value={tab} onChange={setTab} options={[{ value: 'questions', label: 'Questions', count: questions.length }, { value: 'students', label: 'Students', count: students.length }]} />
-      </div>
-      {tab === 'questions' ? <QuestionsTable questions={questions} started={summary.started} quest={quest} /> : <StudentsTable students={students} title={quest.title} />}
+      </div>}
+      {central || tab === 'questions' ? <QuestionsTable questions={questions} started={summary.started} quest={quest} central={central} /> : <StudentsTable students={students} title={quest.title} />}
     </section>
   </Page>;
 }
 
-function QuestionsTable({ questions, started, quest }) {
+function QuestionsTable({ questions, started, quest, central = false }) {
   if (!questions.length) return <div className="px-6 py-12 text-center text-sm text-slate-500">No questions yet. <Link to={quickPrepLibraryUrl(quest)} className="font-semibold text-sky-700 underline dark:text-sky-300">Add from the library</Link></div>;
   return <div className="overflow-x-auto">
     <table className="w-full min-w-[920px] text-left text-sm">
@@ -127,9 +133,9 @@ function QuestionsTable({ questions, started, quest }) {
           <th scope="col" className="px-3 py-3">Section</th>
           <th scope="col" className="px-3 py-3">Difficulty</th>
           <th scope="col" className="px-3 py-3">Topics</th>
-          <th scope="col" className="px-3 py-3 text-right">Solved by</th>
-          <th scope="col" className="px-3 py-3 text-right">Attempting</th>
-          <th scope="col" className="w-44 py-3 pl-3 pr-4">Solve rate</th>
+          {!central && <th scope="col" className="px-3 py-3 text-right">Solved by</th>}
+          {!central && <th scope="col" className="px-3 py-3 text-right">Attempting</th>}
+          {!central && <th scope="col" className="w-44 py-3 pl-3 pr-4">Solve rate</th>}
         </tr>
       </thead>
       <tbody className="divide-y divide-slate-100 dark:divide-zinc-800">
@@ -139,9 +145,9 @@ function QuestionsTable({ questions, started, quest }) {
           <td className="px-3 py-3 text-[12.5px] text-slate-600 dark:text-zinc-300">{question.section || <span className="text-slate-400">—</span>}</td>
           <td className="px-3 py-3"><DifficultyPill difficulty={question.difficulty} /></td>
           <td className="px-3 py-3"><Chips values={question.tags} /></td>
-          <td className="px-3 py-3 text-right font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{question.solvedBy}</td>
-          <td className="px-3 py-3 text-right tabular-nums text-amber-600 dark:text-amber-400">{question.attemptedBy}</td>
-          <td className="py-3 pl-3 pr-4">{started ? <ProgressBar value={question.solveRate} tone="bg-emerald-500" label={`Solve rate for ${question.title}`} /> : <span className="text-xs text-slate-400">No starters yet</span>}</td>
+          {!central && <td className="px-3 py-3 text-right font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{question.solvedBy}</td>}
+          {!central && <td className="px-3 py-3 text-right tabular-nums text-amber-600 dark:text-amber-400">{question.attemptedBy}</td>}
+          {!central && <td className="py-3 pl-3 pr-4">{started ? <ProgressBar value={question.solveRate} tone="bg-emerald-500" label={`Solve rate for ${question.title}`} /> : <span className="text-xs text-slate-400">No starters yet</span>}</td>}
         </tr>)}
       </tbody>
     </table>

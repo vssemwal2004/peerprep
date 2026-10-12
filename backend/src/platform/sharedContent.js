@@ -29,6 +29,46 @@ export async function sharedJudgeData(question) {
   }
 }
 
+// Central QuickPrep definitions, cached briefly. If only the QuickPrep feed fails (503) while the rest of the
+// central service answers, the last good copy (up to a day old) is served. A full central outage still fails
+// QuickPrep pages, because the policy and shared-question checks they also need are not cached.
+const QUEST_CACHE_MS = 60_000;
+const QUEST_STALE_MS = 24 * 60 * 60 * 1000;
+let questFeed = null;
+let questFeedRequest = null;
+
+export async function sharedQuests() {
+  if (!isUniversity()) return null;
+  if (questFeed && Date.now() - questFeed.at < QUEST_CACHE_MS) return questFeed.value;
+  if (questFeedRequest) return questFeedRequest;
+  questFeedRequest = (async () => {
+    const policy = await universityPolicy();
+    if (!policy.permissions?.questions) return [];
+    const { quests } = await controlRequest('quests');
+    if (!Array.isArray(quests)) {
+      const error = new Error('Central QuickPrep feed returned an invalid response');
+      error.status = 503;
+      throw error;
+    }
+    return quests;
+  })().then((value) => {
+    questFeed = { value, at: Date.now() };
+    return value;
+  }, (error) => {
+    if (error.status === 503 && questFeed && Date.now() - questFeed.at < QUEST_STALE_MS) return questFeed.value;
+    throw error;
+  }).finally(() => { questFeedRequest = null; });
+  return questFeedRequest;
+}
+
+/** Tests and policy changes start from fresh central QuickPreps and shared questions. */
+export function resetSharedQuestCache() {
+  questFeed = null;
+  questFeedRequest = null;
+  questionCache = null;
+  questionCacheUntil = 0;
+}
+
 export async function sharedAssessments() {
   if (!isUniversity()) return [];
   const policy = await universityPolicy();

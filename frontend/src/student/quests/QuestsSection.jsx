@@ -65,7 +65,7 @@ export default function QuestsSection({ quests, loading, error, onRetry }) {
       : !quests.length && !error ? <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center dark:border-white/10 dark:bg-[#232325]">
         <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-indigo-600 text-white shadow-lg shadow-sky-500/25"><Zap className="h-6 w-6" aria-hidden="true" /></span>
         <h3 className="mt-3 text-[15px] font-semibold">No QuickPrep yet</h3>
-        <p className="mt-1 text-[13px] text-slate-500 dark:text-zinc-400">Your university has not published a QuickPrep for your semester yet. Your daily challenge is waiting above.</p>
+        <p className="mt-1 text-[13px] text-slate-500 dark:text-zinc-400">Your administrator has not published any question sheets for your semester yet. Check back soon.</p>
       </div> : <>
         {active.length > 0 && <div className="mt-5">
           <h3 className="text-[13px] font-semibold text-slate-500 dark:text-zinc-400">In progress</h3>

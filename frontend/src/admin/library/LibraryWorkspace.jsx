@@ -20,6 +20,7 @@ import QuestionLibrary from '../QuestionLibrary';
 import { useAuth } from '../../context/AuthContext';
 import { hasPermission } from '../coordinatorPermissions';
 import { api } from '../../utils/api';
+import { canAuthorQuickPrep } from '../../platform/universityPermissions';
 
 const AddQuestionToLibrary = lazy(() => import('../AddQuestionToLibrary'));
 const CreateProblem = lazy(() => import('../compiler/CreateProblem'));
@@ -135,7 +136,7 @@ export default function LibraryWorkspace({ view = 'questions' }) {
   const mode = searchParams.get('mode') || 'library';
   const assessmentSelectionMode = mode === 'select';
   // Picking coding questions for a QuickPrep works like assessment selection: browse and select, nothing to create.
-  const quickprepMode = mode === 'quickprep';
+  const quickprepMode = mode === 'quickprep' && canAuthorQuickPrep;
   const pickerMode = assessmentSelectionMode || quickprepMode;
   const quickprepTitle = searchParams.get('quickprepTitle') || 'QuickPrep';
   const assessmentCreationMode = mode === 'assessment-create';

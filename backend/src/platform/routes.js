@@ -16,6 +16,8 @@ import { signInspection, verifyInspection } from './inspectionAuth.js';
 import User from '../models/User.js';
 import AssessmentSubmission from '../models/AssessmentSubmission.js';
 import { interviewReportOptions, interviewReportSummaries, saveInterviewReport } from './interviewQuestionReports.js';
+import { CENTRAL_QUESTION_FILTER } from './centralQuestions.js';
+import { publishedQuestDefinitions } from '../services/questService.js';
 
 const router = Router();
 const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
@@ -300,12 +302,14 @@ router.get('/tenant/assessments/:id/problems/:problemId', requireModule('assessm
   res.json({ problem });
 }));
 router.get('/tenant/questions', requireModule('questions'), asyncRoute(async (req, res) => {
-  const questions = await QuestionLibrary.find({
-    status: 'published',
-    visibility: { $ne: 'private' },
-    sourceType: { $ne: 'assessment' },
-  }).lean();
+  const questions = await QuestionLibrary.find(CENTRAL_QUESTION_FILTER).lean();
   res.json({ questions });
+}));
+// QuickPreps are designed only by the super admin and reach every university with coding enabled.
+// Definitions only: each university keeps its own students' progress.
+router.get('/tenant/quests', requireModule('questions'), asyncRoute(async (req, res) => {
+  res.set('Cache-Control', 'private, no-store');
+  res.json({ quests: await publishedQuestDefinitions() });
 }));
 router.get('/tenant/questions/:id/judge-data', requireModule('questions'), asyncRoute(async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) throw new HttpError(404, 'Question not found');

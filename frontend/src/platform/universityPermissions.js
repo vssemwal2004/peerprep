@@ -1,8 +1,13 @@
 export const isUniversityDeployment = import.meta.env?.VITE_PEERPREP_DEPLOYMENT_ROLE === 'university';
+export const isControlDeployment = import.meta.env?.VITE_PEERPREP_DEPLOYMENT_ROLE === 'control';
+// QuickPreps are designed only by the super admin (central platform) or a standalone install's admin.
+export const canAuthorQuickPrep = !isUniversityDeployment;
+const QUICKPREP_ADMIN_PATH = /^\/admin\/(?:quests|quickprep)(?:\/|$)/;
 
 export function moduleForPath(pathname = '') {
   const path = pathname.split('?')[0];
-  if (/^\/student\/(?:challenges|quests|quickprep)(?:\/|$)/.test(path)) return 'challenges';
+  if (/^\/student\/challenges(?:\/|$)/.test(path)) return 'challenges';
+  if (/^\/student\/(?:quests|quickprep)(?:\/|$)/.test(path)) return 'questions';
   if (/^\/(?:admin|student)\/ai-interviews(?:\/|$)|^\/coordinator\/ai-interviews(?:\/|$)/.test(path)) return 'interviews';
   if (/^\/(?:admin|student)\/learning(?:\/|$)|^\/coordinator\/subjects(?:\/|$)/.test(path)) return 'learning';
   if (/^\/(?:admin|coordinator)\/library(?:\/|$)|^\/(?:admin|coordinator)\/compiler(?:\/|$)|^\/admin\/(?:quests|quickprep)(?:\/|$)|^\/problems(?:\/|$)/.test(path)) return 'questions';
@@ -23,6 +28,8 @@ export function moduleEnabled(permissions, moduleName) {
 
 export function pathAllowed(pathname, permissions, role = 'admin', search = '', { university = isUniversityDeployment } = {}) {
   if (!university) return true;
+  // University admins neither see nor manage QuickPreps; the super admin designs them centrally.
+  if (QUICKPREP_ADMIN_PATH.test(pathname)) return false;
   if (!permissions) return false;
   if (pathname.startsWith('/admin/platform')) return false;
   const moduleName = moduleForPath(pathname);

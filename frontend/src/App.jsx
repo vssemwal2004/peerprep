@@ -392,7 +392,7 @@ function AppContent() {
         <Route path="/student/quickprep" element={<StudentProtectedRoute><StudentQuests /></StudentProtectedRoute>} />
         <Route path="/student/quickprep/:slug" element={<StudentProtectedRoute><QuestDetail /></StudentProtectedRoute>} />
         {/* Challenges became Quests, then QuickPrep; old links, bookmarks and notifications still land in the right place. */}
-        <Route path="/student/challenges" element={<Navigate to="/student/quickprep" replace />} />
+        <Route path="/student/challenges" element={<Navigate to="/student/dashboard" replace />} />
         <Route path="/student/quests" element={<Navigate to="/student/quickprep" replace />} />
         <Route path="/student/quests/:slug" element={<LegacyQuickPrepRedirect />} />
         <Route path="/student/resume" element={<StudentProtectedRoute><StudentResume /></StudentProtectedRoute>} />

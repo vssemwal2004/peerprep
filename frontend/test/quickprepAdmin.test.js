@@ -86,7 +86,7 @@ test('the list is a table with reach, progress and a 3-dot menu of actions', asy
   await settle();
   const rows = [...document.querySelectorAll('tbody tr')];
   assert.equal(rows.length, 2);
-  assert.match(rows[0].textContent, /Amazon Top 3.*Company.*Amazon.*2.*40 students.*Sem 3.*5.*2.*64%.*Published/);
+  assert.match(rows[0].textContent, /Amazon Top 3.*Company.*Amazon.*More.*2.*40 students.*5.*2.*64%.*Published/);
   assert.match(document.body.textContent, /Published1.*Drafts1/s);
   await click(button(/Actions for Amazon Top 3/));
   const menu = document.querySelector('[role="menu"]');
@@ -96,6 +96,48 @@ test('the list is a table with reach, progress and a 3-dot menu of actions', asy
   assert.ok(publish.disabled, 'An empty draft cannot be published');
   await click([...document.querySelectorAll('[role="radio"]')].find((node) => /^Draft\d/.test(node.textContent)));
   assert.equal(document.querySelectorAll('tbody tr').length, 1);
+});
+
+test('compact rows open full details without navigating; popup traps and restores focus', async () => {
+  const topics = ['Array', 'String', 'Graph', 'Dynamic Programming', 'A very long topic name that must remain fully readable'];
+  api.listAdminQuests = async () => ({ quests: [quest({ topics, companies: ['Amazon', 'Google', 'Microsoft', 'Adobe'], semesters: [1, 2, 3, 4], description: 'Full preparation sheet description.', badgeTitle: 'Placement champion', unavailableCount: 2 })] });
+  await render('/admin/quickprep', pages.list, '/admin/quickprep');
+  await settle();
+  const row = document.querySelector('tbody tr');
+  assert.doesNotMatch(row.textContent, /Dynamic Programming|Full preparation sheet description|Sem 1|amazon-top-3/);
+  assert.ok(document.querySelector('table').classList.contains('whitespace-nowrap'));
+  const more = button(/More details for Amazon Top 3/);
+  await click(more);
+  const dialog = document.querySelector('[role="dialog"]');
+  assert.ok(dialog.hasAttribute('open'));
+  assert.equal(location.pathname, '/admin/quickprep', 'More must not trigger row navigation');
+  for (const value of [...topics, 'Microsoft', 'Adobe', 'Full preparation sheet description.', 'Sem 1, Sem 2, Sem 3, Sem 4', 'Placement champion', '60 XP', 'Question difficulty', '2 questions are unavailable']) assert.ok(dialog.textContent.includes(value), value);
+  assert.equal(document.body.style.overflow, 'hidden');
+  const close = button(/Close QuickPrep details/, dialog);
+  assert.equal(document.activeElement, close);
+  await act(async () => document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true })));
+  assert.equal(document.activeElement.textContent, 'Open full sheet');
+  await act(async () => document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true })));
+  assert.equal(document.activeElement, close);
+  await act(async () => document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+  assert.equal(document.querySelector('[role="dialog"]'), null);
+  assert.equal(document.body.style.overflow, '');
+  assert.equal(document.activeElement, more);
+});
+
+test('details popup closes via backdrop and links to the full sheet', async () => {
+  await render('/admin/quickprep', pages.list, '/admin/quickprep');
+  await settle();
+  await click(button(/More details for Amazon Top 3/));
+  await click(document.querySelector('[role="dialog"]'));
+  assert.equal(document.querySelector('[role="dialog"]'), null);
+  await click(button(/More details for Amazon Top 3/));
+  const link = [...document.querySelectorAll('dialog a')].find((node) => node.textContent === 'Open full sheet');
+  assert.equal(link.getAttribute('href'), '/admin/quickprep/q1');
+  await click(link);
+  assert.equal(location.pathname, '/admin/quickprep/q1');
+  assert.equal(document.querySelector('[role="dialog"]'), null);
+  assert.equal(document.body.style.overflow, '');
 });
 
 test('creating starts with details from library-only dropdowns, then opens the questions step', async () => {

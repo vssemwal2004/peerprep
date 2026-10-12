@@ -9,6 +9,7 @@ import { useToast } from '../components/CustomToast';
 import { queueQuestionSelection } from './assessment/assessmentProblemSelectionStore';
 import { loadAssessmentDraft } from './assessment/assessmentDraftStore';
 import { buildAssessmentQuestionIdentitySet, isLibraryQuestionAlreadyAdded } from './assessment/assessmentQuestionIdentity';
+import { canAuthorQuickPrep, isControlDeployment } from '../platform/universityPermissions';
 import { getLanguageLabel, getProblemSupportedLanguages } from './compiler/compilerUtils';
 import CodingQuestionFilterDrawer from './library/CodingQuestionFilterDrawer';
 
@@ -180,7 +181,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   const initialType = params.get('type') || (initialStatus || selectionMode ? 'all' : 'coding');
   const lockType = params.get('lockType') || '';
   // QuickPrep picking: the same library, filters and selection; selected coding rows are added to one QuickPrep.
-  const quickprepMode = params.get('mode') === 'quickprep';
+  const quickprepMode = params.get('mode') === 'quickprep' && canAuthorQuickPrep;
   const quickprepId = params.get('quickprep') || '';
   const quickprepTitle = params.get('quickprepTitle') || 'this QuickPrep';
   const quickprepReturn = params.get('return') || (quickprepId ? `/admin/quickprep/${quickprepId}/edit?step=questions` : '/admin/quickprep');
@@ -299,7 +300,8 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
     }).catch((error) => { if (active) toast.error(error.message || 'This QuickPrep could not be loaded.'); });
     return () => { active = false; };
   }, [quickprepId, quickprepMode, toast]);
-  const quickprepKeyOf = (question) => (question.platformShared ? `shared:${question._id}` : question.sourceProblemId ? `university:${question.sourceProblemId}` : '');
+  // On the central platform every library row is itself a central question, kept by its own id.
+  const quickprepKeyOf = (question) => (question.platformShared || isControlDeployment ? `shared:${question._id}` : question.sourceProblemId ? `university:${question.sourceProblemId}` : '');
   const questionAlreadyAdded = (question) => (selectionMode && isLibraryQuestionAlreadyAdded(question, assessmentQuestionIdentities))
     || (quickprepMode && quickprepKeys.has(quickprepKeyOf(question)));
   // "Select page" acts on what is on screen: the open folder's questions in folders view, else the list.

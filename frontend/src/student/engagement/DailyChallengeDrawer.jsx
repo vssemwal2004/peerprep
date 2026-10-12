@@ -123,7 +123,7 @@ export default function DailyChallengeDrawer({ id, onClose, returnFocusRef }) {
             </>}
         <p className="mt-4 flex items-start gap-1.5 text-[11px] leading-relaxed text-slate-500 dark:text-zinc-400"><Clock3 size={13} className="mt-0.5 shrink-0" /><span>New plan {dateLabel(daily?.endsAt, { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' }) || 'daily'} at 2 AM IST. Missing a day never removes XP.</span></p>
       </div>
-      <footer className="shrink-0 border-t border-slate-200 bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] dark:border-zinc-800 dark:bg-[#202020] sm:px-5"><Link to="/student/quickprep" className={`flex items-center justify-between gap-3 rounded-xl bg-sky-600 px-4 py-3 text-sm font-semibold text-white hover:bg-sky-700 ${focusRing}`}><span>Open QuickPrep<span className="mt-0.5 block text-[11px] font-normal text-sky-100">Your daily challenge and curated quests</span></span><ArrowRight size={19} /></Link></footer>
+      <footer className="shrink-0 border-t border-slate-200 bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] dark:border-zinc-800 dark:bg-[#202020] sm:px-5"><Link to="/student/dashboard" className={`flex items-center justify-between gap-3 rounded-xl bg-sky-600 px-4 py-3 text-sm font-semibold text-white hover:bg-sky-700 ${focusRing}`}><span>Open dashboard<span className="mt-0.5 block text-[11px] font-normal text-sky-100">Your daily challenge and progress</span></span><ArrowRight size={19} /></Link></footer>
     </motion.section>
   </div>, document.body);
 }

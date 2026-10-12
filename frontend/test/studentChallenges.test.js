@@ -7,7 +7,7 @@ import { JSDOM } from 'jsdom';
 import { createServer } from 'vite';
 import { dailyGoalStatus, dailyPlanProgress } from '../src/student/engagement/dailyChallengeModel.js';
 
-let dom, server, root, createRoot, Challenges, Header, ThemeProvider, PopupDismissManager, AuthContext, UniversityPolicyProvider, api, socket;
+let dom, server, root, createRoot, Challenges, QuickPrep, Header, ThemeProvider, PopupDismissManager, AuthContext, UniversityPolicyProvider, api, socket;
 let data, permissions, calls, rank;
 const user = { _id: 'student-self', role: 'student', accessScope: 'full' };
 const keys = ['window', 'document', 'navigator', 'HTMLElement', 'SVGElement', 'Element', 'getComputedStyle', 'localStorage', 'IS_REACT_ACT_ENVIRONMENT', 'fetch'];
@@ -20,6 +20,7 @@ before(async () => {
   ({ createRoot } = await import('react-dom/client'));
   server = await createServer({ root: fileURLToPath(new URL('..', import.meta.url)), define: { 'import.meta.env.VITE_PEERPREP_DEPLOYMENT_ROLE': JSON.stringify('university') }, server: { middlewareMode: true, hmr: false, ws: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
   Challenges = (await server.ssrLoadModule('/src/student/StudentChallenges.jsx')).default;
+  QuickPrep = (await server.ssrLoadModule('/src/student/StudentQuests.jsx')).default;
   Header = (await server.ssrLoadModule('/src/components/StudentDashboardHeader.jsx')).default;
   ({ ThemeProvider } = await server.ssrLoadModule('/src/context/ThemeContext.jsx'));
   PopupDismissManager = (await server.ssrLoadModule('/src/components/PopupDismissManager.jsx')).default;
@@ -68,6 +69,45 @@ async function mountHeader(currentUser = user) {
 }
 const control = name => document.querySelector(`[aria-label="${name}"]`);
 const drawer = () => document.querySelector('[role="dialog"]');
+
+async function mountQuickPrep() {
+  await act(async () => root.render(h(MemoryRouter, { initialEntries: ['/student/quickprep'] }, h(AuthContext.Provider, { value: { user, authChecked: true } }, h(UniversityPolicyProvider, null, h(QuickPrep))))));
+}
+
+test('QuickPrep shows admin sheets without challenge or ranking requests, including refresh', async () => {
+  api.listQuests = async () => { calls.push('sheets'); return { quests: [{ id: 'sheet-1', slug: 'arrays', title: 'Admin Arrays Sheet', total: 10, solved: 0, rewardXp: 50, theme: 'sky', category: 'topic', difficulty: { Easy: 10 }, started: false }] }; };
+  api.refreshStudentEngagement = async () => { calls.push('forbidden-challenges'); throw new Error('Challenge migration required'); };
+  await mountQuickPrep();
+  assert.match(text(), /Admin Arrays Sheet/);
+  assert.deepEqual(calls, ['sheets']);
+  assert.doesNotMatch(text(), /daily challenge|ONE PROBLEM A DAY|50 badges|migration required|University rank/i);
+  assert.equal(document.querySelector('.challenge-layout'), null);
+  assert.ok(document.querySelector('a[href="/student/quickprep/arrays"]'));
+  await click(button('Refresh sheets'));
+  assert.deepEqual(calls, ['sheets', 'sheets']);
+});
+
+test('QuickPrep empty and failed sheet states do not mention daily challenges', async () => {
+  api.listQuests = async () => ({ quests: [] });
+  await mountQuickPrep();
+  assert.match(text(), /administrator has not published any question sheets/);
+  assert.doesNotMatch(text(), /daily challenge/i);
+  api.listQuests = async () => { throw new Error('Sheet library unavailable'); };
+  await click(button('Refresh sheets'));
+  assert.match(document.querySelector('[role="alert"]').textContent, /Sheet library unavailable/);
+  api.listQuests = async () => ({ quests: [] });
+  await click(button('Retry'));
+  assert.equal(document.querySelector('[role="alert"]'), null);
+});
+
+test('QuickPrep requires question access even when learning challenges are enabled', async () => {
+  permissions = { learning: true, questions: false };
+  api.listQuests = async () => { calls.push('sheets'); return { quests: [] }; };
+  await mountQuickPrep();
+  assert.match(text(), /QuickPrep is not available/);
+  assert.deepEqual(calls, []);
+  assert.equal(button('Refresh sheets').disabled, true);
+});
 
 for (const accessScope of ['full', 'assessment_only']) {
   test(`profile dropdown opens change password and closes for ${accessScope} students`, async () => {

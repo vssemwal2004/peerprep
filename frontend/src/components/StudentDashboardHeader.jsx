@@ -28,7 +28,7 @@ import DailyChallengeDrawer from '../student/engagement/DailyChallengeDrawer';
 
 const modules = [
   { label: 'Dashboard', hint: 'Your placement overview', to: '/student/dashboard', icon: LayoutDashboard },
-  { label: 'QuickPrep', hint: 'Daily challenge and curated QuickPreps', to: '/student/quickprep', icon: Sparkles },
+  { label: 'QuickPrep', hint: 'Question sheets prepared by your admin', to: '/student/quickprep', icon: Sparkles },
   { label: 'Analysis', hint: 'Progress and skill insights', to: '/student/analysis', icon: BarChart3 },
   { label: 'Rankings', hint: 'Your university and global rank', to: '/student/rankings', icon: BarChart3 },
   { label: 'Interviews', hint: 'Peer interview sessions', to: '/student/interview', icon: User },
@@ -67,7 +67,7 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
-  const { allowsPath } = useUniversityPolicy();
+  const { allowsPath, allowsModule } = useUniversityPolicy();
   const { theme, toggleTheme } = useTheme();
   const [query, setQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -80,7 +80,7 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
   const searchRef = useRef(null);
   const appsRef = useRef(null);
   const profileRef = useRef(null);
-  const canShowChallenges = user?.role === 'student' && user?.accessScope !== 'assessment_only' && allowsPath('/student/quickprep', 'student');
+  const canShowChallenges = user?.role === 'student' && user?.accessScope !== 'assessment_only' && allowsModule('challenges');
   const challengesOpen = canShowChallenges && challengeRoute === location.key;
   const closeChallenges = useCallback(() => setChallengeRoute(null), []);
 

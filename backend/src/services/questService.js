@@ -10,8 +10,9 @@ import { engagementTenant, engagementPermissions } from './engagementPolicyServi
 import { getSharedCodingCatalog, invalidateChallengeRanking, publicProblemMatch } from './studentDashboardService.js';
 import { notifyOnce } from './notificationService.js';
 import { HttpError } from '../utils/errors.js';
-import { isUniversity } from '../platform/deployment.js';
-import { sharedQuestions } from '../platform/sharedContent.js';
+import { isControlPlane, isUniversity } from '../platform/deployment.js';
+import { sharedQuestions, sharedQuests } from '../platform/sharedContent.js';
+import { CENTRAL_QUESTION_FILTER } from '../platform/centralQuestions.js';
 
 const ACCEPTED = ['AC', 'ACCEPTED', 'ACCEPT'];
 const CATEGORIES = ['company', 'topic', 'study-plan', 'difficulty'];
@@ -35,7 +36,35 @@ export function slugify(title) {
 // Library: the questions a quest may use, read live so titles and difficulty never go stale.
 // ---------------------------------------------------------------------------------------------
 
+// Who may design QuickPreps: the super admin on the central platform, or the admin of a standalone install
+// (which is its own catalog). University deployments only receive them from the central feed.
+export const quickPrepAuthoringAllowed = () => !isUniversity();
+function assertAuthor() {
+  if (!quickPrepAuthoringAllowed()) throw new HttpError(403, 'QuickPreps are managed by the super admin.');
+}
+
+// On the central platform a QuickPrep may use only central library questions, under the same id universities
+// see them by (the library row id), so students open and are credited on exactly that question.
+const linkedProblemId = (row) => row.sourceProblemId || row.questionData?.problemId || row.questionData?.coding?.problemId
+  || row.questionData?.problemDataSnapshot?._id || row.questionData?.problemDataSnapshot?.id || null;
+async function centralLibraryIndex() {
+  const rows = await QuestionLibrary.find({ ...CENTRAL_QUESTION_FILTER, questionType: 'coding' })
+    .select('questionText difficulty tags keywords displayOrder sourceProblemId questionData.problemId questionData.coding.problemId questionData.problemDataSnapshot._id questionData.problemDataSnapshot.id questionData.problemDataSnapshot.title questionData.problemDataSnapshot.difficulty questionData.problemDataSnapshot.companyTags')
+    .maxTimeMS(8000).lean();
+  // Universities judge through the linked problem, so a row without a real one is not offered.
+  const linked = rows.map((row) => String(linkedProblemId(row) || '')).filter((id) => mongoose.isObjectIdOrHexString(id));
+  const existing = new Set((linked.length ? await Problem.find({ _id: { $in: linked } }).select('_id').maxTimeMS(8000).lean() : []).map((problem) => String(problem._id)));
+  const entries = rows.filter((row) => existing.has(String(linkedProblemId(row) || ''))).map((row) => ({
+    source: 'shared', problemId: String(row._id), title: row.questionData?.problemDataSnapshot?.title || row.questionText,
+    difficulty: row.difficulty || row.questionData?.problemDataSnapshot?.difficulty || 'Easy', tags: row.tags || [],
+    companies: row.keywords?.length ? row.keywords : row.questionData?.problemDataSnapshot?.companyTags || [],
+    order: Number(row.displayOrder) || 2147483647, href: `/problems/shared/${row._id}`,
+  }));
+  return new Map(entries.map((entry) => [itemKey(entry), { ...entry, key: itemKey(entry) }]));
+}
+
 async function libraryIndex() {
+  if (isControlPlane()) return centralLibraryIndex();
   const [local, shared] = await Promise.all([
     Problem.find(publicProblemMatch).select('_id title difficulty tags companyTags displayOrder').maxTimeMS(8000).lean(),
     getSharedCodingCatalog(),
@@ -58,6 +87,7 @@ const tally = (entries, pick) => Object.entries(entries.flatMap(pick).reduce((ac
 
 /** Companies, topics and difficulties that exist in the published library: the only choices admins are offered. */
 export async function questTaxonomy() {
+  assertAuthor();
   const all = [...(await libraryIndex()).values()];
   return {
     companies: tally(all, (entry) => [...new Set(entry.companies.map(String).filter(Boolean))]).slice(0, 500),
@@ -69,6 +99,7 @@ export async function questTaxonomy() {
 
 /** Admin question picker: search and filter the library. Several topics or companies match any of them. */
 export async function searchQuestLibrary({ search = '', difficulty = '', topic = '', company = '', topics, companies, source = '', page = 1, limit = 30 } = {}) {
+  assertAuthor();
   const index = await libraryIndex();
   const query = text(search, 100).toLowerCase();
   const difficulties = list(difficulty);
@@ -101,6 +132,9 @@ function validateItems(rawItems, index, { keepUnavailable = new Set() } = {}) {
     if (!['university', 'shared'].includes(item?.source) || !mongoose.isValidObjectId(item?.problemId)) throw new HttpError(400, 'One of the questions is not valid.');
     const normalized = { source: item.source, problemId: String(item.problemId), section: text(item.section, 60) };
     const key = itemKey(normalized);
+    // New picks must be central questions. Items saved before the central rule stay listed as unavailable,
+    // so the QuickPrep can still be edited, unpublished or archived instead of being locked.
+    if (isControlPlane() && normalized.source !== 'shared' && !keepUnavailable.has(key)) throw new HttpError(400, 'Central QuickPreps can only use questions from the central library.');
     if (seen.has(key)) throw new HttpError(400, 'A question appears twice in this QuickPrep.');
     // A question already saved may later be unpublished; it stays listed (flagged) instead of blocking every edit.
     if (!index.has(key) && !keepUnavailable.has(key)) throw new HttpError(400, 'One of the questions is no longer published in the library.');
@@ -148,13 +182,15 @@ const difficultyMix = (items) => items.reduce((mix, item) => { if (item.availabl
 
 /** Full-access, active students per semester: who a QuickPrep reaches once it is published. */
 async function audienceCounts() {
+  // Students live in each university's own database, never on the central platform.
+  if (isControlPlane()) return null;
   const rows = await User.aggregate([
     { $match: { role: 'student', isActive: { $ne: false }, accessScope: { $ne: 'assessment_only' } } },
     { $group: { _id: '$semester', count: { $sum: 1 } } },
   ]).option({ maxTimeMS: 8000 });
   return { total: rows.reduce((sum, row) => sum + row.count, 0), bySemester: new Map(rows.map((row) => [Number(row._id) || 0, row.count])) };
 }
-const audienceFor = (quest, audience) => (quest.semesters?.length
+const audienceFor = (quest, audience) => (!audience ? null : quest.semesters?.length
   ? quest.semesters.reduce((sum, semester) => sum + (audience.bySemester.get(semester) || 0), 0) : audience.total);
 
 function adminShape(quest, index, stats, audience) {
@@ -164,7 +200,7 @@ function adminShape(quest, index, stats, audience) {
     theme: quest.theme, rewardXp: quest.rewardXp, badgeTitle: quest.badgeTitle, semesters: quest.semesters, status: quest.status, publishedAt: quest.publishedAt,
     createdAt: quest.createdAt, updatedAt: quest.updatedAt, items, questionCount: items.filter((item) => item.available).length,
     unavailableCount: items.filter((item) => !item.available).length, difficulty: difficultyMix(items),
-    audience: audience ? audienceFor(quest, audience) : null,
+    audience: audience ? audienceFor(quest, audience) : null, central: isControlPlane(),
     stats: stats || { enrolled: 0, completed: 0, averageProgress: 0 } };
 }
 
@@ -188,18 +224,21 @@ async function findAdminQuest(id, select) {
 
 /** Every QuickPrep (archived included, so they can be restored), newest change first. */
 export async function listAdminQuests() {
+  assertAuthor();
   const quests = await Quest.find(questScope()).sort({ updatedAt: -1 }).limit(300).maxTimeMS(8000).lean();
   const [index, stats, audience] = await Promise.all([libraryIndex(), questStats(quests.map((quest) => quest._id)), audienceCounts()]);
   return quests.map((quest) => adminShape(quest, index, stats.get(String(quest._id)), audience));
 }
 
 export async function getAdminQuest(admin, college, id) {
+  assertAuthor();
   const quest = await findAdminQuest(id);
   const [index, stats, audience] = await Promise.all([libraryIndex(), questStats([quest._id]), audienceCounts()]);
   return adminShape(quest, index, stats.get(String(quest._id)), audience);
 }
 
 export async function createQuest(admin, college, input) {
+  assertAuthor();
   const index = await libraryIndex();
   const fields = await validateQuest(input, index);
   const quest = await Quest.create({ ...fields, tenantKey: questTenant(), slug: await uniqueSlug(fields.title),
@@ -208,6 +247,7 @@ export async function createQuest(admin, college, input) {
 }
 
 export async function updateQuest(admin, college, id, input) {
+  assertAuthor();
   const existing = await findAdminQuest(id);
   const index = await libraryIndex();
   const fields = await validateQuest({ ...existing, ...input }, index, existing);
@@ -234,6 +274,7 @@ const changedMeanwhile = () => new HttpError(409, 'This QuickPrep changed while 
 
 /** Adds library items given as {source, problemId}; ones already present are skipped. */
 export async function addQuestItems(admin, id, rawItems) {
+  assertAuthor();
   const existing = await findAdminQuest(id);
   const index = await libraryIndex();
   const present = new Set(existing.items.map(itemKey));
@@ -248,10 +289,8 @@ export async function addQuestItems(admin, id, rawItems) {
   return { quest: adminShape(quest, index, stats.get(String(quest._id)), audience), added: incoming.length, skipped: (rawItems?.length || 0) - incoming.length };
 }
 
-// A library row is not itself the practice problem: university rows point at a coding Problem; shared
-// rows are the central question itself. These are the same ids students open and their solves record.
-const linkedProblemId = (row) => row.sourceProblemId || row.questionData?.problemId || row.questionData?.coding?.problemId
-  || row.questionData?.problemDataSnapshot?._id || row.questionData?.problemDataSnapshot?.id || null;
+// A library row is not itself the practice problem: on a standalone install university rows point at a coding
+// Problem; shared and central rows are the question itself. These are the ids students open and are credited on.
 const libraryRowTitle = (row) => text(row.questionData?.problemDataSnapshot?.title || row.sourceProblemTitle || row.questionText || 'Untitled question', 120);
 export const LIBRARY_SKIP_REASONS = {
   already_in: 'Already in this QuickPrep',
@@ -261,8 +300,19 @@ export const LIBRARY_SKIP_REASONS = {
   problem_draft: 'Its coding problem is still a draft',
   problem_not_public: 'Its coding problem is not visible to students',
   shared_unavailable: 'Not available to students from the shared catalog',
+  question_draft: 'Still a draft in the library',
+  question_private: 'Private in the library, so universities cannot see it',
+  assessment_only: 'Used only inside an assessment, so universities cannot see it',
   limit: `The QuickPrep is full (${MAX_ITEMS} questions)`,
 };
+
+// Central platform: why a library row is not in the catalog universities receive.
+function centralRowReason(row) {
+  if (row.status !== 'published') return 'question_draft';
+  if (row.visibility === 'private') return 'question_private';
+  if (row.sourceType === 'assessment') return 'assessment_only';
+  return 'no_linked_problem';
+}
 
 /**
  * "Add to QuickPrep" from the Question Library. The client sends library row ids only; each row is re-read
@@ -270,7 +320,9 @@ export const LIBRARY_SKIP_REASONS = {
  * the rest are added in the order selected.
  */
 export async function addQuestLibraryItems(admin, id, rawIds) {
+  assertAuthor();
   await findAdminQuest(id, '_id');
+  const central = isControlPlane();
   const ids = [...new Set((Array.isArray(rawIds) ? rawIds : []).map((value) => String(value ?? '').trim()).filter(Boolean))];
   if (!ids.length) throw new HttpError(400, 'Select at least one question from the library.');
   if (ids.length > MAX_LIBRARY_PICK) throw new HttpError(400, `Select at most ${MAX_LIBRARY_PICK} questions at a time.`);
@@ -278,24 +330,26 @@ export async function addQuestLibraryItems(admin, id, rawIds) {
   const [index, rows, shared] = await Promise.all([
     libraryIndex(),
     localIds.length ? QuestionLibrary.find({ _id: { $in: localIds } })
-      .select('questionType questionText sourceProblemId sourceProblemTitle questionData.problemId questionData.coding.problemId questionData.problemDataSnapshot._id questionData.problemDataSnapshot.id questionData.problemDataSnapshot.title')
+      .select('questionType questionText status visibility sourceType sourceProblemId sourceProblemTitle questionData.problemId questionData.coding.problemId questionData.problemDataSnapshot._id questionData.problemDataSnapshot.id questionData.problemDataSnapshot.title')
       .maxTimeMS(8000).lean() : [],
     sharedQuestions().catch(() => null),
   ]);
   const local = new Map(rows.map((row) => [String(row._id), row]));
-  const central = new Map((shared || []).map((row) => [String(row._id), row]));
+  const sharedRows = new Map((shared || []).map((row) => [String(row._id), row]));
 
   const mapped = ids.map((rowId) => {
     const row = local.get(rowId);
     if (row) {
       if (row.questionType !== 'coding') return { id: rowId, title: libraryRowTitle(row), reason: 'not_coding' };
+      // The super admin's library rows are the central questions themselves: universities know them by this id.
+      if (central) return { id: rowId, title: libraryRowTitle(row), row, item: { source: 'shared', problemId: rowId, section: '' } };
       // questionData is untyped, so a link there may be a number or junk: only a real ObjectId counts.
       const linked = linkedProblemId(row);
       const problemId = linked ? String(linked) : '';
       if (!mongoose.isObjectIdOrHexString(problemId)) return { id: rowId, title: libraryRowTitle(row), reason: 'no_linked_problem' };
       return { id: rowId, title: libraryRowTitle(row), item: { source: 'university', problemId, section: '' } };
     }
-    const sharedRow = central.get(rowId);
+    const sharedRow = sharedRows.get(rowId);
     if (sharedRow) {
       if (sharedRow.questionType !== 'coding') return { id: rowId, title: libraryRowTitle(sharedRow), reason: 'not_coding' };
       return { id: rowId, title: libraryRowTitle(sharedRow), item: { source: 'shared', problemId: rowId, section: '' } };
@@ -309,7 +363,8 @@ export async function addQuestLibraryItems(admin, id, rawIds) {
   const problemState = new Map(problems.map((problem) => [String(problem._id), problem]));
 
   // Visibility is the lasting blocker, so it is reported before draft status (publishing alone won't help).
-  const unavailableReason = (item) => {
+  const unavailableReason = (item, row) => {
+    if (central && row) return centralRowReason(row);
     if (item.source === 'shared') return 'shared_unavailable';
     const problem = problemState.get(item.problemId);
     if (!problem) return 'no_linked_problem';
@@ -329,7 +384,7 @@ export async function addQuestLibraryItems(admin, id, rawIds) {
       if (!reason) {
         const key = itemKey(entry.item);
         if (present.has(key)) reason = 'already_in';
-        else if (!index.has(key)) reason = unavailableReason(entry.item);
+        else if (!index.has(key)) reason = unavailableReason(entry.item, entry.row);
         else if (existing.items.length + incoming.length >= MAX_ITEMS) reason = 'limit';
         else { present.add(key); incoming.push(entry.item); }
       }
@@ -345,6 +400,7 @@ export async function addQuestLibraryItems(admin, id, rawIds) {
 }
 
 export async function duplicateQuest(admin, id) {
+  assertAuthor();
   const source = await findAdminQuest(id);
   const index = await libraryIndex();
   const title = text(`${source.title} (copy)`, 80);
@@ -356,10 +412,15 @@ export async function duplicateQuest(admin, id) {
   return adminShape(quest.toObject(), index, null, await audienceCounts());
 }
 
-/** Drafts nobody started are deleted; anything students touched is archived so history stays intact. */
+/**
+ * Drafts nobody started are deleted; anything students touched is archived so history stays intact. Centrally,
+ * student progress lives in the universities, so any QuickPrep that was ever published is archived instead.
+ */
 export async function removeQuest(admin, college, id) {
-  const quest = await findAdminQuest(id, '_id status');
-  if (quest.status === 'draft' && !await QuestEnrollment.exists({ questId: quest._id })) {
+  assertAuthor();
+  const quest = await findAdminQuest(id, '_id status publishedAt');
+  const touched = isControlPlane() ? Boolean(quest.publishedAt) : await QuestEnrollment.exists({ questId: quest._id });
+  if (quest.status === 'draft' && !touched) {
     await Quest.deleteOne({ _id: quest._id, ...questScope() });
     return { deleted: true };
   }
@@ -390,6 +451,7 @@ async function cohortStates(studentIds, keys) {
 
 /** Admin "View": how every student and every question is doing in one QuickPrep. */
 export async function questInsights(admin, id) {
+  assertAuthor();
   const quest = await findAdminQuest(id);
   const [index, audience] = await Promise.all([libraryIndex(), audienceCounts()]);
   const enrollments = await QuestEnrollment.find({ questId: quest._id }).sort({ lastViewedAt: -1 }).limit(2000).maxTimeMS(8000).lean();
@@ -429,6 +491,7 @@ export async function questInsights(admin, id) {
 
 /** Admin "Insights": every QuickPrep side by side, plus the students finishing the most. */
 export async function questOverview() {
+  assertAuthor();
   const quests = await Quest.find({ ...questScope(), status: { $ne: 'archived' } }).sort({ updatedAt: -1 }).limit(300).maxTimeMS(8000).lean();
   const ids = quests.map((quest) => quest._id);
   const [index, stats, audience, leaders] = await Promise.all([libraryIndex(), questStats(ids), audienceCounts(),
@@ -444,7 +507,7 @@ export async function questOverview() {
   return {
     totals: { quickpreps: rows.length, published: published.length, drafts: rows.length - published.length,
       started: rows.reduce((sum, row) => sum + row.stats.enrolled, 0), completed: rows.reduce((sum, row) => sum + row.stats.completed, 0),
-      students: audience.total },
+      students: audience ? audience.total : null, central: isControlPlane() },
     quests: rows,
     leaders: leaders.map((row) => ({ id: String(row._id), name: people.get(String(row._id))?.name || 'Former student', rollNumber: people.get(String(row._id))?.studentId || '',
       semester: people.get(String(row._id))?.semester || null, started: row.started, completed: row.completed, solved: row.solved, lastActivity: row.lastActivity || null })),
@@ -461,6 +524,41 @@ async function requireCoding(student) {
 
 const visibleFilter = (student) => ({ ...questScope(), status: 'published',
   ...(Number(student.semester) > 0 ? { $or: [{ semesters: { $size: 0 } }, { semesters: Number(student.semester) }] } : { semesters: { $size: 0 } }) });
+
+const DEFINITION_FIELDS = '_id slug title description category company companies topics difficulties theme items rewardXp badgeTitle semesters status publishedAt updatedAt';
+
+/** The central feed: every published QuickPrep definition (no authors, no student data). */
+export async function publishedQuestDefinitions() {
+  const quests = await Quest.find({ status: 'published' }).select(DEFINITION_FIELDS).sort({ publishedAt: -1, _id: -1 }).limit(300).maxTimeMS(8000).lean();
+  // Universities can open only central questions; ids local to the central database are never sent.
+  return quests.map((quest) => ({ ...quest, items: (quest.items || []).filter((item) => item.source === 'shared') }));
+}
+
+// A definition from the central feed arrives as JSON; ids become ObjectIds so enrollments, rewards and
+// badges key on it exactly as they would on a local document.
+function hydrateDefinition(quest) {
+  return { ...quest, _id: objectId(quest._id), publishedAt: quest.publishedAt ? new Date(quest.publishedAt) : null,
+    semesters: (quest.semesters || []).map(Number), items: (quest.items || []).map((item) => ({ source: item.source, problemId: String(item.problemId), section: item.section || '' })) };
+}
+
+/**
+ * QuickPreps this student may see. University deployments read the super admin's central definitions;
+ * standalone installs read their own. Semester targeting is the same either way.
+ */
+async function visibleQuests(student, { slug, id } = {}) {
+  if (isUniversity()) {
+    const semester = Number(student.semester) || 0;
+    return ((await sharedQuests()) || []).filter((quest) => quest && mongoose.isObjectIdOrHexString(String(quest._id)))
+      .map(hydrateDefinition)
+      .filter((quest) => quest.status === 'published'
+        && (!quest.semesters.length || (semester > 0 && quest.semesters.includes(semester)))
+        && (!slug || quest.slug === slug) && (!id || String(quest._id) === String(id)))
+      .sort((a, b) => (b.publishedAt?.getTime() || 0) - (a.publishedAt?.getTime() || 0) || String(b._id).localeCompare(String(a._id)))
+      .slice(0, 100);
+  }
+  return Quest.find({ ...visibleFilter(student), ...(slug ? { slug } : {}), ...(id ? { _id: id } : {}) })
+    .sort({ publishedAt: -1, _id: -1 }).limit(100).maxTimeMS(8000).lean();
+}
 
 /** Solved and attempted state for the given library keys, from verified submissions and attempts. */
 async function questionStates(studentId, keys) {
@@ -528,7 +626,7 @@ function studentCard(quest, index, states, enrollment) {
 
 async function loadStudentQuests(student, filter = {}) {
   const scope = engagementScope(student);
-  const quests = await Quest.find({ ...visibleFilter(student), ...filter }).sort({ publishedAt: -1, _id: -1 }).limit(100).maxTimeMS(8000).lean();
+  const quests = await visibleQuests(student, filter);
   const [index, enrollments] = await Promise.all([libraryIndex(),
     quests.length ? QuestEnrollment.find({ ...scope, questId: { $in: quests.map((quest) => quest._id) } }).maxTimeMS(8000).lean() : []]);
   const keys = [...new Set(quests.flatMap((quest) => quest.items.map(itemKey)).filter((key) => index.has(key)))];
@@ -606,9 +704,14 @@ export async function recordQuestView(student, slug, problemKey, now = new Date(
 export async function latestQuestResume(student) {
   if (!(await engagementPermissions(student)).questions) return null;
   const scope = engagementScope(student);
-  const enrollment = await QuestEnrollment.findOne({ ...scope, completedAt: null, lastViewedAt: { $ne: null } }).sort({ lastViewedAt: -1 }).maxTimeMS(8000).lean();
+  // Only QuickPreps the student can still see compete for the card, so an archived, retargeted or retired
+  // local one opened more recently never hides one they are working through.
+  const quests = await visibleQuests(student);
+  if (!quests.length) return null;
+  const enrollment = await QuestEnrollment.findOne({ ...scope, completedAt: null, lastViewedAt: { $ne: null }, questId: { $in: quests.map((entry) => entry._id) } })
+    .sort({ lastViewedAt: -1 }).maxTimeMS(8000).lean();
   if (!enrollment) return null;
-  const quest = await Quest.findOne({ _id: enrollment.questId, ...visibleFilter(student) }).maxTimeMS(8000).lean();
+  const quest = quests.find((entry) => String(entry._id) === String(enrollment.questId));
   if (!quest) return null;
   const index = await libraryIndex();
   const keys = quest.items.map(itemKey).filter((key) => index.has(key));

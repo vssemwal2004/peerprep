@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { BarChart3, Building2, CircleCheck, FilePen, Layers, Plus, Rocket, Tags, Users, Zap } from 'lucide-react';
+import { BarChart3, Building2, CircleCheck, Globe2, FilePen, Layers, Plus, Rocket, Users, Zap } from 'lucide-react';
 import { api } from '../../utils/api';
 import { QUEST_CATEGORIES, questCategory, questTheme } from '../../student/quests/questTheme';
-import { Chips, MixBar, Notice, Page, PageHeader, ProgressBar, RowMenu, SearchBox, Segmented, StatCard, StatusPill, card, primaryButton, secondaryButton } from './ui';
+import { Notice, Page, PageHeader, ProgressBar, RowMenu, SearchBox, Segmented, StatCard, StatusPill, card, primaryButton, secondaryButton } from './ui';
+import QuickPrepSummaryDialog from './QuickPrepSummaryDialog';
 import { timeAgo } from './format';
 import useQuickPrepActions, { QUICKPREP_ROOT } from './useQuickPrepActions';
+import { isControlDeployment as central } from '../../platform/universityPermissions';
 
 const STATUS_TABS = ['all', 'published', 'draft', 'archived'];
 
@@ -16,6 +18,8 @@ export default function QuickPrepList() {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
   const [category, setCategory] = useState('all');
+  const [detailId, setDetailId] = useState(null);
+  const closeDetails = useCallback(() => setDetailId(null), []);
   const load = useCallback(async () => {
     setState((previous) => ({ ...previous, loading: true, error: '' }));
     try { setState({ quests: (await api.listAdminQuests()).quests || [], loading: false, error: '' }); }
@@ -25,6 +29,7 @@ export default function QuickPrepList() {
   const { actionsFor, busyId, message, setMessage } = useQuickPrepActions({ onChanged: load });
 
   const quests = state.quests;
+  const detail = quests.find((quest) => quest.id === detailId);
   const counts = useMemo(() => Object.fromEntries(STATUS_TABS.map((tab) => [tab, tab === 'all' ? quests.filter((quest) => quest.status !== 'archived').length : quests.filter((quest) => quest.status === tab).length])), [quests]);
   const totals = useMemo(() => {
     const live = quests.filter((quest) => quest.status !== 'archived');
@@ -41,7 +46,7 @@ export default function QuickPrepList() {
     <PageHeader icon={Zap} title="QuickPrep" crumbs={[{ label: 'Admin', to: '/admin/dashboard' }, { label: 'QuickPrep' }]}
       description="Curated question sets for focused practice, such as company sets, topic tracks or a 75 Hard plan. Students earn the badge and XP when they solve every question."
       actions={<>
-        <Link to={`${QUICKPREP_ROOT}/insights`} className={secondaryButton}><BarChart3 className="h-4 w-4" />Insights</Link>
+        {!central && <Link to={`${QUICKPREP_ROOT}/insights`} className={secondaryButton}><BarChart3 className="h-4 w-4" />Insights</Link>}
         <Link to={`${QUICKPREP_ROOT}/new`} className={primaryButton}><Plus className="h-4 w-4" />Create QuickPrep</Link>
       </>} />
 
@@ -49,7 +54,8 @@ export default function QuickPrepList() {
       <StatCard icon={Layers} label="QuickPreps" value={counts.all} hint={`${counts.archived} archived`} tone="sky" />
       <StatCard icon={Rocket} label="Published" value={counts.published} hint="Visible to students" tone="emerald" />
       <StatCard icon={FilePen} label="Drafts" value={counts.draft} hint="Not visible yet" tone="amber" />
-      <StatCard icon={Users} label="Students started" value={totals.started} hint={`${totals.completed} completions`} tone="violet" />
+      {central ? <StatCard icon={Globe2} label="Delivered to" value="All" hint="Universities with coding enabled" tone="violet" />
+        : <StatCard icon={Users} label="Students started" value={totals.started} hint={`${totals.completed} completions`} tone="violet" />}
     </div>
 
     {message && <Notice tone={message.tone} onClose={() => setMessage(null)}>{message.text}</Notice>}
@@ -71,7 +77,7 @@ export default function QuickPrepList() {
         : !quests.length ? <EmptyState />
           : !visible.length ? <p className="px-4 py-12 text-center text-sm text-slate-500">No QuickPrep matches these filters.</p>
             : <div className="overflow-x-auto">
-              <table className="w-full min-w-[1060px] text-left text-sm">
+              <table className="w-full min-w-[1180px] whitespace-nowrap text-left text-sm">
                 <thead className="bg-slate-50/80 text-[11.5px] font-semibold uppercase tracking-wide text-slate-500 dark:bg-zinc-900/60 dark:text-zinc-400">
                   <tr>
                     <th scope="col" className="py-3 pl-4 pr-3">QuickPrep</th>
@@ -79,8 +85,8 @@ export default function QuickPrepList() {
                     <th scope="col" className="px-3 py-3">Companies · Topics</th>
                     <th scope="col" className="px-3 py-3">Questions</th>
                     <th scope="col" className="px-3 py-3">Audience</th>
-                    <th scope="col" className="px-3 py-3">Started / Done</th>
-                    <th scope="col" className="w-36 px-3 py-3">Avg. progress</th>
+                    {!central && <th scope="col" className="px-3 py-3">Started / Done</th>}
+                    {!central && <th scope="col" className="w-36 px-3 py-3">Avg. progress</th>}
                     <th scope="col" className="px-3 py-3">Status</th>
                     <th scope="col" className="px-3 py-3">Updated</th>
                     <th scope="col" className="py-3 pl-3 pr-4 text-right"><span className="sr-only">Actions</span></th>
@@ -95,18 +101,21 @@ export default function QuickPrepList() {
                       <td className="py-3 pl-4 pr-3">
                         <div className="flex items-center gap-3">
                           <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-sm ${theme.band}`}><TypeIcon className="h-5 w-5" aria-hidden="true" /></span>
-                          <div className="min-w-0">
-                            <Link to={`${QUICKPREP_ROOT}/${quest.id}`} onClick={(event) => event.stopPropagation()} className="block max-w-[15rem] truncate font-semibold text-slate-900 hover:text-sky-700 dark:text-zinc-50 dark:hover:text-sky-300">{quest.title}</Link>
-                            <p className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-slate-400"><span className="font-mono">/{quest.slug}</span>{quest.unavailableCount > 0 && <span className="rounded bg-amber-50 px-1 font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-300" title="Unpublished in the library and hidden from students">{quest.unavailableCount} unavailable</span>}</p>
+                          <div className="flex min-w-0 items-center gap-2">
+                            <Link to={`${QUICKPREP_ROOT}/${quest.id}`} title={quest.title} onClick={(event) => event.stopPropagation()} className="block max-w-[15rem] truncate font-semibold text-slate-900 hover:text-sky-700 dark:text-zinc-50 dark:hover:text-sky-300">{quest.title}</Link>
+                            {quest.unavailableCount > 0 && <span className="rounded bg-amber-50 px-1 text-xs font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-300" title="Unpublished in the library and hidden from students">{quest.unavailableCount} unavailable</span>}
                           </div>
                         </div>
                       </td>
                       <td className="px-3 py-3"><span className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[12px] font-semibold ${theme.soft}`}><TypeIcon className="h-3.5 w-3.5" aria-hidden="true" />{type.label}</span></td>
-                      <td className="px-3 py-3"><div className="space-y-1"><Chips values={quest.companies} icon={Building2} empty="All companies" /><Chips values={quest.topics} icon={Tags} empty="All topics" /></div></td>
-                      <td className="px-3 py-3"><p className="font-semibold tabular-nums">{quest.questionCount}</p><MixBar difficulty={quest.difficulty} compact /></td>
-                      <td className="px-3 py-3"><p className="font-semibold tabular-nums">{quest.audience ?? '—'} <span className="text-xs font-normal text-slate-400">students</span></p><p className="text-[11.5px] text-slate-500">{quest.semesters?.length ? `Sem ${quest.semesters.join(', ')}` : 'All semesters'}</p></td>
-                      <td className="px-3 py-3 tabular-nums"><span className="font-semibold">{quest.stats.enrolled}</span><span className="text-slate-400"> / </span><span className="inline-flex items-center gap-1 font-semibold text-emerald-600 dark:text-emerald-400"><CircleCheck className="h-3.5 w-3.5" aria-hidden="true" />{quest.stats.completed}</span></td>
-                      <td className="px-3 py-3"><ProgressBar value={quest.stats.averageProgress} tone={theme.bar} label={`Average progress for ${quest.title}`} /></td>
+                      <td className="px-3 py-3"><div className="flex items-center gap-2">
+                        <span className="inline-flex max-w-28 items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600 dark:bg-zinc-800 dark:text-zinc-300"><Building2 className="h-3 w-3 shrink-0" aria-hidden="true" /><span className="truncate">{quest.companies?.[0] || 'All companies'}</span></span>
+                        <button type="button" aria-label={`More details for ${quest.title}`} aria-haspopup="dialog" onClick={(event) => { event.stopPropagation(); event.currentTarget.focus(); setDetailId(quest.id); }} className="shrink-0 rounded-md px-1.5 py-1 text-xs font-semibold text-sky-600 hover:bg-sky-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500 dark:text-sky-400 dark:hover:bg-sky-500/10">More</button>
+                      </div></td>
+                      <td className="px-3 py-3 font-semibold tabular-nums">{quest.questionCount}</td>
+                      <td className="px-3 py-3 font-semibold tabular-nums">{central ? 'All universities' : <>{quest.audience ?? '—'} <span className="text-xs font-normal text-slate-400">students</span></>}</td>
+                      {!central && <td className="px-3 py-3 tabular-nums"><span className="font-semibold">{quest.stats.enrolled}</span><span className="text-slate-400"> / </span><span className="inline-flex items-center gap-1 font-semibold text-emerald-600 dark:text-emerald-400"><CircleCheck className="h-3.5 w-3.5" aria-hidden="true" />{quest.stats.completed}</span></td>}
+                      {!central && <td className="px-3 py-3"><ProgressBar value={quest.stats.averageProgress} tone={theme.bar} label={`Average progress for ${quest.title}`} /></td>}
                       <td className="px-3 py-3"><StatusPill status={quest.status} /></td>
                       <td className="whitespace-nowrap px-3 py-3 text-[12.5px] text-slate-500">{timeAgo(quest.updatedAt)}</td>
                       <td className="py-3 pl-3 pr-4 text-right" onClick={(event) => event.stopPropagation()}><div className="flex justify-end"><RowMenu name={quest.title} actions={actionsFor(quest)} /></div></td>
@@ -117,6 +126,7 @@ export default function QuickPrepList() {
             </div>}
       {visible.length > 0 && <p className="border-t border-slate-100 px-4 py-2.5 text-[12px] text-slate-500 dark:border-zinc-800">Showing {visible.length} of {quests.length} QuickPreps</p>}
     </section>
+    {detail && <QuickPrepSummaryDialog quest={detail} central={central} onClose={closeDetails} />}
   </Page>;
 }
 

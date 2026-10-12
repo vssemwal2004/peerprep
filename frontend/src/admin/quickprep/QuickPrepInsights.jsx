@@ -22,6 +22,7 @@ export default function QuickPrepInsights() {
   const header = <PageHeader icon={BarChart3} title="QuickPrep insights" crumbs={[{ label: 'QuickPrep', to: QUICKPREP_ROOT }, { label: 'Insights' }]}
     description="How far each QuickPrep reaches, how many students finish it, and who is finishing the most."
     actions={<Link to={`${QUICKPREP_ROOT}/new`} className={primaryButton}><Plus className="h-4 w-4" />Create QuickPrep</Link>} />;
+  if (data?.totals?.central) return <Page>{header}<Notice tone="info">QuickPreps reach every university with coding enabled, and each university keeps its own students’ progress privately. Student insights are therefore not available on the central platform.</Notice></Page>;
   if (error) return <Page>{header}<Notice tone="error">{error} <button type="button" onClick={load} className="font-semibold underline">Retry</button></Notice></Page>;
   if (!data) return <Page>{header}<div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[0, 1, 2, 3].map((key) => <div key={key} className="h-24 animate-pulse rounded-2xl bg-slate-200 dark:bg-zinc-800" />)}</div></Page>;
 
