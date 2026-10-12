@@ -10,7 +10,7 @@ import { createServer } from 'vite';
 // provider. Every request and socket is local; these checks never contact a
 // backend, database, mail provider or live student account.
 let dom, server, root, createRoot, Dashboard, CodingProgress, ChallengeGoalsCard, AuthContext, UniversityPolicyProvider, api, socket;
-let calls, listeners, permissions, dashboard, engagement, announcements, events, assessments;
+let calls, listeners, permissions, dashboard, engagement, announcements, events, assessments, quests;
 const NativeDate = Date;
 const globals = ['window', 'document', 'navigator', 'HTMLElement', 'localStorage', 'IS_REACT_ACT_ENVIRONMENT', 'Date', 'fetch'];
 const originals = new Map(globals.map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
@@ -121,6 +121,8 @@ beforeEach(async () => {
   api.universityPolicy = async () => ({ active: true, permissions: { ...permissions } });
   api.getStudentDashboard = async (forceRefresh = false) => { calls.push(['dashboard', forceRefresh]); return structuredClone(dashboard); };
   api.refreshStudentEngagement = async () => { calls.push(['engagement']); return structuredClone(engagement || engagementFixture()); };
+  quests = [];
+  api.listQuests = async () => { calls.push(['quests']); return { quests: structuredClone(quests) }; };
   api.getStudentChallengeBadges = async () => { throw new Error('Badge pagination must be mocked explicitly'); };
   api.claimAchievements = async () => ({ events: [] });
   api.acknowledgeAchievements = async () => ({ acknowledged: true });
@@ -280,7 +282,7 @@ test('accessible document order follows greeting and recent work, then the progr
     'Announcements', 'Coding progress', 'University standing', 'Coming up',
   ], 'Any announcement leads the rail');
   assert.deepEqual([...main.querySelectorAll('h2')].map((heading) => heading.textContent), [
-    'Your challenges', 'Next in practice', 'Explore your learning',
+    'Your quests', 'Next in practice', 'Explore your learning',
   ]);
 });
 
@@ -297,7 +299,6 @@ test('the greeting shows a compact badge shelf; the full collection stays on the
   assert.match(shelf.textContent, /4\/10/);
   assert.equal(section('Level & badges'), undefined);
   assert.doesNotMatch(text(), /Collected editions|Level & badges/, 'Editions and history stay on the profile');
-  assert.match(section('Your challenges').textContent, /Weekly momentum/, 'Actionable goals remain on the dashboard');
 });
 
 test('adaptive badges on the shelf are the server’s earned set, newest first, with the level’s progress', async () => {
@@ -585,7 +586,8 @@ test('disabled university modules hide their cards and resume links and skip the
   assert.ok(calls.some(([name]) => name === 'assessments'));
   assert.ok(section('Announcements'), 'Announcements remain available when unrelated modules are disabled');
   assert.equal(section('Daily challenge'), undefined);
-  assert.ok(section('Your challenges'), 'Allocated assessments and AI interviews can have challenge plans');
+  assert.equal(section('Your quests'), undefined, 'Quests need coding, so they stay hidden');
+  assert.equal(calls.filter(([name]) => name === 'quests').length, 0, 'The quests API is not called without coding');
   assert.ok(calls.some(([name]) => name === 'engagement'));
 });
 
@@ -617,24 +619,31 @@ test('daily challenge uses its real destination and switches to review only afte
   assert.ok(section('Daily challenge').classList.contains('is-completed'));
 });
 
-test('weekly and monthly tabs support keyboard navigation and show their separate goals and badge styles', async () => {
+const questFixture = (overrides = {}) => ({ id: 'q1', slug: 'amazon-top-50', title: 'Amazon Top 50', description: '', category: 'company', company: 'Amazon', topics: [], theme: 'amber',
+  rewardXp: 60, badge: { title: 'Amazon Top 50 Finisher' }, total: 50, solved: 12, difficulty: { Easy: 20, Medium: 25, Hard: 5 }, started: true, startedAt: iso(6), completedAt: null,
+  lastViewedAt: iso(8), lastProblem: { key: 'coding:local:p7', title: 'LRU Cache', href: '/problems/p7?quest=amazon-top-50' }, ...overrides });
+
+test('your quests replaces weekly and monthly challenges and continues the last opened quest question', async () => {
+  quests = [questFixture(), questFixture({ id: 'q2', slug: 'graphs', title: 'Graphs Track', started: false, solved: 0, lastProblem: null, startedAt: null, lastViewedAt: null })];
   await mount();
-  const card = section('Your challenges');
-  const weekly = card.querySelector('[data-period="weekly"]');
-  const monthly = card.querySelector('[data-period="monthly"]');
-  assert.match(card.textContent, /Weekly momentum/);
-  assert.equal(card.querySelector('[role="progressbar"]').getAttribute('aria-valuemax'), '3');
-  await act(async () => { weekly.focus(); weekly.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); });
-  assert.equal(document.activeElement, monthly);
-  assert.equal(monthly.getAttribute('aria-selected'), 'true');
-  assert.equal(weekly.tabIndex, -1);
-  assert.equal(card.querySelector('[role="tabpanel"]').getAttribute('aria-labelledby'), monthly.id);
-  assert.match(card.textContent, /Monthly explorer/);
-  assert.equal(card.getAttribute('data-period-active'), 'monthly');
-  assert.equal(card.querySelector('[role="progressbar"]').getAttribute('aria-valuemax'), '10');
-  await act(async () => monthly.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Home', bubbles: true })));
-  assert.equal(document.activeElement, weekly);
-  assert.match(card.textContent, /Weekly momentum/);
+  const card = section('Your quests');
+  assert.ok(card, 'The quests card sits in the main column');
+  assert.doesNotMatch(text(), /Weekly momentum|Monthly explorer|This week|This month/, 'Weekly and monthly challenges are gone');
+  assert.match(card.textContent, /Amazon Top 50.*12\/50.*Continue/);
+  assert.doesNotMatch(card.textContent, /Graphs Track/, 'In-progress quests come first; new ones show only when none are started');
+  const link = [...card.querySelectorAll('a')].find((anchor) => anchor.textContent.includes('Amazon Top 50'));
+  assert.equal(link.getAttribute('href'), '/problems/p7?quest=amazon-top-50', 'Continue opens the last question inside the quest');
+  assert.equal(card.querySelector('[role="progressbar"]').getAttribute('aria-valuenow'), '24');
+});
+
+test('a quest the student last worked on leads "Continue where you left off"', async () => {
+  dashboard.resumeItems = [{ id: 'quest:q1', type: 'quest', title: 'Amazon Top 50', subtitle: 'LRU Cache', href: '/problems/p7?quest=amazon-top-50', questHref: '/student/quests/amazon-top-50',
+    solved: 12, total: 50, lastProblemTitle: 'LRU Cache', lastProblemDifficulty: 'Medium', updatedAt: iso(8) }, ...dashboard.resumeItems];
+  await mount();
+  const resume = section('Continue where you left off');
+  assert.match(resume.textContent, /Quest.*Medium.*Amazon Top 50.*Last opened: LRU Cache.*12 \/ 50 solved.*Continue quest/);
+  assert.equal(resume.querySelector('a').getAttribute('href'), '/problems/p7?quest=amazon-top-50');
+  assert.doesNotMatch(resume.textContent, /Two Sum/, 'Only the most recent item is shown');
 });
 
 test('new challenge points trigger a fresh ranking snapshot after the older dashboard request', async () => {
@@ -650,14 +659,12 @@ test('new challenge points trigger a fresh ranking snapshot after the older dash
   await mount();
   assert.ok(requests >= 2, 'A verified award must force a snapshot after the initial policy and dashboard load');
   assert.match(section('University standing').textContent, /183/);
-  assert.match(section('Your challenges').textContent, /Challenge reward earned.*40/);
 });
 
 test('challenge request failure is recoverable without wiping learning, rank or announcements', async () => {
   api.refreshStudentEngagement = async () => { throw new Error('Offline'); };
   await mount();
   assert.match(section('Daily challenge').textContent, /Progress unavailable.*Retry/);
-  assert.match(section('Your challenges').textContent, /Progress unavailable.*Retry/);
   assert.match(section('Announcements').textContent, /Placement registration/);
   assert.match(section('Explore your learning').textContent, /Algorithms/);
   assert.match(section('University standing').textContent, /143/);

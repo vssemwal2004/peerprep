@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import authRoutes from './auth.js';
 import engagementRoutes from './engagement.js';
+import questRoutes from './quests.js';
 import studentRoutes from './students.js';
 import eventRoutes from './events.js';
 import pairingRoutes from './pairing.js';
@@ -45,6 +46,7 @@ router.use('/student/ai-interviews', aiInterviewStudentRoutes);
 router.use('/bulk-uploads', bulkUploadRoutes);
 router.use('/auth', authRoutes);
 router.use('/engagement', engagementRoutes);
+router.use('/quests', questRoutes);
 router.use('/students', requireAuth, requireFullStudent, studentRoutes);
 router.use('/events', requireAuth, requireFullStudent, eventRoutes);
 router.use('/pairing', requireAuth, requireFullStudent, pairingRoutes);

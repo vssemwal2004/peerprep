@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Flame } from 'lucide-react';
+import { ArrowRight, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Flame } from 'lucide-react';
 import DailyCodingChallenge from '../DailyCodingChallenge';
 import usePracticeCalendar, { istDayKey, utcDayKey } from './usePracticeCalendar';
 import { card, DIFFICULTY, focusRing } from './problemsUi';
@@ -50,38 +50,34 @@ function DayCell({ dayKey, label, count, planDone, isToday, future }) {
   </li>;
 }
 
+/** Today's problem: the student's own daily challenge first, the shared problem of the day as a fallback. */
 function TodayRows({ daily, plan, now }) {
-  const problem = daily?.enabled ? daily.challenge : null;
-  const goals = (plan?.goals || []).filter((goal) => goal.slot !== 'stretch');
-  const doneGoals = goals.filter((goal) => goal.completed).length;
-  const resetsIn = countdown(daily?.nextResetAt || plan?.endsAt, now);
+  const personal = (plan?.goals || []).find((goal) => goal.slot === 'core' && goal.href);
+  const shared = daily?.enabled ? daily.challenge : null;
+  const problem = personal
+    ? { title: String(personal.title || personal.label || '').replace(/^Solve\s+/, ''), href: personal.href, difficulty: personal.difficulty, done: Boolean(personal.completed || plan.completed) }
+    : shared ? { title: shared.title, href: shared.href || `/problems/${shared._id}`, difficulty: shared.difficulty, done: false } : null;
+  const resetsIn = countdown(plan?.endsAt || daily?.nextResetAt, now);
   const difficulty = DIFFICULTY[problem?.difficulty];
-  if (!problem && !goals.length) {
+  if (!problem) {
     return <div className="mt-3 flex items-center justify-between gap-2 border-t border-[#f0f1f4] pt-3 text-[12px] text-slate-500 dark:border-white/[0.06] dark:text-zinc-400">
       <span>Any problem you solve counts today.</span>
       <DailyCodingChallenge variant="header" className="!h-auto !px-0 hover:!bg-transparent" />
     </div>;
   }
   return <div className="mt-3 space-y-2 border-t border-[#f0f1f4] pt-3 dark:border-white/[0.06]">
-    {problem && <Link to={problem.href || `/problems/${problem._id}`} className={`group flex items-center gap-3 rounded-xl ${focusRing}`}>
+    <Link to={problem.href} className={`group flex items-center gap-3 rounded-xl ${focusRing}`}>
       <span className="min-w-0 flex-1">
-        <span className="block text-[11px] text-slate-400 dark:text-zinc-500">Problem of the day{resetsIn ? ` · resets in ${resetsIn}` : ''}</span>
+        <span className="block text-[11px] text-slate-400 dark:text-zinc-500">{personal ? 'Your daily challenge' : 'Problem of the day'}{resetsIn ? ` · resets in ${resetsIn}` : ''}</span>
         <span className="flex items-center gap-2">
           <span className="truncate text-[13.5px] font-semibold text-slate-900 group-hover:text-sky-700 dark:text-zinc-50 dark:group-hover:text-sky-300" title={problem.title}>{problem.title}</span>
           {difficulty && <span className={`shrink-0 rounded-full px-1.5 py-px text-[10.5px] font-semibold ring-1 ring-inset ${difficulty.pill}`}>{difficulty.short}</span>}
         </span>
       </span>
-      <span className="inline-flex shrink-0 items-center gap-1 rounded-[10px] bg-sky-600 px-2.5 py-1.5 text-[12px] font-medium text-white transition-colors group-hover:bg-sky-700">
-        Solve<ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-      </span>
-    </Link>}
-    {goals.length > 0 && <Link to="/student/challenges?period=daily" className={`group flex items-center gap-3 rounded-lg ${focusRing}`}>
-      <span className="shrink-0 text-[12px] font-medium text-slate-700 group-hover:text-amber-700 dark:text-zinc-200 dark:group-hover:text-amber-300">Today’s plan</span>
-      <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#eef0f3] dark:bg-white/[0.08]" aria-hidden="true">
-        <span className="block h-full rounded-full bg-amber-500" style={{ width: `${plan.completed ? 100 : Math.round((doneGoals / goals.length) * 100)}%` }} />
-      </span>
-      <span className="shrink-0 text-[12px] tabular-nums text-slate-500 dark:text-zinc-400">{plan.completed ? 'Complete' : `${doneGoals}/${goals.length} done`}</span>
-    </Link>}
+      {problem.done
+        ? <span className="inline-flex shrink-0 items-center gap-1 rounded-[10px] bg-emerald-50 px-2.5 py-1.5 text-[12px] font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"><Check className="h-3.5 w-3.5" aria-hidden="true" />Done</span>
+        : <span className="inline-flex shrink-0 items-center gap-1 rounded-[10px] bg-sky-600 px-2.5 py-1.5 text-[12px] font-medium text-white transition-colors group-hover:bg-sky-700">Solve<ArrowRight className="h-3.5 w-3.5" aria-hidden="true" /></span>}
+    </Link>
   </div>;
 }
 

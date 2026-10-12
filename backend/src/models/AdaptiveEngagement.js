@@ -94,5 +94,49 @@ const interviewReceiptSchema = new Schema({ ...owner, sessionId: { type: String,
 interviewReceiptSchema.index({ tenantKey: 1, studentId: 1, sessionId: 1 }, { unique: true });
 export const InterviewEngagementReceipt = make('InterviewEngagementReceipt', interviewReceiptSchema);
 
+// Quests: admin-curated, ordered sets of library coding questions (company sets, topic tracks,
+// study plans). Items reference the library; titles and difficulty are read live, never copied.
+const questItemSchema = new Schema({
+  source: { type: String, enum: ['university', 'shared'], required: true },
+  problemId: { type: Schema.Types.ObjectId, required: true },
+  section: { type: String, default: '', trim: true, maxlength: 60 },
+}, { _id: false });
+const questSchema = new Schema({
+  tenantKey: { type: String, required: true },
+  slug: { type: String, required: true },
+  title: { type: String, required: true, trim: true, maxlength: 80 },
+  description: { type: String, default: '', trim: true, maxlength: 600 },
+  category: { type: String, enum: ['company', 'topic', 'study-plan', 'difficulty'], default: 'study-plan' },
+  company: { type: String, default: '', trim: true, maxlength: 60 },
+  topics: { type: [String], default: [] },
+  theme: { type: String, enum: ['sky', 'violet', 'emerald', 'amber', 'rose', 'indigo'], default: 'sky' },
+  items: { type: [questItemSchema], default: [] },
+  rewardXp: { type: Number, min: 0, max: 1000, default: 50 },
+  badgeTitle: { type: String, default: '', trim: true, maxlength: 60 },
+  semesters: { type: [Number], default: [] },
+  status: { type: String, enum: ['draft', 'published', 'archived'], default: 'draft' },
+  publishedAt: { type: Date, default: null },
+  createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
+  updatedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+}, { timestamps: true });
+questSchema.index({ tenantKey: 1, slug: 1 }, { unique: true });
+questSchema.index({ tenantKey: 1, status: 1, publishedAt: -1 });
+export const Quest = make('Quest', questSchema);
+
+// One row per student and quest: when they started, where they were last, and completion.
+const enrollmentSchema = new Schema({ ...owner,
+  questId: { type: Schema.Types.ObjectId, ref: 'Quest', required: true },
+  startedAt: { type: Date, required: true },
+  lastProblemKey: { type: String, default: null },
+  lastViewedAt: { type: Date, default: null },
+  solvedCount: { type: Number, default: 0 },
+  totalCount: { type: Number, default: 0 },
+  completedAt: { type: Date, default: null },
+}, { timestamps: true });
+enrollmentSchema.index({ tenantKey: 1, studentId: 1, questId: 1 }, { unique: true });
+enrollmentSchema.index({ tenantKey: 1, questId: 1, completedAt: 1 });
+enrollmentSchema.index({ tenantKey: 1, studentId: 1, lastViewedAt: -1 });
+export const QuestEnrollment = make('QuestEnrollment', enrollmentSchema);
+
 export const adaptiveModels = [EngagementPolicy, MissionAssignment, EngagementReward, EngagementActivity,
-  StudentProgression, StudentBadge, AchievementEvent, MonthlyProgressSnapshot, InterviewEngagementReceipt];
+  StudentProgression, StudentBadge, AchievementEvent, MonthlyProgressSnapshot, InterviewEngagementReceipt, Quest, QuestEnrollment];

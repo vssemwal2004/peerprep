@@ -35,7 +35,7 @@ function useConfetti(count = 56) {
  * Celebration popup for a new learner level and/or newly earned awards.
  * @param {{ open: boolean, level?: {level:number,title:string,helper:string}|null, awards: Array, onClose: () => void }} props
  */
-export default function LevelUpCelebration({ open, level, awards = [], onClose }) {
+export default function LevelUpCelebration({ open, level, awards = [], onClose, onView }) {
   const reduceMotion = useReducedMotion();
   const confetti = useConfetti();
   const closeButtonRef = useRef(null);
@@ -171,6 +171,15 @@ export default function LevelUpCelebration({ open, level, awards = [], onClose }
               >
                 Keep going
               </button>
+              {onView && awards.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={onView}
+                  className={`mt-2 w-full rounded-lg px-4 py-2 text-sm font-semibold text-sky-700 transition-colors hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-500/10 ${focusRing}`}
+                >
+                  View your badges
+                </button>
+              ) : null}
             </div>
           </MotionDiv>
         </MotionDiv>

@@ -39,7 +39,9 @@ const FeedbackForm = lazy(() => import("./student/FeedbackForm"));
 const StudentLearning = lazy(() => import("./student/StudentLearning"));
 const LearningDetail = lazy(() => import("./student/LearningDetail"));
 const StudentProfile = lazy(() => import("./student/StudentProfile"));
-const StudentChallenges = lazy(() => import("./student/StudentChallenges"));
+const StudentQuests = lazy(() => import("./student/StudentQuests"));
+const QuestDetail = lazy(() => import("./student/QuestDetail"));
+const AdminQuests = lazy(() => import("./admin/quests/AdminQuests"));
 const EngagementSettings = lazy(() => import('./admin/EngagementSettings'));
 const HelpAndSupport = lazy(() => import("./student/HelpAndSupport"));
 const ProblemsPage = lazy(() => import("./student/ProblemsPage"));
@@ -369,7 +371,10 @@ function AppContent() {
         {/* Student Routes - Protected */}
         <Route path="/student/change-password" element={<StudentProtectedRoute><ChangePassword /></StudentProtectedRoute>} />
         <Route path="/student/profile" element={<StudentProtectedRoute><StudentProfile /></StudentProtectedRoute>} />
-        <Route path="/student/challenges" element={<StudentProtectedRoute><StudentChallenges /></StudentProtectedRoute>} />
+        <Route path="/student/quests" element={<StudentProtectedRoute><StudentQuests /></StudentProtectedRoute>} />
+        <Route path="/student/quests/:slug" element={<StudentProtectedRoute><QuestDetail /></StudentProtectedRoute>} />
+        {/* Challenges became Quests; old links and bookmarks still land in the right place. */}
+        <Route path="/student/challenges" element={<Navigate to="/student/quests" replace />} />
         <Route path="/student/resume" element={<StudentProtectedRoute><StudentResume /></StudentProtectedRoute>} />
         <Route path="/student/dashboard" element={<StudentProtectedRoute><StudentDashboard /></StudentProtectedRoute>} />
         <Route path="/student/interview" element={<StudentProtectedRoute><StudentInterview /></StudentProtectedRoute>} />
@@ -413,6 +418,7 @@ function AppContent() {
         <Route path="/admin/event" element={<AdminShell><EventManagement /></AdminShell>} />
         <Route path="/admin/event/create" element={<AdminShell><EventManagement /></AdminShell>} />
         <Route path="/admin/settings/student-progression" element={<AdminShell><EngagementSettings /></AdminShell>} />
+        <Route path="/admin/quests" element={<AdminShell><AdminQuests /></AdminShell>} />
         <Route path="/admin/event/:id" element={<AdminShell><EventDetail /></AdminShell>} />
         <Route path="/admin/interviews" element={<Navigate to="/admin/interviews/one-to-one" replace />} />
         <Route path="/admin/interviews/:id" element={<AdminShell><EventDetail /></AdminShell>} />

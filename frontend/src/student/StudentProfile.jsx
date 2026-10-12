@@ -5,7 +5,8 @@ import { api } from '../utils/api';
 import socketService from '../utils/socket';
 import { getLearnerLevel } from './profileBadge';
 import useStickySidebar from './profile/useStickySidebar';
-import { ChallengeGoalsCard, DailyChallengeCard } from './engagement/EngagementCards';
+import { DailyChallengeCard } from './engagement/EngagementCards';
+import QuestsCard from './dashboard/QuestsCard';
 import BadgesCard from './profile/BadgesCard';
 import AchievementCelebration from './engagement/AchievementCelebration';
 import BadgesGallery from './profile/BadgesGallery';
@@ -1026,7 +1027,7 @@ export default function StudentProfile() {
 
             {canEngage && <div className="grid items-start gap-4 xl:grid-cols-2">
               <DailyChallengeCard section={engagement} onRetry={loadRanking} autoRefresh={false} />
-              <ChallengeGoalsCard section={engagement} onRetry={loadRanking} canQuestions={canQuestions} canLearning={canLearning} />
+              {canQuestions && <QuestsCard />}
             </div>}
 
             {canQuestions && <PracticeHistory

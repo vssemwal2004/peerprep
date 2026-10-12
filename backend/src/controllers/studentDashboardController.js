@@ -5,6 +5,7 @@ import Progress from '../models/Progress.js';
 import { HttpError } from '../utils/errors.js';
 import { listStudentChallengeBadges } from '../services/studentEngagementService.js';
 import { refreshAdaptiveEngagement } from '../services/adaptiveEngagementService.js';
+import { latestQuestResume } from '../services/questService.js';
 
 export async function refreshStudentChallenges(req, res) {
   // No client-supplied metrics, award IDs, dates or point values are trusted.
@@ -20,7 +21,10 @@ import { dashboardPermissions, getStudentDashboardData, getStudentUniversityRank
 
 export async function getStudentDashboard(req, res) {
   res.set('Cache-Control', 'private, no-store');
-  res.json(await getStudentDashboardData(req.user));
+  const [data, quest] = await Promise.all([getStudentDashboardData(req.user), latestQuestResume(req.user).catch(() => null)]);
+  // The quest a student last opened competes with their other unfinished work on recency.
+  if (quest) data.resumeItems = [quest, ...(data.resumeItems || [])].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)).slice(0, 4);
+  res.json(data);
 }
 
 export async function getStudentRanking(req, res) {

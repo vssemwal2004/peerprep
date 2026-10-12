@@ -10,7 +10,7 @@ import useDismissedAnnouncement from './dashboard/useDismissedAnnouncement';
 import GreetingHeader from './dashboard/GreetingHeader';
 import ContinueSection from './dashboard/ContinueSection';
 import TodayCard from './dashboard/TodayCard';
-import ChallengeGoals from './dashboard/ChallengeGoals';
+import QuestsCard from './dashboard/QuestsCard';
 import { LearningSubjects, PracticeSuggestions } from './dashboard/DiscoverySections';
 import { AnnouncementsCard, ComingUpCard, RankCard } from './dashboard/RailCards';
 import { card, CardTitle, TitleIcon, Unavailable } from './dashboard/ui';
@@ -21,8 +21,6 @@ import AchievementCelebration from './engagement/AchievementCelebration';
 // The student shell's sticky header is 64px tall plus a 1px border. The rail sticks 16px below
 // it and is capped to the viewport, so only the main column scrolls on large screens.
 const railPosition = 'lg:sticky lg:top-[81px] lg:max-h-[calc(100dvh-97px)] lg:overflow-y-auto lg:overscroll-contain';
-// The mission card is shared with the profile; on the dashboard its surface matches the other cards.
-const sharedCardSurface = '[&>section]:!rounded-2xl [&>section]:!border-[#e9eaee] [&>section]:!shadow-[0_1px_2px_rgba(16,24,40,0.04)] dark:[&>section]:!border-white/[0.07] [&>section]:h-full';
 const rise = (step, className = '') => ({ className: `dashboard-rise ${className}`.trim(), style: { '--rise': step } });
 
 function dashboardNudge({ data, loading, firstSession, week, daily, resumeItems, canQuestions }) {
@@ -57,7 +55,7 @@ export default function StudentDashboard() {
   const progress = sections.dashboard;
   const data = progress.data;
   const permittedItems = (items) => (Array.isArray(items) ? items : []).filter((item) => item.href && allowsPath(item.href.split('?')[0], 'student'));
-  const resumeItems = permittedItems(data?.resumeItems).filter((item) => item.type === 'coding' ? canQuestions : item.type === 'learning' && canLearning);
+  const resumeItems = permittedItems(data?.resumeItems).filter((item) => item.type === 'coding' || item.type === 'quest' ? canQuestions : item.type === 'learning' && canLearning);
   const subjects = canLearning ? permittedItems(data?.learningSubjects) : [];
   const suggestions = canQuestions ? permittedItems(data?.suggestedPractice) : [];
   const upcoming = useMemo(() => getUpcomingItems(canAssessments ? sections.assessments.data || [] : [], canEvents ? sections.events.data || [] : [], now), [canAssessments, canEvents, sections.assessments.data, sections.events.data, now]);
@@ -85,7 +83,7 @@ export default function StudentDashboard() {
   const showToday = canQuestions || canLearning || showDaily;
   const shelf = badgeShelfData(sections.engagement.error ? null : sections.engagement.data, data?.ranking);
   const nudge = sections.engagement.data?.version === 2
-    ? sections.engagement.data.daily?.completed ? 'Your daily plan is complete. Your progress is saved.' : 'Your personalized missions are ready. Every completed step counts.'
+    ? sections.engagement.data.daily?.completed ? 'Today’s challenge is done. Your progress is saved.' : 'Your daily challenge is ready. One problem keeps your streak going.'
     : dashboardNudge({ data, loading: progress.loading, firstSession, week, daily: sections.engagement.data?.daily, resumeItems, canQuestions });
 
   return <RequirePasswordChange user={user}>
@@ -117,8 +115,8 @@ export default function StudentDashboard() {
         </aside>
 
         <div className="min-w-0 space-y-8 [grid-area:body]" data-dashboard-main>
-          {(showChallenges || showPractice) && <div className={`grid grid-cols-1 items-stretch gap-4 ${showChallenges && showPractice ? 'xl:grid-cols-2' : ''}`}>
-            {showChallenges && <div {...rise(3, sharedCardSurface)}><ChallengeGoals section={sections.engagement} onRetry={sections.refresh} canQuestions={canQuestions} canLearning={canLearning} /></div>}
+          {(canQuestions || showPractice) && <div className={`grid grid-cols-1 items-stretch gap-4 ${canQuestions && showPractice ? 'xl:grid-cols-2' : ''}`}>
+            {canQuestions && <div {...rise(3, '[&>section]:h-full')}><QuestsCard /></div>}
             {canQuestions && <div {...rise(4, '[&>section]:h-full')}><PracticeSuggestions problems={suggestions} section={progress} onRetry={sections.refresh} /></div>}
           </div>}
           {canLearning && <LearningSubjects subjects={subjects} section={progress} onRetry={sections.refresh} />}

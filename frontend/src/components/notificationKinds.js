@@ -1,11 +1,12 @@
-import { Bell, BookOpen, CheckCircle2, ClipboardList, Crown, Flame, Medal, Megaphone, MessageSquare, Settings2, Target, Users } from 'lucide-react';
+import { Bell, BookOpen, CheckCircle2, ClipboardList, Crown, Flame, Map as MapIcon, Medal, Megaphone, MessageSquare, Settings2, Target, Users } from 'lucide-react';
 
-// Progress updates come from the challenge system: plans and targets, badges, levels and streaks.
-export const PROGRESS_TYPES = new Set(['CHALLENGE', 'BADGE', 'LEVEL', 'STREAK']);
+// Progress updates: the daily challenge, quests, badges, levels and streaks.
+export const PROGRESS_TYPES = new Set(['CHALLENGE', 'QUEST', 'BADGE', 'LEVEL', 'STREAK']);
 
 const gradientTile = 'bg-gradient-to-br text-white';
 const KINDS = {
-  CHALLENGE: { label: 'Challenge', icon: Target, tile: `${gradientTile} from-sky-400 to-sky-600 shadow-[0_6px_14px_-6px_rgba(2,132,199,0.75)]`, chip: 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300', rail: 'bg-sky-500', cta: 'View challenge' },
+  CHALLENGE: { label: 'Daily challenge', icon: Target, tile: `${gradientTile} from-sky-400 to-sky-600 shadow-[0_6px_14px_-6px_rgba(2,132,199,0.75)]`, chip: 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300', rail: 'bg-sky-500', cta: 'Open' },
+  QUEST: { label: 'Quest', icon: MapIcon, tile: `${gradientTile} from-indigo-400 to-sky-600 shadow-[0_6px_14px_-6px_rgba(79,70,229,0.7)]`, chip: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300', rail: 'bg-indigo-500', cta: 'View quest' },
   BADGE: { label: 'Badge', icon: Medal, tile: `${gradientTile} from-amber-300 to-orange-500 shadow-[0_6px_14px_-6px_rgba(234,88,12,0.7)]`, chip: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300', rail: 'bg-amber-500', cta: 'See badge' },
   LEVEL: { label: 'Level up', icon: Crown, tile: `${gradientTile} from-violet-400 to-indigo-600 shadow-[0_6px_14px_-6px_rgba(99,102,241,0.75)]`, chip: 'bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300', rail: 'bg-violet-500', cta: 'See level' },
   STREAK: { label: 'Streak', icon: Flame, tile: `${gradientTile} from-amber-400 to-rose-500 shadow-[0_6px_14px_-6px_rgba(244,63,94,0.6)]`, chip: 'bg-orange-50 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300', rail: 'bg-orange-500', cta: 'Open' },

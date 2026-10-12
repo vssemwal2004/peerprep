@@ -7,6 +7,7 @@ export function routeModule(path, { assessmentId } = {}) {
   if (/^\/student\/questions(?:\/|$)/.test(path)) return 'questions';
   if (/^\/(?:compiler|execute)(?:\/|$)/.test(path)) return assessmentId ? 'assessments' : 'questions';
   if (/^\/problem-lists(?:\/|$)/.test(path)) return 'questions';
+  if (/^\/quests(?:\/|$)/.test(path)) return 'questions';
   if (/^\/(?:admin\/assessment(?:\/|-|$)|student\/assessments?(?:\/|-|$)|assessment-feedback(?:\/|$))/.test(path)) return 'assessments';
   if (/^\/(?:events|schedule|pairing|feedback)(?:\/|$)/.test(path)) return 'events';
   if (/^\/(?:ai-interviews|student\/ai-interviews)(?:\/|$)/.test(path)) return 'interviews';

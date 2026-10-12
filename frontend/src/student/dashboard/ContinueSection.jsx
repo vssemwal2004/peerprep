@@ -131,7 +131,40 @@ const VERDICT_TONES = {
 };
 
 /** The single most recent unfinished item, shown as the place the student actually stopped. */
+/** A quest the student was working through: the quest, the question they last opened, and progress. */
+function QuestResume({ item, now }) {
+  const total = Math.max(0, Number(item.total) || 0);
+  const solved = Math.min(total, Math.max(0, Number(item.solved) || 0));
+  const percent = total ? Math.round((solved / total) * 100) : 0;
+  return <Link to={item.href} className={`group flex flex-1 flex-col rounded-b-2xl px-5 pb-5 pt-1 ${focusRing} focus-visible:ring-inset focus-visible:ring-offset-0`}>
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-2 py-0.5 text-[11.5px] font-medium text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300">
+        <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" aria-hidden="true" />Quest
+      </span>
+      {item.lastProblemDifficulty && <DifficultyTag difficulty={item.lastProblemDifficulty} className="!rounded-full !px-2 !text-[11px]" />}
+    </div>
+    <h3 className="mt-2.5 line-clamp-2 text-[19px] font-semibold leading-snug tracking-[-0.02em] text-slate-950 transition-colors group-hover:text-sky-700 dark:text-zinc-50 dark:group-hover:text-sky-300" title={item.title}>{item.title}</h3>
+    {item.lastProblemTitle && <p className="mt-1 truncate text-[13px] text-slate-500 dark:text-zinc-400">Last opened: <span className="font-medium text-slate-700 dark:text-zinc-200">{item.lastProblemTitle}</span></p>}
+    <div className="mt-4 rounded-xl bg-gradient-to-br from-indigo-50 to-sky-50 p-4 ring-1 ring-inset ring-indigo-100 dark:from-indigo-500/[0.08] dark:to-sky-500/[0.05] dark:ring-white/[0.06]">
+      <div className="flex items-center justify-between text-[12.5px]">
+        <span className="font-medium text-slate-700 dark:text-zinc-200">Quest progress</span>
+        <span className="tabular-nums text-slate-500 dark:text-zinc-400"><strong className="font-semibold text-slate-900 dark:text-zinc-100">{solved}</strong> / {total} solved</span>
+      </div>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/90 dark:bg-white/10" role="progressbar" aria-label={`${item.title} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
+        <span className="dashboard-fill block h-full rounded-full bg-gradient-to-r from-indigo-500 to-sky-500" style={{ width: `${percent}%` }} />
+      </div>
+    </div>
+    <div className="mt-auto flex items-center justify-between gap-3 pt-4">
+      <p className="min-w-0 truncate text-[12.5px] text-slate-500 dark:text-zinc-400">{formatRelativeTime(item.updatedAt, now)}</p>
+      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-[10px] bg-sky-600 px-3.5 py-2 text-[13px] font-medium text-white shadow-[0_6px_16px_-8px_rgba(2,132,199,0.7)] transition-colors group-hover:bg-sky-700">
+        Continue quest<ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+      </span>
+    </div>
+  </Link>;
+}
+
 function ResumeBody({ item, now }) {
+  if (item.type === 'quest') return <QuestResume item={item} now={now} />;
   const isCoding = item.type === 'coding';
   const kind = isCoding ? null : LEARNING_KINDS[item.contentType] || LEARNING_KINDS.topic;
   const progress = progressOf(item);

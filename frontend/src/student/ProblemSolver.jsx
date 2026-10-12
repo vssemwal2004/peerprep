@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
+  Check,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
@@ -1253,6 +1254,39 @@ export default function ProblemSolver() {
     };
   }, []);
 
+  // Opened from a quest (?quest=slug): the navigator holds only that quest's questions, in order.
+  const questSlug = useMemo(() => new URLSearchParams(location.search).get('quest') || '', [location.search]);
+  const [questContext, setQuestContext] = useState(null);
+  const loadQuestContext = useCallback(async () => {
+    if (!questSlug) { setQuestContext(null); return; }
+    try {
+      const result = await api.getQuest(questSlug);
+      setQuestContext(result?.quest || null);
+    } catch {
+      setQuestContext(null);
+    }
+  }, [questSlug]);
+  useEffect(() => { void loadQuestContext(); }, [loadQuestContext]);
+  // A finished submission can solve a quest question; refresh the quest's marks once it settles.
+  const wasSubmittingRef = useRef(false);
+  useEffect(() => {
+    if (wasSubmittingRef.current && !isSubmitting && questSlug) void loadQuestContext();
+    wasSubmittingRef.current = isSubmitting;
+  }, [isSubmitting, questSlug, loadQuestContext]);
+  const questItems = useMemo(() => (questContext?.items || []).map((item) => ({
+    _id: item.problemId, title: item.title, difficulty: item.difficulty, href: item.href, status: item.status, section: item.section, key: item.key,
+  })), [questContext]);
+  const currentQuestItem = questItems.find((item) => String(item._id) === String(id)) || null;
+  const recordedQuestViewRef = useRef('');
+  useEffect(() => {
+    if (!questSlug || !currentQuestItem) return;
+    const marker = `${questSlug}:${currentQuestItem.key}`;
+    if (recordedQuestViewRef.current === marker) return;
+    recordedQuestViewRef.current = marker;
+    api.recordQuestView(questSlug, currentQuestItem.key).catch(() => {});
+  }, [questSlug, currentQuestItem]);
+  const navigatorList = questContext ? questItems : problemList;
+
   useEffect(() => {
     if (problem?._id) {
       saveProblemDrafts(problem._id, drafts);
@@ -1322,20 +1356,22 @@ export default function ProblemSolver() {
   })();
 
   const currentProblemIndex = useMemo(() => (
-    problemList.findIndex((entry) => String(entry._id) === String(id))
-  ), [id, problemList]);
+    navigatorList.findIndex((entry) => String(entry._id) === String(id))
+  ), [id, navigatorList]);
 
-  const previousProblem = currentProblemIndex > 0 ? problemList[currentProblemIndex - 1] : null;
-  const nextProblem = currentProblemIndex >= 0 ? problemList[currentProblemIndex + 1] : null;
+  const previousProblem = currentProblemIndex > 0 ? navigatorList[currentProblemIndex - 1] : null;
+  const nextProblem = currentProblemIndex >= 0 ? navigatorList[currentProblemIndex + 1] : null;
 
+  // Quest entries carry their own link (with ?quest=) so previous/next stay inside the quest.
   const openProblemById = useCallback((problemId) => {
     if (!problemId || String(problemId) === String(id)) {
       setProblemListOpen(false);
       return;
     }
     setProblemListOpen(false);
-    navigate(`/problems/${problemId}`);
-  }, [id, navigate]);
+    const entry = navigatorList.find((item) => String(item._id) === String(problemId));
+    navigate(entry?.href || `/problems/${problemId}`);
+  }, [id, navigate, navigatorList]);
 
   const updateDraft = (nextCode) => {
     setDrafts((previous) => ({
@@ -1634,6 +1670,11 @@ export default function ProblemSolver() {
               {problemListOpen ? <PanelRightOpen className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
               <span className="truncate">{problem.title}</span>
             </button>
+            {questContext && <button type="button" onClick={() => navigate(`/student/quests/${questContext.slug}`)} title={`Back to ${questContext.title}`}
+              className="hidden max-w-[220px] items-center gap-1.5 rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-100 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-300 dark:ring-indigo-400/20 md:inline-flex">
+              <span className="truncate">{questContext.title}</span>
+              <span className="shrink-0 tabular-nums text-indigo-500 dark:text-indigo-400">{questContext.solved}/{questContext.total}</span>
+            </button>}
             <div className="hidden items-center gap-1 lg:inline-flex">
               <button
                 type="button"
@@ -1727,10 +1768,19 @@ export default function ProblemSolver() {
               <aside className="absolute inset-y-0 left-0 z-40 flex w-[35vw] min-w-[340px] max-w-[460px] flex-col overflow-hidden rounded-r-[30px] bg-white shadow-[0_16px_40px_rgba(15,23,42,0.12)] dark:bg-gray-900">
               <div className="border-b border-slate-200/70 px-5 py-4 dark:border-gray-800">
                 <div className="flex items-center justify-between gap-3">
-                  <div>
+                  {questContext ? <div className="min-w-0">
+                    <p className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-300">Quest</p>
+                    <p className="truncate text-sm font-semibold text-slate-900 dark:text-gray-100" title={questContext.title}>{questContext.title}</p>
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <span className="h-1.5 w-28 overflow-hidden rounded-full bg-slate-100 dark:bg-gray-800" role="progressbar" aria-label="Quest progress" aria-valuemin={0} aria-valuemax={questContext.total} aria-valuenow={questContext.solved}>
+                        <span className="block h-full rounded-full bg-gradient-to-r from-indigo-500 to-sky-500" style={{ width: `${questContext.total ? (questContext.solved / questContext.total) * 100 : 0}%` }} />
+                      </span>
+                      <span className="text-xs tabular-nums text-slate-500 dark:text-gray-400">{questContext.solved}/{questContext.total} solved</span>
+                    </div>
+                  </div> : <div>
                     <p className="text-sm font-semibold text-slate-900 dark:text-gray-100">Problem Navigator</p>
                     <p className="text-xs text-slate-500 dark:text-gray-400">{problemList.length} questions</p>
-                  </div>
+                  </div>}
                   <div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1 dark:bg-gray-800">
                     <button
                       type="button"
@@ -1756,29 +1806,44 @@ export default function ProblemSolver() {
 
               <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
                 <div className="space-y-2">
-                  {problemList.map((entry, index) => {
+                  {navigatorList.map((entry, index) => {
                     const active = String(entry._id) === String(id);
+                    const sectionStart = questContext && entry.section && entry.section !== navigatorList[index - 1]?.section;
                     return (
-                      <button
-                        key={entry._id}
-                        type="button"
-                        onClick={() => openProblemById(entry._id)}
-                        className={`flex w-full items-start justify-between gap-3 rounded-2xl px-4 py-3 text-left transition-colors ${active ? 'bg-sky-50 text-sky-900 ring-1 ring-sky-200 dark:bg-sky-900/20 dark:text-sky-100 dark:ring-sky-800' : 'bg-white/78 text-slate-700 hover:bg-slate-50 dark:bg-gray-950/40 dark:text-gray-200 dark:hover:bg-gray-800/80'}`}
-                      >
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">
-                            Question {index + 1}
-                          </p>
-                          <p className="mt-1 truncate text-sm font-semibold">{entry.title}</p>
-                        </div>
-                        <div className="shrink-0">
-                          <DifficultyBadge difficulty={entry.difficulty} />
-                        </div>
-                      </button>
+                      <div key={entry._id}>
+                        {sectionStart && <p className="px-2 pb-1 pt-3 text-[11.5px] font-semibold text-slate-500 dark:text-gray-400">{entry.section}</p>}
+                        <button
+                          type="button"
+                          onClick={() => openProblemById(entry._id)}
+                          aria-current={active ? 'page' : undefined}
+                          className={`flex w-full items-start justify-between gap-3 rounded-2xl px-4 py-3 text-left transition-colors ${active ? 'bg-sky-50 text-sky-900 ring-1 ring-sky-200 dark:bg-sky-900/20 dark:text-sky-100 dark:ring-sky-800' : 'bg-white/78 text-slate-700 hover:bg-slate-50 dark:bg-gray-950/40 dark:text-gray-200 dark:hover:bg-gray-800/80'}`}
+                        >
+                          <div className="flex min-w-0 items-start gap-2.5">
+                            {questContext && <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${entry.status === 'solved' ? 'bg-emerald-500 text-white' : entry.status === 'attempted' ? 'border-2 border-dashed border-amber-400' : 'border-2 border-slate-200 dark:border-gray-700'}`} title={entry.status === 'solved' ? 'Solved' : entry.status === 'attempted' ? 'Attempted' : 'Not attempted'}>
+                              {entry.status === 'solved' && <Check className="h-3 w-3" strokeWidth={3} aria-hidden="true" />}
+                            </span>}
+                            <div className="min-w-0">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-gray-500">
+                                Question {index + 1}
+                              </p>
+                              <p className="mt-1 truncate text-sm font-semibold">{entry.title}</p>
+                            </div>
+                          </div>
+                          <div className="shrink-0">
+                            <DifficultyBadge difficulty={entry.difficulty} />
+                          </div>
+                        </button>
+                      </div>
                     );
                   })}
                 </div>
               </div>
+              {questContext && <div className="border-t border-slate-200/70 px-5 py-3 dark:border-gray-800">
+                <button type="button" onClick={() => { setProblemListOpen(false); navigate(`/student/quests/${questContext.slug}`); }}
+                  className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">
+                  Quest overview<ChevronRight className="h-4 w-4" />
+                </button>
+              </div>}
               </aside>
             </>
           )}

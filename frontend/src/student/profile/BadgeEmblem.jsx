@@ -1,11 +1,12 @@
 import { useId } from 'react';
-import { BookOpen, Code2, Compass, Flag, GraduationCap, MessageSquare, Target, Trophy } from 'lucide-react';
+import { BookOpen, Code2, Compass, Flag, GraduationCap, Map as MapIcon, MessageSquare, Target, Trophy } from 'lucide-react';
 
 const designs = {
   coding: ['#38bdf8', '#2563eb', Code2], learning: ['#34d399', '#0f766e', BookOpen],
   assessments: ['#fbbf24', '#d97706', Target], interviews: ['#c084fc', '#7c3aed', MessageSquare],
   events: ['#22d3ee', '#0e7490', GraduationCap], momentum: ['#fb923c', '#ea580c', Flag],
   growth: ['#818cf8', '#4338ca', Compass], special: ['#f472b6', '#a21caf', Trophy],
+  quests: ['#22d3ee', '#4f46e5', MapIcon],
 };
 export default function BadgeEmblem({ badge, className = 'h-12 w-12' }) {
   const id = useId();

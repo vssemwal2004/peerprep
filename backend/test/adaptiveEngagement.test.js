@@ -82,7 +82,7 @@ test('first visit creates personalized frozen assignments without invented credi
   assert.equal(first.daily.goals.find((g) => g.slot === 'core').difficulty, 'Easy');
   const second = await refreshAdaptiveEngagement(student, at);
   assert.deepEqual(second.daily.goals, first.daily.goals);
-  assert.equal(await MissionAssignment.countDocuments({ studentId: student._id }), 3);
+  assert.equal(await MissionAssignment.countDocuments({ studentId: student._id }), 1, 'Only the daily challenge is assigned');
   assert.equal(await EngagementReward.countDocuments({}), 0);
 });
 
@@ -159,14 +159,35 @@ test('verified solutions complete missions once under concurrent refreshes; runs
 });
 const noticesFor = (studentId = student._id) => Notification.find({ userId: studentId }).sort({ createdAt: 1, title: 1 }).lean();
 
-test('new weekly and monthly targets are announced once; daily plans are not', async () => {
-  await Promise.all(Array.from({ length: 4 }, () => refreshAdaptiveEngagement(student, at)));
-  await refreshAdaptiveEngagement(student, new Date(at.getTime() + 60000));
-  const notices = await noticesFor();
-  assert.deepEqual(notices.map((notice) => notice.title).sort(), ['New monthly target', 'New weekly target']);
-  assert.ok(notices.every((notice) => notice.type === 'CHALLENGE' && notice.actionUrl === '/student/challenges' && !notice.isRead));
-  assert.match(notices.find((notice) => notice.title === 'New weekly target').message, /^\d+ goals to finish by .+\. Complete them for \+\d+ XP\.$/);
-  assert.equal(await EngagementReward.countDocuments({}), 0, 'Announcing a target never awards XP');
+test('only a daily challenge is assigned: one personal coding problem, different across classmates', async () => {
+  const classmates = Array.from({ length: 6 }, () => ({ ...student, _id: oid() }));
+  await User.collection.insertMany(classmates);
+  const picks = [];
+  for (const learner of [student, ...classmates]) {
+    const result = await refreshAdaptiveEngagement(learner, at);
+    assert.deepEqual(result.periods, [], 'Weekly and monthly targets are no longer offered');
+    assert.equal(result.daily.goals.length, 1);
+    assert.equal(result.daily.goals[0].domain, 'coding');
+    assert.equal(result.daily.goals[0].slot, 'core');
+    picks.push(result.daily.goals[0].key);
+  }
+  assert.ok(new Set(picks).size > 1, 'Students are not all handed the same problem');
+  assert.equal((await refreshAdaptiveEngagement(student, new Date(at.getTime() + 60000))).daily.goals[0].key, picks[0], 'A refresh never reshuffles the day');
+  assert.equal(await MissionAssignment.countDocuments({ kind: { $ne: 'daily' } }), 0);
+  assert.ok((await noticesFor()).every((notice) => !/target/i.test(notice.title)), 'No weekly or monthly target notices');
+});
+
+test('streak badges follow the best run of consecutive days and are kept after a break', async () => {
+  const scope = engagementScope(student);
+  await StudentProgression.create({ ...scope, level: 1, joinedAt: new Date('2026-09-01T00:00:00Z'), legacyImportedAt: at });
+  await EngagementActivity.insertMany(problems.slice(0, 7).map((problem, index) => ({ ...scope, sourceKey: `coding:local:${problem._id}`, contentKey: `coding:local:${problem._id}`,
+    domain: 'coding', difficulty: problem.difficulty, occurredAt: new Date(`2026-10-0${index + 1}T06:00:00Z`), dayKey: `2026-10-0${index + 1}` })));
+  const result = await refreshAdaptiveEngagement(student, at);
+  const earned = new Set(result.badges.filter((badge) => badge.earned).map((badge) => badge.id));
+  for (const id of ['streak-3', 'streak-7', 'code-streak-7']) assert.ok(earned.has(id), `${id} is earned from a 7-day run`);
+  assert.ok(!earned.has('streak-14'));
+  assert.equal(result.badges.find((badge) => badge.id === 'streak-14').progress, 50);
+  assert.ok((await refreshAdaptiveEngagement(student, new Date('2026-10-30T08:00:00Z'))).badges.find((badge) => badge.id === 'streak-7').earned, 'A later break keeps the badge');
 });
 
 test('a completed daily plan and its badges notify once and appear on the heatmap as challenge activity', async () => {
@@ -178,9 +199,9 @@ test('a completed daily plan and its badges notify once and appear on the heatma
   await refreshAdaptiveEngagement(student, new Date(completedAt.getTime() + 1000));
   const notices = await noticesFor();
   const titles = notices.map((notice) => notice.title);
-  assert.equal(titles.filter((title) => title === 'Daily plan complete').length, 1);
-  assert.match(notices.find((notice) => notice.title === 'Daily plan complete').message, /^\+20 XP earned/);
-  assert.ok(titles.includes('Badge earned: Code Initiate') && titles.includes('Badge earned: First Step'));
+  assert.equal(titles.filter((title) => title === 'Daily challenge complete').length, 1);
+  assert.match(notices.find((notice) => notice.title === 'Daily challenge complete').message, /^\+20 XP earned/);
+  assert.ok(titles.includes('Badge earned: Code Initiate') && titles.includes('Badge earned: Daily Debut'));
   assert.equal(new Set(notices.map((notice) => notice.dedupeKey)).size, notices.length, 'No duplicate notices under concurrent refreshes');
   assert.ok(notices.filter((notice) => notice.type === 'BADGE').every((notice) => notice.actionUrl === '/student/profile#badges'));
 
@@ -191,17 +212,6 @@ test('a completed daily plan and its badges notify once and appear on the heatma
   assert.equal(activityByDate[day], 4);
 });
 
-test('an unfinished weekly target gets one closing reminder near its deadline', async () => {
-  const first = await refreshAdaptiveEngagement(student, at);
-  const weekly = first.periods.find((period) => period.kind === 'weekly');
-  const nearEnd = new Date(new Date(weekly.endsAt).getTime() - 36 * 3600000);
-  await refreshAdaptiveEngagement(student, nearEnd);
-  await refreshAdaptiveEngagement(student, new Date(nearEnd.getTime() + 3600000));
-  const reminders = (await noticesFor()).filter((notice) => notice.title === 'Weekly target ends soon');
-  assert.equal(reminders.length, 1);
-  assert.match(reminders[0].message, /^0% done with 2 days left\. Finish it for \+\d+ XP\.$/);
-  assert.equal((await noticesFor(oid())).length, 0, 'Notices belong only to the student who earned them');
-});
 
 test('badges recognised from work before joining are added quietly', async () => {
   await solve(problems[0]._id, new Date(at.getTime() - 86400000));
@@ -332,7 +342,7 @@ test('delayed refresh attributes XP to the verified completion month, not the vi
   const reward = await EngagementReward.findOne({ ...engagementScope(student), key: 'daily:2026-10-31' }).lean();
   assert.equal(reward.earnedAt.toISOString(), completedAt.toISOString());
   const snapshot = await MonthlyProgressSnapshot.findOne({ ...engagementScope(student), month: '2026-10' }).lean();
-  assert.equal(snapshot.summary.xp, 25, 'Daily XP plus the prorated last-day monthly bonus');
+  assert.equal(snapshot.summary.xp, 20, 'Daily XP only; there is no monthly bonus any more');
 });
 
 test('XP alone does not promote; proven mastery plus active days create one permanent level event', async () => {

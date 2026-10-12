@@ -45,7 +45,7 @@ export default function ChallengePlanBoard({ data, plan, kind, error, onAccepted
   };
   const visible = goals.filter(goal => filter === 'all' || dailyGoalStatus(goal) === filter);
   const groups = kind === 'daily' ? [
-    ['core', 'The main mission', 'Start here'],
+    ['core', 'Today’s problem', 'Picked for you'],
     ['choice', 'Pick your path', 'Complete any one'],
     ['stretch', 'Go a little further', 'Optional bonus'],
   ] : [['all', 'Your milestones', 'Complete every goal']];
@@ -63,6 +63,6 @@ export default function ChallengePlanBoard({ data, plan, kind, error, onAccepted
       const items = slot === 'all' ? visible : visible.filter(goal => goal.slot === slot);
       return items.length ? <div key={slot} className="challenge-task-group"><div className="challenge-task-group__label"><h3>{title}</h3><span>{hint}</span></div><ul className={`challenge-task-grid ${items.length === 1 ? 'challenge-task-grid--single' : ''}`}>{items.map(goal => <MissionTile key={goal.id} goal={goal} disabled={!enabled} index={goals.indexOf(goal)} />)}</ul></div> : null;
     }) : <p className="challenge-filter-empty">{filter === 'completed' ? 'Your first win is waiting. You’ve got this.' : 'Nothing here right now. Explore your other missions.'}</p>}
-    <p className="challenge-board__note"><Clock3 size={12} />{kind === 'daily' ? 'Core + one choice. Stretch is optional.' : 'Every milestone counts toward this plan.'} New plans at 2 AM IST.</p>
+    <p className="challenge-board__note"><Clock3 size={12} />{kind === 'daily' ? 'One personal problem a day.' : 'Every milestone counts toward this plan.'} A new one arrives at 2 AM IST.</p>
   </section>;
 }

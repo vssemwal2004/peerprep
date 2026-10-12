@@ -181,6 +181,19 @@ test('rows show real solved and attempted status and open the coding workspace',
   assert.equal(document.getElementById('location').textContent, '/problems/p1');
 });
 
+test('the calendar shows the student’s own daily challenge before the shared problem of the day', async () => {
+  const original = api.refreshStudentEngagement;
+  api.refreshStudentEngagement = async () => ({ ...(await original()), daily: { completed: false, endsAt: new Date(Date.now() + 5 * 3600000).toISOString(),
+    goals: [{ id: 'core', slot: 'core', domain: 'coding', key: 'coding:local:p4', title: 'Solve Merge Intervals', difficulty: 'Medium', href: '/problems/p4', completed: false }] } });
+  await mount();
+  const calendar = document.querySelector('section[aria-labelledby="practice-calendar-title"]');
+  const daily = byText('a', /Your daily challenge/, calendar);
+  assert.equal(daily.getAttribute('href'), '/problems/p4');
+  assert.match(daily.textContent, /Merge Intervals.*Medium.*Solve/);
+  assert.doesNotMatch(daily.textContent, /Solve Merge/, 'The goal wording is trimmed to the problem title');
+  assert.equal(byText('a', /Problem of the day/, calendar), undefined);
+});
+
 test('the calendar is compact by default: streak, this week and today, with the month on request', async () => {
   await mount();
   const calendar = document.querySelector('section[aria-labelledby="practice-calendar-title"]');
@@ -192,7 +205,7 @@ test('the calendar is compact by default: streak, this week and today, with the 
   const daily = byText('a', /Problem of the day/, calendar);
   assert.equal(daily.getAttribute('href'), '/problems/p9');
   assert.match(daily.textContent, /resets in 5h \dm.*Daily Arrays.*Easy.*Solve/);
-  assert.match(calendar.textContent, /Today’s plan1\/2 done/);
+  assert.doesNotMatch(calendar.textContent, /Today’s plan/, 'The daily challenge is one problem, not a multi-step plan');
   assert.equal(calendar.querySelector('button[aria-label="Previous month"]'), null);
 
   const toggle = byText('button', /^Month/, calendar);
