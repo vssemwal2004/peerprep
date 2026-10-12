@@ -39,10 +39,10 @@ export function closestCompany(value, catalog = [], minRatio = 0.75) {
   return best;
 }
 
-/** Case-insensitive prefix matches first, then substring matches. */
-export function filterOptions(options = [], query = '', limit = 8) {
+/** Every option A–Z when nothing is typed; otherwise case-insensitive prefix matches first, then substring matches. */
+export function filterOptions(options = [], query = '', limit = Infinity) {
   const needle = String(query || '').trim().toLowerCase();
-  if (!needle) return options.slice(0, limit);
+  if (!needle) return [...options].sort((a, b) => a.localeCompare(b)).slice(0, limit);
   const prefix = [], contains = [];
   for (const option of options) {
     const lower = option.toLowerCase();

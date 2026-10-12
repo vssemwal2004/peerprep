@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { BriefcaseBusiness, Check, CircleCheck, Plus, Sparkles } from 'lucide-react';
+import { BriefcaseBusiness, Check, ChevronDown, CircleCheck, Plus, Sparkles } from 'lucide-react';
 import { api } from '../../utils/api';
 import { useOptionalAuth } from '../../context/AuthContext';
 import { closestCompany, filterOptions } from './companyMatch';
@@ -8,7 +8,8 @@ import { closestCompany, filterOptions } from './companyMatch';
 const MotionDiv = motion.div;
 const field = 'mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-600 dark:bg-zinc-900 dark:text-white dark:placeholder:text-zinc-500';
 const ghost = 'rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800';
-const primary = 'rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-sky-600/30 hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-40';
+const primary = 'rounded-xl bg-sky-500 px-5 py-2 text-sm font-semibold text-white shadow-sm shadow-sky-500/30 hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-40';
+const CLOSE_AFTER_SAVE_MS = 2600;
 
 // Keyed per student so a shared lab browser still asks the next student; without a known student nothing is remembered.
 const reportStorageKey = (userId, source, questionId) => `peerprep:interview-report:${userId}:${source}:${questionId}`;
@@ -34,6 +35,8 @@ function Highlight({ text, query }) {
 
 function Combobox({ label, value, onChange, options, placeholder, inputRef, describedBy, children }) {
   const id = useId();
+  const ownRef = useRef(null);
+  const ref = inputRef || ownRef;
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const query = value.trim();
@@ -52,13 +55,20 @@ function Combobox({ label, value, onChange, options, placeholder, inputRef, desc
   };
   return <div className="relative">
     <label htmlFor={`${id}-input`} className="block text-sm font-medium text-slate-700 dark:text-zinc-200">{label}</label>
-    <input ref={inputRef} id={`${id}-input`} role="combobox" aria-expanded={shown} aria-describedby={describedBy} aria-controls={`${id}-list`} aria-autocomplete="list"
-      aria-activedescendant={shown && active >= 0 ? `${id}-option-${active}` : undefined} autoComplete="off" maxLength={80}
-      value={value} placeholder={placeholder} className={field} onKeyDown={onKeyDown}
-      onChange={(event) => { onChange(event.target.value); setOpen(true); setActive(-1); }}
-      onFocus={() => setOpen(true)} onBlur={() => { setOpen(false); setActive(-1); }} />
+    <div className="relative">
+      <input ref={ref} id={`${id}-input`} role="combobox" aria-expanded={shown} aria-describedby={describedBy} aria-controls={`${id}-list`} aria-autocomplete="list"
+        aria-activedescendant={shown && active >= 0 ? `${id}-option-${active}` : undefined} autoComplete="off" maxLength={80}
+        value={value} placeholder={placeholder} className={`${field} pr-10`} onKeyDown={onKeyDown}
+        onChange={(event) => { onChange(event.target.value); setOpen(true); setActive(-1); }}
+        onFocus={() => setOpen(true)} onClick={() => setOpen(true)} onBlur={() => { setOpen(false); setActive(-1); }} />
+      <button type="button" tabIndex={-1} aria-label={`Show all ${label.toLowerCase()} options`}
+        onMouseDown={(event) => { event.preventDefault(); ref.current?.focus(); setOpen((current) => !current); }}
+        className="absolute inset-y-0 right-0 mt-1.5 flex w-10 items-center justify-center text-slate-400 hover:text-sky-600 dark:text-zinc-500">
+        <ChevronDown className={`h-4 w-4 transition-transform ${shown ? 'rotate-180' : ''}`} aria-hidden="true" />
+      </button>
+    </div>
     <ul id={`${id}-list`} role="listbox" aria-label={`${label} suggestions`} hidden={!shown}
-      className="absolute inset-x-0 top-full z-20 mt-1 max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+      className="absolute inset-x-0 top-full z-20 mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
       {matches.map((option, index) => <li key={option} id={`${id}-option-${index}`} role="option" aria-selected={index === active}
         onMouseDown={(event) => { event.preventDefault(); pick(option); }} onMouseEnter={() => setActive(index)}
         className={`flex cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm ${index === active ? 'bg-sky-50 text-sky-800 dark:bg-sky-500/15 dark:text-sky-200' : 'text-slate-700 dark:text-zinc-200'}`}>
@@ -70,11 +80,11 @@ function Combobox({ label, value, onChange, options, placeholder, inputRef, desc
   </div>;
 }
 
-/** "Was this question asked in your interview?" Hidden when this student already answered for the question here. */
-export default function InterviewReportPanel({ source, questionId, delay = 0, onReported }) {
+/** "Was this question asked in a company interview?" Hidden when this student already answered for the question here.
+ * No closes the celebration right away; a saved report shows a short thank-you and then closes it. */
+export default function InterviewReportPanel({ source, questionId, delay = 0, onReported, onFinished }) {
   const auth = useOptionalAuth();
   const userId = auth?.user?._id || auth?.user?.id || '';
-  const hintId = useId();
   const [step, setStep] = useState(() => (readReportAnswer(userId, source, questionId) ? 'hidden' : 'ask'));
   const yesRef = useRef(null), dateRef = useRef(null), companyRef = useRef(null), statusRef = useRef(null);
   // Each step replaces the focused button, so focus follows to the new content (only after the student acted).
@@ -94,6 +104,13 @@ export default function InterviewReportPanel({ source, questionId, delay = 0, on
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(null);
   const today = useMemo(localToday, []);
+  const onFinishedRef = useRef(onFinished);
+  useEffect(() => { onFinishedRef.current = onFinished; }, [onFinished]);
+  useEffect(() => {
+    if (step !== 'done') return undefined;
+    const timer = setTimeout(() => onFinishedRef.current?.(), CLOSE_AFTER_SAVE_MS);
+    return () => clearTimeout(timer);
+  }, [step]);
   const typed = company.trim();
   const listed = options.companies.find((name) => name.toLowerCase() === typed.toLowerCase());
   const suggestion = useMemo(() => (listed ? null : closestCompany(typed, options.companies)), [listed, typed, options.companies]);
@@ -103,7 +120,10 @@ export default function InterviewReportPanel({ source, questionId, delay = 0, on
   const ready = Boolean(interviewDate) && typed.length >= 2 && companyConfirmed && jobTitle.trim().length >= 2 && !busy;
   if (step === 'hidden') return null;
 
-  const answerNo = () => { rememberAnswer(userId, source, questionId, 'no'); go('no'); };
+  const answerNo = () => {
+    rememberAnswer(userId, source, questionId, 'no');
+    if (onFinished) onFinished(); else go('no');
+  };
   const answerYes = () => {
     go('form');
     api.questionInterviewOptions().then((data) => setOptions({
@@ -131,10 +151,7 @@ export default function InterviewReportPanel({ source, questionId, delay = 0, on
     <section aria-labelledby="interview-report-title" className="rounded-[15px] bg-gradient-to-br from-sky-50 to-indigo-50 p-4 text-left dark:from-zinc-900 dark:to-indigo-950/60 sm:p-5">
       <div className="flex items-start gap-3">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-sky-600 shadow-sm dark:bg-zinc-800 dark:text-sky-300"><BriefcaseBusiness className="h-5 w-5" aria-hidden="true" /></span>
-        <div className="min-w-0">
-          <h3 id="interview-report-title" className="text-[15px] font-semibold leading-snug text-slate-900 dark:text-white">Was this question asked in one of your interviews?</h3>
-          {step === 'ask' && <p className="mt-1 text-[13px] leading-relaxed text-slate-600 dark:text-zinc-400">Help other students prepare — verified companies appear on questions after enough students confirm.</p>}
-        </div>
+        <h3 id="interview-report-title" className="min-w-0 self-center text-[15px] font-semibold leading-snug text-slate-900 dark:text-white">Was this question asked in any company interview?</h3>
       </div>
 
       {step === 'ask' && <div className="mt-4 flex justify-end gap-2">
@@ -155,10 +172,8 @@ export default function InterviewReportPanel({ source, questionId, delay = 0, on
         <label className="block text-sm font-medium text-slate-700 dark:text-zinc-200">Interview date
           <input ref={dateRef} type="date" required min="2000-01-01" max={today} value={interviewDate} onChange={(event) => setInterviewDate(event.target.value)} className={field} />
         </label>
-        <Combobox label="Company" value={company} options={options.companies} placeholder="Search companies" inputRef={companyRef}
-          describedBy={typed.length >= 2 && !companyConfirmed ? hintId : undefined}
+        <Combobox label="Company" value={company} options={options.companies} placeholder="Choose or search a company" inputRef={companyRef}
           onChange={(next) => { setCompany(next); setError(''); }}>
-          {typed.length >= 2 && !companyConfirmed && <p id={hintId} className="mt-1.5 text-xs text-slate-500 dark:text-zinc-400">Pick a company from the list, or add it as a new company.</p>}
           {typed.length >= 2 && !companyConfirmed && <div className="mt-2 flex flex-wrap items-center gap-2">
             {suggestion && <button type="button" onClick={() => { pendingFocus.current = 'company'; setCompany(suggestion); }}
               className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-3 py-1 text-xs font-medium text-sky-800 hover:bg-sky-200 dark:bg-sky-500/15 dark:text-sky-200 dark:hover:bg-sky-500/25">
@@ -171,11 +186,11 @@ export default function InterviewReportPanel({ source, questionId, delay = 0, on
           </div>}
           {isNew && <p className="mt-2 inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">New company · reviewed by PeerPrep before it appears on questions</p>}
         </Combobox>
-        <Combobox label="Job title" value={jobTitle} options={options.jobTitles} placeholder="e.g. Software Engineer Intern" onChange={setJobTitle} />
+        <Combobox label="Job title" value={jobTitle} options={options.jobTitles} placeholder="Choose or type a job title" onChange={setJobTitle} />
         {error && <p role="alert" className="text-sm text-rose-600 dark:text-rose-400">{error}</p>}
         <div className="flex justify-end gap-2 pt-1">
           <button type="button" onClick={() => { go('ask'); setError(''); }} className={ghost}>Cancel</button>
-          <button type="submit" disabled={!ready} className={primary}>{busy ? 'Submitting…' : 'Submit'}</button>
+          <button type="submit" disabled={!ready} className={primary}>{busy ? 'Saving…' : 'Continue'}</button>
         </div>
       </form>}
     </section>

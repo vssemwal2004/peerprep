@@ -8,8 +8,9 @@ import './acceptedCelebration.css';
 const MotionDiv = motion.div;
 const PALETTE = ['#fbbf24', '#f59e0b', '#fde68a', '#0ea5e9', '#38bdf8', '#6366f1', '#ffffff'];
 const BURST = ['#fbbf24', '#f59e0b', '#fde68a', '#0ea5e9', '#38bdf8'];
-const WAVES = [0, 420, 900];
-const LAND_MS = 920, PANEL_MS = 1800;
+const WAVES = [0, 600, 1250];
+// Keep in step with the coin's FLIGHT_S in PeerPrepCoin.jsx.
+const LAND_MS = 1850, TEXT_S = 1.95, PANEL_MS = 2800;
 const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 const formatMemory = (kb) => (kb >= 1024 ? `${(kb / 1024).toFixed(kb >= 10240 ? 0 : 1)} MB` : `${Math.round(kb)} KB`);
@@ -125,7 +126,7 @@ function CelebrationDialog({ onClose, kind, title, stats, report, onReported }) 
         </button>
         <div className="accepted-celebration__scene"><div ref={coinRef}><PeerPrepCoin still={reduce} /></div></div>
         <div className="space-y-5 px-5 pb-6 pt-2 text-center sm:px-8 sm:pb-8">
-          <MotionDiv {...reveal(1.0)} aria-live="polite">
+          <MotionDiv {...reveal(TEXT_S)} aria-live="polite">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/30">
               <CircleCheckBig className="h-3.5 w-3.5" aria-hidden="true" />Accepted
             </span>
@@ -138,11 +139,8 @@ function CelebrationDialog({ onClose, kind, title, stats, report, onReported }) 
               </li>)}
             </ul>}
           </MotionDiv>
-          {report?.source && report?.questionId && (reduce || panelReady) && <InterviewReportPanel source={report.source} questionId={report.questionId} delay={reduce ? 0 : 1} onReported={onReported} />}
-          <MotionDiv {...reveal(1.2)}>
-            <button type="button" onClick={() => onCloseRef.current?.()}
-              className="w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200">Continue</button>
-          </MotionDiv>
+          {report?.source && report?.questionId && (reduce || panelReady) && <InterviewReportPanel source={report.source} questionId={report.questionId}
+            delay={reduce ? 0 : 1} onReported={onReported} onFinished={() => onCloseRef.current?.()} />}
         </div>
       </div>
     </div>

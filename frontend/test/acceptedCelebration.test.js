@@ -71,7 +71,8 @@ test('coding celebration shows the accepted heading, real stats and the intervie
   assert.match(text(), /Congratulations!/);
   assert.match(text(), /All 12 hidden test cases passed/);
   assert.match(text(), /48 ms/); assert.match(text(), /20 MB/); assert.match(text(), /Python 3/);
-  assert.match(text(), /Was this question asked in one of your interviews\?/);
+  assert.match(text(), /Was this question asked in any company interview\?/);
+  assert.equal(button('Continue'), undefined, 'Only Yes / No are offered until the student adds details');
   assert.doesNotMatch(text(), /coins?\b/i, 'The coin is decorative; no currency is promised');
   assert.equal(document.body.style.overflow, 'hidden');
   assert.equal(document.activeElement, document.querySelector('[aria-label="Close celebration"]'));
@@ -87,32 +88,50 @@ test('practice variant and unknown totals use honest copy', async () => {
   assert.match(text(), /All hidden test cases passed/);
 });
 
-test('answering No remembers the choice and never opens the form', async () => {
+test('answering No remembers the choice and closes the popup', async () => {
   await mount();
   await click(button('No'));
   assert.equal(localStorage.getItem(storageKey), 'no');
-  assert.match(text(), /Thanks — good luck with your next one/);
+  assert.equal(closed, 1);
   assert.equal(document.querySelector('[data-interview-report] form'), null);
   assert.deepEqual(calls, []);
 });
 
-test('Yes with a new company submits the report and explains the review', async () => {
+test('Yes with a new company submits the report, explains the review and then closes', async () => {
   await openForm();
-  const submit = button('Submit');
+  const submit = button('Continue');
   assert.equal(submit.disabled, true);
+  assert.match(submit.className, /bg-sky-500/);
   await type(combobox('Company'), 'Acme Robotics');
   await type(document.querySelector('input[type="date"]'), '2026-09-15');
   await type(combobox('Job title'), 'SDE Intern');
-  assert.equal(button('Submit').disabled, true, 'An unlisted name needs the explicit Add step');
-  assert.match(text(), /Pick a company from the list, or add it as a new company\./);
+  assert.equal(button('Continue').disabled, true, 'An unlisted name needs the explicit Add step');
   await click(button('Add “Acme Robotics” as a new company'));
   assert.match(text(), /New company · reviewed by PeerPrep before it appears on questions/);
   assert.equal(document.activeElement, combobox('Company'), 'Focus stays on the company field after the chip disappears');
-  assert.equal(button('Submit').disabled, false);
-  await click(button('Submit'));
+  assert.equal(button('Continue').disabled, false);
+  await click(button('Continue'));
   assert.deepEqual(calls.at(-1), { source: 'problem', id: 'p1', body: { interviewDate: '2026-09-15', company: 'Acme Robotics', jobTitle: 'SDE Intern' } });
   assert.match(text(), /Thanks! “Acme Robotics” was sent to the PeerPrep team for review\. Once approved and confirmed by enough students, it will appear on this question\./);
   assert.equal(localStorage.getItem(storageKey), 'yes');
+  assert.equal(closed, 0);
+  await act(() => new Promise((resolve) => { setTimeout(resolve, 2700); }));
+  assert.equal(closed, 1, 'The popup closes on its own after the thank-you');
+});
+
+test('company and job title dropdowns list every registered option A–Z before typing', async () => {
+  api.questionInterviewOptions = async () => { calls.push('options'); return { companies: ['Zoho', 'Amazon', 'Google', 'Microsoft', 'Adobe', 'Infosys', 'TCS', 'Wipro', 'Uber', 'Flipkart'], jobTitles: ['Software Engineer', 'Data Analyst', 'SDE Intern'] }; };
+  await openForm();
+  const company = combobox('Company');
+  await act(async () => { company.blur(); company.focus(); });
+  const companies = document.getElementById(company.getAttribute('aria-controls'));
+  assert.equal(company.getAttribute('aria-expanded'), 'true');
+  assert.deepEqual([...companies.querySelectorAll('[role="option"]')].map((node) => node.textContent),
+    ['Adobe', 'Amazon', 'Flipkart', 'Google', 'Infosys', 'Microsoft', 'TCS', 'Uber', 'Wipro', 'Zoho']);
+  const job = combobox('Job title');
+  await act(async () => job.focus());
+  assert.deepEqual([...document.getElementById(job.getAttribute('aria-controls')).querySelectorAll('[role="option"]')].map((node) => node.textContent),
+    ['Data Analyst', 'SDE Intern', 'Software Engineer']);
 });
 
 test('catalog companies are suggested with keyboard support and listed reports say so', async () => {
@@ -129,7 +148,7 @@ test('catalog companies are suggested with keyboard support and listed reports s
   assert.equal(button(/as a new company/), undefined);
   await type(document.querySelector('input[type="date"]'), '2026-08-01');
   await type(combobox('Job title'), 'Software Engineer');
-  await click(button('Submit'));
+  await click(button('Continue'));
   assert.match(text(), /When enough students confirm, this question will show the Google tag\./);
 });
 
@@ -149,21 +168,22 @@ test('report errors are announced and the form stays editable', async () => {
   await type(combobox('Company'), 'Microsoft');
   await type(document.querySelector('input[type="date"]'), '2026-07-01');
   await type(combobox('Job title'), 'SDE Intern');
-  await click(button('Submit'));
+  await click(button('Continue'));
   assert.match(document.querySelector('[role="alert"]').textContent, /Too many interview reports/);
   assert.equal(localStorage.getItem(storageKey), null);
-  assert.ok(button('Submit'));
+  assert.ok(button('Continue'));
+  assert.equal(closed, 0);
 });
 
 test('an already answered question and a missing report hide the panel', async () => {
   localStorage.setItem(storageKey, 'yes');
   await mount();
   assert.match(text(), /Congratulations!/);
-  assert.doesNotMatch(text(), /asked in one of your interviews/);
+  assert.doesNotMatch(text(), /asked in any company interview/);
   await act(async () => root.unmount()); root = createRoot(document.getElementById('app'));
   localStorage.clear();
   await mount({ report: null });
-  assert.doesNotMatch(text(), /asked in one of your interviews/);
+  assert.doesNotMatch(text(), /asked in any company interview/);
   await act(async () => root.render(h(AcceptedCelebration, { open: false, onClose() {} })));
   assert.equal(popup(), null);
   assert.equal(document.body.style.overflow, '');
@@ -175,7 +195,7 @@ test('the answered flag belongs to the signed-in student, and nothing is remembe
   assert.equal(localStorage.getItem(storageKey), 'no');
   viewer = { _id: 'student-b' };
   await remount();
-  assert.match(text(), /asked in one of your interviews/, 'Another student on the same browser is still asked');
+  assert.match(text(), /asked in any company interview/, 'Another student on the same browser is still asked');
   viewer = null;
   localStorage.clear();
   await remount();
@@ -189,8 +209,6 @@ test('focus follows each step of the interview panel', async () => {
   assert.equal(document.activeElement, document.querySelector('input[type="date"]'));
   await click(button('Cancel'));
   assert.equal(document.activeElement, button('Yes'));
-  await click(button('No'));
-  assert.equal(document.activeElement, popup().querySelector('[role="status"]'));
 });
 
 test('the backdrop closes on a full click but not on a scrollbar press or a drag that ends outside', async () => {
@@ -219,7 +237,8 @@ test('companyMatch normalizes, ranks and merges company names', () => {
   assert.equal(closestCompany('amazon', ['Amazon']), null, 'Exact matches need no suggestion');
   assert.equal(closestCompany('Zeta', ['Amazon', 'Google']), null);
   assert.deepEqual(filterOptions(['Bloomberg', 'Google', 'Goldman Sachs', 'Big Go'], 'go'), ['Google', 'Goldman Sachs', 'Big Go']);
-  assert.equal(filterOptions(Array.from({ length: 20 }, (_, index) => `Co ${index}`), '').length, 8);
+  assert.equal(filterOptions(Array.from({ length: 40 }, (_, index) => `Co ${index}`), '').length, 40, 'Nothing typed lists every option');
+  assert.deepEqual(filterOptions(['Zoho', 'adobe', 'Amazon'], ''), ['adobe', 'Amazon', 'Zoho']);
   assert.deepEqual(mergeCompanyTags([{ company: 'Google', voters: 21 }], ['google', 'Amazon']),
     [{ name: 'Google', voters: 21, verified: true }, { name: 'Amazon', voters: 0, verified: false }]);
 });
