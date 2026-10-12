@@ -8,6 +8,7 @@ import { engagementTenant, engagementPermissions } from './engagementPolicyServi
 import { getSharedCodingCatalog, invalidateChallengeRanking, publicProblemMatch } from './studentDashboardService.js';
 import { notifyOnce } from './notificationService.js';
 import { HttpError } from '../utils/errors.js';
+import { isUniversity } from '../platform/deployment.js';
 
 const ACCEPTED = ['AC', 'ACCEPTED', 'ACCEPT'];
 const CATEGORIES = ['company', 'topic', 'study-plan', 'difficulty'];
@@ -15,6 +16,11 @@ const THEMES = ['sky', 'violet', 'emerald', 'amber', 'rose', 'indigo'];
 const MAX_ITEMS = 300;
 const objectId = (value) => new mongoose.Types.ObjectId(String(value));
 const itemKey = (item) => `${item.source === 'shared' ? 'coding:shared' : 'coding:local'}:${item.problemId}`;
+// Quests are built from the deployment's shared library, so they belong to the deployment, not to the college on
+// the admin's account (admins usually have none). A university database holds one university; a standalone
+// database is one catalog shared by every college in it.
+const questTenant = () => engagementTenant({});
+const questScope = () => (isUniversity() ? { tenantKey: questTenant() } : {});
 const text = (value, max) => String(value ?? '').trim().replace(/\s+/g, ' ').slice(0, max);
 
 export function slugify(title) {
@@ -97,11 +103,11 @@ async function validateQuest(input, index) {
   };
 }
 
-async function uniqueSlug(tenantKey, title, excludeId) {
+async function uniqueSlug(title, excludeId) {
   const base = slugify(title);
   for (let attempt = 0; attempt < 50; attempt += 1) {
     const slug = attempt ? `${base}-${attempt + 1}` : base;
-    if (!await Quest.exists({ tenantKey, slug, ...(excludeId ? { _id: { $ne: excludeId } } : {}) })) return slug;
+    if (!await Quest.exists({ ...questScope(), slug, ...(excludeId ? { _id: { $ne: excludeId } } : {}) })) return slug;
   }
   return `${base}-${Date.now().toString(36)}`;
 }
@@ -114,65 +120,60 @@ function adminShape(quest, index, stats) {
     stats: stats || { enrolled: 0, completed: 0, averageProgress: 0 } };
 }
 
-async function questStats(tenantKey, questIds) {
+async function questStats(questIds) {
   const rows = questIds.length ? await QuestEnrollment.aggregate([
-    { $match: { tenantKey, questId: { $in: questIds } } },
+    { $match: { questId: { $in: questIds } } },
     { $group: { _id: '$questId', enrolled: { $sum: 1 }, completed: { $sum: { $cond: [{ $ne: ['$completedAt', null] }, 1, 0] } },
       progress: { $avg: { $cond: [{ $gt: ['$totalCount', 0] }, { $divide: ['$solvedCount', '$totalCount'] }, 0] } } } },
   ]).option({ maxTimeMS: 8000 }) : [];
   return new Map(rows.map((row) => [String(row._id), { enrolled: row.enrolled, completed: row.completed, averageProgress: Math.round((row.progress || 0) * 100) }]));
 }
 
-export async function listAdminQuests(admin, college) {
-  const tenantKey = engagementTenant(admin, college);
-  const quests = await Quest.find({ tenantKey, status: { $ne: 'archived' } }).sort({ updatedAt: -1 }).limit(200).maxTimeMS(8000).lean();
-  const [index, stats] = await Promise.all([libraryIndex(), questStats(tenantKey, quests.map((quest) => quest._id))]);
+export async function listAdminQuests() {
+  const quests = await Quest.find({ ...questScope(), status: { $ne: 'archived' } }).sort({ updatedAt: -1 }).limit(200).maxTimeMS(8000).lean();
+  const [index, stats] = await Promise.all([libraryIndex(), questStats(quests.map((quest) => quest._id))]);
   return quests.map((quest) => adminShape(quest, index, stats.get(String(quest._id))));
 }
 
 export async function getAdminQuest(admin, college, id) {
   if (!mongoose.isValidObjectId(id)) throw new HttpError(404, 'Quest not found');
-  const tenantKey = engagementTenant(admin, college);
-  const quest = await Quest.findOne({ _id: id, tenantKey }).maxTimeMS(8000).lean();
+  const quest = await Quest.findOne({ _id: id, ...questScope() }).maxTimeMS(8000).lean();
   if (!quest) throw new HttpError(404, 'Quest not found');
-  const [index, stats] = await Promise.all([libraryIndex(), questStats(tenantKey, [quest._id])]);
+  const [index, stats] = await Promise.all([libraryIndex(), questStats([quest._id])]);
   return adminShape(quest, index, stats.get(String(quest._id)));
 }
 
 export async function createQuest(admin, college, input) {
-  const tenantKey = engagementTenant(admin, college);
   const index = await libraryIndex();
   const fields = await validateQuest(input, index);
-  const quest = await Quest.create({ ...fields, tenantKey, slug: await uniqueSlug(tenantKey, fields.title),
+  const quest = await Quest.create({ ...fields, tenantKey: questTenant(), slug: await uniqueSlug(fields.title),
     publishedAt: fields.status === 'published' ? new Date() : null, createdBy: admin._id, updatedBy: admin._id });
   return adminShape(quest.toObject(), index);
 }
 
 export async function updateQuest(admin, college, id, input) {
   if (!mongoose.isValidObjectId(id)) throw new HttpError(404, 'Quest not found');
-  const tenantKey = engagementTenant(admin, college);
-  const existing = await Quest.findOne({ _id: id, tenantKey }).maxTimeMS(8000).lean();
+  const existing = await Quest.findOne({ _id: id, ...questScope() }).maxTimeMS(8000).lean();
   if (!existing) throw new HttpError(404, 'Quest not found');
   const index = await libraryIndex();
   const fields = await validateQuest({ ...existing, ...input }, index);
-  const slug = fields.title !== existing.title ? await uniqueSlug(tenantKey, fields.title, existing._id) : existing.slug;
+  const slug = fields.title !== existing.title ? await uniqueSlug(fields.title, existing._id) : existing.slug;
   const publishedAt = fields.status === 'published' ? existing.publishedAt || new Date() : existing.publishedAt;
-  const quest = await Quest.findOneAndUpdate({ _id: id, tenantKey }, { $set: { ...fields, slug, publishedAt, updatedBy: admin._id } }, { new: true }).lean();
-  const stats = await questStats(tenantKey, [quest._id]);
+  const quest = await Quest.findOneAndUpdate({ _id: id, ...questScope() }, { $set: { ...fields, slug, publishedAt, updatedBy: admin._id } }, { new: true }).lean();
+  const stats = await questStats([quest._id]);
   return adminShape(quest, index, stats.get(String(quest._id)));
 }
 
 /** Drafts nobody started are deleted; anything students touched is archived so history stays intact. */
 export async function removeQuest(admin, college, id) {
   if (!mongoose.isValidObjectId(id)) throw new HttpError(404, 'Quest not found');
-  const tenantKey = engagementTenant(admin, college);
-  const quest = await Quest.findOne({ _id: id, tenantKey }).select('_id status').lean();
+  const quest = await Quest.findOne({ _id: id, ...questScope() }).select('_id status').lean();
   if (!quest) throw new HttpError(404, 'Quest not found');
-  if (quest.status === 'draft' && !await QuestEnrollment.exists({ tenantKey, questId: quest._id })) {
-    await Quest.deleteOne({ _id: quest._id, tenantKey });
+  if (quest.status === 'draft' && !await QuestEnrollment.exists({ questId: quest._id })) {
+    await Quest.deleteOne({ _id: quest._id, ...questScope() });
     return { deleted: true };
   }
-  await Quest.updateOne({ _id: quest._id, tenantKey }, { $set: { status: 'archived', updatedBy: admin._id } });
+  await Quest.updateOne({ _id: quest._id, ...questScope() }, { $set: { status: 'archived', updatedBy: admin._id } });
   return { archived: true };
 }
 
@@ -184,7 +185,7 @@ async function requireCoding(student) {
   if (!(await engagementPermissions(student)).questions) throw new HttpError(403, 'Coding questions are not enabled for your university.');
 }
 
-const visibleFilter = (scope, student) => ({ tenantKey: scope.tenantKey, status: 'published',
+const visibleFilter = (student) => ({ ...questScope(), status: 'published',
   ...(Number(student.semester) > 0 ? { $or: [{ semesters: { $size: 0 } }, { semesters: Number(student.semester) }] } : { semesters: { $size: 0 } }) });
 
 /** Solved and attempted state for the given library keys, from verified submissions and attempts. */
@@ -253,7 +254,7 @@ function studentCard(quest, index, states, enrollment) {
 
 async function loadStudentQuests(student, filter = {}) {
   const scope = engagementScope(student);
-  const quests = await Quest.find({ ...visibleFilter(scope, student), ...filter }).sort({ publishedAt: -1, _id: -1 }).limit(100).maxTimeMS(8000).lean();
+  const quests = await Quest.find({ ...visibleFilter(student), ...filter }).sort({ publishedAt: -1, _id: -1 }).limit(100).maxTimeMS(8000).lean();
   const [index, enrollments] = await Promise.all([libraryIndex(),
     quests.length ? QuestEnrollment.find({ ...scope, questId: { $in: quests.map((quest) => quest._id) } }).maxTimeMS(8000).lean() : []]);
   const keys = [...new Set(quests.flatMap((quest) => quest.items.map(itemKey)).filter((key) => index.has(key)))];

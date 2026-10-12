@@ -28,7 +28,8 @@ before(async () => {
 });
 beforeEach(async () => {
   await Promise.all(models.map((model) => model.deleteMany({})));
-  admin = { _id: oid(), role: 'admin', college: 'Test University' };
+  // Like real admin accounts, the admin has no college; students do. Quests must still reach them.
+  admin = { _id: oid(), role: 'admin' };
   student = { _id: oid(), role: 'student', accessScope: 'full', college: 'Test University', semester: 3 };
   await User.collection.insertMany([admin, student]);
   problems = ['Two Sum', 'Valid Anagram', 'LRU Cache', 'Draft Problem'].map((title, index) => ({ _id: oid(), title, difficulty: ['Easy', 'Easy', 'Hard', 'Medium'][index],
@@ -59,8 +60,8 @@ test('admins build quests only from published library questions, with clean slug
   assert.equal(first.questionCount, 3);
   assert.deepEqual(first.items.map((entry) => entry.title), ['Two Sum', 'Valid Anagram', 'LRU Cache'], 'Admin order is preserved');
   assert.ok(first.publishedAt);
-  const otherAdmin = { ...admin, _id: oid(), college: 'Other University' };
-  assert.equal((await listAdminQuests(otherAdmin)).length, 0, 'Another university cannot see these quests');
+  const collegeAdmin = { ...admin, _id: oid(), college: 'Another College' };
+  assert.equal((await listAdminQuests(collegeAdmin)).length, 2, 'Quests belong to the deployment, not to the college on an admin account');
 
   const library = await searchQuestLibrary({ company: 'Amazon' });
   assert.deepEqual(library.items.map((entry) => entry.title), ['LRU Cache']);
