@@ -26,15 +26,20 @@ export default function useQuickPrepActions({ onChanged, onRemoved } = {}) {
     } finally { setBusyId(''); }
   };
 
+  // Mirrors the server: centrally, anything ever published may hold progress in universities, so it is archived.
+  const isTouched = (quest) => (quest.central ? Boolean(quest.publishedAt) : quest.stats?.enrolled > 0);
+  const kept = (quest) => (quest.central ? 'Universities keep their students’ progress.' : 'Student progress is kept.');
   const setStatus = (quest, status) => run(quest, () => api.updateQuest(quest.id, { status }), status === 'published'
-    ? `“${quest.title}” is live for students.` : status === 'archived' ? `“${quest.title}” was archived. Student progress is kept.` : `“${quest.title}” is now a draft and hidden from students.`);
+    ? `“${quest.title}” is live for students.` : status === 'archived' ? `“${quest.title}” was archived. ${kept(quest)}` : `“${quest.title}” is now a draft and hidden from students.`);
   const duplicate = (quest) => run(quest, () => api.duplicateQuest(quest.id), (result) => `Copied as “${result.quest.title}” (draft).`);
   const remove = async (quest) => {
-    const started = quest.stats?.enrolled > 0;
-    if (!window.confirm(started || quest.status !== 'draft'
-      ? `Remove “${quest.title}”? It will be archived so the progress of ${quest.stats?.enrolled || 0} student(s) is kept.`
+    const touched = isTouched(quest);
+    if (!window.confirm(touched || quest.status !== 'draft'
+      ? (quest.central
+        ? `Remove “${quest.title}”? It has been published before, so it will be archived instead of deleted.`
+        : `Remove “${quest.title}”? It will be archived so the progress of ${quest.stats?.enrolled || 0} student(s) is kept.`)
       : `Delete the draft “${quest.title}”? This cannot be undone.`)) return;
-    const result = await run(quest, () => api.deleteQuest(quest.id), (value) => (value.deleted ? 'Draft deleted.' : 'Archived. Student progress is kept.'));
+    const result = await run(quest, () => api.deleteQuest(quest.id), (value) => (value.deleted ? 'Draft deleted.' : `Archived. ${kept(quest)}`));
     if (result) onRemoved?.(result);
   };
 
@@ -51,7 +56,7 @@ export default function useQuickPrepActions({ onChanged, onRemoved } = {}) {
       ? { id: 'restore', label: 'Restore as draft', icon: ArchiveRestore, run: () => setStatus(quest, 'draft') }
       : { id: 'archive', label: 'Archive', icon: Archive, run: () => setStatus(quest, 'archived') },
     'divider',
-    { id: 'delete', label: quest.status === 'draft' && !quest.stats?.enrolled ? 'Delete draft' : 'Remove', icon: Trash2, danger: true, run: () => remove(quest) },
+    { id: 'delete', label: quest.status === 'draft' && !isTouched(quest) ? 'Delete draft' : 'Remove', icon: Trash2, danger: true, run: () => remove(quest) },
   ].filter(Boolean);
 
   return { actionsFor, setStatus, duplicate, remove, busyId, message, setMessage };

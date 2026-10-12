@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BookOpen, Check, Plus, Save, Sparkles, Trash2, Trophy } from 'lucide-react';
 import { api } from '../utils/api';
-import { isUniversityDeployment } from '../platform/universityPermissions';
+import { canAuthorQuickPrep, isUniversityDeployment } from '../platform/universityPermissions';
 import BadgeEmblem from '../student/profile/BadgeEmblem';
 
 const access = { coding: 'questions', learning: 'learning', assessments: 'assessments', interviews: 'interviews', events: 'events' };
@@ -52,7 +52,7 @@ export default function EngagementSettings() {
   };
   return <div className="min-h-screen bg-slate-50 p-4 text-slate-900 dark:bg-[#1a1a1a] dark:text-zinc-100 sm:p-6">
     <div className="mx-auto max-w-6xl space-y-5">
-      <header className="flex items-start gap-3"><span className="rounded-xl bg-sky-100 p-3 text-sky-600 dark:bg-sky-500/10"><Sparkles size={23} /></span><div><h1 className="text-xl font-semibold">Student progression</h1><p className="mt-1 text-sm text-slate-500 dark:text-zinc-400">A personal daily coding problem for every student, 50 permanent badges and levels. Build curated quests under Quests.</p></div></header>
+      <header className="flex items-start gap-3"><span className="rounded-xl bg-sky-100 p-3 text-sky-600 dark:bg-sky-500/10"><Sparkles size={23} /></span><div><h1 className="text-xl font-semibold">Student progression</h1><p className="mt-1 text-sm text-slate-500 dark:text-zinc-400">A personal daily coding problem for every student, 50 permanent badges and levels.{canAuthorQuickPrep ? ' Build curated question sets under QuickPrep.' : ''}</p></div></header>
       <div className={`${panel} flex flex-wrap items-end gap-4`}>
         {!isUniversityDeployment && <div><label className="text-xs font-medium">University name<input value={college} onChange={(event) => setCollege(event.target.value)} placeholder="Default deployment" className={field} /></label><button type="button" onClick={() => setSelectedCollege(college.trim())} className="mt-2 text-xs font-semibold text-sky-600">Load university</button></div>}
         <label className="text-xs font-medium">Policy scope<select className={field} value={cohort} onChange={(event) => { setNotice(''); setCohort(event.target.value); }}><option value="all">All students</option>{Array.from({ length: 12 }, (_, i) => <option key={i} value={`semester:${i + 1}`}>Semester {i + 1}</option>)}</select></label>

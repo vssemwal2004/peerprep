@@ -321,7 +321,9 @@ function PublishStep({ form, set, saved, preview, busy, onBack, onFinish }) {
     { ok: form.title.trim().length >= 3, label: 'Name set', detail: form.title || 'Missing' },
     { ok: preview.total > 0, label: 'Questions ready', detail: `${plural(preview.total, 'question')} visible to students` },
     { ok: !(saved?.unavailableCount > 0), warn: true, label: 'All questions available', detail: saved?.unavailableCount ? `${saved.unavailableCount} unpublished in the library will be hidden` : 'Every question is published' },
-    { ok: (saved?.audience ?? 1) > 0, warn: true, label: 'Students can see it', detail: saved?.audience !== null && saved?.audience !== undefined ? `${plural(saved.audience, 'student')} in the saved audience` : 'Counted after saving' },
+    saved?.central
+      ? { ok: true, warn: true, label: 'Students can see it', detail: 'Delivered to every university with coding enabled' }
+      : { ok: (saved?.audience ?? 1) > 0, warn: true, label: 'Students can see it', detail: saved?.audience !== null && saved?.audience !== undefined ? `${plural(saved.audience, 'student')} in the saved audience` : 'Counted after saving' },
   ];
   const ready = checks.filter((check) => !check.warn).every((check) => check.ok);
   const published = saved?.status === 'published';
