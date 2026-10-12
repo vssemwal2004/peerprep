@@ -28,8 +28,9 @@ import DailyChallengeDrawer from '../student/engagement/DailyChallengeDrawer';
 
 const modules = [
   { label: 'Dashboard', hint: 'Your placement overview', to: '/student/dashboard', icon: LayoutDashboard },
-  { label: 'Quests', hint: 'Daily challenge and curated quests', to: '/student/quests', icon: Sparkles },
+  { label: 'QuickPrep', hint: 'Daily challenge and curated QuickPreps', to: '/student/quickprep', icon: Sparkles },
   { label: 'Analysis', hint: 'Progress and skill insights', to: '/student/analysis', icon: BarChart3 },
+  { label: 'Rankings', hint: 'Your university and global rank', to: '/student/rankings', icon: BarChart3 },
   { label: 'Interviews', hint: 'Peer interview sessions', to: '/student/interview', icon: User },
   { label: 'AI Interviews', hint: 'Practice with AI', to: '/student/ai-interviews', icon: Bot },
   { label: 'Assessments', hint: 'Available tests', to: '/student/assessments', icon: ClipboardList },
@@ -79,7 +80,7 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
   const searchRef = useRef(null);
   const appsRef = useRef(null);
   const profileRef = useRef(null);
-  const canShowChallenges = user?.role === 'student' && user?.accessScope !== 'assessment_only' && allowsPath('/student/quests', 'student');
+  const canShowChallenges = user?.role === 'student' && user?.accessScope !== 'assessment_only' && allowsPath('/student/quickprep', 'student');
   const challengesOpen = canShowChallenges && challengeRoute === location.key;
   const closeChallenges = useCallback(() => setChallengeRoute(null), []);
 

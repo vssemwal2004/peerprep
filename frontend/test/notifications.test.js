@@ -16,8 +16,8 @@ const user = { _id: 'student-1', role: 'student', name: 'Aditi Sharma' };
 const minutesAgo = (minutes) => new Date(Date.now() - minutes * 60000).toISOString();
 
 const items = () => [
-  { _id: 'n1', type: 'QUEST', title: 'Quest complete: Amazon Top 50', message: 'All 50 questions solved. +60 XP and the Amazon Top 50 Finisher badge.', actionUrl: '/student/quests/amazon-top-50', isRead: false, createdAt: minutesAgo(1) },
-  { _id: 'n5', type: 'CHALLENGE', title: 'Daily challenge complete', message: '+20 XP earned. A new challenge arrives at 2 AM.', actionUrl: '/student/quests', isRead: true, createdAt: minutesAgo(5) },
+  { _id: 'n1', type: 'QUEST', title: 'QuickPrep complete: Amazon Top 50', message: 'All 50 questions solved. +60 XP and the Amazon Top 50 Finisher badge.', actionUrl: '/student/quickprep/amazon-top-50', isRead: false, createdAt: minutesAgo(1) },
+  { _id: 'n5', type: 'CHALLENGE', title: 'Daily challenge complete', message: '+20 XP earned. A new challenge arrives at 2 AM.', actionUrl: '/student/quickprep', isRead: true, createdAt: minutesAgo(5) },
   { _id: 'n2', type: 'BADGE', title: 'Badge earned: Code Initiate', message: 'Solve your first practice problem.', actionUrl: '/student/profile#badges', isRead: false, createdAt: minutesAgo(2) },
   { _id: 'n3', type: 'LEVEL', title: 'Level 2 unlocked: Foundation Builder', message: '120 XP and 20% demonstrated mastery got you here.', actionUrl: '/student/profile#badges', isRead: true, createdAt: minutesAgo(3) },
   { _id: 'n4', type: 'ASSESSMENT', title: 'Assessment Submitted', message: 'Assessment submitted successfully', actionUrl: '/student/assessments', isRead: true, createdAt: minutesAgo(4) },
@@ -77,11 +77,11 @@ const buttonNamed = (pattern) => [...panel().querySelectorAll('button')].find((b
 test('challenge, badge and level updates are labelled, rewarded and linked to where they live', async () => {
   await renderSidebar();
   const text = panel().textContent;
-  assert.match(text, /Quest.*\+60 XP.*Quest complete: Amazon Top 50/);
+  assert.match(text, /QuickPrep.*\+60 XP.*QuickPrep complete: Amazon Top 50/);
   assert.match(text, /Daily challenge.*\+20 XP.*Daily challenge complete/);
   assert.match(text, /Badge.*Badge earned: Code Initiate/);
   assert.match(text, /Level up.*Level 2 unlocked: Foundation Builder/);
-  for (const label of ['View quest', 'See badge', 'See level']) assert.ok(buttonNamed(new RegExp(label)), `${label} action is offered`);
+  for (const label of ['View QuickPrep', 'See badge', 'See level']) assert.ok(buttonNamed(new RegExp(label)), `${label} action is offered`);
   assert.doesNotMatch(text, /Level up\+\d+ XP/, 'XP pills come only from a message that states XP; the level notice has none');
 });
 
@@ -92,7 +92,7 @@ test('the Progress tab collects challenge updates and leaves everyday notices un
   await act(async () => progressTab.click());
   assert.equal(progressTab.getAttribute('aria-pressed'), 'true');
   assert.doesNotMatch(panel().textContent, /Assessment Submitted/);
-  assert.match(panel().textContent, /Quest complete: Amazon Top 50/);
+  assert.match(panel().textContent, /QuickPrep complete: Amazon Top 50/);
   await renderSidebar(items().filter((item) => item.type === 'ASSESSMENT'), 0);
   await act(async () => buttonNamed(/^Progress/).click());
   assert.match(panel().textContent, /Completed targets, new badges and level-ups will appear here/);

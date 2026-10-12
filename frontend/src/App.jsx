@@ -1,4 +1,5 @@
-import { BrowserRouter, Navigate, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Navigate, Routes, Route, useLocation, useParams } from "react-router-dom";
+import { quickPrepLibraryUrl } from "./admin/quickprep/libraryLink";
 import { lazy as reactLazy, Suspense, useEffect, useCallback, useLayoutEffect, useRef, useState } from "react";
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
@@ -39,9 +40,13 @@ const FeedbackForm = lazy(() => import("./student/FeedbackForm"));
 const StudentLearning = lazy(() => import("./student/StudentLearning"));
 const LearningDetail = lazy(() => import("./student/LearningDetail"));
 const StudentProfile = lazy(() => import("./student/StudentProfile"));
+const StudentRankings = lazy(() => import("./student/StudentRankings"));
 const StudentQuests = lazy(() => import("./student/StudentQuests"));
 const QuestDetail = lazy(() => import("./student/QuestDetail"));
-const AdminQuests = lazy(() => import("./admin/quests/AdminQuests"));
+const QuickPrepList = lazy(() => import("./admin/quickprep/QuickPrepList"));
+const QuickPrepWizard = lazy(() => import("./admin/quickprep/QuickPrepWizard"));
+const QuickPrepView = lazy(() => import("./admin/quickprep/QuickPrepView"));
+const QuickPrepInsights = lazy(() => import("./admin/quickprep/QuickPrepInsights"));
 const EngagementSettings = lazy(() => import('./admin/EngagementSettings'));
 const HelpAndSupport = lazy(() => import("./student/HelpAndSupport"));
 const ProblemsPage = lazy(() => import("./student/ProblemsPage"));
@@ -236,6 +241,18 @@ function useHideGlobalLoader() {
   }, []);
 }
 
+// QuickPrep questions are picked in the existing Question Library; the old picker address goes there.
+function QuickPrepLibraryRedirect() {
+  const { id } = useParams();
+  return <Navigate to={quickPrepLibraryUrl({ id })} replace />;
+}
+
+// Old Quests links (notifications, bookmarks) open the same set under its QuickPrep address.
+function LegacyQuickPrepRedirect() {
+  const { slug } = useParams();
+  return <Navigate to={`/student/quickprep/${slug}`} replace />;
+}
+
 function AdminShell({ children, layout = true }) {
   return (
     <AdminProtectedRoute>
@@ -371,10 +388,13 @@ function AppContent() {
         {/* Student Routes - Protected */}
         <Route path="/student/change-password" element={<StudentProtectedRoute><ChangePassword /></StudentProtectedRoute>} />
         <Route path="/student/profile" element={<StudentProtectedRoute><StudentProfile /></StudentProtectedRoute>} />
-        <Route path="/student/quests" element={<StudentProtectedRoute><StudentQuests /></StudentProtectedRoute>} />
-        <Route path="/student/quests/:slug" element={<StudentProtectedRoute><QuestDetail /></StudentProtectedRoute>} />
-        {/* Challenges became Quests; old links and bookmarks still land in the right place. */}
-        <Route path="/student/challenges" element={<Navigate to="/student/quests" replace />} />
+        <Route path="/student/rankings" element={<StudentProtectedRoute><StudentRankings /></StudentProtectedRoute>} />
+        <Route path="/student/quickprep" element={<StudentProtectedRoute><StudentQuests /></StudentProtectedRoute>} />
+        <Route path="/student/quickprep/:slug" element={<StudentProtectedRoute><QuestDetail /></StudentProtectedRoute>} />
+        {/* Challenges became Quests, then QuickPrep; old links, bookmarks and notifications still land in the right place. */}
+        <Route path="/student/challenges" element={<Navigate to="/student/quickprep" replace />} />
+        <Route path="/student/quests" element={<Navigate to="/student/quickprep" replace />} />
+        <Route path="/student/quests/:slug" element={<LegacyQuickPrepRedirect />} />
         <Route path="/student/resume" element={<StudentProtectedRoute><StudentResume /></StudentProtectedRoute>} />
         <Route path="/student/dashboard" element={<StudentProtectedRoute><StudentDashboard /></StudentProtectedRoute>} />
         <Route path="/student/interview" element={<StudentProtectedRoute><StudentInterview /></StudentProtectedRoute>} />
@@ -418,7 +438,13 @@ function AppContent() {
         <Route path="/admin/event" element={<AdminShell><EventManagement /></AdminShell>} />
         <Route path="/admin/event/create" element={<AdminShell><EventManagement /></AdminShell>} />
         <Route path="/admin/settings/student-progression" element={<AdminShell><EngagementSettings /></AdminShell>} />
-        <Route path="/admin/quests" element={<AdminShell><AdminQuests /></AdminShell>} />
+        <Route path="/admin/quickprep" element={<AdminShell><QuickPrepList /></AdminShell>} />
+        <Route path="/admin/quickprep/new" element={<AdminShell><QuickPrepWizard /></AdminShell>} />
+        <Route path="/admin/quickprep/insights" element={<AdminShell><QuickPrepInsights /></AdminShell>} />
+        <Route path="/admin/quickprep/:id" element={<AdminShell><QuickPrepView /></AdminShell>} />
+        <Route path="/admin/quickprep/:id/edit" element={<AdminShell><QuickPrepWizard /></AdminShell>} />
+        <Route path="/admin/quickprep/:id/questions/add" element={<QuickPrepLibraryRedirect />} />
+        <Route path="/admin/quests" element={<Navigate to="/admin/quickprep" replace />} />
         <Route path="/admin/event/:id" element={<AdminShell><EventDetail /></AdminShell>} />
         <Route path="/admin/interviews" element={<Navigate to="/admin/interviews/one-to-one" replace />} />
         <Route path="/admin/interviews/:id" element={<AdminShell><EventDetail /></AdminShell>} />

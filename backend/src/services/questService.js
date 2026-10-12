@@ -1,5 +1,7 @@
 import mongoose from 'mongoose';
 import Problem from '../models/Problem.js';
+import User from '../models/User.js';
+import QuestionLibrary from '../models/QuestionLibrary.js';
 import Submission from '../models/Submission.js';
 import QuestionPracticeAttempt from '../models/QuestionPracticeAttempt.js';
 import { Quest, QuestEnrollment, StudentBadge, EngagementReward } from '../models/AdaptiveEngagement.js';
@@ -9,11 +11,13 @@ import { getSharedCodingCatalog, invalidateChallengeRanking, publicProblemMatch 
 import { notifyOnce } from './notificationService.js';
 import { HttpError } from '../utils/errors.js';
 import { isUniversity } from '../platform/deployment.js';
+import { sharedQuestions } from '../platform/sharedContent.js';
 
 const ACCEPTED = ['AC', 'ACCEPTED', 'ACCEPT'];
 const CATEGORIES = ['company', 'topic', 'study-plan', 'difficulty'];
 const THEMES = ['sky', 'violet', 'emerald', 'amber', 'rose', 'indigo'];
 const MAX_ITEMS = 300;
+const MAX_LIBRARY_PICK = 1000;
 const objectId = (value) => new mongoose.Types.ObjectId(String(value));
 const itemKey = (item) => `${item.source === 'shared' ? 'coding:shared' : 'coding:local'}:${item.problemId}`;
 // Quests are built from the deployment's shared library, so they belong to the deployment, not to the college on
@@ -47,24 +51,42 @@ async function libraryIndex() {
   return new Map(entries.map((entry) => [itemKey(entry), { ...entry, key: itemKey(entry) }]));
 }
 
-/** Admin question picker: search and filter the library, with topic and company facets. */
-export async function searchQuestLibrary({ search = '', difficulty = '', topic = '', company = '', page = 1, limit = 30 } = {}) {
+// Query values may arrive as "a,b", repeated params or arrays; all become a clean list.
+const list = (value) => [...new Set((Array.isArray(value) ? value : String(value ?? '').split(',')).map((entry) => text(entry, 60)).filter(Boolean))];
+const tally = (entries, pick) => Object.entries(entries.flatMap(pick).reduce((acc, value) => { acc[value] = (acc[value] || 0) + 1; return acc; }, {}))
+  .map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+
+/** Companies, topics and difficulties that exist in the published library: the only choices admins are offered. */
+export async function questTaxonomy() {
+  const all = [...(await libraryIndex()).values()];
+  return {
+    companies: tally(all, (entry) => [...new Set(entry.companies.map(String).filter(Boolean))]).slice(0, 500),
+    topics: tally(all, (entry) => [...new Set(entry.tags.map(String).filter(Boolean))]).slice(0, 500),
+    difficulties: ['Easy', 'Medium', 'Hard'].map((name) => ({ name, count: all.filter((entry) => entry.difficulty === name).length })),
+    total: all.length,
+  };
+}
+
+/** Admin question picker: search and filter the library. Several topics or companies match any of them. */
+export async function searchQuestLibrary({ search = '', difficulty = '', topic = '', company = '', topics, companies, source = '', page = 1, limit = 30 } = {}) {
   const index = await libraryIndex();
   const query = text(search, 100).toLowerCase();
+  const difficulties = list(difficulty);
+  const topicSet = new Set([...list(topics), ...list(topic)].map((value) => value.toLowerCase()));
+  const companySet = new Set([...list(companies), ...list(company)].map((value) => value.toLowerCase()));
   const all = [...index.values()];
-  const matches = all.filter((entry) => (!difficulty || entry.difficulty === difficulty)
-    && (!topic || entry.tags.includes(topic))
-    && (!company || entry.companies.some((name) => String(name).toLowerCase() === company.toLowerCase()))
+  const matches = all.filter((entry) => (!difficulties.length || difficulties.includes(entry.difficulty))
+    && (!['university', 'shared'].includes(source) || entry.source === source)
+    && (!topicSet.size || entry.tags.some((name) => topicSet.has(String(name).toLowerCase())))
+    && (!companySet.size || entry.companies.some((name) => companySet.has(String(name).toLowerCase())))
     && (!query || [entry.title, ...entry.tags, ...entry.companies].some((value) => String(value).toLowerCase().includes(query))))
     .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title));
   const size = Math.min(100, Math.max(1, Number(limit) || 30));
   const current = Math.max(1, Number(page) || 1);
-  const tally = (pick) => Object.entries(all.flatMap(pick).reduce((acc, value) => { acc[value] = (acc[value] || 0) + 1; return acc; }, {}))
-    .map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)).slice(0, 200);
   return {
     items: matches.slice((current - 1) * size, current * size).map(({ order, ...entry }) => entry),
     pagination: { page: current, limit: size, total: matches.length, pages: Math.max(1, Math.ceil(matches.length / size)) },
-    facets: { topics: tally((entry) => entry.tags), companies: tally((entry) => entry.companies.map(String)) },
+    facets: { topics: tally(all, (entry) => entry.tags).slice(0, 200), companies: tally(all, (entry) => entry.companies.map(String)).slice(0, 200) },
   };
 }
 
@@ -72,34 +94,43 @@ export async function searchQuestLibrary({ search = '', difficulty = '', topic =
 // Admin: create, edit, publish and archive quests for one university.
 // ---------------------------------------------------------------------------------------------
 
-async function validateQuest(input, index) {
-  const title = text(input.title, 80);
-  if (title.length < 3) throw new HttpError(400, 'Give the quest a title of at least 3 characters.');
-  const category = CATEGORIES.includes(input.category) ? input.category : 'study-plan';
-  const rewardXp = Number(input.rewardXp ?? 50);
-  if (!Number.isInteger(rewardXp) || rewardXp < 0 || rewardXp > 1000) throw new HttpError(400, 'Reward XP must be a whole number from 0 to 1000.');
-  const rawItems = Array.isArray(input.items) ? input.items : [];
-  if (!rawItems.length) throw new HttpError(400, 'Add at least one question to the quest.');
-  if (rawItems.length > MAX_ITEMS) throw new HttpError(400, `A quest can hold up to ${MAX_ITEMS} questions.`);
+function validateItems(rawItems, index, { keepUnavailable = new Set() } = {}) {
+  if (rawItems.length > MAX_ITEMS) throw new HttpError(400, `A QuickPrep can hold up to ${MAX_ITEMS} questions.`);
   const seen = new Set();
-  const items = rawItems.map((item) => {
+  return rawItems.map((item) => {
     if (!['university', 'shared'].includes(item?.source) || !mongoose.isValidObjectId(item?.problemId)) throw new HttpError(400, 'One of the questions is not valid.');
     const normalized = { source: item.source, problemId: String(item.problemId), section: text(item.section, 60) };
     const key = itemKey(normalized);
-    if (seen.has(key)) throw new HttpError(400, 'A question appears twice in this quest.');
-    if (!index.has(key)) throw new HttpError(400, 'One of the questions is no longer published in the library.');
+    if (seen.has(key)) throw new HttpError(400, 'A question appears twice in this QuickPrep.');
+    // A question already saved may later be unpublished; it stays listed (flagged) instead of blocking every edit.
+    if (!index.has(key) && !keepUnavailable.has(key)) throw new HttpError(400, 'One of the questions is no longer published in the library.');
     seen.add(key);
     return normalized;
   });
+}
+
+const labels = (value, max) => [...new Set((Array.isArray(value) ? value : []).map((entry) => text(entry, 60)).filter(Boolean))].slice(0, max);
+
+/** Drafts may be saved before any question is added; publishing needs at least one available question. */
+async function validateQuest(input, index, existing = null) {
+  const title = text(input.title, 80);
+  if (title.length < 3) throw new HttpError(400, 'Give the QuickPrep a name of at least 3 characters.');
+  const category = CATEGORIES.includes(input.category) ? input.category : 'study-plan';
+  const rewardXp = Number(input.rewardXp ?? 50);
+  if (!Number.isInteger(rewardXp) || rewardXp < 0 || rewardXp > 1000) throw new HttpError(400, 'Reward XP must be a whole number from 0 to 1000.');
+  const items = validateItems(Array.isArray(input.items) ? input.items : [], index, { keepUnavailable: new Set((existing?.items || []).map(itemKey)) });
+  const status = ['draft', 'published', 'archived'].includes(input.status) ? input.status : 'draft';
+  if (status === 'published' && !items.some((item) => index.has(itemKey(item)))) throw new HttpError(400, 'Add at least one question before publishing.');
   const semesters = [...new Set((Array.isArray(input.semesters) ? input.semesters : []).map(Number))].filter((value) => Number.isInteger(value) && value >= 1 && value <= 16).sort((a, b) => a - b);
+  const companies = labels(Array.isArray(input.companies) ? input.companies : [input.company], 20);
   return {
-    title, category, rewardXp, items, semesters,
+    title, category, rewardXp, items, semesters, status, companies,
+    company: companies[0] || '',
     description: text(input.description, 600),
-    company: text(input.company, 60),
-    topics: [...new Set((Array.isArray(input.topics) ? input.topics : []).map((topic) => text(topic, 40)).filter(Boolean))].slice(0, 10),
+    topics: labels(input.topics, 20),
+    difficulties: labels(input.difficulties, 3).filter((value) => ['Easy', 'Medium', 'Hard'].includes(value)),
     theme: THEMES.includes(input.theme) ? input.theme : 'sky',
     badgeTitle: text(input.badgeTitle, 60),
-    status: ['draft', 'published', 'archived'].includes(input.status) ? input.status : 'draft',
   };
 }
 
@@ -112,11 +143,28 @@ async function uniqueSlug(title, excludeId) {
   return `${base}-${Date.now().toString(36)}`;
 }
 
-function adminShape(quest, index, stats) {
-  const items = quest.items.map((item) => ({ ...item, problemId: String(item.problemId), ...(index.get(itemKey(item)) || { title: 'Unavailable question', available: false }), available: index.has(itemKey(item)) }));
-  return { id: String(quest._id), slug: quest.slug, title: quest.title, description: quest.description, category: quest.category, company: quest.company, topics: quest.topics,
+const questCompanies = (quest) => (quest.companies?.length ? quest.companies : quest.company ? [quest.company] : []);
+const difficultyMix = (items) => items.reduce((mix, item) => { if (item.available !== false && mix[item.difficulty] !== undefined) mix[item.difficulty] += 1; return mix; }, { Easy: 0, Medium: 0, Hard: 0 });
+
+/** Full-access, active students per semester: who a QuickPrep reaches once it is published. */
+async function audienceCounts() {
+  const rows = await User.aggregate([
+    { $match: { role: 'student', isActive: { $ne: false }, accessScope: { $ne: 'assessment_only' } } },
+    { $group: { _id: '$semester', count: { $sum: 1 } } },
+  ]).option({ maxTimeMS: 8000 });
+  return { total: rows.reduce((sum, row) => sum + row.count, 0), bySemester: new Map(rows.map((row) => [Number(row._id) || 0, row.count])) };
+}
+const audienceFor = (quest, audience) => (quest.semesters?.length
+  ? quest.semesters.reduce((sum, semester) => sum + (audience.bySemester.get(semester) || 0), 0) : audience.total);
+
+function adminShape(quest, index, stats, audience) {
+  const items = quest.items.map((item) => ({ ...item, problemId: String(item.problemId), ...(index.get(itemKey(item)) || { title: 'Unavailable question', difficulty: '', tags: [], companies: [] }), available: index.has(itemKey(item)) }));
+  return { id: String(quest._id), slug: quest.slug, title: quest.title, description: quest.description, category: quest.category,
+    company: quest.company, companies: questCompanies(quest), topics: quest.topics || [], difficulties: quest.difficulties || [],
     theme: quest.theme, rewardXp: quest.rewardXp, badgeTitle: quest.badgeTitle, semesters: quest.semesters, status: quest.status, publishedAt: quest.publishedAt,
-    updatedAt: quest.updatedAt, items, questionCount: items.filter((item) => item.available).length,
+    createdAt: quest.createdAt, updatedAt: quest.updatedAt, items, questionCount: items.filter((item) => item.available).length,
+    unavailableCount: items.filter((item) => !item.available).length, difficulty: difficultyMix(items),
+    audience: audience ? audienceFor(quest, audience) : null,
     stats: stats || { enrolled: 0, completed: 0, averageProgress: 0 } };
 }
 
@@ -124,23 +172,31 @@ async function questStats(questIds) {
   const rows = questIds.length ? await QuestEnrollment.aggregate([
     { $match: { questId: { $in: questIds } } },
     { $group: { _id: '$questId', enrolled: { $sum: 1 }, completed: { $sum: { $cond: [{ $ne: ['$completedAt', null] }, 1, 0] } },
-      progress: { $avg: { $cond: [{ $gt: ['$totalCount', 0] }, { $divide: ['$solvedCount', '$totalCount'] }, 0] } } } },
+      progress: { $avg: { $cond: [{ $gt: ['$totalCount', 0] }, { $divide: ['$solvedCount', '$totalCount'] }, 0] } },
+      lastActivity: { $max: '$lastViewedAt' } } },
   ]).option({ maxTimeMS: 8000 }) : [];
-  return new Map(rows.map((row) => [String(row._id), { enrolled: row.enrolled, completed: row.completed, averageProgress: Math.round((row.progress || 0) * 100) }]));
+  return new Map(rows.map((row) => [String(row._id), { enrolled: row.enrolled, completed: row.completed, averageProgress: Math.round((row.progress || 0) * 100), lastActivity: row.lastActivity || null }]));
 }
 
+async function findAdminQuest(id, select) {
+  if (!mongoose.isValidObjectId(id)) throw new HttpError(404, 'QuickPrep not found');
+  const query = Quest.findOne({ _id: id, ...questScope() });
+  const quest = await (select ? query.select(select) : query).maxTimeMS(8000).lean();
+  if (!quest) throw new HttpError(404, 'QuickPrep not found');
+  return quest;
+}
+
+/** Every QuickPrep (archived included, so they can be restored), newest change first. */
 export async function listAdminQuests() {
-  const quests = await Quest.find({ ...questScope(), status: { $ne: 'archived' } }).sort({ updatedAt: -1 }).limit(200).maxTimeMS(8000).lean();
-  const [index, stats] = await Promise.all([libraryIndex(), questStats(quests.map((quest) => quest._id))]);
-  return quests.map((quest) => adminShape(quest, index, stats.get(String(quest._id))));
+  const quests = await Quest.find(questScope()).sort({ updatedAt: -1 }).limit(300).maxTimeMS(8000).lean();
+  const [index, stats, audience] = await Promise.all([libraryIndex(), questStats(quests.map((quest) => quest._id)), audienceCounts()]);
+  return quests.map((quest) => adminShape(quest, index, stats.get(String(quest._id)), audience));
 }
 
 export async function getAdminQuest(admin, college, id) {
-  if (!mongoose.isValidObjectId(id)) throw new HttpError(404, 'Quest not found');
-  const quest = await Quest.findOne({ _id: id, ...questScope() }).maxTimeMS(8000).lean();
-  if (!quest) throw new HttpError(404, 'Quest not found');
-  const [index, stats] = await Promise.all([libraryIndex(), questStats([quest._id])]);
-  return adminShape(quest, index, stats.get(String(quest._id)));
+  const quest = await findAdminQuest(id);
+  const [index, stats, audience] = await Promise.all([libraryIndex(), questStats([quest._id]), audienceCounts()]);
+  return adminShape(quest, index, stats.get(String(quest._id)), audience);
 }
 
 export async function createQuest(admin, college, input) {
@@ -148,33 +204,251 @@ export async function createQuest(admin, college, input) {
   const fields = await validateQuest(input, index);
   const quest = await Quest.create({ ...fields, tenantKey: questTenant(), slug: await uniqueSlug(fields.title),
     publishedAt: fields.status === 'published' ? new Date() : null, createdBy: admin._id, updatedBy: admin._id });
-  return adminShape(quest.toObject(), index);
+  return adminShape(quest.toObject(), index, null, await audienceCounts());
 }
 
 export async function updateQuest(admin, college, id, input) {
-  if (!mongoose.isValidObjectId(id)) throw new HttpError(404, 'Quest not found');
-  const existing = await Quest.findOne({ _id: id, ...questScope() }).maxTimeMS(8000).lean();
-  if (!existing) throw new HttpError(404, 'Quest not found');
+  const existing = await findAdminQuest(id);
   const index = await libraryIndex();
-  const fields = await validateQuest({ ...existing, ...input }, index);
+  const fields = await validateQuest({ ...existing, ...input }, index, existing);
   const slug = fields.title !== existing.title ? await uniqueSlug(fields.title, existing._id) : existing.slug;
   const publishedAt = fields.status === 'published' ? existing.publishedAt || new Date() : existing.publishedAt;
   const quest = await Quest.findOneAndUpdate({ _id: id, ...questScope() }, { $set: { ...fields, slug, publishedAt, updatedBy: admin._id } }, { new: true }).lean();
-  const stats = await questStats([quest._id]);
-  return adminShape(quest, index, stats.get(String(quest._id)));
+  const [stats, audience] = await Promise.all([questStats([quest._id]), audienceCounts()]);
+  return adminShape(quest, index, stats.get(String(quest._id)), audience);
+}
+
+/**
+ * Appends items only if, at write time, none of them is already in the QuickPrep and the cap still holds.
+ * Two overlapping adds (two tabs, a retried request) can then never duplicate a question or overfill the
+ * set, either of which would block every later save. Returns null when the guard did not match.
+ */
+function pushQuestItems(questId, incoming, admin) {
+  return Quest.findOneAndUpdate({
+    _id: questId, ...questScope(),
+    items: { $not: { $elemMatch: { $or: incoming.map((item) => ({ source: item.source, problemId: objectId(item.problemId) })) } } },
+    [`items.${MAX_ITEMS - incoming.length}`]: { $exists: false },
+  }, { $push: { items: { $each: incoming } }, $set: { updatedBy: admin._id } }, { new: true }).lean();
+}
+const changedMeanwhile = () => new HttpError(409, 'This QuickPrep changed while adding questions. Please try again.');
+
+/** Adds library items given as {source, problemId}; ones already present are skipped. */
+export async function addQuestItems(admin, id, rawItems) {
+  const existing = await findAdminQuest(id);
+  const index = await libraryIndex();
+  const present = new Set(existing.items.map(itemKey));
+  const incoming = validateItems((Array.isArray(rawItems) ? rawItems : []).filter((item) => !present.has(itemKey({ source: item?.source, problemId: item?.problemId }))), index);
+  if (existing.items.length + incoming.length > MAX_ITEMS) throw new HttpError(400, `A QuickPrep can hold up to ${MAX_ITEMS} questions.`);
+  let quest = existing;
+  if (incoming.length) {
+    quest = await pushQuestItems(existing._id, incoming, admin);
+    if (!quest) { await findAdminQuest(id); throw changedMeanwhile(); }
+  }
+  const [stats, audience] = await Promise.all([questStats([quest._id]), audienceCounts()]);
+  return { quest: adminShape(quest, index, stats.get(String(quest._id)), audience), added: incoming.length, skipped: (rawItems?.length || 0) - incoming.length };
+}
+
+// A library row is not itself the practice problem: university rows point at a coding Problem; shared
+// rows are the central question itself. These are the same ids students open and their solves record.
+const linkedProblemId = (row) => row.sourceProblemId || row.questionData?.problemId || row.questionData?.coding?.problemId
+  || row.questionData?.problemDataSnapshot?._id || row.questionData?.problemDataSnapshot?.id || null;
+const libraryRowTitle = (row) => text(row.questionData?.problemDataSnapshot?.title || row.sourceProblemTitle || row.questionText || 'Untitled question', 120);
+export const LIBRARY_SKIP_REASONS = {
+  already_in: 'Already in this QuickPrep',
+  not_found: 'No longer in the library',
+  not_coding: 'Not a coding question',
+  no_linked_problem: 'Has no runnable coding problem',
+  problem_draft: 'Its coding problem is still a draft',
+  problem_not_public: 'Its coding problem is not visible to students',
+  shared_unavailable: 'Not available to students from the shared catalog',
+  limit: `The QuickPrep is full (${MAX_ITEMS} questions)`,
+};
+
+/**
+ * "Add to QuickPrep" from the Question Library. The client sends library row ids only; each row is re-read
+ * here and mapped to the problem students open. Rows students cannot open are skipped with a reason, and
+ * the rest are added in the order selected.
+ */
+export async function addQuestLibraryItems(admin, id, rawIds) {
+  await findAdminQuest(id, '_id');
+  const ids = [...new Set((Array.isArray(rawIds) ? rawIds : []).map((value) => String(value ?? '').trim()).filter(Boolean))];
+  if (!ids.length) throw new HttpError(400, 'Select at least one question from the library.');
+  if (ids.length > MAX_LIBRARY_PICK) throw new HttpError(400, `Select at most ${MAX_LIBRARY_PICK} questions at a time.`);
+  const localIds = ids.filter((value) => mongoose.isObjectIdOrHexString(value));
+  const [index, rows, shared] = await Promise.all([
+    libraryIndex(),
+    localIds.length ? QuestionLibrary.find({ _id: { $in: localIds } })
+      .select('questionType questionText sourceProblemId sourceProblemTitle questionData.problemId questionData.coding.problemId questionData.problemDataSnapshot._id questionData.problemDataSnapshot.id questionData.problemDataSnapshot.title')
+      .maxTimeMS(8000).lean() : [],
+    sharedQuestions().catch(() => null),
+  ]);
+  const local = new Map(rows.map((row) => [String(row._id), row]));
+  const central = new Map((shared || []).map((row) => [String(row._id), row]));
+
+  const mapped = ids.map((rowId) => {
+    const row = local.get(rowId);
+    if (row) {
+      if (row.questionType !== 'coding') return { id: rowId, title: libraryRowTitle(row), reason: 'not_coding' };
+      // questionData is untyped, so a link there may be a number or junk: only a real ObjectId counts.
+      const linked = linkedProblemId(row);
+      const problemId = linked ? String(linked) : '';
+      if (!mongoose.isObjectIdOrHexString(problemId)) return { id: rowId, title: libraryRowTitle(row), reason: 'no_linked_problem' };
+      return { id: rowId, title: libraryRowTitle(row), item: { source: 'university', problemId, section: '' } };
+    }
+    const sharedRow = central.get(rowId);
+    if (sharedRow) {
+      if (sharedRow.questionType !== 'coding') return { id: rowId, title: libraryRowTitle(sharedRow), reason: 'not_coding' };
+      return { id: rowId, title: libraryRowTitle(sharedRow), item: { source: 'shared', problemId: rowId, section: '' } };
+    }
+    return { id: rowId, title: 'Unknown question', reason: 'not_found' };
+  });
+
+  // Why a linked problem is not open to students: one lookup for every candidate missing from the index.
+  const hidden = mapped.filter((entry) => entry.item?.source === 'university' && !index.has(itemKey(entry.item)));
+  const problems = hidden.length ? await Problem.find({ _id: { $in: hidden.map((entry) => entry.item.problemId) } }).select('status visibility').maxTimeMS(8000).lean() : [];
+  const problemState = new Map(problems.map((problem) => [String(problem._id), problem]));
+
+  // Visibility is the lasting blocker, so it is reported before draft status (publishing alone won't help).
+  const unavailableReason = (item) => {
+    if (item.source === 'shared') return 'shared_unavailable';
+    const problem = problemState.get(item.problemId);
+    if (!problem) return 'no_linked_problem';
+    if (problem.visibility !== undefined && problem.visibility !== null && problem.visibility !== 'public') return 'problem_not_public';
+    return ['published', 'Active', 'active'].includes(problem.status) ? 'problem_not_public' : 'problem_draft';
+  };
+
+  // Duplicates and the cap are judged against the QuickPrep as it is when the write happens. If another
+  // add lands first, the plan is recomputed once from the fresh document.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const existing = await findAdminQuest(id);
+    const present = new Set(existing.items.map(itemKey));
+    const incoming = [];
+    const skipped = [];
+    for (const entry of mapped) {
+      let reason = entry.reason;
+      if (!reason) {
+        const key = itemKey(entry.item);
+        if (present.has(key)) reason = 'already_in';
+        else if (!index.has(key)) reason = unavailableReason(entry.item);
+        else if (existing.items.length + incoming.length >= MAX_ITEMS) reason = 'limit';
+        else { present.add(key); incoming.push(entry.item); }
+      }
+      if (reason) skipped.push({ id: entry.id, title: entry.title, reason, message: LIBRARY_SKIP_REASONS[reason] });
+    }
+    const quest = incoming.length ? await pushQuestItems(existing._id, incoming, admin) : existing;
+    if (!quest) continue;
+    const [stats, audience] = await Promise.all([questStats([quest._id]), audienceCounts()]);
+    return { quest: adminShape(quest, index, stats.get(String(quest._id)), audience), added: incoming.length, skipped };
+  }
+  await findAdminQuest(id);
+  throw changedMeanwhile();
+}
+
+export async function duplicateQuest(admin, id) {
+  const source = await findAdminQuest(id);
+  const index = await libraryIndex();
+  const title = text(`${source.title} (copy)`, 80);
+  const quest = await Quest.create({
+    ...Object.fromEntries(['description', 'category', 'company', 'companies', 'topics', 'difficulties', 'theme', 'rewardXp', 'badgeTitle', 'semesters'].map((key) => [key, source[key]])),
+    items: source.items.filter((item) => index.has(itemKey(item))).map(({ source: from, problemId, section }) => ({ source: from, problemId, section })),
+    title, status: 'draft', tenantKey: questTenant(), slug: await uniqueSlug(title), createdBy: admin._id, updatedBy: admin._id,
+  });
+  return adminShape(quest.toObject(), index, null, await audienceCounts());
 }
 
 /** Drafts nobody started are deleted; anything students touched is archived so history stays intact. */
 export async function removeQuest(admin, college, id) {
-  if (!mongoose.isValidObjectId(id)) throw new HttpError(404, 'Quest not found');
-  const quest = await Quest.findOne({ _id: id, ...questScope() }).select('_id status').lean();
-  if (!quest) throw new HttpError(404, 'Quest not found');
+  const quest = await findAdminQuest(id, '_id status');
   if (quest.status === 'draft' && !await QuestEnrollment.exists({ questId: quest._id })) {
     await Quest.deleteOne({ _id: quest._id, ...questScope() });
     return { deleted: true };
   }
   await Quest.updateOne({ _id: quest._id, ...questScope() }, { $set: { status: 'archived', updatedBy: admin._id } });
   return { archived: true };
+}
+
+/** Per-student and per-question solve state for a set of students, from verified submissions and attempts. */
+async function cohortStates(studentIds, keys) {
+  const local = keys.filter((key) => key.startsWith('coding:local:')).map((key) => objectId(key.split(':').at(-1)));
+  const shared = keys.filter((key) => key.startsWith('coding:shared:')).map((key) => objectId(key.split(':').at(-1)));
+  const [localRows, sharedRows] = await Promise.all([
+    local.length && studentIds.length ? Submission.aggregate([
+      { $match: { user: { $in: studentIds }, problem: { $in: local }, assessmentId: null } },
+      { $group: { _id: { student: '$user', question: '$problem' }, solved: { $max: { $cond: [{ $and: [{ $eq: ['$mode', 'submit'] }, { $in: ['$status', ACCEPTED] }] }, 1, 0] } } } },
+    ]).option({ maxTimeMS: 10000 }) : [],
+    shared.length && studentIds.length ? QuestionPracticeAttempt.aggregate([
+      { $match: { studentId: { $in: studentIds }, source: 'shared', questionType: 'coding', questionId: { $in: shared } } },
+      { $group: { _id: { student: '$studentId', question: '$questionId' }, solved: { $max: { $cond: [{ $eq: ['$result', 'correct'] }, 1, 0] } } } },
+    ]).option({ maxTimeMS: 10000 }) : [],
+  ]);
+  const states = new Map();
+  for (const [prefix, rows] of [['coding:local', localRows], ['coding:shared', sharedRows]]) {
+    for (const row of rows) states.set(`${String(row._id.student)}|${prefix}:${String(row._id.question)}`, row.solved ? 'solved' : 'attempted');
+  }
+  return states;
+}
+
+/** Admin "View": how every student and every question is doing in one QuickPrep. */
+export async function questInsights(admin, id) {
+  const quest = await findAdminQuest(id);
+  const [index, audience] = await Promise.all([libraryIndex(), audienceCounts()]);
+  const enrollments = await QuestEnrollment.find({ questId: quest._id }).sort({ lastViewedAt: -1 }).limit(2000).maxTimeMS(8000).lean();
+  const studentIds = enrollments.map((row) => row.studentId);
+  const keys = quest.items.map(itemKey).filter((key) => index.has(key));
+  const [users, states] = await Promise.all([
+    studentIds.length ? User.find({ _id: { $in: studentIds } }).select('name studentId semester').maxTimeMS(8000).lean() : [],
+    cohortStates(studentIds, keys),
+  ]);
+  const people = new Map(users.map((user) => [String(user._id), user]));
+  const students = enrollments.map((row) => {
+    const person = people.get(String(row.studentId));
+    const solved = keys.filter((key) => states.get(`${String(row.studentId)}|${key}`) === 'solved').length;
+    const attempted = keys.filter((key) => states.get(`${String(row.studentId)}|${key}`) === 'attempted').length;
+    return { id: String(row.studentId), name: person?.name || 'Former student', rollNumber: person?.studentId || '', semester: person?.semester || null,
+      solved, attempted, total: keys.length, progress: keys.length ? Math.round((solved / keys.length) * 100) : 0,
+      startedAt: row.startedAt, lastViewedAt: row.lastViewedAt || null, completedAt: row.completedAt || null };
+  }).sort((a, b) => Boolean(b.completedAt) - Boolean(a.completedAt) || b.progress - a.progress || a.name.localeCompare(b.name));
+  const questions = quest.items.map((item, position) => {
+    const key = itemKey(item);
+    const entry = index.get(key);
+    const solvedBy = students.filter((student) => states.get(`${student.id}|${key}`) === 'solved').length;
+    const attemptedBy = students.filter((student) => states.get(`${student.id}|${key}`) === 'attempted').length;
+    return { key, position: position + 1, section: item.section || '', available: Boolean(entry), title: entry?.title || 'Unavailable question',
+      difficulty: entry?.difficulty || '', tags: entry?.tags || [], companies: entry?.companies || [], source: item.source,
+      solvedBy, attemptedBy, solveRate: students.length ? Math.round((solvedBy / students.length) * 100) : 0 };
+  });
+  const completed = students.filter((student) => student.completedAt).length;
+  return {
+    quest: adminShape(quest, index, null, audience), students, questions,
+    summary: { audience: audienceFor(quest, audience), started: students.length, completed, inProgress: students.length - completed,
+      completionRate: students.length ? Math.round((completed / students.length) * 100) : 0,
+      averageProgress: students.length ? Math.round(students.reduce((sum, student) => sum + student.progress, 0) / students.length) : 0,
+      xpAwarded: completed * (quest.rewardXp || 0) },
+  };
+}
+
+/** Admin "Insights": every QuickPrep side by side, plus the students finishing the most. */
+export async function questOverview() {
+  const quests = await Quest.find({ ...questScope(), status: { $ne: 'archived' } }).sort({ updatedAt: -1 }).limit(300).maxTimeMS(8000).lean();
+  const ids = quests.map((quest) => quest._id);
+  const [index, stats, audience, leaders] = await Promise.all([libraryIndex(), questStats(ids), audienceCounts(),
+    ids.length ? QuestEnrollment.aggregate([
+      { $match: { questId: { $in: ids } } },
+      { $group: { _id: '$studentId', started: { $sum: 1 }, completed: { $sum: { $cond: [{ $ne: ['$completedAt', null] }, 1, 0] } }, solved: { $sum: '$solvedCount' }, lastActivity: { $max: '$lastViewedAt' } } },
+      { $sort: { completed: -1, solved: -1 } }, { $limit: 10 },
+    ]).option({ maxTimeMS: 8000 }) : []]);
+  const users = leaders.length ? await User.find({ _id: { $in: leaders.map((row) => row._id) } }).select('name studentId semester').maxTimeMS(8000).lean() : [];
+  const people = new Map(users.map((user) => [String(user._id), user]));
+  const rows = quests.map((quest) => adminShape(quest, index, stats.get(String(quest._id)), audience));
+  const published = rows.filter((row) => row.status === 'published');
+  return {
+    totals: { quickpreps: rows.length, published: published.length, drafts: rows.length - published.length,
+      started: rows.reduce((sum, row) => sum + row.stats.enrolled, 0), completed: rows.reduce((sum, row) => sum + row.stats.completed, 0),
+      students: audience.total },
+    quests: rows,
+    leaders: leaders.map((row) => ({ id: String(row._id), name: people.get(String(row._id))?.name || 'Former student', rollNumber: people.get(String(row._id))?.studentId || '',
+      semester: people.get(String(row._id))?.semester || null, started: row.started, completed: row.completed, solved: row.solved, lastActivity: row.lastActivity || null })),
+  };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -208,7 +482,7 @@ async function questionStates(studentId, keys) {
 
 const questBadge = (quest, total) => ({
   id: `quest-${quest._id}`, title: quest.badgeTitle || `${quest.title} Finisher`, category: 'quests', metric: 'quest', target: 1, minimumLevel: 1, rewardXp: quest.rewardXp,
-  rarity: total > 50 ? 'Epic' : total > 15 ? 'Rare' : 'Uncommon', description: `Solve every question in the ${quest.title} quest.`,
+  rarity: total > 50 ? 'Epic' : total > 15 ? 'Rare' : 'Uncommon', description: `Solve every question in the ${quest.title} QuickPrep.`,
 });
 
 /**
@@ -232,8 +506,8 @@ async function settleEnrollment(scope, quest, enrollment, solved, total, now) {
   try { await StudentBadge.updateOne({ ...scope, badgeId: badge.id }, { $setOnInsert: { definition: badge, earnedAt: now, evidence: { questId: String(quest._id), total } } }, { upsert: true }); }
   catch (error) { if (error.code !== 11000) throw error; }
   await createAchievement(scope, `badge:${badge.id}`, { type: 'badge', award: { ...badge, earned: true } });
-  await notifyOnce({ userId: scope.studentId, dedupeKey: `quest:${scope.tenantKey}:${quest._id}`, type: 'QUEST', actionUrl: `/student/quests/${quest.slug}`, now,
-    title: `Quest complete: ${quest.title}`, message: `All ${total} questions solved. +${quest.rewardXp} XP and the ${badge.title} badge.` }).catch(() => {});
+  await notifyOnce({ userId: scope.studentId, dedupeKey: `quest:${scope.tenantKey}:${quest._id}`, type: 'QUEST', actionUrl: `/student/quickprep/${quest.slug}`, now,
+    title: `QuickPrep complete: ${quest.title}`, message: `All ${total} questions solved. +${quest.rewardXp} XP and the ${badge.title} badge.` }).catch(() => {});
   return { ...enrollment, ...counts, completedAt: now };
 }
 
@@ -245,7 +519,7 @@ function studentCard(quest, index, states, enrollment) {
   const last = enrollment?.lastProblemKey ? index.get(enrollment.lastProblemKey) : null;
   return {
     id: String(quest._id), slug: quest.slug, title: quest.title, description: quest.description, category: quest.category, company: quest.company,
-    topics: quest.topics, theme: quest.theme, rewardXp: quest.rewardXp, badge: questBadge(quest, items.length),
+    companies: questCompanies(quest), topics: quest.topics, theme: quest.theme, rewardXp: quest.rewardXp, badge: questBadge(quest, items.length),
     total: items.length, solved, difficulty, started: Boolean(enrollment), startedAt: enrollment?.startedAt || null,
     completedAt: enrollment?.completedAt || null, lastViewedAt: enrollment?.lastViewedAt || null,
     lastProblem: last ? { key: last.key, title: last.title, href: `${last.href}?quest=${encodeURIComponent(quest.slug)}` } : null,
@@ -281,7 +555,7 @@ export async function listStudentQuests(student, now = new Date()) {
 async function findStudentQuest(student, slug) {
   const loaded = await loadStudentQuests(student, { slug: text(slug, 120) });
   const quest = loaded.quests[0];
-  if (!quest) throw new HttpError(404, 'Quest not found');
+  if (!quest) throw new HttpError(404, 'QuickPrep not found');
   return { ...loaded, quest };
 }
 
@@ -303,7 +577,7 @@ export async function startQuest(student, slug, now = new Date()) {
   await requireCoding(student);
   const { scope, quest, index, states } = await findStudentQuest(student, slug);
   const card = studentCard(quest, index, states, null);
-  if (!card.total) throw new HttpError(409, 'This quest has no questions available right now.');
+  if (!card.total) throw new HttpError(409, 'This QuickPrep has no questions available right now.');
   let enrollment;
   try {
     enrollment = await QuestEnrollment.findOneAndUpdate({ ...scope, questId: quest._id },
@@ -321,7 +595,7 @@ export async function recordQuestView(student, slug, problemKey, now = new Date(
   await requireCoding(student);
   const { scope, quest, index } = await findStudentQuest(student, slug);
   const key = text(problemKey, 120);
-  if (!quest.items.some((item) => itemKey(item) === key) || !index.has(key)) throw new HttpError(400, 'That question is not part of this quest.');
+  if (!quest.items.some((item) => itemKey(item) === key) || !index.has(key)) throw new HttpError(400, 'That question is not part of this QuickPrep.');
   const total = quest.items.filter((item) => index.has(itemKey(item))).length;
   await QuestEnrollment.updateOne({ ...scope, questId: quest._id },
     { $set: { lastProblemKey: key, lastViewedAt: now }, $setOnInsert: { startedAt: now, totalCount: total } }, { upsert: true });
@@ -334,7 +608,7 @@ export async function latestQuestResume(student) {
   const scope = engagementScope(student);
   const enrollment = await QuestEnrollment.findOne({ ...scope, completedAt: null, lastViewedAt: { $ne: null } }).sort({ lastViewedAt: -1 }).maxTimeMS(8000).lean();
   if (!enrollment) return null;
-  const quest = await Quest.findOne({ _id: enrollment.questId, ...visibleFilter(scope, student) }).maxTimeMS(8000).lean();
+  const quest = await Quest.findOne({ _id: enrollment.questId, ...visibleFilter(student) }).maxTimeMS(8000).lean();
   if (!quest) return null;
   const index = await libraryIndex();
   const keys = quest.items.map(itemKey).filter((key) => index.has(key));
@@ -343,7 +617,7 @@ export async function latestQuestResume(student) {
   const last = index.get(enrollment.lastProblemKey);
   return {
     id: `quest:${quest._id}`, type: 'quest', title: quest.title, subtitle: last ? last.title : `${keys.length} questions`,
-    href: last ? `${last.href}?quest=${encodeURIComponent(quest.slug)}` : `/student/quests/${quest.slug}`, questHref: `/student/quests/${quest.slug}`,
+    href: last ? `${last.href}?quest=${encodeURIComponent(quest.slug)}` : `/student/quickprep/${quest.slug}`, questHref: `/student/quickprep/${quest.slug}`,
     theme: quest.theme, solved: keys.filter((key) => states.get(key) === 'solved').length, total: keys.length,
     lastProblemTitle: last?.title || null, lastProblemDifficulty: last?.difficulty || null, updatedAt: enrollment.lastViewedAt,
   };

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { getStudentGlobalRanking } from '../services/globalStudentRankingService.js';
 import { login, forcePasswordChange, me, changePassword, changeAdminPassword, requestPasswordReset, resetPassword, updateMe, updateMyAvatar, acknowledgeLearnerProgress } from '../controllers/authController.js';
 import { getStudentActivity, getStudentStats, debugStudentActivity } from '../controllers/activityController.js';
 import { requireAuth, requireStudent, requireFullStudent } from '../middleware/auth.js';
@@ -40,6 +41,13 @@ router.get('/activity', requireAuth, getStudentActivity);
 router.get('/stats', requireAuth, getStudentStats);
 router.get('/dashboard', requireAuth, requireStudent, requireFullStudent, getStudentDashboard);
 router.get('/ranking', requireAuth, requireStudent, requireFullStudent, getStudentRanking);
+router.get('/global-ranking', requireAuth, requireStudent, requireFullStudent, async (req, res, next) => {
+  try {
+    res.set('Cache-Control', 'private, no-store');
+    // Identity and score are server-owned; query/body student IDs and points are ignored.
+    res.json({ ranking: await getStudentGlobalRanking(req.user) });
+  } catch (error) { next(error); }
+});
 router.post('/engagement/refresh', requireAuth, requireStudent, requireFullStudent, refreshStudentChallenges);
 router.get('/engagement/badges', requireAuth, requireStudent, requireFullStudent, getStudentChallengeBadges);
 router.post('/dashboard/problem-view', requireAuth, requireStudent, requireFullStudent, recordStudentProblemView);

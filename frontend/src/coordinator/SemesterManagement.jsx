@@ -1,3 +1,4 @@
+import { difficultyTheme } from '../utils/difficultyTheme';
 import { useState, useEffect, useCallback } from 'react';
 import { AnimatePresence, Reorder, motion } from 'framer-motion';
 import { api } from '../utils/api';
@@ -10,13 +11,7 @@ import {
 import { useToast } from '../components/CustomToast';
 import LearningAnalyticsModal from '../components/LearningAnalyticsModal';
 
-const difficultyColors = {
-  'easy': 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300',
-  'easy-medium': 'bg-lime-100 dark:bg-lime-900/40 text-lime-700 dark:text-lime-300',
-  'medium': 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300',
-  'medium-hard': 'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300',
-  'hard': 'bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300'
-};
+const difficultyColors = Object.fromEntries(['easy', 'easy-medium', 'medium', 'medium-hard', 'hard'].map((level) => [level, difficultyTheme(level).pill]));
 
 // Sidebar Semester Dropdown Component
 function SidebarSemesterDropdown({ semesters, selectedSemester, onSelectSemester }) {

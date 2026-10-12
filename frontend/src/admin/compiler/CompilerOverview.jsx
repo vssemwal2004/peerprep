@@ -1,3 +1,4 @@
+import { DIFFICULTY_THEME } from '../../utils/difficultyTheme';
 import { useEffect, useMemo, useState } from 'react';
 import { Activity, BarChart3, CheckCircle2, FileCode2, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -104,9 +105,9 @@ function VerticalLeaderboardChart({ items = [] }) {
               <span className="text-xs font-medium text-slate-500 dark:text-gray-400">{item.problemsSolved}</span>
               <div className="flex h-56 w-full items-end rounded-2xl bg-slate-100 p-2 dark:bg-gray-900/60">
                 <div className="flex w-full flex-col overflow-hidden rounded-xl" style={{ height: `${solvedHeight}%` }}>
-                  <div className="bg-emerald-500" style={{ height: `${(easy / total) * 100}%` }} />
-                  <div className="bg-amber-500" style={{ height: `${(medium / total) * 100}%` }} />
-                  <div className="bg-rose-500" style={{ height: `${(hard / total) * 100}%` }} />
+                  <div className={DIFFICULTY_THEME.Easy.bar} style={{ height: `${(easy / total) * 100}%` }} />
+                  <div className={DIFFICULTY_THEME.Medium.bar} style={{ height: `${(medium / total) * 100}%` }} />
+                  <div className={DIFFICULTY_THEME.Hard.bar} style={{ height: `${(hard / total) * 100}%` }} />
                 </div>
               </div>
               <span className="w-full truncate text-center text-[11px] text-slate-600 dark:text-gray-300">{item.name}</span>
@@ -115,9 +116,9 @@ function VerticalLeaderboardChart({ items = [] }) {
         })}
       </div>
       <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 dark:text-gray-400">
-        <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />Easy</span>
-        <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-amber-500" />Medium</span>
-        <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-rose-500" />Hard</span>
+        <span className="inline-flex items-center gap-2"><span className={`h-2.5 w-2.5 rounded-full ${DIFFICULTY_THEME.Easy.bar}`} />Easy</span>
+        <span className="inline-flex items-center gap-2"><span className={`h-2.5 w-2.5 rounded-full ${DIFFICULTY_THEME.Medium.bar}`} />Medium</span>
+        <span className="inline-flex items-center gap-2"><span className={`h-2.5 w-2.5 rounded-full ${DIFFICULTY_THEME.Hard.bar}`} />Hard</span>
       </div>
     </div>
   );

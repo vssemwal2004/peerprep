@@ -53,7 +53,7 @@ export default function StudentQuests() {
   const refreshAll = () => { refresh(); quests.reload(); };
   return <div className="challenge-studio">
     <div className="challenge-studio__inner">
-      <header className="challenge-page-heading"><h1><MapIcon size={20} />Quests</h1><button type="button" onClick={refreshAll} disabled={section.loading || !hasAccess} className="challenge-refresh"><RefreshCw size={14} className={section.loading ? 'animate-spin motion-reduce:animate-none' : ''} />Refresh progress</button></header>
+      <header className="challenge-page-heading"><h1><Zap size={20} />QuickPrep</h1><button type="button" onClick={refreshAll} disabled={section.loading || !hasAccess} className="challenge-refresh"><RefreshCw size={14} className={section.loading ? 'animate-spin motion-reduce:animate-none' : ''} />Refresh progress</button></header>
       <section className="challenge-hero" aria-label="Your practice journey">
         <svg className="challenge-hero__curves" viewBox="0 0 1200 270" preserveAspectRatio="none" aria-hidden="true"><path d="M480-70C640 190 1000-120 1280 120v180H420C580 200 340 30 480-70Z" fill="white" opacity=".035" /><path d="M720-50C500 130 1100 260 1290 100" stroke="white" strokeWidth="1" opacity=".16" fill="none" /><path d="M-90 230C260 30 400 420 780 190S1090 150 1270 210" fill="none" stroke="#67e8f9" strokeWidth="60" opacity=".06" /></svg>
         <div className="challenge-hero__copy"><span className="challenge-hero__eyebrow"><span />ONE PROBLEM A DAY</span><h2>Small steps.<br /><span>Big possibilities.</span></h2><p>Your daily problem, plus quests that take you further.</p></div>

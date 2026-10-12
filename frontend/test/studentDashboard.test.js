@@ -282,7 +282,7 @@ test('accessible document order follows greeting and recent work, then the progr
     'Announcements', 'Coding progress', 'University standing', 'Coming up',
   ], 'Any announcement leads the rail');
   assert.deepEqual([...main.querySelectorAll('h2')].map((heading) => heading.textContent), [
-    'Your quests', 'Next in practice', 'Explore your learning',
+    'Your QuickPreps', 'Next in practice', 'Explore your learning',
   ]);
 });
 
@@ -586,7 +586,7 @@ test('disabled university modules hide their cards and resume links and skip the
   assert.ok(calls.some(([name]) => name === 'assessments'));
   assert.ok(section('Announcements'), 'Announcements remain available when unrelated modules are disabled');
   assert.equal(section('Daily challenge'), undefined);
-  assert.equal(section('Your quests'), undefined, 'Quests need coding, so they stay hidden');
+  assert.equal(section('Your QuickPreps'), undefined, 'QuickPreps need coding, so they stay hidden');
   assert.equal(calls.filter(([name]) => name === 'quests').length, 0, 'The quests API is not called without coding');
   assert.ok(calls.some(([name]) => name === 'engagement'));
 });
@@ -623,25 +623,25 @@ const questFixture = (overrides = {}) => ({ id: 'q1', slug: 'amazon-top-50', tit
   rewardXp: 60, badge: { title: 'Amazon Top 50 Finisher' }, total: 50, solved: 12, difficulty: { Easy: 20, Medium: 25, Hard: 5 }, started: true, startedAt: iso(6), completedAt: null,
   lastViewedAt: iso(8), lastProblem: { key: 'coding:local:p7', title: 'LRU Cache', href: '/problems/p7?quest=amazon-top-50' }, ...overrides });
 
-test('your quests replaces weekly and monthly challenges and continues the last opened quest question', async () => {
+test('your QuickPreps replaces weekly and monthly challenges and continues the last opened question', async () => {
   quests = [questFixture(), questFixture({ id: 'q2', slug: 'graphs', title: 'Graphs Track', started: false, solved: 0, lastProblem: null, startedAt: null, lastViewedAt: null })];
   await mount();
-  const card = section('Your quests');
-  assert.ok(card, 'The quests card sits in the main column');
+  const card = section('Your QuickPreps');
+  assert.ok(card, 'The QuickPrep card sits in the main column');
   assert.doesNotMatch(text(), /Weekly momentum|Monthly explorer|This week|This month/, 'Weekly and monthly challenges are gone');
   assert.match(card.textContent, /Amazon Top 50.*12\/50.*Continue/);
-  assert.doesNotMatch(card.textContent, /Graphs Track/, 'In-progress quests come first; new ones show only when none are started');
+  assert.match(card.textContent, /Amazon Top 50.*Graphs Track.*Start/, 'In-progress QuickPreps come first, then new ones to start');
   const link = [...card.querySelectorAll('a')].find((anchor) => anchor.textContent.includes('Amazon Top 50'));
   assert.equal(link.getAttribute('href'), '/problems/p7?quest=amazon-top-50', 'Continue opens the last question inside the quest');
   assert.equal(card.querySelector('[role="progressbar"]').getAttribute('aria-valuenow'), '24');
 });
 
 test('a quest the student last worked on leads "Continue where you left off"', async () => {
-  dashboard.resumeItems = [{ id: 'quest:q1', type: 'quest', title: 'Amazon Top 50', subtitle: 'LRU Cache', href: '/problems/p7?quest=amazon-top-50', questHref: '/student/quests/amazon-top-50',
+  dashboard.resumeItems = [{ id: 'quest:q1', type: 'quest', title: 'Amazon Top 50', subtitle: 'LRU Cache', href: '/problems/p7?quest=amazon-top-50', questHref: '/student/quickprep/amazon-top-50',
     solved: 12, total: 50, lastProblemTitle: 'LRU Cache', lastProblemDifficulty: 'Medium', updatedAt: iso(8) }, ...dashboard.resumeItems];
   await mount();
   const resume = section('Continue where you left off');
-  assert.match(resume.textContent, /Quest.*Medium.*Amazon Top 50.*Last opened: LRU Cache.*12 \/ 50 solved.*Continue quest/);
+  assert.match(resume.textContent, /QuickPrep.*Medium.*Amazon Top 50.*Last opened: LRU Cache.*12 \/ 50 solved.*Continue QuickPrep/);
   assert.equal(resume.querySelector('a').getAttribute('href'), '/problems/p7?quest=amazon-top-50');
   assert.doesNotMatch(resume.textContent, /Two Sum/, 'Only the most recent item is shown');
 });

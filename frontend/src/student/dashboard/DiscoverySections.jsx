@@ -1,3 +1,4 @@
+import { DIFFICULTY_THEME } from '../../utils/difficultyTheme';
 import { useId } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, ArrowUpRight, BookOpen, Cpu, Database, FileText, Layers, Network, PlayCircle, Sigma, Workflow } from 'lucide-react';
@@ -113,7 +114,7 @@ export function LearningSubjects({ subjects, section, onRetry }) {
   </section>;
 }
 
-const DIFFICULTY_RAIL = { easy: 'bg-[#43866a]', medium: 'bg-[#b08c3e]', hard: 'bg-[#88465b]' };
+const DIFFICULTY_RAIL = Object.fromEntries(Object.entries(DIFFICULTY_THEME).map(([key, theme]) => [key.toLowerCase(), theme.rail]));
 
 export function PracticeSuggestions({ problems, section, onRetry }) {
   if (!section.loading && !section.error && !problems.length) return null;

@@ -3,12 +3,18 @@ import AssessmentSubmission from '../models/AssessmentSubmission.js';
 import mongoose from 'mongoose';
 import { controlRequest } from './client.js';
 import { isUniversity } from './deployment.js';
+import { syncUniversityGlobalRanking } from '../services/globalStudentRankingService.js';
 
 export function startUniversityHeartbeat() {
   if (!isUniversity()) return () => {};
   let stopped = false;
+  let rankingBusy = false;
   const send = async () => {
     if (stopped) return;
+    if (!rankingBusy) {
+      rankingBusy = true;
+      void syncUniversityGlobalRanking().catch(() => console.warn('[platform] Global ranking sync unavailable')).finally(() => { rankingBusy = false; });
+    }
     try {
       const [students, coordinators, submissions, interviewSessions] = await Promise.all([
         User.countDocuments({ role: 'student' }),

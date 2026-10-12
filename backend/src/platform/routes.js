@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { saveRankSnapshot, readGlobalRank } from './globalRanking.js';
 import crypto from 'crypto';
 import mongoose from 'mongoose';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
@@ -248,6 +249,14 @@ router.put('/admin/publications/:kind/:id', masterOnly, asyncRoute(async (req, r
 }));
 
 router.use('/tenant', tenantOnly);
+router.post('/tenant/rankings/snapshot', asyncRoute(async (req, res) => {
+  res.set('Cache-Control', 'private, no-store');
+  res.json(await saveRankSnapshot(req.platformUniversity, req.body));
+}));
+router.get('/tenant/rankings/self', asyncRoute(async (req, res) => {
+  res.set('Cache-Control', 'private, no-store');
+  res.json(await readGlobalRank(req.platformUniversity, req.query));
+}));
 router.get('/tenant/policy', (req, res) => res.json({ universityId: req.platformUniversity.universityId, active: true, permissions: req.platformUniversity.permissions, sources: req.platformUniversity.sources, updatedAt: req.platformUniversity.updatedAt }));
 router.post('/tenant/heartbeat', asyncRoute(async (req, res) => {
   const usage = {};

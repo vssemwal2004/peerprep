@@ -134,10 +134,14 @@ export default function LibraryWorkspace({ view = 'questions' }) {
   const selectedStatus = searchParams.get('status') || '';
   const mode = searchParams.get('mode') || 'library';
   const assessmentSelectionMode = mode === 'select';
+  // Picking coding questions for a QuickPrep works like assessment selection: browse and select, nothing to create.
+  const quickprepMode = mode === 'quickprep';
+  const pickerMode = assessmentSelectionMode || quickprepMode;
+  const quickprepTitle = searchParams.get('quickprepTitle') || 'QuickPrep';
   const assessmentCreationMode = mode === 'assessment-create';
   const assessmentTitle = searchParams.get('assessmentTitle') || 'Assessment';
   const lockedQuestionType = searchParams.get('lockType') || '';
-  const navigableQuestionTypes = assessmentSelectionMode && lockedQuestionType
+  const navigableQuestionTypes = pickerMode && lockedQuestionType
     ? questionTypes.filter((item) => item.type === lockedQuestionType)
     : questionTypes;
   const canViewQuestions = hasPermission(user, 'coordinator.library.view');
@@ -275,6 +279,8 @@ export default function LibraryWorkspace({ view = 'questions' }) {
 
   const title = assessmentSelectionMode
     ? 'Add questions to assessment'
+    : quickprepMode
+      ? 'Add questions to QuickPrep'
     : assessmentCreationMode
       ? 'Create question for assessment'
     : view === 'coding-analytics'
@@ -327,8 +333,8 @@ export default function LibraryWorkspace({ view = 'questions' }) {
           <div className="sticky top-[var(--app-navbar-height,5rem)] flex h-[calc(100vh-var(--app-navbar-height,5rem))] flex-col overflow-y-auto px-3 py-5">
             <div className="px-3 pb-4">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-600 text-white"><Library className="h-5 w-5" /></div>
-              <h2 className="mt-3 text-sm font-bold text-slate-950 dark:text-white">{assessmentSelectionMode ? 'Choose questions' : assessmentCreationMode ? 'Create for assessment' : 'Question Library'}</h2>
-              <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-gray-400">{assessmentSelectionMode ? `Select content for ${assessmentTitle}.` : assessmentCreationMode ? `Create and attach content to ${assessmentTitle}.` : 'Create, organize and reuse assessment content.'}</p>
+              <h2 className="mt-3 text-sm font-bold text-slate-950 dark:text-white">{pickerMode ? 'Choose questions' : assessmentCreationMode ? 'Create for assessment' : 'Question Library'}</h2>
+              <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-gray-400">{assessmentSelectionMode ? `Select content for ${assessmentTitle}.` : quickprepMode ? `Select coding questions for ${quickprepTitle}.` : assessmentCreationMode ? `Create and attach content to ${assessmentTitle}.` : 'Create, organize and reuse assessment content.'}</p>
             </div>
 
             {canViewQuestions && <div className="border-t border-slate-200 pt-3 dark:border-gray-800">
@@ -345,7 +351,7 @@ export default function LibraryWorkspace({ view = 'questions' }) {
                     </Link>
                   );
                 })}
-                {!assessmentSelectionMode && <Link to={questionBankUrl('all', 'draft')} className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${view === 'questions' && selectedStatus === 'draft' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' : 'text-slate-600 hover:bg-white hover:text-slate-950 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'}`}>
+                {!pickerMode && <Link to={questionBankUrl('all', 'draft')} className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${view === 'questions' && selectedStatus === 'draft' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' : 'text-slate-600 hover:bg-white hover:text-slate-950 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'}`}>
                   <FilePenLine className="h-4 w-4" />
                   <span className="min-w-0 flex-1 truncate">Drafts</span>
                   <span className={`shrink-0 text-[11px] tabular-nums ${view === 'questions' && selectedStatus === 'draft' ? 'text-amber-700 dark:text-amber-300' : 'text-slate-400 dark:text-gray-500'}`}>({questionCounts.draft.toLocaleString()})</span>
@@ -385,7 +391,7 @@ export default function LibraryWorkspace({ view = 'questions' }) {
                 </Link>
               );
             })}
-            {canViewQuestions && !assessmentSelectionMode && <Link to={questionBankUrl('all', 'draft')} className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${view === 'questions' && selectedStatus === 'draft' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' : 'bg-white text-slate-600 dark:bg-gray-900 dark:text-gray-300'}`}>
+            {canViewQuestions && !pickerMode && <Link to={questionBankUrl('all', 'draft')} className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${view === 'questions' && selectedStatus === 'draft' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' : 'bg-white text-slate-600 dark:bg-gray-900 dark:text-gray-300'}`}>
               <FilePenLine className="h-4 w-4" /><span>Drafts</span><span className="text-[11px] tabular-nums text-slate-400">({questionCounts.draft.toLocaleString()})</span>
             </Link>}
             {codingItems.map(({ id, label, Icon, to }) => (
@@ -400,7 +406,7 @@ export default function LibraryWorkspace({ view = 'questions' }) {
                 <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400"><BookOpenCheck className="h-3.5 w-3.5" /> Library <ChevronRight className="h-3 w-3" /> <span className="truncate text-slate-600 dark:text-gray-300">{title}</span></div>
                 <h1 className="mt-0.5 truncate text-lg font-bold leading-tight text-slate-950 dark:text-white">{title}</h1>
               </div>
-              {!assessmentSelectionMode && (canCreateGeneral || canCreateCoding) && <button type="button" onClick={() => setTypeDrawerOpen(true)} className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-sky-600 px-3.5 text-xs font-semibold text-white shadow-sm transition hover:bg-sky-500">
+              {!pickerMode && (canCreateGeneral || canCreateCoding) && <button type="button" onClick={() => setTypeDrawerOpen(true)} className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-sky-600 px-3.5 text-xs font-semibold text-white shadow-sm transition hover:bg-sky-500">
                 <Plus className="h-4 w-4" /> Create question
               </button>}
             </div>

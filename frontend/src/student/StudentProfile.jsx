@@ -14,6 +14,7 @@ import ProfileSidebar from './profile/ProfileSidebar';
 import StudentSummary from './profile/StudentSummary';
 import CodingProgress from './profile/CodingProgress';
 import UniversityRankCard from './profile/UniversityRankCard';
+import GlobalRankCard from './profile/GlobalRankCard';
 import ActivitySection from './profile/ActivitySection';
 import PeerPrepProgress from './profile/PeerPrepProgress';
 import PracticeHistory from './profile/SubmissionsSection';
@@ -975,6 +976,7 @@ export default function StudentProfile() {
               onEditProfile={openEditModal}
             />
             <UniversityRankCard ranking={ranking} loading={loadingRanking} className="mt-4" />
+            <GlobalRankCard scoreRevision={ranking?.score} className="mt-4" />
           </aside>
 
           {/* Summary and Coding keep their existing design. Activity is immediately below them. */}

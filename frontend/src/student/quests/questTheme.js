@@ -1,3 +1,4 @@
+import { DIFFICULTY_THEME } from '../../utils/difficultyTheme.js';
 import { Building2, Flame, Map as MapIcon, Shapes } from 'lucide-react';
 
 // Each quest picks one theme in the admin builder; the band and accents follow it everywhere.
@@ -12,18 +13,14 @@ export const QUEST_THEMES = {
 export const questTheme = (name) => QUEST_THEMES[name] || QUEST_THEMES.sky;
 
 export const QUEST_CATEGORIES = [
-  { value: 'company', label: 'Company', icon: Building2 },
-  { value: 'topic', label: 'Topic', icon: Shapes },
-  { value: 'study-plan', label: 'Study plan', icon: MapIcon },
-  { value: 'difficulty', label: 'Difficulty', icon: Flame },
+  { value: 'company', label: 'Company', icon: Building2, hint: 'Questions asked by specific companies, e.g. Amazon Top 50.' },
+  { value: 'topic', label: 'Topic', icon: Shapes, hint: 'A deep track on one or more topics, e.g. Linked Lists.' },
+  { value: 'study-plan', label: 'Study plan', icon: MapIcon, hint: 'A paced plan with sections, e.g. 75 Hard in 8 weeks.' },
+  { value: 'difficulty', label: 'Difficulty', icon: Flame, hint: 'A ladder by difficulty, e.g. Hard-only sprint.' },
 ];
 export const questCategory = (value) => QUEST_CATEGORIES.find((category) => category.value === value) || QUEST_CATEGORIES[2];
 
-export const DIFFICULTY_TONES = {
-  Easy: { bar: 'bg-emerald-500', pill: 'bg-emerald-50 text-emerald-700 ring-emerald-200/70 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-400/20' },
-  Medium: { bar: 'bg-amber-500', pill: 'bg-amber-50 text-amber-700 ring-amber-200/70 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-400/20' },
-  Hard: { bar: 'bg-rose-500', pill: 'bg-rose-50 text-rose-700 ring-rose-200/70 dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-400/20' },
-};
+export const DIFFICULTY_TONES = DIFFICULTY_THEME;
 
 export const questPercent = (quest) => (quest?.total ? Math.round((quest.solved / quest.total) * 100) : 0);
 export const questState = (quest) => (quest?.completedAt ? 'completed' : quest?.started ? 'active' : 'new');

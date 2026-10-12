@@ -402,6 +402,12 @@ async function loadRankRows(student, permissions, semesters, now, sharedCatalog 
   return pending;
 }
 
+export async function getUniversityRankSnapshotRows(permissions, now = new Date()) {
+  if (!isUniversity()) throw new Error('Global snapshots require a university deployment');
+  const [semesters, sharedCatalog] = await Promise.all([permissions.learning ? curriculum() : [], permissions.questions ? getSharedCodingCatalog() : []]);
+  return (await loadRankRows({}, permissions, semesters, now, sharedCatalog)).rows;
+}
+
 export async function getStudentUniversityRanking(student, permissions = null, now = new Date()) {
   const allowed = permissions || await dashboardPermissions(student);
   const [semesters, sharedCatalog] = await Promise.all([allowed.learning ? curriculum() : [], allowed.questions ? getSharedCodingCatalog() : []]);

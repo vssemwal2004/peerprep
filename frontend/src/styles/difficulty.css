@@ -1,0 +1,10 @@
+/* Scoped semantic colours: never recolour unrelated success/error/warning UI. */
+.difficulty-easy { --difficulty-accent: #10b981; --difficulty-ink: #047857; --difficulty-soft: #ecfdf5; --difficulty-edge: #a7f3d0; --difficulty-night: #6ee7b7; --difficulty-night-bg: #10382d; }
+.difficulty-medium { --difficulty-accent: #f97316; --difficulty-ink: #c2410c; --difficulty-soft: #fff7ed; --difficulty-edge: #fed7aa; --difficulty-night: #fdba74; --difficulty-night-bg: #432718; }
+.difficulty-hard { --difficulty-accent: #f43f5e; --difficulty-ink: #be123c; --difficulty-soft: #fff1f2; --difficulty-edge: #fecdd3; --difficulty-night: #fda4af; --difficulty-night-bg: #421f2a; }
+.difficulty-neutral { --difficulty-accent: #94a3b8; --difficulty-ink: #475569; --difficulty-soft: #f1f5f9; --difficulty-edge: #cbd5e1; --difficulty-night: #cbd5e1; --difficulty-night-bg: #273244; }
+.difficulty-text, .difficulty-pill { color: var(--difficulty-ink); }
+.difficulty-pill { background-color: var(--difficulty-soft); border-color: var(--difficulty-edge); --tw-ring-color: var(--difficulty-edge); }
+.difficulty-fill { background-color: var(--difficulty-accent); }
+.dark .difficulty-text, .dark .difficulty-pill { color: var(--difficulty-night); }
+.dark .difficulty-pill { background-color: var(--difficulty-night-bg); border-color: var(--difficulty-ink); --tw-ring-color: var(--difficulty-ink); }

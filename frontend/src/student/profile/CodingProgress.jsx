@@ -1,12 +1,9 @@
+import { DIFFICULTY_THEME } from '../../utils/difficultyTheme';
 import { useId, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowUpRight, Flame } from 'lucide-react';
 
-const DIFFICULTIES = [
-  { key: 'easy', label: 'Easy', stroke: '#43866a', text: 'text-[#326f55] dark:text-[#83bd9e]' },
-  { key: 'medium', label: 'Medium', stroke: '#b08c3e', text: 'text-[#8e6e2a] dark:text-[#d5b977]' },
-  { key: 'hard', label: 'Hard', stroke: '#88465b', text: 'text-[#88465b] dark:text-[#cf91a6]' },
-];
+const DIFFICULTIES = Object.entries(DIFFICULTY_THEME).map(([label, theme]) => ({ key: label.toLowerCase(), label, ...theme }));
 
 function count(value) {
   const numeric = Number(value);

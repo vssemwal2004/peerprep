@@ -1,3 +1,4 @@
+import { difficultyTheme } from '../../../utils/difficultyTheme';
 import { useEffect, useMemo, useRef } from "react";
 import * as echarts from "echarts/core";
 import { BarChart, FunnelChart, HeatmapChart, LineChart, PieChart, RadarChart, ScatterChart } from "echarts/charts";
@@ -87,7 +88,7 @@ function barOption(payload, renderer) {
   if (!keys.length) keys = numericKeys(rows).slice(0, 1);
   const horizontal = ["topic", "assessmentTopic", "hierarchy", "conversion"].includes(renderer);
   const percent = renderer !== "distribution";
-  const option = { ...baseOption({ legend: keys.length > 1, dense: rows.length > 10 }), dataZoom: zoomFor(rows.length, horizontal ? "vertical" : "horizontal"), series: keys.map((key) => ({ type: "bar", name: seriesLabel(payload, key), data: rows.map((row) => row[key] ?? null), barMaxWidth: 28, itemStyle: { borderRadius: horizontal ? [0, 5, 5, 0] : [5, 5, 0, 0] }, emphasis: { focus: "series" } })) };
+  const option = { ...baseOption({ legend: keys.length > 1, dense: rows.length > 10 }), dataZoom: zoomFor(rows.length, horizontal ? "vertical" : "horizontal"), series: keys.map((key) => ({ type: "bar", name: seriesLabel(payload, key), data: rows.map((row) => renderer === "difficulty" && !/^(easy|medium|hard)$/i.test(key) ? { value: row[key] ?? null, itemStyle: { color: difficultyTheme(row.difficulty || labelOf(row)).color } } : row[key] ?? null), barMaxWidth: 28, itemStyle: { ...(renderer === "difficulty" ? { color: difficultyTheme(key).color } : {}), borderRadius: horizontal ? [0, 5, 5, 0] : [5, 5, 0, 0] }, emphasis: { focus: "series" } })) };
   if (horizontal) { option.xAxis = valueAxis({ percent }); option.yAxis = categoryAxis(rows.map((row) => labelOf(row, payload?.config?.labelKey)), { inverse: true }); option.grid = { top: keys.length > 1 ? 38 : 12, right: 26, bottom: 28, left: 18, containLabel: true }; }
   else { option.xAxis = categoryAxis(rows.map((row) => labelOf(row, payload?.config?.labelKey)), { rotate: rows.length > 6 ? 25 : 0 }); option.yAxis = valueAxis({ percent }); }
   return option;

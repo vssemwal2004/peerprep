@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import GlobalRankCard from '../profile/GlobalRankCard';
 import { Link } from 'react-router-dom';
 import { ArrowRight, ArrowUpRight, CalendarClock, ChevronDown, Megaphone, Trophy } from 'lucide-react';
 import { formatRelativeTime, formatSchedule, isImportantAnnouncement, numeric } from './dashboardUtils';
@@ -21,7 +22,7 @@ export function RankCard({ ranking, loading, error, onRetry }) {
     : !ranking.universityName ? 'Ask your coordinator to add your university details.'
       : 'Complete a question or lesson to get ranked.';
 
-  return <section aria-labelledby="rank-title" aria-busy={Boolean(loading)} className={railCard}>
+  return <><section aria-labelledby="rank-title" aria-busy={Boolean(loading)} className={railCard}>
     <CardTitle id="rank-title" title="University standing" icon={Trophy} tone="amber"
       action={!loading && topPercent ? <span className="rounded-full bg-sky-600 px-2.5 py-0.5 text-[11.5px] font-semibold text-white">Top {topPercent}%</span> : null} />
     {loading ? <Skeleton className="mt-3 h-[72px]" />
@@ -61,7 +62,7 @@ export function RankCard({ ranking, loading, error, onRetry }) {
         {ranking?.methodology || 'Based on completed coding, learning and assessments. Equal points share the same rank.'}
       </p>}
     </>}
-  </section>;
+  </section><GlobalRankCard scoreRevision={ranking?.score} /></>;
 }
 
 export function ComingUpCard({ items, loading, error, onRetry, canAssessments, canEvents }) {

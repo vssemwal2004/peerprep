@@ -1,3 +1,4 @@
+import { difficultyTheme } from '../../utils/difficultyTheme';
 import { useId, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, BookOpen, Check, Circle, Code2, Flag, LockKeyhole, MessageSquare, Sparkles, Target, Trophy } from 'lucide-react';
@@ -24,7 +25,7 @@ function Goal({ goal, compact = false }) {
         <p className="text-[12px] font-semibold leading-relaxed text-slate-800 dark:text-zinc-100">{goal.title || goal.label}</p>
         <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[10px] text-slate-500 dark:text-zinc-400">
           {labels[goal.domain] && <span>{labels[goal.domain]}</span>}
-          {goal.difficulty && <span>{goal.difficulty}</span>}
+          {goal.difficulty && <span className={difficultyTheme(goal.difficulty).pill}>{goal.difficulty}</span>}
           {goal.minutes && <span>~{goal.minutes} min</span>}
           {goal.target > 1 && <span className="font-semibold tabular-nums">{goal.value}/{goal.target}</span>}
           {goal.slot === 'stretch' && <span className="text-amber-600 dark:text-amber-400">+{goal.rewardXp} XP</span>}
@@ -51,7 +52,7 @@ export function AdaptiveDailyCard({ section, onRetry, compact = false, showHubLi
         {stretch.length > 0 && <details className="text-xs"><summary className={`cursor-pointer rounded font-medium text-sky-600 dark:text-sky-400 ${focusRing}`}>Optional stretch · +{stretch[0].rewardXp} XP</summary><ul className="mt-2">{stretch.map((goal) => <Goal key={goal.id} goal={goal} compact={compact} />)}</ul></details>}
         {daily.paused && <p className="text-[11px] text-amber-600 dark:text-amber-400">University access changed. This plan is paused; your next plan will use your current access.</p>}
         <ChallengeAcceptance plan={daily} kind="daily" enabled={data.enabled} nextHref={goals.find((goal) => goal.slot !== 'stretch' && !goal.completed && !goal.paused && goal.href)?.href} />
-        {showHubLink && <Link to="/student/quests" className={`inline-flex items-center gap-1 rounded text-xs font-semibold text-sky-600 dark:text-sky-400 ${focusRing}`}>Daily challenge & quests<ArrowRight size={14} /></Link>}
+        {showHubLink && <Link to="/student/quickprep" className={`inline-flex items-center gap-1 rounded text-xs font-semibold text-sky-600 dark:text-sky-400 ${focusRing}`}>Daily challenge & QuickPrep<ArrowRight size={14} /></Link>}
         <p className="border-t border-slate-100 pt-2 text-[10px] text-slate-400 dark:border-zinc-800">New plan at 2 AM IST · Missing a day never removes XP.</p>
       </div>}
     </State>
@@ -86,6 +87,6 @@ export function AdaptiveJourneyCard({ section, onRetry, periodKind }) {
       {data?.level && <div className="mt-4 flex items-center gap-3 border-t border-slate-100 pt-3 dark:border-zinc-800"><LevelMedallion level={data.level.level} size="sm" /><div className="min-w-0 flex-1"><p className="text-xs font-semibold text-slate-800 dark:text-zinc-100">Level {data.level.level} · {data.level.title}</p><p className="mt-0.5 text-[11px] text-slate-500">{data.lifetime.points} XP · {data.level.mastery}% mastery</p></div><Link to="/student/profile#badges" className={`rounded text-sky-600 ${focusRing}`} aria-label="View badges and level requirements"><Trophy size={17} /></Link></div>}
       <details className="mt-3 text-[11px] text-slate-500 dark:text-zinc-400"><summary className="cursor-pointer">How progression works</summary><p className="mt-2 leading-relaxed">{data?.rules}</p></details>
     </State>
-    {!periodKind && <Link to="/student/quests" className={`mt-3 inline-flex items-center gap-1 rounded text-xs font-semibold text-sky-600 dark:text-sky-400 ${focusRing}`}>Daily challenge & quests<ArrowRight size={14} /></Link>}
+    {!periodKind && <Link to="/student/quickprep" className={`mt-3 inline-flex items-center gap-1 rounded text-xs font-semibold text-sky-600 dark:text-sky-400 ${focusRing}`}>Daily challenge & QuickPrep<ArrowRight size={14} /></Link>}
   </Card>;
 }

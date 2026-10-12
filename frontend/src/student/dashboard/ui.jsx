@@ -1,3 +1,4 @@
+import { DIFFICULTY_THEME } from '../../utils/difficultyTheme';
 import { RefreshCw } from 'lucide-react';
 
 // Shared surfaces for the student dashboard. Colours stay neutral; PeerPrep sky is reserved for
@@ -8,11 +9,7 @@ export const focusRing = 'focus-visible:outline-none focus-visible:ring-2 focus-
 export const softButton = 'inline-flex shrink-0 items-center gap-1.5 rounded-[10px] bg-[#f1f2f5] px-3 py-[7px] text-[12.5px] font-medium text-slate-700 transition-colors group-hover:bg-slate-900 group-hover:text-white dark:bg-white/[0.07] dark:text-zinc-200 dark:group-hover:bg-zinc-100 dark:group-hover:text-zinc-900';
 export const textLink = `inline-flex items-center gap-1 rounded text-[12px] font-semibold text-sky-700 hover:text-sky-800 dark:text-sky-400 dark:hover:text-sky-300 ${focusRing}`;
 
-const DIFFICULTY_TAGS = {
-  easy: 'bg-[#43866a]/10 text-[#326f55] dark:bg-[#43866a]/20 dark:text-[#83bd9e]',
-  medium: 'bg-[#b08c3e]/10 text-[#8e6e2a] dark:bg-[#b08c3e]/20 dark:text-[#d5b977]',
-  hard: 'bg-[#88465b]/10 text-[#88465b] dark:bg-[#88465b]/25 dark:text-[#cf91a6]',
-};
+const DIFFICULTY_TAGS = Object.fromEntries(Object.entries(DIFFICULTY_THEME).map(([key, theme]) => [key.toLowerCase(), theme.pill]));
 
 export function DifficultyTag({ difficulty, className = '' }) {
   const key = String(difficulty || '').toLowerCase();

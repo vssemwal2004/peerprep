@@ -18,6 +18,8 @@ import {
   Library,
   BarChart3,
   ChevronsLeft,
+  Zap,
+  CirclePlus,
   ChevronDown,
   Settings,
   Mail,
@@ -63,8 +65,9 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
     }
     return [
       { type: 'link', label: 'Dashboard', to: '/student/dashboard', icon: LayoutDashboard },
-      { type: 'link', label: 'Quests', to: '/student/quests', icon: Activity },
+      { type: 'link', label: 'QuickPrep', to: '/student/quickprep', icon: Zap },
       { type: 'link', label: 'Analysis', to: '/student/analysis', icon: BarChart3 },
+      { type: 'link', label: 'Rankings', to: '/student/rankings', icon: BarChart3 },
       { type: 'link', label: 'Interviews', to: '/student/interview', icon: CalendarDays },
       { type: 'link', label: 'AI Interviews', to: '/student/ai-interviews', icon: Bot },
       {
@@ -282,6 +285,17 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
     },
     {
       type: 'group',
+      key: 'quickprep',
+      label: 'QuickPrep',
+      icon: Zap,
+      items: [
+        { label: 'All QuickPreps', to: '/admin/quickprep', icon: ListChecks, match: (loc) => /^\/admin\/quickprep(\/(?!new$|insights$)[^/]+(\/(edit|questions\/add))?)?\/?$/.test(loc.pathname) },
+        { label: 'Create QuickPrep', to: '/admin/quickprep/new', icon: CirclePlus },
+        { label: 'Insights', to: '/admin/quickprep/insights', icon: BarChart3 },
+      ],
+    },
+    {
+      type: 'group',
       key: 'announcements',
       label: 'Announcements',
       icon: Megaphone,
@@ -312,7 +326,6 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
         { label: 'Email Queue', to: '/admin/email-queue', icon: Mail },
         { label: 'Promote Students', to: '/admin/settings/promote-students', icon: GraduationCap },
         { label: 'Student Progression', to: '/admin/settings/student-progression', icon: Activity },
-        { label: 'Quests', to: '/admin/quests', icon: Activity },
       ],
     },
   ];

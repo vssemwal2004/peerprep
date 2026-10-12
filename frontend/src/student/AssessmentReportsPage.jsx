@@ -1,3 +1,4 @@
+import { difficultyTheme } from '../utils/difficultyTheme';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
@@ -597,7 +598,7 @@ function QuestionReview({ report, search, filterOpen }) {
                 <div className="flex flex-wrap gap-1.5">
                   <span className={`rounded-md border px-2 py-1 text-xs font-semibold ${stateStyle(selected.status)}`}>{getQuestionStatus(selected)}</span>
                   {hasValue(selected.type) ? <span className="rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 dark:border-gray-800 dark:text-gray-300">{selected.type}</span> : null}
-                  {hasValue(selected.difficulty) ? <span className="rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 dark:border-gray-800 dark:text-gray-300">{selected.difficulty}</span> : null}
+                  {hasValue(selected.difficulty) ? <span className={`rounded-md border px-2 py-1 text-xs font-medium ${difficultyTheme(selected.difficulty).pill}`}>{selected.difficulty}</span> : null}
                 </div>
               </div>
 

@@ -1,3 +1,4 @@
+import { difficultyTheme } from '../utils/difficultyTheme';
 import { createElement, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -155,7 +156,7 @@ function DifficultyChart({ data = [], loading }) {
     <div className="space-y-3">
       {(loading ? [{ difficulty: 'Easy' }, { difficulty: 'Medium' }, { difficulty: 'Hard' }] : data).map((item) => {
         const value = Number(item?.successRate) || 0;
-        return <div key={item.difficulty}><div className="mb-1 flex justify-between text-[11px] font-medium text-slate-600 dark:text-slate-300"><span>{item.difficulty}</span><span>{loading ? '—' : `${Math.round(value)}%`}</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-gray-700"><div className={`h-full rounded-full ${item.difficulty === 'Easy' ? 'bg-emerald-500' : item.difficulty === 'Medium' ? 'bg-amber-500' : 'bg-rose-500'} ${loading ? 'animate-pulse' : ''}`} style={{ width: loading ? '45%' : `${value}%` }} /></div></div>;
+        return <div key={item.difficulty}><div className="mb-1 flex justify-between text-[11px] font-medium text-slate-600 dark:text-slate-300"><span>{item.difficulty}</span><span>{loading ? '—' : `${Math.round(value)}%`}</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-gray-700"><div className={`h-full rounded-full ${difficultyTheme(item.difficulty).bar} ${loading ? 'animate-pulse' : ''}`} style={{ width: loading ? '45%' : `${value}%` }} /></div></div>;
       })}
     </div>
   );

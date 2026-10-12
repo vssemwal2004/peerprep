@@ -69,11 +69,11 @@ export const BADGES = [
   tier('daily-7', 'Daily Habit', 'momentum', 'dailyCompleted', 7, 'Uncommon', 'Complete 7 daily challenges.'),
   tier('daily-30', 'Daily Devotee', 'momentum', 'dailyCompleted', 30, 'Rare', 'Complete 30 daily challenges.'),
   tier('daily-100', 'Daily Legend', 'momentum', 'dailyCompleted', 100, 'Epic', 'Complete 100 daily challenges.'),
-  // Quests completed.
-  tier('quest-1', 'Quest Starter', 'quests', 'questsCompleted', 1, 'Common', 'Complete your first quest.'),
-  tier('quest-3', 'Quest Explorer', 'quests', 'questsCompleted', 3, 'Uncommon', 'Complete 3 quests.'),
-  tier('quest-5', 'Quest Veteran', 'quests', 'questsCompleted', 5, 'Rare', 'Complete 5 quests.'),
-  tier('quest-10', 'Quest Master', 'quests', 'questsCompleted', 10, 'Epic', 'Complete 10 quests.'),
+  // QuickPreps completed (ids keep their original "quest" names so earned badges stay earned).
+  tier('quest-1', 'QuickPrep Starter', 'quests', 'questsCompleted', 1, 'Common', 'Complete your first QuickPrep.'),
+  tier('quest-3', 'QuickPrep Explorer', 'quests', 'questsCompleted', 3, 'Uncommon', 'Complete 3 QuickPreps.'),
+  tier('quest-5', 'QuickPrep Veteran', 'quests', 'questsCompleted', 5, 'Rare', 'Complete 5 QuickPreps.'),
+  tier('quest-10', 'QuickPrep Master', 'quests', 'questsCompleted', 10, 'Epic', 'Complete 10 QuickPreps.'),
   // Assessments.
   tier('test-explorer', 'Test Explorer', 'assessments', 'assessments', 1, 'Common', 'Complete an evaluated assessment.'),
   tier('tests-5', 'Test Regular', 'assessments', 'assessments', 5, 'Uncommon', 'Complete 5 evaluated assessments.'),

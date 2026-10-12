@@ -1,8 +1,9 @@
+import { difficultyTheme } from '../utils/difficultyTheme';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowLeft, BookOpenText, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, Columns3, Edit3, Eye, EyeOff, Filter, Folder, Globe2, Library, LoaderCircle, Lock, MoreVertical, RefreshCw, Search, Tag, Trash2, X } from 'lucide-react';
+import { ArrowLeft, BookOpenText, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, Columns3, Edit3, Eye, EyeOff, Filter, Folder, Globe2, Library, LoaderCircle, Lock, MoreVertical, Plus, RefreshCw, Search, Tag, Trash2, X } from 'lucide-react';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import { queueQuestionSelection } from './assessment/assessmentProblemSelectionStore';
@@ -178,6 +179,11 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   const initialStatus = params.get('status') || '';
   const initialType = params.get('type') || (initialStatus || selectionMode ? 'all' : 'coding');
   const lockType = params.get('lockType') || '';
+  // QuickPrep picking: the same library, filters and selection; selected coding rows are added to one QuickPrep.
+  const quickprepMode = params.get('mode') === 'quickprep';
+  const quickprepId = params.get('quickprep') || '';
+  const quickprepTitle = params.get('quickprepTitle') || 'this QuickPrep';
+  const quickprepReturn = params.get('return') || (quickprepId ? `/admin/quickprep/${quickprepId}/edit?step=questions` : '/admin/quickprep');
   const libraryViewStateKey = `peerprep:library-view:${location.pathname}:${lockType || initialType}`;
   const restoredViewState = useMemo(() => {
     try {
@@ -270,17 +276,36 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
       window.removeEventListener('resize', closeMenu);
     };
   }, [actionMenuId]);
-  const rowSelectionActive = selectionMode || bulkSelecting;
+  const rowSelectionActive = selectionMode || quickprepMode || bulkSelecting;
   const assessmentQuestionIdentities = useMemo(() => {
     if (!selectionMode) return new Set();
     const draft = loadAssessmentDraft(assessmentKey);
     return buildAssessmentQuestionIdentitySet(draft?.sections || []);
   }, [assessmentKey, selectionMode]);
-  const questionAlreadyAdded = (question) => selectionMode
-    && isLibraryQuestionAlreadyAdded(question, assessmentQuestionIdentities);
-  const eligibleQuestions = useMemo(() => questions.filter((question) => (
-    !selectionMode || !isLibraryQuestionAlreadyAdded(question, assessmentQuestionIdentities)
-  )), [assessmentQuestionIdentities, questions, selectionMode]);
+  // What the QuickPrep already holds, keyed the way students open them: shared rows by their own id,
+  // university rows by their linked coding problem.
+  const [quickprepKeys, setQuickprepKeys] = useState(() => new Set());
+  const [quickprepName, setQuickprepName] = useState('');
+  const [addingToQuickprep, setAddingToQuickprep] = useState(false);
+  const [quickprepSkipped, setQuickprepSkipped] = useState([]);
+  const [quickprepAddedTotal, setQuickprepAddedTotal] = useState(0);
+  useEffect(() => {
+    if (!quickprepMode || !quickprepId) return undefined;
+    let active = true;
+    api.getAdminQuest(quickprepId).then(({ quest }) => {
+      if (!active) return;
+      setQuickprepName(quest.title || '');
+      setQuickprepKeys(new Set((quest.items || []).map((item) => `${item.source}:${item.problemId}`)));
+    }).catch((error) => { if (active) toast.error(error.message || 'This QuickPrep could not be loaded.'); });
+    return () => { active = false; };
+  }, [quickprepId, quickprepMode, toast]);
+  const quickprepKeyOf = (question) => (question.platformShared ? `shared:${question._id}` : question.sourceProblemId ? `university:${question.sourceProblemId}` : '');
+  const questionAlreadyAdded = (question) => (selectionMode && isLibraryQuestionAlreadyAdded(question, assessmentQuestionIdentities))
+    || (quickprepMode && quickprepKeys.has(quickprepKeyOf(question)));
+  // "Select page" acts on what is on screen: the open folder's questions in folders view, else the list.
+  const folderView = filters.type === 'coding' && filters.viewMode === 'folders';
+  const visibleQuestions = folderView ? (folderQuestions[expandedFolderId]?.items || []) : questions;
+  const eligibleQuestions = visibleQuestions.filter((question) => !questionAlreadyAdded(question));
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -534,7 +559,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
 
   const toggleSelection = (question) => {
     if (questionAlreadyAdded(question)) {
-      toast.info('This question is already in the assessment.');
+      toast.info(quickprepMode ? 'This question is already in the QuickPrep.' : 'This question is already in the assessment.');
       return;
     }
     setSelectedIds((prev) => {
@@ -578,7 +603,8 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   };
 
   const selectAllMatchingQuestions = async () => {
-    if (!total || selectingAll) return;
+    // The flat-list query ignores the open folder, so "all matches" is not offered in folders view.
+    if (!total || selectingAll || folderView) return;
     setSelectingAll(true);
     setBulkMenuOpen(false);
     try {
@@ -602,9 +628,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
         selectAll: true,
         skipCache: true,
       });
-      const matches = (data.questions || []).filter((question) => (
-        !selectionMode || !isLibraryQuestionAlreadyAdded(question, assessmentQuestionIdentities)
-      ));
+      const matches = (data.questions || []).filter((question) => !questionAlreadyAdded(question));
       const matchingMeta = {};
       matches.forEach((question) => { matchingMeta[question._id] = question; });
       setSelectedIds(new Set(matches.map((question) => question._id)));
@@ -670,6 +694,44 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
       navigate(returnTo);
     } catch (error) {
       toast.error(error.message || 'Failed to add selected questions.');
+    }
+  };
+
+  const returnToQuickprep = (added = quickprepAddedTotal) => {
+    const target = new URL(quickprepReturn, window.location.origin);
+    if (added) target.searchParams.set('added', String(added));
+    navigate(`${target.pathname}${target.search}`);
+  };
+
+  // The server maps each row to the problem students open and reports any it cannot add, so nothing is
+  // added wrongly or dropped silently. When every pick is added the admin goes straight back to the
+  // builder; otherwise they stay here to see why the rest were skipped.
+  const handleAddToQuickprep = async () => {
+    const libraryIds = Object.values(selectedMeta).filter((question) => !questionAlreadyAdded(question)).map((question) => question._id);
+    if (!libraryIds.length) {
+      toast.error(selectedIds.size ? 'All selected questions are already in this QuickPrep.' : 'Select at least one question from the library.');
+      return;
+    }
+    setAddingToQuickprep(true);
+    try {
+      const result = await api.addQuestLibraryItems(quickprepId, libraryIds);
+      const skipped = result.skipped || [];
+      const addedTotal = quickprepAddedTotal + (result.added || 0);
+      setQuickprepAddedTotal(addedTotal);
+      setQuickprepKeys(new Set((result.quest?.items || []).map((item) => `${item.source}:${item.problemId}`)));
+      clearSelection();
+      if (!skipped.length) {
+        toast.success(`${result.added} question${result.added === 1 ? '' : 's'} added to ${quickprepName || quickprepTitle}.`);
+        returnToQuickprep(addedTotal);
+        return;
+      }
+      setQuickprepSkipped(skipped);
+      if (result.added) toast.success(`${result.added} added. ${skipped.length} could not be added; see why above the table.`);
+      else toast.error('None of the selected questions could be added. See why above the table.');
+    } catch (error) {
+      toast.error(error.message || 'The questions could not be added to the QuickPrep.');
+    } finally {
+      setAddingToQuickprep(false);
     }
   };
 
@@ -1101,6 +1163,33 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
           </div>
         )}
 
+        {quickprepMode && (
+          <div className="mt-1 rounded-2xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-xs text-slate-600 dark:border-sky-900/60 dark:bg-sky-900/15 dark:text-gray-300">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div><span className="font-bold text-sky-800 dark:text-sky-200">Adding questions to QuickPrep:</span> <span className="font-semibold text-slate-900 dark:text-white">{quickprepName || quickprepTitle}</span></div>
+              <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-sky-700 shadow-sm dark:bg-gray-900 dark:text-sky-300">{quickprepKeys.size} in QuickPrep</span>
+            </div>
+            <p className="mt-1.5 leading-5">Use the search and Filters to find coding questions, tick them on any page, then choose <span className="font-semibold">Add to QuickPrep</span>. Only questions students can open are added: published, public, with a runnable problem.</p>
+            <p className="mt-1 text-[10px] font-medium text-sky-700 dark:text-sky-300">Questions already in this QuickPrep are marked Added and cannot be selected again.</p>
+          </div>
+        )}
+
+        {quickprepMode && quickprepSkipped.length > 0 && (
+          <div role="alert" className="mt-3 rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-bold">{quickprepSkipped.length} selected question{quickprepSkipped.length === 1 ? ' was' : 's were'} not added{quickprepAddedTotal ? ` (${quickprepAddedTotal} added so far)` : ''}</p>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setQuickprepSkipped([])} className="rounded-lg px-2.5 py-1 font-semibold hover:bg-amber-100 dark:hover:bg-amber-900/30">Dismiss</button>
+                {quickprepAddedTotal > 0 && <button type="button" onClick={() => returnToQuickprep()} className="rounded-lg bg-amber-600 px-3 py-1 font-semibold text-white hover:bg-amber-500">Back to QuickPrep</button>}
+              </div>
+            </div>
+            <ul className="mt-2 space-y-1">
+              {quickprepSkipped.slice(0, 8).map((entry) => <li key={entry.id} className="flex gap-2"><span className="min-w-0 flex-1 truncate font-semibold">{entry.title}</span><span className="shrink-0 text-amber-700 dark:text-amber-300">{entry.message}</span></li>)}
+              {quickprepSkipped.length > 8 && <li className="text-amber-700 dark:text-amber-300">and {quickprepSkipped.length - 8} more</li>}
+            </ul>
+          </div>
+        )}
+
         {!selectionMode && bulkSelecting && (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-xs text-sky-700 dark:border-sky-900/50 dark:bg-sky-900/15 dark:text-sky-300">
             <div className="font-semibold">
@@ -1110,7 +1199,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
               <button type="button" onClick={toggleSelectVisibleQuestions} className="rounded-lg border border-sky-200 bg-white px-3 py-1.5 font-semibold text-sky-700 hover:bg-sky-50 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300">
                 {eligibleQuestions.length > 0 && eligibleQuestions.every((question) => selectedIds.has(question._id)) ? 'Clear Page' : 'Select Page'}
               </button>
-              <button type="button" onClick={selectAllMatchingQuestions} disabled={!total || selectingAll} className="rounded-lg bg-sky-600 px-3 py-1.5 font-semibold text-white hover:bg-sky-500 disabled:opacity-50">
+              <button type="button" onClick={selectAllMatchingQuestions} disabled={!total || selectingAll || folderView} className="rounded-lg bg-sky-600 px-3 py-1.5 font-semibold text-white hover:bg-sky-500 disabled:opacity-50">
                 {selectingAll ? 'Selecting...' : `Select all ${total}`}
               </button>
               <button type="button" onClick={clearSelection} disabled={!selectedIds.size} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
@@ -1148,7 +1237,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
           })}
         </div>}
 
-        {embedded && filters.status === 'draft' && !selectionMode && (
+        {embedded && filters.status === 'draft' && !selectionMode && !quickprepMode && (
           <section className="mb-5 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50/70 px-5 py-4 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/60 dark:bg-amber-950/20">
             <div className="flex min-w-0 items-start gap-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"><Edit3 className="h-4 w-4" /></span>
@@ -1174,7 +1263,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {embedded && !selectionMode && (
+            {embedded && !selectionMode && !quickprepMode && (
               <>
                 <button type="button" onClick={toggleBulkSelecting} className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold shadow-sm transition-colors ${bulkSelecting ? 'border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-700 dark:bg-sky-900/20 dark:text-sky-300' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}><CheckSquare className="h-3.5 w-3.5" />{bulkSelecting ? `${selectedIds.size} selected` : 'Select'}</button>
                 {bulkSelecting && (
@@ -1184,7 +1273,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                       <div className="absolute right-0 top-12 z-50 w-60 overflow-hidden rounded-2xl border border-slate-200 bg-white py-1 text-xs font-semibold text-slate-600 shadow-2xl dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
                         <div className="border-b border-slate-100 px-3 py-2.5 dark:border-gray-800"><p className="font-bold text-slate-900 dark:text-white">Bulk actions</p><p className="mt-0.5 text-[10px] font-normal text-slate-400">{selectedIds.size} selected</p></div>
                         <button type="button" onClick={toggleSelectVisibleQuestions} disabled={!eligibleQuestions.length} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-50 dark:hover:bg-gray-800"><CheckSquare className="h-3.5 w-3.5" />{eligibleQuestions.length && eligibleQuestions.every((question) => selectedIds.has(question._id)) ? 'Clear current page' : 'Select current page'}</button>
-                        <button type="button" onClick={selectAllMatchingQuestions} disabled={!total || selectingAll} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-50 dark:hover:bg-gray-800"><CheckSquare className="h-3.5 w-3.5" />{selectingAll ? 'Selecting all...' : `Select all ${total} matches`}</button>
+                        <button type="button" onClick={selectAllMatchingQuestions} disabled={!total || selectingAll || folderView} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-50 dark:hover:bg-gray-800"><CheckSquare className="h-3.5 w-3.5" />{selectingAll ? 'Selecting all...' : `Select all ${total} matches`}</button>
                         <button type="button" onClick={() => bulkUpdateQuestions({ title: 'Publish Selected Questions?', message: `Publish ${selectedIds.size} selected question${selectedIds.size === 1 ? '' : 's'}? Coding problems must already pass their validation checks.`, confirmLabel: 'Publish Selected', body: { status: 'published' }, successMessage: 'Selected questions published.' })} disabled={!selectedIds.size} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-50 dark:hover:bg-gray-800"><Eye className="h-3.5 w-3.5" />Publish selected</button>
                         <button type="button" onClick={() => bulkUpdateQuestions({ title: 'Move Selected to Draft?', message: `Move ${selectedIds.size} selected question${selectedIds.size === 1 ? '' : 's'} to draft?`, confirmLabel: 'Move to Draft', body: { status: 'draft' }, successMessage: 'Selected questions moved to draft.' })} disabled={!selectedIds.size} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-50 dark:hover:bg-gray-800"><Edit3 className="h-3.5 w-3.5" />Move to draft</button>
                         <button type="button" onClick={() => bulkUpdateQuestions({ title: 'Make Selected Public?', message: `Make ${selectedIds.size} selected question${selectedIds.size === 1 ? '' : 's'} public?`, confirmLabel: 'Make Public', body: { visibility: 'public' }, successMessage: 'Selected questions are public.' })} disabled={!selectedIds.size} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-50 dark:hover:bg-gray-800"><Globe2 className="h-3.5 w-3.5" />Make public</button>
@@ -1201,8 +1290,16 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
             {embedded && selectionMode && (
               <>
                 <button type="button" onClick={() => navigate(returnTo)} className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><ArrowLeft className="h-3.5 w-3.5" />Back</button>
-                <button type="button" onClick={selectAllMatchingQuestions} disabled={!total || selectingAll} className="inline-flex h-9 items-center gap-2 rounded-lg border border-sky-200 bg-white px-3 text-xs font-semibold text-sky-700 shadow-sm hover:bg-sky-50 disabled:opacity-50 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300"><CheckSquare className="h-3.5 w-3.5" />{selectingAll ? 'Selecting...' : `Select all ${total}`}</button>
+                <button type="button" onClick={selectAllMatchingQuestions} disabled={!total || selectingAll || folderView} className="inline-flex h-9 items-center gap-2 rounded-lg border border-sky-200 bg-white px-3 text-xs font-semibold text-sky-700 shadow-sm hover:bg-sky-50 disabled:opacity-50 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300"><CheckSquare className="h-3.5 w-3.5" />{selectingAll ? 'Selecting...' : `Select all ${total}`}</button>
                 <button type="button" onClick={handleAddSelected} disabled={!selectedIds.size} className="inline-flex h-9 items-center gap-2 rounded-lg bg-sky-600 px-4 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"><CheckSquare className="h-3.5 w-3.5" />Add selected ({selectedIds.size})</button>
+              </>
+            )}
+            {embedded && quickprepMode && (
+              <>
+                <button type="button" onClick={() => returnToQuickprep()} className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"><ArrowLeft className="h-3.5 w-3.5" />Back to QuickPrep</button>
+                <button type="button" onClick={toggleSelectVisibleQuestions} disabled={!eligibleQuestions.length} className="inline-flex h-9 items-center gap-2 rounded-lg border border-sky-200 bg-white px-3 text-xs font-semibold text-sky-700 shadow-sm hover:bg-sky-50 disabled:opacity-50 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300"><CheckSquare className="h-3.5 w-3.5" />{eligibleQuestions.length > 0 && eligibleQuestions.every((question) => selectedIds.has(question._id)) ? 'Clear page' : 'Select page'}</button>
+                <button type="button" onClick={selectAllMatchingQuestions} disabled={!total || selectingAll || folderView} className="inline-flex h-9 items-center gap-2 rounded-lg border border-sky-200 bg-white px-3 text-xs font-semibold text-sky-700 shadow-sm hover:bg-sky-50 disabled:opacity-50 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300"><CheckSquare className="h-3.5 w-3.5" />{selectingAll ? 'Selecting...' : `Select all ${total}`}</button>
+                <button type="button" onClick={handleAddToQuickprep} disabled={!selectedIds.size || addingToQuickprep} className="inline-flex h-9 items-center gap-2 rounded-lg bg-sky-600 px-4 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"><Plus className="h-3.5 w-3.5" />{addingToQuickprep ? 'Adding...' : `Add to QuickPrep (${selectedIds.size})`}</button>
               </>
             )}
             <button type="button" aria-expanded={filterPanelOpen} onClick={() => { setFilterPanelOpen(true); setColumnsPanelOpen(false); }} className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold shadow-sm transition-colors ${filterPanelOpen || activeFilterCount ? 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
@@ -1286,9 +1383,9 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                   </button>
                   {expanded && <div className="border-t border-slate-200 bg-slate-50/40 dark:border-gray-800 dark:bg-gray-950/20">
                     {folderQuestionLoading !== folderId && folderData.pagination && (allInFolder || Number(questionPagination.total) < count) && <div className="flex flex-wrap items-center justify-between gap-2 border-b border-sky-100 bg-sky-50/70 px-4 py-2.5 text-xs dark:border-sky-900/60 dark:bg-sky-950/20"><span className="font-medium text-slate-600 dark:text-gray-300">{allInFolder ? `Showing all ${count} questions in ${folder.name}.` : `${questionPagination.total} questions match the current search and filters out of ${count} total.`}</span><button type="button" onClick={() => loadFolderQuestionPage(folder, 1, { allInFolder: !allInFolder })} className="shrink-0 rounded-lg border border-sky-200 bg-white px-3 py-1.5 font-bold text-sky-700 shadow-sm hover:bg-sky-50 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300">{allInFolder ? 'Apply current filters' : `View all ${count}`}</button></div>}
-                    {folderQuestionLoading === folderId ? <div className="p-6 text-center text-xs text-slate-500">Loading matching questions...</div> : items.length === 0 ? <div className="p-6 text-center text-xs text-slate-500">No questions match the remaining filters in this folder.</div> : items.map((question, questionIndex) => <div key={`${folderId}-${question._id}`} onClick={() => (rowSelectionActive ? toggleSelection(question) : previewQuestion(question))} role="button" tabIndex={0} className="grid min-w-0 cursor-pointer items-center gap-2 border-b border-slate-200/70 px-3 py-3 text-sm text-slate-600 last:border-b-0 hover:bg-white dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-900" style={{ gridTemplateColumns: columnTemplate }}>
-                      {rowSelectionActive ? <div className="flex justify-center"><input type="checkbox" checked={selectedIds.has(question._id)} onChange={(event) => { event.stopPropagation(); toggleSelection(question); }} onClick={(event) => event.stopPropagation()} className="h-4 w-4 rounded border-slate-300 text-sky-600" /></div> : null}
-                      <div className="flex min-w-0 items-center gap-2"><span className="flex h-6 min-w-7 items-center justify-center rounded-md bg-white px-1.5 text-[10px] font-bold tabular-nums text-slate-500 shadow-sm dark:bg-gray-800 dark:text-gray-300">{((Number(questionPagination.page) - 1) * pageSize) + questionIndex + 1}</span><span className="min-w-0 flex-1 truncate font-semibold text-slate-800 dark:text-gray-100">{getLibraryQuestionTitle(question)}</span><button type="button" onClick={(event) => { event.stopPropagation(); setStatementModal({ open: true, title: getLibraryQuestionTitle(question), statement: getFullQuestionStatement(question) }); }} className="shrink-0 text-[11px] font-semibold text-sky-600 hover:underline dark:text-sky-400">+ More</button></div>
+                    {folderQuestionLoading === folderId ? <div className="p-6 text-center text-xs text-slate-500">Loading matching questions...</div> : items.length === 0 ? <div className="p-6 text-center text-xs text-slate-500">No questions match the remaining filters in this folder.</div> : items.map((question, questionIndex) => <div key={`${folderId}-${question._id}`} onClick={() => (rowSelectionActive ? toggleSelection(question) : previewQuestion(question))} role="button" tabIndex={0} aria-disabled={questionAlreadyAdded(question)} className={`grid min-w-0 items-center ${questionAlreadyAdded(question) ? 'cursor-not-allowed opacity-65' : 'cursor-pointer'} gap-2 border-b border-slate-200/70 px-3 py-3 text-sm text-slate-600 last:border-b-0 hover:bg-white dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-900`} style={{ gridTemplateColumns: columnTemplate }}>
+                      {rowSelectionActive ? <div className="flex justify-center"><input type="checkbox" checked={selectedIds.has(question._id)} disabled={questionAlreadyAdded(question)} onChange={(event) => { event.stopPropagation(); toggleSelection(question); }} onClick={(event) => event.stopPropagation()} className="h-4 w-4 rounded border-slate-300 text-sky-600 disabled:opacity-40" /></div> : null}
+                      <div className="flex min-w-0 items-center gap-2"><span className="flex h-6 min-w-7 items-center justify-center rounded-md bg-white px-1.5 text-[10px] font-bold tabular-nums text-slate-500 shadow-sm dark:bg-gray-800 dark:text-gray-300">{((Number(questionPagination.page) - 1) * pageSize) + questionIndex + 1}</span><span className="min-w-0 flex-1 truncate font-semibold text-slate-800 dark:text-gray-100">{getLibraryQuestionTitle(question)}</span>{questionAlreadyAdded(question) && <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">Added</span>}<button type="button" onClick={(event) => { event.stopPropagation(); setStatementModal({ open: true, title: getLibraryQuestionTitle(question), statement: getFullQuestionStatement(question) }); }} className="shrink-0 text-[11px] font-semibold text-sky-600 hover:underline dark:text-sky-400">+ More</button></div>
                       <div className="truncate text-xs font-semibold">{labelForQuestionType(question)}</div>
                       {visibleColumns.difficulty && <div><span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold dark:border-gray-700 dark:bg-gray-800">{question.difficulty || 'Not set'}</span></div>}
                       {visibleColumns.tags && <div className="flex min-w-0 gap-1 overflow-hidden">{(question.tags || []).slice(0, 2).map((tag) => <span key={`${question._id}-${tag}`} className="max-w-[90px] truncate rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] dark:border-gray-700 dark:bg-gray-800">{tag}</span>)}{(question.tags || []).length > 2 && <button type="button" onClick={(event) => { event.stopPropagation(); openTagsModal(question.questionText || 'Question', question.tags || []); }} className="shrink-0 rounded-full border border-sky-200 bg-white px-2 py-0.5 text-[10px] font-bold text-sky-700 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300">+{question.tags.length - 2}</button>}</div>}
@@ -1368,7 +1465,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                   </div>
                 </div>
                 <div className="min-w-0 truncate text-xs font-semibold leading-5 text-slate-700 dark:text-gray-200" title={labelForQuestionType(question)}>{labelForQuestionType(question)}</div>
-                {visibleColumns.difficulty && <div><span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-bold ${String(question.difficulty || '').toLowerCase() === 'hard' ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-900/15 dark:text-rose-300' : String(question.difficulty || '').toLowerCase() === 'medium' ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-900/15 dark:text-amber-300' : String(question.difficulty || '').toLowerCase() === 'easy' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-900/15 dark:text-emerald-300' : 'border-slate-200 bg-slate-50 text-slate-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}>{question.difficulty || 'Not set'}</span></div>}
+                {visibleColumns.difficulty && <div><span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-bold ${difficultyTheme(question.difficulty).pill}`}>{question.difficulty || 'Not set'}</span></div>}
                 {visibleColumns.tags && <div className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap">
                   {(question.tags || []).length ? (
                     <>

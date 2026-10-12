@@ -1,3 +1,4 @@
+import { difficultyTheme } from '../utils/difficultyTheme';
 import { useState, useEffect } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -176,13 +177,7 @@ export default function AdminLearningDetail() {
   };
 
   const getDifficultyBadge = (difficulty) => {
-    const colors = {
-      easy: 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200',
-      'easy-medium': 'bg-lime-100 dark:bg-lime-900 text-lime-800 dark:text-lime-200',
-      medium: 'bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200',
-      'medium-hard': 'bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200',
-      hard: 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
-    };
+    const colors = Object.fromEntries(['easy', 'easy-medium', 'medium', 'medium-hard', 'hard'].map((level) => [level, difficultyTheme(level).pill]));
     return (
       <span className={`px-2 py-1 rounded-full text-xs font-medium ${colors[difficulty] || colors.medium}`}>
         {difficulty || 'Medium'}

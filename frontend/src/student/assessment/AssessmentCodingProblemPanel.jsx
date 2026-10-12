@@ -1,3 +1,4 @@
+import { difficultyTheme } from '../../utils/difficultyTheme';
 import { memo, useMemo, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { RichTextPreview } from '../../admin/compiler/CompilerContentPreview';
@@ -84,7 +85,7 @@ function AssessmentCodingProblemPanel({ question, codingData = {}, language = ''
             <h1 className="text-[24px] font-semibold leading-8 tracking-tight text-slate-950 dark:text-white">{title}</h1>
             <div className="mt-4 flex flex-wrap items-center gap-2">
               {codingData.difficulty ? (
-                <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${difficultyTheme(codingData.difficulty).pill}`}>
                   {codingData.difficulty}
                 </span>
               ) : null}

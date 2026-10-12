@@ -1,3 +1,4 @@
+import { difficultyTheme } from '../../utils/difficultyTheme.js';
 export const COMPILER_LANGUAGES = [
   { id: 'python', label: 'Python', monacoLanguage: 'python', judge0LanguageId: 71 },
   { id: 'javascript', label: 'JavaScript', monacoLanguage: 'javascript', judge0LanguageId: 63 },
@@ -426,14 +427,7 @@ export function deriveHiddenFilePairs(files = []) {
 }
 
 export function difficultyBadgeClass(difficulty) {
-  switch (difficulty) {
-    case 'Hard':
-      return 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-900/20 dark:text-rose-300 dark:border-rose-800';
-    case 'Medium':
-      return 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800';
-    default:
-      return 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800';
-  }
+  return `border ${difficultyTheme(difficulty).pill}`;
 }
 
 export function problemStatusClass(status) {

@@ -1,3 +1,4 @@
+import { difficultyTheme } from '../../utils/difficultyTheme';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Check, Clock3, LockKeyhole, Sparkles } from 'lucide-react';
@@ -20,7 +21,7 @@ function MissionTile({ goal, disabled, index }) {
     <div className="challenge-task__top"><ChallengeGlyph kind={goal.domain} className="challenge-task__icon" /><span className={`challenge-status challenge-status--${status}`}>{status === 'completed' ? <Check size={11} /> : status === 'paused' ? <LockKeyhole size={11} /> : <span className="challenge-status__dot" />}{status === 'completed' ? 'Completed' : status === 'paused' ? 'Paused' : 'Pending'}</span></div>
     <p className="challenge-task__category">{LABELS[goal.domain] || 'Practice'}<span>{String(index + 1).padStart(2, '0')}</span></p>
     <h3>{title}</h3>
-    <div className="challenge-task__meta">{goal.difficulty && <span>{goal.difficulty}</span>}{goal.minutes > 0 && <span><Clock3 size={11} />{goal.minutes} min</span>}{goal.slot === 'stretch' && <span className="challenge-task__bonus">+{goal.rewardXp || 0} XP</span>}</div>
+    <div className="challenge-task__meta">{goal.difficulty && <span className={difficultyTheme(goal.difficulty).pill}>{goal.difficulty}</span>}{goal.minutes > 0 && <span><Clock3 size={11} />{goal.minutes} min</span>}{goal.slot === 'stretch' && <span className="challenge-task__bonus">+{goal.rewardXp || 0} XP</span>}</div>
     <div className="challenge-task__bottom"><div className="challenge-task__progress"><div role="progressbar" aria-label={title} aria-valuemin={0} aria-valuemax={target} aria-valuenow={value}><span style={{ width: `${value / target * 100}%` }} /></div><span>{value}/{target}</span></div>
       {!disabled && !goal.completed && !goal.paused && goal.href && <Link to={goal.href} aria-label={`${value ? 'Continue' : 'Start'}: ${title}`}>{value ? 'Continue' : 'Start'}<ArrowRight size={13} /></Link>}
       {goal.completed && <Check size={16} className="challenge-task__done" />}

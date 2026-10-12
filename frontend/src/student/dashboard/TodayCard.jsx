@@ -237,6 +237,6 @@ export default function TodayCard({ now, week, streak, loading, engagement, show
       {showDaily && <DailyPart section={engagement} onRetry={onRetry} />}
       {(!showDaily || legacyEmpty) && fallbackProblem && <NextUp problem={fallbackProblem} />}
     </TicketStub>}
-    {showDaily && <Link to="/student/quests" className={`mt-4 inline-flex items-center gap-1.5 self-start rounded text-xs font-semibold text-sky-600 dark:text-sky-400 ${focusRing}`}>Daily challenge & quests<ArrowRight size={14} /></Link>}
+    {showDaily && <Link to="/student/quickprep" className={`mt-4 inline-flex items-center gap-1.5 self-start rounded text-xs font-semibold text-sky-600 dark:text-sky-400 ${focusRing}`}>Daily challenge & QuickPrep<ArrowRight size={14} /></Link>}
   </section>;
 }

@@ -6,17 +6,18 @@ import User from '../src/models/User.js';
 import Problem from '../src/models/Problem.js';
 import Submission from '../src/models/Submission.js';
 import Notification from '../src/models/Notification.js';
+import QuestionLibrary from '../src/models/QuestionLibrary.js';
 import { adaptiveModels, EngagementReward, Quest, QuestEnrollment, StudentBadge } from '../src/models/AdaptiveEngagement.js';
 import {
   createQuest, getStudentQuest, latestQuestResume, listAdminQuests, listStudentQuests, recordQuestView, removeQuest,
-  searchQuestLibrary, slugify, startQuest, updateQuest,
+  searchQuestLibrary, slugify, startQuest, updateQuest, questTaxonomy, addQuestItems, addQuestLibraryItems, duplicateQuest, questInsights, questOverview,
 } from '../src/services/questService.js';
 import { refreshAdaptiveEngagement, engagementScope } from '../src/services/adaptiveEngagementService.js';
 
 // Test-owned in-memory database only; no backend .env, network or real accounts are used.
 const at = new Date('2026-10-15T08:00:00Z');
 const oid = () => new mongoose.Types.ObjectId();
-const models = [User, Problem, Submission, Notification, ...adaptiveModels];
+const models = [User, Problem, Submission, Notification, QuestionLibrary, ...adaptiveModels];
 const oldRole = process.env.PEERPREP_DEPLOYMENT_ROLE;
 let mongo, admin, student, problems;
 
@@ -48,7 +49,8 @@ const publish = (overrides = {}) => createQuest(admin, undefined, { title: 'Amaz
 
 test('admins build quests only from published library questions, with clean slugs and validation', async () => {
   assert.equal(slugify('  Amazon: Top 50 (Hard)! '), 'amazon-top-50-hard');
-  await assert.rejects(createQuest(admin, undefined, { title: 'Empty', items: [] }), /at least one question/);
+  assert.equal((await createQuest(admin, undefined, { title: 'Empty draft', items: [] })).questionCount, 0, 'Drafts can be saved before questions are added');
+  await assert.rejects(createQuest(admin, undefined, { title: 'Empty', status: 'published', items: [] }), /before publishing/);
   await assert.rejects(createQuest(admin, undefined, { title: 'Dup', items: [item(problems[0]), item(problems[0])] }), /appears twice/);
   await assert.rejects(createQuest(admin, undefined, { title: 'Draft', items: [item(problems[3])] }), /no longer published/);
   await assert.rejects(createQuest(admin, undefined, { title: 'Too generous', rewardXp: 5000, items: [item(problems[0])] }), /Reward XP/);
@@ -61,7 +63,7 @@ test('admins build quests only from published library questions, with clean slug
   assert.deepEqual(first.items.map((entry) => entry.title), ['Two Sum', 'Valid Anagram', 'LRU Cache'], 'Admin order is preserved');
   assert.ok(first.publishedAt);
   const collegeAdmin = { ...admin, _id: oid(), college: 'Another College' };
-  assert.equal((await listAdminQuests(collegeAdmin)).length, 2, 'Quests belong to the deployment, not to the college on an admin account');
+  assert.equal((await listAdminQuests(collegeAdmin)).length, 3, 'Quests belong to the deployment, not to the college on an admin account');
 
   const library = await searchQuestLibrary({ company: 'Amazon' });
   assert.deepEqual(library.items.map((entry) => entry.title), ['LRU Cache']);
@@ -105,8 +107,8 @@ test('finishing every question completes the quest once: XP, badge, celebration,
   assert.ok(await StudentBadge.exists({ ...scope, badgeId: `quest-${quest.id}` }));
   const notices = await Notification.find({ userId: student._id, type: 'QUEST' }).lean();
   assert.equal(notices.length, 1);
-  assert.match(notices[0].title, /Quest complete: Amazon Top 3/);
-  assert.equal(notices[0].actionUrl, '/student/quests/amazon-top-3');
+  assert.match(notices[0].title, /QuickPrep complete: Amazon Top 3/);
+  assert.equal(notices[0].actionUrl, '/student/quickprep/amazon-top-3');
 
   const progress = await refreshAdaptiveEngagement(student, new Date(done.getTime() + 1000));
   assert.ok(progress.badges.find((badge) => badge.id === 'quest-1').earned, 'Completing a quest counts toward the Quests badges');
@@ -126,7 +128,7 @@ test('a quest whose questions were all solved before starting completes the mome
 
 test('opening a quest question is remembered for the dashboard and only accepts that quest’s questions', async () => {
   const quest = await publish();
-  await assert.rejects(recordQuestView(student, quest.slug, `coding:local:${problems[3]._id}`, at), /not part of this quest/);
+  await assert.rejects(recordQuestView(student, quest.slug, `coding:local:${problems[3]._id}`, at), /not part of this QuickPrep/);
   await recordQuestView(student, quest.slug, `coding:local:${problems[1]._id}`, at);
   const resume = await latestQuestResume(student);
   assert.equal(resume.type, 'quest');
@@ -149,4 +151,95 @@ test('editing keeps the slug stable unless renamed; deleting a started quest arc
   assert.deepEqual((await listStudentQuests(student, at)).quests, [], 'Archived quests leave the student list');
   const draft = await createQuest(admin, undefined, { title: 'Scratch', items: [item(problems[0])] });
   assert.deepEqual(await removeQuest(admin, undefined, draft.id), { deleted: true });
+});
+
+test('the builder offers only library companies and topics, and library picks join a draft once', async () => {
+  const taxonomy = await questTaxonomy();
+  assert.deepEqual(taxonomy.companies.map((entry) => [entry.name, entry.count]), [['Google', 2], ['Amazon', 1]], 'Only published questions count');
+  assert.ok(taxonomy.topics.some((entry) => entry.name === 'Design' && entry.count === 1));
+  assert.deepEqual(taxonomy.difficulties.map((entry) => entry.count), [2, 0, 1]);
+  const picked = await searchQuestLibrary({ companies: 'Amazon,Google', difficulty: 'Easy,Hard' });
+  assert.equal(picked.pagination.total, 3, 'Several companies or difficulties match any of them');
+
+  const draft = await createQuest(admin, undefined, { title: 'Amazon prep', companies: ['Amazon', 'Google'], topics: ['Design'], items: [] });
+  assert.deepEqual([draft.status, draft.companies, draft.company], ['draft', ['Amazon', 'Google'], 'Amazon']);
+  const first = await addQuestItems(admin, draft.id, [item(problems[0]), item(problems[2])]);
+  const again = await addQuestItems(admin, draft.id, [item(problems[2]), item(problems[1])]);
+  assert.deepEqual([first.added, again.added, again.skipped], [2, 1, 1], 'Questions already in the QuickPrep are skipped');
+  assert.deepEqual(again.quest.items.map((entry) => entry.title), ['Two Sum', 'LRU Cache', 'Valid Anagram'], 'New picks join the end');
+  await assert.rejects(addQuestItems(admin, draft.id, [item(problems[3])]), /no longer published/);
+
+  const copy = await duplicateQuest(admin, draft.id);
+  assert.deepEqual([copy.title, copy.status, copy.questionCount, copy.slug], ['Amazon prep (copy)', 'draft', 3, 'amazon-prep-copy']);
+});
+
+test('admin insights show who started, how far each student got and how each question is going', async () => {
+  const quest = await publish({ semesters: [3] });
+  const peer = { _id: oid(), role: 'student', accessScope: 'full', name: 'Ravi', studentId: 'GE-2', semester: 3 };
+  await User.collection.insertMany([peer, { _id: oid(), role: 'student', semester: 5 }]);
+  await User.updateOne({ _id: student._id }, { $set: { name: 'Aditi', studentId: 'GE-1' } });
+  await solve(problems[0], at);
+  await solve(problems[1], at, { status: 'WA' });
+  await startQuest(student, quest.slug, at);
+  await recordQuestView(peer, quest.slug, `coding:local:${problems[0]._id}`, at);
+  const insight = await questInsights(admin, quest.id);
+  assert.equal(insight.summary.audience, 2, 'Semester 3 has two full-access students');
+  assert.deepEqual([insight.summary.started, insight.summary.completed], [2, 0]);
+  assert.deepEqual(insight.students.map((row) => [row.name, row.rollNumber, row.solved, row.attempted, row.progress]), [['Aditi', 'GE-1', 1, 1, 33], ['Ravi', 'GE-2', 0, 0, 0]]);
+  assert.deepEqual(insight.questions.map((row) => [row.title, row.solvedBy, row.attemptedBy, row.solveRate]), [['Two Sum', 1, 0, 50], ['Valid Anagram', 0, 1, 0], ['LRU Cache', 0, 0, 0]]);
+  const overview = await questOverview();
+  assert.deepEqual([overview.totals.quickpreps, overview.totals.started, overview.leaders.length], [1, 2, 2]);
+  assert.equal(overview.quests[0].audience, 2);
+  assert.ok(await latestQuestResume(peer), 'A semester-targeted QuickPrep still appears in Continue where you left off');
+});
+test('Add to QuickPrep maps library rows to the problems students open and explains every skipped row', async () => {
+  const assessmentOnly = { _id: oid(), title: 'Exam Only', difficulty: 'Medium', tags: [], companyTags: [], visibility: 'assessment', status: 'published' };
+  await Problem.collection.insertOne(assessmentOnly);
+  const row = (key, extra) => ({ _id: oid(), sourceKey: key, sourceType: 'compiler', questionType: 'coding', questionText: key, status: 'published', visibility: 'public', ...extra });
+  const rows = {
+    linked: row('linked', { sourceProblemId: problems[0]._id, sourceProblemTitle: 'Two Sum' }),
+    viaData: row('via-data', { sourceType: 'manual', questionData: { problemId: problems[1]._id } }),
+    draft: row('draft', { sourceProblemId: problems[3]._id }),
+    examOnly: row('exam-only', { sourceType: 'assessment', sourceProblemId: assessmentOnly._id }),
+    unlinked: row('unlinked', { sourceType: 'manual' }),
+    mcq: row('mcq', { questionType: 'mcq' }),
+    duplicate: row('duplicate', { sourceType: 'assessment', sourceProblemId: problems[0]._id }),
+  };
+  await QuestionLibrary.collection.insertMany(Object.values(rows));
+  const draftQuest = await createQuest(admin, undefined, { title: 'Library picks', items: [item(problems[2])] });
+  const ids = ['linked', 'viaData', 'draft', 'examOnly', 'unlinked', 'mcq', 'duplicate'].map((name) => String(rows[name]._id));
+  const result = await addQuestLibraryItems(admin, draftQuest.id, [...ids, String(oid())]);
+  assert.equal(result.added, 2);
+  assert.deepEqual(result.quest.items.map((entry) => entry.title), ['LRU Cache', 'Two Sum', 'Valid Anagram'], 'Valid picks join the end in the order selected');
+  assert.deepEqual(result.skipped.map((entry) => [entry.title, entry.reason]), [
+    ['draft', 'problem_draft'], ['exam-only', 'problem_not_public'], ['unlinked', 'no_linked_problem'], ['mcq', 'not_coding'],
+    ['duplicate', 'already_in'], ['Unknown question', 'not_found'],
+  ]);
+  assert.ok(result.skipped.every((entry) => entry.message), 'Every skip carries a readable reason');
+  const again = await addQuestLibraryItems(admin, draftQuest.id, [String(rows.linked._id)]);
+  assert.deepEqual([again.added, again.skipped[0].reason], [0, 'already_in'], 'Adding twice changes nothing');
+  await assert.rejects(addQuestLibraryItems(admin, draftQuest.id, []), /Select at least one question/);
+  // Students open and are credited on the linked problem, never on the library row id.
+  assert.ok((await Quest.findById(draftQuest.id).lean()).items.every((entry) => !Object.values(rows).some((libraryRow) => String(libraryRow._id) === String(entry.problemId))));
+});
+test('overlapping library adds never duplicate a question or overfill, and odd links are skipped not fatal', async () => {
+  const draftExam = { _id: oid(), title: 'Draft Exam', difficulty: 'Hard', tags: [], companyTags: [], visibility: 'assessment', status: 'draft' };
+  await Problem.collection.insertOne(draftExam);
+  const row = (key, extra) => ({ _id: oid(), sourceKey: key, sourceType: 'manual', questionType: 'coding', questionText: key, status: 'published', visibility: 'public', ...extra });
+  const rows = [
+    row('two-sum', { sourceProblemId: problems[0]._id }), row('anagram', { sourceProblemId: problems[1]._id }),
+    row('numeric-link', { questionData: { problemId: 42 } }), row('draft-exam', { sourceProblemId: draftExam._id }),
+  ];
+  await QuestionLibrary.collection.insertMany(rows);
+  const target = await createQuest(admin, undefined, { title: 'Race test', items: [] });
+  const ids = rows.map((entry) => String(entry._id));
+  const results = await Promise.all([addQuestLibraryItems(admin, target.id, ids), addQuestLibraryItems(admin, target.id, ids)]);
+  const stored = (await Quest.findById(target.id).lean()).items.map((entry) => String(entry.problemId));
+  assert.deepEqual(stored.sort(), [String(problems[0]._id), String(problems[1]._id)].sort(), 'Each question is stored once even when two adds overlap');
+  assert.equal(results.reduce((sum, result) => sum + result.added, 0), 2);
+  const reasons = Object.fromEntries(results[0].skipped.map((entry) => [entry.title, entry.reason]));
+  assert.equal(reasons['numeric-link'], 'no_linked_problem', 'A non-ObjectId link is skipped instead of failing the whole batch');
+  assert.equal(reasons['draft-exam'], 'problem_not_public', 'Visibility is reported before draft status');
+  await assert.rejects(addQuestLibraryItems(admin, target.id, Array.from({ length: 1001 }, () => String(oid()))), /at most 1000/);
+  await assert.rejects(addQuestLibraryItems(admin, String(oid()), ids), /not found/);
 });

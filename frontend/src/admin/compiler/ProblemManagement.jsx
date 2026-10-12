@@ -222,7 +222,7 @@ export default function ProblemManagement() {
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex items-start gap-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-orange-500 shadow-sm dark:bg-gray-900"><Flame className="h-5 w-5" /></span>
-              <div><h3 className="text-sm font-semibold text-slate-900 dark:text-white">Daily challenges and quests</h3><p className="mt-1 text-xs leading-5 text-slate-600 dark:text-gray-300">Each student gets a personal daily problem. Build curated quests from the question library.</p></div>
+              <div><h3 className="text-sm font-semibold text-slate-900 dark:text-white">Daily challenges and QuickPrep</h3><p className="mt-1 text-xs leading-5 text-slate-600 dark:text-gray-300">Each student gets a personal daily problem. Build curated quests from the question library.</p></div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button type="button" onClick={() => navigate('/admin/settings/student-progression')} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white dark:bg-white dark:text-slate-900">Manage progression<ArrowRight className="h-3.5 w-3.5" /></button>

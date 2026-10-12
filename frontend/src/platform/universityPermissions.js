@@ -2,10 +2,10 @@ export const isUniversityDeployment = import.meta.env?.VITE_PEERPREP_DEPLOYMENT_
 
 export function moduleForPath(pathname = '') {
   const path = pathname.split('?')[0];
-  if (/^\/student\/(?:challenges|quests)(?:\/|$)/.test(path)) return 'challenges';
+  if (/^\/student\/(?:challenges|quests|quickprep)(?:\/|$)/.test(path)) return 'challenges';
   if (/^\/(?:admin|student)\/ai-interviews(?:\/|$)|^\/coordinator\/ai-interviews(?:\/|$)/.test(path)) return 'interviews';
   if (/^\/(?:admin|student)\/learning(?:\/|$)|^\/coordinator\/subjects(?:\/|$)/.test(path)) return 'learning';
-  if (/^\/(?:admin|coordinator)\/library(?:\/|$)|^\/(?:admin|coordinator)\/compiler(?:\/|$)|^\/admin\/quests(?:\/|$)|^\/problems(?:\/|$)/.test(path)) return 'questions';
+  if (/^\/(?:admin|coordinator)\/library(?:\/|$)|^\/(?:admin|coordinator)\/compiler(?:\/|$)|^\/admin\/(?:quests|quickprep)(?:\/|$)|^\/problems(?:\/|$)/.test(path)) return 'questions';
   if (/^\/(?:admin|coordinator)\/assessment(?:\/|-|$)|^\/student\/assessments?(?:\/|-|$)|^\/(?:assessments|assessment-reports|assessment-history)(?:\/|$)/.test(path)) return 'assessments';
   if (/^\/(?:admin|coordinator)\/(?:event|interviews|feedback)(?:\/|$)|^\/student\/(?:interview|session|feedback)(?:\/|$)/.test(path)) return 'events';
   if (/^\/student\/resume(?:\/|$)|^\/(?:admin|coordinator)\/students\/[^/]+\/resume(?:\/|$)/.test(path)) return 'resumes';

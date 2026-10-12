@@ -1,3 +1,4 @@
+import { difficultyTheme } from '../utils/difficultyTheme';
 import { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -489,10 +490,7 @@ export default function LearningAnalyticsModal({ isOpen, onClose, semesterId, su
                                             </span>
                                             {topic.difficultyLevel && (
                                               <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${
-                                                topic.difficultyLevel === 'easy' ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300' :
-                                                topic.difficultyLevel === 'medium' ? 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300' :
-                                                topic.difficultyLevel === 'hard' ? 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300' :
-                                                'bg-slate-100 dark:bg-gray-700 text-slate-600 dark:text-gray-400'
+                                                difficultyTheme(topic.difficultyLevel).pill
                                               }`}>
                                                 {topic.difficultyLevel}
                                               </span>
