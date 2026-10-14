@@ -1,5 +1,6 @@
 import { renderNativeArgument } from './functionTestInputService.js';
 import { prepareBundledCHeader } from './bundledCHeaderService.js';
+import {statefulTreeSupport,statefulTreeLiteral} from './statefulTreeBindingService.js';
 
 export const STATEFUL_RUNNER_LANGUAGES = ['python', 'cpp', 'c', 'java', 'javascript', 'typescript'];
 const identifier = (value, label) => {
@@ -8,11 +9,16 @@ const identifier = (value, label) => {
 };
 function normalizeType(value) {
   const type = String(value || '').toLowerCase().replace(/^int(?=\[|$)/, 'integer').replace(/^bool(?=\[|$)/, 'boolean');
-  if (!/^(?:integer|long|double|float|boolean|string|character|char)(?:\[\]){0,2}$/.test(type) && type !== 'void') throw new Error(`Unsupported stateful type: ${value || '(empty)'}.`);
+  if (!/^(?:integer|long|double|float|boolean|string|character|char)(?:\[\]){0,2}$/.test(type) && !['void','tree-node'].includes(type)) throw new Error(`Unsupported stateful type: ${value || '(empty)'}.`);
   return type;
 }
 function validateValue(value, type, label) {
-  if (type.endsWith('[]')) {
+  if(type==='tree-node'){
+    if(value===null)return;
+    if(!Array.isArray(value)||value.some(v=>v!==null&&(!Number.isInteger(v)||v<-2147483648||v>2147483647)))throw new Error(label+' must be a breadth-first integer/null tree array.');
+    let slots=value.length?1:0;
+    for(const v of value){if(!slots)throw new Error(label+' contains an unreachable tree slot.');slots--;if(v!==null)slots+=2;}
+  } else if (type.endsWith('[]')) {
     if (!Array.isArray(value)) throw new Error(`${label} must be an array.`);
     for (const entry of value) validateValue(entry, type.slice(0,-2), label);
   } else if (['integer','long'].includes(type)) {
@@ -69,6 +75,7 @@ export function validateStatefulFixture(contract, input) {
 }
 
 const nativeType = (language,type) => {
+  if(type==='tree-node')return language==='java'?'TreeNode':language==='c'?'struct TreeNode*':'TreeNode*';
   if(type.endsWith('[]')) return language==='cpp'?`vector<${nativeType(language,type.slice(0,-2))}>`:`${nativeType(language,type.slice(0,-2))}[]`;
   return ({cpp:{integer:'int',long:'long long',double:'double',float:'double',boolean:'bool',string:'string',character:'char',char:'char'},java:{integer:'int',long:'long',double:'double',float:'double',boolean:'boolean',string:'String',character:'char',char:'char'},c:{integer:'int',long:'long long',double:'double',float:'double',boolean:'bool',string:'char*',character:'char',char:'char'}})[language][type];
 };
@@ -82,6 +89,7 @@ function javaLiteral(value,type){
 function declarations(language,call,index){
   return call.parameters.map((parameter,argument)=>{
     const name=`__ppA${index}_${argument}`,value=call.args[argument],type=parameter.type;
+    if(type==='tree-node')return `${nativeType(language,type)} ${name} = ${statefulTreeLiteral(language,value)};`;
     if(language==='cpp') return `auto ${name} = ${renderNativeArgument('cpp',type,value)};`;
     if(language==='java') return `${nativeType(language,type)} ${name} = ${javaLiteral(value,type)};`;
     const scalar=type.endsWith('[][]')?type.slice(0,-4):type.endsWith('[]')?type.slice(0,-2):type;
@@ -124,6 +132,7 @@ function cScalarOutput(type,value){
   return `printf("%lld",(long long)${value});`;
 }
 function cOutput(type,value){
+  if(type==='tree-node')return `__ppTreeEmit(${value});`;
   if(type.endsWith('[][]'))return `putchar('[');for(int __ppR=0;__ppR<__ppReturnSize;__ppR++){if(__ppR)putchar(',');putchar('[');for(int __ppK=0;__ppK<__ppReturnColumns[__ppR];__ppK++){if(__ppK)putchar(',');${cScalarOutput(type.slice(0,-4),`${value}[__ppR][__ppK]`)}}putchar(']');}putchar(']');`;
   if(type.endsWith('[]'))return `putchar('[');for(int __ppK=0;__ppK<__ppReturnSize;__ppK++){if(__ppK)putchar(',');${cScalarOutput(type.slice(0,-2),`${value}[__ppK]`)}}putchar(']');`;
   return cScalarOutput(type,value);
@@ -155,15 +164,17 @@ export function prepareStatefulSource(language, contract, userCode, input) {
   if(!STATEFUL_RUNNER_LANGUAGES.includes(language))throw new Error(`Unsupported stateful language: ${language}.`);
   if(!String(userCode||'').trim())throw new Error('Stateful user code is missing.');
   const fixture=validateStatefulFixture(contract,input),{className,calls}=fixture;
+  const usesTrees=calls.some(call=>call.returnType==='tree-node'||call.parameters.some(p=>p.type==='tree-node'));
+  const tree=usesTrees?statefulTreeSupport(language):{prefix:'',helpers:''};
   if(language==='python'){
     const lines=['__ppResults = []'];
-    calls.forEach((call)=>{const args=call.args.map((value)=>`__ppJson.loads(${JSON.stringify(JSON.stringify(value))})`).join(', ');if(call.constructor)lines.push(`__ppObject = ${className}(${args})`,`__ppResults.append(None)`);else if(call.returnType==='void')lines.push(`__ppObject.${call.methodName}(${args})`,`__ppResults.append(None)`);else lines.push(`__ppResults.append(__ppJson.loads(__ppJson.dumps(__ppObject.${call.methodName}(${args}))))`);});
-    return `from __future__ import annotations\nfrom typing import *\nfrom collections import *\nfrom heapq import *\nfrom bisect import *\nfrom math import *\nfrom builtins import pow\nfrom functools import *\nfrom itertools import *\nimport json as __ppJson\n\n# PeerPrep Python 3.8 compatible standard library aliases.\ntry:\n    cache\nexcept NameError:\n    cache = lru_cache(maxsize=None)\n\ntry:\n    pairwise\nexcept NameError:\n    def pairwise(values):\n        first, second = tee(values)\n        next(second, None)\n        return zip(first, second)\n\n${userCode}\n\n# PeerPrep private stateful runner.\n${lines.join('\n')}\nprint(__ppJson.dumps(__ppResults, separators=(',', ':')))\n`;
+    calls.forEach((call)=>{const args=call.args.map((value,i)=>call.parameters[i].type==='tree-node'?statefulTreeLiteral(language,value):`__ppJson.loads(${JSON.stringify(JSON.stringify(value))})`).join(', ');if(call.constructor)lines.push(`__ppObject = ${className}(${args})`,`__ppResults.append(None)`);else if(call.returnType==='void')lines.push(`__ppObject.${call.methodName}(${args})`,`__ppResults.append(None)`);else lines.push(`__ppResults.append(__ppJson.loads(__ppJson.dumps(${call.returnType==='tree-node'?'__ppTreeOutput(':''}__ppObject.${call.methodName}(${args})${call.returnType==='tree-node'?')':''})))`);});
+    return `from __future__ import annotations\nfrom typing import *\nfrom collections import *\nfrom heapq import *\nfrom bisect import *\nfrom math import *\nfrom builtins import pow\nfrom functools import *\nfrom itertools import *\nimport json as __ppJson\n\n# PeerPrep Python 3.8 compatible standard library aliases.\ntry:\n    cache\nexcept NameError:\n    cache = lru_cache(maxsize=None)\n\ntry:\n    pairwise\nexcept NameError:\n    def pairwise(values):\n        first, second = tee(values)\n        next(second, None)\n        return zip(first, second)\n\n${tree.prefix}${tree.helpers}${userCode}\n\n# PeerPrep private stateful runner.\n${lines.join('\n')}\nprint(__ppJson.dumps(__ppResults, separators=(',', ':')))\n`;
   }
   if(language==='javascript'||language==='typescript'){
     const lines=[`const __ppResults${language==='typescript'?': any[]':''} = [];`,`let __ppObject${language==='typescript'?': '+className:''};`];
-    calls.forEach((call)=>{const args=call.args.map((value)=>JSON.stringify(value)).join(',');if(call.constructor)lines.push(`__ppObject = new ${className}(${args});`,`__ppResults.push(null);`);else if(call.returnType==='void')lines.push(`__ppObject.${call.methodName}(${args});`,`__ppResults.push(null);`);else lines.push(`__ppResults.push(JSON.parse(JSON.stringify(__ppObject.${call.methodName}(${args}))));`);});
-    return `${userCode}\n\n// PeerPrep private stateful runner.\n${lines.join('\n')}\n${language==='typescript'?'(globalThis as any).console':'console'}.log(JSON.stringify(__ppResults));\n`;
+    calls.forEach((call)=>{const args=call.args.map((value,i)=>call.parameters[i].type==='tree-node'?statefulTreeLiteral(language,value):JSON.stringify(value)).join(',');if(call.constructor)lines.push(`__ppObject = new ${className}(${args});`,`__ppResults.push(null);`);else if(call.returnType==='void')lines.push(`__ppObject.${call.methodName}(${args});`,`__ppResults.push(null);`);else lines.push(`__ppResults.push(JSON.parse(JSON.stringify(${call.returnType==='tree-node'?'__ppTreeOutput(':''}__ppObject.${call.methodName}(${args})${call.returnType==='tree-node'?')':''})));`);});
+    return `${tree.prefix}${tree.helpers}${userCode}\n\n// PeerPrep private stateful runner.\n${lines.join('\n')}\n${language==='typescript'?'(globalThis as any).console':'console'}.log(JSON.stringify(__ppResults));\n`;
   }
   const lines=[];
   calls.forEach((call,index)=>{
@@ -183,10 +194,10 @@ export function prepareStatefulSource(language, contract, userCode, input) {
     else {const callText=language==='java'?`__ppCall(__ppObject,"${call.methodName}",new Object[]{${args}})`:`__ppObject->${call.methodName}(${args})`;lines.push(call.returnType==='void'?`${callText};${language==='cpp'?'cout<<"null";':'System.out.print("null");'}`:`__ppEmit(${callText});`);}
     lines.push('}');
   });
-  if(language==='cpp')return `#include <bits/stdc++.h>\nusing namespace std;\n${userCode}\n${cppPrinter}\nint main(){unique_ptr<${className}> __ppObject;cout<<'[';${lines.join('\n')}cout<<']';__ppObject.reset();return 0;}\n`;
+  if(language==='cpp')return `#include <bits/stdc++.h>\nusing namespace std;\n${tree.prefix}${tree.helpers}${userCode}\n${cppPrinter}\nint main(){unique_ptr<${className}> __ppObject;cout<<'[';${lines.join('\n')}cout<<']';__ppObject.reset();return 0;}\n`;
   if(language==='java'){
     const injectable=userCode.replace(new RegExp(`(^|\\n)\\s*public\\s+class\\s+${className}\\b`),`$1class ${className}`);
-    return `import java.util.*;\nimport java.util.function.*;\n${injectable}\npublic class Main {${javaPrinter}\n${javaBinding}\npublic static void main(String[] args) throws Exception {${className} __ppObject=null;System.out.print('[');${lines.join('\n')}System.out.print(']');}}\n`;
+    return `import java.util.*;\nimport java.util.function.*;\n${tree.prefix}${injectable}\npublic class Main {${tree.helpers}${javaPrinter}\n${javaBinding}\npublic static void main(String[] args) throws Exception {${className} __ppObject=null;System.out.print('[');${lines.join('\n')}System.out.print(']');}}\n`;
   }
-  return `#include <stdio.h>\n#include <stdlib.h>\n#include <stdbool.h>\n#include <string.h>\n#include <limits.h>\n${userCode}\n${cPrinter}\nint main(void){void* __ppObject=NULL;putchar('[');${lines.join('\n')}putchar(']');${contract.cDestructorName?`${identifier(contract.cDestructorName,'C destructor')}(__ppObject);`:''}return 0;}\n`;
+  return `#include <stdio.h>\n#include <stdlib.h>\n#include <stdbool.h>\n#include <string.h>\n#include <limits.h>\n${tree.prefix}${tree.helpers}${userCode}\n${cPrinter}\nint main(void){void* __ppObject=NULL;putchar('[');${lines.join('\n')}putchar(']');${contract.cDestructorName?`${identifier(contract.cDestructorName,'C destructor')}(__ppObject);`:''}return 0;}\n`;
 }

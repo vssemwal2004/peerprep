@@ -251,7 +251,7 @@ export default function ProblemsPage() {
               </div>
                 : <>
                   <ul className="space-y-2">
-                    {problems.map((problem, index) => <ProblemRow key={problem._id} problem={problem} number={((pagination.page - 1) * PAGE_SIZE) + index + 1}
+                    {problems.map((problem, index) => <ProblemRow key={problem._id} problem={problem} number={Number(problem.displayOrder) || (((pagination.page - 1) * PAGE_SIZE) + index + 1)}
                       saved={favorites.includes(String(problem.listId)) || lists.some((list) => list.problemIds.includes(String(problem.listId)))}
                       opening={openingProblemId === problem._id} onOpen={openProblem} onSave={setListPickerProblem} onCompany={selectCompany} />)}
                   </ul>

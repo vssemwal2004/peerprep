@@ -258,7 +258,7 @@ router.get('/shared/:id/problem', asyncRoute(async (req, res) => {
       questionType: 'coding', result: 'correct' }),
   ]);
   res.json({ ...serializeProblem({ ...snapshot, _id: question._id, status: 'published', visibility: 'public' },
-    { sampleTestCases: snapshot.sampleTestCases || [] }), platformShared: true,
+    { sampleTestCases: snapshot.sampleTestCases || [], includeEditorialSolutions: true }), platformShared: true,
   studentStatus: solved ? 'Solved' : 'Unsolved', totalSubmissions, acceptedSubmissions,
   acceptanceRate: totalSubmissions ? Number((acceptedSubmissions * 100 / totalSubmissions).toFixed(1)) : 0 });
 }));

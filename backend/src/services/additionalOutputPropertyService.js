@@ -73,5 +73,25 @@ export function validLargestDivisibleSubset(args,output){
  return actual.length===optimum;
 }
 
-export const additionalOutputPropertyValidators={groupThePeople:validGroupThePeople,rearrangeBarcodes:validRearrangeBarcodes,pancakeSort:validPancakeSort,restoreArray:validRestoreArray,reconstructMatrix:validReconstructMatrix,missingRolls:validMissingRolls,findMatrix:validFindMatrix,minRemoveToMakeValid:validMinRemoveToMakeValid,maxDepthAfterSplit:validMaxDepthAfterSplit,largestDivisibleSubset:validLargestDivisibleSubset};
+export function validGardenNoAdj(args,output){
+ const [n,paths]=args,colors=parseOutput(output);
+ if(!Number.isSafeInteger(n)||n<1||!Array.isArray(paths)||!integers(colors)||colors.length!==n||colors.some(color=>color<1||color>4))return false;
+ for(const edge of paths){
+  if(!integers(edge)||edge.length!==2)return false;
+  const [left,right]=edge;if(left<1||left>n||right<1||right>n||left===right||colors[left-1]===colors[right-1])return false;
+ }
+ return true;
+}
+
+export function validCustomSortString(args,output){
+ const [order,input]=args,actual=outputString(output);
+ if(typeof order!=='string'||typeof input!=='string'||typeof actual!=='string'||actual.length!==input.length)return false;
+ const inputCounts=counts([...input]),actualCounts=counts([...actual]);
+ if(inputCounts.size!==actualCounts.size||[...inputCounts].some(([char,count])=>actualCounts.get(char)!==count))return false;
+ const ranks=new Map([...order].map((char,index)=>[char,index]));let previous=-1;
+ for(const char of actual)if(ranks.has(char)){const rank=ranks.get(char);if(rank<previous)return false;previous=rank;}
+ return true;
+}
+
+export const additionalOutputPropertyValidators={groupThePeople:validGroupThePeople,rearrangeBarcodes:validRearrangeBarcodes,pancakeSort:validPancakeSort,restoreArray:validRestoreArray,reconstructMatrix:validReconstructMatrix,missingRolls:validMissingRolls,findMatrix:validFindMatrix,minRemoveToMakeValid:validMinRemoveToMakeValid,maxDepthAfterSplit:validMaxDepthAfterSplit,largestDivisibleSubset:validLargestDivisibleSubset,gardenNoAdj:validGardenNoAdj,customSortString:validCustomSortString};
 export function acceptsAdditionalOutputProperty(methodName,args,output){const validator=additionalOutputPropertyValidators[methodName];if(!validator)return null;try{return validator(args,output);}catch{return false;}}

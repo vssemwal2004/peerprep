@@ -11,11 +11,19 @@ export function judge0OutputFileSizeKb(problem){
     &&contract?.methodName==='findStrobogrammatic'&&contract?.returnType==='string[]'
     &&contract?.outputMode==='return'&&contract?.parameters?.length===1
     &&contract.parameters[0].name==='n'&&contract.parameters[0].type==='integer';
+  const colorTriangleRed=problem?.executionMode==='function'&&problem?.category==='DSA'
+    &&problem?.title==='Color the Triangle Red'&&contract?.className==='Solution'
+    &&contract?.kind!=='stateful'&&contract?.methodName==='colorRed'
+    &&contract?.returnType==='integer[][]'&&contract?.outputMode==='return'
+    &&contract?.parameters?.length===1&&contract.parameters[0].name==='n'
+    &&contract.parameters[0].type==='integer';
   // Legal n=14 produces 62,500 fourteen-digit strings: compact JSON alone is
   // 1,062,501 bytes, before printer whitespace. Preserve the complete output.
   // Legal n=10 returns 1,048,576 cells: compact JSON is 7,279,547 bytes.
   // Preserve the entire result, including standard printer separators.
-  return specialGrid?16384:strobogrammatic?4096:1024;
+  // Legal n=1000 can return roughly 250,000 coordinate pairs. The canonical
+  // compact oracle is about 2.5 MiB and language printers add separators.
+  return specialGrid?4096:strobogrammatic?4096:colorTriangleRed?4096:1024;
 }
 export function normalizeJudge0FileSizeKb(value){
   const number=Number(value);
@@ -24,6 +32,8 @@ export function normalizeJudge0FileSizeKb(value){
 // This applies only to trusted persisted question oracles. User-provided run
 // expectations keep their existing 64 KiB bound in the compiler workflow.
 export function trustedExpectedOutputLimitBytes(problem){
+  if(judge0OutputFileSizeKb(problem)===4096&&problem?.title==='Fill a Special Grid'
+    &&problem?.functionContract?.methodName==='specialGrid')return 16*1024*1024;
   // Source polynomial1634: at most20000 exact signed integer terms.
   const polynomialContract=problem?.functionContract;
   if(String(problem?._id||problem?.id||'')==='6ac280a519051acf30c4b1d7'&&problem?.title==='Add Two Polynomials Represented as Linked Lists'&&problem.category==='DSA'&&problem.executionMode==='function'&&polynomialContract?.className==='Solution'&&polynomialContract.kind!=='stateful'&&polynomialContract.methodName==='addPoly'&&polynomialContract.returnType==='poly-node'&&polynomialContract.outputMode==='return'&&JSON.stringify(polynomialContract.parameters?.map(x=>[x.name,x.type]))===JSON.stringify([['poly1','poly-node'],['poly2','poly-node']]))return 1024*1024;

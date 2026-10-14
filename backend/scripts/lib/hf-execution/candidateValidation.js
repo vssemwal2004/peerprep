@@ -7,6 +7,14 @@ import { hasExhaustiveContestMatchDomain } from '../contest-match-finite-domain.
 import { isAbsentIdentityTreeSelectorProblem, validateAbsentIdentityTreeSelectorOutput, prepareAbsentIdentityTreeSelectorSource } from '../../../src/services/absentIdentityTreeSelectorRunnerService.js';
 import { isExactScalarLongProblem, validateExactScalarLongFixture, prepareExactScalarLongSource } from '../../../src/services/exactScalarLongRunnerService.js';
 import { isGuessNumberProblem, validateGuessNumberFixture, prepareGuessNumberSource } from '../../../src/services/guessNumberApiRunnerService.js';
+import { isFirstBadVersionProblem, validateFirstBadVersionFixture, prepareFirstBadVersionSource } from '../../../src/services/firstBadVersionApiRunnerService.js';
+import { isSelectedLinkedMutationProblem, validateSelectedLinkedMutationFixture, acceptsSelectedLinkedMutationOutput, prepareSelectedLinkedMutationSource } from '../../../src/services/selectedLinkedMutationRunnerService.js';
+import { isBstIteratorProblem, validateBstIteratorFixture, prepareBstIteratorSource } from '../../../src/services/bstIteratorRunnerService.js';
+import { nestedIntegerRule, validateNestedIntegerFixture, prepareNestedIntegerSource, nestedIteratorCalls, nestedWeight } from '../../../src/services/nestedIntegerRunnerService.js';
+import { isMiniParserProblem, validateMiniParserFixture, validateMiniParserOracle, prepareMiniParserSource } from '../../../src/services/miniParserProvidedRunnerService.js';
+import { pendingProvidedRule, validatePendingProvidedFixture, validatePendingProvidedOracle, preparePendingProvidedSource } from '../../../src/services/pendingProvidedApiRunnerService.js';
+import { standaloneProvidedRule, validateStandaloneProvidedFixture, validateStandaloneProvidedOracle, prepareStandaloneProvidedSource } from '../../../src/services/standaloneProvidedApiRunnerService.js';
+import { linkedListRewireRule, validateLinkedListRewireFixture, validateLinkedListRewireOracle, prepareLinkedListRewireSource } from '../../../src/services/linkedListRewireRunnerService.js';
 import { isSourceSupportedStatefulTolerance } from '../../../src/services/statefulFloatingOutputPolicyService.js';
 import { acceptsRandomizedStatefulOutput } from '../../../src/services/randomizedStatefulOutputService.js';
 // PeerPrep canonical node collections.
@@ -31,6 +39,24 @@ export function hasExhaustiveFiniteDomain(candidate) {
   if (hasExhaustiveParenthesesQueensDomain(candidate)) return true;
   if (hasExhaustiveSpecialGridDomain(candidate)) return true;
   if (hasExhaustiveContestMatchDomain(candidate)) return true;
+  if (String(candidate?._id || '') === '6ace18746ca3216598beebad'
+    && candidate?.title === 'Permutations III'
+    && candidate?.functionContract?.kind !== 'stateful'
+    && candidate?.functionContract?.methodName === 'permute'
+    && candidate?.functionContract?.returnType === 'integer[][]'
+    && candidate?.functionContract?.parameters?.length === 1
+    && candidate.functionContract.parameters[0]?.name === 'n'
+    && candidate.functionContract.parameters[0]?.type === 'integer') {
+    const covered=new Set();
+    try {
+      for(const entry of [...(candidate.sampleTestCases||[]),...(candidate.hiddenTestCases||[])]){
+        const [value]=buildFunctionInputPayload(entry.input,candidate.functionContract).args;
+        if(!Number.isInteger(value)||value<1||value>10||covered.has(value))return false;
+        covered.add(value);
+      }
+    } catch { return false; }
+    return covered.size===10;
+  }
   const domains = {
     countNumbersWithUniqueDigits: [0, 8], totalNQueens: [1, 9],
     largestPalindrome: [1, 8], readBinaryWatch: [0, 10],
@@ -64,7 +90,7 @@ const LANGUAGE_ALIASES = Object.freeze({
 });
 
 const SCALAR_TYPES = new Set([
-  'integer', 'long', 'double', 'boolean', 'string', 'character', 'tree-node', 'list-node', 'void',
+  'integer', 'long', 'double', 'boolean', 'string', 'character', 'tree-node', 'list-node', 'nested-integer', 'void',
 ]);
 
 function stableValue(value) {
@@ -136,6 +162,7 @@ export function canonicalType(annotation) {
     char: 'character', character: 'character',
     treenode: 'tree-node', 'tree-node': 'tree-node',
     listnode: 'list-node', 'list-node': 'list-node',
+    nestedinteger: 'nested-integer', 'nested-integer': 'nested-integer',
     none: 'void', nonetype: 'void', void: 'void',
   })[source.toLowerCase()] || '';
 }
@@ -230,7 +257,7 @@ export function buildExecutionArtifacts(candidate) {
   const originalContract = normalizeNodeCollectionContract(candidate?.functionContract || inferFunctionContract(templates));
   const contract = isIdentityTreeSelectorContract(originalContract) ? { ...originalContract, parameters: originalContract.parameters.map(parameter => ({ ...parameter, type: 'tree-node' })), returnType: 'tree-node' } : originalContract;
   const executionHarnesses = {};
-  if (contract?.methodName && contract.kind !== 'stateful' && !isIdentityTreeSelectorContract(contract) && !providedObjectRule({...candidate,functionContract:contract}) && !customNodeRule({...candidate,functionContract:contract})) {
+  if (contract?.methodName && contract.kind !== 'stateful' && !isIdentityTreeSelectorContract(contract) && !providedObjectRule({...candidate,functionContract:contract}) && !customNodeRule({...candidate,functionContract:contract}) && !nestedIntegerRule({...candidate,functionContract:contract}) && !isMiniParserProblem({...candidate,functionContract:contract}) && !pendingProvidedRule({...candidate,functionContract:contract}) && !standaloneProvidedRule({...candidate,functionContract:contract}) && !linkedListRewireRule({...candidate,functionContract:contract})) {
     for (const language of REQUIRED_LANGUAGES) {
       if (!String(templates[language] || '').trim()) continue;
       executionHarnesses[language] = generateFunctionRunnerTemplate(language, contract, templates[language]);
@@ -275,10 +302,18 @@ export function analyzeExecutionCandidate(candidate) {
   const problems = [];
   const contract = artifacts.functionContract;
   const stateful = contract?.kind === 'stateful';
+  const bstIterator = isBstIteratorProblem({...candidate,functionContract:contract});
+  const nestedInteger = nestedIntegerRule({...candidate,functionContract:contract});
+  const miniParser = isMiniParserProblem({...candidate,functionContract:contract});
+  const pendingProvided = pendingProvidedRule({...candidate,functionContract:contract});
+  const standaloneProvided = standaloneProvidedRule({...candidate,functionContract:contract});
+  const linkedListRewire = linkedListRewireRule({...candidate,functionContract:contract});
   const identityTree = isIdentityTreeSelectorContract(contract);
   const absentIdentityTree = isAbsentIdentityTreeSelectorProblem({...candidate,functionContract:contract});
   const exactScalarLong = isExactScalarLongProblem({...candidate,functionContract:contract});
   const guessNumber = isGuessNumberProblem({...candidate,functionContract:contract});
+  const firstBadVersion = isFirstBadVersionProblem({...candidate,functionContract:contract});
+  const selectedLinkedMutation = isSelectedLinkedMutationProblem({...candidate,functionContract:contract});
   const read4 = isRead4Problem({...candidate,functionContract:contract});
   const providedObject = providedObjectRule({...candidate,functionContract:contract});
   const customNode = customNodeRule({...candidate,functionContract:contract});
@@ -294,14 +329,14 @@ export function analyzeExecutionCandidate(candidate) {
   }
   if (contract && !stateful) {
     for (const [index, parameter] of (contract.parameters || []).entries()) {
-      if (!parameter.name || (!isRunnerSupportedType(parameter.type) && !providedObject && !customNode)) {
+      if (!parameter.name || (!isRunnerSupportedType(parameter.type) && !providedObject && !customNode && !nestedInteger && !pendingProvided && !standaloneProvided)) {
         problems.push(issue('CONTRACT_PARAMETER_UNSUPPORTED', `Parameter ${index + 1} cannot be represented by every requested runner.`, { parameter }));
       }
     }
-    if (!isRunnerSupportedType(contract.returnType, { allowVoid: true }) && !customNode) {
+    if (!isRunnerSupportedType(contract.returnType, { allowVoid: true }) && !customNode && !nestedInteger && !pendingProvided && !standaloneProvided) {
       problems.push(issue('CONTRACT_RETURN_UNSUPPORTED', 'Return type cannot be represented by every requested runner.', { returnType: contract.returnType }));
     }
-    if (contract.returnType === 'void' && contract.outputMode !== 'parameter' && customNode?.kind !== 'robot-clean') {
+    if (contract.returnType === 'void' && contract.outputMode !== 'parameter' && !customNode && pendingProvided?.kind !== 'word') {
       problems.push(issue(
         'VOID_OUTPUT_MODE_UNRESOLVED',
         'A void LeetCode method must identify the mutated output parameter before test outputs can be compared.',
@@ -321,7 +356,7 @@ export function analyzeExecutionCandidate(candidate) {
     if (!String(references[language] || '').trim()) {
       problems.push(issue('REFERENCE_MISSING', `Missing independently executable ${language} reference solution.`, { language }));
     }
-    if (!stateful && !identityTree && !read4 && !providedObject && !customNode && !String(artifacts.executionHarnesses[language] || '').trim()) {
+    if (!stateful && !identityTree && !read4 && !providedObject && !customNode && !nestedInteger && !miniParser && !pendingProvided && !standaloneProvided && !linkedListRewire && !String(artifacts.executionHarnesses[language] || '').trim()) {
       problems.push(issue('RUNNER_MISSING', `Could not generate the ${language} private runner.`, { language }));
     }
   }
@@ -343,20 +378,41 @@ export function analyzeExecutionCandidate(candidate) {
     }
     if (stateful) {
       try {
-        const fixture = validateStatefulFixture(contract, testCase.input);
+        const fixture = bstIterator ? validateBstIteratorFixture({...candidate,functionContract:contract},testCase.input) : nestedInteger?.kind==='iterator' ? validateNestedIntegerFixture({...candidate,functionContract:contract},testCase.input) : validateStatefulFixture(contract, testCase.input);
         const expected = JSON.parse(testCase.output);
         const randomOracle = acceptsRandomizedStatefulOutput({...candidate,functionContract:contract}, testCase, testCase.output);
         if (randomOracle === false) problems.push(issue('STATEFUL_RANDOM_ORACLE_INVALID', 'Randomized fixture outputs must respect current state and deterministic operation results.', {caseIndex:index}));
-        if (!Array.isArray(expected) || expected.length !== fixture.calls.length || fixture.calls.some((call, position) => (call.constructor || call.returnType === 'void') && expected[position] !== null)) {
+        const calls=bstIterator?fixture.names.map((methodName,index)=>({methodName,constructor:index===0,returnType:index===0?'void':methodName==='next'?'integer':'boolean'})):nestedInteger?.kind==='iterator'?nestedIteratorCalls(fixture):fixture.calls;
+        if (!Array.isArray(expected) || expected.length !== calls.length || calls.some((call, position) => (call.constructor || call.returnType === 'void') && expected[position] !== null)) {
           problems.push(issue('STATEFUL_OUTPUT_SHAPE_INVALID', 'Stateful output requires one result per operation and null for constructors or void methods.', { caseIndex: index }));
         }
-        fixture.calls.filter((call) => !call.constructor).forEach((call) => coveredOperations.add(call.methodName));
+        calls.filter((call) => !call.constructor).forEach((call) => coveredOperations.add(call.methodName));
         for (const language of REQUIRED_LANGUAGES) {
-          if (String(references[language] || '').trim()) prepareStatefulSource(language, contract, references[language], testCase.input);
+          if (String(references[language] || '').trim()) (bstIterator?prepareBstIteratorSource(language,{...candidate,functionContract:contract},references[language],testCase.input):nestedInteger?.kind==='iterator'?prepareNestedIntegerSource(language,{...candidate,functionContract:contract},references[language],testCase.input):prepareStatefulSource(language, contract, references[language], testCase.input));
         }
       } catch (error) {
         problems.push(issue('STATEFUL_TESTCASE_INVALID', error.message, { caseIndex: index }));
       }
+    } else if (standaloneProvided) {
+      try{const apiProblem={...candidate,functionContract:contract};validateStandaloneProvidedFixture(apiProblem,testCase.input);if(!validateStandaloneProvidedOracle(apiProblem,testCase))throw Error('Standalone provided API oracle disagrees with expected output.');for(const language of REQUIRED_LANGUAGES)if(String(references[language]||'').trim())prepareStandaloneProvidedSource(language,apiProblem,references[language],testCase.input);}catch(error){problems.push(issue('STANDALONE_PROVIDED_TESTCASE_INVALID',error.message,{caseIndex:index}));}
+    } else if (linkedListRewire) {
+      try{const linkedProblem={...candidate,functionContract:contract};validateLinkedListRewireFixture(linkedProblem,testCase.input);if(!validateLinkedListRewireOracle(linkedProblem,testCase))throw Error('Linked-list rewire oracle disagrees with expected output.');for(const language of REQUIRED_LANGUAGES)if(String(references[language]||'').trim())prepareLinkedListRewireSource(language,linkedProblem,references[language],testCase.input);}catch(error){problems.push(issue('LINKED_LIST_REWIRE_TESTCASE_INVALID',error.message,{caseIndex:index}));}
+    } else if (pendingProvided) {
+      try{const apiProblem={...candidate,functionContract:contract};validatePendingProvidedFixture(apiProblem,testCase.input);if(!validatePendingProvidedOracle(apiProblem,testCase))throw Error('Provided API oracle disagrees with expected output.');for(const language of REQUIRED_LANGUAGES)if(String(references[language]||'').trim())preparePendingProvidedSource(language,apiProblem,references[language],testCase.input);}catch(error){problems.push(issue('PENDING_PROVIDED_TESTCASE_INVALID',error.message,{caseIndex:index}));}
+    } else if (miniParser) {
+      try {
+        const parserProblem={...candidate,functionContract:contract};
+        validateMiniParserFixture(parserProblem,testCase.input);
+        if(!validateMiniParserOracle(parserProblem,testCase))throw Error('Mini Parser oracle disagrees with the independently recognized serialized grammar.');
+        for(const language of REQUIRED_LANGUAGES)if(String(references[language]||'').trim())prepareMiniParserSource(language,parserProblem,references[language],testCase.input);
+      }catch(error){problems.push(issue('MINI_PARSER_TESTCASE_INVALID',error.message,{caseIndex:index}));}
+    } else if (nestedInteger) {
+      try {
+        const nestedProblem={...candidate,functionContract:contract},fixture=validateNestedIntegerFixture(nestedProblem,testCase.input);
+        const expected=nestedWeight(fixture.value,nestedInteger.kind==='inverse');
+        if(String(expected)!==String(testCase.output).trim())throw Error('NestedInteger oracle disagrees with expected output.');
+        for(const language of REQUIRED_LANGUAGES)if(String(references[language]||'').trim())prepareNestedIntegerSource(language,nestedProblem,references[language],testCase.input);
+      }catch(error){problems.push(issue('NESTED_INTEGER_TESTCASE_INVALID',error.message,{caseIndex:index}));}
     } else if (customNode) {
       try {
         const nodeProblem={...candidate,functionContract:contract};
@@ -387,6 +443,20 @@ export function analyzeExecutionCandidate(candidate) {
       } catch (error) {
         problems.push(issue('GUESS_NUMBER_TESTCASE_INVALID', error.message, {caseIndex:index}));
       }
+    } else if (firstBadVersion) {
+      try {
+        const apiProblem={...candidate,functionContract:contract};
+        const {bad}=validateFirstBadVersionFixture(apiProblem,testCase.input);
+        if(String(testCase.output).trim()!==String(bad))throw Error('First Bad Version output must equal the private first bad version.');
+        for(const language of REQUIRED_LANGUAGES)if(String(references[language]||'').trim())prepareFirstBadVersionSource(language,apiProblem,references[language],testCase.input);
+      }catch(error){problems.push(issue('FIRST_BAD_VERSION_TESTCASE_INVALID',error.message,{caseIndex:index}));}
+    } else if (selectedLinkedMutation) {
+      try {
+        const mutationProblem={...candidate,functionContract:contract};
+        validateSelectedLinkedMutationFixture(mutationProblem,testCase.input);
+        if(acceptsSelectedLinkedMutationOutput(mutationProblem,testCase,testCase.output)!==true)throw Error('Delete Node output must equal the independently mutated full list.');
+        for(const language of REQUIRED_LANGUAGES)if(String(references[language]||'').trim())prepareSelectedLinkedMutationSource(language,mutationProblem,references[language],testCase.input);
+      }catch(error){problems.push(issue('SELECTED_LINKED_MUTATION_TESTCASE_INVALID',error.message,{caseIndex:index}));}
     } else if (exactScalarLong) {
       try {
         const exactProblem = {...candidate,functionContract:contract};

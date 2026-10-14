@@ -1,0 +1,125 @@
+/* Editorial renderer: code tokens (Prism class names), KaTeX layout and small prose
+   details that are awkward to express as Tailwind utilities. Light and dark palettes
+   follow the problem workspace (zinc neutrals, #ffa116 accent). */
+
+.editorial-view {
+  --ed-code-fg: #24292f;
+  --ed-comment: #6e7781;
+  --ed-keyword: #cf222e;
+  --ed-string: #0a3069;
+  --ed-number: #0550ae;
+  --ed-function: #8250df;
+  --ed-class: #953800;
+  --ed-operator: #24292f;
+  --ed-punctuation: #57606a;
+  --ed-builtin: #0550ae;
+  overflow-wrap: break-word;
+}
+
+.dark .editorial-view {
+  --ed-code-fg: #d4d4d4;
+  --ed-comment: #8b949e;
+  --ed-keyword: #ff7b72;
+  --ed-string: #a5d6ff;
+  --ed-number: #79c0ff;
+  --ed-function: #d2a8ff;
+  --ed-class: #ffa657;
+  --ed-operator: #d4d4d4;
+  --ed-punctuation: #a1a1aa;
+  --ed-builtin: #79c0ff;
+}
+
+.editorial-view pre.editorial-code-pre {
+  margin: 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  background: transparent;
+  color: var(--ed-code-fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  tab-size: 4;
+  white-space: pre;
+}
+
+.editorial-view pre.editorial-code-pre code {
+  font: inherit;
+  background: transparent;
+  white-space: inherit;
+}
+
+.editorial-view .editorial-code .token.comment,
+.editorial-view .editorial-code .token.prolog,
+.editorial-view .editorial-code .token.doctype,
+.editorial-view .editorial-code .token.cdata {
+  color: var(--ed-comment);
+  font-style: italic;
+}
+
+.editorial-view .editorial-code .token.keyword,
+.editorial-view .editorial-code .token.important,
+.editorial-view .editorial-code .token.atrule,
+.editorial-view .editorial-code .token.directive,
+.editorial-view .editorial-code .token.macro {
+  color: var(--ed-keyword);
+}
+
+.editorial-view .editorial-code .token.string,
+.editorial-view .editorial-code .token.char,
+.editorial-view .editorial-code .token.template-string,
+.editorial-view .editorial-code .token.regex {
+  color: var(--ed-string);
+}
+
+.editorial-view .editorial-code .token.number,
+.editorial-view .editorial-code .token.boolean,
+.editorial-view .editorial-code .token.constant {
+  color: var(--ed-number);
+}
+
+.editorial-view .editorial-code .token.function,
+.editorial-view .editorial-code .token.function-variable {
+  color: var(--ed-function);
+}
+
+.editorial-view .editorial-code .token.class-name,
+.editorial-view .editorial-code .token.decorator,
+.editorial-view .editorial-code .token.annotation {
+  color: var(--ed-class);
+}
+
+.editorial-view .editorial-code .token.builtin,
+.editorial-view .editorial-code .token.property {
+  color: var(--ed-builtin);
+}
+
+.editorial-view .editorial-code .token.operator {
+  color: var(--ed-operator);
+}
+
+.editorial-view .editorial-code .token.punctuation {
+  color: var(--ed-punctuation);
+}
+
+/* KaTeX: long display formulas scroll inside their own box, never the page. */
+.editorial-view .katex-display {
+  margin: 1rem 0;
+  padding: 0.25rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.editorial-view .katex {
+  font-size: 1.05em;
+}
+
+.editorial-view .katex-error {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+}
+
+/* Footnotes produced by GFM. */
+.editorial-view section.footnotes {
+  margin-top: 2rem;
+  font-size: 0.85rem;
+}

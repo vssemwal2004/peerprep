@@ -3,6 +3,8 @@
 import {buildFunctionInputPayload,parseFunctionTestInput}from'./functionTestInputService.js';
 import{validateStatefulFixture}from'./statefulRunnerService.js';
 import {acceptsRootFlexibleOutput} from './flexibleOutputPropertyService.js';
+import {validConstructedGridLayout} from './gridLayoutOutputService.js';
+import {validTriangleRedConstruction} from './triangleColorOutputService.js';
 const integers=xs=>Array.isArray(xs)&&xs.every(Number.isSafeInteger);
 const parse=raw=>{try{const p=parseFunctionTestInput(String(raw??'').trim());return p.positional.length===1?p.positional[0]:undefined;}catch{return undefined;}};
 const string=raw=>{const s=String(raw??'').trim();return /^["']/.test(s)?parse(s):s;};
@@ -162,6 +164,10 @@ export function validThreeEqualBinaryParts(args,raw){
 export function validNoTripleLetterCounts(args,raw){const[a,b]=args,out=string(raw);return Number.isInteger(a)&&Number.isInteger(b)&&a>=0&&a<=100&&b>=0&&b<=100&&Math.max(a,b)<=2*(Math.min(a,b)+1)&&typeof out==='string'&&out.length===a+b&&/^[ab]*$/.test(out)&&[...out].filter(ch=>ch==='a').length===a&&!out.includes('aaa')&&!out.includes('bbb');}
 profiles.avoidFlood={title:'Avoid Flood in The City',parameters:['integer[]'],returnType:'integer[]',accepts:validFloodActions};
 profiles.recoverArray={title:'Find Array Given Subset Sums',parameters:['integer','integer[]'],returnType:'integer[]',accepts:validRecoveredSubsetSums};
+export function validKnightTour(args,raw){const[m,n,r,c]=args,out=parse(raw);if(![m,n,r,c].every(Number.isInteger)||m<1||m>5||n<1||n>5||r<0||r>=m||c<0||c>=n||!Array.isArray(out)||out.length!==m||out.some(row=>!Array.isArray(row)||row.length!==n))return false;const cells=m*n,pos=Array(cells);for(let i=0;i<m;i++)for(let j=0;j<n;j++){const step=out[i][j];if(!Number.isInteger(step)||step<0||step>=cells||pos[step])return false;pos[step]=[i,j];}if(pos[0][0]!==r||pos[0][1]!==c)return false;for(let step=1;step<cells;step++){const dr=Math.abs(pos[step][0]-pos[step-1][0]),dc=Math.abs(pos[step][1]-pos[step-1][1]);if(!((dr===1&&dc===2)||(dr===2&&dc===1)))return false;}return true;}
+profiles.tourOfKnight={title:'The Knight’s Tour',parameters:['integer','integer','integer','integer'],returnType:'integer[][]',accepts:validKnightTour};
+profiles.constructGridLayout={title:'Construct 2D Grid Matching Graph Layout',parameters:['integer','integer[][]'],returnType:'integer[][]',accepts:validConstructedGridLayout};
+profiles.colorRed={title:'Color the Triangle Red',parameters:['integer'],returnType:'integer[][]',accepts:validTriangleRedConstruction};
 // These existing input-derived validators must run before fixed-oracle equality.
 // An identical malformed stored witness must never bypass their source rules.
 export function validModifiedGraphEdgeWeights(args,raw){return acceptsRootFlexibleOutput({title:'Modify Graph Edge Weights',functionContract:{methodName:'modifiedGraphEdges'}},args,raw,'')===true;}

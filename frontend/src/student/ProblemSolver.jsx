@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   Check,
@@ -30,7 +30,7 @@ import {
   getLanguageLabel,
 } from '../admin/compiler/compilerUtils';
 import { RichTextPreview } from '../admin/compiler/CompilerContentPreview';
-import { getDisplayProblemStatement, normalizeRichText } from '../admin/compiler/problemStatementFormatting';
+import { getDisplayProblemStatement } from '../admin/compiler/problemStatementFormatting';
 import {
   buildProblemDrafts,
   getCodeValidationMessage,
@@ -41,6 +41,8 @@ import {
 } from './problemUtils';
 
 const NO_COMPANIES = [];
+// Markdown + KaTeX + Prism are only needed once the Editorial tab is opened.
+const EditorialView = lazy(() => import('../components/editorial/EditorialView'));
 
 function StudentProgressBadge({ status }) {
   return (
@@ -120,19 +122,21 @@ function LeftPanelTabs({
   );
 }
 
-function EditorialPanel({ editorial }) {
+function EditorialPanel({ editorial, editorialMeta = null, editorialSolutions = null, title = '' }) {
   return (
-    <article className="space-y-5 px-5 py-6 sm:px-6">
+    <article className="min-w-0 space-y-5 px-5 py-6 sm:px-6">
       <header className="border-b border-zinc-200 pb-4 dark:border-zinc-700">
         <div className="flex items-center gap-2 text-zinc-900 dark:text-white">
           <BookOpenText className="h-5 w-5" />
           <h1 className="text-xl font-semibold">Editorial</h1>
         </div>
         <p className="mt-1.5 text-sm text-slate-500 dark:text-gray-400">
-          Official explanation and solution approach provided by the problem author.
+          Step-by-step explanation of the intended approach, with complexity analysis and reference implementations.
         </p>
       </header>
-      <RichTextPreview content={editorial} lead />
+      <Suspense fallback={<LoadingPanel label="Loading editorial..." />}>
+        <EditorialView markdown={editorial} meta={editorialMeta} solutions={editorialSolutions} title={title} />
+      </Suspense>
     </article>
   );
 }
@@ -1340,7 +1344,7 @@ export default function ProblemSolver() {
   }, [drafts, language, problem]);
 
   const hasEditorial = useMemo(
-    () => Boolean(normalizeRichText(problem?.editorial || '').trim()),
+    () => Boolean(String(problem?.editorial || '').trim()),
     [problem?.editorial],
   );
 
@@ -1903,7 +1907,7 @@ export default function ProblemSolver() {
               {activeLeftTab === 'description' ? (
                 <ProblemDescriptionPanel problem={problem} language={language} verifiedCompanies={confirmedCompanies} />
               ) : activeLeftTab === 'editorial' ? (
-                <EditorialPanel editorial={problem.editorial} />
+                <EditorialPanel editorial={problem.editorial} editorialMeta={problem.editorialMeta} editorialSolutions={problem.editorialSolutions} title={problem.title} />
               ) : activeLeftTab === 'submissions' ? (
                 <SubmissionList
                   loading={submissionsLoading}
@@ -1975,7 +1979,7 @@ export default function ProblemSolver() {
               {activeLeftTab === 'description' ? (
                 <ProblemDescriptionPanel problem={problem} language={language} verifiedCompanies={confirmedCompanies} />
               ) : activeLeftTab === 'editorial' ? (
-                <EditorialPanel editorial={problem.editorial} />
+                <EditorialPanel editorial={problem.editorial} editorialMeta={problem.editorialMeta} editorialSolutions={problem.editorialSolutions} title={problem.title} />
               ) : activeLeftTab === 'submissions' ? (
                 <SubmissionList
                   loading={submissionsLoading}

@@ -83,6 +83,42 @@ export async function uploadProblemAsset(fileBuffer, { ownerId = 'admin', public
   });
 }
 
+/** Uploads a validated university logo under its own folder. The caller supplies a unique public ID. */
+export async function uploadUniversityLogo(fileBuffer, { universityId, publicId }) {
+  if (!isCloudinaryConfigured()) throw new Error('Cloudinary not configured');
+
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder: `peerprep/universities/${String(universityId)}`,
+        public_id: publicId,
+        resource_type: 'image',
+        overwrite: false,
+        unique_filename: false,
+        use_filename: false,
+      },
+      (error, result) => {
+        if (error) reject(error);
+        else resolve({
+          url: result.secure_url,
+          publicId: result.public_id,
+          width: result.width,
+          height: result.height,
+          format: result.format,
+          bytes: result.bytes,
+        });
+      },
+    );
+    uploadStream.end(fileBuffer);
+  });
+}
+
+/** Removes one image by its Cloudinary public ID. Callers treat failures as best-effort. */
+export async function destroyCloudinaryImage(publicId) {
+  if (!publicId || !isCloudinaryConfigured()) return;
+  await cloudinary.uploader.destroy(publicId, { resource_type: 'image', invalidate: true });
+}
+
 /**
  * Delete avatar from Cloudinary
  * @param {string} imageUrl - The URL of the image to delete

@@ -138,6 +138,7 @@ function escapeRegExp(value = '') {
 function librarySearchRank(question = {}, search = '') {
   const query = normalizeSearchText(search);
   if (!query) return 0;
+  if (/^\d+$/.test(query) && Number(question.displayOrder) === Number(query)) return 0;
   const titles = [question.questionText, question.sourceProblemTitle]
     .map(normalizeSearchText)
     .filter(Boolean);
@@ -362,7 +363,13 @@ function matchesSharedQuestion(question, query = {}) {
   if (query.sourceAssessmentId && String(question.sourceAssessmentId || '') !== String(query.sourceAssessmentId)) return false;
   if (query.difficulty && question.difficulty !== query.difficulty) return false;
   if (query.tag && !(question.tags || []).includes(query.tag)) return false;
-  if (query.search && ![question.questionText, ...(question.tags || [])].some((value) => String(value || '').toLowerCase().includes(String(query.search).toLowerCase()))) return false;
+  if (query.search) {
+    const normalizedSearch = normalizeSearchText(query.search);
+    if (/^\d+$/.test(normalizedSearch)) {
+      if (Number(question.displayOrder) !== Number(normalizedSearch)) return false;
+    } else if (![question.questionText, ...(question.tags || [])]
+      .some((value) => String(value || '').toLowerCase().includes(normalizedSearch))) return false;
+  }
   if (query.uncategorized === 'true' && (question.topicIds || []).length) return false;
   const topicIds = queryList(query.topicIds);
   if (topicIds.length && !topicIds.some((id) => (question.topicIds || []).some((item) => String(item) === id) || (query.topicScope !== 'direct' && (question.topicAncestorIds || []).some((item) => String(item) === id)))) return false;
@@ -375,11 +382,17 @@ function mergedLibraryResponse(local, shared, query = {}) {
   const page = Math.max(1, Number(query.page) || 1);
   const limit = Math.min(100, Math.max(1, Number(query.limit) || 25));
   const direction = query.sortOrder === 'asc' ? 1 : -1;
-  const sortBy = ['updatedAt', 'createdAt', 'questionText', 'difficulty'].includes(query.sortBy) ? query.sortBy : 'updatedAt';
+  const sortBy = ['displayOrder', 'updatedAt', 'createdAt', 'questionText', 'difficulty'].includes(query.sortBy) ? query.sortBy : 'updatedAt';
   const questions = [...local, ...shared.filter((item) => matchesSharedQuestion(item, query)).map((item) => ({ ...formatLibraryQuestionSummary(item), platformShared: true }))]
-    .sort((a, b) => sortBy === 'questionText' || sortBy === 'difficulty'
-      ? String(a[sortBy] || '').localeCompare(String(b[sortBy] || '')) * direction
-      : (new Date(a[sortBy] || 0).getTime() - new Date(b[sortBy] || 0).getTime()) * direction);
+    .sort((a, b) => {
+      if (sortBy === 'displayOrder') {
+        return ((Number(a.displayOrder) || 2147483647) - (Number(b.displayOrder) || 2147483647)) * direction;
+      }
+      if (sortBy === 'questionText' || sortBy === 'difficulty') {
+        return String(a[sortBy] || '').localeCompare(String(b[sortBy] || '')) * direction;
+      }
+      return (new Date(a[sortBy] || 0).getTime() - new Date(b[sortBy] || 0).getTime()) * direction;
+    });
   const total = questions.length;
   const all = query.selectAll === 'true';
   return { questions: all ? questions : questions.slice((page - 1) * limit, page * limit), pagination: { page: all ? 1 : page, limit: all ? total : limit, total, pages: Math.max(1, Math.ceil(total / limit)) } };
@@ -419,6 +432,7 @@ export async function listLibraryQuestions(req, res) {
     const limitNum = Math.min(100, Math.max(1, Number(limit) || 25));
     const skip = (pageNum - 1) * limitNum;
     const normalizedSearch = normalizeSearchText(search);
+    const serialSearch = /^\d+$/.test(normalizedSearch) ? Number(normalizedSearch) : null;
 
     const baseMatch = {
       ...buildLibrarySearchMatch(search),
@@ -540,6 +554,7 @@ export async function listLibraryQuestions(req, res) {
                   {
                     case: {
                       $or: [
+                        ...(serialSearch ? [{ $eq: ['$displayOrder', serialSearch] }] : []),
                         { $eq: [{ $toLower: { $trim: { input: { $ifNull: ['$questionText', ''] } } } }, normalizedSearch] },
                         { $eq: [{ $toLower: { $trim: { input: { $ifNull: ['$sourceProblemTitle', ''] } } } }, normalizedSearch] },
                       ],

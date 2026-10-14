@@ -18,6 +18,22 @@ const problemImageSchema = new mongoose.Schema({
   position: { type: Number, min: 0, default: 0 },
 }, { _id: false });
 
+// Describes how Problem.editorial is authored. Absent on legacy editorials, which the
+// frontend renders with the same markdown renderer. Format contract id: "md-v2".
+export const EDITORIAL_FORMATS = ['md-v2'];
+export const EDITORIAL_SOURCES = ['peerprep-original', 'doocs-derived', 'leetcode-ca-derived'];
+
+const editorialMetaSchema = new mongoose.Schema({
+  format: { type: String, enum: EDITORIAL_FORMATS, default: 'md-v2' },
+  version: { type: Number, min: 1, default: 1 },
+  source: { type: String, enum: EDITORIAL_SOURCES, default: 'peerprep-original' },
+  license: { type: String, default: '', trim: true, maxlength: 80 },
+  attributionUrl: { type: String, default: '', trim: true, maxlength: 1000 },
+  generatedBy: { type: String, default: '', trim: true, maxlength: 200 },
+  reviewedAt: { type: Date },
+  checks: { type: [{ type: String, trim: true, maxlength: 200 }], default: [] },
+}, { _id: false });
+
 const functionParameterSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true, maxlength: 80 },
   type: { type: String, required: true, trim: true, maxlength: 120 },
@@ -158,6 +174,10 @@ const problemSchema = new mongoose.Schema({
   editorial: {
     type: String,
     default: '',
+  },
+  editorialMeta: {
+    type: editorialMetaSchema,
+    default: undefined,
   },
   hints: [{
     type: String,

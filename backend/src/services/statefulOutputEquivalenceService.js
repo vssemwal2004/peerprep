@@ -1,8 +1,15 @@
 import { acceptsRandomizedStatefulOutput } from './randomizedStatefulOutputService.js';
 import { acceptsSourceSupportedStatefulFloat } from './statefulFloatingOutputPolicyService.js';
 import { validateStatefulFixture } from './statefulRunnerService.js';
+import { isBstIteratorProblem, validateBstIteratorFixture } from './bstIteratorRunnerService.js';
+import { nestedIntegerRule, validateNestedIntegerFixture, nestedIteratorCalls } from './nestedIntegerRunnerService.js';
 
 function typedEqual(actual, expected, type) {
+  if(type==='tree-node'){
+    if(!Array.isArray(actual)||!Array.isArray(expected))return false;
+    const normalize=value=>{const result=value.slice();while(result.at(-1)===null)result.pop();return result;};
+    return JSON.stringify(normalize(actual))===JSON.stringify(normalize(expected));
+  }
   if (type.endsWith('[]')) return Array.isArray(actual) && Array.isArray(expected)
     && actual.length === expected.length
     && actual.every((value, index) => typedEqual(value, expected[index], type.slice(0, -2)));
@@ -26,11 +33,19 @@ export function acceptsEquivalentStatefulOutput(problem, testCase, actualOutput)
   const floating = acceptsSourceSupportedStatefulFloat(problem, testCase, actualOutput);
   if (floating !== null) return floating;
   try {
-    const fixture = validateStatefulFixture(problem.functionContract, testCase.input);
+    const nested=nestedIntegerRule(problem);
+    const fixture = isBstIteratorProblem(problem)
+      ? validateBstIteratorFixture(problem, testCase.input)
+      : nested?.kind==='iterator' ? validateNestedIntegerFixture(problem,testCase.input)
+      : validateStatefulFixture(problem.functionContract, testCase.input);
+    const calls = fixture.calls || (nested?.kind==='iterator'?nestedIteratorCalls(fixture):fixture.names.map((methodName,index)=>({
+      constructor:index===0,
+      returnType:index===0?'void':methodName==='next'?'integer':'boolean',
+    })));
     const actual = JSON.parse(String(actualOutput).trim());
     const expected = JSON.parse(String(testCase.output).trim());
     return Array.isArray(actual) && Array.isArray(expected)
-      && actual.length === fixture.calls.length && expected.length === fixture.calls.length
-      && fixture.calls.every((call, index) => typedEqual(actual[index], expected[index], call.constructor ? 'void' : call.returnType));
+      && actual.length === calls.length && expected.length === calls.length
+      && calls.every((call, index) => typedEqual(actual[index], expected[index], call.constructor ? 'void' : call.returnType));
   } catch { return false; }
 }

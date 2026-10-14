@@ -72,6 +72,16 @@ function getLibraryQuestionTitle(question = {}) {
   return question.questionText || data.questionText || 'Untitled Question';
 }
 
+function getQuestionSerial(question = {}, fallback) {
+  const displayOrder = Number(question.displayOrder);
+  return question.questionType === 'coding'
+    && Number.isSafeInteger(displayOrder)
+    && displayOrder > 0
+    && displayOrder < 2147483647
+    ? displayOrder
+    : fallback;
+}
+
 function getFullQuestionStatement(question = {}) {
   const data = question.questionData || {};
   if (question.questionType === 'coding') {
@@ -390,7 +400,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
           page,
           limit: pageSize,
           includeMeta: false,
-          skipCache: reloadKey > 0,
+          skipCache: reloadKey > 0 || Boolean(String(filters.search || '').trim()),
         });
         if (!mounted) return;
         setQuestions(data.questions || []);
@@ -466,7 +476,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
         page: targetPage,
         limit: pageSize,
         includeMeta: false,
-        skipCache: reloadKey > 0,
+        skipCache: reloadKey > 0 || Boolean(String(filters.search || '').trim()),
       });
       setFolderQuestions((current) => ({
         ...current,
@@ -1258,7 +1268,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
             <input
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Search by question, answer, tag or topic"
+              placeholder="Search by serial number, question, answer, tag or topic"
               className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
             />
             {searchInput && <button type="button" onClick={() => setSearchInput('')} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-gray-800"><X className="h-3.5 w-3.5" /></button>}
@@ -1387,7 +1397,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                     {folderQuestionLoading !== folderId && folderData.pagination && (allInFolder || Number(questionPagination.total) < count) && <div className="flex flex-wrap items-center justify-between gap-2 border-b border-sky-100 bg-sky-50/70 px-4 py-2.5 text-xs dark:border-sky-900/60 dark:bg-sky-950/20"><span className="font-medium text-slate-600 dark:text-gray-300">{allInFolder ? `Showing all ${count} questions in ${folder.name}.` : `${questionPagination.total} questions match the current search and filters out of ${count} total.`}</span><button type="button" onClick={() => loadFolderQuestionPage(folder, 1, { allInFolder: !allInFolder })} className="shrink-0 rounded-lg border border-sky-200 bg-white px-3 py-1.5 font-bold text-sky-700 shadow-sm hover:bg-sky-50 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300">{allInFolder ? 'Apply current filters' : `View all ${count}`}</button></div>}
                     {folderQuestionLoading === folderId ? <div className="p-6 text-center text-xs text-slate-500">Loading matching questions...</div> : items.length === 0 ? <div className="p-6 text-center text-xs text-slate-500">No questions match the remaining filters in this folder.</div> : items.map((question, questionIndex) => <div key={`${folderId}-${question._id}`} onClick={() => (rowSelectionActive ? toggleSelection(question) : previewQuestion(question))} role="button" tabIndex={0} aria-disabled={questionAlreadyAdded(question)} className={`grid min-w-0 items-center ${questionAlreadyAdded(question) ? 'cursor-not-allowed opacity-65' : 'cursor-pointer'} gap-2 border-b border-slate-200/70 px-3 py-3 text-sm text-slate-600 last:border-b-0 hover:bg-white dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-900`} style={{ gridTemplateColumns: columnTemplate }}>
                       {rowSelectionActive ? <div className="flex justify-center"><input type="checkbox" checked={selectedIds.has(question._id)} disabled={questionAlreadyAdded(question)} onChange={(event) => { event.stopPropagation(); toggleSelection(question); }} onClick={(event) => event.stopPropagation()} className="h-4 w-4 rounded border-slate-300 text-sky-600 disabled:opacity-40" /></div> : null}
-                      <div className="flex min-w-0 items-center gap-2"><span className="flex h-6 min-w-7 items-center justify-center rounded-md bg-white px-1.5 text-[10px] font-bold tabular-nums text-slate-500 shadow-sm dark:bg-gray-800 dark:text-gray-300">{((Number(questionPagination.page) - 1) * pageSize) + questionIndex + 1}</span><span className="min-w-0 flex-1 truncate font-semibold text-slate-800 dark:text-gray-100">{getLibraryQuestionTitle(question)}</span>{questionAlreadyAdded(question) && <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">Added</span>}<button type="button" onClick={(event) => { event.stopPropagation(); setStatementModal({ open: true, title: getLibraryQuestionTitle(question), statement: getFullQuestionStatement(question) }); }} className="shrink-0 text-[11px] font-semibold text-sky-600 hover:underline dark:text-sky-400">+ More</button></div>
+                      <div className="flex min-w-0 items-center gap-2"><span className="flex h-6 min-w-7 items-center justify-center rounded-md bg-white px-1.5 text-[10px] font-bold tabular-nums text-slate-500 shadow-sm dark:bg-gray-800 dark:text-gray-300">{getQuestionSerial(question, ((Number(questionPagination.page) - 1) * pageSize) + questionIndex + 1)}</span><span className="min-w-0 flex-1 truncate font-semibold text-slate-800 dark:text-gray-100">{getLibraryQuestionTitle(question)}</span>{questionAlreadyAdded(question) && <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">Added</span>}<button type="button" onClick={(event) => { event.stopPropagation(); setStatementModal({ open: true, title: getLibraryQuestionTitle(question), statement: getFullQuestionStatement(question) }); }} className="shrink-0 text-[11px] font-semibold text-sky-600 hover:underline dark:text-sky-400">+ More</button></div>
                       <div className="truncate text-xs font-semibold">{labelForQuestionType(question)}</div>
                       {visibleColumns.difficulty && <div><span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold dark:border-gray-700 dark:bg-gray-800">{question.difficulty || 'Not set'}</span></div>}
                       {visibleColumns.tags && <div className="flex min-w-0 gap-1 overflow-hidden">{(question.tags || []).slice(0, 2).map((tag) => <span key={`${question._id}-${tag}`} className="max-w-[90px] truncate rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] dark:border-gray-700 dark:bg-gray-800">{tag}</span>)}{(question.tags || []).length > 2 && <button type="button" onClick={(event) => { event.stopPropagation(); openTagsModal(question.questionText || 'Question', question.tags || []); }} className="shrink-0 rounded-full border border-sky-200 bg-white px-2 py-0.5 text-[10px] font-bold text-sky-700 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300">+{question.tags.length - 2}</button>}</div>}
@@ -1443,7 +1453,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                 <div className="min-w-0">
                   <div className="flex min-w-0 items-center gap-1.5 font-semibold text-slate-800 dark:text-gray-100">
                     <span className="flex h-6 min-w-7 shrink-0 items-center justify-center rounded-md bg-slate-100 px-1.5 text-[11px] font-bold tabular-nums text-slate-500 dark:bg-gray-800 dark:text-gray-300">
-                      {(page - 1) * pageSize + questionIndex + 1}
+                      {getQuestionSerial(question, (page - 1) * pageSize + questionIndex + 1)}
                     </span>
                     {isPassageSet(question) && <BookOpenText className="h-4 w-4 shrink-0 text-sky-600" />}
                     <span className="min-w-0 max-w-[calc(100%-3.25rem)] truncate leading-5">{getLibraryQuestionTitle(question)}</span>

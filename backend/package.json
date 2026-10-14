@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "node --env-file=.env --watch src/server.js",
     "start": "node --env-file=.env src/server.js",
+    "start:local-repair": "node --env-file=.env --env-file=.env.local-repair src/server.js",
     "worker:compiler": "node --env-file=.env src/workers/compiler.worker.js",
     "worker:assessment": "node --env-file=.env src/workers/assessment.worker.js",
     "worker:maintenance": "node --env-file=.env src/workers/maintenance.worker.js",
@@ -18,7 +19,10 @@
     "migrate:student-engagement": "node --env-file=.env src/migrations/create-student-engagement-indexes.js",
     "migrate:coding-taxonomy": "node --env-file=.env src/migrations/backfill-coding-taxonomy.js",
     "sync:leetcode-images": "node --env-file=.env scripts/syncLeetCodeProblemImages.js",
+    "sync:leetcode-sequence": "node --env-file=.env scripts/syncLeetCodeQuestionSequence.js",
     "import:hf-leetcode-drafts": "node --env-file=.env scripts/importHuggingFaceLeetCodeDrafts.js",
+    "repair:leetcode-draft-content": "node --env-file=.env scripts/repairImportedDraftContent.js",
+    "repair:merge-exact-problem-duplicates": "node --env-file=.env scripts/mergeExactDuplicateProblems.js",
     "migrate:published-coding-questions": "node --env-file=.env scripts/migratePublishedCodingQuestions.js",
     "audit:external-source-coverage": "node --env-file=.env scripts/auditExternalSourceCoverage.js",
     "lint": "echo 'No linter configured'",

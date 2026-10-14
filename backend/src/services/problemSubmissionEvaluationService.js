@@ -10,6 +10,13 @@ import { sqlOutputsEquivalent } from './sqlOutputEquivalenceService.js';
 import { parseFunctionTestInput } from './functionTestInputService.js';
 import { acceptsEquivalentStatefulOutput } from './statefulOutputEquivalenceService.js';
 import { acceptsEquivalentNodeCollectionOutput } from './nodeCollectionOutputEquivalenceService.js';
+import { acceptsSpecialGridCompactOutput } from './specialGridCompactRunnerService.js';
+import { acceptsCodecRoundTripOutput } from './codecRoundTripRunnerService.js';
+import { acceptsMiniParserOutput } from './miniParserProvidedRunnerService.js';
+import { acceptsTinyUrlRoundTripOutput } from './tinyUrlRoundTripRunnerService.js';
+import { acceptsPendingProvidedOutput } from './pendingProvidedApiRunnerService.js';
+import { acceptsStandaloneProvidedOutput } from './standaloneProvidedApiRunnerService.js';
+import { acceptsLinkedListRewireOutput } from './linkedListRewireRunnerService.js';
 
 // Use the same problem contract for publication and learner submissions.
 export function evaluateProblemSubmissionResult(problem, result, testCase) {
@@ -23,6 +30,20 @@ export function evaluateProblemSubmissionResult(problem, result, testCase) {
   if(providedOutput!==undefined)return {...evaluation,verdict:providedOutput?'Accepted':'Wrong Answer',internalStatus:providedOutput?'AC':'WA'};
   const read4Output=acceptsRead4Output(problem,testCase,result.stdout);
   if(read4Output!==undefined)return {...evaluation,verdict:read4Output?'Accepted':'Wrong Answer',internalStatus:read4Output?'AC':'WA'};
+  const compactGridOutput=acceptsSpecialGridCompactOutput(problem,testCase,result.stdout);
+  if(compactGridOutput!==null)return {...evaluation,verdict:compactGridOutput?'Accepted':'Wrong Answer',internalStatus:compactGridOutput?'AC':'WA'};
+  const codecOutput=acceptsCodecRoundTripOutput(problem,testCase,result.stdout);
+  if(codecOutput!==null)return {...evaluation,verdict:codecOutput?'Accepted':'Wrong Answer',internalStatus:codecOutput?'AC':'WA'};
+  const miniParserOutput=acceptsMiniParserOutput(problem,testCase,result.stdout);
+  if(miniParserOutput!==null)return {...evaluation,verdict:miniParserOutput?'Accepted':'Wrong Answer',internalStatus:miniParserOutput?'AC':'WA'};
+  const tinyUrlOutput=acceptsTinyUrlRoundTripOutput(problem,testCase,result.stdout);
+  if(tinyUrlOutput!==null)return {...evaluation,verdict:tinyUrlOutput?'Accepted':'Wrong Answer',internalStatus:tinyUrlOutput?'AC':'WA'};
+  const pendingProvidedOutput=acceptsPendingProvidedOutput(problem,testCase,result.stdout);
+  if(pendingProvidedOutput!==null)return {...evaluation,verdict:pendingProvidedOutput?'Accepted':'Wrong Answer',internalStatus:pendingProvidedOutput?'AC':'WA'};
+  const standaloneProvidedOutput=acceptsStandaloneProvidedOutput(problem,testCase,result.stdout);
+  if(standaloneProvidedOutput!==null)return {...evaluation,verdict:standaloneProvidedOutput?'Accepted':'Wrong Answer',internalStatus:standaloneProvidedOutput?'AC':'WA'};
+  const linkedListRewireOutput=acceptsLinkedListRewireOutput(problem,testCase,result.stdout);
+  if(linkedListRewireOutput!==undefined)return {...evaluation,verdict:linkedListRewireOutput?'Accepted':'Wrong Answer',internalStatus:linkedListRewireOutput?'AC':'WA'};
   let accepted = evaluation.internalStatus === 'AC';
   const tolerance = Number(problem?.functionContract?.absoluteTolerance || 0);
   const sourceNamedOutput = acceptsSourceNamedFlexibleOutput(problem, testCase, result.stdout);

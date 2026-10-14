@@ -18,6 +18,7 @@ import AssessmentSubmission from '../models/AssessmentSubmission.js';
 import { interviewReportOptions, interviewReportSummaries, saveInterviewReport } from './interviewQuestionReports.js';
 import { CENTRAL_QUESTION_FILTER } from './centralQuestions.js';
 import { publishedQuestDefinitions } from '../services/questService.js';
+import { acceptLogoUpload, logoStorage, removeStoredLogo, validateLogoFile } from './universityLogo.js';
 
 const router = Router();
 const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
@@ -51,6 +52,30 @@ function inspectionOrigin(value) {
   }
   return url.origin;
 }
+
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function contactEmail(value) {
+  const email = String(value ?? '').trim().toLowerCase();
+  if (email && (email.length > 254 || !emailPattern.test(email))) throw new HttpError(400, 'Enter a valid contact email');
+  return email;
+}
+
+function frontendUrl(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return '';
+  let url;
+  try { url = new URL(text); } catch { throw new HttpError(400, 'Frontend URL must be a full http(s) URL'); }
+  if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || text.length > 2048) throw new HttpError(400, 'Frontend URL must be a full http(s) URL');
+  return text;
+}
+
+function universityName(value) {
+  const name = String(value ?? '').trim();
+  if (name.length < 2 || name.length > 160) throw new HttpError(400, 'Name must be 2 to 160 characters');
+  return name;
+}
+
+const editableFields = { name: universityName, contactEmail, deploymentUrl: frontendUrl, apiUrl: inspectionOrigin };
 
 async function inspectUniversity(req, university, path) {
   if (!university.active || !university.apiUrl) throw new HttpError(503, 'University API is not configured or is disabled');
@@ -138,6 +163,8 @@ router.post('/admin/universities', masterOnly, asyncRoute(async (req, res) => {
   const universityId = String(req.body?.universityId || '').trim().toLowerCase();
   const name = String(req.body?.name || '').trim();
   if (!idPattern.test(universityId) || name.length < 2 || name.length > 160) throw new HttpError(400, 'Valid university ID and name are required');
+  // Validate every field before touching an archived registration with the same ID.
+  const details = { contactEmail: contactEmail(req.body?.contactEmail), deploymentUrl: frontendUrl(req.body?.deploymentUrl), apiUrl: inspectionOrigin(req.body?.apiUrl) };
   const previous = await University.findOne({ universityId });
   if (previous) {
     if (!previous.deletedAt) throw new HttpError(409, 'University ID already exists');
@@ -148,7 +175,7 @@ router.post('/admin/universities', masterOnly, asyncRoute(async (req, res) => {
   const defaults = await loadDefaults();
   const apiKey = crypto.randomBytes(32).toString('base64url');
   const defaultValues = defaults.toObject();
-  const university = await University.create({ universityId, name, contactEmail: req.body?.contactEmail, deploymentUrl: req.body?.deploymentUrl, apiUrl: inspectionOrigin(req.body?.apiUrl), apiKeyHash: keyHash(apiKey), permissions: defaultValues.permissions, sources: defaultValues.sources });
+  const university = await University.create({ universityId, name, ...details, apiKeyHash: keyHash(apiKey), permissions: defaultValues.permissions, sources: defaultValues.sources });
   await audit(req, 'university.created', universityId);
   res.status(201).json({ university: clean(university), apiKey });
 }));
@@ -156,8 +183,8 @@ router.post('/admin/universities', masterOnly, asyncRoute(async (req, res) => {
 router.patch('/admin/universities/:id', masterOnly, asyncRoute(async (req, res) => {
   const university = await University.findOne({ universityId: req.params.id, deletedAt: null });
   if (!university) throw new HttpError(404, 'University not found');
-  for (const key of ['name', 'contactEmail', 'deploymentUrl', 'apiUrl']) {
-    if (req.body?.[key] !== undefined) university[key] = key === 'apiUrl' ? inspectionOrigin(req.body[key]) : String(req.body[key]).trim();
+  for (const [key, normalize] of Object.entries(editableFields)) {
+    if (req.body?.[key] !== undefined) university[key] = normalize(req.body[key]);
   }
   if (req.body?.active !== undefined) {
     if (typeof req.body.active !== 'boolean') throw new HttpError(400, 'active must be boolean');
@@ -176,7 +203,8 @@ router.patch('/admin/universities/:id', masterOnly, asyncRoute(async (req, res) 
     }
   }
   await university.save();
-  await audit(req, 'university.updated', university.universityId, { permissions: university.permissions, sources: university.sources, active: university.active });
+  await audit(req, 'university.updated', university.universityId, { permissions: university.permissions, sources: university.sources, active: university.active,
+    fields: Object.keys(editableFields).filter((key) => req.body?.[key] !== undefined) });
   res.json({ university: clean(university) });
 }));
 
@@ -186,6 +214,43 @@ router.post('/admin/universities/:id/rotate-key', masterOnly, asyncRoute(async (
   if (!university) throw new HttpError(404, 'University not found');
   await audit(req, 'university.key_rotated', req.params.id);
   res.json({ apiKey });
+}));
+
+// Logo upload: validated by magic bytes and dimensions, stored on Cloudinary, old image removed best-effort.
+router.post('/admin/universities/:id/logo', masterOnly, acceptLogoUpload, asyncRoute(async (req, res) => {
+  const existing = await University.findOne({ universityId: req.params.id, deletedAt: null }).select('universityId logo').lean();
+  if (!existing) throw new HttpError(404, 'University not found');
+  validateLogoFile(req.file);
+  if (!logoStorage.isConfigured()) throw new HttpError(503, 'Logo storage is not configured on this server.');
+  let stored;
+  try {
+    stored = await logoStorage.upload(req.file.buffer, { universityId: existing.universityId, publicId: `logo-${Date.now()}` });
+  } catch (error) {
+    console.error('[UniversityLogo] Upload failed', { universityId: existing.universityId, error: error?.message });
+    throw new HttpError(502, 'The logo could not be uploaded. Try again.');
+  }
+  const logo = { url: stored.url, publicId: stored.publicId, width: stored.width, height: stored.height, bytes: stored.bytes ?? req.file.size, format: stored.format, uploadedAt: new Date() };
+  // The pre-update document names exactly the logo this write replaced, even under concurrent uploads.
+  const previous = await University.findOneAndUpdate({ universityId: existing.universityId, deletedAt: null }, { $set: { logo } }, { new: false });
+  if (!previous) {
+    await removeStoredLogo(stored.publicId, 'university removed during upload');
+    throw new HttpError(404, 'University not found');
+  }
+  if (previous.logo?.publicId && previous.logo.publicId !== stored.publicId) await removeStoredLogo(previous.logo.publicId, 'replaced');
+  await audit(req, 'university.logo_updated', previous.universityId, { publicId: logo.publicId, replaced: previous.logo?.publicId || null, width: logo.width, height: logo.height, bytes: logo.bytes });
+  const university = await University.findById(previous._id);
+  if (!university) throw new HttpError(404, 'University not found');
+  res.json({ university: clean(university) });
+}));
+
+router.delete('/admin/universities/:id/logo', masterOnly, asyncRoute(async (req, res) => {
+  const previous = await University.findOneAndUpdate({ universityId: req.params.id, deletedAt: null }, { $unset: { logo: 1 } }, { new: false });
+  if (!previous) throw new HttpError(404, 'University not found');
+  await removeStoredLogo(previous.logo?.publicId, 'removed');
+  const university = await University.findById(previous._id);
+  if (!university) throw new HttpError(404, 'University not found');
+  if (previous.logo?.publicId) await audit(req, 'university.logo_removed', previous.universityId, { publicId: previous.logo.publicId });
+  res.json({ university: clean(university) });
 }));
 
 router.get('/admin/universities/:id/students', masterOnly, asyncRoute(async (req, res) => {
@@ -223,6 +288,7 @@ router.delete('/admin/universities/:id', masterOnly, asyncRoute(async (req, res)
   if (!university) throw new HttpError(404, 'University not found');
   await clearUniversityAssignments(university.universityId);
   await University.deleteOne({ _id: university._id });
+  await removeStoredLogo(university.logo?.publicId, 'university deleted');
   await audit(req, 'university.deleted', university.universityId, { registrationId: String(university._id) });
   res.json({ universityId: university.universityId, deleted: true });
 }));

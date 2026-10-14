@@ -100,6 +100,23 @@ test('does not relax arbitrary array, null, or nested ordering comparisons', () 
   assert.equal(acceptsEquivalentFunctionOutput(ordinary, { input: 'nums = []', output: '[[1, 2]]' }, '[[2, 1]]'), false);
 });
 
+test('garden coloring accepts every valid four-color assignment and rejects invalid arrays', () => {
+  const target = problem('gardenNoAdj', [{ name: 'n' }, { name: 'paths' }]);
+  const fixture = { input: 'n = 4, paths = [[1,2],[2,3],[3,4],[4,1]]', output: '[1,2,1,2]' };
+  assert.equal(acceptsEquivalentFunctionOutput(target, fixture, '[2,1,2,1]'), true);
+  assert.equal(acceptsEquivalentFunctionOutput(target, fixture, '[1,2,3,4]'), true);
+  for (const wrong of ['[1,1,2,2]', '[1,2,3]', '[1,2,3,5]', '[1,2,3,4.5]', 'null']) {
+    assert.equal(acceptsEquivalentFunctionOutput(target, fixture, wrong), false, wrong);
+  }
+});
+
+test('custom sort accepts any placement of unranked characters while preserving ranked order', () => {
+  const target=problem('customSortString',[{name:'order'},{name:'s'}],'string');
+  const fixture={input:'order = "cba", s = "abcd"',output:'cbad'};
+  for(const valid of ['cbad','dcba','cdba','cbda'])assert.equal(acceptsEquivalentFunctionOutput(target,fixture,valid),true,valid);
+  for(const wrong of ['abcd','cbaa','cbd','cbadx'])assert.equal(acceptsEquivalentFunctionOutput(target,fixture,wrong),false,wrong);
+});
+
 test('preserves ordered pairs while allowing outer order for palindrome pairs', () => {
   const pairs = problem('palindromePairs', [{ name: 'words' }], 'integer[][]');
   const testCase = { input: 'words = ["bat", "tab"]', output: '[[0, 1], [1, 0]]' };

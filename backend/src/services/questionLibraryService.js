@@ -526,7 +526,10 @@ export async function cleanupDraftQuestionsFromLibrary() {
 export function buildLibrarySearchMatch(search = '') {
   const terms = Array.from(new Set(tokenizeSearchValue(search))).slice(0, 8);
   if (!terms.length) return {};
-  return { searchPrefixes: { $all: terms } };
+  const normalized = String(search || '').trim();
+  const serialNumber = /^\d+$/.test(normalized) ? Number(normalized) : null;
+  if (!serialNumber) return { searchPrefixes: { $all: terms } };
+  return { displayOrder: serialNumber };
 }
 
 export function formatLibraryQuestionSummary(question = {}) {

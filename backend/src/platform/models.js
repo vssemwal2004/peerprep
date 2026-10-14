@@ -6,6 +6,19 @@ const universitySchema = new mongoose.Schema({
   contactEmail: { type: String, trim: true, lowercase: true },
   deploymentUrl: String,
   apiUrl: String,
+  // Stored on Cloudinary under peerprep/universities/<universityId>; absent until uploaded.
+  logo: {
+    type: new mongoose.Schema({
+      url: String,
+      publicId: String,
+      width: Number,
+      height: Number,
+      bytes: Number,
+      format: String,
+      uploadedAt: Date,
+    }, { _id: false }),
+    default: undefined,
+  },
   active: { type: Boolean, default: true },
   apiKeyHash: { type: String, required: true, select: false },
   permissions: {

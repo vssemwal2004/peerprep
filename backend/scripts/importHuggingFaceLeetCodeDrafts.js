@@ -14,6 +14,7 @@ import User from '../src/models/User.js';
 import { syncProblemToLibrary } from '../src/services/questionLibraryService.js';
 import { closeDb, connectDb } from '../src/utils/db.js';
 import { fetchVerifiedImage } from './lib/hf-content/fetchVerifiedImage.js';
+import { GENERIC_DRAFT_CONSTRAINTS, SAMPLE_FALLBACKS_BY_TITLE } from './lib/hf-content/draftFallbacks.js';
 import {
   attachUploadedImages,
   contentPublicationGate,
@@ -29,6 +30,10 @@ import {
 const PROVIDER = 'leetcode-dataset';
 const DATASET_VERSION = 'whiskwhite/leetcode-complete@2026-10-04';
 const DATASET_BASE = 'https://huggingface.co/datasets/whiskwhite/leetcode-complete/resolve/main';
+const LEETCODE_CA_URL = 'https://leetcode.ca/all/problems.html';
+const LEETCODE_CA_SUPPLEMENT_IDS = new Set([
+  '192', '193', '194', '195', '1114', '1115', '1116', '1117', '1188', '1195', '1226', '1242', '1279',
+]);
 const SPLITS = ['train', 'validation', 'test', 'unsolved'];
 const MAX_CONTENT_IMAGES = 20;
 const MAX_SAMPLE_IMAGES = 10;
@@ -123,7 +128,9 @@ function mapLanguageEntries(entries, codeField = 'code') {
 }
 
 async function loadSplit(split) {
-  const response = await fetch(`${DATASET_BASE}/${split}.jsonl`, { redirect: 'follow' });
+  const response = await fetch(`${DATASET_BASE}/${split}.jsonl`, {
+    headers: { 'user-agent': 'PeerPrep draft importer/1.0' }, redirect: 'follow',
+  });
   if (!response.ok || !response.body) throw new Error(`Unable to download ${split}: HTTP ${response.status}`);
   const rows = [];
   const lines = readline.createInterface({ input: Readable.fromWeb(response.body), crlfDelay: Infinity });
@@ -133,6 +140,72 @@ async function loadSplit(split) {
   return rows;
 }
 
+async function fetchText(url) {
+  const response = await fetch(url, {
+    headers: { 'user-agent': 'PeerPrep draft importer/1.0' },
+    redirect: 'follow',
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!response.ok) throw new Error(`Unable to download ${url}: HTTP ${response.status}`);
+  return response.text();
+}
+
+function decodeHtml(value) {
+  const named = { amp: '&', apos: "'", gt: '>', lt: '<', nbsp: ' ', quot: '"' };
+  return String(value || '').replace(/<[^>]+>/g, ' ')
+    .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, entity) => {
+      if (entity[0] !== '#') return named[entity.toLowerCase()] ?? match;
+      const radix = entity[1]?.toLowerCase() === 'x' ? 16 : 10;
+      const digits = radix === 16 ? entity.slice(2) : entity.slice(1);
+      const codePoint = Number.parseInt(digits, radix);
+      return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : match;
+    }).replace(/\s+/g, ' ').trim();
+}
+
+async function loadLeetCodeCaSupplements(existingRows) {
+  const knownTitles = new Set(existingRows.map((row) => normalizeTitle(row.title)));
+  const catalogHtml = await fetchText(LEETCODE_CA_URL);
+  const candidates = [...catalogHtml.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)].flatMap((match) => {
+    const block = match[1];
+    const idMatch = block.match(/<td[^>]*>\s*(\d+)\s*<\/td>/i);
+    const titleMatch = block.match(/<a\s+[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
+    const title = decodeHtml(titleMatch?.[2]);
+    if (!idMatch || !titleMatch || !LEETCODE_CA_SUPPLEMENT_IDS.has(String(idMatch[1])) || knownTitles.has(normalizeTitle(title))) return [];
+    return [{
+      id: String(idMatch[1]),
+      title,
+      url: new URL(titleMatch[1], LEETCODE_CA_URL).href,
+      premium: /\bPrime\b/i.test(block),
+    }];
+  });
+
+  return Promise.all(candidates.map(async (candidate) => {
+    const html = await fetchText(candidate.url);
+    const h1End = html.search(/<\/h1>/i);
+    const contentStart = h1End < 0 ? 0 : h1End + '</h1>'.length;
+    const remainder = html.slice(contentStart);
+    const difficultyOffset = remainder.search(/<h3[^>]*>\s*Difficulty\s*:/i);
+    const content = (difficultyOffset < 0 ? remainder : remainder.slice(0, difficultyOffset)).trim();
+    const difficulty = html.match(/<h3[^>]*>\s*Difficulty\s*:<\/h3>[\s\S]*?\b(Easy|Medium|Hard)\b/i)?.[1] || '';
+    return {
+      frontend_id: candidate.id,
+      id: candidate.id,
+      title: candidate.title,
+      title_slug: slugify(candidate.title),
+      url: candidate.url,
+      difficulty,
+      category: Number(candidate.id) >= 192 && Number(candidate.id) <= 195 ? 'Shell' : 'Algorithms',
+      content,
+      example_test_cases: '',
+      topic_tags: [],
+      code_snippets: [],
+      solutions: [],
+      is_paid_only: candidate.premium,
+      __split: 'leetcode-ca',
+    };
+  }));
+}
+
 async function loadDataset() {
   const splits = await Promise.all(SPLITS.map(loadSplit));
   const unique = new Map();
@@ -140,6 +213,11 @@ async function loadDataset() {
     const slug = String(row.title_slug || '').trim().toLowerCase();
     const key = slug || `id:${String(row.frontend_id || row.id || '')}`;
     if (!unique.has(key)) unique.set(key, row);
+  }
+  const supplements = await loadLeetCodeCaSupplements([...unique.values()]);
+  for (const row of supplements) {
+    const slug = String(row.title_slug || '').trim().toLowerCase();
+    if (!unique.has(slug)) unique.set(slug, row);
   }
   return [...unique.values()];
 }
@@ -223,6 +301,7 @@ function buildFaqs(contract, category) {
 
 function prepareCandidate(row) {
   const content = normalizeLeetCodeContent(row);
+  if (!String(content.constraints || '').trim()) content.constraints = GENERIC_DRAFT_CONSTRAINTS;
   const snippetMap = mapLanguageEntries(row.code_snippets, 'code');
   const solutionMap = mapLanguageEntries(row.solutions, 'typed_code');
   const isSql = content.category === 'SQL';
@@ -250,7 +329,10 @@ function prepareCandidate(row) {
       type: parameter.type || 'custom',
     })),
   };
-  const sampleTestCases = content.sampleTestCases
+  const normalizedSamples = content.sampleTestCases.length
+    ? content.sampleTestCases
+    : (SAMPLE_FALLBACKS_BY_TITLE[content.title] || []);
+  const sampleTestCases = normalizedSamples
     .filter((entry) => String(entry.input || '').trim() && String(entry.output || '').trim())
     .map((entry, index) => ({ ...entry, position: index + 1, kind: 'sample' }));
   const formats = buildFormats(functionContract, content.category);
@@ -385,7 +467,9 @@ function plainSampleImages(images) {
 }
 
 async function persistCandidate(candidate, context) {
-  const { adminId, classifications, displayOrder, session } = context;
+  const {
+    adminId, classifications, displayOrder, problemId, session,
+  } = context;
   const externalId = candidate.content.externalId;
   const externalSlug = candidate.content.slug;
   const existingRegistry = await ImportRegistry.findOne({ provider: PROVIDER, externalSlug }).session(session);
@@ -397,6 +481,7 @@ async function persistCandidate(candidate, context) {
 
   const tags = candidate.content.tags;
   const problem = new Problem({
+    ...(problemId ? { _id: problemId } : {}),
     title: candidate.content.title,
     displayOrder,
     description: candidate.content.description,
@@ -537,6 +622,8 @@ async function main() {
     mongoose.connection.collection('question_import_registry').find({ provider: PROVIDER })
       .project({ externalId: 1, externalSlug: 1, problemId: 1, datasetVersion: 1, readiness: 1 }).toArray(),
   ]);
+  const topology = await mongoose.connection.db.admin().command({ hello: 1 });
+  const supportsTransactions = Boolean(topology.setName || topology.msg === 'isdbgrid');
   const knownTitles = new Set(problems.map((problem) => normalizeTitle(problem.title)));
   const knownSlugs = new Set(registryRows.map((entry) => String(entry.externalSlug || '').toLowerCase()));
   const registryByProblem = new Map(registryRows.map((entry) => [String(entry.problemId), entry]));
@@ -583,6 +670,7 @@ async function main() {
       && REQUIRED_LANGUAGES.every((language) => entry.codeTemplates[language])).length,
     withImages: candidates.filter((entry) => entry.content.imageCandidates.length).length,
     readyForPublication: 0,
+    transactionMode: supportsTransactions ? 'transactional' : 'standalone-with-compensation',
     invariant: 'Every created record is draft/private/unvalidated; public samples are never inserted as hidden tests.',
   };
   console.log(JSON.stringify(survey, null, 2));
@@ -618,21 +706,39 @@ async function main() {
 
   await mapConcurrent(candidates, options.concurrency, async (baseCandidate, index) => {
     let candidate = baseCandidate;
+    const attemptedProblemId = options.repairImages ? null : new mongoose.Types.ObjectId();
     try {
       if (options.mirrorImages) candidate = await mirrorCandidateImages(candidate, imageCache);
       const session = await mongoose.startSession();
       let result;
       try {
-        await session.withTransaction(async () => {
+        const persist = async () => {
           result = options.repairImages
             ? await persistImageRepair(candidate, registryBySlug.get(candidate.content.slug), session)
             : await persistCandidate(candidate, {
               adminId: admin._id,
               classifications,
               displayOrder: maxDisplayOrder + index + 1,
+              problemId: attemptedProblemId,
               session,
             });
-        });
+        };
+        if (supportsTransactions) {
+          await session.withTransaction(persist);
+        } else {
+          try {
+            await persist();
+          } catch (error) {
+            if (attemptedProblemId) {
+              await Promise.all([
+                TestCase.deleteMany({ problem: attemptedProblemId }),
+                ImportRegistry.deleteMany({ problemId: attemptedProblemId }),
+                Problem.deleteOne({ _id: attemptedProblemId }),
+              ]);
+            }
+            throw error;
+          }
+        }
       } finally {
         await session.endSession();
       }

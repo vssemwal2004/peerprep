@@ -16,6 +16,38 @@ export function mapCodeTemplates(codeTemplates) {
   }, {});
 }
 
+export function serializeEditorialMeta(meta) {
+  if (!meta || typeof meta !== 'object') return null;
+  const reviewedAt = meta.reviewedAt ? new Date(meta.reviewedAt) : null;
+  return {
+    format: String(meta.format || 'md-v2'),
+    version: Number(meta.version || 1),
+    source: String(meta.source || ''),
+    license: String(meta.license || ''),
+    attributionUrl: String(meta.attributionUrl || ''),
+    generatedBy: String(meta.generatedBy || ''),
+    reviewedAt: reviewedAt && !Number.isNaN(reviewedAt.getTime()) ? reviewedAt.toISOString() : null,
+    checks: Array.isArray(meta.checks) ? meta.checks.map((check) => String(check)) : [],
+  };
+}
+
+// Validated reference solutions shown under the editorial "Implementation" section.
+// Only languages listed in validatedLanguages are exposed; execution harnesses and
+// hidden tests are never part of this payload.
+export function buildEditorialSolutions(problem) {
+  const validated = new Set(
+    (Array.isArray(problem?.validatedLanguages) ? problem.validatedLanguages : [])
+      .map((language) => String(language || '').trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const solutions = mapCodeTemplates(problem?.referenceSolutions);
+  return Object.entries(solutions).reduce((acc, [language, code]) => {
+    const key = String(language || '').trim().toLowerCase();
+    if (validated.has(key) && typeof code === 'string' && code.trim()) acc[key] = code;
+    return acc;
+  }, {});
+}
+
 export function serializeProblem(
   problem,
   {
@@ -26,6 +58,9 @@ export function serializeProblem(
     includeHiddenTestCases = false,
     includeReferenceSolutions = false,
     includeExecutionHarnesses = false,
+    // List payloads pass includeEditorial: false so editorials only reach the detail page.
+    includeEditorial = true,
+    includeEditorialSolutions = false,
     studentStatus = null,
   } = {},
 ) {
@@ -88,7 +123,12 @@ export function serializeProblem(
     inputFormat: problem.inputFormat || '',
     outputFormat: problem.outputFormat || '',
     constraints: problem.constraints || '',
-    editorial: problem.editorial || '',
+    editorial: includeEditorial ? (problem.editorial || '') : undefined,
+    editorialMeta: includeEditorial ? serializeEditorialMeta(problem.editorialMeta) : undefined,
+    // Solutions are only exposed alongside an editorial (they render inside it).
+    editorialSolutions: includeEditorial && includeEditorialSolutions
+      ? (String(problem.editorial || '').trim() ? buildEditorialSolutions(problem) : {})
+      : undefined,
     hints: Array.isArray(problem.hints) ? problem.hints.filter((hint) => String(hint || '').trim()).slice(0, 10) : [],
     faqs: Array.isArray(problem.faqs)
       ? problem.faqs

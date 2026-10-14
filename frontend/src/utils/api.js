@@ -399,6 +399,12 @@ export const api = {
   updateUniversity: (id, body) => request(`/platform/admin/universities/${encodeURIComponent(id)}`, { method: 'PATCH', body }),
   deleteUniversity: (id) => request(`/platform/admin/universities/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   rotateUniversityKey: (id) => request(`/platform/admin/universities/${encodeURIComponent(id)}/rotate-key`, { method: 'POST' }),
+  uploadUniversityLogo: (id, file) => {
+    const formData = new FormData();
+    formData.append('logo', file);
+    return request(`/platform/admin/universities/${encodeURIComponent(id)}/logo`, { method: 'POST', formData, timeoutMs: 60 * 1000 });
+  },
+  deleteUniversityLogo: (id) => request(`/platform/admin/universities/${encodeURIComponent(id)}/logo`, { method: 'DELETE' }),
   publishPlatformContent: (kind, id, body) => request(`/platform/admin/publications/${kind}/${encodeURIComponent(id)}`, { method: 'PUT', body }),
   universityPolicy: () => request('/platform/university/policy', { skipCache: true }),
   aiInterviewRequest: (path = '', options = {}) => request(`/ai-interviews${path}`, { ...options, skipCache: true, skipDedupe: true }),

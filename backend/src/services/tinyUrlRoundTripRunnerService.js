@@ -1,0 +1,15 @@
+import { buildFunctionInputPayload } from './functionTestInputService.js';
+
+export const TINY_URL_ID='6ace186b6ca3216598bee8d8';
+export function isTinyUrlRoundTripProblem(problem){const c=problem?.functionContract;return String(problem?._id||'')===TINY_URL_ID&&problem?.title==='Encode and Decode TinyURL'&&problem?.executionMode==='function'&&c?.className==='Codec'&&c?.methodName==='encode'&&c?.parameters?.length===1&&c.parameters[0]?.name==='longUrl'&&c.parameters[0]?.type==='string'&&c.returnType==='string';}
+export function validateTinyUrlFixture(problem,input){if(!isTinyUrlRoundTripProblem(problem))throw Error('Unsupported TinyURL contract.');const[url]=buildFunctionInputPayload(input,problem.functionContract).args;if(typeof url!=='string'||url.length<1||url.length>10000)throw Error('TinyURL fixture requires a 1..10000 character URL string.');const companion=(url.length>9950?url.slice(0,9950):url)+'#peerprep-second';if(companion===url)throw Error('TinyURL companion must differ.');return{url,companion};}
+export function acceptsTinyUrlRoundTripOutput(problem,testCase,raw){if(!isTinyUrlRoundTripProblem(problem))return null;try{validateTinyUrlFixture(problem,testCase.input);return String(raw).trim()==='true';}catch{return false;}}
+const q=value=>JSON.stringify(value);
+const runners={
+ python:(s,a,b)=>`import json\n${s}\nc=Codec();a=${q(a)};b=${q(b)};x=c.encode(a);y=c.encode(b);print(json.dumps(bool(x and y and x!=a and y!=b and x!=y and c.decode(x)==a and c.decode(y)==b)))`,
+ cpp:(s,a,b)=>`#include <bits/stdc++.h>\nusing namespace std;${s}\nint main(){Solution c;string a=${q(a)},b=${q(b)},x=c.encode(a),y=c.encode(b);cout<<((!x.empty()&&!y.empty()&&x!=a&&y!=b&&x!=y&&c.decode(x)==a&&c.decode(y)==b)?"true":"false");}`,
+ c:(s,a,b)=>`#include <stdio.h>\n#include <stdbool.h>\n#include <string.h>\n#include <stdlib.h>\n${s}\nint main(){char a[]=${q(a)},b[]=${q(b)};char*x=encode(a),*y=encode(b);bool ok=x&&y&&*x&&*y&&strcmp(x,a)&&strcmp(y,b)&&strcmp(x,y)&&!strcmp(decode(x),a)&&!strcmp(decode(y),b);printf(ok?"true":"false");}`,
+ java:(s,a,b)=>`import java.util.*;${s.replace(/public\s+class\s+Codec/,'class Codec')}class Main{public static void main(String[]z){Codec c=new Codec();String a=${q(a)},b=${q(b)},x=c.encode(a),y=c.encode(b);System.out.print(x!=null&&y!=null&&!x.isEmpty()&&!y.isEmpty()&&!x.equals(a)&&!y.equals(b)&&!x.equals(y)&&c.decode(x).equals(a)&&c.decode(y).equals(b));}}`,
+ javascript:(s,a,b)=>`${s}\nconst a=${q(a)},b=${q(b)},x=encode(a),y=encode(b);console.log(Boolean(x&&y&&x!==a&&y!==b&&x!==y&&decode(x)===a&&decode(y)===b));`,
+ typescript:(s,a,b)=>`${s}\nconst a:string=${q(a)},b:string=${q(b)},x:string=encode(a),y:string=encode(b);console.log(Boolean(x&&y&&x!==a&&y!==b&&x!==y&&decode(x)===a&&decode(y)===b));`};
+export function prepareTinyUrlRoundTripSource(language,problem,source,input){const f=validateTinyUrlFixture(problem,input),runner=runners[String(language).toLowerCase()];if(!runner)throw Error('Unsupported TinyURL language.');return runner(String(source),f.url,f.companion);}

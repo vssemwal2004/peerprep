@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {spawnSync} from 'node:child_process';
+import {prepareFunctionSourceForExecution} from '../src/services/functionProblemAdapterService.js';
+
+const expression={_id:'6ace186f6ca3216598beea52',title:'Design an Expression Tree With Evaluate Function',executionMode:'function',functionContract:{kind:'stateful',className:'TreeBuilder',methodName:'buildTree',parameters:[],returnType:'void',outputMode:'return',outputParameterIndex:0,constructorParameters:[],operations:[{methodName:'buildTree',parameters:[{name:'postfix',type:'string[]'}],returnType:'integer',cFunctionName:'treeBuilderBuildTree'}],cConstructorName:'treeBuilderCreate',cDestructorName:'',absoluteTolerance:0}};
+const changeRoot={_id:'6ace186f6ca3216598beea65',title:'Change the Root of a Binary Tree',executionMode:'function',functionContract:{kind:'function',className:'Solution',methodName:'flipBinaryTree',parameters:[{name:'root',type:'custom'},{name:'leaf',type:'custom'}],returnType:'custom',outputMode:'return'}};
+const expressionReference=`abstract class Node{abstract evaluate():number;}class ExprNode extends Node{constructor(private token:string,private left:Node|null=null,private right:Node|null=null){super();}evaluate():number{if(!this.left)return Number(this.token);const a=this.left.evaluate(),b=this.right!.evaluate();if(this.token==='+')return a+b;if(this.token==='-')return a-b;if(this.token==='*')return a*b;return Math.trunc(a/b);}}class TreeBuilder{buildTree(postfix:string[]):Node{const s:Node[]=[];for(const t of postfix){if(t.length===1&&'+-*/'.includes(t)){const r=s.pop()!,l=s.pop()!;s.push(new ExprNode(t,l,r));}else s.push(new ExprNode(t));}return s.pop()!;}}`;
+const changeRootReference=`function flipBinaryTree(root:Node,leaf:Node):Node{let cur:Node=leaf,parent:Node|null=cur.parent;while(parent!==null){const grand:Node|null=parent.parent;if(cur.left!==null)cur.right=cur.left;cur.left=parent;parent.parent=cur;if(parent.left===cur)parent.left=null;else parent.right=null;cur=parent;parent=grand;}leaf.parent=null;return leaf;}`;
+const tsc=fileURLToPath(new URL('../node_modules/typescript/bin/tsc',import.meta.url));
+function compileAndRun(label,source,renamed){assert.match(source,new RegExp(`class ${renamed}\\b`));assert.doesNotMatch(source,/\b(?:abstract\s+)?class\s+Node\b/);const directory=fs.mkdtempSync(path.join(os.tmpdir(),`peerprep-${label}-tsc-`)),input=path.join(directory,'main.ts'),output=path.join(directory,'main.js');fs.writeFileSync(input,source);const compile=spawnSync(process.execPath,[tsc,input,'--target','ES2019','--module','none','--skipLibCheck','true','--outFile',output],{encoding:'utf8',windowsHide:true});assert.equal(compile.status,0,compile.stderr||compile.stdout);const run=spawnSync(process.execPath,[output],{encoding:'utf8',windowsHide:true});assert.equal(run.status,0,run.stderr);assert.match(run.stdout,/"verified":true/);}
+
+test('expression-tree private runner renames learner Node before legacy tsc',()=>{const input='["TreeBuilder","buildTree"]\n[[],[["3","4","+","2","*","7","/"]]]';compileAndRun('expression-node',prepareFunctionSourceForExecution(expression,'typescript',expressionReference,input),'PPExpressionNode');});
+test('change-root private runner renames learner Node before legacy tsc',()=>{compileAndRun('change-root-node',prepareFunctionSourceForExecution(changeRoot,'typescript',changeRootReference,'root = [1,2,3,4,5], leaf = 4'),'PPChangeRootNode');});

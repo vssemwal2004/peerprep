@@ -1098,6 +1098,7 @@ async function loadProblemShape(
     includeHiddenTestCases = false,
     includeReferenceSolutions = false,
     includeExecutionHarnesses = false,
+    includeEditorialSolutions = false,
     problemDocument = null,
   } = {},
 ) {
@@ -1155,6 +1156,7 @@ async function loadProblemShape(
       includeHiddenTestCases,
       includeReferenceSolutions,
       includeExecutionHarnesses,
+      includeEditorialSolutions,
       studentStatus,
     }),
   };
@@ -1403,9 +1405,11 @@ export async function listProblems(req, res) {
 
   if (search) {
     const regex = new RegExp(search, 'i');
+    const serialNumber = /^\d+$/.test(search) ? Number(search) : null;
     query.$and = [
       {
         $or: [
+          ...(serialNumber ? [{ displayOrder: serialNumber }] : []),
           { title: regex },
           { tags: regex },
           { companyTags: regex },
@@ -1439,8 +1443,10 @@ export async function listProblems(req, res) {
       { $sort: { difficultySortRank: sortOrder, title: 1, updatedAt: -1 } },
       { $skip: (page - 1) * limit },
       { $limit: limit },
+      { $project: { editorial: 0, editorialMeta: 0 } },
     ])
     : Problem.find(query)
+      .select('-editorial -editorialMeta')
       .sort(sortMap[sortBy] || sortMap.updatedAt)
       .skip((page - 1) * limit)
       .limit(limit)
@@ -1488,6 +1494,7 @@ export async function listProblems(req, res) {
   res.json({
     problems: problems.map((problem) => serializeProblem(problem, {
       studentStatus: problem.studentStatus || null,
+      includeEditorial: false,
     })),
     pagination: {
       page,
@@ -1563,6 +1570,8 @@ export async function getProblemDetail(req, res) {
     includeHiddenTestCases: !!isAuthor && !previewOnly,
     includeReferenceSolutions: !!isAuthor && !previewOnly,
     includeExecutionHarnesses: !!isAuthor && !previewOnly,
+    // Detail page only: validated reference solutions for the editorial Implementation tabs.
+    includeEditorialSolutions: true,
     problemDocument: problemDoc,
   });
 
@@ -1583,8 +1592,15 @@ export async function createProblem(req, res) {
     throw new HttpError(400, 'Preview testing is required before publishing a problem.');
   }
 
+  // Imported LeetCode questions keep their fixed external serial numbers.
+  // New admin-authored questions always continue after the highest number in
+  // the current catalogue instead of falling back to the schema sentinel.
+  const lastProblem = await Problem.findOne({}).sort({ displayOrder: -1 }).select('displayOrder').lean();
+  const nextDisplayOrder = Math.max(0, Number(lastProblem?.displayOrder || 0)) + 1;
+
   const problem = await Problem.create({
     ...payload.problem,
+    displayOrder: nextDisplayOrder,
     previewValidated: false,
     previewTested: false,
     validatedLanguages: [],
