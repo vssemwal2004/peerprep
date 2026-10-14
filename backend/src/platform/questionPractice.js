@@ -16,6 +16,7 @@ import { isUniversity } from './deployment.js';
 import { universityPolicy, controlRequest } from './client.js';
 import { serializeProblem } from '../controllers/compilerHelpers.js';
 import { interviewReportOptions, interviewReportSummaries, reporterKey, saveInterviewReport } from './interviewQuestionReports.js';
+import { questionQuickPreps } from '../services/questService.js';
 
 const router = Router();
 const published = { status: 'published', visibility: { $ne: 'private' }, sourceType: { $ne: 'assessment' } };
@@ -251,15 +252,16 @@ router.get('/shared/:id/problem', asyncRoute(async (req, res) => {
   if (question.questionType !== 'coding') throw new HttpError(404, 'Coding problem not found');
   const snapshot = question.questionData?.problemDataSnapshot || question.questionData?.coding?.problemData;
   if (!snapshot) throw new HttpError(404, 'Coding problem details unavailable');
-  const [totalSubmissions, acceptedSubmissions, solved] = await Promise.all([
+  const [totalSubmissions, acceptedSubmissions, solved, quickPreps] = await Promise.all([
     QuestionPracticeAttempt.countDocuments({ source: 'shared', questionId: question._id, questionType: 'coding' }),
     QuestionPracticeAttempt.countDocuments({ source: 'shared', questionId: question._id, questionType: 'coding', result: 'correct' }),
     QuestionPracticeAttempt.exists({ studentId: req.user._id, source: 'shared', questionId: question._id,
       questionType: 'coding', result: 'correct' }),
+    questionQuickPreps(req.user, 'shared', question._id),
   ]);
   res.json({ ...serializeProblem({ ...snapshot, _id: question._id, status: 'published', visibility: 'public' },
     { sampleTestCases: snapshot.sampleTestCases || [], includeEditorialSolutions: true }), platformShared: true,
-  studentStatus: solved ? 'Solved' : 'Unsolved', totalSubmissions, acceptedSubmissions,
+  studentStatus: solved ? 'Solved' : 'Unsolved', totalSubmissions, acceptedSubmissions, quickPreps,
   acceptanceRate: totalSubmissions ? Number((acceptedSubmissions * 100 / totalSubmissions).toFixed(1)) : 0 });
 }));
 

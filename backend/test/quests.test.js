@@ -11,6 +11,7 @@ import { adaptiveModels, EngagementReward, Quest, QuestEnrollment, StudentBadge 
 import {
   createQuest, getStudentQuest, latestQuestResume, listAdminQuests, listStudentQuests, recordQuestView, removeQuest,
   searchQuestLibrary, slugify, startQuest, updateQuest, questTaxonomy, addQuestItems, addQuestLibraryItems, duplicateQuest, questInsights, questOverview,
+  questionQuickPreps,
 } from '../src/services/questService.js';
 import { refreshAdaptiveEngagement, engagementScope } from '../src/services/adaptiveEngagementService.js';
 
@@ -86,6 +87,22 @@ test('students see only published quests for their semester, with real progress'
   assert.deepEqual(detail.items.map((entry) => [entry.title, entry.status, entry.section]), [['Two Sum', 'solved', 'Warm up'], ['Valid Anagram', 'none', 'Warm up'], ['LRU Cache', 'none', 'Design']]);
   assert.match(detail.items[0].href, /\?quest=amazon-top-3$/, 'Questions open inside the quest');
   await assert.rejects(getStudentQuest(student, 'draft-quest', at), /not found/);
+});
+
+test('question details can list every visible QuickPrep containing the question', async () => {
+  const first = await publish();
+  const second = await createQuest(admin, undefined, { title: 'Third semester sprint', status: 'published', semesters: [3], items: [item(problems[0])] });
+  await createQuest(admin, undefined, { title: 'Hidden draft', status: 'draft', items: [item(problems[0])] });
+  await createQuest(admin, undefined, { title: 'Final year only', status: 'published', semesters: [7], items: [item(problems[0])] });
+
+  const memberships = await questionQuickPreps(student, 'university', problems[0]._id);
+  assert.deepEqual(memberships.map((sheet) => sheet.title).sort(), ['Amazon Top 3', 'Third semester sprint']);
+  assert.deepEqual(memberships.map((sheet) => sheet.href).sort(), [
+    `/student/quickprep/${first.slug}`,
+    `/student/quickprep/${second.slug}`,
+  ].sort());
+  assert.deepEqual(await questionQuickPreps(student, 'university', problems[3]._id), []);
+  assert.deepEqual(await questionQuickPreps(student, 'unknown', problems[0]._id), []);
 });
 
 test('finishing every question completes the quest once: XP, badge, celebration, notification and the quest badge tier', async () => {

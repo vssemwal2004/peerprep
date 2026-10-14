@@ -545,7 +545,7 @@ function hydrateDefinition(quest) {
  * QuickPreps this student may see. University deployments read the super admin's central definitions;
  * standalone installs read their own. Semester targeting is the same either way.
  */
-async function visibleQuests(student, { slug, id } = {}) {
+async function visibleQuests(student, { slug, id, limit = 100 } = {}) {
   if (isUniversity()) {
     const semester = Number(student.semester) || 0;
     return ((await sharedQuests()) || []).filter((quest) => quest && mongoose.isObjectIdOrHexString(String(quest._id)))
@@ -554,10 +554,26 @@ async function visibleQuests(student, { slug, id } = {}) {
         && (!quest.semesters.length || (semester > 0 && quest.semesters.includes(semester)))
         && (!slug || quest.slug === slug) && (!id || String(quest._id) === String(id)))
       .sort((a, b) => (b.publishedAt?.getTime() || 0) - (a.publishedAt?.getTime() || 0) || String(b._id).localeCompare(String(a._id)))
-      .slice(0, 100);
+      .slice(0, limit);
   }
   return Quest.find({ ...visibleFilter(student), ...(slug ? { slug } : {}), ...(id ? { _id: id } : {}) })
-    .sort({ publishedAt: -1, _id: -1 }).limit(100).maxTimeMS(8000).lean();
+    .sort({ publishedAt: -1, _id: -1 }).limit(limit).maxTimeMS(8000).lean();
+}
+
+/** Published QuickPreps, visible to this student, that contain a coding question. */
+export async function questionQuickPreps(student, source, problemId) {
+  if (!['university', 'shared'].includes(source) || !mongoose.isValidObjectId(problemId)) return [];
+  const key = itemKey({ source, problemId: String(problemId) });
+  const quests = await visibleQuests(student, { limit: 300 });
+  return quests
+    .filter((quest) => (quest.items || []).some((item) => itemKey(item) === key))
+    .map((quest) => ({
+      id: String(quest._id),
+      slug: quest.slug,
+      title: quest.title,
+      theme: quest.theme,
+      href: `/student/quickprep/${quest.slug}`,
+    }));
 }
 
 /** Solved and attempted state for the given library keys, from verified submissions and attempts. */

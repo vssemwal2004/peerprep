@@ -23,6 +23,7 @@ import WorkspaceTimer from './WorkspaceTimer';
 import AcceptedCelebration from './celebration/AcceptedCelebration';
 import { mergeCompanyTags } from './celebration/companyMatch';
 import AnviApproach, { ANVI_ASK_EVENT, AnviMark } from '../components/AnviApproach';
+import QuickPrepMembership from './problems/QuickPrepMembership';
 import { DifficultyBadge, EmptyState, LoadingPanel } from '../admin/compiler/CompilerUi';
 import {
   formatDateTime,
@@ -401,6 +402,7 @@ function ProblemDescriptionPanel({ problem, language, verifiedCompanies }) {
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <DifficultyBadge difficulty={problem.difficulty} />
           <StudentProgressBadge status={problem.studentStatus || 'Unsolved'} />
+          <QuickPrepMembership key={problem._id} quickPreps={problem.quickPreps} />
           <button
             type="button"
             onClick={() => setActiveMetaPanel((current) => current === 'topics' ? '' : 'topics')}

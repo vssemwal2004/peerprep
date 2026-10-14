@@ -16,6 +16,7 @@ import { parseBulkCasePair } from '../utils/testcaseBulkParser.js';
 import { isTestcaseStorageEnabled, readTestcaseTextObject, uploadTestcaseTextObject } from '../utils/testcaseStorage.js';
 import { prepareFunctionSourceForExecution } from '../services/functionProblemAdapterService.js';
 import { sqlStatementKinds } from '../services/sqlMutationContractService.js';
+import { questionQuickPreps } from '../services/questService.js';
 
 const STATUS_MAP = {
   draft: 'draft',
@@ -1580,7 +1581,10 @@ export async function getProblemDetail(req, res) {
     throw new HttpError(404, 'Problem not found.');
   }
 
-  res.json(serializedProblem);
+  const quickPreps = isStudentRequest(req)
+    ? await questionQuickPreps(req.user, 'university', req.params.id)
+    : undefined;
+  res.json({ ...serializedProblem, ...(quickPreps ? { quickPreps } : {}) });
 }
 
 export async function createProblem(req, res) {
