@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, Code2, Download, FileSpreadsheet, Trash2, Upload } from 'lucide-react';
+import { ChevronDown, ChevronUp, Code2, Download, FileSpreadsheet, Image as ImageIcon, Trash2, Upload } from 'lucide-react';
 import QuestionBuilder from './QuestionBuilder';
 import { getLanguageLabel, getProblemSupportedLanguages } from '../../compiler/compilerUtils';
 
@@ -587,6 +587,12 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
                   <div key={`${question.questionId}-sample-${idx}`} className="rounded-xl border border-slate-200 bg-white p-2 text-xs text-slate-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300">
                     <div>Input: {testCase.input || '-'}</div>
                     <div className="mt-1">Output: {testCase.output || '-'}</div>
+                    {Array.isArray(testCase.images) && testCase.images.length ? (
+                      <span className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300">
+                        <ImageIcon className="h-3 w-3" aria-hidden="true" />
+                        {testCase.images.length} image{testCase.images.length === 1 ? '' : 's'}
+                      </span>
+                    ) : null}
                   </div>
                 ))
               ) : (
