@@ -85,7 +85,7 @@ test('students see only published quests for their semester, with real progress'
   assert.deepEqual(amazon.difficulty, { Easy: 2, Medium: 0, Hard: 1 });
   const detail = (await getStudentQuest(student, amazon.slug, at)).quest;
   assert.deepEqual(detail.items.map((entry) => [entry.title, entry.status, entry.section]), [['Two Sum', 'solved', 'Warm up'], ['Valid Anagram', 'none', 'Warm up'], ['LRU Cache', 'none', 'Design']]);
-  assert.match(detail.items[0].href, /\?quest=amazon-top-3$/, 'Questions open inside the quest');
+  assert.match(detail.items[0].href, /\?quest=amazon-top-3&item=coding%3Alocal%3A[0-9a-f]{24}$/, 'Questions open inside the quest, naming the item');
   await assert.rejects(getStudentQuest(student, 'draft-quest', at), /not found/);
 });
 
@@ -151,7 +151,7 @@ test('opening a quest question is remembered for the dashboard and only accepts 
   assert.equal(resume.type, 'quest');
   assert.equal(resume.title, 'Amazon Top 3');
   assert.equal(resume.lastProblemTitle, 'Valid Anagram');
-  assert.equal(resume.href, `/problems/${problems[1]._id}?quest=amazon-top-3`);
+  assert.equal(resume.href, `/problems/${problems[1]._id}?quest=amazon-top-3&item=${encodeURIComponent(`coding:local:${problems[1]._id}`)}`);
   assert.deepEqual([resume.solved, resume.total], [0, 3]);
   assert.ok((await getStudentQuest(student, quest.slug, at)).quest.started, 'Opening a question starts the quest');
 });

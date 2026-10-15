@@ -38,7 +38,7 @@ function DetailBlock({ title, children }) {
   );
 }
 
-function AssessmentCodingProblemPanel({ question, codingData = {}, marks = 0, sectionLabel = 'Coding' }) {
+function AssessmentCodingProblemPanel({ question, codingData = {}, marks = 0, sectionLabel = 'Coding', watermark = null }) {
   const isSql = codingData.category === 'SQL';
   const examples = useMemo(() => normalizeVisibleExamples(codingData), [codingData]);
   const title = question?.questionText || codingData.title || (isSql ? 'SQL problem' : 'Coding problem');
@@ -89,7 +89,7 @@ function AssessmentCodingProblemPanel({ question, codingData = {}, marks = 0, se
             ) : (
               <p className="text-sm text-slate-500 dark:text-gray-400">No problem statement was provided.</p>
             )}
-            <ProblemAssetImages images={(codingData.contentImages || []).filter((image) => image.section !== 'constraints')} className="mt-4" label="Problem" allowOpenOriginal={false} />
+            <ProblemAssetImages images={(codingData.contentImages || []).filter((image) => image.section !== 'constraints')} className="mt-4" label="Problem" secure lightboxOverlay={watermark} />
           </section>
 
           {isSql ? <div className="space-y-5">
@@ -109,7 +109,7 @@ function AssessmentCodingProblemPanel({ question, codingData = {}, marks = 0, se
                 {examples.map((example, index) => (
                   <article key={example.id} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)] dark:border-gray-700 dark:bg-gray-900">
                     <div className="text-base font-semibold text-slate-900 dark:text-gray-100">Example {index + 1}:</div>
-                    {example.images.length ? <ProblemAssetImages images={example.images} variant="sample" label={`Example ${index + 1}`} allowOpenOriginal={false} /> : null}
+                    {example.images.length ? <ProblemAssetImages images={example.images} variant="sample" label={`Example ${index + 1}`} secure lightboxOverlay={watermark} /> : null}
                     <div className="space-y-3 rounded-lg bg-slate-50 px-4 py-3.5 font-mono text-[13px] leading-6 text-slate-800 dark:bg-gray-800 dark:text-gray-200">
                       <div>
                         <div className="font-sans text-sm font-semibold text-slate-900 dark:text-gray-100">{isSql ? 'Additional dataset SQL:' : 'Input:'}</div>
@@ -132,7 +132,7 @@ function AssessmentCodingProblemPanel({ question, codingData = {}, marks = 0, se
           <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)] dark:border-gray-700 dark:bg-gray-900">
             <h2 className="text-base font-semibold text-slate-900 dark:text-gray-100">{isSql ? 'Query rules' : 'Constraints'}</h2>
             {constraints.length ? <ul className="list-disc space-y-2 pl-6 font-mono text-[13px] leading-6 text-slate-800 marker:text-slate-600 dark:text-gray-200 dark:marker:text-gray-400">{constraints.map((constraint, index) => <li key={`${constraint}-${index}`} className="break-words pl-1">{constraint}</li>)}</ul> : <p className="text-sm text-slate-500 dark:text-gray-400">No additional constraints.</p>}
-            <ProblemAssetImages images={(codingData.contentImages || []).filter((image) => image.section === 'constraints')} label="Problem" allowOpenOriginal={false} />
+            <ProblemAssetImages images={(codingData.contentImages || []).filter((image) => image.section === 'constraints')} label="Problem" secure lightboxOverlay={watermark} />
           </section>
 
         </div>

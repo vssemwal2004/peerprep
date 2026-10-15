@@ -6,6 +6,8 @@ export const focusRing = 'focus-visible:outline-none focus-visible:ring-2 focus-
 export const fieldBase = 'h-10 rounded-xl border border-[#e4e7ec] bg-white text-[13px] text-slate-800 outline-none transition-colors placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-white/10 dark:bg-[#1f1f21] dark:text-zinc-100 dark:focus:border-sky-500/60 dark:focus:ring-sky-500/15';
 
 export const DIFFICULTY = DIFFICULTY_THEME;
+/** Rows per page offered under the question list; the first is the default. */
+export const PAGE_SIZE_OPTIONS = [25, 50, 100];
 
 export const QUESTION_TYPES = [
   { value: '', label: 'All types' },

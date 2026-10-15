@@ -66,16 +66,120 @@ export const publicShape = (question, source) => ({
     : [],
 });
 
-async function visibleQuestions() {
-  const [localResult, centralResult] = await Promise.allSettled([QuestionLibrary.find(published).lean(), sharedQuestions()]);
-  if (localResult.status === 'rejected') throw localResult.reason;
-  const local = localResult.value;
-  const central = centralResult.status === 'fulfilled' ? centralResult.value : [];
-  if (centralResult.status === 'rejected' && !local.length) throw centralResult.reason;
-  return { warning: centralResult.status === 'rejected' ? 'Shared questions are temporarily unavailable.' : '', questions: [
-    ...local.map((question) => ({ question, source: 'university' })),
-    ...(central || []).map((question) => ({ question, source: 'shared' })),
-  ] };
+// The list reads only these fields of a page's questions; a full library row carries its whole problem snapshot.
+const LIST_FIELDS = ['questionType', 'sourceProblemId', 'questionText', 'difficulty', 'tags', 'keywords', 'displayOrder',
+  'questionData.problemId', 'questionData.problemDataSnapshot.companyTags', 'questionData.problemDataSnapshot.description',
+  'questionData.problemDataSnapshot.supportedLanguages', 'questionData.coding.statement', 'questionData.coding.supportedLanguages',
+  'questionData.options', 'questionData.allowMultipleAnswers', 'questionData.libraryItemKind', 'questionData.passage',
+  'questionData.questions'].join(' ');
+const FACET_FIELDS = '_id tags keywords questionData.problemDataSnapshot.companyTags';
+const NO_ORDER = 2147483647;
+// The page offers 25, 50 or 100 rows; the coding workspace's problem navigator asks for 200.
+export const PRACTICE_LIST_MAX_LIMIT = 200;
+const FACET_CACHE_MS = 30_000;
+let facetCache = null;
+
+export function resetPracticeListCache() { facetCache = null; }
+
+const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const exactText = (value) => new RegExp(`^${escapeRegExp(value)}$`, 'i');
+const tagPattern = (words) => new RegExp(`^${words.map(escapeRegExp).join('[-_\\s]*')}`, 'i');
+const companyNames = (question) => question.keywords || question.questionData?.problemDataSnapshot?.companyTags || [];
+
+/**
+ * Reads the search box. '12' or '#12' is a question number (as in the admin library's serial search);
+ * '#two-pointers' matches a topic starting with "two pointers"; other words match title, topic or company text.
+ */
+export function parsePracticeSearch(raw) {
+  const value = String(raw || '').trim().slice(0, 100);
+  const serial = value.match(/^#?(\d{1,9})$/);
+  if (serial) return { serial: Number(serial[1]), tagTerms: [], text: '' };
+  const tokens = value.split(/\s+/).filter((token) => token && !/^#+$/.test(token));
+  return {
+    serial: null,
+    tagTerms: tokens.filter((token) => token.startsWith('#'))
+      .map((token) => token.replace(/^#+/, '').toLowerCase().split(/[-_]+/).filter(Boolean)),
+    text: tokens.filter((token) => !token.startsWith('#')).join(' ').toLowerCase(),
+  };
+}
+
+/** The same rules as practiceListFilter, for shared questions that arrive as an in-memory list. */
+export function matchesPracticeCriteria(question, reportedCompanies, criteria) {
+  const tags = (question.tags || []).map((value) => String(value).toLowerCase());
+  const companies = [...companyNames(question), ...reportedCompanies].map((value) => String(value).toLowerCase());
+  const { search } = criteria;
+  return (!criteria.type || question.questionType === criteria.type)
+    && (!criteria.difficulty || String(question.difficulty || '').toLowerCase() === criteria.difficulty)
+    && (!criteria.tags.length || criteria.tags.some((value) => tags.includes(value)))
+    && (!criteria.companies.length || criteria.companies.some((value) => companies.includes(value)))
+    && (!criteria.ids || criteria.ids.has(String(question._id)) || criteria.ids.has(String(question.sourceProblemId || '')))
+    && (search.serial == null || Number(question.displayOrder) === search.serial)
+    && search.tagTerms.every((words) => (question.tags || []).some((tag) => tagPattern(words).test(String(tag))))
+    && (!search.text || [question.questionText, ...tags, ...companies].some((value) => String(value || '').toLowerCase().includes(search.text)));
+}
+
+/** A Mongo filter for the published local library. reportedIds(test) lists questions whose reported company passes test. */
+export function practiceListFilter(criteria, reportedIds = () => []) {
+  const clauses = [];
+  const companyClause = (patterns, ids) => ({ $or: [
+    { keywords: { $in: patterns } },
+    { keywords: null, 'questionData.problemDataSnapshot.companyTags': { $in: patterns } },
+    ...(ids.length ? [{ _id: { $in: ids } }] : []),
+  ] });
+  if (criteria.type) clauses.push({ questionType: criteria.type });
+  if (criteria.difficulty) clauses.push({ difficulty: exactText(criteria.difficulty) });
+  if (criteria.tags.length) clauses.push({ tags: { $in: criteria.tags.map(exactText) } });
+  if (criteria.companies.length) {
+    clauses.push(companyClause(criteria.companies.map(exactText), reportedIds((company) => criteria.companies.includes(company))));
+  }
+  if (criteria.ids) {
+    const objectIds = [...criteria.ids].filter((id) => mongoose.isValidObjectId(id)).map((id) => new mongoose.Types.ObjectId(id));
+    clauses.push({ $or: [{ _id: { $in: objectIds } }, { sourceProblemId: { $in: objectIds } }] });
+  }
+  const { search } = criteria;
+  if (search.serial != null) clauses.push({ displayOrder: search.serial });
+  for (const words of search.tagTerms) clauses.push({ tags: tagPattern(words) });
+  if (search.text) {
+    const pattern = new RegExp(escapeRegExp(search.text), 'i');
+    clauses.push({ $or: [{ questionText: pattern }, { tags: pattern },
+      ...companyClause([pattern], reportedIds((company) => company.includes(search.text))).$or] });
+  }
+  return clauses.length ? { ...published, $and: clauses } : { ...published };
+}
+
+// Sorting happens on a few projected fields, so Mongo never sorts whole library rows.
+const SORT_KEYS = {
+  title: { key: { $toLower: { $ifNull: ['$questionText', ''] } } },
+  difficulty: { key: { $switch: { branches: ['easy', 'medium', 'hard'].map((name, index) => ({
+    case: { $eq: [{ $toLower: { $ifNull: ['$difficulty', ''] } }, name] }, then: index + 1 })), default: 4 } } },
+  createdAt: { key: '$createdAt' },
+  updatedAt: { key: '$updatedAt' },
+};
+
+async function localPage(filter, sortBy, sortOrder, skip, limit) {
+  const sortKey = SORT_KEYS[sortBy];
+  const [result = {}] = await QuestionLibrary.aggregate([
+    { $match: filter },
+    { $project: { order: { $ifNull: ['$displayOrder', NO_ORDER] }, ...(sortKey ? { key: sortKey.key } : {}) } },
+    { $sort: sortKey ? { key: sortOrder, order: 1, _id: 1 } : { order: sortOrder, _id: 1 } },
+    { $facet: { rows: [{ $skip: skip }, { $limit: limit }, { $project: { _id: 1 } }], total: [{ $count: 'count' }] } },
+  ]);
+  return { ids: (result.rows || []).map((row) => row._id), total: result.total?.[0]?.count || 0 };
+}
+
+async function questionsByIds(ids) {
+  if (!ids.length) return [];
+  const rows = await QuestionLibrary.find({ _id: { $in: ids } }).select(LIST_FIELDS).lean();
+  const byId = new Map(rows.map((row) => [String(row._id), row]));
+  return ids.map((id) => byId.get(String(id))).filter(Boolean);
+}
+
+/** Topic and company counts read only tag fields, and are reused for a short while across students. */
+async function localFacetRows() {
+  if (facetCache && facetCache.until > Date.now()) return facetCache.rows;
+  const rows = await QuestionLibrary.find(published).select(FACET_FIELDS).lean();
+  facetCache = { rows, until: Date.now() + FACET_CACHE_MS };
+  return rows;
 }
 
 const scopeFor = (source) => isUniversity() && source === 'university'
@@ -155,20 +259,28 @@ export function gradePracticeAnswer(question, answer) {
 }
 
 router.get('/', asyncRoute(async (req, res) => {
-  const search = String(req.query.search || '').trim().toLowerCase().slice(0, 100);
-  const type = String(req.query.type || '').trim().toLowerCase();
-  const difficulty = String(req.query.difficulty || '').trim().toLowerCase();
-  const tags = String(req.query.tags || '').split(',').map((value) => value.trim().toLowerCase()).filter(Boolean);
-  const companies = String(req.query.companies || '').split(',').map((value) => value.trim().toLowerCase()).filter(Boolean);
-  const ids = req.query.ids === undefined ? null : new Set(String(req.query.ids).split(',').filter(Boolean));
+  const criteria = {
+    search: parsePracticeSearch(req.query.search),
+    type: String(req.query.type || '').trim().toLowerCase(),
+    difficulty: String(req.query.difficulty || '').trim().toLowerCase(),
+    tags: String(req.query.tags || '').split(',').map((value) => value.trim().toLowerCase()).filter(Boolean),
+    companies: String(req.query.companies || '').split(',').map((value) => value.trim().toLowerCase()).filter(Boolean),
+    ids: req.query.ids === undefined ? null : new Set(String(req.query.ids).split(',').filter(Boolean)),
+  };
+  const { companies } = criteria;
   const sortBy = String(req.query.sortBy || 'displayOrder');
   const sortOrder = req.query.sortOrder === 'desc' ? -1 : 1;
-  const page = Math.max(1, Number(req.query.page) || 1);
-  const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 20));
-  const visible = await visibleQuestions();
-  const available = visible.questions;
-  const summariesResult = await Promise.allSettled([reportSummaries()]);
-  const summaries = summariesResult[0].status === 'fulfilled' ? summariesResult[0].value : [];
+  // Capped like the other list routes, so a huge or non-finite page is an empty page, not a $skip error.
+  const page = Math.max(1, Math.min(100000, Number.parseInt(req.query.page, 10) || 1));
+  const limit = Math.min(PRACTICE_LIST_MAX_LIMIT, Math.max(1, Math.floor(Number(req.query.limit)) || 25));
+  const [centralResult, summariesResult, facetRows] = await Promise.all([
+    Promise.allSettled([sharedQuestions()]).then(([result]) => result),
+    Promise.allSettled([reportSummaries()]).then(([result]) => result),
+    localFacetRows(),
+  ]);
+  if (centralResult.status === 'rejected' && !facetRows.length) throw centralResult.reason;
+  const central = centralResult.status === 'fulfilled' ? centralResult.value || [] : [];
+  const summaries = summariesResult.status === 'fulfilled' ? summariesResult.value : [];
   const reportMap = new Map();
   for (const row of summaries) {
     const reportKey = `${row.scopeKey}:${row.questionId}`;
@@ -177,17 +289,78 @@ router.get('/', asyncRoute(async (req, res) => {
       latestDate: row.latestDate, reports: row.reports });
   }
   const reportsFor = ({ question, source }) => reportMap.get(`${scopeFor(source)}:${question._id}`) || [];
-  const all = available.filter(({ question, source }) => {
-    const questionTags = (question.tags || []).map((value) => String(value).toLowerCase());
-    const questionCompanies = [...(question.keywords || question.questionData?.problemDataSnapshot?.companyTags || []),
-      ...reportsFor({ question, source }).map((row) => row.company)].map((value) => String(value).toLowerCase());
-    return (!type || question.questionType === type)
-      && (!difficulty || String(question.difficulty || '').toLowerCase() === difficulty)
-      && (!tags.length || tags.some((value) => questionTags.includes(value)))
-      && (!companies.length || companies.some((value) => questionCompanies.includes(value)))
-      && (!ids || ids.has(String(question._id)) || ids.has(String(question.sourceProblemId || '')))
-      && (!search || [question.questionText, ...questionTags, ...questionCompanies].some((value) => String(value || '').toLowerCase().includes(search)));
+  const localScope = `${scopeFor('university')}:`;
+  const reportedIds = (test) => [...new Set(summaries
+    .filter((row) => `${row.scopeKey}:` === localScope && test(String(row.company || '').toLowerCase()))
+    .map((row) => String(row.questionId)))]
+    .filter((id) => mongoose.isValidObjectId(id)).map((id) => new mongoose.Types.ObjectId(id));
+  const filter = practiceListFilter(criteria, reportedIds);
+  const sharedMatches = central.map((question) => ({ question, source: 'shared' }))
+    .filter((item) => matchesPracticeCriteria(item.question, reportsFor(item).map((row) => row.company), criteria));
+  let selected;
+  let total;
+  if (!sharedMatches.length && sortBy !== 'latestInterviewDate') {
+    // Only local questions: Mongo filters, sorts and pages, and only this page's rows are read in full.
+    const result = await localPage(filter, sortBy, sortOrder, (page - 1) * limit, limit);
+    total = result.total;
+    selected = (await questionsByIds(result.ids)).map((question) => ({ question, source: 'university' }));
+  } else {
+    // Shared questions or interview dates join the order, so the local matches are ordered here on a few fields.
+    const localRefs = await QuestionLibrary.find(filter).select('_id displayOrder questionText difficulty createdAt updatedAt').lean();
+    const all = [...localRefs.map((question) => ({ question, source: 'university' })), ...sharedMatches];
+    sortPractice(all, sortBy, sortOrder, companies, reportsFor);
+    total = all.length;
+    const pageItems = all.slice((page - 1) * limit, page * limit);
+    const localRows = new Map((await questionsByIds(pageItems.filter((item) => item.source === 'university')
+      .map((item) => item.question._id))).map((question) => [String(question._id), question]));
+    selected = pageItems.map((item) => item.source === 'university' ? { ...item, question: localRows.get(String(item.question._id)) } : item)
+      .filter((item) => item.question);
+  }
+  const available = [...facetRows.map((question) => ({ question, source: 'university' })),
+    ...central.map((question) => ({ question, source: 'shared' }))];
+  const selectedIds = selected.map(({ question }) => question._id);
+  const attempts = await QuestionPracticeAttempt.find({ studentId: req.user._id, questionId: { $in: selectedIds } })
+    .sort({ createdAt: -1 }).lean();
+  const localProblemIds = selected.filter(({ question, source }) => source === 'university'
+    && question.questionType === 'coding' && mongoose.isValidObjectId(question.sourceProblemId))
+    .map(({ question }) => question.sourceProblemId);
+  const solvedProblemIds = localProblemIds.length ? await Submission.distinct('problem', {
+    user: req.user._id, problem: { $in: localProblemIds }, mode: 'submit', status: 'AC',
+  }) : [];
+  const solvedProblems = new Set(solvedProblemIds.map(String));
+  const latest = new Map();
+  const solvedPractice = new Set();
+  attempts.forEach((attempt) => {
+    const key = `${attempt.source}:${attempt.questionId}`;
+    if (attempt.result === 'correct') solvedPractice.add(key);
+    if (!latest.has(key)) latest.set(key, attempt.result);
   });
+  const warning = centralResult.status === 'rejected' ? 'Shared questions are temporarily unavailable.'
+    : summariesResult.status === 'rejected' ? 'Interview history is temporarily unavailable.' : '';
+  res.json({ warning, questions: selected.map(({ question, source }) => ({ ...publicShape(question, source),
+    reportedCompanies: reportsFor({ question, source }),
+    result: solvedProblems.has(String(question.sourceProblemId)) || solvedPractice.has(`${source}:${question._id}`)
+      ? 'correct' : latest.get(`${source}:${question._id}`) || null })),
+    pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) },
+    filters: { totalProblems: available.length,
+      availableTags: [...new Set(available.flatMap(({ question }) => question.tags || []))].sort(),
+      tagCounts: Object.entries(available.flatMap(({ question }) => question.tags || []).reduce((acc, value) => {
+        acc[value] = (acc[value] || 0) + 1; return acc;
+      }, {})).map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count),
+      companyCounts: Object.values(available.reduce((acc, item) => {
+        const names = [...companyNames(item.question), ...reportsFor(item).map((row) => row.company)];
+        for (const name of new Map(names.map((value) => [String(value).trim().toLowerCase(), value])).values()) {
+          const companyKey = String(name).trim().toLowerCase();
+          if (!companyKey) continue;
+          if (!acc[companyKey]) acc[companyKey] = { company: String(name), count: 0 };
+          acc[companyKey].count += 1;
+        }
+        return acc;
+      }, {})).sort((a, b) => b.count - a.count),
+    } });
+}));
+
+function sortPractice(all, sortBy, sortOrder, companies, reportsFor) {
   all.sort((left, right) => {
     const a = left.question;
     const b = right.question;
@@ -206,47 +379,7 @@ router.get('/', asyncRoute(async (req, res) => {
     return sortOrder * ((Number(a.displayOrder) || 2147483647) - (Number(b.displayOrder) || 2147483647))
       || String(a._id).localeCompare(String(b._id));
   });
-  const selected = all.slice((page - 1) * limit, page * limit);
-  const selectedIds = selected.map(({ question }) => question._id);
-  const attempts = await QuestionPracticeAttempt.find({ studentId: req.user._id, questionId: { $in: selectedIds } })
-    .sort({ createdAt: -1 }).lean();
-  const localProblemIds = selected.filter(({ question, source }) => source === 'university'
-    && question.questionType === 'coding' && mongoose.isValidObjectId(question.sourceProblemId))
-    .map(({ question }) => question.sourceProblemId);
-  const solvedProblemIds = localProblemIds.length ? await Submission.distinct('problem', {
-    user: req.user._id, problem: { $in: localProblemIds }, mode: 'submit', status: 'AC',
-  }) : [];
-  const solvedProblems = new Set(solvedProblemIds.map(String));
-  const latest = new Map();
-  const solvedPractice = new Set();
-  attempts.forEach((attempt) => {
-    const key = `${attempt.source}:${attempt.questionId}`;
-    if (attempt.result === 'correct') solvedPractice.add(key);
-    if (!latest.has(key)) latest.set(key, attempt.result);
-  });
-  res.json({ warning: visible.warning || (summariesResult[0].status === 'rejected' ? 'Interview history is temporarily unavailable.' : ''), questions: selected.map(({ question, source }) => ({ ...publicShape(question, source),
-    reportedCompanies: reportsFor({ question, source }),
-    result: solvedProblems.has(String(question.sourceProblemId)) || solvedPractice.has(`${source}:${question._id}`)
-      ? 'correct' : latest.get(`${source}:${question._id}`) || null })),
-    pagination: { page, limit, total: all.length, pages: Math.max(1, Math.ceil(all.length / limit)) },
-    filters: { totalProblems: available.length,
-      availableTags: [...new Set(available.flatMap(({ question }) => question.tags || []))].sort(),
-      tagCounts: Object.entries(available.flatMap(({ question }) => question.tags || []).reduce((acc, value) => {
-        acc[value] = (acc[value] || 0) + 1; return acc;
-      }, {})).map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count),
-      companyCounts: Object.values(available.reduce((acc, item) => {
-        const names = [...(item.question.keywords || item.question.questionData?.problemDataSnapshot?.companyTags || []),
-          ...reportsFor(item).map((row) => row.company)];
-        for (const name of new Map(names.map((value) => [String(value).trim().toLowerCase(), value])).values()) {
-          const companyKey = String(name).trim().toLowerCase();
-          if (!companyKey) continue;
-          if (!acc[companyKey]) acc[companyKey] = { company: String(name), count: 0 };
-          acc[companyKey].count += 1;
-        }
-        return acc;
-      }, {})).sort((a, b) => b.count - a.count),
-    } });
-}));
+}
 
 router.get('/:source/:id', asyncRoute(async (req, res) => {
   const found = await findVisible(req.params.source, req.params.id);

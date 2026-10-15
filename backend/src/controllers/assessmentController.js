@@ -680,10 +680,13 @@ export async function hydrateAssessmentCodingRuntime(assessment) {
           studentRunnerTemplates,
           category: liveProblem.category || existingSnapshot.category || 'DSA',
           sqlConfig: liveProblem.sqlConfig || existingSnapshot.sqlConfig,
-          // Images are refreshed from the live problem; statement and sample text stay frozen.
-          contentImages: Array.isArray(liveProblem.contentImages)
-            ? liveProblem.contentImages.filter((image) => image?.url)
-            : existingSnapshot.contentImages,
+          // Statement images stay frozen with the statement; live ones only fill snapshots that never stored any.
+          // Sample images are refreshed per case below, only where that case's text is unchanged.
+          contentImages: Array.isArray(existingSnapshot.contentImages) && existingSnapshot.contentImages.length
+            ? existingSnapshot.contentImages
+            : (Array.isArray(liveProblem.contentImages)
+              ? liveProblem.contentImages.filter((image) => image?.url)
+              : existingSnapshot.contentImages),
           sampleTestCases: overlayLiveSampleImages(
             existingSnapshot.sampleTestCases,
             samplesByProblem.get(String(liveProblem._id)),

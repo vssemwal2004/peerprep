@@ -124,7 +124,7 @@ export function PracticeSuggestions({ problems, section, onRetry }) {
         <h2 id="practice-next-title" className="text-[15.5px] font-semibold tracking-[-0.015em] text-slate-900 dark:text-zinc-100">Next in practice</h2>
         <p className="mt-0.5 text-[12.5px] text-slate-500 dark:text-zinc-400">Unsolved problems, easiest first</p>
       </div>
-      <Link className={`${textLink} mt-0.5`} to="/problems">All questions<ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" /></Link>
+      <Link className={`${textLink} mt-0.5`} to="/problems">PrepCoding<ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" /></Link>
     </header>
     {section.loading
       ? <Skeleton className="mt-4 h-[150px]" />

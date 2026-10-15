@@ -1007,6 +1007,11 @@ export default function ProblemSolver() {
   const [problemListOpen, setProblemListOpen] = useState(false);
   const [leftWidth, setLeftWidth] = useState(null);
   const [language, setLanguage] = useState('python');
+  // Picking a language is remembered as well as running or submitting with it, so the next question opens in it.
+  const changeLanguage = useCallback((nextLanguage) => {
+    setLanguage(nextLanguage);
+    rememberPracticeLanguage(authUserRef.current, nextLanguage);
+  }, []);
   const [drafts, setDrafts] = useState({});
   const [problemList, setProblemList] = useState([]);
   const [testCases, setTestCases] = useState([]);
@@ -1295,10 +1300,14 @@ export default function ProblemSolver() {
     if (wasSubmittingRef.current && !isSubmitting && questSlug) void loadQuestContext();
     wasSubmittingRef.current = isSubmitting;
   }, [isSubmitting, questSlug, loadQuestContext]);
+  // Quest entries are identified by their item key: two items can open the same problem (routeId), and the link's
+  // ?item= says which one is open. routeId is the id in the item's link; off a university a central item opens through its local problem.
+  const questItemKey = useMemo(() => new URLSearchParams(location.search).get('item') || '', [location.search]);
   const questItems = useMemo(() => (questContext?.items || []).map((item) => ({
-    _id: item.problemId, title: item.title, difficulty: item.difficulty, href: item.href, status: item.status, section: item.section, key: item.key,
+    _id: item.key, routeId: item.routeId || item.problemId, title: item.title, difficulty: item.difficulty, href: item.href, status: item.status, section: item.section, key: item.key,
   })), [questContext]);
-  const currentQuestItem = questItems.find((item) => String(item._id) === String(id)) || null;
+  const currentQuestItem = (questItemKey && questItems.find((item) => item.key === questItemKey && String(item.routeId) === String(id)))
+    || questItems.find((item) => String(item.routeId) === String(id)) || null;
   const recordedQuestViewRef = useRef('');
   useEffect(() => {
     if (!questSlug || !currentQuestItem) return;
@@ -1377,23 +1386,25 @@ export default function ProblemSolver() {
     return 'neutral';
   })();
 
+  // The navigator entry for the open problem: its quest item key inside a quest, else the problem id.
+  const currentEntryId = questContext ? (currentQuestItem?._id || '') : id;
   const currentProblemIndex = useMemo(() => (
-    navigatorList.findIndex((entry) => String(entry._id) === String(id))
-  ), [id, navigatorList]);
+    navigatorList.findIndex((entry) => String(entry._id) === String(currentEntryId))
+  ), [currentEntryId, navigatorList]);
 
   const previousProblem = currentProblemIndex > 0 ? navigatorList[currentProblemIndex - 1] : null;
   const nextProblem = currentProblemIndex >= 0 ? navigatorList[currentProblemIndex + 1] : null;
 
   // Quest entries carry their own link (with ?quest=) so previous/next stay inside the quest.
-  const openProblemById = useCallback((problemId) => {
-    if (!problemId || String(problemId) === String(id)) {
+  const openProblemById = useCallback((entryId) => {
+    if (!entryId || String(entryId) === String(currentEntryId)) {
       setProblemListOpen(false);
       return;
     }
     setProblemListOpen(false);
-    const entry = navigatorList.find((item) => String(item._id) === String(problemId));
-    navigate(entry?.href || `/problems/${problemId}`);
-  }, [id, navigate, navigatorList]);
+    const entry = navigatorList.find((item) => String(item._id) === String(entryId));
+    navigate(entry?.href || `/problems/${entryId}`);
+  }, [currentEntryId, navigate, navigatorList]);
 
   const updateDraft = (nextCode) => {
     setDrafts((previous) => ({
@@ -1742,7 +1753,7 @@ export default function ProblemSolver() {
             </button>
             <select
               value={language}
-              onChange={(event) => setLanguage(event.target.value)}
+              onChange={(event) => changeLanguage(event.target.value)}
               className="hidden rounded-lg border-0 bg-zinc-200/70 px-2.5 py-1.5 text-xs font-medium text-zinc-700 outline-none focus:ring-2 focus:ring-[#ffa116] dark:bg-[#333] dark:text-zinc-200 sm:block"
             >
               {(problem.supportedLanguages || []).map((supportedLanguage) => (
@@ -1835,7 +1846,7 @@ export default function ProblemSolver() {
               <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
                 <div className="space-y-2">
                   {navigatorList.map((entry, index) => {
-                    const active = String(entry._id) === String(id);
+                    const active = String(entry._id) === String(currentEntryId);
                     const sectionStart = questContext && entry.section && entry.section !== navigatorList[index - 1]?.section;
                     return (
                       <div key={entry._id}>
@@ -1933,7 +1944,7 @@ export default function ProblemSolver() {
               supportedLanguages={problem.supportedLanguages || []}
               language={language}
               code={activeCode}
-              onLanguageChange={setLanguage}
+              onLanguageChange={changeLanguage}
               onCodeChange={updateDraft}
               customInput={activeTestCaseInput}
               testCases={testCases}
@@ -1996,7 +2007,7 @@ export default function ProblemSolver() {
               supportedLanguages={problem.supportedLanguages || []}
               language={language}
               code={activeCode}
-              onLanguageChange={setLanguage}
+              onLanguageChange={changeLanguage}
               onCodeChange={updateDraft}
               customInput={activeTestCaseInput}
               testCases={testCases}

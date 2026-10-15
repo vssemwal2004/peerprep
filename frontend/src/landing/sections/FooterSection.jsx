@@ -15,7 +15,7 @@ const footerLinks = [
     title: "Student Area",
     links: [
       { label: "Student Login", href: "/student" },
-      { label: "Problems", href: "/problems" },
+      { label: "PrepCoding", href: "/problems" },
       { label: "Assessments", href: "/assessments" },
       { label: "Reports", href: "/assessment-reports" },
       { label: "Help & Support", href: "/student/help" },

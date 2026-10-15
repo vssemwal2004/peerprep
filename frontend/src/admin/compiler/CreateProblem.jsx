@@ -78,7 +78,7 @@ function RequiredFieldLabel({ children, optional = false }) {
 
 // onChange always receives an updater `(currentImages) => nextImages`; parents
 // must apply it against their latest state (setState-style).
-function ProblemImageManager({ images = [], onChange, maxImages = 10, allowSection = false, title = 'Problem images' }) {
+function ProblemImageManager({ images = [], onChange, maxImages = 10, allowSection = false, title = 'Problem images', onUploadingChange }) {
   const inputRef = useRef(null);
   const toast = useToast();
   const [uploading, setUploading] = useState(false);
@@ -104,6 +104,7 @@ function ProblemImageManager({ images = [], onChange, maxImages = 10, allowSecti
     }
 
     setUploading(true);
+    onUploadingChange?.(true);
     let uploadedCount = 0;
     try {
       for (let index = 0; index < selectedFiles.length; index += 1) {
@@ -124,6 +125,7 @@ function ProblemImageManager({ images = [], onChange, maxImages = 10, allowSecti
       toast.error(uploadedCount ? `${uploadedCount} image(s) uploaded before the next upload failed: ${reason}` : reason);
     } finally {
       setUploading(false);
+      onUploadingChange?.(false);
       setUploadProgress('');
     }
   };
@@ -203,6 +205,9 @@ function TestCaseEditorCard({
   ));
   const [expandedIndexes, setExpandedIndexes] = useState(() => new Set());
   const [validationError, setValidationError] = useState('');
+  // Uploads land on a case by its index, so cases cannot be deleted (shifting indexes) while any upload runs.
+  const [activeUploads, setActiveUploads] = useState(0);
+  const uploadBusyTitle = 'Wait for image uploads to finish';
 
   useEffect(() => {
     if (!staged) return;
@@ -239,6 +244,7 @@ function TestCaseEditorCard({
   };
 
   const removeCase = (index) => {
+    if (activeUploads > 0) return;
     onRemove(index);
     setSavedIndexes((current) => new Set([...current].filter((item) => item !== index).map((item) => item > index ? item - 1 : item)));
     setExpandedIndexes((current) => new Set([...current].filter((item) => item !== index).map((item) => item > index ? item - 1 : item)));
@@ -271,7 +277,7 @@ function TestCaseEditorCard({
               <button type="button" onClick={() => togglePreview(index)} title={expandedIndexes.has(index) ? 'Hide case details' : 'View case details'} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-slate-600 hover:bg-white/80 dark:text-gray-300 dark:hover:bg-gray-900/60">{expandedIndexes.has(index) ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}{expandedIndexes.has(index) ? 'Hide' : 'View'}</button>
               <button type="button" onClick={() => setSavedIndexes((current) => { const next = new Set(current); next.delete(index); return next; })} title="Edit case" className="inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-sky-700 hover:bg-white/80 dark:text-sky-300 dark:hover:bg-gray-900/60"><Edit2 className="h-3.5 w-3.5" />Edit</button>
               {onDuplicate && <button type="button" onClick={() => onDuplicate(index)} title="Duplicate case" className="inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-slate-600 hover:bg-white/80 dark:text-gray-300 dark:hover:bg-gray-900/60"><Copy className="h-3.5 w-3.5" />Duplicate</button>}
-              <button type="button" onClick={() => removeCase(index)} title="Delete case" className="inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"><Trash2 className="h-3.5 w-3.5" />Delete</button>
+              <button type="button" onClick={() => removeCase(index)} disabled={activeUploads > 0} title={activeUploads > 0 ? uploadBusyTitle : 'Delete case'} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-rose-950/30"><Trash2 className="h-3.5 w-3.5" />Delete</button>
             </div>
           </div>
           </div>
@@ -286,7 +292,7 @@ function TestCaseEditorCard({
         <div key={`${title}-${index}`} className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700">
           <div className="mb-3 flex items-center justify-between gap-3">
             <h4 className="text-sm font-semibold text-slate-800 dark:text-gray-100">{title} {index + 1}</h4>
-            <button type="button" onClick={() => removeCase(index)} className="inline-flex items-center gap-1 text-xs font-medium text-rose-600"><Trash2 className="h-3.5 w-3.5" />Delete</button>
+            <button type="button" onClick={() => removeCase(index)} disabled={activeUploads > 0} title={activeUploads > 0 ? uploadBusyTitle : undefined} className="inline-flex items-center gap-1 text-xs font-medium text-rose-600 disabled:cursor-not-allowed disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" />Delete</button>
           </div>
           <div className={`grid gap-4 ${includeExplanation ? 'md:grid-cols-[1fr_1fr_1fr_120px]' : 'md:grid-cols-[1fr_1fr_120px]'}`}>
             <textarea
@@ -317,7 +323,7 @@ function TestCaseEditorCard({
               <input type="number" min="0.01" step="0.5" value={testCase.marks ?? 1} onChange={(event) => updateCase(index, 'marks', event.target.value)} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-sky-400 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-sky-500" />
             </label>
           </div>
-          {includeImages ? <div className="mt-4"><ProblemImageManager title={`${title} ${index + 1} images`} images={testCase.images || []} onChange={(images) => updateCase(index, 'images', images)} maxImages={10} /></div> : null}
+          {includeImages ? <div className="mt-4"><ProblemImageManager title={`${title} ${index + 1} images`} images={testCase.images || []} onChange={(images) => updateCase(index, 'images', images)} maxImages={10} onUploadingChange={(busy) => setActiveUploads((count) => Math.max(0, count + (busy ? 1 : -1)))} /></div> : null}
           {staged && <div className="mt-4 flex justify-end"><button type="button" onClick={() => saveCase(index)} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-500"><Save className="h-4 w-4" />Save {title.toLowerCase()} case</button></div>}
         </div>
       ))}
@@ -462,6 +468,8 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
   const [currentStatus, setCurrentStatus] = useState('draft');
   const [previewValidated, setPreviewValidated] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  // Assessment drafts start from a stripped snapshot; runners, solutions and hidden cases arrive asynchronously.
+  const [authorFieldsLoaded, setAuthorFieldsLoaded] = useState(true);
   const [isApprovingPreview, setIsApprovingPreview] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -497,6 +505,7 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
       setActiveLanguage(draft?.form?.supportedLanguages?.[0] || draft?.problemData?.supportedLanguages?.[0] || 'python');
       setLoading(false);
 
+      setAuthorFieldsLoaded(!(draft?.problemId && editorId));
       if (draft?.problemId && editorId) {
         api.getCompilerProblem(draft.problemId)
           .then((response) => {
@@ -520,8 +529,9 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
               previewValidated: Boolean(response.previewValidated ?? response.previewTested),
               status: (response.previewValidated ?? response.previewTested) ? 'Validated' : 'Draft',
             });
+            setAuthorFieldsLoaded(true);
           })
-          .catch(() => {});
+          .catch((error) => toast.error(error.message || 'Could not load runners and solutions for this problem. Reopen the editor before saving.'));
       }
       return undefined;
     }
@@ -834,13 +844,15 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
     }
     // An image cannot stand in for the sample itself: students still need the
     // textual input/output to run against.
+    // Same rule as the server's normalizeSampleTestCases: a sample is kept when it has input, output or explanation.
     const imageOnlySampleIndex = (form.sampleTestCases || []).findIndex((testCase) => (
       testCase?.images?.length
-      && !String(testCase.input || '').trim()
-      && !String(testCase.output || '').trim()
+      && !String(testCase.input ?? '')
+      && !String(testCase.output ?? '')
+      && !String(testCase.explanation || '').trim()
     ));
     if (imageOnlySampleIndex >= 0) {
-      const message = `Sample ${imageOnlySampleIndex + 1} has images but no input or expected output. Add them or remove the sample.`;
+      const message = `Sample ${imageOnlySampleIndex + 1} has images but no input, output or explanation. Add them or remove the sample.`;
       if (silent) setAutoSaveStatus('Auto-save paused: incomplete sample');
       else toast.error(message);
       return null;
@@ -850,6 +862,12 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
       return null;
     }
     if (isSaving) return null;
+    // Saving before the runners and solutions are restored would overwrite them with the stripped snapshot's blanks.
+    if (isAssessment && currentProblemId && !authorFieldsLoaded) {
+      if (silent) setAutoSaveStatus('Auto-save paused: loading problem');
+      else toast.error('Problem details are still loading or failed to load. Reopen the editor before saving.');
+      return null;
+    }
 
     setIsSaving(true);
     if (silent) setAutoSaveStatus('Saving draft...');

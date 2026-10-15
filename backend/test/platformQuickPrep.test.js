@@ -7,14 +7,15 @@ import User from '../src/models/User.js';
 import Problem from '../src/models/Problem.js';
 import QuestionLibrary from '../src/models/QuestionLibrary.js';
 import QuestionPracticeAttempt from '../src/models/QuestionPracticeAttempt.js';
+import Submission from '../src/models/Submission.js';
 import Notification from '../src/models/Notification.js';
 import { University } from '../src/platform/models.js';
 import { adaptiveModels, EngagementReward, Quest, QuestEnrollment, StudentBadge } from '../src/models/AdaptiveEngagement.js';
 import { CENTRAL_QUESTION_FILTER } from '../src/platform/centralQuestions.js';
 import { resetSharedQuestCache } from '../src/platform/sharedContent.js';
 import {
-  addQuestLibraryItems, createQuest, latestQuestResume, listAdminQuests, listStudentQuests, publishedQuestDefinitions, questInsights, recordQuestView, removeQuest,
-  searchQuestLibrary, startQuest, updateQuest,
+  addQuestLibraryItems, createQuest, getStudentQuest, latestQuestResume, listAdminQuests, listStudentQuests, publishedQuestDefinitions, questInsights, questionQuickPreps,
+  recordQuestView, removeQuest, searchQuestLibrary, startQuest, updateQuest,
 } from '../src/services/questService.js';
 
 // Test-owned in-memory database and a stubbed central service only; no .env, network or real accounts.
@@ -22,7 +23,7 @@ const ENV_KEYS = ['PEERPREP_DEPLOYMENT_ROLE', 'PEERPREP_UNIVERSITY_ID', 'PEERPRE
 const savedEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 const savedFetch = globalThis.fetch;
 const oid = () => new mongoose.Types.ObjectId();
-const models = [User, Problem, QuestionLibrary, QuestionPracticeAttempt, Notification, University, ...adaptiveModels];
+const models = [User, Problem, QuestionLibrary, QuestionPracticeAttempt, Submission, Notification, University, ...adaptiveModels];
 let mongo, admin, problems, rows;
 
 before(async () => {
@@ -193,5 +194,47 @@ test('the dashboard resume card skips QuickPreps the student can no longer see',
   await QuestEnrollment.collection.insertOne({ tenantKey: 'university:test-campus', studentId: student._id, questId: oid(), startedAt: new Date(), lastViewedAt: new Date(Date.now() + 60_000), completedAt: null, solvedCount: 0, totalCount: 3 });
   const resume = await latestQuestResume(student);
   assert.equal(resume?.title, 'Central Arrays');
-  assert.equal(resume.href, `/problems/shared/${rows.twoSum._id}?quest=${published.slug}`);
+  assert.equal(resume.href, `/problems/shared/${rows.twoSum._id}?quest=${published.slug}&item=${encodeURIComponent(`coding:shared:${rows.twoSum._id}`)}`);
+});
+
+test('off a university, central QuickPrep questions open, are credited and show membership through their linked problems', async () => {
+  const published = await publishCentralQuickPrep();
+  const student = { _id: oid(), role: 'student', accessScope: 'full', semester: 3 };
+  await User.collection.insertOne(student);
+  const { items } = (await getStudentQuest(student, published.slug)).quest;
+  // There is no shared feed here, so /problems/shared/<row> would 404 ("Problem unavailable").
+  assert.deepEqual(items.map((item) => [item.key, item.routeId, item.href]), [
+    [`coding:shared:${rows.twoSum._id}`, String(problems[0]._id), `/problems/${problems[0]._id}?quest=${published.slug}&item=${encodeURIComponent(`coding:shared:${rows.twoSum._id}`)}`],
+    [`coding:shared:${rows.anagram._id}`, String(problems[1]._id), `/problems/${problems[1]._id}?quest=${published.slug}&item=${encodeURIComponent(`coding:shared:${rows.anagram._id}`)}`],
+  ]);
+
+  await Submission.collection.insertMany([
+    { user: student._id, problem: problems[0]._id, mode: 'submit', status: 'AC', language: 'c', createdAt: new Date() },
+    { user: student._id, problem: problems[1]._id, mode: 'run', status: 'WA', language: 'c', createdAt: new Date() },
+  ]);
+  assert.deepEqual((await getStudentQuest(student, published.slug)).quest.items.map((item) => item.status), ['solved', 'attempted']);
+  await recordQuestView(student, published.slug, `coding:shared:${rows.anagram._id}`);
+  assert.equal((await latestQuestResume(student)).href, `/problems/${problems[1]._id}?quest=${published.slug}&item=${encodeURIComponent(`coding:shared:${rows.anagram._id}`)}`);
+
+  const sheets = await questionQuickPreps(student, 'university', problems[0]._id);
+  assert.deepEqual(sheets.map((sheet) => [sheet.slug, sheet.href, sheet.started, sheet.total]), [[published.slug, `/student/quickprep/${published.slug}`, true, 2]]);
+  assert.deepEqual(await questionQuickPreps(student, 'university', problems[2]._id), [], 'Draft, private and exam rows put a problem in no sheet');
+
+  // A standalone install holding these central rows (and an older local pick) shows every question too.
+  process.env.PEERPREP_DEPLOYMENT_ROLE = 'standalone';
+  await Quest.updateOne({ slug: published.slug }, { $push: { items: { source: 'university', problemId: problems[2]._id } } });
+  assert.deepEqual((await getStudentQuest(student, published.slug)).quest.items.map((item) => item.href.split('?')[0]),
+    [`/problems/${problems[0]._id}`, `/problems/${problems[1]._id}`, `/problems/${problems[2]._id}`]);
+});
+
+test('a failing QuickPrep lookup never breaks the problem page that shows membership', async () => {
+  const student = { _id: oid(), role: 'student', accessScope: 'full', semester: 3 };
+  asUniversity({ quests: [], questions: [], down: true });
+  const savedWarn = console.warn;
+  const warnings = [];
+  console.warn = (...args) => warnings.push(args.join(' '));
+  try {
+    assert.deepEqual(await questionQuickPreps(student, 'shared', rows.twoSum._id), []);
+  } finally { console.warn = savedWarn; }
+  assert.match(warnings.join('\n'), /QuickPrep\] Membership lookup failed/);
 });

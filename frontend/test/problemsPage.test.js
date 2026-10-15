@@ -98,7 +98,7 @@ test('companies lead the page, topics and the calendar sit in the right rail, li
   assert.equal(companies.querySelector('#topics-title'), null);
   assert.match(library.textContent, /All questions20.*Favorites0.*Your lists/);
   assert.doesNotMatch(document.body.textContent, /Question type|One line|Short answer/, 'The question-type filter is removed');
-  assert.match(document.querySelector('h1').textContent, /Practice questions/);
+  assert.match(document.querySelector('h1').textContent, /^PrepCoding$/);
   assert.match(document.body.textContent, /20 questions · 2 topics · 2 companies/);
   assert.doesNotMatch(document.body.textContent, /All TopicsAlgorithmsDatabase/, 'The placeholder category tabs are gone');
 });
@@ -179,6 +179,79 @@ test('rows show real solved and attempted status and open the coding workspace',
   await click(rows[0]);
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 150)); });
   assert.equal(document.getElementById('location').textContent, '/problems/p1');
+});
+
+const typeInto = (input, value) => act(async () => {
+  Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(input, value);
+  input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+});
+const settle = (ms = 0) => act(async () => { await new Promise((resolve) => setTimeout(resolve, ms)); });
+
+function pagedCatalog(total) {
+  api.listPracticeQuestions = async (params) => {
+    calls.push(params);
+    const limit = Number(params.limit);
+    const page = Number(params.page);
+    const rows = Array.from({ length: Math.max(0, Math.min(limit, total - ((page - 1) * limit))) }, (_, index) => {
+      const order = ((page - 1) * limit) + index + 1;
+      return { _id: `q${order}`, source: 'university', questionType: 'mcq', questionText: `Question ${order}`, difficulty: 'Easy', tags: [], reportedCompanies: [], displayOrder: order, result: null };
+    });
+    return { questions: rows, pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) },
+      filters: { totalProblems: total, tagCounts: [], companyCounts: [] } };
+  };
+}
+
+test('the list asks for one page at a time, 25 rows by default, and the pager moves through it', async () => {
+  pagedCatalog(3924);
+  await mount();
+  assert.equal(calls.length, 1, 'One request for the first page');
+  assert.deepEqual([lastCall().page, lastCall().limit], [1, 25]);
+  const pager = document.querySelector('nav[aria-label="Pagination"]').parentElement.parentElement;
+  assert.match(pager.textContent, /Showing 1–25 of 3,924/);
+  await click(document.querySelector('button[aria-label="Next page"]'));
+  assert.deepEqual([lastCall().page, lastCall().limit], [2, 25]);
+  assert.match(document.body.textContent, /Showing 26–50 of 3,924/);
+  assert.match(document.querySelector('ul[aria-busy] li').textContent, /26Question 26/, 'Rows are numbered by their question number');
+  await click(document.querySelector('button[aria-label="Page 157"]'));
+  assert.equal(lastCall().page, 157);
+  assert.match(document.body.textContent, /Showing 3,901–3,924 of 3,924/);
+});
+
+test('rows per page offers 25, 50 and 100, is remembered, and starts again at page 1', async () => {
+  pagedCatalog(300);
+  await mount();
+  await click(document.querySelector('button[aria-label="Next page"]'));
+  const select = byText('label', /^Rows/).querySelector('select');
+  assert.deepEqual([...select.options].map((option) => option.value), ['25', '50', '100']);
+  const before = calls.length;
+  await act(async () => { select.value = '100'; select.dispatchEvent(new dom.window.Event('change', { bubbles: true })); });
+  assert.equal(calls.length, before + 1, 'Changing the size does not first reload the old page');
+  assert.deepEqual([lastCall().page, lastCall().limit], [1, 100]);
+  assert.equal(localStorage.getItem('peerprep:prepcoding-page-size'), '100');
+  assert.match(document.body.textContent, /Showing 1–100 of 300/);
+  await act(async () => root.unmount());
+  root = createRoot(document.getElementById('app'));
+  await mount();
+  assert.equal(lastCall().limit, 100, 'The chosen size is used on the next visit');
+});
+
+test('search waits for typing to pause, resets to page 1 and names a question-number search', async () => {
+  pagedCatalog(300);
+  await mount();
+  await click(document.querySelector('button[aria-label="Next page"]'));
+  const before = calls.length;
+  const input = document.querySelector('input[type="search"]');
+  assert.match(input.placeholder, /#topic.*question no/);
+  await typeInto(input, '#');
+  await typeInto(input, '#1');
+  await typeInto(input, '#12');
+  assert.equal(calls.length, before, 'No request while typing');
+  await settle(300);
+  assert.equal(calls.length, before + 1, 'One request after the pause');
+  assert.deepEqual([lastCall().search, lastCall().page], ['#12', 1]);
+  assert.ok(document.querySelector('button[aria-label="Remove filter: Question #12"]'));
+  await click(document.querySelector('button[aria-label="Clear search"]'));
+  assert.equal(lastCall().search, '', 'Clearing applies at once');
 });
 
 test('the calendar shows the student’s own daily challenge before the shared problem of the day', async () => {

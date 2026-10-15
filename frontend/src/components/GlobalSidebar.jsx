@@ -84,7 +84,7 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
         ],
       },
       { type: 'link', label: 'Learning', to: '/student/learning', icon: BookOpen },
-      { type: 'link', label: 'All Questions', to: '/problems', icon: ListChecks },
+      { type: 'link', label: 'PrepCoding', to: '/problems', icon: ListChecks },
       { type: 'link', label: 'Resume Builder', to: '/student/resume', icon: UserCog },
     ];
   }

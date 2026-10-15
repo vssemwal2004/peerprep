@@ -1,6 +1,6 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, ChevronLeft, ChevronRight, Layers3, LoaderCircle, Search, Shapes, Shuffle, SlidersHorizontal, Star, X } from 'lucide-react';
+import { Building2, Layers3, LoaderCircle, Search, Shapes, Shuffle, SlidersHorizontal, Star, X } from 'lucide-react';
 import { api } from '../utils/api';
 import { useToast } from '../components/CustomToast';
 import { buildTagsParam, PROBLEM_SORT_OPTIONS } from './problemUtils';
@@ -12,9 +12,12 @@ import TopicsPanel from './problems/TopicsPanel';
 import PracticeCalendar from './problems/PracticeCalendar';
 import ProblemRow, { ProblemRowsSkeleton } from './problems/ProblemRow';
 import { CreateListModal, SaveToListsModal } from './problems/ProblemListModals';
-import { DIFFICULTY, fieldBase, focusRing, problemStatus } from './problems/problemsUi';
+import { DIFFICULTY, fieldBase, focusRing, PAGE_SIZE_OPTIONS, problemStatus } from './problems/problemsUi';
+import PracticePager from './problems/PracticePager';
 
-const PAGE_SIZE = 15;
+const PAGE_SIZE_KEY = 'peerprep:prepcoding-page-size';
+const SEARCH_DEBOUNCE_MS = 250;
+const NO_ORDER = 2147483647;
 const QUESTION_SORT_OPTIONS = [...PROBLEM_SORT_OPTIONS.filter((option) => !option.value.startsWith('acceptance')),
   { value: 'latest-asked', label: 'Recently Asked', sortBy: 'latestInterviewDate', sortOrder: 'desc' }];
 const FAVORITES_KEY = 'peerprep:problem-favorites';
@@ -27,23 +30,17 @@ function readFavorites() {
   } catch { return []; }
 }
 
-function Pagination({ pagination, loading, solvedOnPage, shown, onPage }) {
-  const current = pagination.page || 1;
-  const pages = pagination.pages || 1;
-  const visible = Array.from(new Set([1, current - 1, current, current + 1, pages])).filter((value) => value >= 1 && value <= pages);
-  const pageButton = `flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-[12.5px] tabular-nums disabled:opacity-30 ${focusRing}`;
-  return <div className="flex flex-wrap items-center justify-between gap-3 pt-4 text-[12.5px] text-slate-500 dark:text-zinc-400">
-    <span><strong className="font-semibold text-slate-800 dark:text-zinc-100">{solvedOnPage}</strong> of {shown} solved on this page · Page {current} of {pages}</span>
-    <nav className="flex items-center gap-1" aria-label="Pagination">
-      <button type="button" onClick={() => onPage(current - 1)} disabled={loading || current <= 1} className={`${pageButton} hover:bg-[#f3f4f6] dark:hover:bg-white/[0.06]`} aria-label="Previous page"><ChevronLeft className="h-4 w-4" /></button>
-      {visible.map((value, index) => <span key={value} className="flex items-center gap-1">
-        {index > 0 && value - visible[index - 1] > 1 && <span aria-hidden="true">…</span>}
-        <button type="button" onClick={() => onPage(value)} disabled={loading} aria-current={value === current ? 'page' : undefined}
-          className={`${pageButton} ${value === current ? 'bg-slate-900 font-semibold text-white dark:bg-white dark:text-slate-900' : 'hover:bg-[#f3f4f6] dark:hover:bg-white/[0.06]'}`}>{value}</button>
-      </span>)}
-      <button type="button" onClick={() => onPage(current + 1)} disabled={loading || current >= pages} className={`${pageButton} hover:bg-[#f3f4f6] dark:hover:bg-white/[0.06]`} aria-label="Next page"><ChevronRight className="h-4 w-4" /></button>
-    </nav>
-  </div>;
+function readPageSize() {
+  try {
+    const stored = Number(window.localStorage.getItem(PAGE_SIZE_KEY));
+    return PAGE_SIZE_OPTIONS.includes(stored) ? stored : PAGE_SIZE_OPTIONS[0];
+  } catch { return PAGE_SIZE_OPTIONS[0]; }
+}
+
+/** The search chip names a question-number search as such; other searches show the typed text. */
+function searchLabel(value) {
+  const serial = value.match(/^#?(\d+)$/);
+  return serial ? `Question #${serial[1]}` : `“${value}”`;
 }
 
 function FilterChip({ label, onRemove }) {
@@ -85,6 +82,7 @@ export default function ProblemsPage() {
   const navigate = useNavigate();
   const toast = useToast();
   const navigationTimerRef = useRef(null);
+  const listTopRef = useRef(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [difficulty, setDifficulty] = useState('');
   const [activeQuestion, setActiveQuestion] = useState(null);
@@ -92,7 +90,9 @@ export default function ProblemsPage() {
   const [selectedTags, setSelectedTags] = useState([]);
   const [selectedCompany, setSelectedCompany] = useState('');
   const [sortValue, setSortValue] = useState(PROBLEM_SORT_OPTIONS[0].value);
-  const [page, setPage] = useState(1);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [pageSize, setPageSize] = useState(readPageSize);
+  const [pageState, setPageState] = useState({ key: '', page: 1 });
   const [loading, setLoading] = useState(true);
   const [companiesLoading, setCompaniesLoading] = useState(true);
   const [showFavorites, setShowFavorites] = useState(false);
@@ -106,28 +106,40 @@ export default function ProblemsPage() {
   const [openingProblemId, setOpeningProblemId] = useState('');
   const [companyCounts, setCompanyCounts] = useState([]);
   const [response, setResponse] = useState({ problems: [], pagination: { page: 1, pages: 1, total: 0 }, filters: { availableTags: [], tagCounts: [] } });
-  const deferredSearch = useDeferredValue(searchQuery);
   const resolvedSort = useMemo(() => QUESTION_SORT_OPTIONS.find((option) => option.value === sortValue) || QUESTION_SORT_OPTIONS[0], [sortValue]);
   const selectedList = useMemo(() => lists.find((list) => list._id === selectedListId), [lists, selectedListId]);
   const filteredIds = showFavorites ? favorites : (selectedList ? selectedList.problemIds : null);
+  // Any change to what is listed, or to the page size, starts again at page 1 without a request for the old page.
+  const filterKey = JSON.stringify([debouncedSearch, difficulty, resolvedSort.value, selectedTags, selectedCompany, showFavorites, selectedListId, pageSize]);
+  // Leaving a filter combination forgets its page, so returning to it also starts at page 1 (adjusted during render).
+  if (pageState.key !== filterKey) setPageState({ key: filterKey, page: 1 });
+  const page = pageState.key === filterKey ? pageState.page : 1;
 
   useEffect(() => () => window.clearTimeout(navigationTimerRef.current), []);
-  useEffect(() => { window.localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites)); }, [favorites]);
+  useEffect(() => { try { window.localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites)); } catch { /* favorites last for this visit */ } }, [favorites]);
+  useEffect(() => { try { window.localStorage.setItem(PAGE_SIZE_KEY, String(pageSize)); } catch { /* the default size is used next time */ } }, [pageSize]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(searchQuery.trim()), SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
   useEffect(() => { let mounted = true; api.listProblemLists().then((result) => { if (mounted) setLists(result.lists || []); }).catch((error) => { if (mounted) toast.error(error.message || 'Could not load your lists.'); }); return () => { mounted = false; }; }, [toast]);
-  useEffect(() => { setPage(1); }, [deferredSearch, difficulty, resolvedSort.sortBy, resolvedSort.sortOrder, selectedTags, selectedCompany, showFavorites, selectedListId]);
   useEffect(() => {
     let mounted = true;
     const load = async () => {
       try {
         setLoading(true);
-        const result = await api.listPracticeQuestions({ search: deferredSearch, difficulty, tags: buildTagsParam(selectedTags), companies: selectedCompany, ...(filteredIds ? { ids: filteredIds.join(',') || '__none__' } : {}), sortBy: resolvedSort.sortBy, sortOrder: resolvedSort.sortOrder, page, limit: PAGE_SIZE });
-        if (mounted) { setResponse(result); setCompanyCounts(result.filters?.companyCounts || []); setCompaniesLoading(false); }
+        const result = await api.listPracticeQuestions({ search: debouncedSearch, difficulty, tags: buildTagsParam(selectedTags), companies: selectedCompany, ...(filteredIds ? { ids: filteredIds.join(',') || '__none__' } : {}), sortBy: resolvedSort.sortBy, sortOrder: resolvedSort.sortOrder, page, limit: pageSize });
+        if (!mounted) return;
+        const lastPage = result.pagination?.pages || 1;
+        // A page past the end (the list shrank) moves to the new last page instead of showing nothing.
+        if (!(result.questions || []).length && page > lastPage) { setPageState((previous) => ({ ...previous, page: lastPage })); return; }
+        setResponse(result); setCompanyCounts(result.filters?.companyCounts || []); setCompaniesLoading(false);
       } catch (error) { if (mounted) toast.error(error.message || 'Failed to load questions.'); }
       finally { if (mounted) { setLoading(false); setCompaniesLoading(false); } }
     };
     load();
     return () => { mounted = false; };
-  }, [deferredSearch, difficulty, filteredIds, page, refreshQuestions, resolvedSort.sortBy, resolvedSort.sortOrder, selectedTags, selectedCompany, toast]);
+  }, [debouncedSearch, difficulty, filteredIds, page, pageSize, refreshQuestions, resolvedSort.sortBy, resolvedSort.sortOrder, selectedTags, selectedCompany, toast]);
 
   const problems = (response.questions || []).map((question) => ({ ...question, title: question.questionText, listId: question.source === 'university' && question.questionType === 'coding' && question.sourceProblemId ? question.sourceProblemId : question._id }));
   const pagination = response.pagination || { page: 1, pages: 1, total: 0 };
@@ -146,7 +158,14 @@ export default function ProblemsPage() {
     setSortValue(next ? 'latest-asked' : 'sequence-asc');
   };
   const selectView = (next) => { setShowFavorites(next.kind === 'favorites'); setSelectedListId(next.kind === 'list' ? next.id : ''); };
-  const clearFilters = () => { setSearchQuery(''); setDifficulty(''); setSelectedTags([]); setSelectedCompany(''); setSortValue('sequence-asc'); selectView({ kind: 'all' }); };
+  const clearSearch = () => { setSearchQuery(''); setDebouncedSearch(''); };
+  const goToPage = (next) => {
+    // The pager shows the previous response's pages while a new filter loads; ignore clicks until it lands.
+    if (loading) return;
+    setPageState({ key: filterKey, page: next });
+    listTopRef.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+  };
+  const clearFilters = () => { clearSearch(); setDifficulty(''); setSelectedTags([]); setSelectedCompany(''); setSortValue('sequence-asc'); selectView({ kind: 'all' }); };
   const toggleFavorite = (problemId) => setFavorites((previous) => previous.includes(String(problemId)) ? previous.filter((id) => id !== String(problemId)) : [...previous, String(problemId)]);
   const openProblem = (problem) => {
     if (openingProblemId) return;
@@ -165,7 +184,7 @@ export default function ProblemsPage() {
     selectedTopic && { key: 'topic', label: `Topic: ${selectedTopic}`, clear: () => selectTopic('') },
     selectedCompany && { key: 'company', label: `Company: ${selectedCompany}`, clear: () => selectCompany(selectedCompany) },
     difficulty && { key: 'difficulty', label: difficulty, clear: () => setDifficulty('') },
-    searchQuery && { key: 'search', label: `“${searchQuery}”`, clear: () => setSearchQuery('') },
+    debouncedSearch && { key: 'search', label: searchLabel(debouncedSearch), clear: clearSearch },
   ].filter(Boolean);
   // The header follows the most specific focus: a topic, then a company, then a saved list.
   const topicCount = topicCounts.find(({ tag }) => tag === selectedTopic)?.count;
@@ -182,7 +201,7 @@ export default function ProblemsPage() {
 
       <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-          <h1 className="text-[20px] font-semibold tracking-[-0.02em] text-slate-950 dark:text-zinc-50">Practice questions</h1>
+          <h1 className="text-[20px] font-semibold tracking-[-0.02em] text-slate-950 dark:text-zinc-50">PrepCoding</h1>
           <p className="text-[13px] text-slate-500 dark:text-zinc-400">
             {initialLoad
               ? <span className="inline-block h-3 w-52 animate-pulse rounded bg-slate-200/80 align-middle dark:bg-white/[0.08]" aria-label="Loading counts" />
@@ -205,7 +224,7 @@ export default function ProblemsPage() {
           </div>
         </aside>
 
-        <section aria-labelledby="question-list-title" className="order-1 min-w-0 xl:order-2">
+        <section ref={listTopRef} aria-labelledby="question-list-title" className="order-1 min-w-0 scroll-mt-4 xl:order-2">
           <h2 id="question-list-title" className="sr-only">Questions</h2>
           {selection && <SelectionHeader kind={selection.kind} title={selection.title} description={selection.description} catalogCount={selection.catalogCount}
             shownCount={pagination.total || 0} filtered={narrowed} loading={loading} onClear={selection.clear} />}
@@ -213,8 +232,10 @@ export default function ProblemsPage() {
             <label className="relative block min-w-[220px] flex-1">
               <span className="sr-only">Search questions</span>
               <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
-              <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search by title, topic or company" className={`w-full pl-10 pr-9 ${fieldBase}`} />
-              {searchQuery && <button type="button" onClick={() => setSearchQuery('')} aria-label="Clear search" className={`absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:text-slate-700 ${focusRing}`}><X className="h-4 w-4" /></button>}
+              <input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} maxLength={100}
+                placeholder="Search title, company, #topic or question no." title="Type 12 or #12 for a question number, #two-pointers for a topic"
+                className={`w-full pl-10 pr-9 [&::-webkit-search-cancel-button]:hidden ${fieldBase}`} />
+              {searchQuery && <button type="button" onClick={clearSearch} aria-label="Clear search" className={`absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:text-slate-700 ${focusRing}`}><X className="h-4 w-4" /></button>}
             </label>
             <div role="radiogroup" aria-label="Difficulty" className="flex h-10 items-center rounded-xl border border-[#e4e7ec] bg-white p-1 dark:border-white/10 dark:bg-[#1f1f21]">
               {DIFFICULTY_OPTIONS.map((value) => {
@@ -250,12 +271,15 @@ export default function ProblemsPage() {
                 {activeFilters.length > 0 && <button type="button" onClick={clearFilters} className={`mt-4 rounded-xl bg-slate-900 px-4 py-2 text-[12.5px] font-medium text-white dark:bg-white dark:text-slate-900 ${focusRing}`}>Clear filters</button>}
               </div>
                 : <>
-                  <ul className="space-y-2">
-                    {problems.map((problem, index) => <ProblemRow key={problem._id} problem={problem} number={Number(problem.displayOrder) || (((pagination.page - 1) * PAGE_SIZE) + index + 1)}
+                  {/* The current page stays in place, dimmed, until the next one arrives. */}
+                  <ul aria-busy={loading} className={`space-y-2 transition-opacity duration-150 ${loading ? 'opacity-60' : ''}`}>
+                    {problems.map((problem, index) => <ProblemRow key={problem._id} problem={problem}
+                      number={Number(problem.displayOrder) > 0 && Number(problem.displayOrder) < NO_ORDER ? Number(problem.displayOrder) : (((pagination.page || 1) - 1) * (pagination.limit || pageSize)) + index + 1}
                       saved={favorites.includes(String(problem.listId)) || lists.some((list) => list.problemIds.includes(String(problem.listId)))}
                       opening={openingProblemId === problem._id} onOpen={openProblem} onSave={setListPickerProblem} onCompany={selectCompany} />)}
                   </ul>
-                  <Pagination pagination={pagination} loading={loading} solvedOnPage={solvedOnPage} shown={problems.length} onPage={setPage} />
+                  <PracticePager busy={loading} page={pagination.page || 1} pages={pagination.pages || 1} total={pagination.total || 0} limit={pagination.limit || pageSize} pageSize={pageSize}
+                    shown={problems.length} solvedOnPage={solvedOnPage} onPage={goToPage} onPageSize={setPageSize} />
                 </>}
           </div>
         </section>

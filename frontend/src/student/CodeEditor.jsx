@@ -9,7 +9,17 @@ import {
 // Monaco and its language workers are the largest frontend assets. Keep them
 // behind their own boundary so the problem description and preview controls can
 // render while the editor downloads in parallel.
-const MonacoCodeEditor = lazy(() => import('../admin/compiler/MonacoCodeEditor'));
+const loadMonacoCodeEditor = () => import('../admin/compiler/MonacoCodeEditor');
+const MonacoCodeEditor = lazy(loadMonacoCodeEditor);
+
+// Suggests the functions and variables the student declared in this editor.
+// It reuses the Monaco chunk above, so it adds nothing to the first render.
+function loadIdentifierCompletions() {
+  return Promise.all([
+    loadMonacoCodeEditor().then((module) => module.preloadMonacoEditor()),
+    import('./editor/identifierCompletion'),
+  ]);
+}
 
 function CodeEditorLoading() {
   return (
@@ -331,6 +341,24 @@ function CodeEditor({
     if (clipboardNoticeTimerRef.current) clearTimeout(clipboardNoticeTimerRef.current);
     const pending = pendingCodeCommitRef.current;
     if (pending) pending.commit(pending.value);
+  }, []);
+
+  useEffect(() => {
+    const scopeElement = editorContainerRef.current;
+    if (!scopeElement) return undefined;
+    let cancelled = false;
+    let release = null;
+    loadIdentifierCompletions()
+      .then(([monaco, { acquireIdentifierCompletions }]) => {
+        if (!cancelled) release = acquireIdentifierCompletions(monaco, scopeElement);
+      })
+      .catch(() => {
+        // Autocomplete is optional; the editor keeps Monaco's default suggestions.
+      });
+    return () => {
+      cancelled = true;
+      release?.();
+    };
   }, []);
 
   useEffect(() => {

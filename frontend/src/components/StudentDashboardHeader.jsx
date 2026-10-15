@@ -35,7 +35,7 @@ const modules = [
   { label: 'AI Interviews', hint: 'Practice with AI', to: '/student/ai-interviews', icon: Bot },
   { label: 'Assessments', hint: 'Available tests', to: '/student/assessments', icon: ClipboardList },
   { label: 'Learning', hint: 'Subjects and learning paths', to: '/student/learning', icon: BookOpen },
-  { label: 'Coding Problems', hint: 'Practice problem solving', to: '/problems', icon: Code2 },
+  { label: 'PrepCoding', hint: 'Practice problem solving', to: '/problems', icon: Code2 },
   { label: 'Resume Builder', hint: 'Build your placement resume', to: '/student/resume', icon: UserCog },
 ];
 

@@ -13,7 +13,7 @@ export function pickPracticeLanguage(user, supportedLanguages = [], fallback = '
   return supportedLanguages[0] || 'python';
 }
 
-/** Called on a practice run or submit; saves only when the language actually changed. SQL problems are SQL-only, so they never replace it. */
+/** Called when the student picks a language and on a practice run or submit; saves only when the language actually changed. SQL problems are SQL-only, so they never replace it. */
 export function rememberPracticeLanguage(user, language) {
   if (!user?._id || user.role !== 'student' || !language || language === 'sql' || language === preferredFor(user)) return;
   sessionLanguages.set(String(user._id), language);

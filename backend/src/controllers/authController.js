@@ -1,4 +1,6 @@
 import User from '../models/User.js';
+import Submission from '../models/Submission.js';
+import QuestionPracticeAttempt from '../models/QuestionPracticeAttempt.js';
 import { signToken } from '../utils/jwt.js';
 import { HttpError } from '../utils/errors.js';
 import crypto from 'crypto';
@@ -217,7 +219,7 @@ export async function me(req, res) {
     response.college = u.college;
     response.semester = u.semester;
     response.learnerProgress = profile.learnerProgress || null;
-    response.practiceLanguage = profile.practiceLanguage || '';
+    response.practiceLanguage = profile.practiceLanguage || await latestPracticeLanguage(u._id);
 
     // Fetch coordinator names from teacherIds
     if (Array.isArray(u.teacherIds) && u.teacherIds.length > 0) {
@@ -296,6 +298,22 @@ export async function acknowledgeLearnerProgress(req, res) {
 // General-purpose language ids the practice editor offers (COMPILER_LANGUAGES in frontend/src/admin/compiler/compilerUtils.js).
 // SQL is left out: SQL problems allow nothing else, so remembering it would only override the student's coding language.
 const PRACTICE_LANGUAGES = new Set(['python', 'javascript', 'java', 'cpp', 'c', 'typescript', 'csharp', 'php', 'go', 'rust', 'kotlin', 'ruby', 'r', 'swift']);
+
+/**
+ * Students who practised before the preference was stored have none saved; fall back to the language of their
+ * latest practice run/submit (problem submissions or shared-catalog attempts, never assessments).
+ */
+async function latestPracticeLanguage(userId) {
+  const languages = [...PRACTICE_LANGUAGES];
+  const [submission, attempt] = await Promise.all([
+    Submission.findOne({ user: userId, mode: { $in: ['run', 'submit'] }, assessmentId: { $exists: false }, language: { $in: languages } })
+      .sort({ createdAt: -1 }).select('language createdAt').maxTimeMS(3000).lean().catch(() => null),
+    QuestionPracticeAttempt.findOne({ studentId: userId, questionType: 'coding', language: { $in: languages } })
+      .sort({ createdAt: -1 }).select('language createdAt').maxTimeMS(3000).lean().catch(() => null),
+  ]);
+  const latest = [submission, attempt].filter(Boolean).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+  return latest?.language || '';
+}
 
 /** Remember the language a student last ran or submitted practice code in, so every problem opens in it. */
 export async function updatePracticeLanguage(req, res) {

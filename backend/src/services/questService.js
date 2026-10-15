@@ -47,15 +47,15 @@ function assertAuthor() {
 // see them by (the library row id), so students open and are credited on exactly that question.
 const linkedProblemId = (row) => row.sourceProblemId || row.questionData?.problemId || row.questionData?.coding?.problemId
   || row.questionData?.problemDataSnapshot?._id || row.questionData?.problemDataSnapshot?.id || null;
-async function centralLibraryIndex() {
+async function centralLibraryIndex(problemFilter = {}) {
   const rows = await QuestionLibrary.find({ ...CENTRAL_QUESTION_FILTER, questionType: 'coding' })
     .select('questionText difficulty tags keywords displayOrder sourceProblemId questionData.problemId questionData.coding.problemId questionData.problemDataSnapshot._id questionData.problemDataSnapshot.id questionData.problemDataSnapshot.title questionData.problemDataSnapshot.difficulty questionData.problemDataSnapshot.companyTags')
     .maxTimeMS(8000).lean();
   // Universities judge through the linked problem, so a row without a real one is not offered.
   const linked = rows.map((row) => String(linkedProblemId(row) || '')).filter((id) => mongoose.isObjectIdOrHexString(id));
-  const existing = new Set((linked.length ? await Problem.find({ _id: { $in: linked } }).select('_id').maxTimeMS(8000).lean() : []).map((problem) => String(problem._id)));
+  const existing = new Set((linked.length ? await Problem.find({ ...problemFilter, _id: { $in: linked } }).select('_id').maxTimeMS(8000).lean() : []).map((problem) => String(problem._id)));
   const entries = rows.filter((row) => existing.has(String(linkedProblemId(row) || ''))).map((row) => ({
-    source: 'shared', problemId: String(row._id), title: row.questionData?.problemDataSnapshot?.title || row.questionText,
+    source: 'shared', problemId: String(row._id), localProblemId: String(linkedProblemId(row)), title: row.questionData?.problemDataSnapshot?.title || row.questionText,
     difficulty: row.difficulty || row.questionData?.problemDataSnapshot?.difficulty || 'Easy', tags: row.tags || [],
     companies: row.keywords?.length ? row.keywords : row.questionData?.problemDataSnapshot?.companyTags || [],
     order: Number(row.displayOrder) || 2147483647, href: `/problems/shared/${row._id}`,
@@ -78,6 +78,20 @@ async function libraryIndex() {
       href: `/problems/shared/${question._id}` })),
   ];
   return new Map(entries.map((entry) => [itemKey(entry), { ...entry, key: itemKey(entry) }]));
+}
+
+/**
+ * The questions students can open from a QuickPrep. A university opens central ("shared") items through its
+ * central feed at /problems/shared/<row id>. Elsewhere there is no feed: a shared item is a central library row
+ * in this database, which students open and are judged on through its linked problem, at /problems/<problem id>,
+ * exactly as the All Questions page opens it. `routeId` is the id in the item's link.
+ */
+async function studentLibraryIndex(quests = []) {
+  if (isUniversity()) return libraryIndex();
+  const needsCentral = isControlPlane() || quests.some((quest) => (quest.items || []).some((item) => item.source === 'shared'));
+  const [index, central] = await Promise.all([isControlPlane() ? new Map() : libraryIndex(), needsCentral ? centralLibraryIndex(publicProblemMatch) : new Map()]);
+  for (const [key, entry] of central) index.set(key, { ...entry, routeId: entry.localProblemId, href: `/problems/${entry.localProblemId}` });
+  return index;
 }
 
 // Query values may arrive as "a,b", repeated params or arrays; all become a clean list.
@@ -564,37 +578,83 @@ async function visibleQuests(student, { slug, id, limit = 100 } = {}) {
     .sort({ publishedAt: -1, _id: -1 }).limit(limit).maxTimeMS(8000).lean();
 }
 
-/** Published QuickPreps, visible to this student, that contain a coding question. */
+// Two items of one QuickPrep can open the same problem (two central rows linked to it), so the link also names the item.
+const questItemHref = (href, slug, key) => `${href}?quest=${encodeURIComponent(slug)}&item=${encodeURIComponent(key)}`;
+
+/**
+ * Published QuickPreps, visible to this student, that contain a coding question, with the student's progress
+ * in each. It only decorates a problem page, so a failed lookup is logged and gives an empty list.
+ */
 export async function questionQuickPreps(student, source, problemId) {
   if (!['university', 'shared'].includes(source) || !mongoose.isValidObjectId(problemId)) return [];
-  const key = itemKey({ source, problemId: String(problemId) });
-  const quests = await visibleQuests(student, { limit: 300 });
-  return quests
-    .filter((quest) => (quest.items || []).some((item) => itemKey(item) === key))
-    .map((quest) => ({
-      id: String(quest._id),
-      slug: quest.slug,
-      title: quest.title,
-      theme: quest.theme,
-      href: `/student/quickprep/${quest.slug}`,
-    }));
+  try {
+    // The central platform's QuickPreps open only central rows (studentLibraryIndex), so an old local pick there is not membership.
+    const keys = new Set(isControlPlane() && source === 'university' ? [] : [itemKey({ source, problemId: String(problemId) })]);
+    const visible = await visibleQuests(student, { limit: 300 });
+    if (!visible.length) return [];
+    // Off a university, QuickPreps hold central library rows; a problem belongs through the rows linked to it.
+    // Only the visible QuickPreps' own shared rows are checked (by _id, always indexed) instead of scanning the library.
+    if (!isUniversity() && source === 'university') {
+      const sharedIds = [...new Set(visible.flatMap((quest) => (quest.items || [])
+        .filter((item) => item.source === 'shared' && mongoose.isValidObjectId(String(item.problemId)))
+        .map((item) => String(item.problemId))))];
+      if (sharedIds.length) {
+        const ids = [String(problemId), objectId(problemId)];
+        const rows = await QuestionLibrary.find({ _id: { $in: sharedIds.map(objectId) }, ...CENTRAL_QUESTION_FILTER, questionType: 'coding',
+          $or: [{ sourceProblemId: ids[1] }, { 'questionData.problemId': { $in: ids } }, { 'questionData.coding.problemId': { $in: ids } }] })
+          .select('_id').maxTimeMS(8000).lean();
+        for (const row of rows) keys.add(itemKey({ source: 'shared', problemId: String(row._id) }));
+      }
+    }
+    const quests = visible.filter((quest) => (quest.items || []).some((item) => keys.has(itemKey(item))));
+    if (!quests.length) return [];
+    const enrollments = await QuestEnrollment.find({ ...engagementScope(student), questId: { $in: quests.map((quest) => quest._id) } })
+      .select('questId solvedCount totalCount completedAt').maxTimeMS(8000).lean();
+    const byQuest = new Map(enrollments.map((row) => [String(row.questId), row]));
+    return quests.map((quest) => {
+      const enrollment = byQuest.get(String(quest._id));
+      return {
+        id: String(quest._id),
+        slug: quest.slug,
+        title: quest.title,
+        theme: quest.theme,
+        href: `/student/quickprep/${quest.slug}`,
+        started: Boolean(enrollment),
+        completed: Boolean(enrollment?.completedAt),
+        solved: enrollment?.solvedCount || 0,
+        // Before a start, count what this deployment can open: universities and the central platform open only central items.
+        total: enrollment?.totalCount || (quest.items || []).filter((item) => (!isUniversity() && !isControlPlane()) || item.source === 'shared').length,
+      };
+    });
+  } catch (error) {
+    console.warn(`[QuickPrep] Membership lookup failed for ${source}:${problemId}:`, error?.message || error);
+    return [];
+  }
 }
 
-/** Solved and attempted state for the given library keys, from verified submissions and attempts. */
-async function questionStates(studentId, keys) {
-  const local = keys.filter((key) => key.startsWith('coding:local:')).map((key) => objectId(key.split(':').at(-1)));
-  const shared = keys.filter((key) => key.startsWith('coding:shared:')).map((key) => objectId(key.split(':').at(-1)));
+/**
+ * Solved and attempted state for the given library keys, from verified submissions and attempts. A shared
+ * item judged through a local problem (`localProblemId` in the index, off a university) uses that problem's submissions.
+ */
+async function questionStates(studentId, keys, index = new Map()) {
+  const localIdOf = (key) => (key.startsWith('coding:local:') ? key.split(':').at(-1) : index.get(key)?.localProblemId || null);
+  const local = [...new Set(keys.map(localIdOf).filter(Boolean))].map(objectId);
+  const shared = keys.filter((key) => key.startsWith('coding:shared:') && !localIdOf(key)).map((key) => objectId(key.split(':').at(-1)));
   const [solvedLocal, triedLocal, solvedShared, triedShared] = await Promise.all([
     local.length ? Submission.distinct('problem', { user: studentId, problem: { $in: local }, mode: 'submit', assessmentId: null, status: { $in: ACCEPTED } }) : [],
     local.length ? Submission.distinct('problem', { user: studentId, problem: { $in: local }, assessmentId: null }) : [],
     shared.length ? QuestionPracticeAttempt.distinct('questionId', { studentId, source: 'shared', questionType: 'coding', questionId: { $in: shared }, result: 'correct' }) : [],
     shared.length ? QuestionPracticeAttempt.distinct('questionId', { studentId, source: 'shared', questionType: 'coding', questionId: { $in: shared } }) : [],
   ]);
+  const solved = new Set([...solvedLocal.map((value) => `local:${value}`), ...solvedShared.map((value) => `shared:${value}`)]);
+  const tried = new Set([...triedLocal.map((value) => `local:${value}`), ...triedShared.map((value) => `shared:${value}`)]);
   const states = new Map();
-  for (const value of triedLocal) states.set(`coding:local:${value}`, 'attempted');
-  for (const value of triedShared) states.set(`coding:shared:${value}`, 'attempted');
-  for (const value of solvedLocal) states.set(`coding:local:${value}`, 'solved');
-  for (const value of solvedShared) states.set(`coding:shared:${value}`, 'solved');
+  for (const key of keys) {
+    const localId = localIdOf(key);
+    const marker = localId ? `local:${localId}` : `shared:${key.split(':').at(-1)}`;
+    if (solved.has(marker)) states.set(key, 'solved');
+    else if (tried.has(marker)) states.set(key, 'attempted');
+  }
   return states;
 }
 
@@ -640,17 +700,17 @@ function studentCard(quest, index, states, enrollment) {
     companies: questCompanies(quest), topics: quest.topics, theme: quest.theme, rewardXp: quest.rewardXp, badge: questBadge(quest, items.length),
     total: items.length, solved, difficulty, started: Boolean(enrollment), startedAt: enrollment?.startedAt || null,
     completedAt: enrollment?.completedAt || null, lastViewedAt: enrollment?.lastViewedAt || null,
-    lastProblem: last ? { key: last.key, title: last.title, href: `${last.href}?quest=${encodeURIComponent(quest.slug)}` } : null,
+    lastProblem: last ? { key: last.key, title: last.title, href: questItemHref(last.href, quest.slug, last.key) } : null,
   };
 }
 
 async function loadStudentQuests(student, filter = {}) {
   const scope = engagementScope(student);
   const quests = await visibleQuests(student, filter);
-  const [index, enrollments] = await Promise.all([libraryIndex(),
+  const [index, enrollments] = await Promise.all([studentLibraryIndex(quests),
     quests.length ? QuestEnrollment.find({ ...scope, questId: { $in: quests.map((quest) => quest._id) } }).maxTimeMS(8000).lean() : []]);
   const keys = [...new Set(quests.flatMap((quest) => quest.items.map(itemKey)).filter((key) => index.has(key)))];
-  const states = await questionStates(scope.studentId, keys);
+  const states = await questionStates(scope.studentId, keys, index);
   return { scope, quests, index, states, enrollments: new Map(enrollments.map((row) => [String(row.questId), row])) };
 }
 
@@ -684,8 +744,8 @@ export async function getStudentQuest(student, slug, now = new Date()) {
   const card = studentCard(quest, index, states, enrollment);
   if (enrollment && !enrollment.completedAt) enrollment = await settleEnrollment(scope, quest, enrollment, card.solved, card.total, now);
   const items = quest.items.map((item) => ({ item, entry: index.get(itemKey(item)) })).filter(({ entry }) => entry).map(({ item, entry }) => ({
-    key: entry.key, source: entry.source, problemId: entry.problemId, title: entry.title, difficulty: entry.difficulty, tags: entry.tags.slice(0, 4),
-    section: item.section || '', status: states.get(entry.key) || 'none', href: `${entry.href}?quest=${encodeURIComponent(quest.slug)}`,
+    key: entry.key, source: entry.source, problemId: entry.problemId, routeId: entry.routeId || entry.problemId, title: entry.title, difficulty: entry.difficulty, tags: entry.tags.slice(0, 4),
+    section: item.section || '', status: states.get(entry.key) || 'none', href: questItemHref(entry.href, quest.slug, entry.key),
   }));
   return { quest: { ...card, completedAt: enrollment?.completedAt || null, items } };
 }
@@ -733,14 +793,14 @@ export async function latestQuestResume(student) {
   if (!enrollment) return null;
   const quest = quests.find((entry) => String(entry._id) === String(enrollment.questId));
   if (!quest) return null;
-  const index = await libraryIndex();
+  const index = await studentLibraryIndex([quest]);
   const keys = quest.items.map(itemKey).filter((key) => index.has(key));
   if (!keys.length) return null;
-  const states = await questionStates(scope.studentId, keys);
+  const states = await questionStates(scope.studentId, keys, index);
   const last = index.get(enrollment.lastProblemKey);
   return {
     id: `quest:${quest._id}`, type: 'quest', title: quest.title, subtitle: last ? last.title : `${keys.length} questions`,
-    href: last ? `${last.href}?quest=${encodeURIComponent(quest.slug)}` : `/student/quickprep/${quest.slug}`, questHref: `/student/quickprep/${quest.slug}`,
+    href: last ? questItemHref(last.href, quest.slug, last.key) : `/student/quickprep/${quest.slug}`, questHref: `/student/quickprep/${quest.slug}`,
     theme: quest.theme, solved: keys.filter((key) => states.get(key) === 'solved').length, total: keys.length,
     lastProblemTitle: last?.title || null, lastProblemDifficulty: last?.difficulty || null, updatedAt: enrollment.lastViewedAt,
   };

@@ -88,6 +88,26 @@ function createTerminalExecutionResult(error, {
   };
 }
 
+/** The rotated watermark marks, shared by the problem pane and the image viewer. */
+function WatermarkMarks({ columns, config }) {
+  return columns.map((item) => (
+    <div
+      key={item.id}
+      className="absolute select-none whitespace-nowrap font-black uppercase tracking-[0.22em]"
+      style={{
+        left: item.left,
+        top: item.top,
+        transform: `rotate(${config.angle}deg)`,
+        color: config.color,
+        opacity: config.opacity,
+        fontSize: `${config.fontSize}px`,
+      }}
+    >
+      {item.text}
+    </div>
+  ));
+}
+
 const buildSampleTestCases = (codingData = {}) => {
   const list = Array.isArray(codingData.sampleTestCases) && codingData.sampleTestCases.length
     ? codingData.sampleTestCases
@@ -3279,6 +3299,10 @@ export default function AssessmentAttempt() {
       spacing,
     }));
   }, [watermarkConfig]);
+  // The image viewer is portaled out of the problem pane, so it carries its own copy of the watermark.
+  const lightboxWatermark = useMemo(() => (watermarkConfig.enabled
+    ? <WatermarkMarks columns={watermarkColumns} config={watermarkConfig} />
+    : null), [watermarkColumns, watermarkConfig]);
 
   if (loading) {
     return (
@@ -3592,22 +3616,7 @@ export default function AssessmentAttempt() {
                 >
                   {showAssessmentWorkspace && watermarkConfig.enabled && (
                     <div className="pointer-events-none absolute inset-0 z-[1] overflow-hidden" aria-hidden="true">
-                      {watermarkColumns.map((item) => (
-                        <div
-                          key={item.id}
-                          className="absolute select-none whitespace-nowrap font-black uppercase tracking-[0.22em]"
-                          style={{
-                            left: item.left,
-                            top: item.top,
-                            transform: `rotate(${watermarkConfig.angle}deg)`,
-                            color: watermarkConfig.color,
-                            opacity: watermarkConfig.opacity,
-                            fontSize: `${watermarkConfig.fontSize}px`,
-                          }}
-                        >
-                          {item.text}
-                        </div>
-                      ))}
+                      <WatermarkMarks columns={watermarkColumns} config={watermarkConfig} />
                     </div>
                   )}
                   <AssessmentCodingProblemPanel
@@ -3616,6 +3625,7 @@ export default function AssessmentAttempt() {
                     language={activeLanguage}
                     marks={questionMarks}
                     sectionLabel={currentSectionLabel}
+                    watermark={lightboxWatermark}
                   />
                 </section>
 

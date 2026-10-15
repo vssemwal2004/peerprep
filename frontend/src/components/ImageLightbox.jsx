@@ -4,6 +4,8 @@ import { ChevronLeft, ChevronRight, ExternalLink, ImageOff, Loader2, Maximize, X
 
 const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
 const DRAG_THRESHOLD = 4;
+// In assessments the viewer sits above the workspace (z-40..60) and below every proctoring overlay (z-70..150).
+const SECURE_LAYER = 'z-[65]';
 
 // One slide. Keyed by index in the parent so load/error state resets per image.
 function LightboxStage({ image, zoomed, canZoom, onToggleZoom, onMeasured, onBackdrop }) {
@@ -136,9 +138,13 @@ function LightboxStage({ image, zoomed, canZoom, onToggleZoom, onMeasured, onBac
  * solver split panes and the assessment fullscreen chrome.
  * images: [{ src, originalUrl, alt, caption }]
  */
-export default function ImageLightbox({ images = [], initialIndex = 0, onClose, allowOpenOriginal = true }) {
+export default function ImageLightbox({ images = [], initialIndex = 0, onClose, allowOpenOriginal = true, secure = false, overlay = null }) {
   const count = images.length;
-  const [index, setIndex] = useState(() => Math.min(Math.max(0, initialIndex), Math.max(0, count - 1)));
+  const [rawIndex, setIndex] = useState(() => Math.min(Math.max(0, initialIndex), Math.max(0, count - 1)));
+  // The image list comes from props, so it can shrink while the viewer is open.
+  const index = Math.min(rawIndex, Math.max(0, count - 1));
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   const [zoomed, setZoomed] = useState(false);
   const [canZoom, setCanZoom] = useState(false);
   const dialogRef = useRef(null);
@@ -146,7 +152,7 @@ export default function ImageLightbox({ images = [], initialIndex = 0, onClose, 
 
   const go = useCallback((delta) => {
     if (count < 2) return;
-    setIndex((current) => (current + delta + count) % count);
+    setIndex((current) => (Math.min(current, count - 1) + delta + count) % count);
     setZoomed(false);
     setCanZoom(false);
   }, [count]);
@@ -166,6 +172,23 @@ export default function ImageLightbox({ images = [], initialIndex = 0, onClose, 
       if (opener && document.contains(opener)) opener.focus?.({ preventScroll: true });
     };
   }, []);
+
+  // Assessments: leaving fullscreen, hiding the tab or losing focus each raise a proctoring overlay
+  // (pause, fullscreen recovery, auto-submit). Close so the viewer never covers or traps focus away from them.
+  useEffect(() => {
+    if (!secure) return undefined;
+    const close = () => onCloseRef.current?.();
+    const closeIfExited = () => { if (!document.fullscreenElement) close(); };
+    const closeIfHidden = () => { if (document.hidden) close(); };
+    document.addEventListener('fullscreenchange', closeIfExited);
+    document.addEventListener('visibilitychange', closeIfHidden);
+    window.addEventListener('blur', close);
+    return () => {
+      document.removeEventListener('fullscreenchange', closeIfExited);
+      document.removeEventListener('visibilitychange', closeIfHidden);
+      window.removeEventListener('blur', close);
+    };
+  }, [secure]);
 
   // Window capture so solver/editor shortcuts do not also react. Modified keys
   // (Alt+Tab, Ctrl+Tab, ...) pass straight through for the assessment guards.
@@ -220,7 +243,7 @@ export default function ImageLightbox({ images = [], initialIndex = 0, onClose, 
       role="dialog"
       aria-modal="true"
       aria-label={image.alt ? `Image viewer: ${image.alt}` : 'Image viewer'}
-      className="fixed inset-0 z-[20000] flex flex-col bg-black/80 backdrop-blur-sm"
+      className={`fixed inset-0 ${secure ? SECURE_LAYER : 'z-[20000]'} flex flex-col bg-black/80 backdrop-blur-sm`}
       onClick={(event) => {
         if (event.target === event.currentTarget) close();
       }}
@@ -276,6 +299,7 @@ export default function ImageLightbox({ images = [], initialIndex = 0, onClose, 
           onMeasured={setCanZoom}
           onBackdrop={close}
         />
+        {overlay ? <div className="pointer-events-none absolute inset-0 z-[5] overflow-hidden" aria-hidden="true">{overlay}</div> : null}
         {count > 1 ? (
           <>
             <button type="button" onClick={() => go(-1)} className={`${navButton} left-2 sm:left-4`} aria-label="Previous image">

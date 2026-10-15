@@ -3,7 +3,7 @@ const footerSections = [
     title: 'Platform',
     links: [
       { label: 'Assessments', href: '/student/assessments' },
-      { label: 'Compiler', href: '/problems' },
+      { label: 'PrepCoding', href: '/problems' },
       { label: 'Learning', href: '/student/learning' },
       { label: 'Reports', href: '/student/assessment-reports' },
     ],

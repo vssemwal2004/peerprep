@@ -38,7 +38,7 @@ import {
   listSubmissions,
 } from '../controllers/submissionController.js';
 import { cacheJsonResponse, invalidateResponseCache } from '../middleware/responseCache.js';
-import { uploadCodingProblemAsset } from '../controllers/problemAssetController.js';
+import { acceptProblemAsset, uploadCodingProblemAsset } from '../controllers/problemAssetController.js';
 import { getDailyChallenge, getDailyChallengeSettings, saveDailyChallengeSettings } from '../controllers/codingStreakController.js';
 
 const router = Router();
@@ -56,20 +56,6 @@ const compilerCache = cacheJsonResponse({
   namespace: 'compiler',
   ttlSeconds: Number(process.env.RESPONSE_CACHE_COMPILER_TTL_SECONDS || 30),
 });
-const problemAssetUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 1024 * 1024, files: 1, fields: 0, parts: 1 },
-});
-
-function acceptProblemAsset(req, res, next) {
-  problemAssetUpload.single('image')(req, res, (error) => {
-    if (!error) return next();
-    if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
-      return res.status(413).json({ error: 'Image must be 1 MB or smaller.' });
-    }
-    return res.status(400).json({ error: 'Upload one JPG, PNG, WebP, or GIF image up to 1 MB.' });
-  });
-}
 const invalidateCompilerCache = invalidateResponseCache('compiler');
 
 router.get('/daily-challenge', requireStudent, requireFullStudent, getDailyChallenge);

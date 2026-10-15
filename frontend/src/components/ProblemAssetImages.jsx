@@ -142,6 +142,9 @@ export default function ProblemAssetImages({
   variant = 'content',
   label = '',
   allowOpenOriginal = true,
+  // Assessments: the viewer never leaves the page, stays under proctoring overlays and carries the watermark.
+  secure = false,
+  lightboxOverlay = null,
 }) {
   const [openIndex, setOpenIndex] = useState(null);
   const items = prepareImages(images, label);
@@ -179,7 +182,9 @@ export default function ProblemAssetImages({
             caption: item.caption,
           }))}
           initialIndex={openIndex}
-          allowOpenOriginal={allowOpenOriginal}
+          allowOpenOriginal={allowOpenOriginal && !secure}
+          secure={secure}
+          overlay={lightboxOverlay}
           onClose={() => setOpenIndex(null)}
         />
       ) : null}

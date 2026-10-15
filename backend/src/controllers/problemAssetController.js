@@ -1,8 +1,35 @@
 import { randomUUID } from 'node:crypto';
+import multer from 'multer';
 import { isCloudinaryConfigured, uploadProblemAsset } from '../utils/cloudinary.js';
 
 const ONE_MB = 1024 * 1024;
 const SUPPORTED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+
+// No `parts` limit: busboy also counts the closing boundary as a part, so `parts: 1`
+// rejected every single-image upload with LIMIT_PART_COUNT. `files` and `fields` bound the request.
+const problemAssetUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: ONE_MB, files: 1, fields: 0 },
+});
+
+const UPLOAD_ERROR_MESSAGES = {
+  LIMIT_FILE_SIZE: [413, 'Image must be 1 MB or smaller.'],
+  LIMIT_FILE_COUNT: [400, 'Upload one image at a time.'],
+  LIMIT_UNEXPECTED_FILE: [400, 'Send the image in the "image" form field.'],
+  LIMIT_FIELD_COUNT: [400, 'Send only the image, without other form fields.'],
+  LIMIT_PART_COUNT: [400, 'Send only the image, without other form fields.'],
+};
+
+/** Parses one multipart image from the `image` field and turns parser failures into specific messages. */
+export function acceptProblemAsset(req, res, next) {
+  problemAssetUpload.single('image')(req, res, (error) => {
+    if (!error) return next();
+    const [status, message] = UPLOAD_ERROR_MESSAGES[error.code]
+      || [400, 'The image upload could not be read. Try again with one JPG, PNG, WebP, or GIF image up to 1 MB.'];
+    console.warn(`[problem-assets] Rejected upload: ${error.code || error.message}`);
+    return res.status(status).json({ error: message });
+  });
+}
 
 function detectedImageType(buffer) {
   if (!Buffer.isBuffer(buffer) || buffer.length < 12) return '';
@@ -29,6 +56,10 @@ export function mapImageStorageError(error) {
   // Cloudinary reports its own request timeouts as http_code 499 / TimeoutError.
   if (httpCode === 499 || name === 'TimeoutError' || ['ETIMEDOUT', 'ESOCKETTIMEDOUT', 'ECONNRESET'].includes(code)) {
     return { status: 504, error: 'Image upload timed out. Try again.' };
+  }
+  // Any other 4xx means Cloudinary rejected this file; retrying the same upload will not help.
+  if (httpCode >= 400 && httpCode < 500) {
+    return { status: 422, error: 'This image could not be processed. Try re-exporting it or using a smaller image.' };
   }
   return { status: 502, error: 'Image storage is temporarily unavailable.' };
 }

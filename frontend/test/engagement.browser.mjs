@@ -178,7 +178,7 @@ try {
   assert.equal(await header.getByRole('button', { name: 'Open daily challenges' }).evaluate(node => node === document.activeElement), true, 'Focus returns to the header trigger');
   assert.equal(await page.locator('[data-app-scroll-container]').evaluate(node => node.style.overflow), '');
   await header.getByRole('textbox', { name: 'Search student modules' }).fill('coding');
-  await header.getByRole('button', { name: 'Coding Problems Practice problem solving' }).waitFor();
+  await header.getByRole('button', { name: 'PrepCoding Practice problem solving' }).waitFor();
   await page.keyboard.press('Escape');
   await header.getByRole('button', { name: 'Open profile menu' }).click();
   await header.getByRole('button', { name: 'My profile', exact: true }).click();
@@ -233,7 +233,7 @@ try {
   await page.goto(`${base}/__engagement-fixture?restricted`, { waitUntil: 'commit' });
   await page.locator('#activity').waitFor();
   await header.getByRole('textbox', { name: 'Search student modules' }).fill('coding');
-  assert.equal(await header.getByRole('button', { name: 'Coding Problems Practice problem solving' }).count(), 0, 'Profile header respects university feature allocations');
+  assert.equal(await header.getByRole('button', { name: 'PrepCoding Practice problem solving' }).count(), 0, 'Profile header respects university feature allocations');
   await page.keyboard.press('Escape');
   await header.getByRole('button', { name: 'Open module launcher' }).click();
   assert.equal(await header.getByRole('button', { name: 'Learning', exact: true }).count(), 0);

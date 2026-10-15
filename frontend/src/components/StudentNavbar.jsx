@@ -81,7 +81,7 @@ export function StudentNavbar() {
     { path: "/student/interview", label: "Interview", Icon: CalendarDays },
     { path: "/student/assessments", label: "Assessments", Icon: ClipboardList },
     { path: "/student/learning", label: "Learning", Icon: GraduationCap },
-    { path: "/problems", label: "Problems", Icon: Code2 },
+    { path: "/problems", label: "PrepCoding", Icon: Code2 },
   ];
 
   const isItemActive = (path) => {
