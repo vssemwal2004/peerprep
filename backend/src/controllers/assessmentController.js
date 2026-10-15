@@ -1982,7 +1982,7 @@ export async function previewAssessmentStudents(req, res) {
   const emails = normalized.map(row => String(row.email || '').toLowerCase()).filter(Boolean);
   const studentIds = normalized.map(row => String(row.studentid || '')).filter(Boolean);
   const existing = await User.find({ $or: [{ email: { $in: emails } }, { studentId: { $in: studentIds } }] })
-    .select('_id name email studentId role accessScope').lean();
+    .select('_id name email studentId role accessScope semester').lean();
   const byEmail = new Map(existing.filter(user => user.email).map(user => [user.email.toLowerCase(), user]));
   const byStudentId = new Map(existing.filter(user => user.studentId).map(user => [String(user.studentId), user]));
   const seenEmails = new Set();
@@ -2010,16 +2010,22 @@ export async function previewAssessmentStudents(req, res) {
     if (assessmentSet !== '' && (!Number.isInteger(assessmentSet) || assessmentSet < 1 || assessmentSet > 8)) {
       errors.push('Assessment Set must be a whole number between 1 and 8');
     }
-    return { row: index + 1, name: row.name, email, studentid: studentId, assessmentSet,
+    const semester = row.semester === '' || row.semester === undefined || row.semester === null
+      ? ''
+      : Number(row.semester);
+    if (semester !== '' && (!Number.isInteger(semester) || semester < 1 || semester > 8)) {
+      errors.push('Semester must be a whole number between 1 and 8');
+    }
+    return { row: index + 1, name: row.name, email, studentid: studentId, semester, assessmentSet,
       status: errors.length ? 'error' : user ? 'existing' : 'new', errors,
-      existingStudent: user && !errors.length ? { _id: user._id, name: user.name, email: user.email, studentId: user.studentId, accessScope: user.accessScope } : null };
+      existingStudent: user && !errors.length ? { _id: user._id, name: user.name, email: user.email, studentId: user.studentId, accessScope: user.accessScope, semester: user.semester } : null };
   });
   return res.json({ preview });
 }
 
 async function resolveAssignedStudents({ targetType, assignedStudents, audienceType = 'platform_students', candidateCredentialMode = 'secure_generated' }) {
   if (targetType === 'all') {
-    const students = await User.find({ role: 'student', accessScope: { $ne: 'assessment_only' } }).select('_id email name studentId accessScope').lean();
+    const students = await User.find({ role: 'student', accessScope: { $ne: 'assessment_only' } }).select('_id email name studentId accessScope semester').lean();
     return { ids: students.map(s => s._id), users: students, created: [] };
   }
 
@@ -2038,7 +2044,7 @@ async function resolveAssignedStudents({ targetType, assignedStudents, audienceT
       { studentId: { $in: studentIds } },
       { _id: { $in: normalizedRows.map(r => r._id).filter(Boolean) } },
     ],
-  }).select('_id email name studentId role accessScope').lean();
+  }).select('_id email name studentId role accessScope semester').lean();
 
   const existingByEmail = new Map(existing.filter(u => u.email).map(u => [u.email.toLowerCase(), u]));
   const existingByStudentId = new Map(existing.filter(u => u.studentId).map(u => [u.studentId.toString(), u]));
@@ -2112,9 +2118,12 @@ async function resolveAssignedStudents({ targetType, assignedStudents, audienceT
       throw new Error(`Teacher ID / Coordinator code(s) "${invalidIds.join(', ')}" do not match any existing coordinator.`);
     }
 
-    const semesterNum = assessmentOnly ? undefined : parseInt(row.semester, 10);
-    if (!assessmentOnly && (Number.isNaN(semesterNum) || semesterNum < 1 || semesterNum > 8)) {
-      throw new Error('Semester must be between 1 and 8 for new students.');
+    const hasSemester = row.semester !== '' && row.semester !== undefined && row.semester !== null;
+    const semesterNum = hasSemester ? Number(row.semester) : undefined;
+    if ((!assessmentOnly || hasSemester) && (!Number.isInteger(semesterNum) || semesterNum < 1 || semesterNum > 8)) {
+      throw new Error(assessmentOnly
+        ? 'Optional semester must be a whole number between 1 and 8.'
+        : 'Semester must be between 1 and 8 for new students.');
     }
 
     const generatedPassword = candidateCredentialMode === 'student_id'
@@ -2149,7 +2158,7 @@ async function resolveAssignedStudents({ targetType, assignedStudents, audienceT
     });
   }
 
-  const users = await User.find({ _id: { $in: assignedIds } }).select('_id email name studentId accessScope +temporaryPasswordEncrypted').lean();
+  const users = await User.find({ _id: { $in: assignedIds } }).select('_id email name studentId accessScope semester +temporaryPasswordEncrypted').lean();
   return { ids: assignedIds, users, created };
 }
 
@@ -2600,7 +2609,7 @@ export async function listAssessments(req, res) {
 export async function getAssessment(req, res) {
   try {
     const { id } = req.params;
-    const assessment = await Assessment.findById(id).populate('assignedStudents', 'name email studentId accessScope').lean()
+    const assessment = await Assessment.findById(id).populate('assignedStudents', 'name email studentId accessScope semester').lean()
       || await sharedAssessment(id);
     if (!assessment) return res.status(404).json({ error: 'Assessment not found' });
     const status = computeStatus(new Date(), assessment);
@@ -2860,7 +2869,7 @@ export async function updateAssessment(req, res) {
     if (!isDraft && (sendEmail || newlyCreatedAudienceUsers.length)) {
       const mailUsers = resolvedAudienceUsers.length
         ? resolvedAudienceUsers
-        : await User.find({ _id: { $in: assessment.assignedStudents || [] } }).select('_id email name studentId accessScope +temporaryPasswordEncrypted').lean();
+        : await User.find({ _id: { $in: assessment.assignedStudents || [] } }).select('_id email name studentId accessScope semester +temporaryPasswordEncrypted').lean();
       await queueAssessmentAudienceEmails({
         assessment,
         users: mailUsers,
