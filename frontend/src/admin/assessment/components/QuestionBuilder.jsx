@@ -39,8 +39,8 @@ export function QuestionImageUploader({ value, onChange, label = 'Add image', co
       toast.error('Use a JPG, PNG, WebP, or GIF image.');
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('Question images must be 5 MB or smaller.');
+    if (file.size > 1024 * 1024) {
+      toast.error('Question images must be 1 MB or smaller.');
       return;
     }
     setUploading(true);

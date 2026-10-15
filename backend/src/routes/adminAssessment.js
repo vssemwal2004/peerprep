@@ -68,7 +68,7 @@ router.use('/library/questions', async (req, res, next) => {
 });
 const questionAssetUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+  limits: { fileSize: 1024 * 1024, files: 1 },
 });
 
 router.post('/assessment/students/preview', requireAuth, requireCoordinatorPermission('coordinator.assessment.create'), previewAssessmentStudents);

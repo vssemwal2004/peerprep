@@ -43,7 +43,7 @@ const PAIR_TEMPLATE_FILES = [
 
 const BULK_INPUT_TEMPLATE = '2 3\n###CASE###\n10 20\n###CASE###\n7 8\n';
 const BULK_OUTPUT_TEMPLATE = '5\n###CASE###\n30\n###CASE###\n15\n';
-const PROBLEM_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+const PROBLEM_IMAGE_MAX_BYTES = 1024 * 1024;
 const CODE_FILE_MAX_BYTES = 100 * 1024;
 const PROBLEM_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
@@ -95,7 +95,7 @@ function ProblemImageManager({ images = [], onChange, maxImages = 10, allowSecti
     }
     const oversized = selectedFiles.find((file) => file.size > PROBLEM_IMAGE_MAX_BYTES);
     if (oversized) {
-      toast.error(`“${oversized.name}” is larger than 5 MB. Choose a smaller image.`);
+      toast.error(`“${oversized.name}” is larger than 1 MB. Choose a smaller image.`);
       return;
     }
     if (images.length + selectedFiles.length > maxImages) {
@@ -139,7 +139,7 @@ function ProblemImageManager({ images = [], onChange, maxImages = 10, allowSecti
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h4 className="text-sm font-semibold text-slate-900 dark:text-white">{title}</h4>
-          <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">JPG, PNG, WebP or GIF · maximum 5 MB each · {images.length}/{maxImages}</p>
+          <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">JPG, PNG, WebP or GIF · maximum 1 MB each · {images.length}/{maxImages}</p>
         </div>
         <button type="button" onClick={() => inputRef.current?.click()} disabled={uploading || images.length >= maxImages} className="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-white px-3 py-2 text-xs font-semibold text-sky-700 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-sky-900 dark:bg-gray-900 dark:text-sky-300 dark:hover:bg-sky-950/30">
           {uploading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
