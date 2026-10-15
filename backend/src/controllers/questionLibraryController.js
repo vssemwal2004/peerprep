@@ -17,7 +17,8 @@ import { prepareFunctionSourceForExecution } from '../services/functionProblemAd
 import { buildJudge0Options } from '../services/executionService.js';
 import { persistedTestCaseInputLimitBytes } from '../services/trustedLargeInputPolicyService.js';
 import StudentUploadBatch from '../models/StudentUploadBatch.js';
-import { supabase } from '../utils/supabase.js';
+import { isCloudinaryConfigured, uploadProblemAsset } from '../utils/cloudinary.js';
+import { mapImageStorageError } from './problemAssetController.js';
 import {
   buildLibrarySearchMatch,
   ensureQuestionLibrarySynchronized,
@@ -222,51 +223,32 @@ export async function uploadLibraryAsset(req, res) {
     if (!QUESTION_ASSET_MIME_TYPES.has(req.file.mimetype)) {
       return res.status(400).json({ error: 'Only JPG, PNG, WebP, and GIF images are supported.' });
     }
-    if (!supabase) return res.status(503).json({ error: 'Question image storage is not configured.' });
-
-    const bucket = String(process.env.SUPABASE_QUESTION_ASSET_BUCKET || 'question-assets').trim();
-    const ownerId = String(req.user?._id || req.admin?._id || 'admin');
-    const extension = QUESTION_ASSET_MIME_TYPES.get(req.file.mimetype);
-    const datePrefix = new Date().toISOString().slice(0, 10);
-    const objectPath = `${ownerId}/${datePrefix}/${randomUUID()}.${extension}`;
-
-    let uploadResult = await supabase.storage.from(bucket).upload(objectPath, req.file.buffer, {
-      contentType: req.file.mimetype,
-      cacheControl: '31536000',
-      upsert: false,
-    });
-
-    if (uploadResult.error && /bucket.*not found/i.test(uploadResult.error.message || '')) {
-      const created = await supabase.storage.createBucket(bucket, {
-        public: true,
-        fileSizeLimit: 5 * 1024 * 1024,
-        allowedMimeTypes: Array.from(QUESTION_ASSET_MIME_TYPES.keys()),
-      });
-      if (created.error && !/already exists/i.test(created.error.message || '')) throw created.error;
-      uploadResult = await supabase.storage.from(bucket).upload(objectPath, req.file.buffer, {
-        contentType: req.file.mimetype,
-        cacheControl: '31536000',
-        upsert: false,
-      });
+    if (!isCloudinaryConfigured()) {
+      return res.status(503).json({ error: 'Question image storage is not configured.' });
     }
 
-    if (uploadResult.error) throw uploadResult.error;
-    const { data } = supabase.storage.from(bucket).getPublicUrl(objectPath);
-    if (!data?.publicUrl) throw new Error('Unable to create a public image URL.');
+    const ownerId = String(req.user?._id || req.admin?._id || 'admin');
+    const uploaded = await uploadProblemAsset(req.file.buffer, {
+      ownerId,
+      publicId: `question-${Date.now()}-${randomUUID()}`,
+    });
 
     return res.status(201).json({
       asset: {
-        url: data.publicUrl,
-        path: objectPath,
-        bucket,
+        url: uploaded.url,
+        publicId: uploaded.publicId,
+        width: uploaded.width,
+        height: uploaded.height,
+        format: uploaded.format,
         mimeType: req.file.mimetype,
         originalName: req.file.originalname,
-        size: req.file.size,
+        size: uploaded.bytes || req.file.size,
       },
     });
   } catch (err) {
     console.error('Error uploading question library asset:', err);
-    return res.status(500).json({ error: err.message || 'Failed to upload question image.' });
+    const mapped = mapImageStorageError(err);
+    return res.status(mapped.status).json({ error: mapped.error });
   }
 }
 
