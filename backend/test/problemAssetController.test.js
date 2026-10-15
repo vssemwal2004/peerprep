@@ -53,9 +53,9 @@ test('upload parser explains a wrong field name, extra fields, and oversized ima
   assert.equal(twoImages.status, 400);
   assert.match(twoImages.body.error, /one image at a time/i);
 
-  const oversized = await postMultipart((form) => form.append('image', pngBlob((1024 * 1024) + 1), 'big.png'));
+  const oversized = await postMultipart((form) => form.append('image', pngBlob((5 * 1024 * 1024) + 1), 'big.png'));
   assert.equal(oversized.status, 413);
-  assert.match(oversized.body.error, /1 MB or smaller/);
+  assert.match(oversized.body.error, /5 MB or smaller/);
 });
 
 function responseRecorder() {
@@ -74,11 +74,11 @@ test('problem image upload requires a file', async () => {
   assert.match(res.body.error, /select an image/i);
 });
 
-test('problem image upload rejects files larger than 1 MB', async () => {
+test('problem image upload rejects files larger than 5 MB', async () => {
   const res = responseRecorder();
-  await uploadCodingProblemAsset({ file: { size: (1024 * 1024) + 1, mimetype: 'image/png', buffer: Buffer.alloc(12) } }, res);
+  await uploadCodingProblemAsset({ file: { size: (5 * 1024 * 1024) + 1, mimetype: 'image/png', buffer: Buffer.alloc(12) } }, res);
   assert.equal(res.statusCode, 413);
-  assert.match(res.body.error, /1 MB/i);
+  assert.match(res.body.error, /5 MB/i);
 });
 
 test('problem image upload rejects spoofed image MIME types', async () => {

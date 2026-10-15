@@ -2,18 +2,18 @@ import { randomUUID } from 'node:crypto';
 import multer from 'multer';
 import { isCloudinaryConfigured, uploadProblemAsset } from '../utils/cloudinary.js';
 
-const ONE_MB = 1024 * 1024;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const SUPPORTED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
 // No `parts` limit: busboy also counts the closing boundary as a part, so `parts: 1`
 // rejected every single-image upload with LIMIT_PART_COUNT. `files` and `fields` bound the request.
 const problemAssetUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: ONE_MB, files: 1, fields: 0 },
+  limits: { fileSize: MAX_IMAGE_BYTES, files: 1, fields: 0 },
 });
 
 const UPLOAD_ERROR_MESSAGES = {
-  LIMIT_FILE_SIZE: [413, 'Image must be 1 MB or smaller.'],
+  LIMIT_FILE_SIZE: [413, 'Image must be 5 MB or smaller.'],
   LIMIT_FILE_COUNT: [400, 'Upload one image at a time.'],
   LIMIT_UNEXPECTED_FILE: [400, 'Send the image in the "image" form field.'],
   LIMIT_FIELD_COUNT: [400, 'Send only the image, without other form fields.'],
@@ -25,7 +25,7 @@ export function acceptProblemAsset(req, res, next) {
   problemAssetUpload.single('image')(req, res, (error) => {
     if (!error) return next();
     const [status, message] = UPLOAD_ERROR_MESSAGES[error.code]
-      || [400, 'The image upload could not be read. Try again with one JPG, PNG, WebP, or GIF image up to 1 MB.'];
+      || [400, 'The image upload could not be read. Try again with one JPG, PNG, WebP, or GIF image up to 5 MB.'];
     console.warn(`[problem-assets] Rejected upload: ${error.code || error.message}`);
     return res.status(status).json({ error: message });
   });
@@ -67,7 +67,7 @@ export function mapImageStorageError(error) {
 export async function uploadCodingProblemAsset(req, res) {
   try {
     if (!req.file) return res.status(400).json({ error: 'Select an image to upload.' });
-    if (req.file.size > ONE_MB) return res.status(413).json({ error: 'Image must be 1 MB or smaller.' });
+    if (req.file.size > MAX_IMAGE_BYTES) return res.status(413).json({ error: 'Image must be 5 MB or smaller.' });
     const detectedType = detectedImageType(req.file.buffer);
     if (!SUPPORTED_TYPES.has(req.file.mimetype) || detectedType !== req.file.mimetype) {
       return res.status(415).json({ error: 'Use a valid JPG, PNG, WebP, or GIF image.' });
