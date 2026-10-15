@@ -10,8 +10,8 @@ import useDismissedAnnouncement from './dashboard/useDismissedAnnouncement';
 import GreetingHeader from './dashboard/GreetingHeader';
 import ContinueSection from './dashboard/ContinueSection';
 import TodayCard from './dashboard/TodayCard';
-import QuestsCard from './dashboard/QuestsCard';
-import { LearningSubjects, PracticeSuggestions } from './dashboard/DiscoverySections';
+import CodingSheets from './dashboard/CodingSheets';
+import { PracticeSuggestions } from './dashboard/DiscoverySections';
 import { AnnouncementsCard, ComingUpCard, RankCard } from './dashboard/RailCards';
 import { card, CardTitle, TitleIcon, Unavailable } from './dashboard/ui';
 import BadgeShelf from './dashboard/BadgeShelf';
@@ -56,7 +56,6 @@ export default function StudentDashboard() {
   const data = progress.data;
   const permittedItems = (items) => (Array.isArray(items) ? items : []).filter((item) => item.href && allowsPath(item.href.split('?')[0], 'student'));
   const resumeItems = permittedItems(data?.resumeItems).filter((item) => item.type === 'coding' || item.type === 'quest' ? canQuestions : item.type === 'learning' && canLearning);
-  const subjects = canLearning ? permittedItems(data?.learningSubjects) : [];
   const suggestions = canQuestions ? permittedItems(data?.suggestedPractice) : [];
   const upcoming = useMemo(() => getUpcomingItems(canAssessments ? sections.assessments.data || [] : [], canEvents ? sections.events.data || [] : [], now), [canAssessments, canEvents, sections.assessments.data, sections.events.data, now]);
   const week = getWeekActivity(data?.activityByDate || {}, now);
@@ -115,11 +114,8 @@ export default function StudentDashboard() {
         </aside>
 
         <div className="min-w-0 space-y-8 [grid-area:body]" data-dashboard-main>
-          {(canQuestions || showPractice) && <div className={`grid grid-cols-1 items-stretch gap-4 ${canQuestions && showPractice ? 'xl:grid-cols-2' : ''}`}>
-            {canQuestions && <div {...rise(3, '[&>section]:h-full')}><QuestsCard /></div>}
-            {canQuestions && <div {...rise(4, '[&>section]:h-full')}><PracticeSuggestions problems={suggestions} section={progress} onRetry={sections.refresh} /></div>}
-          </div>}
-          {canLearning && <LearningSubjects subjects={subjects} section={progress} onRetry={sections.refresh} />}
+          {canQuestions && <CodingSheets />}
+          {showPractice && <div {...rise(4)}><PracticeSuggestions problems={suggestions} section={progress} onRetry={sections.refresh} /></div>}
         </div>
       </div>
       <AchievementCelebration revision={sections.engagement.data?.generatedAt} enabled={!sections.engagement.error && sections.engagement.data?.version === 2} />

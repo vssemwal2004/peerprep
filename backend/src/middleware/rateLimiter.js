@@ -248,6 +248,24 @@ export const uploadLimiter = rateLimit({
   }
 });
 
+// Problem-image upload limiter - authors add several images per problem, so this has its own,
+// larger bucket instead of sharing the general upload budget.
+export const problemAssetUploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // 100 problem images per 15 minutes
+  message: 'Too many problem image uploads',
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: getRateLimitKey,
+  store: buildRateLimitStore('rl:problem-asset:'),
+  handler: (req, res) => {
+    console.warn(`[SECURITY] Problem image upload limit exceeded for ${req.user?._id || req.ip}`);
+    res.status(429).json({
+      error: 'Problem image upload limit reached. Please wait a few minutes before uploading more images.'
+    });
+  }
+});
+
 // Strict limiter for expensive operations (bulk operations, CSV processing)
 export const bulkOperationLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour

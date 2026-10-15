@@ -10,13 +10,14 @@ import TestCase from '../models/TestCase.js';
 import { HttpError } from '../utils/errors.js';
 import { sanitizeSearchQuery, sanitizeString, validateObjectId, validatePagination } from '../utils/validators.js';
 import { refreshProblemStats, serializeProblem, serializeSubmission, serializeSubmissionForRealtime, serializeStudentSubmission } from './compilerHelpers.js';
-import { runJudge0, buildJudge0Options as sharedJudge0Options } from '../services/executionService.js';
+import { runJudge0, buildJudge0Options as sharedJudge0Options, MAX_STDIN_SIZE_BYTES } from '../services/executionService.js';
 import { removeProblemFromLibrary, syncProblemToLibrary } from '../services/questionLibraryService.js';
 import { parseBulkCasePair } from '../utils/testcaseBulkParser.js';
 import { isTestcaseStorageEnabled, readTestcaseTextObject, uploadTestcaseTextObject } from '../utils/testcaseStorage.js';
 import { prepareFunctionSourceForExecution } from '../services/functionProblemAdapterService.js';
 import { sqlStatementKinds } from '../services/sqlMutationContractService.js';
 import { questionQuickPreps } from '../services/questService.js';
+import { persistedTestCaseInputLimitBytes } from '../services/trustedLargeInputPolicyService.js';
 
 const STATUS_MAP = {
   draft: 'draft',
@@ -91,6 +92,26 @@ function normalizeComparableOutput(value) {
 
 function buildJudge0Options(problem) {
   return sharedJudge0Options(problem);
+}
+
+function buildPersistedTestCaseJudge0Options(problem) {
+  return {
+    ...buildJudge0Options(problem),
+    stdinLimitBytes: persistedTestCaseInputLimitBytes(),
+  };
+}
+
+function validatePersistedTestCaseInputs(testCases = [], label = 'Hidden test case') {
+  const limitBytes = persistedTestCaseInputLimitBytes();
+  testCases.forEach((testCase, index) => {
+    const sizeBytes = Buffer.byteLength(String(testCase?.input ?? ''), 'utf8');
+    if (sizeBytes > limitBytes) {
+      throw new HttpError(
+        400,
+        `${label} input #${index + 1} is ${(sizeBytes / 1024 / 1024).toFixed(2)} MB and exceeds the ${(limitBytes / 1024 / 1024).toFixed(0)} MB persisted testcase limit.`,
+      );
+    }
+  });
 }
 
 function evaluateJudge0Case(judgeResult, expectedOutput = '', problem, input = '') {
@@ -333,7 +354,14 @@ function normalizeSampleTestCases(value) {
       }).filter((image) => /^https:\/\//i.test(image.url)),
       marks: Math.max(0.01, Number(testCase?.marks) || 1),
     }))
-    .filter((testCase) => testCase.input || testCase.output || testCase.explanation);
+    .filter((testCase, index) => {
+      if (testCase.input || testCase.output || testCase.explanation) return true;
+      // An empty case would otherwise vanish silently along with its uploaded images.
+      if (testCase.images.length) {
+        throw new HttpError(400, `Sample case ${index + 1} has images but no input or output. Add its input and output, or remove the images.`);
+      }
+      return false;
+    });
 }
 
 function normalizeHiddenTestCases(value) {
@@ -753,6 +781,8 @@ function buildProblemPayload(
   const sampleTestCases = sampleTestCasesProvided ? normalizeSampleTestCases(req.body.sampleTestCases) : null;
   let hiddenTestCases = hiddenTestCasesFromFiles
     || (req.body.hiddenTestCases !== undefined ? normalizeHiddenTestCases(req.body.hiddenTestCases) : null);
+  validatePersistedTestCaseInputs(hiddenTestCases || [], 'Hidden test case');
+  validatePersistedTestCaseInputs(hiddenBulkCases || [], 'Bulk hidden test case');
   const requestedTotalMarks = Number(req.body.totalMarks);
   const hasRequestedTotalMarks = Number.isFinite(requestedTotalMarks) && requestedTotalMarks > 0;
   const derivedTotalMarks = hiddenTestCases?.length
@@ -927,6 +957,8 @@ export async function loadHiddenExecutionTestCases(problem) {
     throw new HttpError(400, 'At least one hidden/internal testcase is required before preview approval.');
   }
 
+  validatePersistedTestCaseInputs(hiddenTestCases, 'Hidden test case');
+
   return hiddenTestCases;
 }
 
@@ -948,7 +980,7 @@ async function evaluateOfficialSolution(problem, { language, sourceCode, testCas
       prepareFunctionSourceForExecution(problem, language, sourceCode, testCase.input || ''),
       languageId,
       testCase.input || '',
-      buildJudge0Options(problem),
+      buildPersistedTestCaseJudge0Options(problem),
     );
     const evaluation = evaluateJudge0Case(judgeResult, testCase.output || '', problem, testCase.input || '');
     const executionTimeMs = secondsToMilliseconds(judgeResult.time);
@@ -2054,7 +2086,7 @@ export async function runProblemCode(req, res) {
       prepareFunctionSourceForExecution(problem, language, sourceCode, customInput),
       languageId,
       customInput,
-      buildJudge0Options(problem),
+      { ...buildJudge0Options(problem), stdinLimitBytes: MAX_STDIN_SIZE_BYTES },
     );
     const evaluation = evaluateJudge0Case(judgeResult, '');
     const result = {
@@ -2144,7 +2176,7 @@ export async function submitProblemCode(req, res) {
         prepareFunctionSourceForExecution(problem, language, sourceCode, testCase.input || ''),
         languageId,
         testCase.input || '',
-        buildJudge0Options(problem),
+        buildPersistedTestCaseJudge0Options(problem),
       );
       const evaluation = evaluateJudge0Case(judgeResult, testCase.output || '', problem, testCase.input || '');
       const executionTimeMs = secondsToMilliseconds(judgeResult.time);

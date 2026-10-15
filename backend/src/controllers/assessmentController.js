@@ -14,6 +14,7 @@ import { readPresenceCheckpoint, writePresenceCheckpoint } from '../services/ass
 import { networkPauseCreditFields } from '../services/assessmentHeartbeatPolicy.js';
 import { createAssessmentEvidenceUpload, verifyAssessmentEvidenceUpload, normalizeLegacyEvidence, signAssessmentEvidenceRead } from '../services/assessmentEvidenceService.js';
 import Problem from '../models/Problem.js';
+import TestCase from '../models/TestCase.js';
 import Submission from '../models/Submission.js';
 import User from '../models/User.js';
 import StudentUploadBatch from '../models/StudentUploadBatch.js';
@@ -523,8 +524,31 @@ function sanitizeAssessmentForResponse(assessment) {
 function redactCodingAnswerData(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   const redacted = { ...value };
+  // Exam delivery must never include learning aids, solution material, or
+  // private runner implementation. UI hiding alone is not a security boundary.
+  [
+    'editorial',
+    'editorialMeta',
+    'editorialSolutions',
+    'referenceSolution',
+    'referenceSolutions',
+    'executionHarness',
+    'executionHarnesses',
+    'studentRunnerTemplates',
+    'hiddenTestCases',
+    'hiddenTestCaseTotalMarks',
+    'validatedLanguages',
+    'hints',
+    'faqs',
+    'companyTags',
+  ].forEach((field) => { delete redacted[field]; });
   if (Array.isArray(redacted.testCases)) {
     redacted.testCases = redacted.testCases.filter((testCase) => !testCase?.hidden);
+  }
+  // The SQL result query is the grader's checker for mutation questions.
+  if (redacted.sqlConfig && typeof redacted.sqlConfig === 'object' && !Array.isArray(redacted.sqlConfig)) {
+    redacted.sqlConfig = { ...redacted.sqlConfig };
+    delete redacted.sqlConfig.resultQuery;
   }
   if (redacted.problemData && typeof redacted.problemData === 'object') {
     redacted.problemData = redactCodingAnswerData(redacted.problemData);
@@ -575,7 +599,20 @@ function mapToPlainObject(value) {
   return {};
 }
 
-async function hydrateAssessmentCodingRuntime(assessment) {
+// A snapshot sample only takes the live sample's images when it still shows
+// the same input and output, so a frozen exam never pairs text with stale art.
+function overlayLiveSampleImages(snapshotSamples, liveSamples = []) {
+  if (!Array.isArray(snapshotSamples) || !Array.isArray(liveSamples) || !liveSamples.length) return snapshotSamples;
+  return snapshotSamples.map((sample, index) => {
+    const live = liveSamples[index];
+    if (!live || !sample || typeof sample !== 'object') return sample;
+    if (String(sample.input ?? '') !== String(live.input ?? '')
+      || String(sample.output ?? '') !== String(live.output ?? '')) return sample;
+    return { ...sample, images: Array.isArray(live.images) ? live.images : [] };
+  });
+}
+
+export async function hydrateAssessmentCodingRuntime(assessment) {
   if (!assessment) return assessment;
   const source = typeof assessment.toObject === 'function' ? assessment.toObject() : { ...assessment };
   const sections = Array.isArray(source.sections) ? source.sections : [];
@@ -593,10 +630,22 @@ async function hydrateAssessmentCodingRuntime(assessment) {
 
   if (!problemIds.length) return source;
 
-  const problems = await Problem.find({ _id: { $in: problemIds } })
-    .select('_id supportedLanguages codeTemplates category sqlConfig executionMode functionContract companyTags hints faqs')
-    .lean();
+  const [problems, liveSamples] = await Promise.all([
+    Problem.find({ _id: { $in: problemIds } })
+      .select('_id supportedLanguages codeTemplates category sqlConfig executionMode functionContract contentImages')
+      .lean(),
+    TestCase.find({ problem: { $in: problemIds }, kind: 'sample' })
+      .select('problem position input output images')
+      .lean(),
+  ]);
   const problemsById = new Map(problems.map((problem) => [String(problem._id), problem]));
+  const samplesByProblem = new Map();
+  (liveSamples || []).forEach((testCase) => {
+    const key = String(testCase.problem);
+    if (!samplesByProblem.has(key)) samplesByProblem.set(key, []);
+    samplesByProblem.get(key).push(testCase);
+  });
+  samplesByProblem.forEach((cases) => cases.sort((left, right) => Number(left.position) - Number(right.position)));
 
   return {
     ...source,
@@ -629,12 +678,19 @@ async function hydrateAssessmentCodingRuntime(assessment) {
           functionContract: liveProblem.functionContract || existingSnapshot.functionContract,
           showExecutionHarness: false,
           studentRunnerTemplates,
-          companyTags: Array.isArray(liveProblem.companyTags) ? liveProblem.companyTags : [],
-          hints: Array.isArray(liveProblem.hints) ? liveProblem.hints : [],
-          faqs: Array.isArray(liveProblem.faqs) ? liveProblem.faqs : [],
           category: liveProblem.category || existingSnapshot.category || 'DSA',
           sqlConfig: liveProblem.sqlConfig || existingSnapshot.sqlConfig,
+          // Images are refreshed from the live problem; statement and sample text stay frozen.
+          contentImages: Array.isArray(liveProblem.contentImages)
+            ? liveProblem.contentImages.filter((image) => image?.url)
+            : existingSnapshot.contentImages,
+          sampleTestCases: overlayLiveSampleImages(
+            existingSnapshot.sampleTestCases,
+            samplesByProblem.get(String(liveProblem._id)),
+          ),
         };
+        if (problemDataSnapshot.sampleTestCases === undefined) delete problemDataSnapshot.sampleTestCases;
+        if (problemDataSnapshot.contentImages === undefined) delete problemDataSnapshot.contentImages;
 
         return {
           ...question,
@@ -1520,7 +1576,35 @@ function normalizeAssessmentCodeMap(value) {
   );
 }
 
-function normalizeAssessmentSections(sections = []) {
+// Authors load hidden cases and solutions while building, but grading always
+// reads the live Problem/TestCase records, so persisted snapshots keep only
+// the counts and marks the builder needs.
+const ASSESSMENT_SNAPSHOT_PRIVATE_FIELDS = [
+  'hiddenTestCases',
+  'referenceSolution',
+  'referenceSolutions',
+  'executionHarness',
+  'executionHarnesses',
+];
+
+function stripAssessmentSnapshotPrivateFields(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return snapshot;
+  const stripped = { ...snapshot };
+  const hiddenCases = Array.isArray(snapshot.hiddenTestCases) ? snapshot.hiddenTestCases : [];
+  if (hiddenCases.length) {
+    if (!stripped.hiddenTestCaseCount) stripped.hiddenTestCaseCount = hiddenCases.length;
+    if (!stripped.hiddenTestCaseTotalMarks) {
+      stripped.hiddenTestCaseTotalMarks = Number(hiddenCases.reduce(
+        (total, testCase) => total + (Number(testCase?.marks) > 0 ? Number(testCase.marks) : 1),
+        0,
+      ).toFixed(2));
+    }
+  }
+  ASSESSMENT_SNAPSHOT_PRIVATE_FIELDS.forEach((field) => { delete stripped[field]; });
+  return stripped;
+}
+
+export function normalizeAssessmentSections(sections = []) {
   if (!Array.isArray(sections)) return [];
   return sections.map((section) => {
     const sectionType = section?.type;
@@ -1539,10 +1623,10 @@ function normalizeAssessmentSections(sections = []) {
         || question?.coding?.problemId
         || snapshot?._id
         || null;
-      const normalizedSnapshot = snapshot ? {
+      const normalizedSnapshot = snapshot ? stripAssessmentSnapshotPrivateFields({
         ...snapshot,
         codeTemplates: normalizeAssessmentCodeMap(snapshot.codeTemplates || snapshot.templates),
-      } : undefined;
+      }) : undefined;
       const normalizedCoding = question.coding ? {
         ...question.coding,
         starterCode: Array.isArray(question.coding.starterCode)
@@ -1551,12 +1635,12 @@ function normalizeAssessmentSections(sections = []) {
             code: decodeLegacyCodeEntities(entry?.code),
           }))
           : question.coding.starterCode,
-        problemData: question.coding.problemData ? {
+        problemData: question.coding.problemData ? stripAssessmentSnapshotPrivateFields({
           ...question.coding.problemData,
           codeTemplates: normalizeAssessmentCodeMap(
             question.coding.problemData.codeTemplates || question.coding.problemData.templates,
           ),
-        } : question.coding.problemData,
+        }) : question.coding.problemData,
       } : question.coding;
       return {
         ...question,

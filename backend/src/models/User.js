@@ -68,6 +68,8 @@ const userSchema = new mongoose.Schema({
   linkedinUrl: { type: String, trim: true },
   githubUrl: { type: String, trim: true },
   portfolioUrl: { type: String, trim: true },
+  // The language a student last ran or submitted practice code in; the practice editor opens in it next time.
+  practiceLanguage: { type: String, trim: true, maxlength: 20 },
   // Learner level / awards already celebrated in the student UI. Levels and awards themselves are
   // computed from activity data; this only records what the student has been shown (and when),
   // so the level-up celebration appears once across devices and admins can see achievement dates.

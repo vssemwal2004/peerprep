@@ -11,6 +11,7 @@ const testCaseSchema = new mongoose.Schema({
   explanation: { type: String },
   hidden: { type: Boolean, default: false },
   marks: { type: Number, min: 0.01, default: 1 },
+  images: { type: [mongoose.Schema.Types.Mixed], default: [] },
 }, { _id: false });
 
 const codingSchema = new mongoose.Schema({
@@ -29,6 +30,8 @@ const codingSchema = new mongoose.Schema({
   supportedLanguages: { type: [String], default: [] },
   starterCode: { type: [starterCodeSchema], default: [] },
   testCases: { type: [testCaseSchema], default: [] },
+  sampleTestCases: { type: mongoose.Schema.Types.Mixed },
+  contentImages: { type: mongoose.Schema.Types.Mixed },
   problemId: { type: mongoose.Schema.Types.ObjectId },
   problemData: { type: mongoose.Schema.Types.Mixed },
   category: { type: String, enum: ['DSA', 'SQL'], default: 'DSA' },

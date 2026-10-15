@@ -16,6 +16,8 @@ const schema = new mongoose.Schema({
   compileOutput: { type: String, default: '' },
   testCaseResults: [{ _id: false, index: Number,
     status: { type: String, enum: ['AC', 'WA', 'CE', 'RE', 'TLE'] }, executionTimeMs: Number }],
+  // The first failing case (grading stops there), already capped for display by studentFailedCase.
+  failedCase: { type: new mongoose.Schema({ index: Number, input: String, expectedOutput: String, actualOutput: String, truncated: Boolean }, { _id: false }), default: undefined },
 }, { timestamps: true });
 
 schema.index({ studentId: 1, source: 1, questionId: 1, createdAt: -1 });

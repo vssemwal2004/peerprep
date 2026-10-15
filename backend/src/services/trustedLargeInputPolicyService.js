@@ -1,3 +1,11 @@
+const DEFAULT_PERSISTED_TESTCASE_INPUT_LIMIT_BYTES = 4 * 1024 * 1024;
+
+export function persistedTestCaseInputLimitBytes() {
+  const configured = Number(process.env.PERSISTED_TESTCASE_MAX_INPUT_BYTES);
+  if (!Number.isFinite(configured)) return DEFAULT_PERSISTED_TESTCASE_INPUT_LIMIT_BYTES;
+  return Math.trunc(Math.max(64 * 1024, Math.min(16 * 1024 * 1024, configured)));
+}
+
 // Explicit persisted large-input contracts from the initial draft campaign.
 // Source/case legality remains enforced independently by preflight and grading.
 const signatures=new Set([
@@ -98,4 +106,4 @@ const signatures=new Set([
   "[\"6ac2815019051acf30c4de4c\",\"Valid Subarrays With Exactly One Peak\",\"DSA\",\"function\",\"Solution\",\"function\",\"validSubarrays\",\"long\",\"return\",null,[[\"nums\",\"integer[]\"],[\"k\",\"integer\"]]]",
   "[\"6ac2822019051acf30c4e348\",\"Valid Subarrays With Matching Sum Digits II\",\"DSA\",\"function\",\"Solution\",\"function\",\"countValidSubarrays\",\"long\",\"return\",null,[[\"nums\",\"integer[]\"],[\"x\",\"integer\"]]]"
 ]);
-export function trustedTestCaseInputLimitBytes(p){const c=p?.functionContract;if(!c||p.category!=='DSA'||p.executionMode!=='function')return 65536;const signature=JSON.stringify([String(p._id||p.id||''),p.title,p.category,p.executionMode,c.className||'Solution',c.kind||'function',c.methodName,c.returnType,c.outputMode||'return',c.outputMode==='parameter'?c.outputParameterIndex:null,c.parameters?.map(x=>[x.name,x.type])]);return signatures.has(signature)?4*1024*1024:65536;}
+export function trustedTestCaseInputLimitBytes(){return persistedTestCaseInputLimitBytes();}

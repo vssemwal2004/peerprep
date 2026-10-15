@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getStudentGlobalRanking } from '../services/globalStudentRankingService.js';
-import { login, forcePasswordChange, me, changePassword, changeAdminPassword, requestPasswordReset, resetPassword, updateMe, updateMyAvatar, acknowledgeLearnerProgress } from '../controllers/authController.js';
+import { login, forcePasswordChange, me, changePassword, changeAdminPassword, requestPasswordReset, resetPassword, updateMe, updateMyAvatar, acknowledgeLearnerProgress, updatePracticeLanguage } from '../controllers/authController.js';
 import { getStudentActivity, getStudentStats, debugStudentActivity } from '../controllers/activityController.js';
 import { requireAuth, requireStudent, requireFullStudent } from '../middleware/auth.js';
 import { getStudentDashboard, getStudentRanking, recordStudentProblemView, recordStudentTopicView, refreshStudentChallenges, getStudentChallengeBadges } from '../controllers/studentDashboardController.js';
@@ -36,6 +36,7 @@ router.get('/me', requireAuth, me);
 router.put('/me', requireAuth, updateMe);
 router.put('/me/avatar', requireAuth, uploadLimiter, upload.single('avatar'), updateMyAvatar);
 router.put('/me/learner-progress', requireAuth, acknowledgeLearnerProgress);
+router.put('/me/practice-language', requireAuth, updatePracticeLanguage);
 router.get('/activity/debug', requireAuth, debugStudentActivity);
 router.get('/activity', requireAuth, getStudentActivity);
 router.get('/stats', requireAuth, getStudentStats);

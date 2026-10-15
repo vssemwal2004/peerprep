@@ -7,14 +7,20 @@ import QuestionPracticeAttempt from '../models/QuestionPracticeAttempt.js';
 import Problem from '../models/Problem.js';
 import Submission from '../models/Submission.js';
 import { loadHiddenExecutionTestCases } from '../controllers/problemController.js';
-import { runJudge0, buildJudge0Options, KEY_TO_LANGUAGE_ID } from '../services/executionService.js';
+import {
+  runJudge0,
+  buildJudge0Options,
+  KEY_TO_LANGUAGE_ID,
+  MAX_STDIN_SIZE_BYTES,
+  sanitizeExecutionText,
+} from '../services/executionService.js';
 import { evaluateProblemSubmissionResult } from '../services/problemSubmissionEvaluationService.js';
 import { prepareFunctionSourceForExecution } from '../services/functionProblemAdapterService.js';
 import { compilerExecutionLimiter } from '../middleware/rateLimiter.js';
 import { sharedQuestions, sharedJudgeData } from './sharedContent.js';
 import { isUniversity } from './deployment.js';
 import { universityPolicy, controlRequest } from './client.js';
-import { serializeProblem } from '../controllers/compilerHelpers.js';
+import { problemUsedInAssessment, serializeProblem, studentFailedCase } from '../controllers/compilerHelpers.js';
 import { interviewReportOptions, interviewReportSummaries, reporterKey, saveInterviewReport } from './interviewQuestionReports.js';
 import { questionQuickPreps } from '../services/questService.js';
 
@@ -247,6 +253,20 @@ router.get('/:source/:id', asyncRoute(async (req, res) => {
   res.json({ question: publicShape(found, req.params.source) });
 }));
 
+// Shared snapshots come from the control catalog; only expose https sample images with display fields.
+const sharedSampleImages = (images) => (Array.isArray(images) ? images : [])
+  .filter((image) => /^https:\/\//i.test(String(image?.url || '').trim()))
+  .slice(0, 10)
+  .map((image, index) => {
+    const width = Number(image.width);
+    const height = Number(image.height);
+    return { url: String(image.url).trim(), alt: String(image.alt || ''), caption: String(image.caption || ''),
+      width: Number.isFinite(width) && width > 0 ? width : undefined,
+      height: Number.isFinite(height) && height > 0 ? height : undefined,
+      position: Math.max(0, Number(image.position) || index) };
+  })
+  .sort((a, b) => a.position - b.position);
+
 router.get('/shared/:id/problem', asyncRoute(async (req, res) => {
   const question = await findVisible('shared', req.params.id);
   if (question.questionType !== 'coding') throw new HttpError(404, 'Coding problem not found');
@@ -260,7 +280,8 @@ router.get('/shared/:id/problem', asyncRoute(async (req, res) => {
     questionQuickPreps(req.user, 'shared', question._id),
   ]);
   res.json({ ...serializeProblem({ ...snapshot, _id: question._id, status: 'published', visibility: 'public' },
-    { sampleTestCases: snapshot.sampleTestCases || [], includeEditorialSolutions: true }), platformShared: true,
+    { sampleTestCases: (snapshot.sampleTestCases || []).map((item) => ({ ...item, images: sharedSampleImages(item?.images) })),
+      includeEditorialSolutions: true }), platformShared: true,
   studentStatus: solved ? 'Solved' : 'Unsolved', totalSubmissions, acceptedSubmissions, quickPreps,
   acceptanceRate: totalSubmissions ? Number((acceptedSubmissions * 100 / totalSubmissions).toFixed(1)) : 0 });
 }));
@@ -274,7 +295,7 @@ router.get('/shared/:id/submissions', asyncRoute(async (req, res) => {
     language: item.language, sourceCode: item.answer, createdAt: item.createdAt,
     totalTestCases: item.totalTestCases || 0, passedTestCases: item.passedTestCases || 0,
     executionTimeMs: item.executionTimeMs || 0, memoryUsedKb: item.memoryUsedKb || 0,
-    testCaseResults: item.testCaseResults || [], compileOutput: item.compileOutput || '' })) });
+    testCaseResults: item.testCaseResults || [], failedCase: item.failedCase || null, compileOutput: item.compileOutput || '' })) });
 }));
 
 router.post('/shared/:id/run', compilerExecutionLimiter, asyncRoute(async (req, res) => {
@@ -287,7 +308,9 @@ router.post('/shared/:id/run', compilerExecutionLimiter, asyncRoute(async (req, 
     || (problem.supportedLanguages?.length && !problem.supportedLanguages.includes(language))) throw new HttpError(400, 'Valid source code and language are required');
   const samples = (question.questionData?.problemDataSnapshot?.sampleTestCases
     || question.questionData?.coding?.problemData?.sampleTestCases || problem.sampleTestCases || []).slice(0, 12);
-  const cases = samples.length ? samples : [{ input: String(req.body?.customInput || '').slice(0, 65536) }];
+  const cases = samples.length ? samples : [{
+    input: sanitizeExecutionText(req.body?.customInput || '', MAX_STDIN_SIZE_BYTES, 'Input'),
+  }];
   const options = buildJudge0Options(problem);
   const caseResults = [];
   let totalTime = 0;
@@ -365,9 +388,18 @@ async function judgeCodingQuestion(question, source, answer, language) {
     testCaseResults.push({ index: index + 1, status: failureStatus || 'AC',
       executionTimeMs: Number.isFinite(caseTimeMs) ? Math.max(0, caseTimeMs) : 0 });
     if (failureStatus) {
+      // The failing case is shown only for a public practice problem no assessment grades on; otherwise its hidden
+      // cases are assessment data and could be read one per submit, so the student gets the index alone.
+      const publicProblem = source === 'shared'
+        || (['published', 'active'].includes(String(problem.status || '').toLowerCase()) && (problem.visibility || 'public') === 'public');
+      const reveal = publicProblem && !(await Promise.all([problemId, question._id].map(problemUsedInAssessment))).some(Boolean);
+      const failedCase = reveal
+        ? studentFailedCase({ index: index + 1, input: testCase.input || '', expectedOutput: testCase.output || '',
+          actualOutput: evaluation.actualOutput || output.stdout || '' }, failureStatus)
+        : { index: index + 1 };
       return { result: 'incorrect', feedback: failureStatus === 'CE' ? 'Compilation failed'
         : failureStatus === 'RE' ? 'Runtime error' : failureStatus === 'TLE' ? 'Time limit exceeded' : 'A test case failed',
-        totalTestCases: testCases.length, passedTestCases, executionTimeMs, memoryUsedKb, testCaseResults,
+        totalTestCases: testCases.length, passedTestCases, executionTimeMs, memoryUsedKb, testCaseResults, failedCase,
         failureStatus, ...(failureStatus === 'CE' ? { compileOutput: await publicSampleCompileOutput(question, problem, language, answer) } : {}) };
     }
     passedTestCases += 1;
@@ -408,7 +440,7 @@ router.post('/:source/:id/attempts', compilerExecutionLimiter, asyncRoute(async 
     source: req.params.source, questionType: question.questionType, answer, language, result: graded.result,
     totalTestCases: graded.totalTestCases || 0, passedTestCases: graded.passedTestCases || 0,
     executionTimeMs: graded.executionTimeMs || 0, memoryUsedKb: graded.memoryUsedKb || 0,
-    failureStatus: graded.failureStatus, testCaseResults: graded.testCaseResults || [],
+    failureStatus: graded.failureStatus, testCaseResults: graded.testCaseResults || [], failedCase: graded.failedCase || undefined,
     compileOutput: graded.compileOutput || '' });
   if (req.params.source === 'shared' && question.questionType === 'coding') {
     const [totalSubmissions, acceptedSubmissions] = await Promise.all([

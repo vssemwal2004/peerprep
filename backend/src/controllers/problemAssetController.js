@@ -14,6 +14,25 @@ function detectedImageType(buffer) {
   return '';
 }
 
+/** Maps an image-storage failure to a safe status and message; the provider's own text is never returned. */
+export function mapImageStorageError(error) {
+  const detail = error?.error && typeof error.error === 'object' ? error.error : {};
+  const httpCode = Number(error?.http_code ?? detail.http_code);
+  const code = String(error?.code || detail.code || '').toUpperCase();
+  const name = String(error?.name || detail.name || '');
+  if (httpCode === 401 || httpCode === 403) {
+    return { status: 503, error: 'Image storage credentials are invalid. Contact the administrator.' };
+  }
+  if (httpCode === 420 || httpCode === 429) {
+    return { status: 429, error: 'Image storage is busy. Try again in a minute.' };
+  }
+  // Cloudinary reports its own request timeouts as http_code 499 / TimeoutError.
+  if (httpCode === 499 || name === 'TimeoutError' || ['ETIMEDOUT', 'ESOCKETTIMEDOUT', 'ECONNRESET'].includes(code)) {
+    return { status: 504, error: 'Image upload timed out. Try again.' };
+  }
+  return { status: 502, error: 'Image storage is temporarily unavailable.' };
+}
+
 export async function uploadCodingProblemAsset(req, res) {
   try {
     if (!req.file) return res.status(400).json({ error: 'Select an image to upload.' });
@@ -47,6 +66,7 @@ export async function uploadCodingProblemAsset(req, res) {
     });
   } catch (error) {
     console.error('Error uploading coding problem image:', error);
-    return res.status(500).json({ error: error.message || 'Failed to upload problem image.' });
+    const mapped = mapImageStorageError(error);
+    return res.status(mapped.status).json({ error: mapped.error });
   }
 }

@@ -95,6 +95,32 @@ export function sumTestCaseMarks(testCases = []) {
   ).toFixed(2));
 }
 
+// Assessment drafts store the problem as problemDataSnapshot, which reaches
+// students. Authors load hidden cases and solutions for editing, so strip them
+// (keeping counts/marks for the builder) before anything is queued.
+const ASSESSMENT_SNAPSHOT_PRIVATE_FIELDS = [
+  'hiddenTestCases',
+  'referenceSolution',
+  'referenceSolutions',
+  'executionHarness',
+  'executionHarnesses',
+];
+
+export function toAssessmentProblemSnapshot(problem) {
+  if (!problem || typeof problem !== 'object' || Array.isArray(problem)) return problem;
+  const snapshot = { ...problem };
+  const hiddenCases = Array.isArray(problem.hiddenTestCases) ? problem.hiddenTestCases : [];
+  if (hiddenCases.length) {
+    if (!snapshot.hiddenTestCaseCount) snapshot.hiddenTestCaseCount = hiddenCases.length;
+    if (!snapshot.hiddenTestCaseTotalMarks) snapshot.hiddenTestCaseTotalMarks = sumTestCaseMarks(hiddenCases);
+  }
+  ASSESSMENT_SNAPSHOT_PRIVATE_FIELDS.forEach((field) => { delete snapshot[field]; });
+  if (Array.isArray(snapshot.testCases)) {
+    snapshot.testCases = snapshot.testCases.filter((testCase) => !testCase?.hidden);
+  }
+  return snapshot;
+}
+
 export function distributeMarksAcrossTestCases(testCases = [], totalMarks = 0) {
   const source = Array.isArray(testCases) ? testCases : [];
   if (!source.length) return [];

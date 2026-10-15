@@ -1,3 +1,5 @@
+import mongoose from 'mongoose';
+import Assessment from '../models/Assessment.js';
 import Problem from '../models/Problem.js';
 import Submission from '../models/Submission.js';
 import {
@@ -245,7 +247,20 @@ export async function serializeSubmissionForRealtime(submission) {
   return payload;
 }
 
-export function serializeStudentSubmission(submission) {
+/**
+ * Whether any assessment grades on this problem. Its hidden cases then double as assessment test data, so a
+ * practice submit must not reveal them (judging stops at the first failure, so they could be read one by one).
+ */
+export async function problemUsedInAssessment(problemId) {
+  if (!mongoose.isValidObjectId(problemId)) return false;
+  const id = new mongoose.Types.ObjectId(String(problemId));
+  const paths = ['problemId', 'coding.problemId', 'problemDataSnapshot._id'];
+  return Boolean(await Assessment.exists({ $or: paths.flatMap((path) => [
+    { [`sections.questions.${path}`]: id }, { [`questionSets.sections.questions.${path}`]: id },
+  ]) }).maxTimeMS(5000));
+}
+
+export function serializeStudentSubmission(submission, { revealFailedCase = false } = {}) {
   const serialized = serializeSubmission(submission, {
     includeJudgeDetails: submission?.mode === 'run',
   });
@@ -261,9 +276,33 @@ export function serializeStudentSubmission(submission) {
     }
   }
 
+  // Practice submits show the student the one case that failed (submits stop there) when the caller has checked
+  // the problem is public and not graded by an assessment. Assessment submissions never do.
+  if (revealFailedCase && submission?.mode === 'submit' && !submission.assessmentId) {
+    serialized.failedCase = studentFailedCase(submission.failedCase, submission.status);
+  }
+  serialized.fromAssessment = Boolean(submission?.assessmentId);
+
   serialized.sourceCode = submission?.sourceCode || '';
 
   return serialized;
+}
+
+const FAILED_CASE_TEXT_LIMIT = 4000;
+
+/**
+ * The first failing judge case as a practising student sees it: input, expected and actual output, each capped
+ * for display. Only for verdicts the input explains (WA/RE/TLE); a compile error gets the index alone.
+ */
+export function studentFailedCase(failedCase, status) {
+  if (!failedCase) return null;
+  if (!['WA', 'RE', 'TLE'].includes(String(status || '').toUpperCase())) return { index: failedCase.index };
+  const fields = ['input', 'expectedOutput', 'actualOutput'].map((key) => [key, String(failedCase[key] ?? '')]);
+  return {
+    index: failedCase.index,
+    ...Object.fromEntries(fields.map(([key, value]) => [key, value.slice(0, FAILED_CASE_TEXT_LIMIT)])),
+    truncated: fields.some(([, value]) => value.length > FAILED_CASE_TEXT_LIMIT),
+  };
 }
 
 export async function refreshProblemStats(problemId) {

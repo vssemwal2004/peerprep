@@ -10,7 +10,7 @@ import { hasPermission } from './coordinatorPermissions';
 import { ArrowLeft, ClipboardList, Save, Send, Plus, Eye, EyeOff, Hash, Lock, Shield, Globe, Copy, Camera, Volume2, Monitor, Shuffle, Droplet, Navigation, Layers, Timer, RotateCcw, CheckSquare, Clock, BookOpen, FilePlus2, Check, X, Users, Upload, Search, Loader2 } from 'lucide-react';
 import { SectionCard } from './compiler/CompilerUi';
 import RichTextEditor from './compiler/RichTextEditor';
-import { createDefaultProblemForm, createProblemFormFromProblem } from './compiler/compilerUtils';
+import { createDefaultProblemForm, createProblemFormFromProblem, toAssessmentProblemSnapshot } from './compiler/compilerUtils';
 import AssessmentCard from './assessment/components/AssessmentCard';
 import StudentSelector from './assessment/components/StudentSelector';
 import AssessmentCandidateEditor from './assessment/components/AssessmentCandidateEditor';
@@ -347,6 +347,8 @@ export default function CreateAssessment({ viewOnly = false }) {
   const { user } = useAuth();
 
   const rolePrefix = location.pathname.startsWith('/coordinator') ? '/coordinator' : '/admin';
+  const isCoordinator = rolePrefix === '/coordinator';
+  const managerLabel = isCoordinator ? 'coordinator' : 'admin';
   const canCreateAssessmentCandidates = hasPermission(user, 'coordinator.assessment.candidates');
   const requestedAudience = 'platform_students';
 
@@ -471,20 +473,21 @@ export default function CreateAssessment({ viewOnly = false }) {
       const section = nextSections[draft.sectionIndex];
       if (!section || !section.questions?.[draft.questionIndex]) return;
       const question = section.questions[draft.questionIndex];
-      const codingMarks = getCodingProblemMarks(draft.problemData || question.problemDataSnapshot || {});
+      const draftProblem = toAssessmentProblemSnapshot(draft.problemData);
+      const codingMarks = getCodingProblemMarks(draftProblem || question.problemDataSnapshot || {});
       section.questions[draft.questionIndex] = ensureQuestionMeta({
         ...question,
         type: 'coding',
         questionText: draft.problemData?.title || question.questionText,
         codingEditorId: draft.tempId || question.codingEditorId,
         problemId: draft.problemData?._id || draft.problemId || question.problemId,
-        problemDataSnapshot: draft.problemData || question.problemDataSnapshot,
+        problemDataSnapshot: draftProblem || question.problemDataSnapshot,
         points: question.marksMode === 'custom' ? question.points : codingMarks,
         marksMode: question.marksMode === 'custom' ? 'custom' : 'test_cases',
         coding: {
           ...(question.coding || {}),
           problemId: draft.problemData?._id || draft.problemId || question.coding?.problemId,
-          problemData: draft.problemData || question.coding?.problemData,
+          problemData: draftProblem || question.coding?.problemData,
           previewValidated: draft.previewValidated ?? draft.previewTested ?? question.coding?.previewValidated ?? question.coding?.previewTested,
           status: draft.status || question.coding?.status,
         },
@@ -497,7 +500,8 @@ export default function CreateAssessment({ viewOnly = false }) {
     if (!problems.length) return prevSections;
     const sourceSections = Array.isArray(prevSections) ? prevSections : [];
     const existingIdentities = buildAssessmentQuestionIdentitySet(sourceSections);
-    const uniqueProblems = problems.filter((problem) => {
+    // Snapshots reach students: never keep hidden cases or solutions in them.
+    const uniqueProblems = problems.map((problem) => toAssessmentProblemSnapshot(problem)).filter((problem) => {
       const key = problem?._id ? `problem:${String(problem._id)}` : '';
       if (!key || existingIdentities.has(key)) return false;
       existingIdentities.add(key);
@@ -1809,7 +1813,7 @@ export default function CreateAssessment({ viewOnly = false }) {
               <div className="space-y-4 p-4">
                 <div className="grid gap-2 sm:grid-cols-3">
                   {[
-                    { label: 'Total questions', value: questionChoiceSummary.created, helper: 'Created by admin' },
+                    { label: 'Total questions', value: questionChoiceSummary.created, helper: `Created by ${managerLabel}` },
                     { label: 'Each student sees', value: questionChoiceSummary.shown, helper: 'Selected from total' },
                     { label: 'Student answers', value: questionChoiceSummary.required, helper: 'Required to attempt' },
                   ].map((item) => <div key={item.label} className="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3 dark:border-gray-700 dark:bg-gray-800/70"><p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{item.label}</p><p className="mt-1 text-xl font-bold text-slate-900 dark:text-white">{item.value}</p><p className="text-[10px] text-slate-500">{item.helper}</p></div>)}
@@ -1946,7 +1950,7 @@ export default function CreateAssessment({ viewOnly = false }) {
                 {s.candidateCredentialMode === 'student_id' && <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-200">Existing accounts are never overwritten. Use this only in a controlled lab and keep one-active-session protection enabled.</p>}
               </Row>
               <Row {...rowProps} icon={<Globe className="h-4 w-4" />} iconBg="bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-gray-300"
-                title="Test Visibility" desc={form.isVisible ? 'Test is visible to students on their dashboard.' : 'Test is hidden — only admins can see it.'}>
+                title="Test Visibility" desc={form.isVisible ? 'Test is visible to students on their dashboard.' : `Test is hidden — only authorized ${isCoordinator ? 'coordinators and admins' : 'admins'} can see it.`}>
                 <FieldRow label="Current Status">
                   <button type="button" onClick={() => updateForm({ isVisible: !form.isVisible })}
                     className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${form.isVisible ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'border-slate-200 bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
@@ -2113,7 +2117,7 @@ export default function CreateAssessment({ viewOnly = false }) {
                   <FieldRow label="Snapshot interval">
                     <NumInput value={s.cameraSnapshotInterval} onChange={(v) => upd('cameraSnapshotInterval', v)} min={30} placeholder="120" unit="sec" />
                   </FieldRow>
-                  <FieldRow label="Alert admin on face not detected">
+                  <FieldRow label={`Alert ${managerLabel} when a face is not detected`}>
                     <Toggle value={Boolean(s.cameraFaceAlert)} onChange={(v) => upd('cameraFaceAlert', v)} />
                   </FieldRow>
                 </div>
@@ -2503,7 +2507,7 @@ export default function CreateAssessment({ viewOnly = false }) {
                     <Toggle value={Boolean(form.sendEmail)} disabled={loading} onChange={(value) => updateForm({ sendEmail: value })} />
                   </div>
                   <div className="mt-3 flex items-center justify-between border-t border-sky-100 pt-3 dark:border-sky-900/40">
-                    <span className="text-[11px] text-slate-500 dark:text-gray-400">Send a preview to your administrator email before publishing.</span>
+                    <span className="text-[11px] text-slate-500 dark:text-gray-400">Send a preview to your account email before publishing.</span>
                     <button type="button" onClick={handleSendTestEmail} disabled={sendingTestEmail || loading} className="rounded-lg border border-sky-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-sky-700 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-sky-800 dark:bg-gray-900 dark:text-sky-300">
                       {sendingTestEmail ? 'Sending…' : 'Send test email'}
                     </button>

@@ -12,6 +12,7 @@ import { buildAssessmentQuestionIdentitySet, isLibraryQuestionAlreadyAdded } fro
 import { canAuthorQuickPrep, isControlDeployment } from '../platform/universityPermissions';
 import { getLanguageLabel, getProblemSupportedLanguages } from './compiler/compilerUtils';
 import CodingQuestionFilterDrawer from './library/CodingQuestionFilterDrawer';
+import QuickPrepAddReviewDialog from './quickprep/QuickPrepAddReviewDialog';
 
 const TYPE_LABELS = {
   all: 'All Questions',
@@ -300,6 +301,8 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
   const [addingToQuickprep, setAddingToQuickprep] = useState(false);
   const [quickprepSkipped, setQuickprepSkipped] = useState([]);
   const [quickprepAddedTotal, setQuickprepAddedTotal] = useState(0);
+  const [quickprepReview, setQuickprepReview] = useState(null);
+  const quickprepReviewRequestRef = useRef(0);
   useEffect(() => {
     if (!quickprepMode || !quickprepId) return undefined;
     let active = true;
@@ -715,15 +718,41 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
     navigate(`${target.pathname}${target.search}`);
   };
 
-  // The server maps each row to the problem students open and reports any it cannot add, so nothing is
-  // added wrongly or dropped silently. When every pick is added the admin goes straight back to the
-  // builder; otherwise they stay here to see why the rest were skipped.
+  // First a dry run: the admin reviews every pick, sees which ones are blocked (draft, private, no runnable
+  // problem) and the sheet's new total, then confirms. Only the ready ids are sent for the real add.
   const handleAddToQuickprep = async () => {
     const libraryIds = Object.values(selectedMeta).filter((question) => !questionAlreadyAdded(question)).map((question) => question._id);
     if (!libraryIds.length) {
       toast.error(selectedIds.size ? 'All selected questions are already in this QuickPrep.' : 'Select at least one question from the library.');
       return;
     }
+    // Only the latest dry run may fill the popup; one that returns after the popup closed is ignored.
+    const requestId = ++quickprepReviewRequestRef.current;
+    setQuickprepReview({ loading: true, error: '', plan: null });
+    try {
+      const plan = await api.previewQuestLibraryItems(quickprepId, libraryIds);
+      if (quickprepReviewRequestRef.current === requestId) setQuickprepReview({ loading: false, error: '', plan });
+    } catch (error) {
+      if (quickprepReviewRequestRef.current === requestId) setQuickprepReview({ loading: false, error: error.message || 'The selected questions could not be checked.', plan: null });
+    }
+  };
+
+  const closeQuickprepReview = () => {
+    quickprepReviewRequestRef.current += 1;
+    setQuickprepReview(null);
+  };
+
+  const deselectQuickprepBlocked = (blockedIds) => {
+    const blocked = new Set(blockedIds);
+    setSelectedIds((previous) => new Set([...previous].filter((id) => !blocked.has(id))));
+    setSelectedMeta((previous) => Object.fromEntries(Object.entries(previous).filter(([id]) => !blocked.has(id))));
+    setQuickprepReview((previous) => (previous?.plan ? { ...previous, plan: { ...previous.plan, items: previous.plan.items.filter((item) => !blocked.has(item.id)) } } : previous));
+  };
+
+  // The server re-checks each row, so anything that changed since the review is still skipped with a reason.
+  // When every pick is added the admin goes straight back to the builder; otherwise they stay here to see why.
+  const confirmAddToQuickprep = async (libraryIds) => {
+    if (!libraryIds.length) return;
     setAddingToQuickprep(true);
     try {
       const result = await api.addQuestLibraryItems(quickprepId, libraryIds);
@@ -732,6 +761,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
       setQuickprepAddedTotal(addedTotal);
       setQuickprepKeys(new Set((result.quest?.items || []).map((item) => `${item.source}:${item.problemId}`)));
       clearSelection();
+      closeQuickprepReview();
       if (!skipped.length) {
         toast.success(`${result.added} question${result.added === 1 ? '' : 's'} added to ${quickprepName || quickprepTitle}.`);
         returnToQuickprep(addedTotal);
@@ -1200,6 +1230,11 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
               {quickprepSkipped.length > 8 && <li className="text-amber-700 dark:text-amber-300">and {quickprepSkipped.length - 8} more</li>}
             </ul>
           </div>
+        )}
+
+        {quickprepMode && quickprepReview && (
+          <QuickPrepAddReviewDialog quickprepName={quickprepName || quickprepTitle} review={quickprepReview} meta={selectedMeta} adding={addingToQuickprep}
+            onClose={closeQuickprepReview} onConfirm={confirmAddToQuickprep} onDeselectBlocked={deselectQuickprepBlocked} />
         )}
 
         {!selectionMode && bulkSelecting && (

@@ -31,7 +31,7 @@ router.delete('/admin/:id', requireQuickPrepAuthor, writeLimit, async (req, res)
 router.get('/admin/:id/insights', requireQuickPrepAuthor, async (req, res) => res.json(await questInsights(req.user, req.params.id)));
 router.post('/admin/:id/items', requireQuickPrepAuthor, writeLimit, async (req, res) => res.json(await addQuestItems(req.user, req.params.id, req.body?.items)));
 // The Question Library's "Add to QuickPrep": library row ids in, mapped and checked on the server.
-router.post('/admin/:id/library-items', requireQuickPrepAuthor, writeLimit, async (req, res) => res.json(await addQuestLibraryItems(req.user, req.params.id, req.body?.libraryIds)));
+router.post('/admin/:id/library-items', requireQuickPrepAuthor, writeLimit, async (req, res) => res.json(await addQuestLibraryItems(req.user, req.params.id, req.body?.libraryIds, { dryRun: req.body?.dryRun === true })));
 router.post('/admin/:id/duplicate', requireQuickPrepAuthor, writeLimit, async (req, res) => res.status(201).json({ quest: await duplicateQuest(req.user, req.params.id) }));
 
 router.get('/', requireStudent, requireFullStudent, async (req, res) => res.json(await listStudentQuests(req.user)));

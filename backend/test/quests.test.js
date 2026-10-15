@@ -225,6 +225,12 @@ test('Add to QuickPrep maps library rows to the problems students open and expla
   await QuestionLibrary.collection.insertMany(Object.values(rows));
   const draftQuest = await createQuest(admin, undefined, { title: 'Library picks', items: [item(problems[2])] });
   const ids = ['linked', 'viaData', 'draft', 'examOnly', 'unlinked', 'mcq', 'duplicate'].map((name) => String(rows[name]._id));
+  // The review popup's dry run reports the same plan without writing anything.
+  const preview = await addQuestLibraryItems(admin, draftQuest.id, [...ids, String(oid())], { dryRun: true });
+  assert.deepEqual([preview.preview, preview.added, preview.currentTotal, preview.items.length], [true, 2, 1, 8]);
+  assert.deepEqual(preview.items.filter((entry) => entry.ok).map((entry) => entry.title), ['Two Sum', 'via-data']);
+  assert.ok(preview.items.filter((entry) => !entry.ok).every((entry) => entry.reason && entry.message));
+  assert.equal((await Quest.findById(draftQuest.id).lean()).items.length, 1, 'A dry run writes nothing');
   const result = await addQuestLibraryItems(admin, draftQuest.id, [...ids, String(oid())]);
   assert.equal(result.added, 2);
   assert.deepEqual(result.quest.items.map((entry) => entry.title), ['LRU Cache', 'Two Sum', 'Valid Anagram'], 'Valid picks join the end in the order selected');

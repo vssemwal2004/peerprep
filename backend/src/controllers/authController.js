@@ -191,7 +191,7 @@ export async function me(req, res) {
   // req.user comes from the auth cache, which does not select the editable profile fields.
   // Read them fresh so bio/username/links (and learner progress) survive a page reload.
   const profile = await User.findById(u._id)
-    .select('username bio linkedinUrl githubUrl portfolioUrl learnerProgress')
+    .select('username bio linkedinUrl githubUrl portfolioUrl learnerProgress practiceLanguage')
     .lean() || {};
   // Return fields based on role
   const response = {
@@ -217,7 +217,8 @@ export async function me(req, res) {
     response.college = u.college;
     response.semester = u.semester;
     response.learnerProgress = profile.learnerProgress || null;
-    
+    response.practiceLanguage = profile.practiceLanguage || '';
+
     // Fetch coordinator names from teacherIds
     if (Array.isArray(u.teacherIds) && u.teacherIds.length > 0) {
       const coordinators = await User.find({ 
@@ -290,6 +291,21 @@ export async function acknowledgeLearnerProgress(req, res) {
   };
   await userDoc.save();
   res.json({ learnerProgress: userDoc.learnerProgress });
+}
+
+// General-purpose language ids the practice editor offers (COMPILER_LANGUAGES in frontend/src/admin/compiler/compilerUtils.js).
+// SQL is left out: SQL problems allow nothing else, so remembering it would only override the student's coding language.
+const PRACTICE_LANGUAGES = new Set(['python', 'javascript', 'java', 'cpp', 'c', 'typescript', 'csharp', 'php', 'go', 'rust', 'kotlin', 'ruby', 'r', 'swift']);
+
+/** Remember the language a student last ran or submitted practice code in, so every problem opens in it. */
+export async function updatePracticeLanguage(req, res) {
+  const u = req.user;
+  if (!u) return res.status(401).json({ error: 'Unauthorized' });
+  if (u.role !== 'student') throw new HttpError(403, 'Only students have a practice language');
+  const language = String(req.body?.language || '').trim().toLowerCase();
+  if (!PRACTICE_LANGUAGES.has(language)) throw new HttpError(400, 'Unsupported language');
+  await User.updateOne({ _id: u._id }, { $set: { practiceLanguage: language } });
+  res.json({ practiceLanguage: language });
 }
 
 // Update current user's profile (students, coordinators, and admins can update their name)

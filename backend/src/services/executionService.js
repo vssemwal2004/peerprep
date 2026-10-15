@@ -310,7 +310,11 @@ export async function runJudge0(sourceCodeInput, languageId, stdin = '', options
 
   const isSql = LANGUAGE_ID_TO_KEY[numericLanguageId] === 'sql';
   if (isSql) validateSqlMutationContract(sourceCodeInput, options.sqlRequiredStatement || '');
-  const rawInput = sanitizeExecutionText(stdin, options.preparedFunctionRunner && !isSql ? MAX_PREPARED_SOURCE_CODE_SIZE_BYTES : MAX_STDIN_SIZE_BYTES, isSql ? 'Dataset SQL' : 'Input');
+  const requestedStdinLimit = Number(options.stdinLimitBytes);
+  const stdinLimitBytes = Number.isFinite(requestedStdinLimit)
+    ? Math.trunc(Math.max(MAX_STDIN_SIZE_BYTES, Math.min(16 * 1024 * 1024, requestedStdinLimit)))
+    : (options.preparedFunctionRunner && !isSql ? MAX_PREPARED_SOURCE_CODE_SIZE_BYTES : MAX_STDIN_SIZE_BYTES);
+  const rawInput = sanitizeExecutionText(stdin, stdinLimitBytes, isSql ? 'Dataset SQL' : 'Input');
   const sqlSetupCode = isSql
     ? sanitizeExecutionText(options.sqlSetupCode || '', MAX_SOURCE_CODE_SIZE_BYTES, 'SQL schema and seed data')
     : '';

@@ -49,6 +49,7 @@ coverage/
 # MongoDB Backups
 MongoBackup/
 mongo-backup.bat
+/.local-mongodb/
 
 # Local reference-repository downloads used during data repair
 /.codex-temp-*/

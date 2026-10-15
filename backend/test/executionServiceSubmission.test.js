@@ -47,8 +47,22 @@ test('compiled languages use compatible targets and prepared runners retain room
     assert.equal(bodies[1].compiler_options, '--target ES2019 --lib ESNext,DOM');
     assert.equal(bodies[2].compiler_options, '-std=gnu11 -Wl,--no-as-needed -lm');
     await assert.rejects(runJudge0(' '.repeat(60 * 1024), 54), /50 KB/);
-    await assert.rejects(runJudge0(' '.repeat(257 * 1024), 54, '', { preparedFunctionRunner: true }), /256 KB/);
+    await assert.rejects(runJudge0(' '.repeat((4 * 1024 * 1024) + 1), 54, '', { preparedFunctionRunner: true }), /4096 KB/);
   } finally { globalThis.fetch = originalFetch; }
+});
+
+test('persisted testcase allowance accepts 100k-element stdin without widening ordinary custom input', async () => {
+  const originalFetch = globalThis.fetch;
+  const input = JSON.stringify([Array.from({ length: 100000 }, (_, index) => index % 10)]);
+  assert.ok(Buffer.byteLength(input, 'utf8') > 64 * 1024);
+  globalThis.fetch = async () => new Response(JSON.stringify({ status: { id: 5, description: 'Time Limit Exceeded' } }));
+  try {
+    await assert.rejects(runJudge0('print(0)', 71, input), /64 KB/);
+    const result = await runJudge0('print(0)', 71, input, { stdinLimitBytes: 4 * 1024 * 1024 });
+    assert.equal(result.status.id, 5);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('large integer answers compare exactly instead of rounding or relative tolerance', () => {

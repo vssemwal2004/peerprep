@@ -18,8 +18,10 @@ import {
   getLanguageLabel,
   parseBulkCasePair,
   sumTestCaseMarks,
+  toAssessmentProblemSnapshot,
 } from './compilerUtils';
 import { EmptyState, LoadingPanel, SectionCard } from './CompilerUi';
+import ProblemAssetImages from '../../components/ProblemAssetImages';
 import { loadCodingDraft, removeCodingDraft, saveCodingDraft } from '../assessment/assessmentCodingStore';
 import { queueProblemSelection } from '../assessment/assessmentProblemSelectionStore';
 import AuthoringStepper from '../library/AuthoringStepper';
@@ -74,6 +76,8 @@ function RequiredFieldLabel({ children, optional = false }) {
   return <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-gray-300">{children}{optional ? <span className="ml-1 text-xs font-normal text-slate-400">(optional)</span> : <span className="ml-1 font-bold text-rose-500" aria-label="required">*</span>}</label>;
 }
 
+// onChange always receives an updater `(currentImages) => nextImages`; parents
+// must apply it against their latest state (setState-style).
 function ProblemImageManager({ images = [], onChange, maxImages = 10, allowSection = false, title = 'Problem images' }) {
   const inputRef = useRef(null);
   const toast = useToast();
@@ -100,28 +104,31 @@ function ProblemImageManager({ images = [], onChange, maxImages = 10, allowSecti
     }
 
     setUploading(true);
-    const uploaded = [];
+    let uploadedCount = 0;
     try {
       for (let index = 0; index < selectedFiles.length; index += 1) {
         setUploadProgress(`${index + 1}/${selectedFiles.length}`);
         const response = await api.uploadCompilerProblemAsset(selectedFiles[index]);
-        uploaded.push({
+        const asset = {
           ...(response.asset || {}),
           ...(allowSection ? { section: 'description' } : {}),
-          position: images.length + index,
-        });
-        onChange([...images, ...uploaded]);
+        };
+        // Functional update: append to the latest list rather than the one
+        // captured when the upload started, so concurrent edits survive.
+        onChange((current = []) => [...current, { ...asset, position: current.length }]);
+        uploadedCount += 1;
       }
-      toast.success(`${uploaded.length} image${uploaded.length === 1 ? '' : 's'} uploaded to Cloudinary.`);
+      toast.success(`${uploadedCount} image${uploadedCount === 1 ? '' : 's'} uploaded to Cloudinary.`);
     } catch (error) {
-      toast.error(uploaded.length ? `${uploaded.length} image(s) uploaded before the next upload failed.` : (error.message || 'Image upload failed.'));
+      const reason = error?.message || 'Image upload failed.';
+      toast.error(uploadedCount ? `${uploadedCount} image(s) uploaded before the next upload failed: ${reason}` : reason);
     } finally {
       setUploading(false);
       setUploadProgress('');
     }
   };
 
-  const updateImage = (index, updates) => onChange(images.map((image, itemIndex) => (
+  const updateImage = (index, updates) => onChange((current = []) => current.map((image, itemIndex) => (
     itemIndex === index ? { ...image, ...updates } : image
   )));
 
@@ -144,12 +151,12 @@ function ProblemImageManager({ images = [], onChange, maxImages = 10, allowSecti
           <div key={`${image.publicId || image.url}-${index}`} className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900">
             <div className="relative flex h-36 items-center justify-center bg-slate-100 p-2 dark:bg-gray-950">
               <img src={image.url} alt={image.alt || ''} loading="lazy" decoding="async" className="max-h-full max-w-full rounded-lg object-contain" />
-              <button type="button" onClick={() => onChange(images.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove image ${index + 1}`} title="Remove image" className="absolute right-2 top-2 rounded-lg bg-white/95 p-1.5 text-slate-500 shadow transition hover:text-rose-600 dark:bg-gray-800 dark:text-gray-300"><Trash2 className="h-4 w-4" /></button>
+              <button type="button" onClick={() => onChange((current = []) => current.filter((_, itemIndex) => itemIndex !== index))} disabled={uploading} aria-label={`Remove image ${index + 1}`} title={uploading ? 'Wait for uploads to finish' : 'Remove image'} className="absolute right-2 top-2 rounded-lg bg-white/95 p-1.5 text-slate-500 shadow transition hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-800 dark:text-gray-300"><Trash2 className="h-4 w-4" /></button>
             </div>
             <div className="space-y-2 p-3">
-              {allowSection ? <select value={image.section || 'description'} onChange={(event) => updateImage(index, { section: event.target.value })} className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"><option value="description">Show after description</option><option value="constraints">Show with constraints</option></select> : null}
-              <input value={image.alt || ''} onChange={(event) => updateImage(index, { alt: event.target.value })} maxLength={500} placeholder="Alternative text (recommended)" className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
-              <input value={image.caption || ''} onChange={(event) => updateImage(index, { caption: event.target.value })} maxLength={1000} placeholder="Caption (optional)" className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700 outline-none focus:border-sky-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
+              {allowSection ? <select value={image.section || 'description'} onChange={(event) => updateImage(index, { section: event.target.value })} disabled={uploading} className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700 outline-none focus:border-sky-400 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"><option value="description">Show after description</option><option value="constraints">Show with constraints</option></select> : null}
+              <input value={image.alt || ''} onChange={(event) => updateImage(index, { alt: event.target.value })} disabled={uploading} maxLength={500} aria-label={`Alternative text for image ${index + 1}`} placeholder="Describe what the image shows (read aloud to screen readers)" className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700 outline-none focus:border-sky-400 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
+              <input value={image.caption || ''} onChange={(event) => updateImage(index, { caption: event.target.value })} disabled={uploading} maxLength={1000} aria-label={`Caption for image ${index + 1}`} placeholder="Caption (optional)" className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700 outline-none focus:border-sky-400 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
             </div>
           </div>
         ))}
@@ -221,6 +228,12 @@ function TestCaseEditorCard({
       setValidationError(`Add ${requireInput ? `both ${inputLabel.toLowerCase()} and ` : ''}${outputLabel.toLowerCase()} before saving this ${title.toLowerCase()} case.`);
       return;
     }
+    // Screen readers need some alt text; fall back to a positional label.
+    if (includeImages && (testCase?.images || []).some((image) => !String(image?.alt || '').trim())) {
+      onChange(index, 'images', (current = []) => current.map((image, imageIndex) => (
+        String(image?.alt || '').trim() ? image : { ...image, alt: `${title} ${index + 1} illustration ${imageIndex + 1}` }
+      )));
+    }
     setSavedIndexes((current) => new Set([...current, index]));
     setValidationError('');
   };
@@ -267,7 +280,7 @@ function TestCaseEditorCard({
             <div><p className="font-bold uppercase tracking-wide text-slate-400">{outputLabel}</p><pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-100 p-3 font-mono text-slate-700 dark:bg-gray-800 dark:text-gray-200">{testCase.output || '(empty)'}</pre></div>
             {includeExplanation && <div><p className="font-bold uppercase tracking-wide text-slate-400">Explanation</p><p className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-100 p-3 leading-5 text-slate-700 dark:bg-gray-800 dark:text-gray-200">{testCase.explanation || 'No explanation added.'}</p></div>}
           </div>}
-          {includeImages && testCase.images?.length ? <div className="border-t border-emerald-200 p-4 dark:border-emerald-800"><p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Example images</p><div className="flex flex-wrap gap-2">{testCase.images.map((image, imageIndex) => <img key={`${image.publicId || image.url}-${imageIndex}`} src={image.url} alt={image.alt || ''} loading="lazy" className="h-20 max-w-40 rounded-lg border border-slate-200 object-contain dark:border-gray-700" />)}</div></div> : null}
+          {includeImages && testCase.images?.length ? <div className="border-t border-emerald-200 p-4 dark:border-emerald-800"><p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Example images ({testCase.images.length})</p><ProblemAssetImages images={testCase.images} variant="sample" /></div> : null}
         </div>
       ) : (
         <div key={`${title}-${index}`} className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700">
@@ -489,9 +502,21 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
           .then((response) => {
             setPreviewValidated(Boolean(response.previewValidated ?? response.previewTested));
             setCurrentStatus(response.status || 'draft');
+            // Draft forms built from an assessment snapshot lack the author-only
+            // fields (stripped for students); restore them from the full problem
+            // so saving does not wipe harnesses, solutions or hidden cases.
+            const authorForm = createProblemFormFromProblem(response);
+            const hasCode = (codeMap) => Object.values(codeMap || {}).some((code) => String(code || '').trim());
+            setForm((previous) => ({
+              ...previous,
+              executionHarnesses: hasCode(previous.executionHarnesses) ? previous.executionHarnesses : authorForm.executionHarnesses,
+              referenceSolutions: hasCode(previous.referenceSolutions) ? previous.referenceSolutions : authorForm.referenceSolutions,
+              hiddenTestCases: (previous.hiddenTestCases || []).some(isConfiguredHiddenCase) ? previous.hiddenTestCases : authorForm.hiddenTestCases,
+              existingHiddenTestCaseCount: previous.existingHiddenTestCaseCount || authorForm.existingHiddenTestCaseCount,
+            }));
             saveCodingDraft(editorId, {
               problemId: response._id,
-              problemData: response,
+              problemData: toAssessmentProblemSnapshot(response),
               previewValidated: Boolean(response.previewValidated ?? response.previewTested),
               status: (response.previewValidated ?? response.previewTested) ? 'Validated' : 'Draft',
             });
@@ -565,7 +590,10 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
   const validationStatus = previewValidated ? (canAddToAssessment ? 'Ready' : 'Validated') : 'Draft';
 
   const updateField = (field, value) => {
-    setForm((previous) => ({ ...previous, [field]: value }));
+    setForm((previous) => ({
+      ...previous,
+      [field]: typeof value === 'function' ? value(previous[field]) : value,
+    }));
     setIsDirty(true);
   };
 
@@ -699,7 +727,9 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
     setForm((previous) => ({
       ...previous,
       sampleTestCases: previous.sampleTestCases.map((testCase, itemIndex) => (
-        itemIndex === index ? { ...testCase, [field]: value } : testCase
+        itemIndex === index
+          ? { ...testCase, [field]: typeof value === 'function' ? value(testCase[field]) : value }
+          : testCase
       )),
     }));
     setIsDirty(true);
@@ -802,6 +832,19 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
       if (!silent) toast.success('Incomplete question saved as a local draft.');
       return { localDraft: true };
     }
+    // An image cannot stand in for the sample itself: students still need the
+    // textual input/output to run against.
+    const imageOnlySampleIndex = (form.sampleTestCases || []).findIndex((testCase) => (
+      testCase?.images?.length
+      && !String(testCase.input || '').trim()
+      && !String(testCase.output || '').trim()
+    ));
+    if (imageOnlySampleIndex >= 0) {
+      const message = `Sample ${imageOnlySampleIndex + 1} has images but no input or expected output. Add them or remove the sample.`;
+      if (silent) setAutoSaveStatus('Auto-save paused: incomplete sample');
+      else toast.error(message);
+      return null;
+    }
     if (form.hiddenTestUploadMode === 'pairs' && hiddenPairs.issues.length > 0) {
       toast.error('Fix hidden testcase file issues before saving.');
       return null;
@@ -846,7 +889,7 @@ export default function CreateProblem({ mode = 'compiler', assessmentContext } =
           questionIndex: finalAssessmentContext?.questionIndex,
           problemId: response._id,
           form: nextForm,
-          problemData: response,
+          problemData: toAssessmentProblemSnapshot(response),
           previewValidated: Boolean(response.previewValidated ?? response.previewTested),
           status: (response.previewValidated ?? response.previewTested) ? 'Validated' : 'Draft',
         });
@@ -1072,11 +1115,15 @@ if (!isValidated || publishedProblem.status !== 'published') {
       return;
     }
 
+    // The author-facing problem carries hidden cases and solutions; only the
+    // student-safe snapshot may enter the assessment draft.
+    const assessmentSnapshot = toAssessmentProblemSnapshot(publishedProblem);
+
     // If in assessment mode, use the existing assessment context
     if (isAssessmentCreate) {
       queueProblemSelection(assessmentKey, {
         sectionIndex: 0,
-        problems: [publishedProblem],
+        problems: [assessmentSnapshot],
         createdForAssessment: true,
         questionSet: finalAssessmentContext?.questionSet || 1,
       });
@@ -1089,7 +1136,7 @@ if (!isValidated || publishedProblem.status !== 'published') {
         questionIndex: finalAssessmentContext?.questionIndex,
         problemId: publishedProblem._id,
         form: createProblemFormFromProblem(publishedProblem),
-        problemData: publishedProblem,
+        problemData: assessmentSnapshot,
         previewValidated: Boolean(publishedProblem.previewValidated ?? publishedProblem.previewTested),
         status: 'Ready',
       });
@@ -1580,11 +1627,12 @@ if (!isValidated || publishedProblem.status !== 'published') {
                   <div className="rounded-2xl border border-slate-200 p-4 dark:border-gray-700">
                     <p className="text-sm font-semibold text-slate-800 dark:text-gray-100">Parsed samples</p>
                     <div className="mt-3 space-y-3">
-                      {form.sampleTestCases.filter((item) => item.input || item.output || item.explanation).map((testCase, index) => (
+                      {form.sampleTestCases.filter((item) => item.input || item.output || item.explanation || item.images?.length).map((testCase, index) => (
                         <div key={`preview-sample-${index}`} className="rounded-xl bg-slate-50 p-3 text-xs dark:bg-gray-800">
                           <div className="flex items-center justify-between gap-3"><p className="font-semibold text-slate-700 dark:text-gray-200">Sample {index + 1}</p><span className="font-semibold text-emerald-700 dark:text-emerald-300">{Number(testCase.marks) || 1} mark(s)</span></div>
                           <p className="mt-2 font-semibold text-slate-500">Input</p><pre className="mt-1 overflow-x-auto whitespace-pre-wrap text-slate-600 dark:text-gray-300">{testCase.input || '(empty input)'}</pre>
                           <p className="mt-2 font-semibold text-slate-500">Expected output</p><pre className="mt-1 overflow-x-auto whitespace-pre-wrap text-slate-600 dark:text-gray-300">{testCase.output || '(empty output)'}</pre>
+                          {testCase.images?.length ? <ProblemAssetImages images={testCase.images} variant="sample" className="mt-3" /> : null}
                         </div>
                       ))}
                     </div>

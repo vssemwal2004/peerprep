@@ -1,4 +1,4 @@
-import { trustedTestCaseInputLimitBytes } from './trustedLargeInputPolicyService.js';
+import { persistedTestCaseInputLimitBytes } from './trustedLargeInputPolicyService.js';
 import { trustedExpectedOutputLimitBytes } from './outputFileBudgetService.js';
 import { evaluateProblemSubmissionResult } from './problemSubmissionEvaluationService.js';
 import { assessmentDefinitionById, sharedAssessmentProblem } from '../platform/sharedContent.js';
@@ -338,7 +338,7 @@ async function loadSubmissionTestCases(problem) {
   }
 
   allTestCases.forEach((testCase, index) => {
-    sanitizeExecutionText(testCase.input, trustedTestCaseInputLimitBytes(problem), `Test case input #${index + 1}`);
+    sanitizeExecutionText(testCase.input, persistedTestCaseInputLimitBytes(), `Test case input #${index + 1}`);
     sanitizeExecutionText(testCase.output, trustedExpectedOutputLimitBytes(problem), `Test case output #${index + 1}`);
   });
 
@@ -740,9 +740,14 @@ async function executeRunPayload({
   };
 }
 
-async function executeSubmitPayload({ sourceCode, sourceCodeFactory, languageId, problem }) {
+// Practice submits stop at the first failing case: the verdict is already decided, so running the rest only
+// spends judge capacity. Assessment submits run every case because marks are awarded per passed case.
+async function executeSubmitPayload({ sourceCode, sourceCodeFactory, languageId, problem, stopOnFirstFailure = false }) {
   const allTestCases = await loadSubmissionTestCases(problem);
-  const judge0Options = buildJudge0Options(problem);
+  const judge0Options = {
+    ...buildJudge0Options(problem),
+    stdinLimitBytes: persistedTestCaseInputLimitBytes(),
+  };
   const testCaseResults = [];
   let totalTimeSeconds = 0;
   let peakMemoryKb = 0;
@@ -792,6 +797,7 @@ async function executeSubmitPayload({ sourceCode, sourceCodeFactory, languageId,
           error: evaluation.error || '',
         };
       }
+      if (stopOnFirstFailure) break;
     } else {
       passed += 1;
       passedTestCaseMarks += testCaseMarks;
@@ -1308,6 +1314,7 @@ export async function processCompilerExecutionJob(job) {
       sourceCodeFactory: executionSourceFactory,
       languageId,
       problem,
+      stopOnFirstFailure: job.name === 'submit' && !assessmentId,
     });
 
     let finalizedSubmission = null;

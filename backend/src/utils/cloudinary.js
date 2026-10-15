@@ -13,6 +13,9 @@ if (CLOUDINARY_CLOUD_NAME && CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET) {
     secure: true
   });
   console.log('[Cloudinary] Configured successfully');
+} else if (process.env.NODE_ENV === 'production') {
+  // Production without storage breaks problem images, avatars, and university logos.
+  console.error('[Cloudinary] NOT CONFIGURED in production - set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET. Image uploads will fail.');
 } else {
   console.warn('[Cloudinary] Not configured - missing environment variables');
 }

@@ -150,6 +150,7 @@ function CodeEditor({
   result,
   isRunning,
   isSubmitting,
+  executionDisabled = false,
   onRun,
   onSubmit,
   onReset,
@@ -639,7 +640,7 @@ function CodeEditor({
             <button
               type="button"
               onClick={handleRun}
-              disabled={isRunning || isSubmitting}
+              disabled={executionDisabled || isRunning || isSubmitting}
               className="inline-flex h-8 items-center gap-2 rounded-md bg-slate-900 px-3 text-xs font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-sky-700 dark:hover:bg-sky-600 dark:disabled:bg-gray-700"
             >
               <Play className="h-3.5 w-3.5" />
@@ -648,7 +649,7 @@ function CodeEditor({
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={isRunning || isSubmitting}
+              disabled={executionDisabled || isRunning || isSubmitting}
               className="inline-flex h-8 items-center gap-2 rounded-md bg-sky-600 px-3 text-xs font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-gray-700"
             >
               <Send className="h-3.5 w-3.5" />
@@ -739,7 +740,7 @@ function CodeEditor({
           <button
             type="button"
             onClick={handleRun}
-            disabled={isRunning || isSubmitting}
+            disabled={executionDisabled || isRunning || isSubmitting}
             title={isSqlMode ? 'Run the query on the dataset' : 'Run your code on the selected test cases'}
             className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-[0_1px_2px_rgba(16,24,40,0.05)] transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
           >
@@ -749,7 +750,7 @@ function CodeEditor({
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={isRunning || isSubmitting}
+            disabled={executionDisabled || isRunning || isSubmitting}
             title={isSqlMode ? 'Submit the query for full evaluation' : 'Submit for evaluation on all test cases'}
             className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-gradient-to-b from-emerald-500 to-emerald-600 px-3.5 text-xs font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_2px_0_#047857,0_6px_14px_-6px_rgba(5,150,105,0.6)] transition-[transform,box-shadow,filter] hover:brightness-105 active:translate-y-px active:shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_1px_0_#047857] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-60 disabled:active:translate-y-0"
           >
@@ -1042,6 +1043,7 @@ function codeEditorPropsEqual(previous, next) {
     && previous.result === next.result
     && previous.isRunning === next.isRunning
     && previous.isSubmitting === next.isSubmitting
+    && previous.executionDisabled === next.executionDisabled
     && previous.showToolbar === next.showToolbar
     && previous.consoleActions === next.consoleActions
     && previous.internalClipboardOnly === next.internalClipboardOnly

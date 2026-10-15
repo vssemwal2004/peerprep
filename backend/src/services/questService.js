@@ -317,9 +317,10 @@ function centralRowReason(row) {
 /**
  * "Add to QuickPrep" from the Question Library. The client sends library row ids only; each row is re-read
  * here and mapped to the problem students open. Rows students cannot open are skipped with a reason, and
- * the rest are added in the order selected.
+ * the rest are added in the order selected. With dryRun nothing is written: the same plan is returned so the
+ * admin can review every pick (and why any is blocked) before confirming.
  */
-export async function addQuestLibraryItems(admin, id, rawIds) {
+export async function addQuestLibraryItems(admin, id, rawIds, { dryRun = false } = {}) {
   assertAuthor();
   await findAdminQuest(id, '_id');
   const central = isControlPlane();
@@ -379,6 +380,7 @@ export async function addQuestLibraryItems(admin, id, rawIds) {
     const present = new Set(existing.items.map(itemKey));
     const incoming = [];
     const skipped = [];
+    const plan = [];
     for (const entry of mapped) {
       let reason = entry.reason;
       if (!reason) {
@@ -389,7 +391,9 @@ export async function addQuestLibraryItems(admin, id, rawIds) {
         else { present.add(key); incoming.push(entry.item); }
       }
       if (reason) skipped.push({ id: entry.id, title: entry.title, reason, message: LIBRARY_SKIP_REASONS[reason] });
+      plan.push({ id: entry.id, title: entry.title, ok: !reason, ...(reason ? { reason, message: LIBRARY_SKIP_REASONS[reason] } : {}) });
     }
+    if (dryRun) return { preview: true, items: plan, added: incoming.length, skipped, currentTotal: existing.items.length, max: MAX_ITEMS };
     const quest = incoming.length ? await pushQuestItems(existing._id, incoming, admin) : existing;
     if (!quest) continue;
     const [stats, audience] = await Promise.all([questStats([quest._id]), audienceCounts()]);

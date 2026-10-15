@@ -7,7 +7,7 @@ import {
   compilerRunLimiter,
   compilerSubmitCooldown,
   compilerSubmitLimiter,
-  uploadLimiter,
+  problemAssetUploadLimiter,
 } from '../middleware/rateLimiter.js';
 import {
   approveProblemPreview,
@@ -80,7 +80,7 @@ router.get('/overview', requireCoordinatorPermission('coordinator.compiler.view'
 router.get('/analytics', requireCoordinatorPermission('coordinator.compiler.analytics'), compilerCache, getAdminCompilerAnalytics);
 router.get('/student/:id', requireCoordinatorPermission('coordinator.compiler.analytics'), getCompilerStudentAnalytics);
 router.get('/problems/overview', requireCoordinatorPermission('coordinator.compiler.view'), compilerCache, getCompilerOverview);
-router.post('/problem-assets', requireCoordinatorPermission('coordinator.compiler.create'), uploadLimiter, acceptProblemAsset, uploadCodingProblemAsset);
+router.post('/problem-assets', requireCoordinatorPermission('coordinator.compiler.create'), problemAssetUploadLimiter, acceptProblemAsset, uploadCodingProblemAsset);
 router.post('/problems/preview/run', requireCoordinatorPermission('coordinator.compiler.manage'), upload.none(), previewRunProblem);
 router.post('/problems/:id/preview/approve', requireCoordinatorPermission('coordinator.compiler.manage'), invalidateCompilerCache, upload.none(), approveProblemPreview);
 router.get('/problems', requireAdminCoordinatorOrStudent, requireFullStudent, listProblems);

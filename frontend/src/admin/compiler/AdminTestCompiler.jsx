@@ -4,7 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   Building2,
   ChevronDown,
-  PanelLeftOpen,
+  RotateCcw,
   Tag,
   X,
 } from 'lucide-react';
@@ -142,7 +142,7 @@ function ProblemDescriptionPanel({ problem, previewValidated }) {
               >
                 <div className="text-base font-semibold text-slate-900 dark:text-gray-100">Example {index + 1}:</div>
 
-                <ProblemAssetImages images={testCase.images} />
+                <ProblemAssetImages images={testCase.images} variant="sample" label={`Example ${index + 1}`} />
                 <div className="space-y-3 rounded-lg bg-slate-50 px-4 py-3.5 font-mono text-[13px] leading-6 text-slate-800 dark:bg-gray-800 dark:text-gray-200">
                   <div>
                     <div className="font-sans text-sm font-semibold text-slate-900 dark:text-gray-100">Input:</div>
@@ -724,6 +724,27 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
         </span>
       </div>
       <div className="flex shrink-0 items-center gap-2">
+        <select
+          value={language}
+          onChange={(event) => setLanguage(event.target.value)}
+          disabled={isRunning || isSubmitting}
+          aria-label="Preview language"
+          className="hidden h-9 max-w-36 rounded-lg border-0 bg-zinc-200/70 px-2.5 text-xs font-medium text-zinc-700 outline-none focus:ring-2 focus:ring-[#ffa116] disabled:opacity-50 dark:bg-[#333] dark:text-zinc-200 sm:block"
+        >
+          {(problem.supportedLanguages || []).map((supportedLanguage) => (
+            <option key={supportedLanguage} value={supportedLanguage}>{getLanguageLabel(supportedLanguage)}</option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={resetCode}
+          disabled={isRunning || isSubmitting}
+          aria-label="Reset preview code"
+          title="Reset code"
+          className="hidden h-9 w-9 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-200 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-700 md:inline-flex"
+        >
+          <RotateCcw className="h-4 w-4" />
+        </button>
         <button type="button" onClick={() => navigate(backTo || `${rolePrefix}/library/coding/problems`)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800">{backLabel}</button>
         {sharedQuestionId ? rolePrefix === '/admin' && <button type="button" onClick={async () => {
           try {
@@ -754,22 +775,26 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
   );
 
   return (
-    <div className="h-full min-h-[680px] w-full overflow-hidden bg-[linear-gradient(180deg,_#f7fbff_0%,_#f1f7fc_100%)] dark:bg-[linear-gradient(180deg,_#0f172a_0%,_#111827_100%)]">
+    <div className="h-full min-h-[680px] w-full overflow-hidden bg-[#f2f2f2] font-sans dark:bg-[#1a1a1a]">
       <div className="flex h-full min-h-0 flex-col">
-        {headerTarget ? createPortal(previewHeader, headerTarget) : <header className="flex min-h-14 shrink-0 items-center border-b border-slate-200 bg-white px-4 py-2.5 dark:border-gray-800 dark:bg-gray-900">{previewHeader}</header>}
-        <div className="relative hidden h-full min-h-0 flex-1 overflow-hidden p-2.5 lg:flex">
+        {headerTarget ? createPortal(previewHeader, headerTarget) : <header className="flex min-h-14 shrink-0 items-center border-b border-zinc-200 bg-white/90 px-3 py-2 backdrop-blur dark:border-white/[0.07] dark:bg-[#202022]/95">{previewHeader}</header>}
+        <div className="relative hidden h-full min-h-0 flex-1 overflow-hidden p-2 lg:flex">
 
           <div
             ref={splitContainerRef}
-            className="mx-auto grid h-full min-h-0 w-full flex-1 grid-cols-[auto_16px_minmax(0,1fr)] overflow-hidden"
+            className="mx-auto grid h-full min-h-0 w-full max-w-[1680px] flex-1 grid-cols-[auto_16px_minmax(0,1fr)] overflow-hidden"
           >
             <section
               style={{
-                width: leftWidth === null ? 'clamp(400px, 45vw, 760px)' : `${leftWidth}px`,
+                width: leftWidth === null ? 'clamp(320px, 40vw, 680px)' : `${leftWidth}px`,
                 willChange: 'width',
               }}
-              className="flex h-full min-w-[280px] shrink-0 flex-col overflow-hidden rounded-[24px] border border-transparent bg-white/72 shadow-[0_12px_36px_-28px_rgba(15,23,42,0.24)] backdrop-blur-sm dark:border-transparent dark:bg-gray-900/84"
+              className="flex h-full min-w-[320px] shrink-0 flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-[#282828]"
             >
+              <div className="flex h-11 flex-none items-end justify-between border-b border-zinc-200 px-5 dark:border-zinc-700">
+                <div className="border-b-2 border-zinc-900 pb-2.5 text-sm font-semibold text-zinc-900 dark:border-white dark:text-white">Description</div>
+                <span className={`mb-2.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${previewBadgeClass(previewValidated)}`}>{previewValidated ? 'Validated' : 'Preview required'}</span>
+              </div>
               <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain scroll-smooth">
                 <ProblemDescriptionPanel problem={problem} previewValidated={previewValidated} />
               </div>
@@ -778,16 +803,13 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
             <button
               type="button"
               onPointerDown={handleResizeStart}
-              className="group relative flex w-4 shrink-0 cursor-col-resize touch-none select-none items-center justify-center transition-colors"
+              className="group relative flex w-2 shrink-0 cursor-col-resize touch-none select-none items-center justify-center transition-colors"
               aria-label="Resize panels"
             >
-              <div className="absolute inset-y-5 left-1/2 w-px -translate-x-1/2 rounded-full bg-slate-200/45 dark:bg-gray-700/60" />
-              <div className="relative z-10 rounded-full bg-white/70 p-1 text-slate-400 transition-colors group-hover:text-sky-500 dark:bg-gray-900 dark:text-gray-500">
-                <PanelLeftOpen className="h-3.5 w-3.5 rotate-90" />
-              </div>
+              <div className="absolute inset-y-4 left-1/2 w-1 -translate-x-1/2 rounded-full bg-zinc-300 transition group-hover:bg-[#ffa116] dark:bg-zinc-700" />
             </button>
 
-            <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
+            <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-[#282828]">
               <CodeEditor
                 supportedLanguages={problem.supportedLanguages || []}
                 language={language}
@@ -809,7 +831,8 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
                 onRun={handleRun}
                 onSubmit={handleSubmit}
                 onReset={resetCode}
-                showToolbar
+                showToolbar={false}
+                consoleActions
                 internalClipboardOnly={false}
                 editorKey={`admin-test:${problem?._id || 'draft'}`}
                 executionMode={problem?.category === 'SQL' ? 'sql' : 'code'}
@@ -819,7 +842,7 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
         </div>
 
         <div className="min-h-0 flex-1 space-y-3 px-3 py-3 lg:hidden">
-          <div className="rounded-[24px] bg-white/88 px-3 py-3 shadow-[0_10px_32px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:bg-gray-900/88">
+          <div className="rounded-lg border border-zinc-200 bg-white px-3 py-3 dark:border-zinc-700 dark:bg-[#282828]">
             <div className="flex items-center gap-1 rounded-2xl bg-slate-100 p-1 dark:bg-gray-800">
               <button
                 type="button"
@@ -838,13 +861,13 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
             </div>
           </div>
 
-          <div className={`overflow-hidden rounded-[28px] bg-white/84 shadow-[0_10px_32px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:bg-gray-900/84 ${mobileView === 'description' ? 'block' : 'hidden'}`}>
+          <div className={`overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-[#282828] ${mobileView === 'description' ? 'block' : 'hidden'}`}>
             <div className="max-h-[calc(100vh-15rem)] overflow-y-auto overflow-x-hidden overscroll-contain scroll-smooth">
               <ProblemDescriptionPanel problem={problem} previewValidated={previewValidated} />
             </div>
           </div>
 
-          <div className={`${mobileView === 'editor' ? 'block' : 'hidden'}`}>
+          <div className={`overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-[#282828] ${mobileView === 'editor' ? 'block' : 'hidden'}`}>
             <CodeEditor
               supportedLanguages={problem.supportedLanguages || []}
               language={language}
@@ -866,7 +889,8 @@ export default function AdminTestCompiler({ backTo, editTo, backLabel = 'Back', 
               onRun={handleRun}
               onSubmit={handleSubmit}
               onReset={resetCode}
-              showToolbar
+              showToolbar={false}
+              consoleActions
               internalClipboardOnly={false}
               executionMode={problem?.category === 'SQL' ? 'sql' : 'code'}
               editorKey={`admin-test:${problem?._id || 'draft'}`}

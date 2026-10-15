@@ -218,7 +218,7 @@ test('question-level option shuffle works when global option shuffle is disabled
   assert.equal(question.options[question.correctOptionIndex], 'South');
 });
 
-test('student assessment response removes answer keys and hidden coding cases', () => {
+test('student assessment response removes answer keys, hidden cases, and coding learning aids', () => {
   const response = sanitizeStudentAssessmentForResponse({
     _id: 'assessment-1',
     passwordHash: 'secret',
@@ -231,7 +231,16 @@ test('student assessment response removes answer keys and hidden coding cases', 
         expectedAnswer: 'answer',
         keywords: ['answer'],
         answerExplanation: 'because',
-        coding: { testCases: [{ input: 'public', hidden: false }, { input: 'private', hidden: true }] },
+        coding: {
+          testCases: [{ input: 'public', hidden: false }, { input: 'private', hidden: true }],
+          hints: ['Use the optimal recurrence'],
+          faqs: [{ question: 'How?', answer: 'Here is the solution.' }],
+          companyTags: ['Example Corp'],
+          editorial: 'Complete solution',
+          referenceSolutions: { python: 'print(42)' },
+          executionHarnesses: { python: 'private runner' },
+          studentRunnerTemplates: { python: 'runner' },
+        },
       }],
     }],
   });
@@ -244,4 +253,7 @@ test('student assessment response removes answer keys and hidden coding cases', 
   assert.equal(question.keywords, undefined);
   assert.equal(question.answerExplanation, undefined);
   assert.deepEqual(question.coding.testCases, [{ input: 'public', hidden: false }]);
+  for (const field of ['hints', 'faqs', 'companyTags', 'editorial', 'referenceSolutions', 'executionHarnesses', 'studentRunnerTemplates']) {
+    assert.equal(question.coding[field], undefined, `${field} must not be delivered during an exam`);
+  }
 });

@@ -17,9 +17,7 @@ import {
   MapPin,
   Maximize,
   Monitor,
-  Play,
   RotateCcw,
-  Send,
   ShieldCheck,
   Timer,
   Video,
@@ -3446,7 +3444,7 @@ export default function AssessmentAttempt() {
     || (hasAiFooterIssue ? 'AI proctoring needs attention. Please adjust and continue.' : '');
 
   return (
-    <div className="relative min-h-screen bg-[linear-gradient(180deg,#f8fbff_0%,#f8fafc_36%,#eef2ff_100%)] text-slate-900 dark:bg-none dark:bg-gray-950 dark:text-gray-100 lg:h-screen lg:overflow-hidden">
+    <div className="relative min-h-screen bg-[#f2f2f2] font-sans text-slate-900 dark:bg-[#1a1a1a] dark:text-gray-100 lg:h-screen lg:overflow-hidden">
       {showAssessmentWorkspace && !isSubmitted && (
         <div role="status" aria-live="polite" className="fixed bottom-2 left-3 z-40 max-w-[min(90vw,480px)] rounded-lg border border-slate-200 bg-white/95 px-3 py-2 text-xs text-slate-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
           {!draftStorageAvailable ? 'Device storage unavailable. Keep this page open until answers are saved to the server.'
@@ -3508,8 +3506,8 @@ export default function AssessmentAttempt() {
 
       {showAssessmentWorkspace && (
       <>
-      <header className="sticky top-0 z-40 border-b border-slate-200/90 bg-white shadow-[0_10px_30px_-24px_rgba(15,23,42,0.45)] dark:border-slate-700 dark:bg-gray-950">
-        <div className="flex min-h-[64px] w-full flex-wrap items-center gap-3 px-4 py-2.5">
+      <header className="sticky top-0 z-40 border-b border-zinc-200 bg-white/90 backdrop-blur dark:border-white/[0.07] dark:bg-[#202022]/95">
+        <div className="flex min-h-[56px] w-full flex-wrap items-center gap-3 px-3 py-2">
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -3566,52 +3564,31 @@ export default function AssessmentAttempt() {
             {isCoding && (
               <button
                 type="button"
-                onClick={handleRunCoding}
-                disabled={isRunning || isSubmitting || isSubmitted}
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-slate-900 px-3 text-[11px] font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-sky-700 dark:hover:bg-sky-600"
-              >
-                {isRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-                {isRunning ? 'Running' : 'Run'}
-              </button>
-            )}
-            {isCoding && (
-              <button
-                type="button"
-                onClick={handleSubmitCoding}
-                disabled={isRunning || isSubmitting || isSubmitted}
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-sky-600 px-3 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {isSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                {isSubmitting ? 'Submitting' : 'Submit'}
-              </button>
-            )}
-            {isCoding && (
-              <button
-                type="button"
                 onClick={handleResetCoding}
                 disabled={isRunning || isSubmitting || isSubmitted}
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-50 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                aria-label="Reset assessment code"
+                title="Reset code"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
-                Reset
               </button>
             )}
           </div>
         </div>
       </header>
       {isCoding ? (
-        <div className={`w-full px-3 py-3 pb-16 dark:!bg-gray-950 md:px-4 lg:h-[calc(100vh-68px)] lg:overflow-hidden ${
+        <div className={`w-full p-2 pb-16 dark:!bg-[#1a1a1a] lg:h-[calc(100vh-56px)] lg:overflow-hidden ${
           cameraStatusLine && !cameraStatusLine.ok
-            ? 'bg-[linear-gradient(180deg,#fff5f5_0%,#fffdfd_18%,#ffffff_52%,#fff5f5_100%)]'
-            : 'bg-[linear-gradient(180deg,#eef7fb_0%,#f7fbfd_18%,#ffffff_52%,#f7fbfd_100%)]'
+            ? 'bg-rose-50'
+            : 'bg-[#f2f2f2]'
         }`}>
-          <div className="flex h-full flex-col gap-3 lg:flex-row lg:min-h-0 lg:overflow-hidden">
+          <div className="mx-auto flex h-full max-w-[1800px] flex-col gap-2 lg:flex-row lg:min-h-0 lg:overflow-hidden">
             <div className="flex min-h-0 flex-1 flex-col lg:min-h-0 lg:overflow-hidden min-w-0">
-              <div ref={splitContainerRef} className="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row lg:min-h-0">
+              <div ref={splitContainerRef} className="flex min-h-0 flex-1 flex-col gap-2 lg:flex-row lg:min-h-0">
                 <section
                   ref={problemPaneRef}
                   style={{ '--assessment-problem-width': `${leftWidth}px` }}
-                  className={`relative min-h-[520px] w-full min-w-0 shrink-0 overflow-hidden rounded-[28px] lg:h-full lg:min-h-0 lg:w-[var(--assessment-problem-width)] lg:min-w-[320px] lg:basis-[var(--assessment-problem-width)] ${cameraStatusLine && !cameraStatusLine.ok ? 'border border-rose-300' : 'border border-slate-200/80 dark:border-gray-700'}`}
+                  className={`relative min-h-[520px] w-full min-w-0 shrink-0 overflow-hidden rounded-lg bg-white lg:h-full lg:min-h-0 lg:w-[var(--assessment-problem-width)] lg:min-w-[320px] lg:basis-[var(--assessment-problem-width)] dark:bg-[#282828] ${cameraStatusLine && !cameraStatusLine.ok ? 'border border-rose-300' : 'border border-zinc-200 dark:border-zinc-700'}`}
                 >
                   {showAssessmentWorkspace && watermarkConfig.enabled && (
                     <div className="pointer-events-none absolute inset-0 z-[1] overflow-hidden" aria-hidden="true">
@@ -3645,14 +3622,14 @@ export default function AssessmentAttempt() {
                 <button
                   type="button"
                   onPointerDown={handleResizeStart}
-                  className="group relative hidden w-4 shrink-0 cursor-col-resize items-center justify-center rounded-full transition-colors hover:bg-sky-50 lg:flex dark:hover:bg-sky-950/30"
+                  className="group relative hidden w-2 shrink-0 cursor-col-resize items-center justify-center transition-colors lg:flex"
                   aria-label="Resize panels"
                 >
-                  <div className="h-14 w-1 rounded-full bg-slate-300 transition-colors group-hover:bg-sky-500 dark:bg-gray-600" />
+                  <div className="absolute inset-y-4 left-1/2 w-1 -translate-x-1/2 rounded-full bg-zinc-300 transition-colors group-hover:bg-[#ffa116] dark:bg-zinc-700" />
                 </button>
 
-                <section ref={editorPaneRef} className={`flex min-h-[520px] min-w-0 flex-1 flex-col overflow-hidden rounded-[28px] bg-white/96 dark:bg-gray-900 lg:min-h-0 ${
-                  cameraStatusLine && !cameraStatusLine.ok ? 'border border-rose-300' : 'border border-slate-200/80 dark:border-gray-700'
+                <section ref={editorPaneRef} className={`flex min-h-[520px] min-w-0 flex-1 flex-col overflow-hidden rounded-lg bg-white dark:bg-[#282828] lg:min-h-0 ${
+                  cameraStatusLine && !cameraStatusLine.ok ? 'border border-rose-300' : 'border border-zinc-200 dark:border-zinc-700'
                 }`}>
                   {section?.type === 'coding' && (() => {
                     const answerValue = answersMap[answerKey(activeSection, activeQuestion)] || {};
@@ -3715,6 +3692,7 @@ export default function AssessmentAttempt() {
                         onSubmit={handleSubmitCoding}
                         onReset={handleResetCoding}
                         showToolbar={false}
+                        consoleActions
                         internalClipboardOnly={copyBlockEnabled}
                         blockContextMenu={blockRightClick}
                         clipboardScope={`assessment:${assessment?._id || id}:submission:${submission?._id || 'active'}`}

@@ -24,6 +24,9 @@ import AcceptedCelebration from './celebration/AcceptedCelebration';
 import { mergeCompanyTags } from './celebration/companyMatch';
 import AnviApproach, { ANVI_ASK_EVENT, AnviMark } from '../components/AnviApproach';
 import QuickPrepMembership from './problems/QuickPrepMembership';
+import FailedTestCasePanel from './problems/FailedTestCasePanel';
+import { pickPracticeLanguage, rememberPracticeLanguage } from './practiceLanguage';
+import { useOptionalAuth } from '../context/AuthContext';
 import { DifficultyBadge, EmptyState, LoadingPanel } from '../admin/compiler/CompilerUi';
 import {
   formatDateTime,
@@ -454,7 +457,7 @@ function ProblemDescriptionPanel({ problem, language, verifiedCompanies }) {
 
       <section>
         <RichTextPreview content={getDisplayProblemStatement(problem.description, (problem.sampleTestCases || []).length > 0)} lead />
-        <ProblemAssetImages images={descriptionImages} className="mt-4" />
+        <ProblemAssetImages images={descriptionImages} className="mt-4" label="Problem" />
       </section>
 
       {isSql ? <section className="space-y-7">
@@ -498,7 +501,7 @@ function ProblemDescriptionPanel({ problem, language, verifiedCompanies }) {
                   <div className="text-base font-semibold text-slate-900 dark:text-gray-100">Example {index + 1}:</div>
                 </div>
 
-                <ProblemAssetImages images={testCase.images} />
+                <ProblemAssetImages images={testCase.images} variant="sample" label={`Example ${index + 1}`} />
 
                 <div className="space-y-3 rounded-lg bg-slate-50 px-4 py-3.5 font-mono text-[13px] leading-6 text-slate-800 dark:bg-gray-800 dark:text-gray-200">
                   <div className="min-w-0 space-y-2">
@@ -535,7 +538,7 @@ function ProblemDescriptionPanel({ problem, language, verifiedCompanies }) {
               ))}
             </ul>
           ) : <p className="text-sm text-slate-500 dark:text-gray-400">No additional constraints.</p>}
-          <ProblemAssetImages images={constraintImages} className="mt-4" />
+          <ProblemAssetImages images={constraintImages} className="mt-4" label="Problem" />
         </section>
 
         {faqs.length > 0 ? (
@@ -818,7 +821,7 @@ function AcceptancePanel({ submissions, selectedId, onBack }) {
   const statusUpper = String(selected.status || '').toUpperCase();
   const isAccepted = statusUpper === 'AC';
   const isCompileError = statusUpper === 'CE';
-  const isWrongAnswer = statusUpper === 'WA';
+  const isCaseFailure = selected.mode === 'submit' && ['WA', 'RE', 'TLE'].includes(statusUpper);
   const isErrorLike = ['CE', 'RE', 'WA', 'TLE'].includes(statusUpper);
 
   const totalCases = Number(selected.totalTestCases ?? 0);
@@ -864,8 +867,8 @@ function AcceptancePanel({ submissions, selectedId, onBack }) {
                 const isFailed = failedCaseIndex > 0 && Number(entry.index) === failedCaseIndex;
                 const base = isOk
                   ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-200 dark:border-emerald-800'
-                  : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-200 dark:border-amber-800';
-                const ring = isFailed ? 'ring-2 ring-amber-400/60 dark:ring-amber-300/40' : '';
+                  : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-900/20 dark:text-rose-200 dark:border-rose-800';
+                const ring = isFailed ? 'ring-2 ring-rose-400/60 dark:ring-rose-300/40' : '';
 
                 return (
                   <span
@@ -873,7 +876,7 @@ function AcceptancePanel({ submissions, selectedId, onBack }) {
                     className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${base} ${ring}`}
                     title={`Case ${entry.index}: ${statusLabel(entry.status)}`}
                   >
-                    <span className={`h-2 w-2 rounded-full ${isOk ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                    <span className={`h-2 w-2 rounded-full ${isOk ? 'bg-emerald-500' : 'bg-rose-500'}`} />
                     Case {entry.index}
                   </span>
                 );
@@ -960,21 +963,7 @@ function AcceptancePanel({ submissions, selectedId, onBack }) {
         </div>
       )}
 
-      {isWrongAnswer && (
-        <div className="space-y-4">
-          <div className="rounded-[24px] bg-rose-50 px-5 py-4 text-sm text-rose-800 shadow-[0_12px_24px_rgba(244,63,94,0.06)] dark:bg-rose-900/10 dark:text-rose-200">
-            One of the judge test cases did not match the expected output.
-          </div>
-
-          {failedCaseIndex > 0 && (
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
-                Case {failedCaseIndex}
-              </span>
-            </div>
-          )}
-        </div>
-      )}
+      {isCaseFailure && <FailedTestCasePanel submission={selected} stderr={stderrText} />}
 
       {codeText && (
         <div
@@ -1001,6 +990,9 @@ export default function ProblemSolver() {
   const isSharedRoute = location.pathname.includes('/problems/shared/');
   const navigate = useNavigate();
   const toast = useToast();
+  const authUser = useOptionalAuth()?.user || null;
+  const authUserRef = useRef(authUser);
+  authUserRef.current = authUser;
   const splitContainerRef = useRef(null);
   const dragFrameRef = useRef(null);
   const submissionPollRef = useRef(null);
@@ -1216,15 +1208,12 @@ export default function ProblemSolver() {
 
         const storedDrafts = loadProblemDrafts(id);
         const nextDrafts = buildProblemDrafts(response, storedDrafts);
-        const nextLanguage = response.supportedLanguages?.[0] || 'python';
-
         setProblem(response);
         // Keep recently opened, unfinished practice available on the dashboard.
         void api.recordStudentProblemView(response._id || id, response.platformShared || isSharedRoute ? 'shared' : 'university').catch(() => {});
         setDrafts(nextDrafts);
-        setLanguage((previous) => (
-          response.supportedLanguages?.includes(previous) ? previous : nextLanguage
-        ));
+        // Open in the language the student last ran or submitted with, when this problem offers it.
+        setLanguage((previous) => pickPracticeLanguage(authUserRef.current, response.supportedLanguages || [], previous));
         const samples = Array.isArray(response.sampleTestCases) ? response.sampleTestCases : [];
         const nextCases = samples.map((testCase, index) => ({
           id: `sample-${index + 1}`,
@@ -1442,6 +1431,7 @@ export default function ProblemSolver() {
       toast.error(validationMessage);
       return;
     }
+    rememberPracticeLanguage(authUser, language);
 
     const selectedCase = activeTestCase;
     const runInput = selectedCase?.input ?? '';
@@ -1525,6 +1515,7 @@ export default function ProblemSolver() {
       toast.error(validationMessage);
       return;
     }
+    rememberPracticeLanguage(authUser, language);
 
     stopSubmissionPolling();
     setIsSubmitting(true);

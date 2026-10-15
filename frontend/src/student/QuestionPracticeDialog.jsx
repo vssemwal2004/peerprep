@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../utils/api';
+import { useOptionalAuth } from '../context/AuthContext';
+import { pickPracticeLanguage, rememberPracticeLanguage } from './practiceLanguage';
 import AcceptedCelebration from './celebration/AcceptedCelebration';
 
 export default function QuestionPracticeDialog({ question, onClose, onAnswered }) {
@@ -12,11 +14,14 @@ export default function QuestionPracticeDialog({ question, onClose, onAnswered }
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [celebration, setCelebration] = useState(null);
+  const authUser = useOptionalAuth()?.user || null;
+  const authUserRef = useRef(authUser);
+  authUserRef.current = authUser;
 
   useEffect(() => {
     let active = true;
     api.getPracticeQuestion(question.source, question._id).then(({ question: loaded }) => {
-      if (active) { setDetail(loaded); setLanguage(loaded.supportedLanguages?.[0] || 'python'); }
+      if (active) { setDetail(loaded); setLanguage(pickPracticeLanguage(authUserRef.current, loaded.supportedLanguages || [])); }
     }).catch((failure) => { if (active) setError(failure.message || 'Could not load question.'); });
     return () => { active = false; };
   }, [question._id, question.source]);
@@ -36,6 +41,7 @@ export default function QuestionPracticeDialog({ question, onClose, onAnswered }
     event.preventDefault();
     if (!detail) return;
     setBusy(true); setError('');
+    if (detail.questionType === 'coding') rememberPracticeLanguage(authUser, language);
     try {
       const response = await api.submitPracticeAnswer(question.source, question._id,
         detail.subquestions?.length ? subAnswers : detail.questionType === 'mcq' ? answer.split(',').filter(Boolean).map(Number) : answer, language);

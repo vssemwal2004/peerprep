@@ -245,26 +245,34 @@ test('a live streak with no activity yet today shows a half-filled waiting flame
   assert.ok(today.querySelector('svg clipPath'), 'The waiting flame is filled halfway');
 });
 
-test('subject cards show real content counts, link straight to the next topic and tidy ALL-CAPS names', async () => {
-  dashboard.learningSubjects[0] = { ...dashboard.learningSubjects[0], title: 'DESIGN ANALYSIS AND ALGORITHM', videoCount: 6, notesCount: 4,
-    nextTopic: { id: 'topic-3', title: 'Binary Search', chapterName: 'Searching', contentType: 'video', href: '/student/learning/Semester%202/Algorithms/teacher-1?semesterId=semester-2&subjectId=subject-algorithms&topicId=topic-3&contentType=video' } };
-  dashboard.learningSubjects[1] = { ...dashboard.learningSubjects[1], title: 'OS AND DBMS LAB' };
+test('learning subject cards are no longer shown on the dashboard', async () => {
   await mount();
-  const learning = section('Explore your learning');
-  assert.match(learning.textContent, /Design Analysis and Algorithm/);
-  assert.match(learning.textContent, /OS and DBMS Lab/, 'Acronyms stay upper case');
-  assert.match(learning.textContent, /6 videos/);
-  assert.match(learning.textContent, /4 notes/);
-  const next = links().find((link) => link.getAttribute('href') === dashboard.learningSubjects[0].nextTopic.href);
-  assert.ok(next, 'Next topic opens directly');
-  assert.match(next.textContent, /Next up.*Binary Search/);
-  await act(async () => next.click());
-  assert.equal(document.getElementById('location').textContent, dashboard.learningSubjects[0].nextTopic.href);
-  assert.doesNotMatch(learning.textContent, /0 videos|0 notes/, 'Missing content counts are omitted, not shown as zero');
+  assert.equal(section('Explore your learning'), undefined);
+  assert.ok(links().every((link) => link.getAttribute('href') !== dashboard.learningSubjects[0].href));
+});
+
+test('coding sheets show at most three QuickPrep cards, in progress first, with View all to the student QuickPrep page', async () => {
+  quests = [
+    questFixture({ id: 'q-done', slug: 'done', title: 'Finished Sheet', solved: 50, completedAt: iso(5) }),
+    questFixture({ id: 'q-new', slug: 'graphs', title: 'Graphs Track', started: false, solved: 0, lastProblem: null, startedAt: null, lastViewedAt: null }),
+    questFixture(),
+    questFixture({ id: 'q-new-2', slug: 'dp', title: 'DP Basics', started: false, solved: 0, lastProblem: null, startedAt: null, lastViewedAt: null }),
+  ];
+  await mount();
+  const sheets = section('Coding sheets');
+  assert.ok(sheets, 'Coding sheets sit in the main column');
+  const titles = [...sheets.querySelectorAll('h3')].map((node) => node.textContent);
+  assert.deepEqual(titles, ['Amazon Top 50', 'Graphs Track', 'DP Basics'], 'Three cards: in progress first, then new');
+  const viewAll = [...sheets.querySelectorAll('a')].find((anchor) => /View all/.test(anchor.textContent));
+  assert.equal(viewAll.getAttribute('href'), '/student/quickprep');
+  assert.match(viewAll.textContent, /\(4\)/);
+  await act(async () => viewAll.click());
+  assert.equal(document.getElementById('location').textContent, '/student/quickprep');
 });
 
 test('accessible document order follows greeting and recent work, then the progress rail, then discovery', async () => {
   announcements = announcements.map((announcement) => ({ ...announcement, priority: 'normal' }));
+  quests = [questFixture()];
   await mount();
   const main = document.querySelector('[data-dashboard-main]');
   const greeting = document.querySelector('.dashboard-greeting');
@@ -279,10 +287,10 @@ test('accessible document order follows greeting and recent work, then the progr
     'Recent work comes before the rail, which comes before discovery on small screens');
   assert.ok(rail.compareDocumentPosition(main) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
   assert.deepEqual([...rail.querySelectorAll('h2')].map((heading) => heading.textContent), [
-    'Announcements', 'Coding progress', 'University standing', 'Coming up',
+    'Announcements', 'Coding progress', 'University standing', 'Global standing', 'Coming up',
   ], 'Any announcement leads the rail');
   assert.deepEqual([...main.querySelectorAll('h2')].map((heading) => heading.textContent), [
-    'Your QuickPreps', 'Next in practice', 'Explore your learning',
+    'Coding sheets', 'Next in practice',
   ]);
 });
 
@@ -326,24 +334,14 @@ test('a student with no badges sees the next one to earn instead of an empty she
   assert.match(shelf.textContent, /Next: First Accept/);
 });
 
-test('learning and practice discovery show only server-provided subjects and questions with working navigation', async () => {
+test('practice discovery shows only server-provided questions with working navigation', async () => {
   await mount();
-  for (const item of [...dashboard.learningSubjects, ...dashboard.suggestedPractice]) {
+  for (const item of dashboard.suggestedPractice) {
     const link = links().find((entry) => entry.textContent.includes(item.title) && entry.getAttribute('href') === item.href);
     assert.ok(link, `${item.title} is a real returned discovery item`);
     await act(async () => link.click());
     assert.equal(document.getElementById('location').textContent, item.href);
-    if (item.state) assert.deepEqual(JSON.parse(document.getElementById('location').getAttribute('data-state')), item.state,
-      'Opening a learning subject preserves its semester and coordinator context');
   }
-  const algorithms = links().find((entry) => entry.getAttribute('href') === dashboard.learningSubjects[0].href);
-  assert.match(algorithms.textContent, /8 topics/);
-  assert.match(algorithms.textContent, /2 completed/);
-  assert.equal(algorithms.querySelector('[role="progressbar"]').getAttribute('aria-valuenow'), '25');
-  const databases = links().find((entry) => entry.getAttribute('href') === dashboard.learningSubjects[1].href);
-  assert.match(databases.textContent, /12 topics/);
-  assert.match(databases.textContent, /Explore subject/);
-  assert.equal(databases.querySelector('[role="progressbar"]').getAttribute('aria-valuenow'), '0');
 });
 
 test('missing optional discovery fields hide unused sections without invented subjects or practice', async () => {
@@ -394,8 +392,9 @@ for (const disabledModule of ['learning', 'questions']) {
     permissions = { ...allPermissions, [disabledModule]: false };
     if (disabledModule === 'questions') permissions.coding = false;
     await mount();
+    // Learning has no dashboard discovery cards any more, so only practice can be "the other allowed module".
     const hidden = disabledModule === 'learning' ? dashboard.learningSubjects : dashboard.suggestedPractice;
-    const allowed = disabledModule === 'learning' ? dashboard.suggestedPractice : dashboard.learningSubjects;
+    const allowed = disabledModule === 'learning' ? dashboard.suggestedPractice : [];
     for (const item of hidden) assert.equal(links().find((link) => link.getAttribute('href') === item.href), undefined,
       `${item.title} must stay hidden when its module is disabled`);
     for (const item of allowed) assert.ok(links().find((link) => link.getAttribute('href') === item.href),
@@ -403,7 +402,7 @@ for (const disabledModule of ['learning', 'questions']) {
   });
 }
 
-for (const module of ['questions', 'learning']) {
+for (const module of ['questions']) {
   test(`a ${module}-only university policy change refetches progress and reveals newly enabled discovery`, async () => {
     permissions = { ...allPermissions, [module]: false };
     const field = module === 'learning' ? 'learningSubjects' : 'suggestedPractice';
@@ -535,7 +534,7 @@ test('admin announcement updates replace the displayed notices and remove listen
   assert.match(section('Announcements').textContent, /Placement registration closes Friday/);
   assert.equal(listeners.get('announcement_update')?.size, 1);
   assert.deepEqual([...document.querySelectorAll('aside[aria-label="Your progress and priorities"] h2')].map((heading) => heading.textContent), [
-    'Announcements', 'Coding progress', 'University standing', 'Coming up',
+    'Announcements', 'Coding progress', 'University standing', 'Global standing', 'Coming up',
   ], 'Announcements are brought ahead of routine rail items');
   const beforeCount = calls.filter(([name]) => name === 'announcements').length;
   announcements = [{ _id: 'notice-2', title: 'Drive postponed', message: 'The updated schedule will be shared tomorrow.', priority: 'high', createdAt: iso(9) }];
@@ -586,17 +585,13 @@ test('disabled university modules hide their cards and resume links and skip the
   assert.ok(calls.some(([name]) => name === 'assessments'));
   assert.ok(section('Announcements'), 'Announcements remain available when unrelated modules are disabled');
   assert.equal(section('Daily challenge'), undefined);
-  assert.equal(section('Your QuickPreps'), undefined, 'QuickPreps need coding, so they stay hidden');
+  assert.equal(section('Coding sheets'), undefined, 'QuickPreps need coding, so they stay hidden');
   assert.equal(calls.filter(([name]) => name === 'quests').length, 0, 'The quests API is not called without coding');
   assert.ok(calls.some(([name]) => name === 'engagement'));
 });
 
-test('progress cues come from real data: subject icons, difficulty tags and announcement priority', async () => {
+test('progress cues come from real data: difficulty tags and announcement priority', async () => {
   await mount();
-  for (const subject of dashboard.learningSubjects) {
-    const link = links().find((entry) => entry.getAttribute('href') === subject.href);
-    assert.ok(link.querySelector('svg'), `${subject.title} has a subject icon`);
-  }
   const practice = section('Next in practice');
   assert.match(practice.textContent, /Balanced Brackets.*Easy.*Linked List Reversal.*Medium/);
   assert.match(section('Announcements').textContent, /Important.*Placement registration closes Friday/);
@@ -623,16 +618,16 @@ const questFixture = (overrides = {}) => ({ id: 'q1', slug: 'amazon-top-50', tit
   rewardXp: 60, badge: { title: 'Amazon Top 50 Finisher' }, total: 50, solved: 12, difficulty: { Easy: 20, Medium: 25, Hard: 5 }, started: true, startedAt: iso(6), completedAt: null,
   lastViewedAt: iso(8), lastProblem: { key: 'coding:local:p7', title: 'LRU Cache', href: '/problems/p7?quest=amazon-top-50' }, ...overrides });
 
-test('your QuickPreps replaces weekly and monthly challenges and continues the last opened question', async () => {
+test('coding sheets replace weekly and monthly challenges and show real QuickPrep progress', async () => {
   quests = [questFixture(), questFixture({ id: 'q2', slug: 'graphs', title: 'Graphs Track', started: false, solved: 0, lastProblem: null, startedAt: null, lastViewedAt: null })];
   await mount();
-  const card = section('Your QuickPreps');
-  assert.ok(card, 'The QuickPrep card sits in the main column');
+  const card = section('Coding sheets');
+  assert.ok(card, 'The coding sheets sit in the main column');
   assert.doesNotMatch(text(), /Weekly momentum|Monthly explorer|This week|This month/, 'Weekly and monthly challenges are gone');
   assert.match(card.textContent, /Amazon Top 50.*12\/50.*Continue/);
-  assert.match(card.textContent, /Amazon Top 50.*Graphs Track.*Start/, 'In-progress QuickPreps come first, then new ones to start');
+  assert.match(card.textContent, /Amazon Top 50.*Graphs Track.*Start QuickPrep/, 'In-progress QuickPreps come first, then new ones to start');
   const link = [...card.querySelectorAll('a')].find((anchor) => anchor.textContent.includes('Amazon Top 50'));
-  assert.equal(link.getAttribute('href'), '/problems/p7?quest=amazon-top-50', 'Continue opens the last question inside the quest');
+  assert.equal(link.getAttribute('href'), '/student/quickprep/amazon-top-50');
   assert.equal(card.querySelector('[role="progressbar"]').getAttribute('aria-valuenow'), '24');
 });
 
@@ -661,12 +656,12 @@ test('new challenge points trigger a fresh ranking snapshot after the older dash
   assert.match(section('University standing').textContent, /183/);
 });
 
-test('challenge request failure is recoverable without wiping learning, rank or announcements', async () => {
+test('challenge request failure is recoverable without wiping practice, rank or announcements', async () => {
   api.refreshStudentEngagement = async () => { throw new Error('Offline'); };
   await mount();
   assert.match(section('Daily challenge').textContent, /Progress unavailable.*Retry/);
   assert.match(section('Announcements').textContent, /Placement registration/);
-  assert.match(section('Explore your learning').textContent, /Algorithms/);
+  assert.match(section('Next in practice').textContent, /Balanced Brackets/);
   assert.match(section('University standing').textContent, /143/);
   api.refreshStudentEngagement = async () => structuredClone(engagementFixture());
   await act(async () => section('Daily challenge').querySelector('button').click());
@@ -780,7 +775,6 @@ test('a dashboard failure is explicit and independent notices still load', async
   assert.equal(document.querySelector('[role="img"][aria-label^="All problems:"]'), null,
     'A failed request must not masquerade as zero solved problems');
   assert.doesNotMatch(text(), /Two Sum|Binary Search Basics|NaN|Infinity/);
-  assert.match(section('Explore your learning').textContent, /could not be loaded/,
+  assert.match(section('Next in practice').textContent, /could not be loaded/,
     'Unavailable discovery stays explicit rather than disappearing as if it were empty');
-  assert.match(section('Next in practice').textContent, /could not be loaded/);
 });

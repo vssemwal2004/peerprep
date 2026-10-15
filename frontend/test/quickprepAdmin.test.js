@@ -159,7 +159,10 @@ test('creating starts with details from library-only dropdowns, then opens the q
 test('Add questions opens the existing Question Library, where selected coding rows are added to the QuickPrep', async () => {
   const row = (id, title, extra = {}) => ({ _id: id, questionType: 'coding', questionText: title, difficulty: 'Easy', tags: [], status: 'published', visibility: 'public', updatedAt: '2026-10-01T00:00:00Z', ...extra });
   api.listLibraryQuestions = async (params) => { calls.push(['library', params]); return { questions: [row('lib-1', 'Two Sum', { sourceProblemId: 'p1' }), row('lib-2', 'Valid Anagram', { sourceProblemId: 'p3' }), row('sh-1', 'Shared Graphs', { platformShared: true, sourceProblemId: 'sp' })], pagination: { page: 1, pages: 1, total: 3 }, filters: {} }; };
-  api.addQuestLibraryItems = async (id, libraryIds) => { calls.push(['library-add', id, libraryIds]); return { added: 1, skipped: [{ id: 'sh-1', title: 'Shared Graphs', reason: 'shared_unavailable', message: 'Not available to students from the shared catalog' }], quest: quest({ items: [item('p1', 'Two Sum', 'Easy'), item('p3', 'Valid Anagram', 'Easy')] }) }; };
+  api.previewQuestLibraryItems = async (id, libraryIds) => { calls.push(['library-preview', id, libraryIds]); return { preview: true, added: 1, currentTotal: 1, max: 300,
+    items: [{ id: 'lib-2', title: 'Valid Anagram', ok: true }, { id: 'sh-1', title: 'Shared Graphs', ok: false, reason: 'question_draft', message: 'Still a draft in the library' }],
+    skipped: [{ id: 'sh-1', title: 'Shared Graphs', reason: 'question_draft', message: 'Still a draft in the library' }] }; };
+  api.addQuestLibraryItems = async (id, libraryIds) => { calls.push(['library-add', id, libraryIds]); return { added: 1, skipped: [], quest: quest({ items: [item('p1', 'Two Sum', 'Easy'), item('p3', 'Valid Anagram', 'Easy')] }) }; };
   const libraryUrl = (await server.ssrLoadModule('/src/admin/quickprep/libraryLink.js')).quickPrepLibraryUrl({ id: 'q1', title: 'Amazon Top 3' });
   assert.equal(libraryUrl, '/admin/library?type=coding&lockType=coding&mode=quickprep&quickprep=q1&quickprepTitle=Amazon+Top+3&return=%2Fadmin%2Fquickprep%2Fq1%2Fedit%3Fstep%3Dquestions');
   await act(async () => root.render(h(MemoryRouter, { initialEntries: [libraryUrl] }, h(Where), h(pages.toast, null, h(Routes, null,
@@ -173,9 +176,15 @@ test('Add questions opens the existing Question Library, where selected coding r
   await click(rows[1].querySelector('input[type="checkbox"]'));
   await click(rows[2].querySelector('input[type="checkbox"]'));
   await click(button(/Add to QuickPrep \(2\)/));
-  assert.deepEqual(calls.find(([name]) => name === 'library-add').slice(1), ['q1', ['lib-2', 'sh-1']], 'Library row ids go to the server for mapping');
-  assert.match(document.body.textContent, /1 selected question was not added \(1 added so far\).*Shared Graphs.*Not available to students/s, 'Skipped rows stay on screen with a reason');
-  await click(button(/^Back to QuickPrep$/));
+  assert.deepEqual(calls.find(([name]) => name === 'library-preview').slice(1), ['q1', ['lib-2', 'sh-1']], 'Library row ids go to the server for a dry run first');
+  assert.equal(calls.some(([name]) => name === 'library-add'), false, 'Nothing is added before the admin confirms');
+  const dialog = document.querySelector('[role="dialog"]');
+  assert.ok(dialog, 'A review popup lists the selection before adding');
+  assert.match(dialog.textContent, /Selected2.*Ready to add1.*Cannot be added1.*Sheet total after adding2/s, 'Counts include the sheet total after adding');
+  assert.match(dialog.textContent, /1 question cannot be added.*Still a draft in the library/s, 'Draft picks are reported as an error');
+  assert.match(dialog.textContent, /Valid Anagram.*Shared Graphs/s, 'Every selected question is listed');
+  await click(button(/^Add 1 question$/, dialog));
+  assert.deepEqual(calls.find(([name]) => name === 'library-add').slice(1), ['q1', ['lib-2']], 'Only the ready questions are added');
   assert.equal(`${location.pathname}${location.search}`, '/admin/quickprep/q1/edit?step=questions&added=1');
   // The library's toasts dismiss themselves after 4 s; let them finish before the DOM is torn down.
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 4100)); });

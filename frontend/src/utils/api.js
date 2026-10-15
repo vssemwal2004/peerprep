@@ -423,6 +423,7 @@ export const api = {
   me: (forceRefresh = false) =>
     request("/auth/me", { skipCache: forceRefresh }),
   updateMyProfile: (body) => request("/auth/me", { method: "PUT", body }),
+  savePracticeLanguage: (language) => request("/auth/me/practice-language", { method: "PUT", body: { language } }),
   getMyResume: () => request("/resume/me", { skipCache: true }),
   saveMyResume: (body) =>
     request("/resume/me", { method: "PUT", body, skipQueue: true }),
@@ -483,6 +484,7 @@ export const api = {
   getQuestInsights: (id) => request(`/quests/admin/${encodeURIComponent(id)}/insights`, { skipCache: true }),
   addQuestItems: (id, items) => request(`/quests/admin/${encodeURIComponent(id)}/items`, { method: 'POST', body: { items } }),
   addQuestLibraryItems: (id, libraryIds) => request(`/quests/admin/${encodeURIComponent(id)}/library-items`, { method: 'POST', body: { libraryIds } }),
+  previewQuestLibraryItems: (id, libraryIds) => request(`/quests/admin/${encodeURIComponent(id)}/library-items`, { method: 'POST', body: { libraryIds, dryRun: true } }),
   duplicateQuest: (id) => request(`/quests/admin/${encodeURIComponent(id)}/duplicate`, { method: 'POST' }),
   getEngagementPolicy: (query = '') => request(`/engagement/policy${query}`, { skipCache: true }),
   updateEngagementPolicy: (body, query = '') => request(`/engagement/policy${query}`, { method: 'PATCH', body }),

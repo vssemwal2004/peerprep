@@ -1,7 +1,7 @@
 import Problem from '../models/Problem.js';
 import Submission from '../models/Submission.js';
 import { HttpError } from '../utils/errors.js';
-import { serializeSubmission, serializeStudentSubmission } from './compilerHelpers.js';
+import { problemUsedInAssessment, serializeSubmission, serializeStudentSubmission } from './compilerHelpers.js';
 import { sanitizeSearchQuery, validateObjectId, validatePagination } from '../utils/validators.js';
 
 function round(value) {
@@ -94,17 +94,19 @@ export async function listProblemSubmissions(req, res) {
     query.mode = mode;
   }
 
-  const [total, submissions] = await Promise.all([
+  const [total, submissions, gradedByAssessment] = await Promise.all([
     Submission.countDocuments(query),
     Submission.find(query)
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
       .lean(),
+    problemUsedInAssessment(problem._id),
   ]);
 
   res.json({
-    submissions: submissions.map((submission) => serializeStudentSubmission(submission)),
+    // The problem is public here (checked above); its failing practice case is shown unless an assessment grades on it.
+    submissions: submissions.map((submission) => serializeStudentSubmission(submission, { revealFailedCase: !gradedByAssessment })),
     pagination: {
       page,
       limit,

@@ -6,8 +6,16 @@ import TestCase from '../models/TestCase.js';
 import { sharedQuestions } from '../platform/sharedContent.js';
 import { controlRequest } from '../platform/client.js';
 import { isUniversity } from '../platform/deployment.js';
-import { runJudge0, KEY_TO_LANGUAGE_ID, normalizeComparableOutput } from '../services/executionService.js';
+import {
+  runJudge0,
+  KEY_TO_LANGUAGE_ID,
+  MAX_STDIN_SIZE_BYTES,
+  normalizeComparableOutput,
+  sanitizeExecutionText,
+} from '../services/executionService.js';
 import { prepareFunctionSourceForExecution } from '../services/functionProblemAdapterService.js';
+import { buildJudge0Options } from '../services/executionService.js';
+import { persistedTestCaseInputLimitBytes } from '../services/trustedLargeInputPolicyService.js';
 import StudentUploadBatch from '../models/StudentUploadBatch.js';
 import { supabase } from '../utils/supabase.js';
 import {
@@ -17,6 +25,27 @@ import {
   buildSearchPrefixes,
   syncProblemToLibrary,
 } from '../services/questionLibraryService.js';
+
+/** Keeps sample-case images on copied problems, limited to the fields and https URLs TestCase accepts. */
+function copySampleImages(images) {
+  return (Array.isArray(images) ? images : [])
+    .filter((image) => /^https:\/\//i.test(String(image?.url || '').trim()))
+    .slice(0, 10)
+    .map((image, index) => {
+      const width = Number(image.width);
+      const height = Number(image.height);
+      return {
+        url: String(image.url).trim(),
+        publicId: String(image.publicId || '').trim(),
+        sourceUrl: String(image.sourceUrl || '').trim(),
+        alt: String(image.alt || '').trim().slice(0, 500),
+        caption: String(image.caption || '').trim().slice(0, 1000),
+        width: Number.isFinite(width) && width >= 1 ? width : undefined,
+        height: Number.isFinite(height) && height >= 1 ? height : undefined,
+        position: Math.max(0, Number(image.position) || index),
+      };
+    });
+}
 
 export async function copySharedQuestion(req, res) {
   try {
@@ -57,7 +86,7 @@ export async function copySharedQuestion(req, res) {
     });
     try {
       const cases = [
-        ...sample.map((item, index) => ({ kind: 'sample', position: index + 1, input: item.input || '', output: item.output || '', explanation: item.explanation || '', marks: item.marks || 1 })),
+        ...sample.map((item, index) => ({ kind: 'sample', position: index + 1, input: item.input || '', output: item.output || '', explanation: item.explanation || '', images: copySampleImages(item.images), marks: item.marks || 1 })),
         ...hidden.map((item, index) => ({ kind: 'hidden', position: index + 1, input: item.input || '', output: item.output || '', marks: item.marks || 1 })),
       ];
       if (cases.length) await TestCase.insertMany(cases.map((item) => ({ ...item, problem: problem._id, createdBy: req.user._id })));
@@ -86,24 +115,25 @@ export async function executeSharedCodingPreview(req, res) {
       || (problem.supportedLanguages?.length && !problem.supportedLanguages.includes(language))) {
       return res.status(400).json({ error: 'Valid source code and language are required' });
     }
-    const runCase = async (input, expectedOutput) => {
+    const runCase = async (input, expectedOutput, { persisted = false } = {}) => {
       const output = await runJudge0(prepareFunctionSourceForExecution(problem, language, sourceCode, input),
-        KEY_TO_LANGUAGE_ID[language], input, { cpuTimeLimitSeconds: problem.timeLimitSeconds || 2,
-          memoryLimitKb: Number(problem.memoryLimitMb || 256) * 1024,
-          sqlSetupCode: [problem.sqlConfig?.schemaSql, problem.sqlConfig?.seedDataSql].filter(Boolean).join('\n') });
+        KEY_TO_LANGUAGE_ID[language], input, {
+          ...buildJudge0Options(problem),
+          ...(persisted ? { stdinLimitBytes: persistedTestCaseInputLimitBytes() } : {}),
+        });
       const status = output.compile_output ? 'CE' : output.stderr ? 'RE'
         : output.status?.id !== 3 ? 'RE'
           : expectedOutput !== undefined && normalizeComparableOutput(output.stdout) !== normalizeComparableOutput(expectedOutput) ? 'WA' : 'AC';
       return { status, output: output.stdout || '', stderr: output.stderr || '', compileOutput: output.compile_output || '' };
     };
     if (req.params.action === 'run') {
-      const input = String(req.body?.customInput || '').slice(0, 65536);
+      const input = sanitizeExecutionText(req.body?.customInput || '', MAX_STDIN_SIZE_BYTES, 'Input');
       const sample = (question.questionData?.problemDataSnapshot?.sampleTestCases || []).find((item) => item.input === input);
       return res.json(await runCase(input, sample?.output));
     }
     let passed = 0;
     for (const item of testCases) {
-      const result = await runCase(item.input || '', item.output || '');
+      const result = await runCase(item.input || '', item.output || '', { persisted: true });
       if (result.status !== 'AC') return res.json({ ...result, totalTestCases: testCases.length, passedTestCases: passed });
       passed += 1;
     }
