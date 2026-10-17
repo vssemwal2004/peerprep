@@ -1447,6 +1447,46 @@ export async function deleteStudentUploadBatch(req, res) {
 
 export async function bulkDeleteStudents(req, res) {
   try {
+    // "Delete all matching" sends the active list filters instead of every ID,
+    // so it is not bounded by the per-request ID cap or JSON body size.
+    if (req.body?.allMatching === true) {
+      const filters = req.body.filters && typeof req.body.filters === 'object' ? req.body.filters : {};
+      const { query } = buildStudentListQuery(req.user, filters);
+      const matched = await User.find(query).select('_id name email studentId').lean();
+      if (!matched.length) {
+        return res.status(404).json({ error: 'No matching students were found.' });
+      }
+      const result = await User.deleteMany({ _id: { $in: matched.map((student) => student._id) }, role: 'student' });
+      const deletedCount = result.deletedCount || 0;
+
+      logActivity({
+        userEmail: req.user.email,
+        userRole: req.user.role,
+        actionType: 'BULK_DELETE',
+        targetType: 'STUDENT',
+        targetId: 'bulk-delete-all-matching',
+        description: `Deleted all ${deletedCount} matching student${deletedCount === 1 ? '' : 's'}`,
+        metadata: {
+          filters,
+          requestedCount: matched.length,
+          deletedCount,
+          students: matched.slice(0, 500).map((student) => ({
+            id: String(student._id),
+            name: student.name,
+            email: student.email,
+            studentId: student.studentId,
+          })),
+        },
+        req,
+      });
+
+      return res.json({
+        message: 'Matching students deleted successfully',
+        requested: matched.length,
+        deleted: deletedCount,
+      });
+    }
+
     const studentIds = Array.isArray(req.body?.studentIds)
       ? [...new Set(req.body.studentIds.map((id) => String(id).trim()).filter(Boolean))]
       : [];

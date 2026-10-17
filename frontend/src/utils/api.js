@@ -718,6 +718,13 @@ export const api = {
       timeoutMs: 60 * 1000,
       skipDedupe: true,
     }),
+  bulkDeleteAllMatchingStudents: (filters) =>
+    request("/students/bulk-delete", {
+      method: "POST",
+      body: { allMatching: true, filters },
+      timeoutMs: 120 * 1000,
+      skipDedupe: true,
+    }),
   resendStudentCredentials: (studentIds) =>
     request("/students/resend-credentials", {
       method: "POST",

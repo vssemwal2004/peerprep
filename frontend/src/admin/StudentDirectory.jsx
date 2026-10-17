@@ -791,31 +791,28 @@ export default function StudentDirectory() {
       toast.error('Select at least one student to delete.');
       return;
     }
-    const deletingAllMatching = ids.length === pagination.total;
-    setBulkDeleteTarget({ ids, deletingAllMatching, totalBeforeDelete: pagination.total });
+    const deletingAllMatching = activeTab === 'students' && ids.length === pagination.total;
+    // Snapshot the filters now so the server deletes exactly the list the confirmation describes.
+    const matchingFilters = { search: debouncedSearch, ...filters, uploadBatchId };
+    setBulkDeleteTarget({ ids, deletingAllMatching, matchingFilters });
     setShowBulkMenu(false);
   };
 
   const handleBulkDeleteStudents = async () => {
     if (!bulkDeleteTarget?.ids?.length || isBulkDeleting) return;
-    const { ids, totalBeforeDelete } = bulkDeleteTarget;
+    const { ids, deletingAllMatching, matchingFilters } = bulkDeleteTarget;
     setIsBulkDeleting(true);
     try {
-      const result = await api.bulkDeleteStudents(ids);
+      const result = deletingAllMatching
+        ? await api.bulkDeleteAllMatchingStudents(matchingFilters)
+        : await api.bulkDeleteStudents(ids);
       const deletedCount = Number(result?.deleted ?? 0);
       if (deletedCount < 1) {
         throw new Error('No student accounts were deleted. The selection has been kept so you can retry.');
       }
-      const refreshedPagination = await loadData({ forceRefresh: true });
-      if (!refreshedPagination) {
-        throw new Error(`${deletedCount} accounts were deleted, but the student list could not refresh. Reload this page.`);
-      }
-      const expectedMaximum = Math.max(0, totalBeforeDelete - deletedCount);
-      if (refreshedPagination.total > expectedMaximum) {
-        throw new Error(`${deletedCount} accounts were deleted, but an old student list is still visible. Reload this page.`);
-      }
       clearSelection();
-      toast.success(`${deletedCount} selected student${deletedCount === 1 ? '' : 's'} permanently deleted from the platform.`);
+      toast.success(`${deletedCount} student${deletedCount === 1 ? '' : 's'} permanently deleted from the platform.`);
+      await loadData({ forceRefresh: true });
     } catch (err) {
       toast.error(err.message || 'Failed to delete selected students');
     } finally {
@@ -1056,8 +1053,6 @@ export default function StudentDirectory() {
               <div className="mb-2 flex flex-col gap-2 rounded-md border border-slate-200 bg-slate-50/70 px-2.5 py-2 dark:border-gray-700 dark:bg-gray-800/70 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex flex-wrap items-center gap-2">
                   <button
-                    data-platform-menu-trigger
-                    aria-expanded={showBulkMenu}
                     type="button"
                     onClick={toggleSelectPage}
                     disabled={!pageStudentIds.length}
@@ -1110,6 +1105,9 @@ export default function StudentDirectory() {
 
                 <div ref={bulkMenuRef} className="relative self-start sm:self-auto">
                   <button
+                    data-platform-menu-trigger
+                    aria-expanded={showBulkMenu}
+                    aria-haspopup="menu"
                     type="button"
                     onClick={() => setShowBulkMenu((open) => !open)}
                     disabled={isBulkDeleting || isSendingCredentials}
