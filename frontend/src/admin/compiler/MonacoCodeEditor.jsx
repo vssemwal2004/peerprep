@@ -2,25 +2,44 @@ import { useEffect, useRef, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import * as bundledMonaco from 'monaco-editor/esm/vs/editor/editor.api';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
-import 'monaco-editor/esm/vs/basic-languages/cpp/cpp.contribution';
-import 'monaco-editor/esm/vs/basic-languages/csharp/csharp.contribution';
-import 'monaco-editor/esm/vs/basic-languages/go/go.contribution';
-import 'monaco-editor/esm/vs/basic-languages/java/java.contribution';
-import 'monaco-editor/esm/vs/basic-languages/javascript/javascript.contribution';
-import 'monaco-editor/esm/vs/basic-languages/kotlin/kotlin.contribution';
-import 'monaco-editor/esm/vs/basic-languages/php/php.contribution';
-import 'monaco-editor/esm/vs/basic-languages/python/python.contribution';
-import 'monaco-editor/esm/vs/basic-languages/r/r.contribution';
-import 'monaco-editor/esm/vs/basic-languages/ruby/ruby.contribution';
-import 'monaco-editor/esm/vs/basic-languages/rust/rust.contribution';
-import 'monaco-editor/esm/vs/basic-languages/sql/sql.contribution';
-import 'monaco-editor/esm/vs/basic-languages/swift/swift.contribution';
-import 'monaco-editor/esm/vs/basic-languages/typescript/typescript.contribution';
 import { getMonacoLanguage } from './compilerUtils';
+import { acquireIdentifierCompletions } from '../../student/editor/identifierCompletion';
 
 const internalEditorClipboards = new Map();
 const MAX_CACHED_MODELS = 24;
 let rCompletionProviderRegistered = false;
+
+const languageContributionLoaders = {
+  c: () => import('monaco-editor/esm/vs/basic-languages/cpp/cpp.contribution'),
+  cpp: () => import('monaco-editor/esm/vs/basic-languages/cpp/cpp.contribution'),
+  csharp: () => import('monaco-editor/esm/vs/basic-languages/csharp/csharp.contribution'),
+  go: () => import('monaco-editor/esm/vs/basic-languages/go/go.contribution'),
+  java: () => import('monaco-editor/esm/vs/basic-languages/java/java.contribution'),
+  javascript: () => import('monaco-editor/esm/vs/basic-languages/javascript/javascript.contribution'),
+  kotlin: () => import('monaco-editor/esm/vs/basic-languages/kotlin/kotlin.contribution'),
+  php: () => import('monaco-editor/esm/vs/basic-languages/php/php.contribution'),
+  python: () => import('monaco-editor/esm/vs/basic-languages/python/python.contribution'),
+  r: () => import('monaco-editor/esm/vs/basic-languages/r/r.contribution'),
+  ruby: () => import('monaco-editor/esm/vs/basic-languages/ruby/ruby.contribution'),
+  rust: () => import('monaco-editor/esm/vs/basic-languages/rust/rust.contribution'),
+  sql: () => import('monaco-editor/esm/vs/basic-languages/sql/sql.contribution'),
+  swift: () => import('monaco-editor/esm/vs/basic-languages/swift/swift.contribution'),
+  typescript: () => import('monaco-editor/esm/vs/basic-languages/typescript/typescript.contribution'),
+};
+const languageContributionPromises = new Map();
+
+function ensureLanguageContribution(language) {
+  const languageId = getMonacoLanguage(language);
+  const loader = languageContributionLoaders[languageId];
+  if (!loader) return Promise.resolve();
+  if (!languageContributionPromises.has(languageId)) {
+    languageContributionPromises.set(languageId, loader().catch((error) => {
+      languageContributionPromises.delete(languageId);
+      throw error;
+    }));
+  }
+  return languageContributionPromises.get(languageId);
+}
 
 const R_KEYWORDS = [
   'if', 'else', 'repeat', 'while', 'for', 'in', 'next', 'break', 'function',
@@ -202,8 +221,8 @@ function trimModelCache(entries, activeKey) {
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
-export function preloadMonacoEditor() {
-  return Promise.resolve(bundledMonaco);
+export function preloadMonacoEditor(language) {
+  return ensureLanguageContribution(language).then(() => bundledMonaco);
 }
 
 export default function MonacoCodeEditor({
@@ -218,6 +237,7 @@ export default function MonacoCodeEditor({
   onClipboardStatus,
   contentKey = '',
   valueVersion = 0,
+  identifierSuggestions = false,
 }) {
   const containerRef = useRef(null);
   const editorRef = useRef(null);
@@ -337,9 +357,14 @@ export default function MonacoCodeEditor({
     let mutationObserver;
     let resizeObserver;
     let layoutFrame;
+    let releaseIdentifierCompletions;
+    let cancelled = false;
     const modelEntries = modelEntriesRef.current;
 
-    try {
+    const initializeEditor = async () => {
+      try {
+      await ensureLanguageContribution(latestLanguageRef.current);
+      if (cancelled || !containerRef.current) return;
       definePeerprepThemes(bundledMonaco);
       registerRCompletionProvider(bundledMonaco);
       const initialModelKey = getModelKey(contentKeyRef.current);
@@ -425,6 +450,9 @@ export default function MonacoCodeEditor({
       });
 
       editorRef.current = editor;
+      if (identifierSuggestions) {
+        releaseIdentifierCompletions = acquireIdentifierCompletions(bundledMonaco, containerRef.current);
+      }
       if (!latestReadOnlyRef.current) ensureEditorWritable(editor);
 
       changeSubscription = editor.onDidChangeModelContent(() => {
@@ -469,12 +497,18 @@ export default function MonacoCodeEditor({
         editor.layout();
       });
       setIsLoading(false);
-    } catch (error) {
-      setLoadError(error?.message || 'The code editor could not load.');
-      setIsLoading(false);
-    }
+      } catch (error) {
+        if (!cancelled) {
+          setLoadError(error?.message || 'The code editor could not load.');
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void initializeEditor();
 
     return () => {
+      cancelled = true;
       mutationObserver?.disconnect();
       resizeObserver?.disconnect();
       if (layoutFrame) cancelAnimationFrame(layoutFrame);
@@ -482,17 +516,25 @@ export default function MonacoCodeEditor({
       focusSubscription?.dispose();
       widgetFocusSubscription?.dispose();
       readOnlyAttemptSubscription?.dispose();
+      releaseIdentifierCompletions?.();
       editor?.setModel(null);
       editor?.dispose();
       modelEntries.forEach((entry) => entry.model.dispose());
       modelEntries.clear();
       editorRef.current = null;
     };
-  }, []);
+  }, [identifierSuggestions]);
 
   useEffect(() => {
-    const model = editorRef.current?.getModel();
-    if (model) bundledMonaco.editor.setModelLanguage(model, getMonacoLanguage(language));
+    let cancelled = false;
+    void ensureLanguageContribution(language).then(() => {
+      if (cancelled) return;
+      const model = editorRef.current?.getModel();
+      if (model) bundledMonaco.editor.setModelLanguage(model, getMonacoLanguage(language));
+    }).catch(() => {
+      // Keep the existing language active if an optional syntax contribution fails to load.
+    });
+    return () => { cancelled = true; };
   }, [language]);
 
   useEffect(() => {

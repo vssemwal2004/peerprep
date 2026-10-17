@@ -12,22 +12,32 @@ import {
 const loadMonacoCodeEditor = () => import('../admin/compiler/MonacoCodeEditor');
 const MonacoCodeEditor = lazy(loadMonacoCodeEditor);
 
-// Suggests the functions and variables the student declared in this editor.
-// It reuses the Monaco chunk above, so it adds nothing to the first render.
-function loadIdentifierCompletions() {
-  return Promise.all([
-    loadMonacoCodeEditor().then((module) => module.preloadMonacoEditor()),
-    import('./editor/identifierCompletion'),
-  ]);
-}
+function CodeEditorLoading({ value, onChange, readOnly = false }) {
+  const [draft, setDraft] = useState(value || '');
 
-function CodeEditorLoading() {
+  useEffect(() => {
+    setDraft(value || '');
+  }, [value]);
+
   return (
-    <div className="flex h-full min-h-[360px] items-center justify-center bg-white text-sm text-slate-500 dark:bg-gray-950 dark:text-gray-400">
-      <span className="flex items-center gap-2">
+    <div className="relative h-full min-h-[360px] overflow-hidden bg-white dark:bg-gray-950">
+      <div className="pointer-events-none absolute right-3 top-3 z-10 flex items-center gap-2 rounded-md bg-white/90 px-2 py-1 text-[10px] font-medium text-slate-500 shadow-sm dark:bg-gray-900/90 dark:text-gray-400">
         <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-200 border-t-sky-500 dark:border-gray-700 dark:border-t-sky-400" />
-        Preparing code editor...
-      </span>
+        Enhancing editor…
+      </div>
+      <textarea
+        value={draft}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          onChange?.(event.target.value);
+        }}
+        readOnly={readOnly}
+        aria-label="Code editor"
+        spellCheck={false}
+        autoCapitalize="off"
+        autoCorrect="off"
+        className="h-full w-full resize-none border-0 bg-white px-4 py-3.5 font-mono text-sm leading-[23px] text-slate-800 outline-none dark:bg-gray-950 dark:text-gray-100"
+      />
     </div>
   );
 }
@@ -344,24 +354,6 @@ function CodeEditor({
   }, []);
 
   useEffect(() => {
-    const scopeElement = editorContainerRef.current;
-    if (!scopeElement) return undefined;
-    let cancelled = false;
-    let release = null;
-    loadIdentifierCompletions()
-      .then(([monaco, { acquireIdentifierCompletions }]) => {
-        if (!cancelled) release = acquireIdentifierCompletions(monaco, scopeElement);
-      })
-      .catch(() => {
-        // Autocomplete is optional; the editor keeps Monaco's default suggestions.
-      });
-    return () => {
-      cancelled = true;
-      release?.();
-    };
-  }, []);
-
-  useEffect(() => {
     if (internalClipboardOnly) {
       setClipboardNotice((current) => current || 'Editor-only clipboard');
       return;
@@ -405,6 +397,13 @@ function CodeEditor({
       pendingCodeCommitRef.current = null;
       pending?.commit(pending.value);
     }, 1200);
+  };
+
+  const handleLoadingEditorCodeChange = (nextCode) => {
+    handleEditorCodeChange(nextCode);
+    // Persist fallback edits immediately so Monaco receives the latest text if
+    // its chunk finishes loading between two keystrokes.
+    commitPendingCode();
   };
 
   const handleClipboardStatus = ({ message } = {}) => {
@@ -708,7 +707,7 @@ function CodeEditor({
             {clipboardNotice}
           </div>
         ) : null}
-        <Suspense fallback={<CodeEditorLoading />}>
+        <Suspense fallback={<CodeEditorLoading value={code} onChange={handleLoadingEditorCodeChange} />}>
           <MonacoCodeEditor
             language={language}
             value={code}
@@ -720,6 +719,7 @@ function CodeEditor({
             onClipboardStatus={handleClipboardStatus}
             contentKey={`${editorKey || 'code-editor'}:${language || 'plain'}`}
             valueVersion={`${valueVersion}:${localValueVersion}`}
+            identifierSuggestions
           />
         </Suspense>
       </div>
