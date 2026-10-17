@@ -344,17 +344,21 @@ export default function StudentDirectory() {
         setFilteredStudents(nextStudents);
         setPagination(nextPagination);
         if (nextPagination.page !== currentPage) setCurrentPage(nextPagination.page);
+        return nextPagination;
       } else {
         const data = await api.listAllSpecialStudents('', sortOrder);
         if (loadRequestRef.current !== requestId) return;
         setSpecialStudents(data.students || []);
         setFilteredStudents(data.students || []);
-        setPagination({ page: 1, pages: 1, total: data.count || data.students?.length || 0, limit: itemsPerPage });
+        const nextPagination = { page: 1, pages: 1, total: data.count || data.students?.length || 0, limit: itemsPerPage };
+        setPagination(nextPagination);
+        return nextPagination;
       }
     } catch (err) {
       if (loadRequestRef.current === requestId) {
         setError(err.message || "Failed to load students");
       }
+      return null;
     } finally {
       if (loadRequestRef.current === requestId) setIsLoading(false);
     }
@@ -796,13 +800,21 @@ export default function StudentDirectory() {
     setIsBulkDeleting(true);
     setShowBulkMenu(false);
     try {
+      const totalBeforeDelete = pagination.total;
       const result = await api.bulkDeleteStudents(ids);
       const deletedCount = Number(result?.deleted ?? 0);
       if (deletedCount < 1) {
         throw new Error('No student accounts were deleted. The selection has been kept so you can retry.');
       }
+      const refreshedPagination = await loadData({ forceRefresh: true });
+      if (!refreshedPagination) {
+        throw new Error(`${deletedCount} accounts were deleted, but the student list could not refresh. Reload this page.`);
+      }
+      const expectedMaximum = Math.max(0, totalBeforeDelete - deletedCount);
+      if (refreshedPagination.total > expectedMaximum) {
+        throw new Error(`${deletedCount} accounts were deleted, but an old student list is still visible. Reload this page.`);
+      }
       clearSelection();
-      await loadData({ forceRefresh: true });
       toast.success(`${deletedCount} selected student${deletedCount === 1 ? '' : 's'} permanently deleted from the platform.`);
     } catch (err) {
       toast.error(err.message || 'Failed to delete selected students');

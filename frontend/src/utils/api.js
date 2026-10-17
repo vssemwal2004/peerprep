@@ -627,6 +627,7 @@ export const api = {
     });
     if (options.page) params.append("page", options.page);
     if (options.limit) params.append("limit", options.limit);
+    if (options.skipCache) params.append("_fresh", Date.now().toString());
     const queryString = params.toString();
     return request(`/students/list${queryString ? "?" + queryString : ""}`, {
       skipCache: Boolean(options.skipCache),
@@ -711,7 +712,12 @@ export const api = {
   deleteStudent: (studentId) =>
     request(`/students/${studentId}`, { method: "DELETE" }),
   bulkDeleteStudents: (studentIds) =>
-    request("/students/bulk-delete", { method: "POST", body: { studentIds } }),
+    request("/students/bulk-delete", {
+      method: "POST",
+      body: { studentIds },
+      timeoutMs: 60 * 1000,
+      skipDedupe: true,
+    }),
   resendStudentCredentials: (studentIds) =>
     request("/students/resend-credentials", {
       method: "POST",
