@@ -628,7 +628,9 @@ export const api = {
     if (options.page) params.append("page", options.page);
     if (options.limit) params.append("limit", options.limit);
     const queryString = params.toString();
-    return request(`/students/list${queryString ? "?" + queryString : ""}`);
+    return request(`/students/list${queryString ? "?" + queryString : ""}`, {
+      skipCache: Boolean(options.skipCache),
+    });
   },
   listMasterData: ({ category = "", activeOnly = false } = {}) => {
     const params = new URLSearchParams();

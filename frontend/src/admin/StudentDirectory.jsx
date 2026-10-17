@@ -310,7 +310,7 @@ export default function StudentDirectory() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const loadData = async () => {
+  const loadData = async ({ forceRefresh = false } = {}) => {
     const requestId = loadRequestRef.current + 1;
     loadRequestRef.current = requestId;
     setIsLoading(true);
@@ -324,6 +324,7 @@ export default function StudentDirectory() {
           uploadBatchId,
           page: currentPage,
           limit: itemsPerPage,
+          skipCache: forceRefresh,
         });
         if (loadRequestRef.current !== requestId) return;
         const responseStudents = Array.isArray(data.students) ? data.students : [];
@@ -526,7 +527,7 @@ export default function StudentDirectory() {
       const result = await api.resendStudentCredentials(ids);
       if (result.queued) toast.success(result.message);
       if (result.skipped) toast.error(`${result.skipped} student${result.skipped === 1 ? ' is' : 's are'} no longer eligible.`);
-      await loadData();
+      await loadData({ forceRefresh: true });
       credentialRefreshTimersRef.current.forEach((timer) => clearTimeout(timer));
       credentialRefreshTimersRef.current = [3000, 8000, 15000, 30000].map((delay) => (
         setTimeout(() => loadData(), delay)
@@ -650,7 +651,7 @@ export default function StudentDirectory() {
         delete next[deletedId];
         return next;
       });
-      await loadData();
+      await loadData({ forceRefresh: true });
       toast.success(`Student ${student.name} has been deleted successfully.`);
     } catch (err) {
       toast.error(err.message || 'Failed to delete student');
@@ -796,9 +797,13 @@ export default function StudentDirectory() {
     setShowBulkMenu(false);
     try {
       const result = await api.bulkDeleteStudents(ids);
+      const deletedCount = Number(result?.deleted ?? 0);
+      if (deletedCount < 1) {
+        throw new Error('No student accounts were deleted. The selection has been kept so you can retry.');
+      }
       clearSelection();
-      await loadData();
-      toast.success(`${result.deleted || ids.length} selected student${(result.deleted || ids.length) === 1 ? '' : 's'} deleted.`);
+      await loadData({ forceRefresh: true });
+      toast.success(`${deletedCount} selected student${deletedCount === 1 ? '' : 's'} permanently deleted from the platform.`);
     } catch (err) {
       toast.error(err.message || 'Failed to delete selected students');
     } finally {
