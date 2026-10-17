@@ -106,6 +106,7 @@ export default function StudentDirectory() {
   const [activeRowMenuId, setActiveRowMenuId] = useState(null);
   const [showBulkMenu, setShowBulkMenu] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [bulkDeleteTarget, setBulkDeleteTarget] = useState(null);
   const [isSelectingAllFiltered, setIsSelectingAllFiltered] = useState(false);
   const [sendingCredentialIds, setSendingCredentialIds] = useState(new Set());
   const loadRequestRef = useRef(0);
@@ -423,6 +424,7 @@ export default function StudentDirectory() {
     setSelectedStudentIds(new Set());
     setSelectedStudentMap({});
     setShowBulkMenu(false);
+    setBulkDeleteTarget(null);
   };
 
   const toggleStudentSelection = (student, event) => {
@@ -782,25 +784,23 @@ export default function StudentDirectory() {
     toast.success(`${selectedStudents.length} selected student${selectedStudents.length === 1 ? '' : 's'} exported.`);
   };
 
-  const handleBulkDeleteStudents = async () => {
+  const openBulkDeleteConfirmation = (event) => {
+    event?.stopPropagation();
     const ids = Array.from(selectedStudentIds);
     if (!ids.length) {
       toast.error('Select at least one student to delete.');
       return;
     }
     const deletingAllMatching = ids.length === pagination.total;
-    const targetLabel = deletingAllMatching
-      ? `all ${ids.length} matching students`
-      : `${ids.length} selected student${ids.length === 1 ? '' : 's'}`;
-    if (!confirm(`Permanently delete ${targetLabel} from the database? This action cannot be undone.`)) {
-      setShowBulkMenu(false);
-      return;
-    }
-
-    setIsBulkDeleting(true);
+    setBulkDeleteTarget({ ids, deletingAllMatching, totalBeforeDelete: pagination.total });
     setShowBulkMenu(false);
+  };
+
+  const handleBulkDeleteStudents = async () => {
+    if (!bulkDeleteTarget?.ids?.length || isBulkDeleting) return;
+    const { ids, totalBeforeDelete } = bulkDeleteTarget;
+    setIsBulkDeleting(true);
     try {
-      const totalBeforeDelete = pagination.total;
       const result = await api.bulkDeleteStudents(ids);
       const deletedCount = Number(result?.deleted ?? 0);
       if (deletedCount < 1) {
@@ -1160,7 +1160,7 @@ export default function StudentDirectory() {
                       )}
                       <button
                         type="button"
-                        onClick={handleBulkDeleteStudents}
+                        onClick={openBulkDeleteConfirmation}
                         disabled={!selectedCount || isBulkDeleting}
                         className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-45 dark:text-red-400 dark:hover:bg-red-950/30"
                       >
@@ -1450,6 +1450,58 @@ export default function StudentDirectory() {
           )}
         </div>
       </motion.div>
+
+      {bulkDeleteTarget && (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="bulk-student-delete-title"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !isBulkDeleting) setBulkDeleteTarget(null);
+          }}
+        >
+          <div className="w-full max-w-md rounded-2xl border border-rose-200 bg-white p-5 shadow-2xl dark:border-rose-900/60 dark:bg-gray-900">
+            <div className="flex items-start gap-3">
+              <span className="rounded-xl bg-rose-100 p-2.5 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400">
+                <UserX className="h-6 w-6" />
+              </span>
+              <div>
+                <h2 id="bulk-student-delete-title" className="text-lg font-bold text-slate-950 dark:text-white">
+                  Remove students from platform?
+                </h2>
+                <p className="mt-1 text-sm leading-5 text-slate-500 dark:text-gray-400">
+                  {bulkDeleteTarget.deletingAllMatching
+                    ? `All ${bulkDeleteTarget.ids.length.toLocaleString()} matching student accounts will be permanently deleted.`
+                    : `${bulkDeleteTarget.ids.length.toLocaleString()} selected student account${bulkDeleteTarget.ids.length === 1 ? '' : 's'} will be permanently deleted.`}
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-medium leading-5 text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/25 dark:text-rose-200">
+              Login access will be removed immediately. This action cannot be undone.
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={isBulkDeleting}
+                onClick={() => setBulkDeleteTarget(null)}
+                className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isBulkDeleting}
+                onClick={handleBulkDeleteStudents}
+                className="inline-flex items-center gap-2 rounded-xl bg-rose-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-rose-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isBulkDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserX className="h-4 w-4" />}
+                {isBulkDeleting ? 'Deleting students…' : `Permanently delete ${bulkDeleteTarget.ids.length.toLocaleString()}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Student Profile Modal */}
       <AnimatePresence>
