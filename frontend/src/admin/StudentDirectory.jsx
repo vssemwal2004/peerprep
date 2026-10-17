@@ -783,7 +783,11 @@ export default function StudentDirectory() {
       toast.error('Select at least one student to delete.');
       return;
     }
-    if (!confirm(`Delete ${ids.length} selected student${ids.length === 1 ? '' : 's'}? This action cannot be undone.`)) {
+    const deletingAllMatching = ids.length === pagination.total;
+    const targetLabel = deletingAllMatching
+      ? `all ${ids.length} matching students`
+      : `${ids.length} selected student${ids.length === 1 ? '' : 's'}`;
+    if (!confirm(`Permanently delete ${targetLabel} from the database? This action cannot be undone.`)) {
       setShowBulkMenu(false);
       return;
     }
@@ -1140,10 +1144,13 @@ export default function StudentDirectory() {
                       <button
                         type="button"
                         onClick={handleBulkDeleteStudents}
-                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+                        disabled={!selectedCount || isBulkDeleting}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-45 dark:text-red-400 dark:hover:bg-red-950/30"
                       >
                         <UserX className="h-4 w-4" />
-                        Delete selected
+                        {selectedCount === pagination.total
+                          ? `Delete all ${selectedCount.toLocaleString()} matching`
+                          : `Delete ${selectedCount.toLocaleString()} selected`}
                       </button>
                       <button
                         type="button"

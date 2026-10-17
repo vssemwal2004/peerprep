@@ -1454,8 +1454,8 @@ export async function bulkDeleteStudents(req, res) {
     if (!studentIds.length) {
       return res.status(400).json({ error: 'Select at least one student to delete.' });
     }
-    if (studentIds.length > 500) {
-      return res.status(400).json({ error: 'Bulk delete is limited to 500 students at a time.' });
+    if (studentIds.length > 5000) {
+      return res.status(400).json({ error: 'Bulk delete is limited to 5000 students at a time.' });
     }
 
     const validIds = studentIds.filter((id) => {
