@@ -1,11 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { CheckCircle2, Download, FileSpreadsheet, FileText, Loader2, RotateCcw, Sheet } from "lucide-react";
 import { prepAnalysisApi } from "../api";
-<<<<<<< Updated upstream
 import { RANGE_PRESETS, optionLookup, summaryLines, toQueryRequest } from "../filterModel";
-=======
-import { RANGE_PRESETS, summaryLines, toQueryRequest } from "../filterModel";
->>>>>>> Stashed changes
 import { Button, Dialog, Popover, focusRing } from "./ui";
 
 const FORMATS = [
@@ -13,7 +9,6 @@ const FORMATS = [
   { value: "xlsx", label: "Excel", hint: "Sort and filter in Excel", Icon: FileSpreadsheet },
   { value: "csv", label: "CSV", hint: "Plain data for any tool", Icon: Sheet },
 ];
-<<<<<<< Updated upstream
 // Which column groups make sense for each feature (Quick Prep columns are part of Prep Coding).
 const AREA_GROUPS = {
   coding: ["Student details", "Prep Coding"],
@@ -21,13 +16,6 @@ const AREA_GROUPS = {
   interview: ["Student details", "Prep Interview"],
   assessment: ["Student details", "Prep Assessment"],
   all: ["Student details", "Prep Coding", "Prep Learning", "Prep Interview", "Prep Assessment"],
-=======
-// Which column groups make sense in each area.
-const AREA_GROUPS = {
-  coding: ["Student details", "Prep Coding", "Quick Prep sheets"],
-  learning: ["Student details", "Prep Learning"],
-  all: ["Student details", "Prep Coding", "Quick Prep sheets", "Prep Learning"],
->>>>>>> Stashed changes
 };
 
 function ExportDialog({ open, initialFormat, onClose, catalog, area, areaLabel, state, fieldMap, matched, table }) {
@@ -39,12 +27,7 @@ function ExportDialog({ open, initialFormat, onClose, catalog, area, areaLabel, 
   const [status, setStatus] = useState({ busy: false, error: "", done: "" });
   const maxPdf = catalog.exportLimits?.maxPdfColumns || 12;
   const metricLabel = (key) => fieldMap.get(key)?.label || key;
-<<<<<<< Updated upstream
   const lines = summaryLines(state, fieldMap, metricLabel, optionLookup(catalog), areaLabel);
-=======
-  const lookup = (field, value) => catalog.staticOptions?.[field.options]?.find((option) => String(option.value) === String(value))?.label;
-  const lines = summaryLines(state, fieldMap, metricLabel, lookup);
->>>>>>> Stashed changes
   const period = RANGE_PRESETS.find((preset) => preset.value === state.range.preset)?.label || "Custom period";
   const tooManyForPdf = format === "pdf" && selected.length > maxPdf;
   const ordered = columns.filter((column) => selected.includes(column.key)).map((column) => column.key);

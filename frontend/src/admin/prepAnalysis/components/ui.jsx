@@ -64,20 +64,12 @@ export function Drawer({ open, onClose, title, subtitle, width = "max-w-[1040px]
         <header className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-3 dark:border-gray-700">
           <div className="min-w-0">
             <h2 id={titleId} className="text-[14px] font-bold text-slate-900 dark:text-white">{title}</h2>
-<<<<<<< Updated upstream
             {subtitle && <p className="mt-0.5 line-clamp-2 text-[11.5px] text-slate-500 dark:text-slate-400">{subtitle}</p>}
-=======
-            {subtitle && <p className="mt-0.5 truncate text-[11.5px] text-slate-500 dark:text-slate-400">{subtitle}</p>}
->>>>>>> Stashed changes
           </div>
           <IconButton label="Close" onClick={onClose}><X className="h-4 w-4" /></IconButton>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
-<<<<<<< Updated upstream
         {footer && <footer className="border-t border-slate-200 bg-slate-50/80 px-4 py-3 sm:px-5 dark:border-gray-700 dark:bg-white/[0.02]">{footer}</footer>}
-=======
-        {footer && <footer className="border-t border-slate-200 bg-slate-50/80 px-5 py-3 dark:border-gray-700 dark:bg-white/[0.02]">{footer}</footer>}
->>>>>>> Stashed changes
       </section>
     </div>,
     document.body,
@@ -152,13 +144,9 @@ function useAnchoredPosition(open, anchorRef, { minWidth = 240, maxHeight = 360 
       const left = Math.min(Math.max(8, rect.left), window.innerWidth - width - 8);
       const below = window.innerHeight - rect.bottom - 8;
       const above = rect.top - 8;
-<<<<<<< Updated upstream
       // Open upwards when the panel would not get its preferred height below the anchor.
       const wanted = Math.min(maxHeight, 360);
       const openUp = below < wanted && above > below;
-=======
-      const openUp = below < 260 && above > below;
->>>>>>> Stashed changes
       setPosition({
         left, width,
         maxHeight: Math.min(maxHeight, openUp ? above - 4 : below - 4),
@@ -176,7 +164,6 @@ function useAnchoredPosition(open, anchorRef, { minWidth = 240, maxHeight = 360 
   return position;
 }
 
-<<<<<<< Updated upstream
 const FOCUSABLE = "[autofocus], input:not([disabled]), button:not([disabled]), select, [tabindex]:not([tabindex='-1'])";
 
 /**
@@ -184,18 +171,12 @@ const FOCUSABLE = "[autofocus], input:not([disabled]), button:not([disabled]), s
  * closed by clicking outside or pressing Escape. Focus moves into the panel when
  * it opens and back to where it was when it closes. Inside a modal dialog or
  * drawer it is rendered within that dialog, so screen readers keep it reachable.
-=======
-/**
- * A floating panel anchored to `anchorRef`, drawn above everything (portal),
- * closed by clicking outside or pressing Escape.
->>>>>>> Stashed changes
  */
 export function Popover({ open, anchorRef, onClose, minWidth = 280, maxHeight = 420, label, children }) {
   const panelRef = useRef(null);
   const refs = useMemo(() => [anchorRef, panelRef], [anchorRef]);
   useDismiss(open, refs, onClose);
   const position = useAnchoredPosition(open, anchorRef, { minWidth, maxHeight });
-<<<<<<< Updated upstream
   const shown = Boolean(open && position);
   useEffect(() => {
     if (!shown) return undefined;
@@ -210,20 +191,13 @@ export function Popover({ open, anchorRef, onClose, minWidth = 280, maxHeight = 
   }, [shown]);
   if (!shown) return null;
   const host = anchorRef.current?.closest("[aria-modal='true']") || document.body;
-=======
-  if (!open || !position) return null;
->>>>>>> Stashed changes
   return createPortal(
     <div ref={panelRef} role="dialog" aria-label={label} data-platform-popup-root
       style={{ position: "fixed", left: position.left, width: position.width, top: position.top, bottom: position.bottom, maxHeight: position.maxHeight }}
       className="z-[200] flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900">
       {children}
     </div>,
-<<<<<<< Updated upstream
     host,
-=======
-    document.body,
->>>>>>> Stashed changes
   );
 }
 
@@ -326,14 +300,9 @@ export function OptionPicker({ list, staticOptions, value, multiple = true, onCh
   );
 }
 
-<<<<<<< Updated upstream
 // fieldClass has no width, for inputs and selects that size themselves (w-20, w-auto…):
 // combining a width with inputClass's w-full would lose to w-full.
 export const fieldClass = `h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-[12px] text-slate-800 outline-none transition-colors placeholder:text-slate-500 hover:border-slate-300 focus:border-sky-400 dark:border-gray-700 dark:bg-white/[0.03] dark:text-slate-100 dark:placeholder:text-gray-400 ${focusRing}`;
 export const inputClass = `${fieldClass} w-full`;
 export const selectClass = `${inputClass} pr-7`;
 export const fieldSelectClass = `${fieldClass} pr-7`;
-=======
-export const inputClass = `h-8 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-[12px] text-slate-800 outline-none transition-colors placeholder:text-slate-400 hover:border-slate-300 focus:border-sky-400 dark:border-gray-700 dark:bg-white/[0.03] dark:text-slate-100 ${focusRing}`;
-export const selectClass = `${inputClass} pr-7`;
->>>>>>> Stashed changes

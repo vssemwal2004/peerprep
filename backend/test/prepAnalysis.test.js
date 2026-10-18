@@ -10,18 +10,13 @@ import {
   buildReport, DEFAULT_EXPORT_COLUMNS, EXPORT_COLUMNS, renderCsv, renderPdf, renderXlsx, validateExportOptions,
 } from '../src/modules/prepAnalysis/prepAnalysis.export.js';
 import { mockScore } from '../src/modules/prepAnalysis/interviewFacts.js';
-<<<<<<< Updated upstream
 import { DIFFICULTY_POINTS, prepScore } from '../src/modules/prepAnalysis/prepScore.js';
-=======
-import { prepScore, SOLVE_TARGETS } from '../src/modules/prepAnalysis/prepScore.js';
->>>>>>> Stashed changes
 import { buildStudentRows, indexProblemMeta, qualifiedCodingMetric } from '../src/modules/prepAnalysis/studentRows.js';
 
 const ALL_MODULES = { allowedModules: new Set(['student', 'coding', 'learning', 'interview', 'assessment']) };
 
 // ---------------------------------------------------------------- Prep Score
 
-<<<<<<< Updated upstream
 test('Prep Coding score = work points (Easy 1, Medium 2, Hard 4) x quality (submissions per solve)', () => {
   assert.deepEqual(DIFFICULTY_POINTS, { Easy: 1, Medium: 2, Hard: 4 });
   // 1 Easy + 3 Medium + 2 Hard = 15 work points; quality (3 x 6 + 10) / (20 + 10) = 93.3%.
@@ -52,29 +47,6 @@ test('Prep Coding quality: normal debugging is free, guessing lowers it, one luc
       }
     }
   }
-=======
-test('Prep Score uses only the student\'s own work and ranks difficulty above easy-only volume', () => {
-  assert.deepEqual(SOLVE_TARGETS, { Easy: 50, Medium: 40, Hard: 20 });
-  const a = prepScore({ solved: { Easy: 120, Medium: 10, Hard: 0 }, accepted: 60, attempts: 100 });
-  const b = prepScore({ solved: { Easy: 30, Medium: 25, Hard: 12 }, accepted: 75, attempts: 100 });
-  // A: (10*1 + 20*0.25 + 0) / 70 = 21.4% progress -> 0.85*21.43 + 0.15*60 = 27.2
-  assert.equal(a.progress, 21.4);
-  assert.equal(a.score, 27.2);
-  // B: (10*0.6 + 20*0.625 + 40*0.6) / 70 = 60.7% progress -> 0.85*60.71 + 0.15*75 = 62.9
-  assert.equal(b.progress, 60.7);
-  assert.equal(b.score, 62.9);
-  assert.ok(b.score > a.score);
-  const parts = b.points.Easy + b.points.Medium + b.points.Hard + b.points.accuracy;
-  assert.ok(Math.abs(parts - b.score) <= 0.2, 'the parts add up to the score');
-  assert.equal(prepScore({ solved: { Easy: 50, Medium: 40, Hard: 20 }, accepted: 100, attempts: 100 }).score, 100, 'meeting every target with full accuracy is 100');
-});
-
-test('Prep Score caps each difficulty and does not reward one lucky submission', () => {
-  assert.equal(prepScore({ solved: { Easy: 5000 }, accepted: 10, attempts: 10 }).progress, 14.3, 'easy alone is worth at most 10/70');
-  assert.equal(prepScore({ solved: {}, accepted: 0, attempts: 0 }).score, 0);
-  assert.equal(prepScore({ solved: { Easy: 1 }, accepted: 1, attempts: 1 }).points.accuracy, 1.5, 'one accepted submission earns a tenth of the accuracy share');
-  assert.equal(prepScore({ solved: { Easy: 1 }, accepted: 10, attempts: 10 }).points.accuracy, 15);
->>>>>>> Stashed changes
 });
 
 // ---------------------------------------------------------------- synthetic cohort
@@ -298,12 +270,8 @@ test('Quick Prep: sheets started and finished, progress, and sheet-level narrowi
   const kpis = Object.fromEntries(groups.map((group) => [group.key, Object.fromEntries(group.kpis.map((kpi) => [kpi.id, kpi.value]))]));
   assert.deepEqual(groups.map((group) => group.label), ['Prep Coding', 'Prep Learning'], '"All" shows each feature side by side');
   assert.deepEqual(buildKpiGroups('coding', new Set(['student', 'coding']), rows).map((group) => group.key), ['coding'], 'Quick Prep is part of Prep Coding, not its own section');
-<<<<<<< Updated upstream
   assert.equal(kpis.learning.subjectDone, 1, 'only Asha finished a subject');
   assert.ok(groups.every((group) => group.kpis.length <= 5), 'a few useful numbers per feature, one row');
-=======
-  assert.equal(kpis.learning.topics, 6);
->>>>>>> Stashed changes
   assert.equal(kpis.coding.sheetFinished, 1, 'Quick Prep numbers sit among the Prep Coding numbers');
   assert.equal(kpis.coding.sheetStarted, 2);
 });
@@ -364,17 +332,10 @@ test('every chart builds from the cohort and from an empty selection', () => {
   const chosen = CHARTS.find((chart) => chart.id === 'student-profile').build({ rows, options: { studentId: 's3' }, range: {}, topics });
   assert.equal(chosen.student.name, 'Chen', 'an admin can pick the student');
   const kpis = Object.fromEntries(buildKpis(rows).map((kpi) => [kpi.id, kpi.value]));
-<<<<<<< Updated upstream
   assert.equal(kpis.active, 2);
   assert.equal(kpis.hard, 1, 'students who solved a Hard problem, not a total of solves');
   assert.equal(kpis.stopped, 2);
   assert.equal(buildKpis(rows).find((kpi) => kpi.id === 'stopped').hint, '50% of 4 students');
-=======
-  assert.equal(kpis.students, 4);
-  assert.equal(kpis.active, 2);
-  assert.equal(kpis.solved, 4);
-  assert.equal(kpis.stopped, 2);
->>>>>>> Stashed changes
   assert.ok(!('prepScore' in kpis), 'no cohort-average Prep Score');
   assert.equal(byId['needs-attention'].items[0].daysSinceActive, null, 'attention lists carry recency for the chart summary');
 });
@@ -385,21 +346,13 @@ function interviewsAndTests() {
     ['t2', { id: 't2', title: 'Quiz 2', type: 'mcq', visible: true, ended: true, startTime: new Date('2026-09-15'), forEveryone: false, assigned: new Set(['s1', 's2']) }],
     ['t3', { id: 't3', title: 'Finals', type: 'mixed', visible: true, ended: false, startTime: new Date('2026-11-01'), forEveryone: true, assigned: new Set() }],
   ]);
-<<<<<<< Updated upstream
   const attempt = (testId, percent, at, status = 'submitted') => ({ testId, status, percent, score: percent / 2, maxMarks: 50, minutes: 20, at: new Date(at) });
-=======
-  const attempt = (testId, percent, at) => ({ testId, percent, score: percent / 2, maxMarks: 50, minutes: 20, at: new Date(at) });
->>>>>>> Stashed changes
   const assessment = {
     tests,
     byStudent: new Map([
       ['s1', [attempt('t1', 80, '2026-10-01'), attempt('t2', 30, '2026-10-05')]],
-<<<<<<< Updated upstream
       // An expired attempt counts in the admin's test lists but not in the Prep Score (the student's dashboard ignores it too).
       ['s2', [attempt('t1', 35, '2026-09-20', 'expired')]],
-=======
-      ['s2', [attempt('t1', 35, '2026-09-20')]],
->>>>>>> Stashed changes
     ]),
   };
   const ratings = (value) => ({ communication: value, problemSolving: value, preparedness: value, attitude: value, integrity: value });
@@ -423,16 +376,12 @@ test('Prep Assessment: each student\'s own tests, scores, passes and missed test
     [2, 1, 1, 0, 55, 80, 30, 50],
   );
   assert.deepEqual(byName('Bilal').assessment.missedIds, ['t2'], 'an assigned test that is over and not taken is missed');
-<<<<<<< Updated upstream
   assert.deepEqual(byName('Bilal').assessment.assignedIds.sort(), ['t1', 't2', 't3'], 'assigned tests include active tests and tests not yet attempted');
-=======
->>>>>>> Stashed changes
   assert.deepEqual(byName('Chen').assessment.missedIds, ['t1'], 'tests for everyone count, unfinished tests do not');
   assert.equal(byName('Chen').assessment.status, 'never');
   assert.deepEqual(pick(rows, { children: [{ field: 'assessment.missed', operator: 'gte', value: 1 }] }).sort(), ['Bilal', 'Chen', 'Dev']);
   assert.deepEqual(pick(rows, { children: [{ field: 'assessment.averageScore', operator: 'gte', value: 50, qualifiers: { tests: ['t1'] } }] }), ['Asha'], 'narrowed to one test');
   assert.deepEqual(pick(rows, { children: [{ field: 'assessment.passedTests', operator: 'anyOf', value: ['t1'] }] }), ['Asha']);
-<<<<<<< Updated upstream
   assert.deepEqual(pick(rows, { children: [{ field: 'assessment.assignedTests', operator: 'anyOf', value: ['t2'] }] }).sort(), ['Asha', 'Bilal']);
   const results = CHARTS.find((chart) => chart.id === 'assessment-tests').build({ rows, options: {}, range: {}, tests });
   assert.deepEqual(results.groups.find((group) => group.label === 'Mid term').values, { Passed: 1, Failed: 1, Missed: 2 });
@@ -443,12 +392,6 @@ test('Prep Assessment: each student\'s own tests, scores, passes and missed test
   assert.deepEqual(byClass.groups.find((group) => group.label === 'Sem 5').values, { Passed: 1, Failed: 2, Missed: 1 });
   const kpis = Object.fromEntries(buildKpiGroups('assessment', new Set(['student', 'assessment']), rows)[0].kpis.map((kpi) => [kpi.id, kpi.value]));
   assert.deepEqual([kpis.students, kpis.passedStudents, kpis.missed, kpis.never], [2, 1, 3, 2], 'counts of students the admin can act on');
-=======
-  const results = CHARTS.find((chart) => chart.id === 'assessment-tests').build({ rows, options: {}, range: {}, tests });
-  assert.deepEqual(results.groups.find((group) => group.label === 'Mid term').values, { Passed: 1, Failed: 1, Missed: 2 });
-  const kpis = Object.fromEntries(buildKpiGroups('assessment', new Set(['student', 'assessment']), rows)[0].kpis.map((kpi) => [kpi.id, kpi.value]));
-  assert.deepEqual([kpis.students, kpis.taken, kpis.passed, kpis.missed, kpis.never], [2, 3, 1, 3, 2]);
->>>>>>> Stashed changes
 });
 
 test('Prep Interview: mock interviews out of 100, ratings, interviewer turns and AI interviews', () => {
@@ -473,7 +416,6 @@ test('Prep Interview: mock interviews out of 100, ratings, interviewer turns and
   assert.equal(profile.coding, null, 'no coding without the licence');
 });
 
-<<<<<<< Updated upstream
 test('Prep Score on analysis rows: points per licensed feature, overall = their average (the students\' formula)', () => {
   const { rows } = interviewsAndTests();
   const asha = rows.find((row) => row.name === 'Asha');
@@ -493,8 +435,6 @@ test('Prep Score on analysis rows: points per licensed feature, overall = their 
   assert.deepEqual(pick(rows, { children: [{ field: 'interview.prepScore', operator: 'gte', value: 60 }] }), ['Asha']);
 });
 
-=======
->>>>>>> Stashed changes
 test('a student profile shows only that student\'s own work, per licensed area', () => {
   const { rows } = cohort();
   const range = { preset: 'all', from: null, to: new Date('2026-10-10T00:00:00Z') };
@@ -502,11 +442,7 @@ test('a student profile shows only that student\'s own work, per licensed area',
   assert.equal(asha.student.name, 'Asha');
   assert.equal(asha.student.coordinators, undefined, 'internal ids stay on the server');
   assert.deepEqual(asha.coding.solved, { Easy: 1, Medium: 1, Hard: 1, total: 3 });
-<<<<<<< Updated upstream
   assert.deepEqual([asha.coding.work, asha.coding.quality], [7, 100], '1 + 2 + 4 work points, 6 submissions for 3 solves is fair');
-=======
-  assert.deepEqual(asha.coding.targets, SOLVE_TARGETS);
->>>>>>> Stashed changes
   assert.deepEqual(asha.coding.topics.map((topic) => [topic.name, topic.solved, topic.attempted]), [['Graphs', 2, 2], ['Arrays', 1, 1]]);
   assert.deepEqual(asha.coding.verdicts.map((verdict) => [verdict.name, verdict.value]), [['Accepted', 3], ['Wrong answer', 3]]);
   assert.deepEqual(asha.coding.calendar.days, [['2026-10-01', 3], ['2026-10-05', 3]]);

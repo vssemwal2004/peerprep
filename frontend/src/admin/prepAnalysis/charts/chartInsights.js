@@ -131,7 +131,6 @@ const BY_ID = {
     const finishers = new Set((cells || []).filter((cell) => cell[2] >= 100).map((cell) => cell[1])).size;
     return `${finishers} of these ${plural(students.length, "student")} have finished at least one of these sheets.`;
   },
-<<<<<<< Updated upstream
   "assessment-tests": ({ groups }) => {
     if (!groups?.length) return null;
     const missed = maxBy(groups, (group) => group.values.Missed || 0);
@@ -183,8 +182,6 @@ const BY_ID = {
     const weakest = maxBy((groups || []).filter((group) => group.students), lowShare);
     return weakest && lowShare(weakest) > 0 ? `${weakest.label} gets the most low ratings (1 or 2): ${Math.round(lowShare(weakest) * 100)}% of its ratings.` : null;
   },
-=======
->>>>>>> Stashed changes
   "learning-leaders": ({ items }) => (items?.[0] ? `${items[0].name} has completed the most topics (${number(items[0].value)}).` : null),
   "quickprep-leaders": ({ items }) => (items?.[0] ? `${items[0].name} has finished the most sheets (${number(items[0].value)}).` : null),
 };

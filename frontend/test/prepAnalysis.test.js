@@ -6,7 +6,6 @@ import {
 } from '../src/admin/prepAnalysis/charts/chartOptions.js';
 import { alpha, chartTheme } from '../src/admin/prepAnalysis/charts/chartTheme.js';
 import {
-<<<<<<< Updated upstream
   compactOption, countActive, defaultFilterState, featureFields, groupName, groupText, isKpiActive, isMainField, kpiRule, listRule, newGroup,
   newRankRule, normalizeState, numberPresets, OPERATORS, rangeOf, rangeRule, rankMetrics, rankText, ruleText, setRule, studentFields, summaryLines,
   switchArea, toggleKpi, toQueryRequest, toRequestRank, valueParts,
@@ -203,167 +202,6 @@ test('pages saved by earlier versions open as groups instead of breaking', () =>
   assert.deepEqual(v4.groups[0].rules.map((rule) => rule.field), ['coding.prepScore', 'student.branch']);
   assert.equal(v4.rank.join, 'or');
   assert.deepEqual(Object.keys(normalizeState(null)).sort(), ['area', 'groups', 'range', 'rank']);
-=======
-  compactOption, countActive, createFilter, defaultFilterState, fieldsForArea, filterFromRange, isFilterComplete, isPickActive, kpiPick,
-  LIST_MODES, normalizeState, numberPresets, OPERATORS, picksForArea, pinnedFields, QUICK_PICKS, rangeOf, rankingText, setFieldFilter,
-  summaryLines, switchArea, togglePick, toQueryRequest, toRequestFilter, toRequestRank, valueWords,
-} from '../src/admin/prepAnalysis/filterModel.js';
-import { pointsPerSolve, studentHighlights } from '../src/admin/prepAnalysis/studentInsights.js';
-import { pathAllowed } from '../src/platform/universityPermissions.js';
-
-const FIELDS = [
-  { key: 'student.semester', module: 'student', label: 'Semester', kind: 'enum', valueType: 'number', options: 'semesters', quick: true },
-  { key: 'student.branch', module: 'student', label: 'Branch', kind: 'enum', options: 'branches', quick: true },
-  { key: 'student.course', module: 'student', label: 'Course', kind: 'enum', options: 'courses', quick: true },
-  { key: 'student.search', module: 'student', label: 'Name, email or student ID', kind: 'text' },
-  { key: 'coding.practiceStatus', module: 'coding', label: 'Practice status', kind: 'enum', options: 'practiceStatuses', quick: true },
-  { key: 'coding.languages', module: 'coding', label: 'Programming language used', kind: 'set', options: 'languages', quick: true },
-  { key: 'coding.solvedTopics', module: 'coding', label: 'Topic solved', kind: 'set', options: 'topics', quick: true },
-  { key: 'coding.prepScore', module: 'coding', label: 'Prep Score', kind: 'number', unit: '/ 100', rankable: true },
-  { key: 'coding.solved', module: 'coding', label: 'Problems solved', kind: 'number', qualifiers: 'coding', rankable: true },
-  { key: 'coding.solvedHard', module: 'coding', label: 'Hard problems solved', kind: 'number', qualifiers: 'coding', rankable: true },
-  { key: 'coding.daysSinceActive', module: 'coding', label: 'Days since last practice', kind: 'number', unit: 'days' },
-  { key: 'learning.progress', module: 'learning', label: 'Course completed', kind: 'percent', qualifiers: 'learning', rankable: true },
-  { key: 'learning.status', module: 'learning', label: 'Learning status', kind: 'enum', options: 'learningStatuses', quick: true },
-  { key: 'learning.subjects', module: 'learning', label: 'Subject studied', kind: 'set', options: 'subjects', quick: true },
-  // Quick Prep sheets are part of Prep Coding.
-  { key: 'quickprep.progress', module: 'coding', group: 'Quick Prep sheets', label: 'Sheet progress', kind: 'percent', qualifiers: 'quickprep', rankable: true },
-  { key: 'quickprep.status', module: 'coding', group: 'Quick Prep sheets', label: 'Quick Prep status', kind: 'enum', options: 'quickprepStatuses', quick: true },
-];
-const fieldMap = new Map(FIELDS.map((field) => [field.key, field]));
-const field = (key) => fieldMap.get(key);
-const filter = (key, operator, value, extra = {}) => ({ ...createFilter(field(key)), operator, value, ...extra });
-const STATUS_LABELS = { inactive: 'Stopped (no practice for 14+ days)', never: 'Never practised' };
-const lookup = (entry, value) => (entry.options === 'practiceStatuses' ? STATUS_LABELS[value] : undefined);
-
-// ---------------------------------------------------------------- words an admin reads
-
-test('no AND / OR or "condition" jargon anywhere an admin reads', () => {
-  const labels = [...Object.values(OPERATORS).flat(), ...Object.values(LIST_MODES).flat()].map((entry) => entry.label);
-  for (const label of labels) assert.doesNotMatch(label, /\b(AND|OR|condition|group|operator)\b/);
-  assert.deepEqual(LIST_MODES.enum.map((mode) => mode.label), ['Only these', 'All except these']);
-});
-
-test('a filter button shows its value in plain words', () => {
-  assert.equal(valueWords(filter('student.semester', 'anyOf', [5, 6], { labels: { 5: 'Semester 5', 6: 'Semester 6' } }), field('student.semester')), '5, 6', 'no "Semester Semester 5"');
-  assert.equal(valueWords(filter('coding.practiceStatus', 'anyOf', ['inactive', 'never']), field('coding.practiceStatus'), lookup), 'Stopped, Never practised');
-  assert.equal(valueWords(filter('student.branch', 'noneOf', ['CSE']), field('student.branch')), 'not CSE');
-  assert.equal(valueWords(filter('coding.solvedTopics', 'allOf', ['Graphs', 'DP', 'Trees']), field('coding.solvedTopics')), 'all of Graphs, DP +1');
-  assert.equal(valueWords(filter('learning.progress', 'between', ['20', '60']), field('learning.progress')), '20 to 60%');
-  assert.equal(valueWords(filter('coding.prepScore', 'gte', '50'), field('coding.prepScore')), 'at least 50', 'the "/ 100" unit is not repeated');
-  assert.equal(valueWords(filter('coding.daysSinceActive', 'lte', '7'), field('coding.daysSinceActive')), 'up to 7 days');
-  assert.equal(valueWords(filter('coding.solved', 'gte', ''), field('coding.solved')), '', 'unfinished filters say nothing');
-  assert.equal(compactOption('Practising (last 14 days)', field('coding.practiceStatus')), 'Practising');
-  assert.equal(rankingText({ mode: 'top', value: 10, unit: 'percent', metric: 'coding.prepScore' }, (key) => field(key).label), 'Top 10% by Prep Score');
-  assert.equal(rankingText({ mode: 'everyone' }), 'Everyone');
-});
-
-test('number filters are a "from … to" range with one-click presets in the field\'s own scale', () => {
-  assert.deepEqual(filterFromRange(field('coding.prepScore'), '50', '').value, '50');
-  assert.equal(filterFromRange(field('coding.prepScore'), '50', '').operator, 'gte');
-  assert.equal(filterFromRange(field('coding.prepScore'), '', '25').operator, 'lte');
-  assert.deepEqual(filterFromRange(field('coding.prepScore'), '80', '20').value, ['20', '80'], 'a reversed range is put the right way round');
-  assert.equal(filterFromRange(field('coding.prepScore'), '', ''), null, 'an empty range removes the filter');
-  for (const [from, to] of [['10', ''], ['', '30'], ['10', '30']]) assert.deepEqual(rangeOf(filterFromRange(field('coding.solved'), from, to)), { from, to });
-  const kept = filterFromRange(field('coding.solved'), '3', '', { id: 'x', qualifiers: { topics: ['Graphs'] } });
-  assert.deepEqual([kept.id, kept.qualifiers], ['x', { topics: ['Graphs'] }], '"Count only…" survives a range change');
-  assert.equal(numberPresets(field('coding.prepScore'))[0].label, 'Under 25');
-  assert.ok(numberPresets(field('learning.progress')).some((preset) => preset.label === 'Done (100%)'));
-  assert.ok(numberPresets(field('coding.daysSinceActive')).some((preset) => preset.label === 'More than 14 days'));
-  assert.ok(numberPresets(field('coding.solved')).every((preset) => isFilterComplete(filterFromRange(field('coding.solved'), preset.from, preset.to), field('coding.solved'))));
-});
-
-// ---------------------------------------------------------------- page state and requests
-
-test('one filter per field, always applied together', () => {
-  let filters = setFieldFilter([], 'student.semester', filter('student.semester', 'anyOf', [5]));
-  filters = setFieldFilter(filters, 'student.semester', filter('student.semester', 'anyOf', [5, 6]));
-  assert.equal(filters.length, 1, 'changing a filter replaces it');
-  assert.deepEqual(setFieldFilter(filters, 'student.semester', null), []);
-  const repaired = normalizeState({ join: 'or', filters: [filter('student.branch', 'anyOf', ['CSE']), filter('student.branch', 'anyOf', ['ECE'])] });
-  assert.equal(repaired.join, 'and', 'older "any filter" pages become "all filters"');
-  assert.deepEqual(repaired.filters.map((entry) => entry.value), [['ECE']], 'older duplicate filters keep the last one');
-});
-
-test('filters, "Show" and chart filters become one API request', () => {
-  const state = { ...defaultFilterState('coding'), join: 'or' };
-  state.filters = [
-    filter('student.semester', 'anyOf', ['5', '6']),
-    filter('coding.solved', 'gte', '4', { qualifiers: { topics: ['Graphs'], languages: [] } }),
-    filter('coding.languages', 'anyOf', []),
-  ];
-  state.ranking = { mode: 'bottom', value: '10', unit: 'count', metric: 'coding.prepScore' };
-  const request = toQueryRequest({ state, layout: [{ id: 'top-students', options: { limit: 10 }, view: 'table', size: 'full' }, { id: 'student-profile', filters: [filter('student.branch', 'anyOf', ['CSE'])], options: { studentId: '' } }] }, fieldMap);
-  assert.equal(request.module, 'coding');
-  assert.deepEqual(request.filter, {
-    type: 'group', join: 'and', children: [
-      { type: 'rule', field: 'student.semester', operator: 'anyOf', value: [5, 6] },
-      { type: 'rule', field: 'coding.solved', operator: 'gte', value: 4, qualifiers: { topics: ['Graphs'] } },
-    ],
-  }, 'always "all filters"; the unfinished one is skipped');
-  assert.deepEqual(request.rank.cuts, [{ metric: 'coding.prepScore', direction: 'bottom', unit: 'count', value: 10 }]);
-  assert.deepEqual(request.charts[0], { id: 'top-students', options: { limit: 10 } }, 'a chart\'s view and width stay in the browser');
-  assert.deepEqual(request.charts[1], { id: 'student-profile', filter: { type: 'group', join: 'and', children: [{ type: 'rule', field: 'student.branch', operator: 'anyOf', value: ['CSE'] }] } });
-  assert.deepEqual(toRequestRank({ mode: 'everyone' }).cuts, []);
-  assert.deepEqual(toRequestFilter({ filters: [] }, fieldMap), { type: 'group', join: 'and', children: [] });
-  assert.equal(countActive(state, fieldMap), 3, 'two finished filters plus "Show"');
-});
-
-test('layer 1: each area offers student details plus its own fields and its own filter buttons', () => {
-  const catalog = { fields: FIELDS };
-  assert.deepEqual([...new Set(fieldsForArea(catalog, 'learning').map((entry) => entry.module))], ['student', 'learning']);
-  assert.equal(fieldsForArea(catalog, 'all').length, FIELDS.length);
-  assert.ok(fieldsForArea(catalog, 'coding').some((entry) => entry.key === 'quickprep.progress'), 'sheet filters are offered in Prep Coding');
-  assert.deepEqual(pinnedFields('coding', fieldMap).map((entry) => entry.key).slice(-1), ['quickprep.status'], 'Quick Prep has a button inside Prep Coding');
-  const withoutLearning = new Map(FIELDS.filter((entry) => entry.module !== 'learning').map((entry) => [entry.key, entry]));
-  assert.ok(pinnedFields('all', withoutLearning).every((entry) => entry.module !== 'learning'), 'unlicensed areas never get a button');
-  const state = { ...defaultFilterState('coding'), filters: [filter('student.semester', 'anyOf', [5]), filter('coding.solved', 'gte', '3')] };
-  const learning = switchArea(state, 'learning', fieldMap, { learning: 'learning.progress' });
-  assert.deepEqual(learning.filters.map((entry) => entry.field), ['student.semester'], 'coding filters do not follow into Learning');
-  assert.equal(learning.ranking.metric, 'learning.progress');
-});
-
-test('quick picks and headline numbers switch a filter on and off with one click', () => {
-  assert.ok(QUICK_PICKS.every((pick) => pick.area === 'coding' || pick.area === 'learning'), 'no separate Quick Prep area');
-  const coding = picksForArea('coding', fieldMap);
-  assert.ok(coding.some((pick) => pick.section === 'quickprep'), 'sheet picks sit inside Prep Coding');
-  assert.ok(picksForArea('all', fieldMap).every((pick) => pick.all), '"All areas" shows a short list');
-  const stopped = QUICK_PICKS.find((pick) => pick.id === 'stopped');
-  const on = togglePick(stopped, defaultFilterState('coding'), 'coding.prepScore');
-  assert.ok(isPickActive(stopped, on));
-  assert.equal(togglePick(stopped, on, 'coding.prepScore').filters.length, 0, 'a second click undoes it');
-  const top = QUICK_PICKS.find((pick) => pick.id === 'top10');
-  const ranked = togglePick(top, on, 'coding.prepScore');
-  assert.deepEqual([ranked.ranking.mode, ranked.ranking.value, ranked.filters.length], ['top', 10, 1], 'picks combine');
-  assert.equal(togglePick(top, ranked, 'coding.prepScore').ranking.mode, 'everyone');
-  const stuck = togglePick(QUICK_PICKS.find((pick) => pick.id === 'sheetStuck'), defaultFilterState('coding'));
-  assert.deepEqual(toRequestFilter(stuck, fieldMap).children.map((rule) => [rule.field, rule.operator, rule.value]), [
-    ['quickprep.status', 'anyOf', ['inProgress']], ['quickprep.progress', 'lte', 30],
-  ]);
-  const notPractising = kpiPick('coding', 'stopped', fieldMap);
-  const filtered = togglePick(notPractising, defaultFilterState('coding'));
-  assert.deepEqual(filtered.filters[0].value, ['inactive', 'never']);
-  assert.equal(kpiPick('coding', 'students', fieldMap), null, 'not every number is clickable');
-  assert.equal(kpiPick('learning', 'halfway', new Map()), null, 'no pick for fields this university does not have');
-});
-
-test('downloads describe the filters in plain sentences', () => {
-  const state = { ...defaultFilterState('coding'), ranking: { mode: 'top', value: 10, unit: 'count', metric: 'coding.prepScore' } };
-  state.filters = [filter('student.semester', 'anyOf', [5], { labels: { 5: 'Semester 5' } }), filter('quickprep.progress', 'gte', '50'), filter('student.branch', 'anyOf', [])];
-  assert.deepEqual(summaryLines(state, fieldMap, (key) => field(key).label), [
-    'Semester: 5',
-    'Sheet progress: at least 50%',
-    'Show: Top 10 by Prep Score',
-  ]);
-  assert.deepEqual(summaryLines(defaultFilterState(), fieldMap, (key) => key), []);
-});
-
-test('older saved states are repaired instead of breaking the page', () => {
-  const repaired = normalizeState({ quick: {}, filter: { type: 'group' }, ranking: { mode: 'top' } });
-  assert.deepEqual(Object.keys(repaired).sort(), ['area', 'filters', 'join', 'range', 'ranking']);
-  assert.deepEqual(repaired.filters, []);
-  assert.equal(normalizeState(null).ranking.mode, 'everyone');
->>>>>>> Stashed changes
 });
 
 // ---------------------------------------------------------------- charts
@@ -415,11 +253,7 @@ test('views change how a chart reads: steps with %, 100% bars, weekly lines', ()
   const weekly = buildChartOption({ type: 'calendar', data: SAMPLES.calendar }, chartTheme(false), 'weekly');
   assert.deepEqual(weekly.series[0].data, [5], 'days in the same week add up');
   const accent = buildChartOption({ type: 'radar', data: SAMPLES.radar, section: 'learning' }, chartTheme(false));
-<<<<<<< Updated upstream
   assert.equal(accent.series[0].data[0].itemStyle.color, '#0284c7', 'every feature uses the app\'s sky colour');
-=======
-  assert.equal(accent.series[0].data[0].itemStyle.color, '#059669', 'Prep Learning charts use its green');
->>>>>>> Stashed changes
   assert.equal(alpha('#4f46e5', 0.5), 'rgba(79,70,229,0.5)');
   assert.equal(alpha('rgba(79,70,229,0.5)', 0.5), 'rgba(79,70,229,0.25)');
 });
@@ -471,7 +305,6 @@ test('charts speak the area\'s own units and colours, and escape names', () => {
 
 // ---------------------------------------------------------------- one student
 
-<<<<<<< Updated upstream
 const FORMULA = { coding: { points: { Easy: 1, Medium: 2, Hard: 4 }, fairTriesPerSolve: 3, starterSubmissions: 10 } };
 
 test('a student profile says what stands out, from that student\'s own work only', () => {
@@ -479,14 +312,6 @@ test('a student profile says what stands out, from that student\'s own work only
   assert.deepEqual(pointsPerSolve(FORMULA, 50), { Easy: 0.5, Medium: 1, Hard: 2 }, 'at the student\'s current quality');
   const coding = {
     practiceStatus: 'inactive', daysSinceActive: 21, solved: { Easy: 50, Medium: 12, Hard: 0, total: 62 }, quality: 100, triesPerSolve: 1.9,
-=======
-const FORMULA = { weights: { Easy: 10, Medium: 20, Hard: 40 }, targets: { Easy: 50, Medium: 40, Hard: 20 }, progressShare: 0.85, accuracyShare: 0.15, accuracyFullCreditSubmissions: 10 };
-
-test('a student profile says what stands out, from that student\'s own work only', () => {
-  assert.deepEqual(pointsPerSolve(FORMULA), { Easy: 0.2, Medium: 0.6, Hard: 2.4 });
-  const coding = {
-    practiceStatus: 'inactive', daysSinceActive: 21, solved: { Easy: 50, Medium: 12, Hard: 0, total: 62 }, targets: FORMULA.targets,
->>>>>>> Stashed changes
     submissions: 120, accuracy: 31, verdicts: [{ key: 'AC', name: 'Accepted', value: 37 }, { key: 'TLE', name: 'Too slow', value: 60 }, { key: 'WA', name: 'Wrong answer', value: 23 }],
     topics: [{ name: 'Arrays', solved: 30, attempted: 32 }, { name: 'Dynamic Programming', solved: 1, attempted: 6 }],
   };
@@ -496,26 +321,17 @@ test('a student profile says what stands out, from that student\'s own work only
   const texts = lines.map((line) => line.text);
   assert.ok(texts.includes('No coding practice for 21 days.'));
   assert.ok(texts.includes('Low accuracy: 31% of submissions accepted; most failures are “Too slow”.'));
-<<<<<<< Updated upstream
   assert.ok(texts.includes('Ready for Hard problems: 12 Mediums solved, no Hard yet. Each Hard solve adds 4 points.'));
   assert.ok(!texts.some((text) => text.includes('submissions per solved problem')), 'fair submissions are not flagged');
   const guessing = studentHighlights({ coding: { ...coding, quality: 47.8, triesPerSolve: 6.5 }, formula: FORMULA }, 20).map((line) => line.text);
   assert.ok(guessing.includes('6.5 submissions per solved problem (up to 3 is fair), so quality is 47.8% of the Prep Coding points.'));
-=======
-  assert.ok(texts.includes('Ready for Hard problems: 12 Mediums solved, no Hard yet. Each Hard solve adds about 2.4 points.'));
-  assert.ok(texts.includes('Reached the Easy target; more Easy solves no longer raise the Prep Score.'));
->>>>>>> Stashed changes
   assert.ok(texts.includes('Finding Dynamic Programming hard: 1 of 6 tried problems solved.'));
   assert.ok(texts.includes('Stuck in “Graphs sprint”: 1 of 10 questions solved.'));
   assert.ok(texts.includes('Behind in the course: 12% of the topics open to them completed.'));
   assert.equal(lines[0].tone, 'warn', 'problems come first');
   assert.ok(texts.every((text) => !/average|class|cohort|other students/i.test(text)), 'never compared with others');
   assert.deepEqual(studentHighlights({ coding: { practiceStatus: 'never', solved: { total: 0 } }, formula: FORMULA }), [{ tone: 'warn', text: 'Has not submitted any code yet.' }]);
-<<<<<<< Updated upstream
   assert.equal(studentHighlights({ coding, formula: FORMULA }).length, 5, 'a short list by default');
-=======
-  assert.equal(studentHighlights({ coding, formula: FORMULA }).length, 6, 'a short list by default');
->>>>>>> Stashed changes
 });
 
 test('the old analytics page stays reachable for assessment analysis only when assessments are licensed', () => {

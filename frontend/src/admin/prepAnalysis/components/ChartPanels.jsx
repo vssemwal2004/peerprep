@@ -1,30 +1,17 @@
 import { useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, Plus, RotateCcw } from "lucide-react";
-<<<<<<< Updated upstream
 import { newGroup } from "../filterModel";
 import { ChartBody } from "./ChartCard";
 import { GroupFilters } from "./GroupEditor";
-=======
-import { ChartBody } from "./ChartCard";
-import { ConditionBuilder } from "./ConditionBuilder";
->>>>>>> Stashed changes
 import { sectionStyle } from "./sectionStyles";
 import { Button, Dialog, Drawer, IconButton, OptionPicker, focusRing, inputClass, selectClass } from "./ui";
 
 /** Per-chart settings: compare by, how many, which student, and filters for this chart only. */
-<<<<<<< Updated upstream
 export function ChartSettingsDialog({ open, entry, definition, catalog, fields, onClose, onSave }) {
   const [draft, setDraft] = useState(null);
   useEffect(() => {
     if (open && entry) {
       setDraft({ filter: Array.isArray(entry.filter?.rules) ? entry.filter : newGroup(), options: { ...(definition?.options || {}), ...(entry.options || {}) }, labels: entry.labels || {} });
-=======
-export function ChartSettingsDialog({ open, entry, definition, catalog, fields, fieldMap, onClose, onSave }) {
-  const [draft, setDraft] = useState(null);
-  useEffect(() => {
-    if (open && entry) {
-      setDraft({ filter: entry.filter?.type === "group" ? entry.filter : newGroup(), options: { ...(definition?.options || {}), ...(entry.options || {}) }, labels: entry.labels || {} });
->>>>>>> Stashed changes
     }
   }, [definition, entry, open]);
   if (!open || !draft || !definition) return null;
@@ -66,14 +53,8 @@ export function ChartSettingsDialog({ open, entry, definition, catalog, fields, 
         <section>
           <h4 className="text-[12.5px] font-bold text-slate-900 dark:text-white">Show this chart only for some students <span className="font-medium text-slate-400">(optional)</span></h4>
           <p className="mb-2.5 mt-0.5 text-[11.5px] text-slate-500 dark:text-slate-400">These work on top of the filters at the top of the page. Leave them empty to use every student on the page.</p>
-<<<<<<< Updated upstream
           <GroupFilters group={draft.filter} featureFields={fields.filter((field) => field.module !== "student")} studentFields={fields.filter((field) => field.module === "student")}
             catalog={catalog} onChange={(filter) => setDraft((current) => ({ ...current, filter }))} />
-=======
-          <ConditionBuilder group={draft.filter} fields={fields} fieldMap={fieldMap} catalog={catalog}
-            emptyText="No condition: the chart uses every student on the page."
-            onChange={(filter) => setDraft((current) => ({ ...current, filter }))} />
->>>>>>> Stashed changes
         </section>
       </div>
     </Dialog>

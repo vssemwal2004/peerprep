@@ -13,12 +13,8 @@ export async function getPrepAnalysisCatalog(req, res) {
   const catalog = publicFieldCatalog(req.platformPermissions);
   const modules = new Set(catalog.modules.map((module) => module.key));
   const licensedChart = (id) => modules.has(CHARTS.find((chart) => chart.id === id)?.module);
-<<<<<<< Updated upstream
   // Always fresh: the feature list changes with licences and deployments.
   res.set('Cache-Control', 'private, no-cache');
-=======
-  res.set('Cache-Control', 'private, max-age=60');
->>>>>>> Stashed changes
   res.json({
     ...catalog,
     limits: FILTER_LIMITS,

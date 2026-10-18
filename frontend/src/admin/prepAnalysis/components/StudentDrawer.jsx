@@ -6,11 +6,8 @@ import { DIFFICULTY_COLORS, OUTCOME_COLORS } from "../charts/chartTheme";
 import { RANGE_PRESETS } from "../filterModel";
 import { lastSeenText, studentHighlights } from "../studentInsights";
 import { ChartBody } from "./ChartCard";
-<<<<<<< Updated upstream
 import { formatScore } from "../../../student/prepScore/formatScore";
 import { PrepCoin, PrepScoreFlow, ScoreValue } from "../../../student/prepScore/PrepScore";
-=======
->>>>>>> Stashed changes
 import { StatusPill } from "./Insights";
 import { initials, sectionStyle } from "./sectionStyles";
 import { Drawer } from "./ui";
@@ -60,7 +57,6 @@ function Bar({ label, value, max, color, right, sub }) {
   );
 }
 
-<<<<<<< Updated upstream
 /** Prep Coding's points as a coin with "work points × quality". */
 function CodingScore({ coding }) {
   return (
@@ -68,38 +64,18 @@ function CodingScore({ coding }) {
       <PrepCoin size={56} />
       <span className="text-[22px] font-extrabold leading-6 tabular-nums text-slate-900 dark:text-white">{formatScore(coding.prepScore)}</span>
       <span className="text-[10.5px] leading-tight text-slate-500 dark:text-slate-400">{formatScore(coding.work)} work points × {formatScore(coding.quality)}% quality</span>
-=======
-function ScoreRing({ score, color = "#0284c7" }) {
-  const radius = 42;
-  const length = 2 * Math.PI * radius;
-  return (
-    <div className="relative h-[108px] w-[108px] shrink-0">
-      <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90" aria-hidden="true">
-        <circle cx="50" cy="50" r={radius} fill="none" strokeWidth="9" className="stroke-slate-100 dark:stroke-white/[0.06]" />
-        <circle cx="50" cy="50" r={radius} fill="none" strokeWidth="9" stroke={color} strokeLinecap="round" strokeDasharray={length} strokeDashoffset={length * (1 - Math.min(100, score) / 100)} className="transition-[stroke-dashoffset] duration-700" />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-[24px] font-extrabold leading-7 tabular-nums text-slate-900 dark:text-white">{score.toFixed(1)}</span>
-        <span className="text-[10px] font-semibold text-slate-400">Prep Score</span>
-      </div>
->>>>>>> Stashed changes
     </div>
   );
 }
 
 const calendarChart = (id, section, calendar) => ({ id, section, type: "calendar", title: "Daily activity", question: "", data: calendar, size: "full" });
 
-<<<<<<< Updated upstream
 function CodingSection({ coding, quickprep }) {
-=======
-function CodingSection({ coding }) {
->>>>>>> Stashed changes
   const verdictTotal = coding.verdicts.reduce((sum, verdict) => sum + verdict.value, 0);
   const verdictColor = { AC: OUTCOME_COLORS.AC, WA: OUTCOME_COLORS.WA, TLE: OUTCOME_COLORS.TLE, RE: OUTCOME_COLORS.RE, CE: OUTCOME_COLORS.CE };
   return (
     <Section section="coding" title="Prep Coding" aside={<StatusPill status={coding.practiceStatus} />}>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-<<<<<<< Updated upstream
         <CodingScore coding={coding} />
         <div className="min-w-0 flex-1 space-y-2.5">
           {["Easy", "Medium", "Hard"].map((key) => (
@@ -109,16 +85,6 @@ function CodingSection({ coding }) {
           <Bar label="Quality" value={coding.quality} max={100} color={DIFFICULTY_COLORS.Accuracy}
             right={<b className="text-slate-900 dark:text-white">{formatScore(coding.quality)}%</b>}
             sub={coding.solved.total ? `${coding.triesPerSolve} submissions per solve (up to 3 is fair) · ${coding.accuracy}% accepted` : `${coding.accepted} of ${coding.submissions} submissions accepted`} />
-=======
-        <ScoreRing score={coding.prepScore} />
-        <div className="min-w-0 flex-1 space-y-2.5">
-          {["Easy", "Medium", "Hard"].map((key) => (
-            <Bar key={key} label={key} value={coding.solved[key]} max={coding.targets[key]} color={DIFFICULTY_COLORS[key]}
-              right={<><b className="text-slate-900 dark:text-white">{coding.solved[key]}</b> of {coding.targets[key]} target · {coding.points[key]} pts</>} />
-          ))}
-          <Bar label="Accuracy" value={coding.accuracy} max={100} color={DIFFICULTY_COLORS.Accuracy}
-            right={<><b className="text-slate-900 dark:text-white">{coding.accuracy}%</b> · {coding.points.accuracy} pts</>} sub={`${coding.accepted} of ${coding.submissions} submissions accepted`} />
->>>>>>> Stashed changes
         </div>
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -179,25 +145,16 @@ function CodingSection({ coding }) {
           <ChartBody chart={calendarChart("profile-coding", "coding", coding.calendar)} height={170} />
         </div>
       )}
-<<<<<<< Updated upstream
       {quickprep && <QuickPrepBlock quickprep={quickprep} />}
-=======
->>>>>>> Stashed changes
     </Section>
   );
 }
 
-<<<<<<< Updated upstream
 /** Quick Prep sheets, shown inside Prep Coding. */
 function QuickPrepBlock({ quickprep }) {
   return (
     <div className="space-y-2.5 border-t border-slate-100 pt-3 dark:border-gray-800">
       <p className="flex items-center justify-between text-[12px] font-bold text-slate-800 dark:text-slate-100">Quick Prep sheets <StatusPill status={quickprep.status} /></p>
-=======
-function QuickPrepSection({ quickprep }) {
-  return (
-    <Section section="quickprep" title="Quick Prep sheets" aside={<StatusPill status={quickprep.status} />}>
->>>>>>> Stashed changes
       {quickprep.sheets.length ? (
         <div className="space-y-2.5">
           {quickprep.sheets.map((sheet) => (
@@ -210,7 +167,6 @@ function QuickPrepSection({ quickprep }) {
       {quickprep.notStarted.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 text-[11.5px]">
           <span className="font-semibold text-slate-500">Open to them, not started:</span>
-<<<<<<< Updated upstream
           {quickprep.notStarted.map((title) => <span key={title} className="rounded-full border border-dashed border-slate-300 px-2 py-0.5 text-slate-600 dark:border-gray-700 dark:text-slate-300">{title}</span>)}
         </div>
       )}
@@ -278,9 +234,6 @@ function AssessmentSection({ assessment }) {
         <div className="flex flex-wrap items-center gap-1.5 text-[11.5px]">
           <span className="font-semibold text-slate-500">Missed:</span>
           {assessment.missedTests.map((title) => <span key={title} className="rounded-full border border-dashed border-amber-300 px-2 py-0.5 text-amber-700 dark:border-amber-500/40 dark:text-amber-300">{title}</span>)}
-=======
-          {quickprep.notStarted.map((title) => <span key={title} className="rounded-full border border-dashed border-slate-300 px-2 py-0.5 text-slate-600 dark:border-white/15 dark:text-slate-300">{title}</span>)}
->>>>>>> Stashed changes
         </div>
       )}
     </Section>
@@ -347,7 +300,6 @@ export default function StudentDrawer({ studentId, range = "all", onClose }) {
             </div>
           </div>
 
-<<<<<<< Updated upstream
           {profile.prepScore && (
             <section aria-label="Prep Score" className="rounded-xl border border-slate-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
               <div className="flex items-center justify-between gap-3">
@@ -363,8 +315,6 @@ export default function StudentDrawer({ studentId, range = "all", onClose }) {
             </section>
           )}
 
-=======
->>>>>>> Stashed changes
           {highlights.length > 0 && (
             <section aria-label="What stands out" className="space-y-1.5">
               <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">What stands out</p>
@@ -380,16 +330,10 @@ export default function StudentDrawer({ studentId, range = "all", onClose }) {
             </section>
           )}
 
-<<<<<<< Updated upstream
           {profile.coding && <CodingSection coding={profile.coding} quickprep={profile.quickprep} />}
           {profile.learning && <LearningSection learning={profile.learning} />}
           {profile.interview && <InterviewSection interview={profile.interview} />}
           {profile.assessment && <AssessmentSection assessment={profile.assessment} />}
-=======
-          {profile.coding && <CodingSection coding={profile.coding} />}
-          {profile.quickprep && <QuickPrepSection quickprep={profile.quickprep} />}
-          {profile.learning && <LearningSection learning={profile.learning} />}
->>>>>>> Stashed changes
           <p className="text-center text-[10.5px] text-slate-400">Only this student's own work in {period.toLowerCase()} is shown. Students are never compared with each other here.</p>
         </div>
       )}

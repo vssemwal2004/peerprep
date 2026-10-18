@@ -18,10 +18,7 @@ export const OUTCOME_COLORS = Object.freeze({
   Solved: "#10b981", "Not solved": "#f43f5e",
   Finished: "#10b981", "In progress": "#0284c7", "Not started": "#cbd5e1",
   Passed: "#10b981", Failed: "#f43f5e", Missed: "#cbd5e1",
-<<<<<<< Updated upstream
   "Below 40%": "#f43f5e", "40–60%": "#7dd3fc", "60–80%": "#0ea5e9", "80–100%": "#0369a1",
-=======
->>>>>>> Stashed changes
   Mock: "#0284c7", AI: "#38bdf8",
   "Rated 1": "#e0f2fe", "Rated 2": "#bae6fd", "Rated 3": "#7dd3fc", "Rated 4": "#0ea5e9", "Rated 5": "#0369a1",
   AC: "#10b981", WA: "#f43f5e", TLE: "#f59e0b", RE: "#64748b", CE: "#94a3b8",

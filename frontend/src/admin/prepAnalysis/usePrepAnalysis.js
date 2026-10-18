@@ -1,11 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { prepAnalysisApi } from "./api";
-<<<<<<< Updated upstream
 import { switchArea, toQueryRequest } from "./filterModel";
 import { prepAnalysisStateFromSearch } from "./analysisPreset";
-=======
-import { normalizeState, switchArea, toQueryRequest } from "./filterModel";
->>>>>>> Stashed changes
 
 const STORAGE_KEY = "peerprep.prepAnalysis.v4";
 const OLD_STORAGE_KEY = "peerprep.prepAnalysis.v3";
@@ -33,11 +29,7 @@ export function usePrepAnalysis() {
   const stored = useMemo(readStored, []);
   const [catalog, setCatalog] = useState(null);
   const [catalogError, setCatalogError] = useState(null);
-<<<<<<< Updated upstream
   const [state, setState] = useState(() => prepAnalysisStateFromSearch(window.location.search, stored.state));
-=======
-  const [state, setState] = useState(() => normalizeState(stored.state));
->>>>>>> Stashed changes
   const [layouts, setLayouts] = useState(stored.layouts || {});
   const [table, setTableState] = useState(DEFAULT_TABLE);
   const [data, setData] = useState(null);

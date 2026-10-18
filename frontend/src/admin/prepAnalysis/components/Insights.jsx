@@ -5,11 +5,8 @@ import {
 import { DIFFICULTY_COLORS } from "../charts/chartTheme";
 import { LANGUAGE_LABELS } from "../charts/chartOptions";
 import { isKpiActive, kpiRule } from "../filterModel";
-<<<<<<< Updated upstream
 import { formatScore } from "../../../student/prepScore/formatScore";
 import { PrepCoin } from "../../../student/prepScore/PrepScore";
-=======
->>>>>>> Stashed changes
 import { initials, sectionStyle } from "./sectionStyles";
 import { Dialog, IconButton, focusRing } from "./ui";
 
@@ -17,11 +14,7 @@ const KPI_ICONS = {
   students: Users, active: Activity, solved: CheckCircle2, hard: Flame, accuracy: Target, stopped: PauseCircle,
   sheetStarted: ListChecks, sheetFinished: BadgeCheck, topics: BookOpenCheck, halfway: Flag, video: PlayCircle,
   mocks: MessagesSquare, ai: Bot, strong: Trophy, scheduled: CalendarClock, never: CircleDashed,
-<<<<<<< Updated upstream
   taken: ClipboardList, passed: CheckCircle2, passedStudents: CheckCircle2, passRate: Target, missed: XCircle, subjectDone: BadgeCheck,
-=======
-  taken: ClipboardList, passed: CheckCircle2, passRate: Target, missed: XCircle,
->>>>>>> Stashed changes
 };
 const BLANK = String.fromCharCode(160);
 
@@ -93,7 +86,6 @@ export function PercentBar({ value, color = "#0284c7", width = "w-20" }) {
   );
 }
 
-<<<<<<< Updated upstream
 /** Prep Coding's points, with how much each difficulty brings (the bar is that split, not a fraction of a maximum). */
 function ScoreCell({ row }) {
   const segments = ["Easy", "Medium", "Hard"].map((key) => ({ key, value: row.points?.[key] || 0 }));
@@ -105,16 +97,6 @@ function ScoreCell({ row }) {
       <div className="flex h-1.5 w-16 overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.06]"
         title={`${segments.map((segment) => `${segment.key} ${formatScore(segment.value)}`).join(" · ")} · quality ${formatScore(row.quality ?? 0)}%`}>
         {total > 0 && segments.map((segment) => <span key={segment.key} style={{ width: `${(segment.value / total) * 100}%`, backgroundColor: DIFFICULTY_COLORS[segment.key] }} />)}
-=======
-function ScoreCell({ row }) {
-  const segments = ["Easy", "Medium", "Hard"].map((key) => ({ key, value: row.points?.[key] || 0 }));
-  segments.push({ key: "Accuracy", value: row.points?.accuracy || 0 });
-  return (
-    <div className="flex items-center gap-2">
-      <span className="w-9 text-right text-[12px] font-bold tabular-nums text-slate-900 dark:text-white">{row.prepScore.toFixed(1)}</span>
-      <div className="flex h-1.5 w-20 overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.06]" title={segments.map((segment) => `${segment.key} ${segment.value}`).join(" · ")}>
-        {segments.map((segment) => <span key={segment.key} style={{ width: `${segment.value}%`, backgroundColor: DIFFICULTY_COLORS[segment.key] }} />)}
->>>>>>> Stashed changes
       </div>
     </div>
   );
@@ -159,7 +141,6 @@ const COLUMNS = {
     { label: "Tests", render: (row) => <StatusPill status={row.assessment?.status} /> },
   ],
 };
-<<<<<<< Updated upstream
 const scoreCell = (value) => (value === null || value === undefined ? "—" : (
   <span className="inline-flex items-center gap-1.5"><PrepCoin size={18} /><b className="tabular-nums text-slate-900 dark:text-white">{formatScore(value)}</b></span>
 ));
@@ -176,16 +157,6 @@ COLUMNS.all = [
   { ...COLUMNS.assessment[0], label: "Prep Assessment", sort: undefined },
 ];
 const POSITION_HINT = { coding: "Prep Score", learning: "course completed", interview: "Prep Score", assessment: "Prep Score", all: "overall Prep Score" };
-=======
-COLUMNS.all = [
-  COLUMNS.coding[0],
-  { label: "Course completed", sort: "learningProgress", render: (row) => (row.learning ? <PercentBar value={row.learning.progress} /> : "—") },
-  COLUMNS.interview[0],
-  COLUMNS.assessment[0],
-  COLUMNS.coding[3],
-];
-const POSITION_HINT = { coding: "Prep Score", learning: "course completed", interview: "mock score", assessment: "test score", all: "Prep Score" };
->>>>>>> Stashed changes
 
 export function StudentTable({ table, area, loading, onChange, onOpen }) {
   if (!table) return null;
@@ -255,44 +226,28 @@ export function StudentTable({ table, area, loading, onChange, onOpen }) {
   );
 }
 
-<<<<<<< Updated upstream
 /** Prep Score in plain words, with the live points and rules (PREP_SCORE_RULES). */
 export function ScoreHelpDialog({ open, onClose, formula }) {
   if (!open || !formula?.coding) return null;
   const { coding } = formula;
-=======
-/** Prep Score in plain words, with the live weights and targets. */
-export function ScoreHelpDialog({ open, onClose, formula }) {
-  if (!open || !formula) return null;
-  const { weights, targets } = formula;
->>>>>>> Stashed changes
   return (
     <Dialog open={open} onClose={onClose} size="max-w-lg" title="How to use Prep Analysis" subtitle="Every number belongs to one student and comes only from that student's own work.">
       <div className="space-y-3 p-4 text-[12.5px] leading-5 text-slate-600 dark:text-slate-300">
         <p className="font-bold text-slate-900 dark:text-white">Finding students</p>
         <ul className="list-disc space-y-1 pl-5">
-<<<<<<< Updated upstream
           <li>Press <b>Filters</b> and pick what to analyse: All, Prep Coding (with Quick Prep sheets), Prep Learning, Prep Interview or Prep Assessment.</li>
           <li>Under <b>Which students?</b> tap the options you want, e.g. Semester <b>5</b> and <b>6</b>, Prep Score <b>250–1,000</b>. Several options in one row mean any of them; different rows all apply together.</li>
           <li>Need a second kind of student too? Press <b>Add another group of students</b>: students who fit group A <b>or</b> group B are shown.</li>
           <li>Optionally show only the <b>Top</b> or <b>Bottom</b> students (a number or a %). The button at the bottom shows how many students match; press it to apply.</li>
-=======
-          <li>Press <b>Filters</b>. Step 1: choose the feature (All, Prep Coding, Prep Learning, Prep Interview, Prep Assessment). Step 2: conditions on that feature. Step 3: conditions on the students. Step 4: your own top / bottom rules.</li><li>Join conditions with <b>AND</b> (must match every one) or <b>OR</b> (may match any one). Add a group for combinations such as “Semester is 5 AND (Branch is CSE OR Branch is IT)”.</li><li>The button at the bottom shows how many students match; press it to apply.</li>
->>>>>>> Stashed changes
           <li>What is in use shows next to the Filters button: click it to change, or × to clear.</li>
           <li>The big numbers are shortcuts: click “Not practising” to see just those students; click again to undo.</li>
           <li>Click any student (in the table or a chart) to see their full profile.</li>
         </ul>
-<<<<<<< Updated upstream
         <p className="flex items-center gap-1.5 font-bold text-slate-900 dark:text-white"><PrepCoin size={18} />Prep Score: work points × quality, no maximum</p>
-=======
-        <p className="font-bold text-slate-900 dark:text-white">Prep Score (Prep Coding, 0–100)</p>
->>>>>>> Stashed changes
         <div className="grid grid-cols-3 gap-2">
           {["Easy", "Medium", "Hard"].map((key) => (
             <div key={key} className="rounded-lg border border-slate-200 px-3 py-2 dark:border-gray-700">
               <p className="text-[11px] font-bold" style={{ color: DIFFICULTY_COLORS[key] }}>{key}</p>
-<<<<<<< Updated upstream
               <p className="text-[11.5px]"><b className="text-slate-900 dark:text-white">{coding.points[key]}</b> point{coding.points[key] === 1 ? "" : "s"} per solve</p>
             </div>
           ))}
@@ -302,17 +257,6 @@ export function ScoreHelpDialog({ open, onClose, formula }) {
           <li><b>× Quality</b>, the student's own average. Coding: up to {coding.fairTriesPerSolve} submissions per solved problem are fair (the first {coding.starterSubmissions} are free); more lowers it. Interviews and tests: the average mark above the {formula.passMark}% pass mark (a failing attempt earns nothing).</li>
           <li><b>Overall Prep Score</b> = the average of the features your university uses. A well-prepared student earns about 500 in each feature; there is no maximum.</li>
         </ol>
-=======
-              <p className="text-[11.5px]">counts <b className="text-slate-900 dark:text-white">{weights[key]}</b></p>
-              <p className="text-[11.5px]">full at <b className="text-slate-900 dark:text-white">{targets[key]}</b> solved</p>
-            </div>
-          ))}
-        </div>
-        <ul className="list-disc space-y-1 pl-5">
-          <li>Harder problems count more; solving only Easy problems gives at most about {Math.round((weights.Easy / (weights.Easy + weights.Medium + weights.Hard)) * 85)} points.</li>
-          <li>{Math.round(formula.accuracyShare * 100)} points come from accuracy, building up over the first {formula.accuracyFullCreditSubmissions} submissions.</li>
-        </ul>
->>>>>>> Stashed changes
         <p><b className="text-slate-900 dark:text-white">Course completed (Prep Learning)</b>: topics a student completed out of the topics they can open (their semester and earlier).</p>
         <p><b className="text-slate-900 dark:text-white">Sheet progress (Quick Prep sheets, part of Prep Coding)</b>: questions solved out of all questions in the sheets the student started.</p>
       </div>

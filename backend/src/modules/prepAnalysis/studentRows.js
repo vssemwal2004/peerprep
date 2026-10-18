@@ -2,10 +2,7 @@
 // scores each student from their own work. Filters, rank cuts and charts all
 // read these rows, so one database pass serves every filter change for the period.
 
-<<<<<<< Updated upstream
 import { prepScores } from '../../services/prepScores.js';
-=======
->>>>>>> Stashed changes
 import { PASS_PERCENT, testAssignedTo } from './assessmentFacts.js';
 import { RATINGS } from './interviewFacts.js';
 import { accessibleSemesters } from './learningFacts.js';
@@ -101,11 +98,8 @@ function assessmentRow(student, facts, now, range) {
   const attempts = [...latest.values()];
   const percents = attempts.map((attempt) => attempt.percent);
   const passedIds = attempts.filter((attempt) => attempt.percent >= PASS_PERCENT).map((attempt) => attempt.testId);
-<<<<<<< Updated upstream
   // Report navigation must also work for a completed test that an admin later hides.
   const assignedIds = [...facts.tests.values()].filter((test) => test.forEveryone || test.assigned.has(id)).map((test) => test.id);
-=======
->>>>>>> Stashed changes
   // A missed test: meant for the student, over, (started in the period) and not taken.
   const inPeriod = (test) => !range?.from || !test.startTime || new Date(test.startTime) >= range.from;
   const missedIds = [...facts.tests.values()].filter((test) => test.ended && inPeriod(test) && testAssignedTo(test, id) && !latest.has(test.id)).map((test) => test.id);
@@ -122,10 +116,7 @@ function assessmentRow(student, facts, now, range) {
     lastScore: attempts.length ? attempts.at(-1).percent : 0,
     minutes: attempts.reduce((sum, attempt) => sum + attempt.minutes, 0),
     takenIds: attempts.map((attempt) => attempt.testId),
-<<<<<<< Updated upstream
     assignedIds,
-=======
->>>>>>> Stashed changes
     passedIds,
     missedIds,
     byTest: latest,
@@ -185,11 +176,7 @@ function emptyCoding() {
     attempted: 0, submissions: 0, accepted: 0, accuracy: 0, activeDays: 0,
     lastActiveAt: null, daysSinceActive: null, practiceStatus: 'never',
     languages: [], solvedTopics: [], solvedTags: [], solvedDifficulties: [],
-<<<<<<< Updated upstream
     prepScore: 0, work: 0, quality: 100, triesPerSolve: 0, points: { Easy: 0, Medium: 0, Hard: 0 },
-=======
-    prepScore: 0, progress: 0, points: { Easy: 0, Medium: 0, Hard: 0, accuracy: 0 },
->>>>>>> Stashed changes
   };
 }
 
@@ -197,7 +184,6 @@ function emptyCoding() {
  * students: lean User docs. facts.byStudent: Map(id -> [{ problemId, language, attempts, accepted }]).
  * facts.days: Map(id -> Map(day -> { attempts, accepted })). problems: indexed meta map.
  */
-<<<<<<< Updated upstream
 /** Prep Score per feature and overall, with the same formula students see on their dashboard. */
 export function rowScores(row, features) {
   const mocks = row.interview?.mocks || [];
@@ -215,10 +201,6 @@ export function rowScores(row, features) {
 export function buildStudentRows({
   students, facts, problems, batchNames = new Map(), now = new Date(), learning = null, quickprep = null, assessment = null, interview = null, range = null,
   scoreFeatures = { coding: true, learning: Boolean(learning), interview: Boolean(interview), assessment: Boolean(assessment) },
-=======
-export function buildStudentRows({
-  students, facts, problems, batchNames = new Map(), now = new Date(), learning = null, quickprep = null, assessment = null, interview = null, range = null,
->>>>>>> Stashed changes
 }) {
   const learningTotals = new Map();
   const rows = students.map((student) => {
@@ -259,13 +241,9 @@ export function buildStudentRows({
     coding.practiceStatus = coding.submissions === 0 ? 'never' : coding.daysSinceActive > INACTIVE_AFTER_DAYS ? 'inactive' : 'active';
     const score = prepScore({ solved: coding.solved, accepted: coding.accepted, attempts: coding.submissions });
     coding.prepScore = score.score;
-<<<<<<< Updated upstream
     coding.work = score.work;
     coding.quality = score.quality;
     coding.triesPerSolve = score.triesPerSolve;
-=======
-    coding.progress = score.progress;
->>>>>>> Stashed changes
     coding.points = score.points;
     coding.languages = [...languages];
     coding.solvedTopics = [...solvedTopics];
@@ -297,11 +275,7 @@ export function buildStudentRows({
       qualifiedCache: new Map(),
     };
   });
-<<<<<<< Updated upstream
   for (const row of rows) row.scores = rowScores(row, scoreFeatures);
-=======
-
->>>>>>> Stashed changes
   return rows;
 }
 

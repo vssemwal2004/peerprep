@@ -1317,11 +1317,7 @@ export default function AssessmentReports() {
                 return (
                   <button key={tab.id} onClick={() => {
                     if (tab.id === 'analytics') {
-<<<<<<< Updated upstream
                       navigate(assessmentAnalysisPath({ _id: selectedAssessmentId, title: selectedAssessment?.title }));
-=======
-                      navigate(`/admin/analysis/assessments${selectedAssessmentId ? `?assessmentIds=${encodeURIComponent(selectedAssessmentId)}` : ''}`);
->>>>>>> Stashed changes
                       return;
                     }
                     setActiveTab(tab.id);
