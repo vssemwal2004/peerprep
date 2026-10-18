@@ -59,7 +59,11 @@ export async function loadAssessmentFacts({ user, studentIds, range }) {
     match.$or = [{ submittedAt: window }, { status: 'expired', updatedAt: window }];
   }
   const rows = await AssessmentSubmission.find(match)
+<<<<<<< Updated upstream
     .select('studentId assessmentId status score maxMarks timeTakenSec submittedAt updatedAt createdAt')
+=======
+    .select('studentId assessmentId score maxMarks timeTakenSec submittedAt updatedAt createdAt')
+>>>>>>> Stashed changes
     .limit(MAX_SUBMISSIONS)
     .maxTimeMS(MAX_QUERY_MS)
     .lean();
@@ -71,7 +75,11 @@ export async function loadAssessmentFacts({ user, studentIds, range }) {
     const at = row.submittedAt || row.updatedAt || row.createdAt;
     const percent = Math.max(0, Math.min(100, (Number(row.score) / Number(row.maxMarks)) * 100));
     const list = byStudent.get(studentId) || [];
+<<<<<<< Updated upstream
     list.push({ testId: test.id, status: row.status, percent: Math.round(percent * 10) / 10, score: Number(row.score), maxMarks: Number(row.maxMarks), minutes: Math.round((Number(row.timeTakenSec) || 0) / 60), at });
+=======
+    list.push({ testId: test.id, percent: Math.round(percent * 10) / 10, score: Number(row.score), maxMarks: Number(row.maxMarks), minutes: Math.round((Number(row.timeTakenSec) || 0) / 60), at });
+>>>>>>> Stashed changes
     byStudent.set(studentId, list);
   }
   return { tests, byStudent };
