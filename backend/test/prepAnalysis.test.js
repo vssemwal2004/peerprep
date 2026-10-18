@@ -346,12 +346,13 @@ function interviewsAndTests() {
     ['t2', { id: 't2', title: 'Quiz 2', type: 'mcq', visible: true, ended: true, startTime: new Date('2026-09-15'), forEveryone: false, assigned: new Set(['s1', 's2']) }],
     ['t3', { id: 't3', title: 'Finals', type: 'mixed', visible: true, ended: false, startTime: new Date('2026-11-01'), forEveryone: true, assigned: new Set() }],
   ]);
-  const attempt = (testId, percent, at) => ({ testId, percent, score: percent / 2, maxMarks: 50, minutes: 20, at: new Date(at) });
+  const attempt = (testId, percent, at, status = 'submitted') => ({ testId, status, percent, score: percent / 2, maxMarks: 50, minutes: 20, at: new Date(at) });
   const assessment = {
     tests,
     byStudent: new Map([
       ['s1', [attempt('t1', 80, '2026-10-01'), attempt('t2', 30, '2026-10-05')]],
-      ['s2', [attempt('t1', 35, '2026-09-20')]],
+      // An expired attempt counts in the admin's test lists but not in the Prep Score (the student's dashboard ignores it too).
+      ['s2', [attempt('t1', 35, '2026-09-20', 'expired')]],
     ]),
   };
   const ratings = (value) => ({ communication: value, problemSolving: value, preparedness: value, attitude: value, integrity: value });
