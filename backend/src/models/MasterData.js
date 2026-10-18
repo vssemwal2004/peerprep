@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const MASTER_DATA_CATEGORIES = ['campus', 'branch', 'semester', 'course'];
@@ -67,4 +68,4 @@ masterDataSchema.pre('validate', function normalizeMasterData() {
 });
 
 export { MASTER_DATA_CATEGORIES };
-export default mongoose.model('MasterData', masterDataSchema);
+export default tenantModel(mongoose.model('MasterData', masterDataSchema));

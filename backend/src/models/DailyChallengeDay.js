@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 // A day's question is pinned, so catalog edits cannot change an already-running challenge.
@@ -7,4 +8,4 @@ const schema = new mongoose.Schema({
   source: { type: String, enum: ['university', 'shared'], default: 'university' },
 }, { timestamps: true });
 
-export default mongoose.model('DailyChallengeDay', schema);
+export default tenantModel(mongoose.model('DailyChallengeDay', schema));

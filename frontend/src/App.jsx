@@ -383,6 +383,7 @@ function AppContent() {
         }>
           <Routes>
             <Route path="/" element={<LandingPage />} />
+            <Route path="/universities" element={<Navigate to="/student" replace />} />
             <Route path="/student" element={<StudentLogin />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/privacy" element={<PrivacyPolicy />} />
@@ -590,7 +591,7 @@ function App() {
       <AuthProvider>
         <UniversityPolicyProvider>
           <ToastProvider>
-            <BrowserRouter>
+            <BrowserRouter basename={/^\/u\/([a-z0-9][a-z0-9-]{1,62})(?:\/|$)/.exec(window.location.pathname)?.[0]?.replace(/\/$/, '') || '/'}>
               <AppContent />
             </BrowserRouter>
           </ToastProvider>

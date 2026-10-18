@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 import { SUPPORTED_LANGUAGES } from './Problem.js';
 import { attachAdminAnalyticsInvalidation } from '../modules/adminAnalytics/adminAnalytics.invalidation.js';
@@ -142,7 +143,7 @@ attachAdminAnalyticsInvalidation(submissionSchema, {
   documentFilter: (doc) => doc.mode === 'submit' && ['AC', 'WA', 'TLE', 'RE', 'CE'].includes(doc.status),
 });
 
-export default mongoose.model('Submission', submissionSchema);
+export default tenantModel(mongoose.model('Submission', submissionSchema));
 
 
 

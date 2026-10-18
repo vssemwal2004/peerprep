@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const eventParticipantSchema = new mongoose.Schema({
@@ -30,4 +31,4 @@ eventParticipantSchema.index({ eventId: 1, studentId: 1 }, { unique: true });
 eventParticipantSchema.index({ eventId: 1, assignmentStatus: 1, createdAt: -1 });
 eventParticipantSchema.index({ studentId: 1, assignmentStatus: 1, eventId: 1 });
 
-export default mongoose.model('EventParticipant', eventParticipantSchema);
+export default tenantModel(mongoose.model('EventParticipant', eventParticipantSchema));

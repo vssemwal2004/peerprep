@@ -17,6 +17,7 @@ import QuestionPracticeAttempt from '../models/QuestionPracticeAttempt.js';
 import Semester from '../models/Subject.js';
 import { learningSemesters, sharedQuestions } from '../platform/sharedContent.js';
 import { isUniversity } from '../platform/deployment.js';
+import { currentTenant } from '../platform/tenantContext.js';
 import { universityPolicy } from '../platform/client.js';
 
 const DAY_MS = 86_400_000;
@@ -406,8 +407,8 @@ async function loadProgressRows(students, permissions, semesters, now, sharedCat
 async function loadRankRows(student, permissions, semesters, now, sharedCatalog = []) {
   const scope = universityCohort(student);
   if (!scope) return { rows: [], universityName: '' };
-  const universityName = String(student.college || (isUniversity() ? process.env.PEERPREP_UNIVERSITY_NAME || process.env.PEERPREP_UNIVERSITY_ID : '')).trim();
-  const key = JSON.stringify({ scope, permissions, challenges: challengeRankRevision, shared: sharedCatalog.map((row) => [String(row._id), row.difficulty]) });
+  const universityName = String(student.college || (isUniversity() ? currentTenant()?.universityId || process.env.PEERPREP_UNIVERSITY_NAME || process.env.PEERPREP_UNIVERSITY_ID : '')).trim();
+  const key = JSON.stringify({ universityId: currentTenant()?.universityId || 'platform', scope, permissions, challenges: challengeRankRevision, shared: sharedCatalog.map((row) => [String(row._id), row.difficulty]) });
   const cached = rankCache.get(key);
   if (cached && now.getTime() - cached.at < cacheLifetimeMs) return cached.value;
   if (rankLoads.has(key)) return rankLoads.get(key);

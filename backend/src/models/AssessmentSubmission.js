@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 import { attachAdminAnalyticsInvalidation } from '../modules/adminAnalytics/adminAnalytics.invalidation.js';
 
@@ -124,5 +125,5 @@ attachAdminAnalyticsInvalidation(assessmentSubmissionSchema, {
   documentFilter: (doc) => ['submitted', 'violation', 'expired'].includes(doc.status),
 });
 
-export default mongoose.model('AssessmentSubmission', assessmentSubmissionSchema);
+export default tenantModel(mongoose.model('AssessmentSubmission', assessmentSubmissionSchema));
 

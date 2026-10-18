@@ -1,10 +1,11 @@
 import { createInterviewServiceToken } from "./interviewServiceAuth.js";
+import { interviewServiceUrl, interviewServiceSecret } from './interviewServiceConfig.js';
 
 export function interviewServiceConfigured() {
-  if (!process.env.INTERVIEW_SERVICE_URL || !process.env.INTERVIEW_SERVICE_SECRET || process.env.INTERVIEW_SERVICE_SECRET.length < 32)
+  if (!interviewServiceUrl() || !interviewServiceSecret() || interviewServiceSecret().length < 32)
     return false;
   try {
-    const base = new URL(process.env.INTERVIEW_SERVICE_URL);
+    const base = new URL(interviewServiceUrl());
     return ["http:", "https:"].includes(base.protocol)
       && (process.env.NODE_ENV !== "production" || base.protocol === "https:")
       && !base.username && !base.password && !base.search && !base.hash
@@ -18,7 +19,7 @@ export async function forwardInterviewRequest(req, res) {
 
   let destination;
   try {
-    const base = new URL(process.env.INTERVIEW_SERVICE_URL);
+    const base = new URL(interviewServiceUrl());
     destination = new URL(`/internal/ai-interviews${req.path === "/" ? "" : req.path}`, base);
   } catch {
     return res.status(503).json({ error: "Interview service URL is invalid." });
@@ -56,7 +57,7 @@ export async function forwardInterviewMedia(req, res) {
     return res.status(415).json({ error: "Unsupported recording format." });
   if (isUpload && Number(req.get("Content-Length") || 0) > 8 * 1024 * 1024)
     return res.status(413).json({ error: "Recording is too large." });
-  const destination = new URL(`/internal/ai-interviews${req.path}`, process.env.INTERVIEW_SERVICE_URL);
+  const destination = new URL(`/internal/ai-interviews${req.path}`, interviewServiceUrl());
   try {
     const upstream = await fetch(destination, {
       method: req.method,

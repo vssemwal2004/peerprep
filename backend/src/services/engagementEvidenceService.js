@@ -13,6 +13,7 @@ import { buildCurriculumTopicMap, getSharedCodingCatalog, publicProblemMatch, pu
 import { learningSemesters, sharedAssessments } from '../platform/sharedContent.js';
 import { interviewServiceConfigured } from './interviewServiceClient.js';
 import { createInterviewServiceToken } from './interviewServiceAuth.js';
+import { interviewServiceUrl } from './interviewServiceConfig.js';
 import { dayKey } from './adaptiveEngagementRules.js';
 
 const aggregate = (model, pipeline) => model.aggregate(pipeline).option({ maxTimeMS: 8000 });
@@ -39,7 +40,7 @@ export async function loadEvidenceAndCandidates(scope, student, domains, now, pr
     has('assessments') ? Promise.all([Assessment.find({ lifecycleStatus: { $ne: 'draft' }, isVisible: { $ne: false }, $or: [{ targetType: 'all' }, { assignedStudents: student._id }] }).select('_id title targetType assignedStudents audienceType startTime endTime duration manuallyCompletedAt').maxTimeMS(8000).lean(), sharedAssessments()]).then(([a, b]) => [...a, ...b]) : [],
     has('assessments') ? AssessmentSubmission.find({ studentId: student._id }).select('assessmentId status evaluationStatus submittedAt score maxMarks').maxTimeMS(8000).lean() : [],
     has('events') ? Pair.find({ interviewee: student._id, status: { $in: ['scheduled', 'completed'] } }).select('_id event interviewer status finalConfirmedTime scheduledAt').maxTimeMS(8000).lean() : [],
-    has('interviews') && interviewServiceConfigured() ? fetch(new URL('/internal/ai-interviews', process.env.INTERVIEW_SERVICE_URL), {
+    has('interviews') && interviewServiceConfigured() ? fetch(new URL('/internal/ai-interviews', interviewServiceUrl()), {
       headers: { Authorization: `Bearer ${createInterviewServiceToken(student._id)}` }, signal: AbortSignal.timeout(5000),
     }).then(async (response) => response.ok ? await response.json() : []).catch(() => []) : [],
   ]);

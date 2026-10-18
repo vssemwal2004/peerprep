@@ -2,6 +2,8 @@
 import { ResilientRateLimitStore } from './resilientRateLimitStore.js';
 import { getValkeyClient, isValkeyEnabled } from '../utils/valkey.js';
 import { verifyToken } from '../utils/jwt.js';
+import { currentTenant } from '../platform/tenantContext.js';
+import { verifiedSharedInternalRequest } from '../platform/internalAuth.js';
 
 /**
  * SECURITY: Rate Limiting Middleware
@@ -40,7 +42,7 @@ const MAX_TRACKED_EMAILS = 10000; // Maximum emails to track (prevents memory ex
  * each student's traffic is isolated from other students.
  */
 function getRateLimitUserId(req) {
-  if (req.user?._id) return String(req.user._id);
+  if (req.user?._id) return `${req.user.universityId || 'platform'}:${req.user._id}`;
 
   const cookieToken = req.cookies?.accessToken;
   const authorization = req.headers?.authorization || '';
@@ -52,7 +54,7 @@ function getRateLimitUserId(req) {
 
   try {
     const payload = verifyToken(token);
-    return payload?.sub ? String(payload.sub) : '';
+    return payload?.sub ? `${payload.tenantId || 'legacy'}:${payload.sub}` : '';
   } catch {
     return '';
   }
@@ -65,7 +67,8 @@ function getClientIp(req) {
 export function getRateLimitKey(req) {
   const userId = getRateLimitUserId(req);
   const clientIp = getClientIp(req);
-  return userId ? `user:${userId}:ip:${clientIp}` : `ip:${clientIp}`;
+  const universityId = /^\/api\/u\/([a-z0-9][a-z0-9-]{1,62})(?:\/|$)/.exec(req.originalUrl || '')?.[1] || 'platform';
+  return userId ? `user:${userId}:ip:${clientIp}` : `university:${universityId}:ip:${clientIp}`;
 }
 
 function getRequestIdentifier(req) {
@@ -115,7 +118,7 @@ setInterval(() => {
 export function checkEmailResetLimit(email) {
   if (!email) return { allowed: true, remainingAttempts: EMAIL_RESET_MAX_ATTEMPTS, resetTime: 0 };
   
-  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedEmail = `${currentTenant()?.universityId || 'platform'}:${email.trim().toLowerCase()}`;
   const now = Date.now();
   const data = emailResetAttempts.get(normalizedEmail);
   
@@ -153,7 +156,7 @@ export function checkEmailResetLimit(email) {
 export function recordEmailResetAttempt(email) {
   if (!email) return;
   
-  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedEmail = `${currentTenant()?.universityId || 'platform'}:${email.trim().toLowerCase()}`;
   const now = Date.now();
   const data = emailResetAttempts.get(normalizedEmail);
   
@@ -297,7 +300,8 @@ export const apiLimiter = rateLimit({
   // second would exhaust this shared budget and lock the student out of the whole API.
   skip: (req) => req.path === '/health'
     || req.path === '/api/health'
-    || (req.method === 'GET' && req.path.startsWith('/results/')),
+    || verifiedSharedInternalRequest(req)
+    || (req.method === 'GET' && /^\/(?:u\/[a-z0-9-]+\/)?results\//.test(req.path)),
   store: buildRateLimitStore('rl:api:'),
   handler: (req, res) => {
     console.warn(`[SECURITY] API rate limit exceeded for ${req.ip} on ${req.path}`);

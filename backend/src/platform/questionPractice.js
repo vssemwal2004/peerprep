@@ -19,6 +19,7 @@ import { prepareFunctionSourceForExecution } from '../services/functionProblemAd
 import { compilerExecutionLimiter } from '../middleware/rateLimiter.js';
 import { sharedQuestions, sharedJudgeData } from './sharedContent.js';
 import { isUniversity } from './deployment.js';
+import { currentTenant } from './tenantContext.js';
 import { universityPolicy, controlRequest } from './client.js';
 import { problemUsedInAssessment, serializeProblem, studentFailedCase } from '../controllers/compilerHelpers.js';
 import { interviewReportOptions, interviewReportSummaries, reporterKey, saveInterviewReport } from './interviewQuestionReports.js';
@@ -78,9 +79,9 @@ const NO_ORDER = 2147483647;
 // The page offers 25, 50 or 100 rows; the coding workspace's problem navigator asks for 200.
 export const PRACTICE_LIST_MAX_LIMIT = 200;
 const FACET_CACHE_MS = 30_000;
-let facetCache = null;
+const facetCaches = new Map();
 
-export function resetPracticeListCache() { facetCache = null; }
+export function resetPracticeListCache() { facetCaches.clear(); }
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const exactText = (value) => new RegExp(`^${escapeRegExp(value)}$`, 'i');
@@ -177,14 +178,16 @@ async function questionsByIds(ids) {
 
 /** Topic and company counts read only tag fields, and are reused for a short while across students. */
 async function localFacetRows() {
+  const key = currentTenant()?.universityId || 'platform';
+  const facetCache = facetCaches.get(key);
   if (facetCache && facetCache.until > Date.now()) return facetCache.rows;
   const rows = await QuestionLibrary.find(published).select(FACET_FIELDS).lean();
-  facetCache = { rows, until: Date.now() + FACET_CACHE_MS };
+  facetCaches.set(key, { rows, until: Date.now() + FACET_CACHE_MS });
   return rows;
 }
 
 const scopeFor = (source) => isUniversity() && source === 'university'
-  ? `university:${process.env.PEERPREP_UNIVERSITY_ID}` : 'control';
+  ? `university:${currentTenant()?.universityId || process.env.PEERPREP_UNIVERSITY_ID}` : 'control';
 
 async function reportSummaries(questionId = null) {
   if (isUniversity()) {
@@ -229,7 +232,7 @@ router.post('/:source/:id/interview-reports', asyncRoute(async (req, res) => {
   ]);
   if (!practiceSolved && !codingSolved) throw new HttpError(403, 'Solve this question before reporting an interview');
   const scopeKey = scopeFor(practiceSource);
-  const reporter = reporterKey(isUniversity() ? process.env.PEERPREP_UNIVERSITY_ID : 'control', req.user._id);
+  const reporter = reporterKey(isUniversity() ? currentTenant()?.universityId || process.env.PEERPREP_UNIVERSITY_ID : 'control', req.user._id);
   const payload = { ...req.body, scopeKey, questionId: String(question._id), reporterKey: reporter };
   const saved = isUniversity()
     ? await controlRequest('question-interviews', { method: 'POST', body: payload })

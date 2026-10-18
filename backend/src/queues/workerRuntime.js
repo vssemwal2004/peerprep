@@ -2,6 +2,9 @@ import { Worker } from 'bullmq';
 import { assertLegacyQueuesDrained, assertQueueServer, createQueueConnection, queuePrefix, DEFAULT_ATTEMPTS } from './queueManager.js';
 import { positiveInteger, withDeadline } from '../utils/valkey.js';
 import { startWorkerEmitter, closeRealtime } from '../utils/realtime.js';
+import { deploymentRole } from '../platform/deployment.js';
+import { getTenant } from '../platform/tenantConnections.js';
+import { runForPlatform, runForTenant } from '../platform/tenantContext.js';
 
 const workers = new Set();
 
@@ -25,7 +28,14 @@ export async function startQueueWorker({ queueName, concurrency = 5, processJob 
   } catch (error) { connection.disconnect(); throw error; }
   const active = new Set();
   const worker = new Worker(queueName, (job) => {
-    const processing = Promise.resolve().then(() => processJob(toApplicationJob(job)));
+    const processing = Promise.resolve().then(async () => {
+      if (deploymentRole() !== 'shared') return processJob(toApplicationJob(job));
+      const universityId = job.data.universityId;
+      if (!universityId) throw new Error('Shared worker job is missing university ID');
+      if (universityId === 'platform') return runForPlatform(() => processJob(toApplicationJob(job)));
+      const tenant = await getTenant(universityId);
+      return runForTenant(tenant, () => processJob(toApplicationJob(job)));
+    });
     active.add(processing);
     return processing.finally(() => active.delete(processing));
   }, {

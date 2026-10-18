@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const pairSchema = new mongoose.Schema({
@@ -32,4 +33,4 @@ pairSchema.pre('save', async function(next) {
   next();
 });
 
-export default mongoose.model('Pair', pairSchema);
+export default tenantModel(mongoose.model('Pair', pairSchema));

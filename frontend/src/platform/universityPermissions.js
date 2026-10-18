@@ -1,5 +1,6 @@
-export const isUniversityDeployment = import.meta.env?.VITE_PEERPREP_DEPLOYMENT_ROLE === 'university';
-export const isControlDeployment = import.meta.env?.VITE_PEERPREP_DEPLOYMENT_ROLE === 'control';
+const universityPath = typeof window !== 'undefined' && /^\/u\/[a-z0-9][a-z0-9-]{1,62}(?:\/|$)/.test(window.location.pathname);
+export const isUniversityDeployment = universityPath;
+export const isControlDeployment = !universityPath;
 // QuickPreps are designed only by the super admin (central platform) or a standalone install's admin.
 export const canAuthorQuickPrep = !isUniversityDeployment;
 const QUICKPREP_ADMIN_PATH = /^\/admin\/(?:quests|quickprep)(?:\/|$)/;

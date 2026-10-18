@@ -12,6 +12,9 @@ import { apiRequestTimeout } from './middleware/requestTimeout.js';
 import { requestPerformance } from './middleware/requestPerformance.js';
 import { readDependencyHealth, readinessFromDependencies } from './services/dependencyHealthService.js';
 import { enforceUniversityPolicy } from './platform/enforcePolicy.js';
+import { deploymentRole } from './platform/deployment.js';
+import { getTenant, validUniversityId } from './platform/tenantConnections.js';
+import { runForTenant } from './platform/tenantContext.js';
 
 const app = express();
 
@@ -144,7 +147,7 @@ if (process.env.NODE_ENV === 'production') {
     skip: (req, res) => {
       if (logNoisyAssessmentRequests || res.statusCode >= 400) return false;
       if ((req.originalUrl || '').startsWith('/api/health')) return true;
-      return /^\/api\/student\/assessment\/[0-9a-f]{24}\/(?:heartbeat|monitoring)(?:\?|$)/i.test(req.originalUrl || '');
+      return /^\/api\/(?:u\/[a-z0-9-]+\/)?student\/assessment\/[0-9a-f]{24}\/(?:heartbeat|monitoring)(?:\?|$)/i.test(req.originalUrl || '');
     },
   }));
 } else {
@@ -167,9 +170,19 @@ app.get('/api/health/ready', async (req, res) => {
 
 // General API rate limiting (generous limits)
 app.use('/api', apiLimiter);
-app.use('/api', enforceUniversityPolicy);
-
-app.use('/api', routes);
+if (deploymentRole() === 'shared') {
+  app.use('/api/u/:universityId', async (req, res, next) => {
+    if (!validUniversityId(req.params.universityId)) return next(new HttpError(404, 'University not found'));
+    try {
+      const tenant = await getTenant(req.params.universityId);
+      req.universityId = tenant.universityId;
+      return runForTenant(tenant, next);
+    } catch {
+      return next(new HttpError(503, 'University is unavailable'));
+    }
+  }, enforceUniversityPolicy, routes);
+}
+app.use('/api', enforceUniversityPolicy, routes);
 
 app.use(notFound);
 app.use(errorHandler);

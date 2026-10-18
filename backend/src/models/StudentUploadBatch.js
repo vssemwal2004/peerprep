@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const studentUploadBatchSchema = new mongoose.Schema({
@@ -37,4 +38,4 @@ studentUploadBatchSchema.index(
   { unique: true, partialFilterExpression: { sourceAssessmentId: { $type: 'objectId' } } },
 );
 
-export default mongoose.model('StudentUploadBatch', studentUploadBatchSchema);
+export default tenantModel(mongoose.model('StudentUploadBatch', studentUploadBatchSchema));

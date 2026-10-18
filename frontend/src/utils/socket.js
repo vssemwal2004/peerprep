@@ -27,6 +27,7 @@ class SocketService {
     // Prevents XSS attacks from stealing tokens stored in JavaScript
     const SOCKET_URL = getSocketURL();
     this.socket = io(SOCKET_URL, {
+      auth: { universityId: /^\/u\/([a-z0-9][a-z0-9-]{1,62})(?:\/|$)/.exec(window.location.pathname)?.[1] || 'platform' },
       transports: ['websocket', 'polling'],
       autoConnect: true,
       reconnection: true,

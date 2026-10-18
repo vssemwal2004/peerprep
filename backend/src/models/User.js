@@ -1,3 +1,4 @@
+import { tenantModel, currentTenant } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 import bcrypt from 'bcrypt';
 import { attachAdminAnalyticsInvalidation } from '../modules/adminAnalytics/adminAnalytics.invalidation.js';
@@ -110,6 +111,7 @@ userSchema.statics.hashPassword = async function (pw) {
 
 // SECURITY: Invalidate password reset tokens when password changes
 userSchema.pre('save', function(next) {
+  this.$locals.syncLoginIdentity = this.isNew || this.isModified('email');
   if (this.isModified('passwordHash') && !this.isNew) {
     // Password was changed - invalidate all reset tokens
     this.passwordChangedAt = new Date();
@@ -120,4 +122,21 @@ userSchema.pre('save', function(next) {
   next();
 });
 
-export default mongoose.model('User', userSchema);
+// Main-domain login routes email to a university. Keep only a keyed email
+// digest in the main database; student records and passwords stay local.
+userSchema.post('save', async function(doc) {
+  if (!currentTenant() || !this.$locals.syncLoginIdentity) return;
+  const { syncTenantLoginIdentity } = await import('../platform/loginDirectory.js');
+  await syncTenantLoginIdentity(doc);
+});
+
+userSchema.post('findOneAndUpdate', async function(doc) {
+  const update = this.getUpdate() || {};
+  const emailChanged = Object.hasOwn(update, 'email') || Object.hasOwn(update.$set || {}, 'email') || Object.hasOwn(update.$unset || {}, 'email');
+  if (!currentTenant() || !doc || !emailChanged) return;
+  const fresh = await this.model.findById(doc._id).select('_id email').lean();
+  const { syncTenantLoginIdentity } = await import('../platform/loginDirectory.js');
+  await syncTenantLoginIdentity(fresh || { _id: doc._id, email: '' });
+});
+
+export default tenantModel(mongoose.model('User', userSchema));

@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { deploymentRole } from '../platform/deployment.js';
 import { verifyDeploymentDatabaseIdentity } from '../platform/dbIdentity.js';
+import { closeTenantConnections } from '../platform/tenantConnections.js';
 
 let memServer;
 
@@ -80,6 +81,7 @@ export async function connectDb({ allowMemoryFallback = true } = {}) {
 
 export async function closeDb() {
   try {
+    await closeTenantConnections();
     if (mongoose.connection?.readyState && mongoose.connection.readyState !== 0) {
       await mongoose.disconnect();
     }

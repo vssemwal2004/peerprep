@@ -80,7 +80,7 @@ function engagementFixture() {
 }
 
 before(async () => {
-  dom = new JSDOM('<!doctype html><html><body><div id="app"></div></body></html>', { url: 'http://localhost:5173/student/dashboard' });
+  dom = new JSDOM('<!doctype html><html><body><div id="app"></div></body></html>', { url: 'http://localhost:5173/u/test-university/student/dashboard' });
   for (const key of ['window', 'document', 'navigator', 'HTMLElement', 'localStorage']) {
     Object.defineProperty(globalThis, key, { configurable: true, writable: true, value: dom.window[key] });
   }
@@ -89,7 +89,6 @@ before(async () => {
   ({ createRoot } = await import('react-dom/client'));
   server = await createServer({
     root: fileURLToPath(new URL('..', import.meta.url)),
-    define: { 'import.meta.env.VITE_PEERPREP_DEPLOYMENT_ROLE': JSON.stringify('university') },
     server: { middlewareMode: true, hmr: false, ws: false }, appType: 'custom',
     optimizeDeps: { noDiscovery: true, include: [] },
   });

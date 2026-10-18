@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const eventSchema = new mongoose.Schema({
@@ -37,4 +38,4 @@ eventSchema.index({ coordinatorId: 1, createdAt: -1 });
 eventSchema.index({ status: 1, createdAt: -1 });
 eventSchema.index({ allowedParticipants: 1, createdAt: -1 });
 
-export default mongoose.model('Event', eventSchema);
+export default tenantModel(mongoose.model('Event', eventSchema));

@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const schema = new mongoose.Schema({
@@ -23,4 +24,4 @@ schema.index({ submissionId: 1, at: -1 });
 schema.index({ submissionId: 1, attemptGeneration: 1, _id: -1 });
 schema.index({ assessmentId: 1, kind: 1, at: -1 });
 schema.index({ studentId: 1 });
-export default mongoose.model('AssessmentEvent', schema);
+export default tenantModel(mongoose.model('AssessmentEvent', schema));

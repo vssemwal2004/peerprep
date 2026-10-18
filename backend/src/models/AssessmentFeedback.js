@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const assessmentFeedbackSchema = new mongoose.Schema({
@@ -33,4 +34,4 @@ assessmentFeedbackSchema.index({ assessmentId: 1, studentId: 1 }, { unique: true
 assessmentFeedbackSchema.index({ assessmentId: 1, createdAt: -1 });
 assessmentFeedbackSchema.index({ studentId: 1, createdAt: -1 });
 
-export default mongoose.model('AssessmentFeedback', assessmentFeedbackSchema);
+export default tenantModel(mongoose.model('AssessmentFeedback', assessmentFeedbackSchema));

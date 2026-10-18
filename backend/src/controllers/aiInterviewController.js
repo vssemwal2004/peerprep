@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { currentTenant } from "../platform/tenantContext.js";
 import AIInterview from "../models/AIInterview.js";
 import Resource from "../models/AIInterviewResource.js";
 import QuestionLibrary from "../models/QuestionLibrary.js";
@@ -398,7 +399,7 @@ export async function deleteInterview(req, res) {
     error(409, "INVALID_LIFECYCLE", "Restore before deleting.");
   // Session documents are written by the separate interview service. Keep
   // this read-only guard so admins cannot delete a definition in active use.
-  if (await mongoose.connection.collection("aiinterviewsessions").findOne(
+  if (await (currentTenant()?.connection || mongoose.connection).collection("aiinterviewsessions").findOne(
     { interviewId: current._id }, { projection: { _id: 1 } },
   ))
     error(409, "HAS_STUDENT_SESSIONS", "This interview has student sessions and cannot be deleted. Archive it instead.");

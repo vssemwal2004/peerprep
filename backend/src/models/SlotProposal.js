@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const slotProposalSchema = new mongoose.Schema({
@@ -20,4 +21,4 @@ const slotProposalSchema = new mongoose.Schema({
 
 slotProposalSchema.index({ event: 1, pair: 1, user: 1 }, { unique: true });
 
-export default mongoose.model('SlotProposal', slotProposalSchema);
+export default tenantModel(mongoose.model('SlotProposal', slotProposalSchema));

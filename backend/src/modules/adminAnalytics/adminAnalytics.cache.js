@@ -1,7 +1,9 @@
 import crypto from 'crypto';
 import { getValkeyClient } from '../../utils/valkey.js';
+import { currentTenant } from '../../platform/tenantContext.js';
 
 const CACHE_NAMESPACE = 'peerprep:admin-analytics:v2';
+const namespace = () => `${CACHE_NAMESPACE}:${currentTenant()?.universityId || 'platform'}`;
 const CACHE_SCHEMA_VERSION = 1;
 const memoryCache = new Map();
 const inFlight = new Map();
@@ -28,7 +30,7 @@ function clone(value) {
 }
 
 function storageKey(version, key) {
-  return `${CACHE_NAMESPACE}:${version}:${key}`;
+  return `${namespace()}:${version}:${key}`;
 }
 
 async function valkeyCommand(args) {
@@ -39,7 +41,7 @@ async function valkeyCommand(args) {
 }
 
 async function readVersion() {
-  const shared = await valkeyCommand(['GET', `${CACHE_NAMESPACE}:version`]);
+  const shared = await valkeyCommand(['GET', `${namespace()}:version`]);
   return shared == null ? localVersion : Math.max(1, Number(shared) || 1);
 }
 
@@ -85,6 +87,7 @@ function attachMetadata(payload, status, source, entry, version) {
 export function analyticsAuthorizationScope(user = {}) {
   const permissions = Array.isArray(user.coordinatorPermissions) ? [...user.coordinatorPermissions].sort() : [];
   const raw = JSON.stringify({
+    universityId: currentTenant()?.universityId || 'platform',
     id: String(user._id || user.id || ''), role: String(user.role || ''),
     coordinatorId: String(user.coordinatorId || ''), dataScope: String(user.coordinatorDataScope || ''),
     college: String(user.college || ''), permissions,
@@ -141,8 +144,8 @@ export async function withAdminAnalyticsCache({ key, scopeHash, loader, bypass =
 }
 
 export async function invalidateAdminAnalyticsCache() {
-  let sharedVersion = await valkeyCommand(['INCR', `${CACHE_NAMESPACE}:version`]);
-  if (Number(sharedVersion) === 1) sharedVersion = await valkeyCommand(['INCR', `${CACHE_NAMESPACE}:version`]);
+  let sharedVersion = await valkeyCommand(['INCR', `${namespace()}:version`]);
+  if (Number(sharedVersion) === 1) sharedVersion = await valkeyCommand(['INCR', `${namespace()}:version`]);
   localVersion = sharedVersion == null ? localVersion + 1 : Math.max(2, Number(sharedVersion) || 2);
   lastInvalidatedAt = new Date().toISOString();
   memoryCache.clear();

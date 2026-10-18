@@ -1,5 +1,11 @@
 # Per-category database routing
 
+> Historical design note. Production now uses one frontend and one shared
+> backend with a separate database per university. See
+> [the current deployment guide](SHARED_UNIVERSITY_DEPLOYMENT.md). The
+> university deployment and broad per-category source switches described below
+> are not production instructions.
+
 ## Agreed rules
 
 - The super admin chooses `university` or `shared` for each data category, separately for each university. A default policy supplies choices for new universities.

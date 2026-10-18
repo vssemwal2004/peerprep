@@ -46,6 +46,7 @@ export function cacheJsonResponse({ namespace, ttlSeconds = 30, keyBuilder = def
 
 export function invalidateResponseCache(namespaces) {
   return function invalidateResponseCacheMiddleware(req, res, next) {
+    if (isUniversity()) return next();
     let invalidated = false;
     const invalidateOnce = async () => {
       if (invalidated) return;

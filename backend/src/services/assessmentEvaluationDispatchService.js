@@ -5,6 +5,7 @@ import Notification from '../models/Notification.js';
 import { enqueueAssessmentCodingEvaluationJobs } from './compilerExecutionWorkflowService.js';
 import { mutateAssessmentSubmission } from './assessmentPersistenceService.js';
 import { getIo } from '../utils/io.js';
+import { personalRoom } from '../utils/realtime.js';
 import { requestAssessmentReportRefresh } from './assessmentReportSummaryService.js';
 
 const LEASE_MS = 120_000;
@@ -27,7 +28,7 @@ async function ensureSubmissionNotification(submission) {
   };
   try {
     const result = await Notification.updateOne({ _id: id }, { $setOnInsert: fields }, { upsert: true });
-    if (result.upsertedCount) getIo()?.to(String(submission.studentId)).emit('new_notification', { ...fields, _id: id });
+    if (result.upsertedCount) getIo()?.to(personalRoom(submission.studentId)).emit('new_notification', { ...fields, _id: id });
   } catch (error) {
     if (error?.code !== 11000) throw error;
   }

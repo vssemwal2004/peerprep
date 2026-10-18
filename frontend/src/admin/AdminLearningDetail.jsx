@@ -1,3 +1,4 @@
+import { isUniversityDeployment } from '../platform/universityPermissions';
 import { difficultyTheme } from '../utils/difficultyTheme';
 import { useState, useEffect } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
@@ -83,7 +84,7 @@ export default function AdminLearningDetail() {
   const [sharedLearning, setSharedLearning] = useState(false);
 
   useEffect(() => {
-    if (import.meta.env.VITE_PEERPREP_DEPLOYMENT_ROLE === 'university') {
+    if (isUniversityDeployment) {
       api.universityPolicy().then((policy) => setSharedLearning(policy.sources?.learning === 'shared')).catch(() => {});
     }
   }, []);

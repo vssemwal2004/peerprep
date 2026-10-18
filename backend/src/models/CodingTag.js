@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const codingTagSchema = new mongoose.Schema({
@@ -10,4 +11,4 @@ const codingTagSchema = new mongoose.Schema({
 
 codingTagSchema.index({ status: 1, name: 1 });
 
-export default mongoose.model('CodingTag', codingTagSchema);
+export default tenantModel(mongoose.model('CodingTag', codingTagSchema));

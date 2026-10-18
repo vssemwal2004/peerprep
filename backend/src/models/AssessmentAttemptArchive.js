@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 // Retakes must not destroy the previous accepted answers/receipt/results.
@@ -9,4 +10,4 @@ const schema = new mongoose.Schema({
   snapshot: { type: mongoose.Schema.Types.Mixed, required: true },
 }, { timestamps: true });
 schema.index({ submissionId: 1, attemptGeneration: 1 }, { unique: true });
-export default mongoose.model('AssessmentAttemptArchive', schema);
+export default tenantModel(mongoose.model('AssessmentAttemptArchive', schema));

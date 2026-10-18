@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const goalSchema = new mongoose.Schema({
@@ -23,4 +24,4 @@ schema.index({ studentId: 1, kind: 1, periodKey: 1 }, { unique: true });
 schema.index({ studentId: 1, earnedAt: -1 });
 schema.index({ studentId: 1, kind: 1, endsAt: -1 });
 
-export default mongoose.model('StudentChallenge', schema);
+export default tenantModel(mongoose.model('StudentChallenge', schema));

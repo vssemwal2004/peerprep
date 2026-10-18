@@ -27,7 +27,7 @@ before(async () => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   globalThis.fetch = async () => { throw new Error('Unexpected live request in suggested companies test'); };
   ({ createRoot } = await import('react-dom/client'));
-  server = await createServer({ root: fileURLToPath(new URL('..', import.meta.url)), define: { 'import.meta.env.VITE_PEERPREP_DEPLOYMENT_ROLE': JSON.stringify('control') },
+  server = await createServer({ root: fileURLToPath(new URL('..', import.meta.url)),
     server: { middlewareMode: true, hmr: false, ws: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
   api = (await server.ssrLoadModule('/src/utils/api.js')).api;
   Page = (await server.ssrLoadModule('/src/admin/companies/SuggestedCompanies.jsx')).default;

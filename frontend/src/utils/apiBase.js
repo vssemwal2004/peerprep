@@ -39,12 +39,14 @@ export function getDefaultApiOrigin() {
 
 export function getApiBase() {
   const explicitBase = trimTrailingSlash(import.meta.env.VITE_API_BASE);
-  if (explicitBase) return explicitBase;
+  const tenantPrefix = typeof window !== 'undefined'
+    ? /^\/u\/([a-z0-9][a-z0-9-]{1,62})(?:\/|$)/.exec(window.location.pathname)?.[1] : null;
+  if (explicitBase) return tenantPrefix ? `${explicitBase}/u/${tenantPrefix}` : explicitBase;
 
   const explicitOrigin = normalizeOrigin(import.meta.env.VITE_API_URL);
-  if (explicitOrigin) return `${explicitOrigin}/api`;
+  if (explicitOrigin) return `${explicitOrigin}/api${tenantPrefix ? `/u/${tenantPrefix}` : ''}`;
 
-  return `${getDefaultApiOrigin()}/api`;
+  return `${getDefaultApiOrigin()}/api${tenantPrefix ? `/u/${tenantPrefix}` : ''}`;
 }
 
 export function getSocketBase() {

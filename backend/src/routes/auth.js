@@ -1,6 +1,7 @@
 import { Router } from 'express';
+import { routeLogin, routePasswordResetRequest } from '../platform/rootLogin.js';
 import { getStudentGlobalRanking } from '../services/globalStudentRankingService.js';
-import { login, forcePasswordChange, me, changePassword, changeAdminPassword, requestPasswordReset, resetPassword, updateMe, updateMyAvatar, acknowledgeLearnerProgress, updatePracticeLanguage } from '../controllers/authController.js';
+import { forcePasswordChange, me, changePassword, changeAdminPassword, resetPassword, updateMe, updateMyAvatar, acknowledgeLearnerProgress, updatePracticeLanguage } from '../controllers/authController.js';
 import { getStudentActivity, getStudentStats, debugStudentActivity } from '../controllers/activityController.js';
 import { requireAuth, requireStudent, requireFullStudent } from '../middleware/auth.js';
 import { getStudentDashboard, getStudentRanking, recordStudentProblemView, recordStudentTopicView, refreshStudentChallenges, getStudentChallengeBadges } from '../controllers/studentDashboardController.js';
@@ -20,7 +21,7 @@ function getAuthCookieOptions() {
 const router = Router();
 
 // SECURITY: Rate limit authentication endpoints
-router.post('/login', authLimiter, login);
+router.post('/login', authLimiter, (req, res, next) => Promise.resolve(routeLogin(req, res)).catch(next));
 
 // SECURITY: Logout endpoint to clear HttpOnly cookie
 router.post('/logout', (req, res) => {
@@ -30,7 +31,7 @@ router.post('/logout', (req, res) => {
 
 router.post('/password/change', requireAuth, changePassword);
 router.post('/password/admin-change', requireAuth, changeAdminPassword);
-router.post('/password/request-reset', passwordResetLimiter, requestPasswordReset);
+router.post('/password/request-reset', passwordResetLimiter, (req, res, next) => Promise.resolve(routePasswordResetRequest(req, res)).catch(next));
 router.post('/password/reset', passwordResetLimiter, resetPassword);
 router.get('/me', requireAuth, me);
 router.put('/me', requireAuth, updateMe);

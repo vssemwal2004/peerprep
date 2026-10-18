@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const metricSchema = new mongoose.Schema({
@@ -175,4 +176,4 @@ const studentAnalyticsSchema = new mongoose.Schema({
 
 studentAnalyticsSchema.index({ generatedAt: -1 });
 
-export default mongoose.model('StudentAnalytics', studentAnalyticsSchema);
+export default tenantModel(mongoose.model('StudentAnalytics', studentAnalyticsSchema));

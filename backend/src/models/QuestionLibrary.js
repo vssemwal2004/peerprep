@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const questionLibrarySchema = new mongoose.Schema({
@@ -49,4 +50,4 @@ questionLibrarySchema.index({ questionType: 1, topicIds: 1, updatedAt: -1 });
 questionLibrarySchema.index({ questionType: 1, topicAncestorIds: 1, updatedAt: -1 });
 questionLibrarySchema.index({ questionType: 1, codingTagIds: 1, updatedAt: -1 });
 
-export default mongoose.model('QuestionLibrary', questionLibrarySchema);
+export default tenantModel(mongoose.model('QuestionLibrary', questionLibrarySchema));

@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from "mongoose";
 
 const schema = new mongoose.Schema({
@@ -14,4 +15,4 @@ const schema = new mongoose.Schema({
 }, { timestamps: true, minimize: false });
 schema.index({ ownerId: 1, active: 1, updatedAt: -1, _id: -1 });
 schema.index({ activeRenderOwner: 1 }, { unique: true, partialFilterExpression: { activeRenderOwner: { $type: "string" } } });
-export default mongoose.model("AIAvatar", schema);
+export default tenantModel(mongoose.model("AIAvatar", schema));

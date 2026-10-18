@@ -13,12 +13,12 @@ const user = { _id: 'student-self', role: 'student', accessScope: 'full' };
 const keys = ['window', 'document', 'navigator', 'HTMLElement', 'SVGElement', 'Element', 'getComputedStyle', 'localStorage', 'IS_REACT_ACT_ENVIRONMENT', 'fetch'];
 const originals = new Map(keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
 before(async () => {
-  dom = new JSDOM('<!doctype html><html><body><div id="app"></div></body></html>', { url: 'http://localhost:5173' });
+  dom = new JSDOM('<!doctype html><html><body><div id="app"></div></body></html>', { url: 'http://localhost:5173/u/test-university/student/challenges' });
   for (const key of keys) Object.defineProperty(globalThis, key, { configurable: true, writable: true, value: key === 'IS_REACT_ACT_ENVIRONMENT' ? true : dom.window[key] });
   globalThis.fetch = async () => { throw new Error('No live requests allowed'); };
   dom.window.matchMedia = () => ({ matches: true, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} });
   ({ createRoot } = await import('react-dom/client'));
-  server = await createServer({ root: fileURLToPath(new URL('..', import.meta.url)), define: { 'import.meta.env.VITE_PEERPREP_DEPLOYMENT_ROLE': JSON.stringify('university') }, server: { middlewareMode: true, hmr: false, ws: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
+  server = await createServer({ root: fileURLToPath(new URL('..', import.meta.url)), server: { middlewareMode: true, hmr: false, ws: false }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
   Challenges = (await server.ssrLoadModule('/src/student/StudentChallenges.jsx')).default;
   QuickPrep = (await server.ssrLoadModule('/src/student/StudentQuests.jsx')).default;
   Header = (await server.ssrLoadModule('/src/components/StudentDashboardHeader.jsx')).default;

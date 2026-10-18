@@ -1,3 +1,4 @@
+import { currentTenant } from '../../platform/tenantContext.js';
 import CodingTopic from '../../models/CodingTopic.js';
 import Problem from '../../models/Problem.js';
 import User from '../../models/User.js';
@@ -140,7 +141,7 @@ const contextCache = new Map();
 function cacheKey(user, range, modules, parts) {
   const scope = user?.role === 'coordinator' && user.coordinatorDataScope !== 'all' ? `c:${user.coordinatorId}` : user?.role === 'coordinator' ? `ca:${user.coordinatorId}` : 'all';
   const period = range.preset === 'custom' ? `${range.from?.toISOString() || ''}..${range.to?.toISOString() || ''}` : range.preset;
-  return `${scope}|${period}|${[...modules].sort().join(',')}|${parts.peer ? 'p' : ''}${parts.ai ? 'a' : ''}`;
+  return `${currentTenant()?.universityId || 'platform'}|${scope}|${period}|${[...modules].sort().join(',')}|${parts.peer ? 'p' : ''}${parts.ai ? 'a' : ''}`;
 }
 
 async function buildContext(user, range, modules, parts) {

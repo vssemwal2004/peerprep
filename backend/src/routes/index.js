@@ -36,10 +36,12 @@ import prepAnalysisRoutes from '../modules/prepAnalysis/prepAnalysis.routes.js';
 import platformRoutes from '../platform/routes.js';
 import questionPracticeRoutes from '../platform/questionPractice.js';
 import interviewCompanyRoutes from './interviewCompanies.js';
+import walletRoutes from './wallet.js';
 import { requireAuth, requireFullStudent } from '../middleware/auth.js';
 
 const router = Router();
 router.use('/platform', platformRoutes);
+router.use('/wallet', walletRoutes);
 router.use('/student/questions', requireAuth, requireFullStudent, questionPracticeRoutes);
 // Reserved feature routes must precede the interview identifier routes.
 router.use('/ai-interviews/avatars', avatarRoutes);

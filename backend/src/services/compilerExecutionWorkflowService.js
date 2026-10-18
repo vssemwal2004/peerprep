@@ -14,6 +14,7 @@ import { parseBulkCasePair } from '../utils/testcaseBulkParser.js';
 import { readTestcaseTextObject } from '../utils/testcaseStorage.js';
 import { createNotification } from './notificationService.js';
 import { getIo } from '../utils/io.js';
+import { personalRoom, compilerMonitorRoom } from '../utils/realtime.js';
 import { serializeSubmissionForRealtime, refreshProblemStats } from '../controllers/compilerHelpers.js';
 import {
   assessmentQueue,
@@ -209,12 +210,12 @@ export function pickReferenceSolution(problem, preferredLanguageKey = '') {
 function emitSubmissionUpdate(submission) {
   const io = getIo();
   if (!io) return;
-  const userRoom = String(submission?.user || '');
+  const userRoom = personalRoom(submission?.user || '');
   if (!userRoom) return;
   // Fire-and-forget: the realtime payload also resolves `firstAccepted`; never block or fail the judge flow.
   serializeSubmissionForRealtime(submission)
     .then((payload) => {
-      io.to(userRoom).to('compiler:monitor').emit('compiler-submission-updated', payload);
+      io.to(userRoom).to(compilerMonitorRoom()).emit('compiler-submission-updated', payload);
     })
     .catch((error) => {
       console.warn('[Realtime Submission] emit failed:', error?.message || error);

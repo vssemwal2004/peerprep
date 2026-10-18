@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import Assessment from '../models/Assessment.js';
 import AssessmentSubmission from '../models/AssessmentSubmission.js';
 import AssessmentReportSummary from '../models/AssessmentReportSummary.js';
+import { currentTenant } from '../platform/tenantContext.js';
 
 export const evaluatedAssessmentExpression = {
   $and: [
@@ -102,11 +103,13 @@ export async function refreshPendingAssessmentReports({ limit = 5, now = new Dat
 
 // Fair, bounded reconciliation covers legacy records, starts, deletions and
 // crashes before a refresh request. It never rebuilds all exams in an API call.
-let discoveryCursor = null;
+const discoveryCursors = new Map();
 export async function discoverAssessmentReportRefreshes({ limit = 25, now = new Date() } = {}) {
+  const tenantKey = currentTenant()?.universityId || 'platform';
+  const discoveryCursor = discoveryCursors.get(tenantKey) || null;
   const rows = await Assessment.find(discoveryCursor ? { _id: { $gt: discoveryCursor } } : {})
     .sort({ _id: 1 }).limit(limit).select('_id startTime endTime').lean();
-  discoveryCursor = rows.length === limit ? rows.at(-1)._id : null;
+  discoveryCursors.set(tenantKey, rows.length === limit ? rows.at(-1)._id : null);
   const summaries = await AssessmentReportSummary.find({ _id: { $in: rows.map((row) => row._id) } })
     .select('computedAt requestedVersion computedVersion').lean();
   const byId = new Map(summaries.map((row) => [String(row._id), row]));
@@ -118,7 +121,7 @@ export async function discoverAssessmentReportRefreshes({ limit = 25, now = new 
       await requestAssessmentReportRefresh(assessment._id, now);
     }
   }
-  return { discovered: rows.length, hasMore: Boolean(discoveryCursor) };
+  return { discovered: rows.length, hasMore: Boolean(discoveryCursors.get(tenantKey)) };
 }
 
 export function startAssessmentReportSummaryWorker() {

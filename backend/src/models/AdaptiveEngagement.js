@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const { Schema } = mongoose;
@@ -5,7 +6,7 @@ const owner = {
   tenantKey: { type: String, required: true },
   studentId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
 };
-const make = (name, schema) => mongoose.models[name] || mongoose.model(name, schema);
+const make = (name, schema) => tenantModel(mongoose.models[name] || mongoose.model(name, schema));
 
 const policySchema = new Schema({
   tenantKey: { type: String, required: true },

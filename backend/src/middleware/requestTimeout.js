@@ -15,10 +15,12 @@ const LONG_REQUEST_PATTERNS = [
   /^\/api\/compiler\/problems\/[^/]+\/submit/,
   /^\/api\/execute/,
   /^\/api\/student\/assessment\/submit/,
+  /^\/api\/platform\/admin\/universities$/,
 ];
 
 function resolveRequestTimeoutMs(req) {
-  const requestPath = req.originalUrl?.split('?')[0] || req.path;
+  const requestPath = (req.originalUrl?.split('?')[0] || req.path)
+    .replace(/^\/api\/u\/[a-z0-9][a-z0-9-]{1,62}(?=\/)/, '/api');
   if (requestPath === '/api/health') return HEALTH_REQUEST_TIMEOUT_MS;
   if (requestPath === '/api/students/upload') return STUDENT_UPLOAD_TIMEOUT_MS;
   if (LONG_REQUEST_PATTERNS.some((pattern) => pattern.test(requestPath))) {

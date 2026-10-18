@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 // DEPRECATED MODEL
 // -----------------
 // The SpecialStudent collection is no longer used by the
@@ -46,4 +47,4 @@ specialStudentSchema.statics.hashPassword = async function (pw) {
   return bcrypt.hash(pw, saltRounds);
 };
 
-export default mongoose.model('SpecialStudent', specialStudentSchema);
+export default tenantModel(mongoose.model('SpecialStudent', specialStudentSchema));
