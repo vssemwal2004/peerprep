@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowRight, CalendarDays, Check, RefreshCw, Sparkles, Trophy, Zap } from 'lucide-react';
 import useChallengeHub from './engagement/useChallengeHub';
 import { useAuth } from '../context/AuthContext';
+import { formatScore } from './prepScore/formatScore';
 import { publishRanking } from './prepScore/rankingStore';
 import ChallengeArtwork, { ChallengeGlyph } from './engagement/ChallengeArtwork';
 import ChallengePlanBoard from './engagement/ChallengePlanBoard';
@@ -88,7 +89,7 @@ export default function StudentChallenges() {
         <aside className="challenge-aside" aria-label="Monthly progress">
           {data && <MonthCalendar data={data} accepted={accepted} />}
           <section className="challenge-collection"><ChallengeGlyph kind="monthly" /><p className="challenge-eyebrow">MAKE IT A COLLECTION</p><h2>Little wins.<br />Lasting achievements.</h2><Link to="/student/profile#badges">Explore your badges<ArrowRight size={15} /></Link><svg viewBox="0 0 300 80" aria-hidden="true"><path d="M0 60C80-30 160 140 300 10v70H0Z" fill="currentColor" /></svg></section>
-          <details className="challenge-rules"><summary>How do rewards work?</summary><p>Finish the core and one choice for daily XP; finish every goal for weekly/monthly XP. Stretch is optional.</p><p>Every verified XP adds 1 university score point. Rank also depends on other students. {ranking ? `Your total score: ${integer(ranking.score)}.` : ''}</p><p>Plans reset at 2 AM IST. Missed days never remove earned XP.</p></details>
+          <details className="challenge-rules"><summary>How do rewards work?</summary><p>Finish the core and one choice for daily XP; finish every goal for weekly/monthly XP. Stretch is optional.</p><p>XP raises your level. Your rank comes from your Prep Score, which counts only your own coding, learning, interview and assessment work, so XP does not change it. {ranking ? `Your Prep Score: ${formatScore(ranking.score)}.` : ''}</p><p>Plans reset at 2 AM IST. Missed days never remove earned XP.</p></details>
         </aside>
       </div>}
     </div>

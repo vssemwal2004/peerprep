@@ -41,6 +41,7 @@ export const EXPORT_COLUMNS = [
   { key: 'lists', label: 'Uploaded lists', group: 'Student details', module: 'student', width: 22, get: (row) => list(row.student.batchNames) },
   { key: 'account', label: 'Account', group: 'Student details', module: 'student', width: 10, get: (row) => (row.student.status === 'inactive' ? 'Disabled' : 'Active') },
   { key: 'overallPrepScore', label: 'Prep Score (overall)', group: 'Student details', module: 'student', kind: 'decimal', width: 11, get: (row) => row.scores?.total ?? 0 },
+  { key: 'learningPrepScore', label: 'Prep Learning score', group: 'Prep Learning', module: 'learning', kind: 'decimal', width: 11, get: (row) => row.scores?.features.learning?.score ?? null },
   { key: 'interviewPrepScore', label: 'Prep Interview score', group: 'Prep Interview', module: 'interview', kind: 'decimal', width: 11, get: (row) => row.scores?.features.interview?.score ?? null },
   { key: 'assessmentPrepScore', label: 'Prep Assessment score', group: 'Prep Assessment', module: 'assessment', kind: 'decimal', width: 11, get: (row) => row.scores?.features.assessment?.score ?? null },
 
@@ -100,7 +101,7 @@ const COLUMN_BY_KEY = new Map(EXPORT_COLUMNS.map((column) => [column.key, column
 export const DEFAULT_EXPORT_COLUMNS = Object.freeze({
   // Each default fits on a PDF page (EXPORT_LIMITS.maxPdfColumns).
   coding: ['position', 'name', 'studentId', 'semester', 'branch', 'sheetProgress', 'prepScore', 'solvedEasy', 'solvedMedium', 'solvedHard', 'accuracy', 'practiceStatus'],
-  learning: ['position', 'name', 'studentId', 'semester', 'branch', 'learningProgress', 'topicsCompleted', 'topicsAvailable', 'videoMinutes', 'learningStatus', 'daysSinceLesson'],
+  learning: ['position', 'name', 'studentId', 'semester', 'branch', 'learningPrepScore', 'learningProgress', 'topicsCompleted', 'topicsAvailable', 'videoMinutes', 'learningStatus', 'daysSinceLesson'],
   interview: ['position', 'name', 'studentId', 'semester', 'branch', 'interviewPrepScore', 'interviewsDone', 'mockDone', 'mockScore', 'bestMockScore', 'aiInterviews', 'interviewStatus'],
   assessment: ['position', 'name', 'studentId', 'semester', 'branch', 'assessmentPrepScore', 'testsTaken', 'testsPassed', 'testsMissed', 'testScore', 'bestTestScore', 'testStatus'],
   all: ['position', 'name', 'studentId', 'semester', 'branch', 'overallPrepScore', 'prepScore', 'sheetProgress', 'learningProgress', 'mockScore', 'testScore', 'practiceStatus'],

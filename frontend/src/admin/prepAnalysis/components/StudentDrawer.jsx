@@ -311,7 +311,7 @@ export default function StudentDrawer({ studentId, range = "all", onClose }) {
                 </div>
                 <p className="max-w-[220px] text-right text-[11px] text-slate-500">Each feature: work points × quality. Overall: their average (no maximum).</p>
               </div>
-              <PrepScoreFlow prepScore={profile.prepScore} className="mt-3" />
+              <PrepScoreFlow prepScore={profile.prepScore} own={false} className="mt-3" />
             </section>
           )}
 

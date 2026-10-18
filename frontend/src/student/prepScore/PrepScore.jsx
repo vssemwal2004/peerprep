@@ -72,7 +72,7 @@ function Equation({ feature }) {
     <span className="flex flex-wrap items-center gap-1.5" aria-hidden="true">
       <Chip value={formatScore(work?.value)} caption="work points" />
       {quality && <><Op>×</Op><Chip value={`${formatScore(quality.value)}%`} caption="quality" /></>}
-      {extra && <><Op>+</Op><Chip value={formatScore(extra.value)} caption={extra.label.toLowerCase()} /></>}
+      {extra && <><Op>+</Op><Chip value={formatScore(extra.value)} caption={extra.label} /></>}
       <Op>=</Op><Chip value={formatScore(feature.score)} caption="points" strong />
     </span>
   );
@@ -90,14 +90,25 @@ const sentence = (feature) => [
  * feature's "work points x quality = points" (tap for where each number comes
  * from), then their average. `prepScore` = { total, features } from the API.
  */
-export function PrepScoreFlow({ prepScore, className = '' }) {
+export function PrepScoreFlow({ prepScore, className = '', own = true }) {
+  const [shown, setShown] = useState(false);
   const [open, setOpen] = useState(null);
   const baseId = useId();
   const features = FEATURES.filter((feature) => prepScore?.features?.[feature.key]);
   if (!features.length) return null;
   const scores = features.map(({ key }) => prepScore.features[key].score);
+  const listId = `${baseId}-flow`;
+  // Each feature is shown to 1 decimal; when that sum does not reproduce the average, say so.
+  const shownAverage = scores.reduce((sum, value) => sum + value, 0) / features.length;
+  const approximate = features.length > 1 && formatScore(shownAverage) !== formatScore(prepScore.total);
   return (
     <div className={className}>
+      {/* Nothing of the calculation shows until the student asks for it. */}
+      <button type="button" onClick={() => setShown((value) => !value)} aria-expanded={shown} aria-controls={listId}
+        className="inline-flex items-center gap-1 rounded text-[12px] font-semibold text-sky-700 hover:text-sky-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-sky-300 dark:hover:text-sky-200">
+        How is my score calculated?<ChevronDown className={`h-3.5 w-3.5 transition-transform ${shown ? 'rotate-180' : ''}`} aria-hidden="true" />
+      </button>
+      {shown && <div id={listId} className="mt-2">
       <ol className="space-y-1.5">
         {features.map(({ key, label, Icon }) => {
           const feature = prepScore.features[key];
@@ -114,10 +125,11 @@ export function PrepScoreFlow({ prepScore, className = '' }) {
                   <ScoreValue value={feature.score} size="sm" label={label} />
                   <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform ${expanded ? 'rotate-180' : ''}`} aria-hidden="true" />
                 </span>
-                <span className="mt-1.5 block pl-8"><Equation feature={feature} /><span className="sr-only">{sentence(feature)}</span></span>
               </button>
+              {/* Closed by default: only the feature's points show until the student opens it. */}
               {expanded && (
                 <div id={panelId} className="space-y-1.5 border-t border-slate-100 px-3 py-2 pl-10 text-[11.5px] leading-snug text-slate-600 dark:border-white/[0.06] dark:text-zinc-400">
+                  <Equation feature={feature} /><span className="sr-only">{sentence(feature)}</span>
                   {steps.map((step) => (
                     <p key={step.label}>
                       <b className="text-slate-800 dark:text-zinc-200">{step.label} {step === feature.quality ? `${formatScore(step.value)}%` : formatScore(step.value)}</b>
@@ -134,40 +146,12 @@ export function PrepScoreFlow({ prepScore, className = '' }) {
       </ol>
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-sky-50/80 px-3 py-2 ring-1 ring-inset ring-sky-100 dark:bg-sky-500/[0.07] dark:ring-sky-500/20">
         <span className="min-w-0 text-[11.5px] leading-snug text-slate-700 dark:text-zinc-300">
-          <b className="block text-slate-900 dark:text-zinc-50">{features.length > 1 ? `Average of ${features.length} features` : 'Your Prep Score'}</b>
-          {features.length > 1 && <span className="tabular-nums">({scores.map(formatScore).join(' + ')}) ÷ {features.length}</span>}
+          <b className="block text-slate-900 dark:text-zinc-50">{features.length > 1 ? `Average of ${features.length} features` : own ? 'Your Prep Score' : 'Prep Score'}</b>
+          {features.length > 1 && <span className="tabular-nums">({scores.map(formatScore).join(' + ')}) ÷ {features.length}{approximate ? ' ≈' : ''}</span>}
         </span>
         <ScoreValue value={prepScore.total} size="md" />
       </div>
+      </div>}
     </div>
-  );
-}
-
-/** "How the Prep Score works": the rule as three steps, with this student's licensed features. */
-export function PrepScoreRules({ prepScore, className = '' }) {
-  const features = FEATURES.filter((feature) => prepScore?.features?.[feature.key]?.rule);
-  const steps = [
-    { title: 'Earn work points', body: features.length ? null : 'Solve problems, finish topics, do interviews and take tests.' },
-    { title: '× Quality', body: 'Your own average: few submissions per solve, and marks above the 40% pass mark. A small start-up allowance (epsilon) stops one lucky or unlucky attempt from deciding it.' },
-    { title: 'Average your features', body: 'Your Prep Score is the average of your features. There is no maximum. A better Prep Score means a better rank; equal scores share a rank.' },
-  ];
-  return (
-    <ol className={`relative space-y-3 ${className}`}>
-      <span className="absolute bottom-3 left-[11px] top-3 w-px bg-sky-200 dark:bg-sky-500/30" aria-hidden="true" />
-      {steps.map((step, index) => (
-        <li key={step.title} className="relative flex gap-3">
-          <span className="z-[1] flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-600 text-[11px] font-bold text-white ring-4 ring-white dark:ring-gray-900">{index + 1}</span>
-          <div className="min-w-0 text-[11.5px] leading-snug text-slate-600 dark:text-zinc-400">
-            <p className="text-[12.5px] font-semibold text-slate-900 dark:text-zinc-100">{step.title}</p>
-            {index === 0 && features.length > 0 && (
-              <ul className="mt-1 space-y-0.5">
-                {features.map(({ key, label }) => <li key={key}><b className="font-semibold text-slate-700 dark:text-zinc-200">{label}:</b> {prepScore.features[key].rule}</li>)}
-              </ul>
-            )}
-            {step.body && <p className="mt-0.5">{step.body}</p>}
-          </div>
-        </li>
-      ))}
-    </ol>
   );
 }

@@ -157,7 +157,7 @@ async function buildContext(user, range, modules, parts) {
   ]);
   const rows = buildStudentRows({
     students: cohort.students, facts: coding, problems: coding.problems, batchNames: cohort.batchNames, learning, quickprep, assessment, interview, range,
-    scoreFeatures: { coding: modules.has('coding'), learning: modules.has('learning'), interview: modules.has('interview'), assessment: modules.has('assessment') },
+    scoreFeatures: { coding: modules.has('coding'), learning: modules.has('learning'), interview: modules.has('interview'), assessment: modules.has('assessment'), mock: parts.peer, ai: parts.ai },
   });
   return {
     rows, topics: coding.topics, batchNames: cohort.batchNames, truncated: cohort.truncated, loadedAt: new Date(),

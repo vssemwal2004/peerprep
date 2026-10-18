@@ -1,8 +1,8 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, ChevronDown } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { formatScore } from './formatScore';
-import { PrepCoin, PrepScoreFlow, PrepScoreRules, ScoreValue } from './PrepScore';
+import { PrepCoin, PrepScoreFlow, ScoreValue } from './PrepScore';
 import { rankingSnapshot, subscribeRanking } from './rankingStore';
 
 /**
@@ -15,7 +15,6 @@ export default function HeaderPrepScore({ userId }) {
   const snapshot = useSyncExternalStore(subscribeRanking, rankingSnapshot);
   const ranking = snapshot.userId && snapshot.userId === String(userId) ? snapshot.ranking : null;
   const [open, setOpen] = useState(false);
-  const [showRules, setShowRules] = useState(false);
   const rootRef = useRef(null);
   const panelId = useId();
 
@@ -54,13 +53,8 @@ export default function HeaderPrepScore({ userId }) {
               {rank ? <><b className="text-[16px] text-slate-950 dark:text-white">#{rank.toLocaleString()}</b><br />of {total.toLocaleString()} students</> : 'Not ranked yet'}
             </p>
           </div>
-          {!score && <p className="mt-3 text-[12px] leading-relaxed text-slate-600 dark:text-slate-300">Solve a problem, finish a topic or take a test to start your Prep Score.</p>}
+          {!score && <p className="mt-3 text-[12px] leading-relaxed text-slate-600 dark:text-slate-300">{ranking.hasProgress ? 'Marks above the 40% pass mark earn points, so your score starts as soon as you pass.' : 'Solve a problem, finish a topic or take a test to start your Prep Score.'}</p>}
           <PrepScoreFlow prepScore={ranking.prepScore} className="mt-3" />
-          <button type="button" onClick={() => setShowRules((value) => !value)} aria-expanded={showRules}
-            className="mt-3 inline-flex items-center gap-1 rounded text-[12px] font-semibold text-slate-600 hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-slate-300 dark:hover:text-sky-300">
-            How the Prep Score works<ChevronDown className={`h-3.5 w-3.5 transition-transform ${showRules ? 'rotate-180' : ''}`} aria-hidden="true" />
-          </button>
-          {showRules && <PrepScoreRules prepScore={ranking.prepScore} className="mt-2" />}
           <Link to="/student/rankings" onClick={() => setOpen(false)} className="mt-3 flex items-center gap-1 text-[12px] font-semibold text-sky-700 hover:underline dark:text-sky-300">
             See rankings<ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
           </Link>

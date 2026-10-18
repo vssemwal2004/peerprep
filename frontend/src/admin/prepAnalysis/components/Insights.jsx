@@ -254,7 +254,7 @@ export function ScoreHelpDialog({ open, onClose, formula }) {
         </div>
         <ol className="list-decimal space-y-1 pl-5">
           <li><b>Work points</b>: Prep Coding as above; Prep Learning {formula.learning.perTopic} per topic completed; Prep Interview {formula.interview.perMock} per mock interview (+{formula.interview.perAiInterview} per AI interview); Prep Assessment {formula.assessment.perTest} per test taken.</li>
-          <li><b>× Quality</b>, the student's own average. Coding: up to {coding.fairTriesPerSolve} submissions per solved problem are fair (the first {coding.starterSubmissions} are free); more lowers it. Interviews and tests: the average mark above the {formula.passMark}% pass mark, counting {formula.starterAttempts} starter attempts at {formula.starterScore}% so one attempt cannot decide it.</li>
+          <li><b>× Quality</b>, the student's own average. Coding: up to {coding.fairTriesPerSolve} submissions per solved problem are fair (the first {coding.starterSubmissions} are free); more lowers it. Interviews and tests: the average mark above the {formula.passMark}% pass mark (a failing attempt earns nothing).</li>
           <li><b>Overall Prep Score</b> = the average of the features your university uses. A well-prepared student earns about 500 in each feature; there is no maximum.</li>
         </ol>
         <p><b className="text-slate-900 dark:text-white">Course completed (Prep Learning)</b>: topics a student completed out of the topics they can open (their semester and earlier).</p>

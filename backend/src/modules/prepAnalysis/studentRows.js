@@ -187,8 +187,8 @@ function emptyCoding() {
 /** Prep Score per feature and overall, with the same formula students see on their dashboard. */
 export function rowScores(row, features) {
   const mocks = row.interview?.mocks || [];
-  // Only marked tests count towards the score.
-  const attempts = row.assessment ? [...row.assessment.byTest.values()].filter((attempt) => Number.isFinite(attempt.percent)) : [];
+  // The score counts the same tests as the student's own dashboard: submitted and marked (not violations or expired attempts).
+  const attempts = row.assessment ? [...row.assessment.byTest.values()].filter((attempt) => attempt.status === 'submitted' && Number.isFinite(attempt.percent)) : [];
   return prepScores({
     easySolved: row.coding.solved.Easy, mediumSolved: row.coding.solved.Medium, hardSolved: row.coding.solved.Hard,
     submissions: row.coding.submissions, acceptedSubmissions: row.coding.accepted,

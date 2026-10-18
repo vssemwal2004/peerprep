@@ -142,7 +142,8 @@ export function scoreStudentProgress(metrics = {}, now = new Date()) {
     challengeBadges: count(metrics.challengeBadges),
     badgeMetrics, levelMetrics,
     level: metrics.adaptiveLevel || learnerLevel({ solved: levelMetrics.solvedCount, streak: levelMetrics.streak, assessmentScore: levelMetrics.assessmentScore ?? 0, interviewScore: levelMetrics.interviewScore, challengePoints: levelMetrics.challengePoints }),
-    hasProgress: prepScore.total > 0,
+    // Work counts even when low marks earn no points yet: the student is ranked, at the bottom, not "not started".
+    hasProgress: Object.values(prepScore.features).some((feature) => (Number(feature.work?.value) || 0) + (Number(feature.extra?.value) || 0) > 0),
   };
 }
 

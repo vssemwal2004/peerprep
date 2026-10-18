@@ -2,7 +2,7 @@
 //
 //   - Pick the feature to analyse (All, Prep Coding with its Quick Prep sheets, …).
 //   - Describe the students you want as a GROUP: tap options in each filter
-//     ("Semester 5, 6", "Prep Score 75 or more"). Several options in one filter
+//     ("Semester 5, 6", "Prep Score 250 or more"). Several options in one filter
 //     mean "any of them"; different filters all apply together.
 //   - Need a second kind of student too? Add another group: students who fit
 //     group A OR group B are shown. Any filter can be flipped to "not these".
@@ -119,9 +119,9 @@ const PERCENT_PRESETS = [
 ];
 // Prep Score has no ceiling (a well-prepared student earns about 500 per feature).
 const SCORE_PRESETS = [
-  { label: "Under 50", from: "", to: "49.9" },
-  { label: "50–250", from: "50", to: "250" },
-  { label: "250–1,000", from: "250", to: "1000" },
+  { label: "Under 50", from: "", to: "49.99" },
+  { label: "50–250", from: "50", to: "249.99" },
+  { label: "250–1,000", from: "250", to: "999.99" },
   { label: "1,000 or more", from: "1000", to: "" },
 ];
 const DAY_PRESETS = [
@@ -312,7 +312,7 @@ export function compactOption(label, field) {
   return text;
 }
 
-/** A filter in a few plain words: "Semester 5 or 6", "Prep Score 75 or more", "Branch not CSE". */
+/** A filter in a few plain words: "Semester 5 or 6", "Prep Score 250 or more", "Branch not CSE". */
 export function ruleText(rule, fieldMap, lookup = () => undefined, { max = 3 } = {}) {
   const field = fieldMap.get(rule.field);
   if (!isRuleComplete(rule, field)) return "";

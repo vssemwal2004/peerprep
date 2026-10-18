@@ -1,6 +1,6 @@
 import { useId } from 'react';
 import { Medal, Trophy } from 'lucide-react';
-import { PrepScoreFlow, PrepScoreRules, ScoreValue } from '../prepScore/PrepScore';
+import { PrepScoreFlow, ScoreValue } from '../prepScore/PrepScore';
 
 function finiteNumber(value, fallback = 0) {
   const numeric = Number(value);
@@ -102,10 +102,6 @@ export default function UniversityRankCard({ ranking, loading = false, className
       </div>
       </div>
       {!loading && ranking?.prepScore ? <PrepScoreFlow prepScore={ranking.prepScore} className="mt-3 border-t border-slate-100 pt-3 dark:border-zinc-800" /> : null}
-      <details className={`text-[11px] leading-relaxed text-slate-500 dark:text-zinc-400 ${wide ? 'mt-3 border-t border-slate-100 pt-2.5 dark:border-zinc-800' : 'mt-3'}`}>
-        <summary className="w-fit cursor-pointer rounded text-sky-600 hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-sky-400 dark:hover:text-sky-300">How the Prep Score works</summary>
-        <PrepScoreRules prepScore={ranking?.prepScore} className="mt-3" />
-      </details>
     </section>
   );
 }

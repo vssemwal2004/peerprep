@@ -18,9 +18,11 @@ export async function syncUniversityGlobalRanking() {
     const scores = new Map(), counts = new Map();
     for (const row of rows) {
       // Snapshots carry whole Prep Score points (484.4 -> 484), which keeps the bucket count small for any cohort size.
-      const score = Math.round(Number(row.rankingSummary.score || 0));
+      // Anyone with progress is at least 1, so they never share the 0 bucket with students who have not started.
+      const exact = Number(row.rankingSummary.score || 0);
       const { hasProgress } = row.rankingSummary;
-      scores.set(String(row.studentId), { score, hasProgress });
+      const score = hasProgress ? Math.max(1, Math.round(exact)) : 0;
+      scores.set(String(row.studentId), { score, exact, hasProgress });
       counts.set(score, (counts.get(score) || 0) + 1);
     }
     await controlRequest('rankings/snapshot', { method: 'POST', body: {
@@ -41,7 +43,7 @@ export async function getStudentGlobalRanking(student) {
     if (!own) return { status: 'syncing', rank: null };
     const result = await controlRequest(`rankings/self?score=${own.score}&generatedAt=${encodeURIComponent(current.generatedAt)}`);
     if (result.status === 'syncing') snapshot = null;
-    const shown = Number.isFinite(Number(result.score)) ? { ...result, score: Number(result.score) } : result;
+    const shown = Number.isFinite(Number(result.score)) ? { ...result, score: own.exact } : result;
     if (!own.hasProgress && result.status === 'ready') return { ...shown, status: 'unranked', rank: null, tied: false };
     return shown;
   } catch {

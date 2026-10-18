@@ -64,9 +64,16 @@ test('rank derives verified progress, preserves ties, and never returns another 
     completedTopics: 6, totalTopics: 12, interviews: 2, mockAverage: 70, aiInterviews: 1, assessmentsCompleted: 3, assessmentScore: 80,
   }, now);
   // Coding: 10 + 4 x 2 + 2 x 4 = 26 work points, 20 submissions for 16 solves is fair (100%).
-  // Learning: 6 x 14. Interview: 2 x 250 x (60 - 40) / 60 + 1 x 5. Assessment: 3 x 100 x (68 - 40) / 60.
-  assert.deepEqual(scored.scoreBreakdown, { coding: 26, learning: 84, interview: 171.7, assessment: 140 });
-  assert.equal(scored.score, 105.42);
+  // Learning: 6 x 14. Interview: 2 x 250 x (70 - 40) / 60 + 1 x 5. Assessment: 3 x 100 x (80 - 40) / 60.
+  assert.deepEqual(scored.scoreBreakdown, { coding: 26, learning: 84, interview: 255, assessment: 200 });
+  assert.equal(scored.score, 141.25);
+  // A mark at or below the pass mark never adds points: it can only pull the average down.
+  const strong = scoreStudentProgress({ assessmentsCompleted: 1, assessmentScore: 90, interviews: 1, mockAverage: 90 }, now);
+  const withFailures = scoreStudentProgress({ assessmentsCompleted: 3, assessmentScore: (90 + 20 + 35) / 3, interviews: 3, mockAverage: (90 + 20 + 35) / 3 }, now);
+  assert.ok(withFailures.scoreBreakdown.assessment <= strong.scoreBreakdown.assessment && withFailures.scoreBreakdown.interview <= strong.scoreBreakdown.interview, 'failing attempts never raise the score');
+  const lowButWorking = scoreStudentProgress({ assessmentsCompleted: 2, assessmentScore: 30 }, now);
+  assert.equal(lowButWorking.score, 0);
+  assert.equal(lowButWorking.hasProgress, true, 'work below the pass mark is progress that scores 0, not "not started"');
   const huge = scoreStudentProgress({ easySolved: 3000, mediumSolved: 3000, hardSolved: 3000, submissions: 1e4, acceptedSubmissions: 1e4, completedTopics: 1e6, totalTopics: 10, interviews: 100, mockAverage: 100, aiInterviews: 100, assessmentsCompleted: 100, assessmentScore: 100 }, now);
   assert.ok(huge.score > 1000 && Number.isFinite(huge.score), 'no ceiling: more real work keeps adding');
   assert.equal(huge.scoreBreakdown.learning, 140, 'topics count only up to the topics open to the student');
@@ -481,9 +488,8 @@ test('assessment badge metrics exclude violations and level average ignores unsc
   const rank = await getStudentUniversityRanking(learner, null, now);
   assert.equal(rank.badgeMetrics.assessments, 3);
   assert.equal(rank.levelMetrics.assessmentScore, 100);
-  // Only the one marked test counts: 100% counts as 66.7% with 2 starter tests at 50%, so 1 x 100 x (66.7 - 40) / 60.
-  // Unmarked tests and the violation add nothing.
-  assert.equal(rank.scoreBreakdown.assessment, 44.4);
+  // Only the one marked test counts: 1 x 100 x (100 - 40) / 60. Unmarked tests and the violation add nothing.
+  assert.equal(rank.scoreBreakdown.assessment, 100);
   assert.equal(rank.earnedBadges, 1);
   assert.equal(rank.level.title, 'Consistent Performer');
   assertProfileProgressContract(rank);
@@ -520,12 +526,12 @@ test('Prep Interview score uses the student\'s own mock scores (both feedback sc
     { tenantKey: 'college:someone-else', studentId: learnerId, sessionId: 'elsewhere', interviewId: 'ai-3', completedAt: now },
   ]);
   const rank = await getStudentUniversityRanking(learner, null, now);
-  // Average mock 71.5% counts as 60.75% with 2 starter mocks at 50%: 2 x 250 x (60.75 - 40) / 60 = 172.9, plus 1 AI interview x 5.
-  assert.equal(rank.scoreBreakdown.interview, 177.9, 'unfinished and other-tenant AI interviews do not count');
+  // Average mock 71.5%: 2 x 250 x (71.5 - 40) / 60 = 262.5, plus 1 AI interview x 5.
+  assert.equal(rank.scoreBreakdown.interview, 267.5, 'unfinished and other-tenant AI interviews do not count');
   assert.equal(rank.score, rank.prepScore.total);
-  assert.ok(Math.abs(rank.score - 177.92 / 4) < 0.01, 'the overall score averages all four features');
+  assert.ok(Math.abs(rank.score - 267.5 / 4) < 0.01, 'the overall score averages all four features');
   assert.equal(rank.rank, 1);
   const { work, quality, extra } = rank.prepScore.features.interview;
-  assert.deepEqual([work.value, quality.value, extra.value], [500, 34.6, 5]);
+  assert.deepEqual([work.value, quality.value, extra.value], [500, 52.5, 5]);
   assert.match(rank.methodology, /work points × quality/);
 });

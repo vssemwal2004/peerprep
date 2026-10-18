@@ -162,7 +162,7 @@ export function FilterDrawer({ open, state, catalog, fieldMap, matched, onApply,
                 <Plus className="h-4 w-4" />Add another group of students
               </button>
               <span className="text-[11.5px] text-slate-500 dark:text-gray-400">
-                {lastIsEmpty ? "Choose at least one filter first." : <>e.g. Semester 5 with Prep Score 75+, <b>or</b> Semester 6 who stopped practising.</>}
+                {lastIsEmpty ? "Choose at least one filter first." : <>e.g. Semester 5 with Prep Score 250+, <b>or</b> Semester 6 who stopped practising.</>}
               </span>
             </div>
           )}

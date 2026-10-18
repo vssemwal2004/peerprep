@@ -418,14 +418,14 @@ test('Prep Interview: mock interviews out of 100, ratings, interviewer turns and
 test('Prep Score on analysis rows: points per licensed feature, overall = their average (the students\' formula)', () => {
   const { rows } = interviewsAndTests();
   const asha = rows.find((row) => row.name === 'Asha');
-  // Interview: 2 mocks (80%, 60%) count as 60% with 2 starter mocks at 50%: 2 x 250 x (60 - 40) / 60, plus 1 AI interview x 5.
-  assert.equal(asha.scores.features.interview.score, 171.7);
+  // Interview: 2 mocks averaging 70%: 2 x 250 x (70 - 40) / 60, plus 1 AI interview x 5.
+  assert.equal(asha.scores.features.interview.score, 255);
   assert.equal(asha.scores.features.interview.extra.value, 5);
-  // Assessment: tests at 80% and 30% count as 52.5%: 2 x 100 x (52.5 - 40) / 60.
-  assert.equal(asha.scores.features.assessment.score, 41.7);
+  // Assessment: tests at 80% and 30% average 55%: 2 x 100 x (55 - 40) / 60.
+  assert.equal(asha.scores.features.assessment.score, 50);
   assert.equal(asha.scores.features.learning, undefined, 'a feature that is not loaded does not count');
   assert.equal(asha.scores.features.coding.score, 0, 'no coding work in this cohort');
-  assert.equal(asha.scores.total, 71.11, 'the overall score averages the features (0, 171.7, 41.7), it never adds them up');
+  assert.equal(asha.scores.total, 101.67, 'the overall score averages the features (0, 255, 50), it never adds them up');
   const { rows: codingRows } = cohort();
   const coder = codingRows.find((row) => row.name === 'Asha');
   assert.equal(coder.scores.features.coding.score, coder.coding.prepScore, 'Prep Coding uses the same formula on both sides');

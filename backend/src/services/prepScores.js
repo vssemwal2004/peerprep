@@ -8,9 +8,9 @@
 //   Prep Learning   = 14 x topics completed
 //   Prep Interview  = 250 x mock interviews x Quality + 5 x AI interviews
 //   Prep Assessment = 100 x tests taken x Quality
-//     Quality (interview, assessment) = (average score - 40) / 60, where the average
-//     counts 2 starter attempts at 50% (epsilon), so one great or bad attempt cannot dominate;
-//     an average at or below the 40% pass mark earns no points.
+//     Quality (interview, assessment) = (average score - 40) / 60: only marks above the 40%
+//     pass mark earn points, so a failing attempt never adds to the score (it can only lower
+//     the average). The points are 250 or 100 x the sum of (mark - 40) / 60 over the attempts.
 //   Prep Score      = average of the licensed features' scores
 //
 // Points per unit are set so a well-prepared student earns about the same in
@@ -26,10 +26,8 @@ export const PREP_SCORE_RULES = Object.freeze({
   learning: { perTopic: 14 },
   interview: { perMock: 250, perAiInterview: 5 },
   assessment: { perTest: 100 },
-  // Interview and assessment quality.
+  // Interview and assessment marks count only above this.
   passMark: 40,
-  starterAttempts: 2,
-  starterScore: 50,
 });
 export const PREP_SCORE_FEATURES = Object.freeze([
   { key: 'coding', label: 'Prep Coding' },
@@ -46,6 +44,9 @@ export function scoreFeatures(permissions) {
     learning: allowed('learning'),
     interview: allowed('events') || allowed('interviews'),
     assessment: allowed('assessments'),
+    // Which parts of Prep Interview exist: mock interviews ("events") and AI interviews.
+    mock: allowed('events'),
+    ai: allowed('interviews'),
   };
 }
 
@@ -59,25 +60,20 @@ const round2 = (value) => Math.round(value * 100) / 100;
 const num = (value) => round1(value).toLocaleString('en-US');
 const plural = (amount, word) => `${num(amount)} ${word}${amount === 1 ? '' : 's'}`;
 
-/** Interview/assessment quality: the smoothed average's distance above the pass mark, 0-1. */
-function markQuality(attempts, average) {
-  const { passMark, starterAttempts, starterScore } = PREP_SCORE_RULES;
-  const smoothed = (attempts * percent(average) + starterAttempts * starterScore) / (attempts + starterAttempts);
-  return { smoothed, quality: Math.max(0, smoothed - passMark) / (100 - passMark) };
-}
-
+/** Interview/assessment quality: how far the average mark is above the pass mark, as a share of the marks above it (0-1). */
 function markQualityStep(attempts, average, noun) {
-  const { passMark, starterAttempts, starterScore } = PREP_SCORE_RULES;
-  const { smoothed, quality } = markQuality(attempts, average);
+  const { passMark } = PREP_SCORE_RULES;
+  const mark = attempts ? percent(average) : 0;
+  const quality = attempts ? Math.max(0, mark - passMark) / (100 - passMark) : 0;
   return {
     quality,
     step: {
       label: 'Quality',
-      value: attempts ? round1(quality * 100) : 0,
+      value: round1(quality * 100),
       detail: attempts
-        ? `Your average ${num(percent(average))}% counts as ${num(smoothed)}% with ${starterAttempts} starter ${noun}s at ${starterScore}%; only marks above the ${passMark}% pass mark count`
+        ? `Your average is ${num(mark)}%; only marks above the ${passMark}% pass mark earn points`
         : `No ${noun} yet`,
-      math: attempts ? `(${num(smoothed)} − ${passMark}) ÷ ${100 - passMark}` : '',
+      math: attempts ? `(${num(mark)} − ${passMark}) ÷ ${100 - passMark}` : '',
     },
   };
 }
@@ -134,19 +130,35 @@ export function prepScores(metrics = {}, features = scoreFeatures(null)) {
     };
   }
   if (features.interview) {
-    const mocks = count(metrics.mockInterviews);
-    const ai = count(metrics.aiInterviews);
+    // A university may license only mock interviews or only AI interviews; show just the parts that exist.
+    const showMock = features.mock !== false;
+    const showAi = features.ai !== false;
+    const mocks = showMock ? count(metrics.mockInterviews) : 0;
+    const ai = showAi ? count(metrics.aiInterviews) : 0;
     const { perMock, perAiInterview } = PREP_SCORE_RULES.interview;
-    const { quality, step } = markQualityStep(mocks, mocks ? metrics.mockAverage : 0, 'mock interview');
-    const exact = mocks * perMock * quality + ai * perAiInterview;
-    exacts.push(exact);
-    result.interview = {
-      score: round1(exact),
-      rule: `${perMock} points per mock interview × quality, plus ${perAiInterview} per AI interview`,
-      work: { label: 'Work points', value: mocks * perMock, detail: `${plural(mocks, 'mock interview')} × ${perMock}` },
-      quality: step,
-      extra: { label: 'AI interviews', value: ai * perAiInterview, detail: `${plural(ai, 'AI interview')} × ${perAiInterview}` },
-    };
+    const aiPoints = { label: 'AI interview points', value: ai * perAiInterview, detail: `${plural(ai, 'AI interview')} × ${perAiInterview}` };
+    if (showMock) {
+      const { quality, step } = markQualityStep(mocks, mocks ? metrics.mockAverage : 0, 'mock interview');
+      const exact = mocks * perMock * quality + ai * perAiInterview;
+      exacts.push(exact);
+      result.interview = {
+        score: round1(exact),
+        rule: `${perMock} points per mock interview × quality${showAi ? `, plus ${perAiInterview} per AI interview` : ''}`,
+        work: { label: 'Work points', value: mocks * perMock, detail: `${plural(mocks, 'mock interview')} × ${perMock}` },
+        quality: step,
+        extra: showAi ? aiPoints : null,
+      };
+    } else {
+      const exact = ai * perAiInterview;
+      exacts.push(exact);
+      result.interview = {
+        score: round1(exact),
+        rule: `${perAiInterview} points per AI interview`,
+        work: { label: 'Work points', value: exact, detail: aiPoints.detail },
+        quality: null,
+        extra: null,
+      };
+    }
   }
   if (features.assessment) {
     const taken = count(metrics.testsTaken);

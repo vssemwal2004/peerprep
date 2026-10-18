@@ -87,8 +87,8 @@ test('university service syncs verified server scores without identities or rest
       { role: 'student', isActive: true, accessScope: 'assessment_only' },
       { role: 'student', isActive: false, accessScope: 'full' },
     ]);
-    // Challenge XP does not count toward rank; one 50% test on the only licensed module counts as 50% with
-    // 2 starter tests at 50%, so 1 x 100 x (50 - 40) / 60 = 16.7, synced as 17 whole points.
+    // Challenge XP does not count toward rank; one 50% test on the only licensed module is 1 x 100 x (50 - 40) / 60 = 16.67,
+    // synced as 17 whole points and shown exactly.
     await StudentChallenge.collection.insertOne({ studentId: own, kind: 'daily', earnedAt: new Date(), rewardPoints: 20 });
     await AssessmentSubmission.collection.insertOne({ studentId: own, assessmentId: new mongoose.Types.ObjectId(), status: 'submitted', evaluationStatus: 'completed', score: 50, maxMarks: 100, submittedAt: new Date() });
     const campus = await University.create({ universityId: 'campus-a', name: 'Campus', apiKeyHash: 'test-only', permissions: {}, sources: policy.sources });
@@ -108,7 +108,7 @@ test('university service syncs verified server scores without identities or rest
     campus.permissions.assessments = true;
     await campus.save();
     const rank = await getStudentGlobalRanking({ _id: own, score: 99999 });
-    assert.equal(rank.status, 'ready'); assert.equal(rank.score, 17, 'Prep Score from the test (synced in whole points); challenge XP is not added'); assert.equal(rank.rank, 1); assert.equal(rank.totalStudents, 2);
+    assert.equal(rank.status, 'ready'); assert.equal(rank.score, 16.67, 'Prep Score from the test (ranked in whole points, shown exactly); challenge XP is not added'); assert.equal(rank.rank, 1); assert.equal(rank.totalStudents, 2);
     assert.doesNotMatch(JSON.stringify(transmitted), /Private|private@|studentId|99999/);
     assert.equal((await getStudentGlobalRanking({ _id: other })).status, 'unranked');
   } finally {

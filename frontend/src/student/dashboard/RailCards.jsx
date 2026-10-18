@@ -2,7 +2,7 @@ import { useState } from 'react';
 import GlobalRankCard from '../profile/GlobalRankCard';
 import { Link } from 'react-router-dom';
 import { ArrowRight, ArrowUpRight, CalendarClock, ChevronDown, Megaphone, Trophy } from 'lucide-react';
-import { PrepScoreFlow, PrepScoreRules, ScoreValue } from '../prepScore/PrepScore';
+import { PrepScoreFlow, ScoreValue } from '../prepScore/PrepScore';
 import { formatRelativeTime, formatSchedule, isImportantAnnouncement, numeric } from './dashboardUtils';
 import { card, CardTitle, focusRing, Skeleton, textLink, Unavailable } from './ui';
 
@@ -11,7 +11,6 @@ const railCard = `p-4 ${card}`;
 const railChip = 'inline-flex flex-1 items-center justify-center gap-1 rounded-[10px] bg-[#f1f2f5] px-3 py-1.5 text-[12.5px] font-medium text-slate-700 transition-colors hover:bg-sky-50 hover:text-sky-700 dark:bg-white/[0.06] dark:text-zinc-200 dark:hover:bg-sky-500/10 dark:hover:text-sky-300';
 
 export function RankCard({ ranking, loading, error, onRetry }) {
-  const [showMethod, setShowMethod] = useState(false);
   const total = numeric(ranking?.totalStudents);
   const rawRank = numeric(ranking?.rank);
   const rank = rawRank > 0 && total > 0 ? Math.min(total, rawRank) : null;
@@ -55,14 +54,7 @@ export function RankCard({ ranking, loading, error, onRetry }) {
     {!loading && !error && <>
       <div className="mt-3 flex items-center justify-between gap-3 text-[12px]">
         <span className="min-w-0 truncate text-slate-500 dark:text-zinc-400">{ranking?.universityName || ''}</span>
-        <button type="button" onClick={() => setShowMethod((value) => !value)} aria-expanded={showMethod} aria-controls="rank-method"
-          className={`inline-flex shrink-0 items-center gap-0.5 rounded font-medium text-slate-600 hover:text-sky-700 dark:text-zinc-300 dark:hover:text-sky-300 ${focusRing}`}>
-          How the Prep Score works<ChevronDown className={`h-3.5 w-3.5 transition-transform ${showMethod ? 'rotate-180' : ''}`} aria-hidden="true" />
-        </button>
       </div>
-      {showMethod && <div id="rank-method" className="mt-2 rounded-lg bg-[#f6f7f9] px-3 py-3 dark:bg-white/[0.04]">
-        <PrepScoreRules prepScore={ranking?.prepScore} />
-      </div>}
     </>}
   </section><GlobalRankCard scoreRevision={ranking?.score} /></>;
 }
