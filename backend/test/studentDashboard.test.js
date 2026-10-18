@@ -58,16 +58,18 @@ test('rank derives verified progress, preserves ties, and never returns another 
   assert.deepEqual(missing.badgeMetrics, idle.badgeMetrics);
   assert.deepEqual(missing.levelMetrics, idle.levelMetrics);
   assert.equal(rankStudentProgress(rows, 'a', '', now).rank, null);
-  // Every feature 0-100; the overall Prep Score is their average.
+  // Every feature is work points x quality; the overall Prep Score is their average.
   const scored = scoreStudentProgress({
     easySolved: 10, mediumSolved: 4, hardSolved: 2, submissions: 20, acceptedSubmissions: 10,
     completedTopics: 6, totalTopics: 12, interviews: 2, mockAverage: 70, aiInterviews: 1, assessmentsCompleted: 3, assessmentScore: 80,
   }, now);
-  // Coding: progress (10 x 10/50 + 20 x 4/40 + 40 x 2/20) / 70 = 11.43% for 85, accuracy 50% for 15.
-  assert.deepEqual(scored.scoreBreakdown, { coding: 17.2, learning: 50, interview: 66, assessment: 76 });
-  assert.equal(scored.score, 52.3);
-  const huge = scoreStudentProgress({ easySolved: 1e6, mediumSolved: 1e6, hardSolved: 1e6, submissions: 1e7, acceptedSubmissions: 1e7, completedTopics: 1e6, totalTopics: 10, interviews: 1e5, mockAverage: 100, aiInterviews: 1e5, assessmentsCompleted: 1e5, assessmentScore: 100 }, now);
-  assert.equal(huge.score, 100, 'scores never run into thousands: 100 is the most anyone can have');
+  // Coding: 10 + 4 x 2 + 2 x 4 = 26 work points, 20 submissions for 16 solves is fair (100%).
+  // Learning: 6 x 14. Interview: 2 x 250 x (60 - 40) / 60 + 1 x 5. Assessment: 3 x 100 x (68 - 40) / 60.
+  assert.deepEqual(scored.scoreBreakdown, { coding: 26, learning: 84, interview: 171.7, assessment: 140 });
+  assert.equal(scored.score, 105.42);
+  const huge = scoreStudentProgress({ easySolved: 3000, mediumSolved: 3000, hardSolved: 3000, submissions: 1e4, acceptedSubmissions: 1e4, completedTopics: 1e6, totalTopics: 10, interviews: 100, mockAverage: 100, aiInterviews: 100, assessmentsCompleted: 100, assessmentScore: 100 }, now);
+  assert.ok(huge.score > 1000 && Number.isFinite(huge.score), 'no ceiling: more real work keeps adding');
+  assert.equal(huge.scoreBreakdown.learning, 140, 'topics count only up to the topics open to the student');
   const codingOnly = scoreStudentProgress({ easySolved: 3, completedTopics: 9, scoreFeatures: { coding: true, learning: false, interview: false, assessment: false } }, now);
   assert.deepEqual(Object.keys(codingOnly.prepScore.features), ['coding'], 'unlicensed features do not count and are not listed');
   assert.ok(Math.abs(codingOnly.score - codingOnly.prepScore.features.coding.score) < 0.05, 'with one licensed feature the overall score is that feature (shown to 1 decimal, ranked to 2)');
@@ -239,9 +241,10 @@ test('dashboard counts distinct public accepted problems, scopes ranking, and re
   assert.equal(dashboard.coding.hardSolved, 0);
   assert.deepEqual(dashboard.coding.totalsByDifficulty, { easy: 2, medium: 1, hard: 1 });
   assert.equal(dashboard.coding.totalProblems, 4);
-  // Prep Score counts accuracy too: 2 of 3 accepted submissions beats a single Medium or Easy solve.
-  assert.equal(dashboard.ranking.rank, 1);
-  assert.equal(dashboard.ranking.tied, false);
+  // One Easy solve is 1 work point (3 submissions for it are fair), equal to the classmate with one Easy solve;
+  // the classmate with a Medium solve (2 points) ranks first.
+  assert.equal(dashboard.ranking.rank, 2);
+  assert.equal(dashboard.ranking.tied, true);
   assert.equal(dashboard.ranking.totalStudents, 3, 'other colleges, disabled and assessment-only accounts are not ranked here');
   assert.equal(dashboard.learning.totalTopics, 1);
   assert.equal(dashboard.learning.completedTopics, 0);

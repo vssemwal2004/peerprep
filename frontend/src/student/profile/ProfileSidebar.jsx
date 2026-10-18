@@ -13,7 +13,8 @@ import {
 } from 'lucide-react';
 import { focusRing } from './format';
 import { levelTheme } from './levelTheme';
-import { formatScore, PrepCoin } from '../prepScore/PrepScore';
+import { formatScore } from '../prepScore/formatScore';
+import { PrepCoin } from '../prepScore/PrepScore';
 
 function normalizeHref(href) {
   const raw = typeof href === 'string' ? href.trim() : '';

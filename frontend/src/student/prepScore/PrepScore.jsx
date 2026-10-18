@@ -1,5 +1,6 @@
 import { useId, useState } from 'react';
 import { BookOpen, ChevronDown, ClipboardCheck, Code2, MessagesSquare } from 'lucide-react';
+import { formatScore } from './formatScore';
 
 // Prep Score: each feature scores work points x quality from the student's own
 // work, and the Prep Score is the average of the features their university has
@@ -12,12 +13,6 @@ const FEATURES = [
   { key: 'assessment', label: 'Prep Assessment', Icon: ClipboardCheck },
 ];
 
-const finite = (value) => {
-  const number = Number(value);
-  return Number.isFinite(number) ? Math.max(0, number) : 0;
-};
-/** "1,234.5" (one decimal at most). */
-export const formatScore = (value) => finite(value).toLocaleString(undefined, { maximumFractionDigits: 1 });
 
 const COIN_FACE = {
   background: 'radial-gradient(circle at 34% 28%, #fffbeb 0%, #fde68a 18%, #fbbf24 45%, #f59e0b 72%, #b45309 100%)',

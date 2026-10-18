@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, ChevronDown } from 'lucide-react';
-import { formatScore, PrepCoin, PrepScoreFlow, PrepScoreRules, ScoreValue } from './PrepScore';
+import { formatScore } from './formatScore';
+import { PrepCoin, PrepScoreFlow, PrepScoreRules, ScoreValue } from './PrepScore';
 import { rankingSnapshot, subscribeRanking } from './rankingStore';
 
 /**

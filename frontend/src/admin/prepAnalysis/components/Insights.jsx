@@ -5,7 +5,8 @@ import {
 import { DIFFICULTY_COLORS } from "../charts/chartTheme";
 import { LANGUAGE_LABELS } from "../charts/chartOptions";
 import { isKpiActive, kpiRule } from "../filterModel";
-import { formatScore, PrepCoin } from "../../../student/prepScore/PrepScore";
+import { formatScore } from "../../../student/prepScore/formatScore";
+import { PrepCoin } from "../../../student/prepScore/PrepScore";
 import { initials, sectionStyle } from "./sectionStyles";
 import { Dialog, IconButton, focusRing } from "./ui";
 
