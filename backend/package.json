@@ -8,6 +8,7 @@
     "dev": "node --env-file=.env --watch src/server.js",
     "start": "node --env-file=.env src/server.js",
     "start:local-repair": "node --env-file=.env --env-file=.env.local-repair src/server.js",
+    "dev:local-repair": "node --env-file=.env --env-file=.env.local-repair --watch src/server.js",
     "worker:compiler": "node --env-file=.env src/workers/compiler.worker.js",
     "worker:assessment": "node --env-file=.env src/workers/assessment.worker.js",
     "worker:maintenance": "node --env-file=.env src/workers/maintenance.worker.js",

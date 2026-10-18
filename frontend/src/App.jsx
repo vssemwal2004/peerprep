@@ -80,7 +80,9 @@ const CoordinatorOnboarding = lazy(() => import("./admin/CoordinatorOnboarding")
 const CoordinatorDirectory = lazy(() => import("./admin/CoordinatorDirectory"));
 const AdminChangePassword = lazy(() => import("./admin/AdminChangePassword"));
 const AdminActivity = lazy(() => import("./admin/AdminActivity"));
+// Assessment analysis still uses the previous analytics page until Prep Analysis covers assessments.
 const AdminAnalyticsPage = lazy(() => import("./admin/analytics/AdminAnalyticsPage"));
+const PrepAnalysisPage = lazy(() => import("./admin/prepAnalysis/PrepAnalysisPage"));
 const LibraryWorkspace = lazy(() => import("./admin/library/LibraryWorkspace"));
 const AdminCompanyInsights = lazy(() => import("./admin/AdminCompanyInsights"));
 const AdminCompanyBenchmarkAdd = lazy(() => import("./admin/AdminCompanyBenchmarkAdd"));
@@ -467,7 +469,8 @@ function AppContent() {
         <Route path="/admin/platform" element={<AdminShell><PlatformControl /></AdminShell>} />
         <Route path="/admin/learning/:semester/:subject/:teacherId" element={<AdminShell><AdminLearningDetail /></AdminShell>} />
         <Route path="/admin/activity" element={<AdminShell><AdminActivity /></AdminShell>} />
-        <Route path="/admin/analysis" element={<AdminShell><AdminAnalyticsPage /></AdminShell>} />
+        <Route path="/admin/analysis" element={<AdminShell><PrepAnalysisPage /></AdminShell>} />
+        <Route path="/admin/analysis/assessments" element={<AdminShell><AdminAnalyticsPage /></AdminShell>} />
         <Route path="/admin/assessment" element={<AdminShell><AssessmentDashboard /></AdminShell>} />
         <Route path="/admin/assessment/create" element={<AdminShell><CreateAssessment /></AdminShell>} />
         <Route path="/admin/assessment/:id" element={<AdminShell><CreateAssessment viewOnly /></AdminShell>} />

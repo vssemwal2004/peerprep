@@ -2,6 +2,7 @@ import Assessment from '../models/Assessment.js';
 import Problem from '../models/Problem.js';
 import QuestionLibrary from '../models/QuestionLibrary.js';
 import TestCase from '../models/TestCase.js';
+import { serialSearchClause } from '../utils/problemSerial.js';
 
 const LIBRARY_SYNC_COOLDOWN_MS = Math.max(0, Number(process.env.QUESTION_LIBRARY_SYNC_COOLDOWN_MS || 60000));
 
@@ -246,6 +247,7 @@ function buildProblemLibraryPayload(problem = {}, { sampleTestCases = [], hidden
     sourceProblemId: problem._id,
     sourceProblemTitle: String(problem.title || '').trim(),
     displayOrder: Number(problem.displayOrder || 2147483647),
+    sourceNumber: Number(problem.sourceNumber) > 0 ? Number(problem.sourceNumber) : undefined,
     sourceQuestionId: String(problem._id),
     sectionName: 'Compiler Problem',
     questionType: 'coding',
@@ -529,7 +531,7 @@ export function buildLibrarySearchMatch(search = '') {
   const normalized = String(search || '').trim();
   const serialNumber = /^\d+$/.test(normalized) ? Number(normalized) : null;
   if (!serialNumber) return { searchPrefixes: { $all: terms } };
-  return { displayOrder: serialNumber };
+  return serialSearchClause(serialNumber);
 }
 
 export function formatLibraryQuestionSummary(question = {}) {
@@ -552,6 +554,7 @@ export function formatLibraryQuestionSummary(question = {}) {
     sourceProblemId: linkedProblemId,
     sourceProblemTitle: question.sourceProblemTitle || '',
     displayOrder: Number(question.displayOrder || 2147483647),
+    sourceNumber: Number(question.sourceNumber) > 0 ? Number(question.sourceNumber) : null,
     sourceQuestionId: question.sourceQuestionId || '',
     sectionName: question.sectionName || '',
     questionType: question.questionType || 'other',

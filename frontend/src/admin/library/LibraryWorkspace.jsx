@@ -225,7 +225,7 @@ export default function LibraryWorkspace({ view = 'questions' }) {
 
   const codingItems = [
     rolePrefix === '/admin'
-      ? { id: 'admin-analysis', label: 'Analysis', Icon: BarChart3, to: '/admin/analysis' }
+      ? { id: 'admin-analysis', label: 'Prep Analysis', Icon: BarChart3, to: '/admin/analysis' }
       : canViewCodingAnalytics && { id: 'coding-analytics', label: 'Coding analytics', Icon: BarChart3, to: `${libraryRoot}/coding/analytics` },
   ].filter(Boolean);
 

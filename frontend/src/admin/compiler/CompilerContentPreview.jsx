@@ -47,6 +47,27 @@ export function RichTextPreview({ content, className = '', lead = false }) {
   let listBuffer = null;
   let codeBuffer = null;
   let exampleBuffer = null;
+  let tableBuffer = null;
+
+  const flushTable = () => {
+    if (!tableBuffer || tableBuffer.rows.length === 0) return;
+    const [header, ...body] = tableBuffer.rows;
+    blocks.push(
+      <div key={`table-${blocks.length}`} className="max-w-full overflow-x-auto rounded-xl border border-slate-200 dark:border-gray-700">
+        <table className="w-full min-w-max border-collapse text-left text-sm text-slate-800 dark:text-gray-200">
+          <thead className="bg-slate-100 text-slate-950 dark:bg-gray-800 dark:text-white">
+            <tr>{header.map((cell, index) => <th key={`head-${index}`} className="border-b border-slate-200 px-3.5 py-2.5 font-semibold dark:border-gray-700">{renderInlineNodes(cell, `table-head-${index}`)}</th>)}</tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 bg-white dark:divide-gray-800 dark:bg-gray-900">
+            {body.map((row, rowIndex) => (
+              <tr key={`row-${rowIndex}`}>{row.map((cell, cellIndex) => <td key={`cell-${rowIndex}-${cellIndex}`} className="px-3.5 py-2.5 align-top">{renderInlineNodes(cell, `table-${rowIndex}-${cellIndex}`)}</td>)}</tr>
+            ))}
+          </tbody>
+        </table>
+      </div>,
+    );
+    tableBuffer = null;
+  };
 
   const flushExample = () => {
     if (!exampleBuffer) return;
@@ -86,6 +107,18 @@ export function RichTextPreview({ content, className = '', lead = false }) {
 
   lines.forEach((line) => {
     const trimmed = line.trim();
+    const tableCells = /^\|.*\|$/.test(trimmed)
+      ? trimmed.slice(1, -1).split(/(?<!\\)\|/).map((cell) => cell.trim().replace(/\\\|/g, '|'))
+      : null;
+    const tableDivider = tableCells?.every((cell) => /^:?-{3,}:?$/.test(cell));
+    if (tableCells && tableCells.length >= 2) {
+      flushList();
+      flushExample();
+      if (!tableBuffer) tableBuffer = { rows: [] };
+      if (!tableDivider) tableBuffer.rows.push(tableCells);
+      return;
+    }
+    flushTable();
     const labeledLine = trimmed.match(/^(?:\*\*)?(input|output|explanation)\s*:(?:\*\*)?\s*(.*)$/i);
     const constraintLine = /^(?:\d+|[A-Za-z_]\w*(?:\[[^\]]+\]|(?:\.\w+))*)\s*(?:<=|>=|<|>|==|!=)/.test(trimmed);
     if (labeledLine) {
@@ -196,6 +229,7 @@ export function RichTextPreview({ content, className = '', lead = false }) {
 
   flushList();
   flushExample();
+  flushTable();
   if (codeBuffer) blocks.push(<pre key={`code-${blocks.length}`} className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950 px-4 py-4 font-mono text-[13px] leading-6 text-sky-100 shadow-inner"><code>{codeBuffer.join('\n')}</code></pre>);
 
   return (

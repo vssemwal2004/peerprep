@@ -49,6 +49,8 @@ export function pathAllowed(pathname, permissions, role = 'admin', search = '', 
     if (section === 'interviews' || section === 'interview') return moduleEnabled(permissions, 'interviews');
     if (section === 'learning') return moduleEnabled(permissions, 'learning');
     if (section === 'overview' || section === 'placement' || section === 'readiness') return contributors.every((name) => moduleEnabled(permissions, name));
+  } else if (/^\/admin\/analysis\/assessments(?:\/|$)/.test(pathname)) {
+    return moduleEnabled(permissions, 'assessments');
   } else if (new URLSearchParams(search || pathname.split('?')[1] || '').get('source') === 'coding') {
     return moduleEnabled(permissions, 'questions');
   }

@@ -38,6 +38,12 @@ int main() { int t; cin >> t; cout << solve(v, t) << endl; }`, 'cpp');
     assert.equal(found[name], 'variable', `${name} is a variable`);
   }
   assert.equal(found.ll, 'class');
+  const details = Object.fromEntries(extractDeclaredIdentifiers(`int solve(vector<int>& nums, int target) {
+  map<string, vector<int>> groups; long long total = 0, best = -1; return 0; }`, 'cpp').map(({ name, detail }) => [name, detail]));
+  assert.equal(details.solve, 'int solve(vector<int>& nums, int target)');
+  assert.equal(details.nums, 'vector<int>&');
+  assert.equal(details.groups, 'map<string, vector<int>>');
+  assert.equal(details.best, 'long long');
   for (const absent of ['commentedOut', 'fakeInString', 'cout', 'cin', 'endl', 'std', 'vector', 'int', 'return', 'include', 'bits']) {
     assert.equal(found[absent], undefined, `${absent} is not suggested`);
   }
@@ -181,7 +187,7 @@ function createFakeMonaco() {
   const editors = [];
   const monaco = {
     languages: {
-      CompletionItemKind: { Function: 1, Variable: 4, Class: 5, Module: 8 },
+      CompletionItemKind: { Method: 0, Function: 1, Field: 3, Variable: 4, Class: 5, Module: 8, Keyword: 17, Text: 18, Reference: 21 },
       registerCompletionItemProvider(languageId, provider) {
         const entry = { languageId, provider, disposed: false };
         registered.push(entry);
@@ -242,18 +248,37 @@ test('providers are registered once, scoped to student editors and disposed with
 
   editors.push({ getModel: () => model, getDomNode: () => studentNode });
   const result = python.provideCompletionItems(model, position);
-  const labels = result.suggestions.map((item) => item.label);
-  assert.deepEqual(labels.sort(), ['count', 'helper', 'total']);
-  assert.ok(!labels.includes('to'), 'The word being typed is not suggested back');
-  const helper = result.suggestions.find((item) => item.label === 'helper');
+  const nameOf = (item) => (typeof item.label === 'string' ? item.label : item.label.label);
+  const byName = new Map(result.suggestions.map((item) => [nameOf(item), item]));
+  for (const name of ['count', 'helper', 'total']) assert.ok(byName.get(name).sortText.startsWith('0'), `${name} is a declared name`);
+  assert.ok(!byName.has('to'), 'The word being typed is not suggested back');
+  assert.ok(byName.get('return').sortText.startsWith('4'), 'Keywords stay available beside declared names');
+  assert.ok(byName.get('range').sortText.startsWith('3'), 'Library names stay available');
+  const helper = byName.get('helper');
   assert.equal(helper.kind, 1);
-  assert.equal(result.suggestions.find((item) => item.label === 'total').kind, 4);
+  assert.equal(helper.detail, 'def helper(count)', 'Functions show their signature');
+  assert.equal(byName.get('total').kind, 4);
   assert.deepEqual(helper.range, { startLineNumber: 3, endLineNumber: 3, startColumn: 5, endColumn: 7 });
-  assert.ok(helper.sortText.startsWith('0'));
+  const sorted = [...result.suggestions].sort((a, b) => a.sortText.localeCompare(b.sortText)).map(nameOf);
+  assert.deepEqual(sorted.slice(0, 3), ['count', 'helper', 'total'], 'Declared names rank first');
 
-  const memberModel = createModel('items = []\nitems.ap', 'python');
+  const memberModel = createModel('stack = []\nstack.sort()\nstack.ap', 'python');
   editors.push({ getModel: () => memberModel, getDomNode: () => studentNode });
-  assert.equal(python.provideCompletionItems(memberModel, { lineNumber: 2, column: 9 }), undefined, 'Member access is left to Monaco');
+  const members = python.provideCompletionItems(memberModel, { lineNumber: 3, column: 9 }).suggestions.map(nameOf);
+  assert.ok(members.includes('append'), 'Container methods are offered after a dot');
+  assert.ok(members.includes('sort'), 'Members already used in the file are offered');
+  assert.ok(!members.includes('stack') && !members.includes('return'), 'Variables and keywords are not members');
+
+  const typedModel = createModel('vector<int> nums;\nint best = 0;\nnu', 'cpp');
+  editors.push({ getModel: () => typedModel, getDomNode: () => studentNode });
+  const cpp = registered.find((entry) => entry.languageId === 'cpp').provider;
+  const typed = new Map(cpp.provideCompletionItems(typedModel, { lineNumber: 3, column: 3 }).suggestions.map((item) => [nameOf(item), item]));
+  assert.equal(typed.get('nums').label.description, 'vector<int>', 'Variables show their declared type');
+  assert.equal(typed.get('best').label.description, 'int');
+
+  const comparison = createModel('a = 1\nif a >', 'python');
+  editors.push({ getModel: () => comparison, getDomNode: () => studentNode });
+  assert.deepEqual(python.provideCompletionItems(comparison, { lineNumber: 2, column: 7 }, { triggerKind: 1 }).suggestions, [], '`>` alone does not open the list');
 
   releaseFirst();
   releaseFirst();

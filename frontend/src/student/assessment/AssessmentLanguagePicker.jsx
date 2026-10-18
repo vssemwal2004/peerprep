@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, Code2 } from 'lucide-react';
 import { getLanguageLabel } from '../../admin/compiler/compilerUtils';
 
@@ -87,11 +87,4 @@ function AssessmentLanguagePicker({ languages = [], value, onChange, disabled = 
   );
 }
 
-function languagePickerPropsEqual(previous, next) {
-  return previous.value === next.value
-    && previous.disabled === next.disabled
-    && previous.languages.length === next.languages.length
-    && previous.languages.every((language, index) => language === next.languages[index]);
-}
-
-export default memo(AssessmentLanguagePicker, languagePickerPropsEqual);
+export default AssessmentLanguagePicker;

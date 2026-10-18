@@ -1442,7 +1442,7 @@ export async function listProblems(req, res) {
     query.$and = [
       {
         $or: [
-          ...(serialNumber ? [{ displayOrder: serialNumber }] : []),
+          ...(serialNumber ? [{ displayOrder: serialNumber }, { sourceNumber: serialNumber }] : []),
           { title: regex },
           { tags: regex },
           { companyTags: regex },

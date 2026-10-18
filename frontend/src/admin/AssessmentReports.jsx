@@ -1316,7 +1316,7 @@ export default function AssessmentReports() {
                 return (
                   <button key={tab.id} onClick={() => {
                     if (tab.id === 'analytics') {
-                      navigate(`/admin/analysis${selectedAssessmentId ? `?assessmentIds=${encodeURIComponent(selectedAssessmentId)}` : ''}`);
+                      navigate(`/admin/analysis/assessments${selectedAssessmentId ? `?assessmentIds=${encodeURIComponent(selectedAssessmentId)}` : ''}`);
                       return;
                     }
                     setActiveTab(tab.id);

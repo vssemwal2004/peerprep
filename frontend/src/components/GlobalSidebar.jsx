@@ -208,7 +208,7 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
     ...(import.meta.env.VITE_PEERPREP_DEPLOYMENT_ROLE === 'control'
       ? [{ type: 'link', label: 'Universities', to: '/admin/platform', icon: Building2 }]
       : []),
-    { type: 'link', label: 'Analysis', to: '/admin/analysis', icon: BarChart3 },
+    { type: 'link', label: 'Prep Analysis', to: '/admin/analysis', icon: BarChart3 },
     {
       type: 'group',
       key: 'interviews',

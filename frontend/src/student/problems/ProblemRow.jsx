@@ -27,8 +27,7 @@ export default function ProblemRow({ problem, number, saved, opening, onOpen, on
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <span className="shrink-0 text-[12px] tabular-nums text-slate-400 dark:text-zinc-500">{number}</span>
-          <span className="truncate text-[14.5px] font-medium text-slate-900 transition-colors group-hover:text-sky-700 dark:text-zinc-50 dark:group-hover:text-sky-300" title={problem.title}>{problem.title}</span>
-          {opening && <LoaderCircle className="h-4 w-4 shrink-0 animate-spin text-sky-500" aria-label="Opening" />}
+          <span className="truncate text-[14.5px] font-medium text-slate-900 transition-colors group-hover:text-sky-700 dark:text-zinc-50 dark:group-hover:text-sky-300" title={problem.title}>{problem.title}</span>          {opening && <LoaderCircle className="h-4 w-4 shrink-0 animate-spin text-sky-500" aria-label="Opening" />}
         </div>
         {(tags.length > 0 || companies.length > 0) && <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           {tags.map((tag) => <span key={tag} className="rounded-md bg-[#f3f4f6] px-1.5 py-0.5 text-[11px] text-slate-500 dark:bg-white/[0.05] dark:text-zinc-400">{tag}</span>)}

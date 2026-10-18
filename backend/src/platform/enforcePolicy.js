@@ -16,16 +16,19 @@ export function routeModule(path, { assessmentId } = {}) {
 }
 
 function hasAnalysisAccess(path, permissions = {}) {
-  const modules = path.startsWith('/admin/')
-    ? ['questions', 'assessments', 'learning']
-    : ['questions', 'assessments', 'interviews', 'learning'];
+  // Prep Analysis also covers mock interviews (events) and AI interviews.
+  const modules = path.startsWith('/admin/prep-analysis')
+    ? ['questions', 'assessments', 'learning', 'events', 'interviews']
+    : path.startsWith('/admin/')
+      ? ['questions', 'assessments', 'learning']
+      : ['questions', 'assessments', 'interviews', 'learning'];
   return modules.some((name) => permissions[name] === true);
 }
 
 export async function enforceUniversityPolicy(req, res, next) {
   if (!isUniversity()) return next();
   const moduleName = routeModule(req.path, { assessmentId: req.body?.assessmentId || req.query?.assessmentId });
-  const analysisRoute = /^\/(?:admin\/analytics|student\/analysis)(?:\/|$)/.test(req.path);
+  const analysisRoute = /^\/(?:admin\/analytics|admin\/prep-analysis|student\/analysis)(?:\/|$)/.test(req.path);
   if (!moduleName && !analysisRoute) return next();
   try {
     const policy = await universityPolicy();

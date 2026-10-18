@@ -170,6 +170,7 @@ function librarySearchRank(question = {}, search = '') {
   const query = normalizeSearchText(search);
   if (!query) return 0;
   if (/^\d+$/.test(query) && Number(question.displayOrder) === Number(query)) return 0;
+  if (/^\d+$/.test(query) && Number(question.sourceNumber) === Number(query)) return 1;
   const titles = [question.questionText, question.sourceProblemTitle]
     .map(normalizeSearchText)
     .filter(Boolean);
@@ -355,7 +356,7 @@ function buildStatusCounts(questions = []) {
 
 const LIBRARY_SUMMARY_PROJECTION = [
   '_id', 'sourceKey', 'sourceType', 'sourceAssessmentId', 'sourceAssessmentTitle',
-  'sourceProblemId', 'sourceProblemTitle', 'displayOrder', 'sourceQuestionId', 'sectionName',
+  'sourceProblemId', 'sourceProblemTitle', 'displayOrder', 'sourceNumber', 'sourceQuestionId', 'sectionName',
   'questionType', 'questionText', 'tags', 'topicIds', 'topicAncestorIds',
   'codingTagIds', 'keywords', 'difficulty', 'status', 'visibility', 'createdBy',
   'createdAt', 'updatedAt', 'questionData.libraryItemKind', 'questionData.questions',
@@ -378,7 +379,8 @@ function matchesSharedQuestion(question, query = {}) {
   if (query.search) {
     const normalizedSearch = normalizeSearchText(query.search);
     if (/^\d+$/.test(normalizedSearch)) {
-      if (Number(question.displayOrder) !== Number(normalizedSearch)) return false;
+      if (Number(question.displayOrder) !== Number(normalizedSearch)
+        && Number(question.sourceNumber) !== Number(normalizedSearch)) return false;
     } else if (![question.questionText, ...(question.tags || [])]
       .some((value) => String(value || '').toLowerCase().includes(normalizedSearch))) return false;
   }
@@ -566,7 +568,7 @@ export async function listLibraryQuestions(req, res) {
                   {
                     case: {
                       $or: [
-                        ...(serialSearch ? [{ $eq: ['$displayOrder', serialSearch] }] : []),
+                        ...(serialSearch ? [{ $eq: ['$displayOrder', serialSearch] }, { $eq: ['$sourceNumber', serialSearch] }] : []),
                         { $eq: [{ $toLower: { $trim: { input: { $ifNull: ['$questionText', ''] } } } }, normalizedSearch] },
                         { $eq: [{ $toLower: { $trim: { input: { $ifNull: ['$sourceProblemTitle', ''] } } } }, normalizedSearch] },
                       ],

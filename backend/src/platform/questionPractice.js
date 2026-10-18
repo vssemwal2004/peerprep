@@ -23,6 +23,7 @@ import { universityPolicy, controlRequest } from './client.js';
 import { problemUsedInAssessment, serializeProblem, studentFailedCase } from '../controllers/compilerHelpers.js';
 import { interviewReportOptions, interviewReportSummaries, reporterKey, saveInterviewReport } from './interviewQuestionReports.js';
 import { questionQuickPreps } from '../services/questService.js';
+import { serialSearchClause } from '../utils/problemSerial.js';
 
 const router = Router();
 const published = { status: 'published', visibility: { $ne: 'private' }, sourceType: { $ne: 'assessment' } };
@@ -87,7 +88,7 @@ const tagPattern = (words) => new RegExp(`^${words.map(escapeRegExp).join('[-_\\
 const companyNames = (question) => question.keywords || question.questionData?.problemDataSnapshot?.companyTags || [];
 
 /**
- * Reads the search box. '12' or '#12' is a question number (as in the admin library's serial search);
+ * Reads the search box. '12' or '#12' is a question number: the PeerPrep serial or the LeetCode number;
  * '#two-pointers' matches a topic starting with "two pointers"; other words match title, topic or company text.
  */
 export function parsePracticeSearch(raw) {
@@ -113,7 +114,7 @@ export function matchesPracticeCriteria(question, reportedCompanies, criteria) {
     && (!criteria.tags.length || criteria.tags.some((value) => tags.includes(value)))
     && (!criteria.companies.length || criteria.companies.some((value) => companies.includes(value)))
     && (!criteria.ids || criteria.ids.has(String(question._id)) || criteria.ids.has(String(question.sourceProblemId || '')))
-    && (search.serial == null || Number(question.displayOrder) === search.serial)
+    && (search.serial == null || Number(question.displayOrder) === search.serial || Number(question.sourceNumber) === search.serial)
     && search.tagTerms.every((words) => (question.tags || []).some((tag) => tagPattern(words).test(String(tag))))
     && (!search.text || [question.questionText, ...tags, ...companies].some((value) => String(value || '').toLowerCase().includes(search.text)));
 }
@@ -137,7 +138,7 @@ export function practiceListFilter(criteria, reportedIds = () => []) {
     clauses.push({ $or: [{ _id: { $in: objectIds } }, { sourceProblemId: { $in: objectIds } }] });
   }
   const { search } = criteria;
-  if (search.serial != null) clauses.push({ displayOrder: search.serial });
+  if (search.serial != null) clauses.push(serialSearchClause(search.serial));
   for (const words of search.tagTerms) clauses.push({ tags: tagPattern(words) });
   if (search.text) {
     const pattern = new RegExp(escapeRegExp(search.text), 'i');

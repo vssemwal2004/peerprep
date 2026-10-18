@@ -173,26 +173,37 @@ function destructuredNames(pattern) {
   return identifiersIn(cleaned);
 }
 
+const MAX_DETAIL_LENGTH = 90;
+
+// Collapses a declaration fragment into a one-line type or signature label.
+export function compactDetail(text) {
+  const compact = String(text || '').replace(/\s+/g, ' ').replace(/\s*([(),<>[\]])\s*/g, '$1')
+    .replace(/,/g, ', ').trim();
+  return compact.length > MAX_DETAIL_LENGTH ? `${compact.slice(0, MAX_DETAIL_LENGTH - 1)}…` : compact;
+}
+
 function createCollector(limit, keywords) {
   const found = new Map();
   return {
     isKeyword: (name) => keywords.has(name),
-    add(name, kind = 'variable') {
+    // `detail` is the declared type (variables) or signature (functions), when known.
+    add(name, kind = 'variable', detail = '') {
       if (!name || name === '_' || name.length > 64 || keywords.has(name)) return;
       if (!/^\$?[A-Za-z_][\w$]*[?!]?$/.test(name)) return;
       const existing = found.get(name);
       if (existing) {
-        if (KIND_PRIORITY[kind] > KIND_PRIORITY[existing]) found.set(name, kind);
+        if (KIND_PRIORITY[kind] > KIND_PRIORITY[existing.kind]) found.set(name, { kind, detail: detail || existing.detail });
+        else if (!existing.detail && detail && kind === existing.kind) existing.detail = detail;
         return;
       }
       if (found.size >= limit) return;
-      found.set(name, kind);
+      found.set(name, { kind, detail });
     },
     get full() {
       return found.size >= limit;
     },
     result() {
-      return [...found.entries()].map(([name, kind]) => ({ name, kind }));
+      return [...found.entries()].map(([name, { kind, detail }]) => ({ name, kind, detail: compactDetail(detail) }));
     },
   };
 }
@@ -228,16 +239,32 @@ function looksLikeFunctionDeclaration(code, typeName, openIndex) {
   return splitTopLevel(inner).every((piece) => CLIKE_PARAMETER.test(piece));
 }
 
+// The scan restarts after a keyword, so `long long x` matches as `long x`; this
+// restores the modifier words written just before the matched type.
+const TYPE_MODIFIER_BEFORE = /\b(unsigned|signed|long|short|const)\s+$/;
+
+function fullTypeName(code, typeIndex, typeName) {
+  let type = typeName;
+  let end = typeIndex;
+  for (let step = 0; step < 3; step += 1) {
+    const modifier = TYPE_MODIFIER_BEFORE.exec(code.slice(Math.max(0, end - 20), end));
+    if (!modifier) break;
+    type = `${modifier[1]} ${type}`;
+    end -= modifier[0].length;
+  }
+  return type;
+}
+
 function extractClike(code, collector) {
   eachMatch(code, /^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)(\()?/gm, (match) => {
-    collector.add(match[1], match[2] ? 'function' : 'variable');
+    collector.add(match[1], match[2] ? 'function' : 'variable', 'macro');
   }, collector);
   const body = code.replace(/^[ \t]*#[^\n]*/gm, ' ');
 
-  eachMatch(body, /\b(?:class|struct|enum|interface|record|union)\s+(?:class\s+|struct\s+)?([A-Za-z_]\w*)/g, (match) => {
-    collector.add(match[1], 'class');
+  eachMatch(body, /\b(class|struct|enum|interface|record|union)\s+(?:class\s+|struct\s+)?([A-Za-z_]\w*)/g, (match) => {
+    collector.add(match[2], 'class', match[1]);
   }, collector);
-  eachMatch(body, /\busing\s+([A-Za-z_]\w*)\s*=/g, (match) => collector.add(match[1], 'class'), collector);
+  eachMatch(body, /\busing\s+([A-Za-z_]\w*)\s*=\s*([^;\n]*)/g, (match) => collector.add(match[1], 'class', match[2]), collector);
 
   CLIKE_DECLARATION.lastIndex = 0;
   let match;
@@ -252,26 +279,33 @@ function extractClike(code, collector) {
     }
     const terminator = match[4];
     const terminatorIndex = match.index + match[0].length - terminator.length;
+    const baseType = fullTypeName(body, match.index, typeName);
+    const declaredType = `${baseType}${match[2].replace(/\s+/g, '')}`;
 
     if (terminator === '(') {
-      collector.add(name, looksLikeFunctionDeclaration(body, typeName, terminatorIndex) ? 'function' : 'variable');
+      if (looksLikeFunctionDeclaration(body, typeName, terminatorIndex)) {
+        const params = readBalanced(body, terminatorIndex);
+        collector.add(name, 'function', `${declaredType} ${name}(${params?.inner ?? ''})`);
+      } else {
+        collector.add(name, 'variable', declaredType);
+      }
       continue;
     }
     const isLambda = terminator === '=' && /^\s*\[[^\]]*\]\s*\(/.test(body.slice(terminatorIndex + 1, terminatorIndex + 80));
-    collector.add(name, isLambda ? 'function' : 'variable');
+    collector.add(name, isLambda ? 'function' : 'variable', isLambda ? 'lambda' : `${declaredType}${terminator === '[' ? '[]' : ''}`);
 
     if (terminator === ',' || terminator === '=') {
       const pieces = readDeclaratorPieces(body, terminatorIndex + 1, false);
       // After `=` the first piece is this declarator's own initializer.
       for (const piece of terminator === '=' ? pieces.slice(1) : pieces) {
-        collector.add(CLIKE_EXTRA_DECLARATOR.exec(piece)?.[1]);
+        collector.add(CLIKE_EXTRA_DECLARATOR.exec(piece)?.[1], 'variable', baseType);
       }
     }
   }
 
   // C++17 structured bindings: auto& [key, value] = ...
   eachMatch(body, /\bauto\s*[&*]{0,2}\s*\[([^\]]+)\]/g, (match) => {
-    identifiersIn(match[1]).forEach((name) => collector.add(name));
+    identifiersIn(match[1]).forEach((name) => collector.add(name, 'variable', 'auto'));
   }, collector);
 }
 
@@ -279,6 +313,11 @@ function extractClike(code, collector) {
 
 const JS_ARROW_OR_FUNCTION_VALUE = /^\s*(?:async\s+)?(?:function\b|[A-Za-z_$][\w$]*\s*=>|\([^()]*\)\s*(?::\s*[^=]+)?=>)/;
 const JS_MODIFIERS = /^(?:\s*(?:\.\.\.|public\s+|private\s+|protected\s+|readonly\s+|override\s+|@[\w$.]+\s+))*/;
+
+// `name: Type = value` -> 'Type' (TypeScript annotations only).
+function jsAnnotation(text) {
+  return /^[A-Za-z_$][\w$]*\??\s*:\s*([^=]+?)\s*(?:=[\s\S]*)?$/.exec(text)?.[1] || '';
+}
 
 function addJsParameters(paramText, collector) {
   for (const piece of splitTopLevel(paramText)) {
@@ -289,38 +328,44 @@ function addJsParameters(paramText, collector) {
       destructuredNames(pattern ? pattern.inner : trimmed).forEach((name) => collector.add(name));
       continue;
     }
-    collector.add(leadingIdentifier(trimmed));
+    collector.add(leadingIdentifier(trimmed), 'variable', jsAnnotation(trimmed) || 'parameter');
   }
 }
 
-function addJsDeclarator(piece, collector) {
+function addJsDeclarator(piece, collector, declarationKeyword) {
   const trimmed = piece.trim();
   if (!trimmed) return;
   if (trimmed[0] === '{' || trimmed[0] === '[') {
     const pattern = readBalanced(trimmed, 0);
-    destructuredNames(pattern ? pattern.inner : trimmed).forEach((name) => collector.add(name));
+    destructuredNames(pattern ? pattern.inner : trimmed).forEach((name) => collector.add(name, 'variable', declarationKeyword));
     return;
   }
   const name = leadingIdentifier(trimmed);
   const assignment = /^[A-Za-z_$][\w$]*\s*(?::[^=]*)?=(?![=>])/.exec(trimmed);
   const value = assignment ? trimmed.slice(assignment[0].length) : '';
-  collector.add(name, value && JS_ARROW_OR_FUNCTION_VALUE.test(value) ? 'function' : 'variable');
+  if (value && JS_ARROW_OR_FUNCTION_VALUE.test(value)) {
+    const params = /^\s*(?:async\s+)?(?:function\s*\*?\s*[\w$]*\s*)?(\([^()]*\)|[A-Za-z_$][\w$]*)/.exec(value)?.[1] || '()';
+    collector.add(name, 'function', `${declarationKeyword} ${name} = ${params.startsWith('(') ? params : `(${params})`} =>`);
+    return;
+  }
+  const annotation = jsAnnotation(assignment ? trimmed.slice(0, assignment[0].length - 1) : trimmed);
+  collector.add(name, 'variable', annotation ? `${declarationKeyword} ${name}: ${annotation}` : declarationKeyword);
 }
 
 function extractJs(code, collector) {
-  eachMatch(code, /\b(?:class|interface|enum|type)\s+([A-Za-z_$][\w$]*)/g, (match) => {
-    collector.add(match[1], 'class');
+  eachMatch(code, /\b(class|interface|enum|type)\s+([A-Za-z_$][\w$]*)/g, (match) => {
+    collector.add(match[2], 'class', match[1]);
   }, collector);
 
   eachMatch(code, /\bfunction\b\s*\*?\s*([A-Za-z_$][\w$]*)?\s*(?:<[^>()]*>)?\s*\(/g, (match) => {
-    if (match[1]) collector.add(match[1], 'function');
     const params = readBalanced(code, match.index + match[0].length - 1);
+    if (match[1]) collector.add(match[1], 'function', `function ${match[1]}(${params?.inner ?? ''})`);
     if (params) addJsParameters(params.inner, collector);
   }, collector);
 
-  eachMatch(code, /\b(?:const|let|var)\s+/g, (match) => {
+  eachMatch(code, /\b(const|let|var)\s+/g, (match) => {
     readDeclaratorPieces(code, match.index + match[0].length, true)
-      .forEach((piece) => addJsDeclarator(piece, collector));
+      .forEach((piece) => addJsDeclarator(piece, collector, match[1]));
   }, collector);
 
   // Class methods: `name(params) {`, `async name(...)`, `static get name()`.
@@ -329,7 +374,7 @@ function extractJs(code, collector) {
     if (!params) return;
     if (!/^\s*(?::\s*[^{;\n]+)?\{/.test(code.slice(params.end + 1, params.end + 120))) return;
     if (['if', 'for', 'while', 'switch', 'catch', 'function', 'return', 'with'].includes(match[1])) return;
-    collector.add(match[1], 'function');
+    collector.add(match[1], 'function', `${match[1]}(${params.inner})`);
     addJsParameters(params.inner, collector);
   }, collector);
 
@@ -347,24 +392,27 @@ function extractJs(code, collector) {
 function addPythonParameters(paramText, collector) {
   for (const piece of splitTopLevel(paramText)) {
     const name = leadingIdentifier(piece, /^\s*\*{0,2}\s*([A-Za-z_]\w*)/);
-    if (name !== 'self' && name !== 'cls') collector.add(name);
+    const annotation = /:\s*([^=]+?)\s*(?:=[\s\S]*)?$/.exec(piece)?.[1] || '';
+    if (name !== 'self' && name !== 'cls') collector.add(name, 'variable', annotation || 'parameter');
   }
 }
 
 function extractPython(code, collector) {
   eachMatch(code, /^[ \t]*(?:async[ \t]+)?def[ \t]+([A-Za-z_]\w*)[ \t]*\(/gm, (match) => {
-    collector.add(match[1], 'function');
     const params = readBalanced(code, match.index + match[0].length - 1);
+    const returns = params ? /^\s*->\s*([^:\n]+?)\s*:/.exec(code.slice(params.end + 1, params.end + 120))?.[1] : '';
+    collector.add(match[1], 'function', `def ${match[1]}(${params?.inner ?? ''})${returns ? ` -> ${returns}` : ''}`);
     if (params) addPythonParameters(params.inner, collector);
   }, collector);
 
-  eachMatch(code, /^[ \t]*class[ \t]+([A-Za-z_]\w*)/gm, (match) => collector.add(match[1], 'class'), collector);
+  eachMatch(code, /^[ \t]*class[ \t]+([A-Za-z_]\w*)/gm, (match) => collector.add(match[1], 'class', 'class'), collector);
 
   // a = ..., a, b = ..., x: int = ..., first, *rest = ...
-  eachMatch(code, /^[ \t]*(\*?[A-Za-z_]\w*(?:[ \t]*,[ \t]*\*?[A-Za-z_]\w*)*)[ \t]*,?[ \t]*(?::[^=\n]+)?=(?!=)/gm, (match) => {
+  eachMatch(code, /^[ \t]*(\*?[A-Za-z_]\w*(?:[ \t]*,[ \t]*\*?[A-Za-z_]\w*)*)[ \t]*,?[ \t]*(?::([^=\n]+))?=(?!=)/gm, (match) => {
     const isLambda = /^\s*lambda\b/.test(code.slice(match.index + match[0].length, match.index + match[0].length + 40));
     const names = identifiersIn(match[1]);
-    names.forEach((name) => collector.add(name, isLambda && names.length === 1 ? 'function' : 'variable'));
+    const annotation = match[2]?.trim() || '';
+    names.forEach((name) => collector.add(name, isLambda && names.length === 1 ? 'function' : 'variable', isLambda ? 'lambda' : annotation));
   }, collector);
 
   eachMatch(code, /\bfor[ \t]+([A-Za-z_][\w \t,()*]*?)[ \t]+in\b/g, (match) => {

@@ -59,6 +59,13 @@ const problemSchema = new mongoose.Schema({
     default: 2147483647,
     index: true,
   },
+  // LeetCode catalogue number, kept for search only; displayOrder is the PeerPrep serial.
+  // See utils/problemSerial.js.
+  sourceNumber: {
+    type: Number,
+    min: 1,
+    index: true,
+  },
   description: {
     type: String,
     default: '',

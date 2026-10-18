@@ -32,6 +32,7 @@ import avatarRoutes from './avatars.js';
 import bulkUploadRoutes from './bulkUploads.js';
 import problemListRoutes from './problemLists.js';
 import adminAnalyticsRoutes from '../modules/adminAnalytics/adminAnalytics.routes.js';
+import prepAnalysisRoutes from '../modules/prepAnalysis/prepAnalysis.routes.js';
 import platformRoutes from '../platform/routes.js';
 import questionPracticeRoutes from '../platform/questionPractice.js';
 import interviewCompanyRoutes from './interviewCompanies.js';
@@ -62,6 +63,7 @@ router.use('/activity', requireAuth, requireFullStudent, activityRoutes);
 // students must be able to execute coding questions inside an assigned test.
 router.use('/compiler', requireAuth, compilerRoutes);
 router.use('/admin/analytics', adminAnalyticsRoutes);
+router.use('/admin/prep-analysis', prepAnalysisRoutes);
 router.use('/problem-lists', problemListRoutes);
 router.use('/admin', adminAssessmentRoutes);
 router.use('/student', studentAssessmentRoutes);
