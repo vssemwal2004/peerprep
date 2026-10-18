@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { prepAnalysisApi } from "./api";
-import { normalizeState, switchArea, toQueryRequest } from "./filterModel";
+import { switchArea, toQueryRequest } from "./filterModel";
+import { prepAnalysisStateFromSearch } from "./analysisPreset";
 
 const STORAGE_KEY = "peerprep.prepAnalysis.v4";
 const OLD_STORAGE_KEY = "peerprep.prepAnalysis.v3";
@@ -28,7 +29,7 @@ export function usePrepAnalysis() {
   const stored = useMemo(readStored, []);
   const [catalog, setCatalog] = useState(null);
   const [catalogError, setCatalogError] = useState(null);
-  const [state, setState] = useState(() => normalizeState(stored.state));
+  const [state, setState] = useState(() => prepAnalysisStateFromSearch(window.location.search, stored.state));
   const [layouts, setLayouts] = useState(stored.layouts || {});
   const [table, setTableState] = useState(DEFAULT_TABLE);
   const [data, setData] = useState(null);

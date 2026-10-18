@@ -97,6 +97,8 @@ function assessmentRow(student, facts, now, range) {
   const attempts = [...latest.values()];
   const percents = attempts.map((attempt) => attempt.percent);
   const passedIds = attempts.filter((attempt) => attempt.percent >= PASS_PERCENT).map((attempt) => attempt.testId);
+  // Report navigation must also work for a completed test that an admin later hides.
+  const assignedIds = [...facts.tests.values()].filter((test) => test.forEveryone || test.assigned.has(id)).map((test) => test.id);
   // A missed test: meant for the student, over, (started in the period) and not taken.
   const inPeriod = (test) => !range?.from || !test.startTime || new Date(test.startTime) >= range.from;
   const missedIds = [...facts.tests.values()].filter((test) => test.ended && inPeriod(test) && testAssignedTo(test, id) && !latest.has(test.id)).map((test) => test.id);
@@ -113,6 +115,7 @@ function assessmentRow(student, facts, now, range) {
     lastScore: attempts.length ? attempts.at(-1).percent : 0,
     minutes: attempts.reduce((sum, attempt) => sum + attempt.minutes, 0),
     takenIds: attempts.map((attempt) => attempt.testId),
+    assignedIds,
     passedIds,
     missedIds,
     byTest: latest,

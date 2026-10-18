@@ -15,6 +15,7 @@ import {
 } from './reports/ReportComponents';
 import ReportDetailDrawer from './reports/ReportDetailDrawer';
 import ReportViolationModal from './reports/ReportViolationModal';
+import { assessmentAnalysisPath } from './prepAnalysis/analysisPreset';
 
 const PAGE_SIZES = [25, 50, 100, 250];
 
@@ -1316,7 +1317,7 @@ export default function AssessmentReports() {
                 return (
                   <button key={tab.id} onClick={() => {
                     if (tab.id === 'analytics') {
-                      navigate(`/admin/analysis/assessments${selectedAssessmentId ? `?assessmentIds=${encodeURIComponent(selectedAssessmentId)}` : ''}`);
+                      navigate(assessmentAnalysisPath({ _id: selectedAssessmentId, title: selectedAssessment?.title }));
                       return;
                     }
                     setActiveTab(tab.id);

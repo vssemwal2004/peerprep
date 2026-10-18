@@ -12,6 +12,7 @@ import {
 } from '../src/admin/prepAnalysis/filterModel.js';
 import { pointsPerSolve, studentHighlights } from '../src/admin/prepAnalysis/studentInsights.js';
 import { pathAllowed } from '../src/platform/universityPermissions.js';
+import { assessmentAnalysisPath, prepAnalysisStateFromSearch } from '../src/admin/prepAnalysis/analysisPreset.js';
 
 const FIELDS = [
   { key: 'student.semester', module: 'student', group: 'Class', label: 'Semester', kind: 'enum', valueType: 'number', options: 'semesters' },
@@ -41,6 +42,29 @@ const label = (key) => field(key).label;
 const pick = (key, values, operator) => listRule(field(key), values, operator);
 const range = (key, from, to) => rangeRule(field(key), from, to);
 const groupOf = (...rules) => rules.reduce((group, rule) => setRule(group, rule.field, rule), newGroup());
+
+test('assessment reports open Prep Analysis with the selected assessment already filtered', () => {
+  const path = assessmentAnalysisPath({ _id: 'test-42', title: 'Third Year' });
+  assert.equal(path, '/admin/analysis?source=assessment&assessmentId=test-42&assessmentTitle=Third+Year');
+  const state = prepAnalysisStateFromSearch(path.split('?')[1], defaultFilterState('coding'));
+  assert.equal(state.area, 'assessment');
+  assert.deepEqual(state.groups[0].rules[0], {
+    id: state.groups[0].rules[0].id,
+    field: 'assessment.assignedTests',
+    operator: 'anyOf',
+    value: ['test-42'],
+    labels: { 'test-42': 'Third Year' },
+    qualifiers: {},
+  });
+});
+
+test('direct Prep Analysis visits keep saved filters and feature links start in that feature', () => {
+  const saved = { ...defaultFilterState('learning'), range: { preset: '90d' } };
+  assert.equal(prepAnalysisStateFromSearch('', saved).range.preset, '90d');
+  const coding = prepAnalysisStateFromSearch('?source=coding', saved);
+  assert.equal(coding.area, 'coding');
+  assert.equal(coding.groups[0].rules.length, 0);
+});
 
 // ---------------------------------------------------------------- what to analyse
 

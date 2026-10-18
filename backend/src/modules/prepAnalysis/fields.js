@@ -124,6 +124,7 @@ const FIELD_LIST = [
 
   // ---- Prep Assessment
   { key: 'assessment.status', module: 'assessment', group: 'Activity', label: 'Test status', kind: 'enum', options: 'assessmentStatuses', quick: true, get: (row) => row.assessment?.status },
+  { key: 'assessment.assignedTests', module: 'assessment', group: 'Tests', label: 'Assigned test', kind: 'set', options: 'tests', get: (row) => row.assessment?.assignedIds || [] },
   { key: 'assessment.takenTests', module: 'assessment', group: 'Tests', label: 'Test taken', kind: 'set', options: 'tests', get: (row) => row.assessment?.takenIds || [] },
   { key: 'assessment.passedTests', module: 'assessment', group: 'Tests', label: `Test passed (${PASS_PERCENT}%+)`, kind: 'set', options: 'tests', get: (row) => row.assessment?.passedIds || [] },
   { key: 'assessment.missedTests', module: 'assessment', group: 'Tests', label: 'Test missed', kind: 'set', options: 'tests', get: (row) => row.assessment?.missedIds || [] },

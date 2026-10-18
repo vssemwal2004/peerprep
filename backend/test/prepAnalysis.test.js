@@ -366,11 +366,13 @@ test('Prep Assessment: each student\'s own tests, scores, passes and missed test
     [2, 1, 1, 0, 55, 80, 30, 50],
   );
   assert.deepEqual(byName('Bilal').assessment.missedIds, ['t2'], 'an assigned test that is over and not taken is missed');
+  assert.deepEqual(byName('Bilal').assessment.assignedIds.sort(), ['t1', 't2', 't3'], 'assigned tests include active tests and tests not yet attempted');
   assert.deepEqual(byName('Chen').assessment.missedIds, ['t1'], 'tests for everyone count, unfinished tests do not');
   assert.equal(byName('Chen').assessment.status, 'never');
   assert.deepEqual(pick(rows, { children: [{ field: 'assessment.missed', operator: 'gte', value: 1 }] }).sort(), ['Bilal', 'Chen', 'Dev']);
   assert.deepEqual(pick(rows, { children: [{ field: 'assessment.averageScore', operator: 'gte', value: 50, qualifiers: { tests: ['t1'] } }] }), ['Asha'], 'narrowed to one test');
   assert.deepEqual(pick(rows, { children: [{ field: 'assessment.passedTests', operator: 'anyOf', value: ['t1'] }] }), ['Asha']);
+  assert.deepEqual(pick(rows, { children: [{ field: 'assessment.assignedTests', operator: 'anyOf', value: ['t2'] }] }).sort(), ['Asha', 'Bilal']);
   const results = CHARTS.find((chart) => chart.id === 'assessment-tests').build({ rows, options: {}, range: {}, tests });
   assert.deepEqual(results.groups.find((group) => group.label === 'Mid term').values, { Passed: 1, Failed: 1, Missed: 2 });
   const scores = CHARTS.find((chart) => chart.id === 'assessment-scores').build({ rows, options: {}, range: {}, tests });
