@@ -34,7 +34,7 @@ export function servicePeriodStatus(university, now = new Date()) {
   return 'active';
 }
 
-export function servicePeriodMessage(status) {
+export function servicePeriodMessage(university, status) {
   if (status === 'upcoming') return 'Your university service period has not started. Contact your university administrator.';
   if (status === 'expired') return 'Your university service period has ended. Contact your university administrator to renew access.';
   return '';

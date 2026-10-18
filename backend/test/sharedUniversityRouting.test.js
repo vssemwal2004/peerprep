@@ -44,6 +44,10 @@ test('one API isolates university users, sessions and student lists with duplica
     }
     await User.create({ role: 'admin', email: 'platform@example.test',
       passwordHash: await User.hashPassword('platform-password') });
+    await User.create({ role: 'coordinator', name: 'PeerPrep coordinator', email: 'peerprep-coordinator@example.test',
+      coordinatorId: 'PEERPREP-C1', passwordHash: await User.hashPassword('coordinator-password') });
+    await User.create({ role: 'student', name: 'PeerPrep student', email: 'peerprep-student@example.test',
+      studentId: 'PEERPREP-S1', teacherIds: ['PEERPREP-C1'], passwordHash: await User.hashPassword('student-password') });
     server = await new Promise((resolve) => { const listener = app.listen(0, '127.0.0.1', () => resolve(listener)); });
     const origin = `http://127.0.0.1:${server.address().port}`;
     process.env.PEERPREP_SHARED_API_ORIGIN = origin;
@@ -67,6 +71,33 @@ test('one API isolates university users, sessions and student lists with duplica
       body: JSON.stringify({ identifier: 'platform@example.test', password: 'platform-password' }) });
     assert.equal(platformLogin.status, 200);
     const platformCookie = platformLogin.headers.get('set-cookie').split(';')[0];
+    const mainCoordinatorLogin = await fetch(`${origin}/api/auth/login`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: 'peerprep-coordinator@example.test', password: 'coordinator-password' }) });
+    assert.equal(mainCoordinatorLogin.status, 200);
+    assert.equal((await mainCoordinatorLogin.json()).user.universityId, null);
+    const mainCoordinatorCookie = mainCoordinatorLogin.headers.get('set-cookie').split(';')[0];
+    const mainCoordinatorWallet = await fetch(`${origin}/api/wallet`, { headers: { Cookie: mainCoordinatorCookie } });
+    assert.equal(mainCoordinatorWallet.status, 200);
+    assert.equal((await mainCoordinatorWallet.json()).balance, 0);
+    const mainStudentLogin = await fetch(`${origin}/api/auth/login`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: 'peerprep-student@example.test', password: 'student-password' }) });
+    assert.equal(mainStudentLogin.status, 200);
+    const mainStudentWallet = await fetch(`${origin}/api/wallet`, {
+      headers: { Cookie: mainStudentLogin.headers.get('set-cookie').split(';')[0] },
+    });
+    assert.equal(mainStudentWallet.status, 200);
+    assert.equal((await mainStudentWallet.json()).balance, 0);
+    const mainRecipientSearch = await fetch(`${origin}/api/platform/admin/wallet-recipients?role=student&search=peerprep-student`, {
+      headers: { Cookie: platformCookie },
+    });
+    assert.equal(mainRecipientSearch.status, 200);
+    assert.equal((await mainRecipientSearch.json()).recipients.length, 1);
+    const blockedRecipientSearch = await fetch(`${origin}/api/platform/admin/wallet-recipients?role=student&search=peerprep-student`, {
+      headers: { Cookie: mainCoordinatorCookie },
+    });
+    assert.equal(blockedRecipientSearch.status, 403);
     const gammaUri = mongo.getUri('gamma');
     const testDatabase = (universityId, dbUri) => fetch(`${origin}/api/platform/admin/universities/test-database`, {
       method: 'POST', headers: { Cookie: platformCookie, 'Content-Type': 'application/json' },
@@ -91,6 +122,7 @@ test('one API isolates university users, sessions and student lists with duplica
     const gamma = await fetch(`${origin}/api/platform/admin/universities`, { method: 'POST',
       headers: { Cookie: platformCookie, 'Content-Type': 'application/json' },
       body: JSON.stringify({ universityId: 'gamma', name: 'Gamma University',
+        serviceStartDate: '2020-01-01', serviceEndDate: '2099-12-31', coordinatorLimit: 100, studentLimit: 10000,
         dbUri: gammaUri, judge0Url: 'http://127.0.0.1:2358',
         adminEmail: 'gamma-admin@example.test', adminPassword: 'gamma-password-strong' }) });
     const gammaBody = await gamma.json();
@@ -115,6 +147,7 @@ test('one API isolates university users, sessions and student lists with duplica
     const existingRegistration = await fetch(`${origin}/api/platform/admin/universities`, { method: 'POST',
       headers: { Cookie: platformCookie, 'Content-Type': 'application/json' },
       body: JSON.stringify({ universityId: 'existing', name: 'Existing University', dbUri: existingUri,
+        serviceStartDate: '2020-01-01', serviceEndDate: '2099-12-31', coordinatorLimit: 100, studentLimit: 10000,
         judge0Url: 'http://127.0.0.1:2358', adminEmail: 'existing-admin@example.test',
         adminPassword: 'unused-password-strong' }) });
     assert.equal(existingRegistration.status, 201, await existingRegistration.text());

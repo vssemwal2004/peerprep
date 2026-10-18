@@ -11,6 +11,7 @@ export function UniversityPolicyProvider({ children }) {
   const { user, authChecked, logout } = useAuth();
   const [permissions, setPermissions] = useState(null);
   const [status, setStatus] = useState(isUniversityDeployment ? 'loading' : 'ready');
+  const [serviceMessage, setServiceMessage] = useState('');
   const [revision, setRevision] = useState(0);
   const refresh = useCallback(() => setRevision((value) => value + 1), []);
 
@@ -27,6 +28,7 @@ export function UniversityPolicyProvider({ children }) {
         if (!mounted) return;
         if (!policy?.active || !policy.permissions) throw new Error('University permissions are unavailable');
         setPermissions((current) => JSON.stringify(current) === JSON.stringify(policy.permissions) ? current : policy.permissions);
+        setServiceMessage('');
         setStatus('ready');
       } catch (error) {
         if (mounted) {
@@ -34,6 +36,12 @@ export function UniversityPolicyProvider({ children }) {
             mounted = false;
             await logout();
             returnToLogin();
+            return;
+          }
+          if (error.response?.data?.code === 'SERVICE_INACTIVE') {
+            setPermissions(null);
+            setServiceMessage(error.message);
+            setStatus('service-inactive');
             return;
           }
           setPermissions(null);
@@ -49,7 +57,7 @@ export function UniversityPolicyProvider({ children }) {
     return () => { mounted = false; clearInterval(timer); window.removeEventListener('focus', onFocus); };
   }, [authChecked, user, revision, logout]);
 
-  return <UniversityPolicyContext.Provider value={{ permissions, status, refresh,
+  return <UniversityPolicyContext.Provider value={{ permissions, status, serviceMessage, refresh,
     allowsModule: (name) => !isUniversityDeployment || moduleEnabled(permissions, name),
     allowsPath: (path, role, search) => !isUniversityDeployment || pathAllowed(path, permissions, role, search),
   }}>{children}</UniversityPolicyContext.Provider>;

@@ -18,6 +18,7 @@ import {
   Sun,
   User,
   UserCog,
+  Wallet,
   X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -205,6 +206,7 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
           <button type="button" onClick={toggleTheme} className="hidden h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 sm:flex" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} title="Change theme">{theme === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}</button>
 
           <NotificationBell buttonClassName="shrink-0" />
+          <button type="button" onClick={() => goTo('/student/wallet')} className="flex h-9 w-9 items-center justify-center rounded-xl text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-950" aria-label="PeerPrep wallet" title="PeerPrep wallet"><Wallet className="h-5 w-5" /></button>
 
           <span className="mx-0.5 hidden h-6 w-px bg-slate-200 dark:bg-slate-800 sm:block" aria-hidden="true" />
           <div ref={profileRef} className="relative">

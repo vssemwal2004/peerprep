@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../utils/api';
 import ProgressionEditor from './platform/ProgressionEditor';
 import { buildProgressionPayload, normalizeProgression, permissionOn } from './platform/progressionMath';
@@ -14,7 +14,7 @@ const modules = [
 const card = 'rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900';
 const input = 'rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white';
 const button = 'rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50';
-const emptyUniversity = { universityId: '', name: '', contactEmail: '', dbUri: '', judge0Url: '', judge0AuthHeader: '', judge0AuthToken: '', adminEmail: '', adminPassword: '', interviewServiceUrl: '', interviewServiceSecret: '' };
+const emptyUniversity = { universityId: '', name: '', contactEmail: '', dbUri: '', judge0Url: '', judge0AuthHeader: '', judge0AuthToken: '', adminEmail: '', adminPassword: '', interviewServiceUrl: '', interviewServiceSecret: '', serviceStartDate: '', serviceEndDate: '', initialCoins: '0', coordinatorLimit: '', studentLimit: '' };
 
 // Server-managed progression keys (version, updatedAt, updatedBy) are stripped before copying.
 const defaultsFrom = (university) => ({
@@ -28,6 +28,47 @@ const defaultsFrom = (university) => ({
 const supportsCoding = (defaults) => defaults?.permissions?.coding !== undefined;
 const supportsProgression = (defaults) => Boolean(defaults?.progression);
 const visibleModules = (defaults) => modules.filter(([moduleName]) => moduleName !== 'coding' || supportsCoding(defaults));
+
+function UniversityCoinControls({ university, disabled, onSaved, onError }) {
+  const [start, setStart] = useState(university.serviceStartDate || '');
+  const [end, setEnd] = useState(university.serviceEndDate || '');
+  const [topUp, setTopUp] = useState('');
+  const [coordinatorLimit, setCoordinatorLimit] = useState(String(university.coordinatorLimit ?? ''));
+  const [studentLimit, setStudentLimit] = useState(String(university.studentLimit ?? ''));
+  const [counts, setCounts] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const topUpRequestId = useRef(null);
+  async function run(work) {
+    setSaving(true);
+    onError('');
+    try { await work(); await onSaved(); } catch (error) { onError(error.message || 'Request failed'); }
+    finally { setSaving(false); }
+  }
+  return <section className="mt-4 rounded-xl border border-sky-200 bg-sky-50/50 p-4 dark:border-sky-900 dark:bg-sky-950/20">
+    <h4 className="font-semibold">Service period and PeerPrep coins</h4>
+    <div className="mt-3 flex flex-wrap items-end gap-3">
+      <label className="grid gap-1 text-sm">Starts <input className={input} type="date" value={start} onChange={(event) => setStart(event.target.value)} /></label>
+      <label className="grid gap-1 text-sm">Ends (inclusive) <input className={input} type="date" value={end} onChange={(event) => setEnd(event.target.value)} /></label>
+      <button className={button} disabled={disabled || saving || !start || !end} onClick={() => run(() => api.updateUniversity(university.universityId, { serviceStartDate: start, serviceEndDate: end }))}>Save dates</button>
+    </div>
+    <div className="mt-4 border-t border-sky-200 pt-4 dark:border-sky-900">
+      <h5 className="text-sm font-semibold">Account limits</h5>
+      <p className="mt-1 text-xs text-slate-500">Once the limit is reached, no new account of that type can be created, including through bulk uploads.</p>
+      <div className="mt-3 flex flex-wrap items-end gap-3">
+        <label className="grid gap-1 text-sm">Maximum coordinators<input className={input} type="number" min="0" max="10000000" step="1" value={coordinatorLimit} onChange={(event) => setCoordinatorLimit(event.target.value)} /></label>
+        <label className="grid gap-1 text-sm">Maximum students<input className={input} type="number" min="0" max="10000000" step="1" value={studentLimit} onChange={(event) => setStudentLimit(event.target.value)} /></label>
+        <button className={button} disabled={disabled || saving || coordinatorLimit === '' || studentLimit === ''} onClick={() => run(() => api.updateUniversity(university.universityId, { coordinatorLimit: Number(coordinatorLimit), studentLimit: Number(studentLimit) }))}>Save limits</button>
+        <button className="rounded-lg border border-sky-300 px-4 py-2 text-sm font-semibold text-sky-700 dark:border-sky-700 dark:text-sky-300" disabled={saving} onClick={() => api.universityAccountCounts(university.universityId).then(setCounts).catch((error) => onError(error.message))}>Check current usage</button>
+      </div>
+      {counts && <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">Currently {counts.coordinators} coordinators and {counts.students} students.</p>}
+    </div>
+    <div className="mt-3 flex flex-wrap items-end gap-3">
+      <label className="grid gap-1 text-sm">Add to university wallet <input className={input} type="number" min="1" step="1" value={topUp} onChange={(event) => { topUpRequestId.current = null; setTopUp(event.target.value); }} /></label>
+      <button className={button} disabled={disabled || saving || !topUp} onClick={() => run(async () => { topUpRequestId.current ||= crypto.randomUUID(); await api.topUpUniversityCoins(university.universityId, { amount: Number(topUp), requestId: topUpRequestId.current }); topUpRequestId.current = null; setTopUp(''); })}>Add coins</button>
+    </div>
+    <p className="mt-2 text-xs text-slate-500">The university admin distributes these coins to coordinators from the university wallet.</p>
+  </section>;
+}
 
 export default function PlatformControl() {
   const [overview, setOverview] = useState(null);
@@ -154,11 +195,13 @@ export default function PlatformControl() {
           ['dbUri', 'MongoDB URI'], ['judge0Url', 'Judge0 URL'],
           ['judge0AuthHeader', 'Judge0 auth header (optional)'], ['judge0AuthToken', 'Judge0 auth token (optional)'],
           ['adminEmail', 'University admin email'], ['adminPassword', 'Initial admin password (unused for an existing admin)'],
+          ['serviceStartDate', 'Service start date'], ['serviceEndDate', 'Service end date'], ['initialCoins', 'Initial PeerPrep coins'],
+          ['coordinatorLimit', 'Maximum coordinators'], ['studentLimit', 'Maximum students'],
           ['interviewServiceUrl', 'AI interview service URL (optional)'], ['interviewServiceSecret', 'AI interview secret (optional)'],
         ].map(([field, label]) => <label key={field} className="grid gap-1 text-sm">{label}
-          <input className={input} type={['adminPassword', 'dbUri', 'judge0AuthToken', 'interviewServiceSecret'].includes(field) ? 'password' : 'text'}
+          <input className={input} type={['adminPassword', 'dbUri', 'judge0AuthToken', 'interviewServiceSecret'].includes(field) ? 'password' : field.startsWith('service') ? 'date' : ['initialCoins', 'coordinatorLimit', 'studentLimit'].includes(field) ? 'number' : 'text'} min={['initialCoins', 'coordinatorLimit', 'studentLimit'].includes(field) ? '0' : undefined} max={['coordinatorLimit', 'studentLimit'].includes(field) ? '10000000' : undefined} step={['initialCoins', 'coordinatorLimit', 'studentLimit'].includes(field) ? '1' : undefined}
             autoComplete="off" value={newUniversity[field]} onChange={(event) => setNewUniversity({ ...newUniversity, [field]: event.target.value })}
-            required={['universityId', 'name', 'dbUri', 'judge0Url', 'adminEmail', 'adminPassword'].includes(field)} />
+            required={['universityId', 'name', 'dbUri', 'judge0Url', 'adminEmail', 'adminPassword', 'serviceStartDate', 'serviceEndDate', 'coordinatorLimit', 'studentLimit'].includes(field)} />
         </label>)}
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -177,6 +220,10 @@ export default function PlatformControl() {
             <span className={university.dbConfigured ? 'text-emerald-600' : 'text-rose-600'}>{university.dbConfigured ? 'Database configured' : 'Database missing'}</span>
             <span className={university.judgeConfigured ? 'text-emerald-600' : 'text-rose-600'}>{university.judgeConfigured ? 'Judge0 configured' : 'Judge0 missing'}</span>
             <span>{university.active ? 'Active' : 'Disabled'}</span>
+            <span>🪙 {Number(university.coinBalance || 0).toLocaleString()} coins</span>
+            <span>Coordinator cap: {university.coordinatorLimit ?? 'Not set'}</span>
+            <span>Student cap: {university.studentLimit ?? 'Not set'}</span>
+            <span>{university.serviceStartDate && university.serviceEndDate ? `${university.serviceStartDate} to ${university.serviceEndDate}` : 'Service dates not set'}</span>
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -186,6 +233,7 @@ export default function PlatformControl() {
           <button disabled={busy} className="rounded-lg border border-rose-500 px-4 py-2 text-sm font-semibold text-rose-600 disabled:opacity-50" onClick={() => deleteUniversity(university)}>Delete</button>
         </div>
       </div>
+      <UniversityCoinControls university={university} disabled={busy} onSaved={refresh} onError={setMessage} />
       <div className="mt-4 grid gap-3 md:grid-cols-2">
         <a className="text-sm text-sky-600 underline md:col-span-2" href={`/u/${university.universityId}/student`}>Open {university.name} on PeerPrep</a>
         <label className="grid gap-1 text-sm">Replace MongoDB URI <input className={input} type="password" autoComplete="off" placeholder={university.dbConfigured ? 'Configured; enter a new URI to replace' : 'MongoDB URI required'} value={connections[university.universityId]?.dbUri || ''} onChange={(event) => setConnections((previous) => ({ ...previous, [university.universityId]: { ...previous[university.universityId], dbUri: event.target.value } }))} /></label>

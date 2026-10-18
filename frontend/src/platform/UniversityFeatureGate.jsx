@@ -5,9 +5,10 @@ import { isUniversityDeployment } from './universityPermissions';
 
 export default function UniversityFeatureGate({ role, children }) {
   const location = useLocation();
-  const { status, refresh, allowsPath } = useUniversityPolicy();
+  const { status, serviceMessage, refresh, allowsPath } = useUniversityPolicy();
   if (!isUniversityDeployment) return children;
   if (status === 'loading') return <PageSkeleton />;
+  if (status === 'service-inactive') return <div className="mx-auto max-w-xl p-8 text-center"><h1 className="text-xl font-semibold">University service unavailable</h1><p className="mt-2 text-sm text-slate-500">{serviceMessage}</p><Link to="/student" className="mt-4 inline-block rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white">Back to login</Link></div>;
   if (status === 'error') return <div className="mx-auto max-w-xl p-8 text-center">
     <h1 className="text-xl font-semibold">University access is unavailable</h1>
     <p className="mt-2 text-sm text-slate-500">The university permissions could not be loaded. Please retry.</p>

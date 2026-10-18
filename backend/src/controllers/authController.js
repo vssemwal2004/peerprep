@@ -513,12 +513,9 @@ export async function login(req, res) {
       mustChangePassword: Boolean(admin.mustChangePassword), universityId: currentTenant()?.universityId || null } });
   }
 
-  if (deploymentRole() === 'shared' && !currentTenant()) {
-    logAuthAttempt(req, false, id, null, 'Platform login requires an admin account');
-    throw new HttpError(401, 'Invalid credentials');
-  }
-
-  // Try regular student by email OR studentId
+  // The main login router accepts only email for PeerPrep's own accounts.
+  // It has already selected the main database before calling this handler.
+  // Try regular student by email OR studentId within the selected database.
   const student = await User.findOne({
     role: 'student',
     $or: [{ email: idLower }, { studentId: id }],
@@ -666,14 +663,11 @@ export async function requestPasswordReset(req, res) {
 
   const identifier = email.trim().toLowerCase();
   
-  // Search by email or studentId
-  const user = await User.findOne({
-    role: 'student',
-    $or: [
-      { email: identifier },
-      { studentId: identifier }
-    ]
-  });
+  // PeerPrep's own coordinators can reset their password from the main login.
+  // Existing university reset behavior remains student-only.
+  const user = await User.findOne(deploymentRole() === 'shared' && !currentTenant()
+    ? { role: { $in: ['student', 'coordinator'] }, email: identifier }
+    : { role: 'student', $or: [{ email: identifier }, { studentId: identifier }] });
   
   // Always return success to prevent email enumeration
   if (!user) {

@@ -61,7 +61,7 @@ export default function StudentLoginPage() {
       return;
     }
     if (!isUniversityDeployment && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      setError('Enter the email address registered by your university.');
+      setError('Enter the email address registered with PeerPrep.');
       return;
     }
 

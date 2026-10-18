@@ -3,7 +3,8 @@ import mongoose from 'mongoose';
 import { requireAuth } from '../middleware/auth.js';
 import { HttpError } from '../utils/errors.js';
 import { currentTenant } from '../platform/tenantContext.js';
-import { allocateCoins, walletBalance, walletMovements } from '../platform/coins.js';
+import { isControlPlane } from '../platform/deployment.js';
+import { allocateCoins, PLATFORM_WALLET_SCOPE, walletBalance, walletMovements } from '../platform/coins.js';
 import User from '../models/User.js';
 
 const router = Router();
@@ -11,10 +12,11 @@ const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res)).cat
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 router.use(requireAuth, (req, res, next) => currentTenant()
-  ? next() : next(new HttpError(404, 'Wallet is available in a university account')));
+  || (isControlPlane() && ['coordinator', 'student'].includes(req.user.role))
+  ? next() : next(new HttpError(404, 'Wallet is unavailable for this account')));
 
 router.get('/', asyncRoute(async (req, res) => {
-  const universityId = currentTenant().universityId;
+  const universityId = currentTenant()?.universityId || PLATFORM_WALLET_SCOPE;
   const [balance, movements] = await Promise.all([
     walletBalance(universityId, req.user), walletMovements(universityId, req.user),
   ]);
@@ -55,7 +57,7 @@ router.post('/allocate', asyncRoute(async (req, res) => {
   const scope = req.user.role === 'coordinator' ? { teacherIds: req.user.coordinatorId } : {};
   const target = await User.findOne({ _id: targetId, role, isActive: { $ne: false }, ...scope }).select('_id').lean();
   if (!target) throw new HttpError(404, 'Recipient is not available for your account');
-  const universityId = currentTenant().universityId;
+  const universityId = currentTenant()?.universityId || PLATFORM_WALLET_SCOPE;
   const result = await allocateCoins({
     universityId, actorId: req.user._id,
     fromRole: req.user.role === 'admin' ? 'university' : 'coordinator',

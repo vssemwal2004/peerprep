@@ -6,6 +6,7 @@ import { deploymentRole } from './deployment.js';
 import { currentTenant, runForTenant } from './tenantContext.js';
 import { getTenant } from './tenantConnections.js';
 import { findLiveLoginCandidates, normalizedLoginEmail } from './loginDirectory.js';
+import { servicePeriodStatus, servicePeriodMessage } from './servicePeriod.js';
 
 export async function routeLogin(req, res) {
   if (deploymentRole() !== 'shared' || currentTenant()) return login(req, res);
@@ -13,10 +14,10 @@ export async function routeLogin(req, res) {
   const password = req.body?.password;
   if (!email || !password) throw new HttpError(400, 'Enter your email and password');
 
-  // Platform admins remain in the main database. All university accounts use
-  // their own database and carry a university claim in the resulting session.
-  const platformAdmin = await User.findOne({ role: 'admin', email });
-  if (platformAdmin && await platformAdmin.verifyPassword(password)) return login(req, res);
+  // PeerPrep's own admins, coordinators and students stay in the main DB.
+  // University accounts use their own DB and carry a university session claim.
+  const platformUser = await User.exists({ email });
+  if (platformUser) return login(req, res);
 
   const matches = await findLiveLoginCandidates(email);
   if (matches.length > 1) {
@@ -31,6 +32,10 @@ export async function routeLogin(req, res) {
   }
   if (!matches.length) throw new HttpError(401, 'Invalid credentials');
   const tenant = await getTenant(matches[0].universityId);
+  const user = await runForTenant(tenant, () => User.findById(matches[0].userId).select('passwordHash').lean());
+  if (!user?.passwordHash || !(await bcrypt.compare(password, user.passwordHash))) throw new HttpError(401, 'Invalid credentials');
+  const period = servicePeriodStatus(tenant);
+  if (period !== 'active') throw new HttpError(403, servicePeriodMessage(tenant, period));
   return runForTenant(tenant, () => login(req, res));
 }
 
@@ -39,6 +44,7 @@ export async function routePasswordResetRequest(req, res) {
   const email = normalizedLoginEmail(req.body?.email);
   const generic = { message: 'If an account exists with this email, a password reset link has been sent.' };
   if (!email) return res.json(generic);
+  if (await User.exists({ email, role: { $in: ['student', 'coordinator'] } })) return requestPasswordReset(req, res);
   const matches = await findLiveLoginCandidates(email);
   if (matches.length !== 1) return res.json(generic);
   const tenant = await getTenant(matches[0].universityId);

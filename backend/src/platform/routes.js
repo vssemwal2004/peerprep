@@ -9,7 +9,7 @@ import QuestionLibrary from '../models/QuestionLibrary.js';
 import Semester from '../models/Subject.js';
 import Problem from '../models/Problem.js';
 import { loadHiddenExecutionTestCases } from '../controllers/problemController.js';
-import { University, Publication, PlatformAudit, PlatformSettings } from './models.js';
+import { University, Publication, PlatformAudit, PlatformSettings, PlatformCoinWallet, PlatformCoinMovement } from './models.js';
 import { isControlPlane, isUniversity } from './deployment.js';
 import { controlRequest, universityPolicy } from './client.js';
 import { signInspection, verifyInspection } from './inspectionAuth.js';
@@ -22,11 +22,14 @@ import { acceptLogoUpload, logoStorage, removeStoredLogo, validateLogoFile } fro
 import { deploymentRole } from './deployment.js';
 import { encryptTenantSecret } from './tenantSecrets.js';
 import { getTenant, testTenantConnection, validateTenantMongoUri, invalidateTenantRegistration, ensureTenantIndexes } from './tenantConnections.js';
-import { runForTenant } from './tenantContext.js';
+import { currentTenant, runForTenant } from './tenantContext.js';
 import { verifiedSharedInternalRequest } from './internalAuth.js';
 import { backfillTenantLoginDirectory } from './loginDirectory.js';
 import { seedEmailTemplates } from '../services/emailTemplateService.js';
 import { seedDefaultMasterData } from '../services/masterDataService.js';
+import { serviceDates } from './servicePeriod.js';
+import { coinAmount, coinRequestId, creditPlatformUser, PLATFORM_WALLET_SCOPE, topUpUniversity } from './coins.js';
+import { accountLimit, withAccountCreationLocks } from './accountLimits.js';
 
 const router = Router();
 const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
@@ -171,7 +174,7 @@ function inspectionOnly(req, res, next) {
 }
 
 function masterOnly(req, res, next) {
-  if (!isControlPlane()) return next(new HttpError(404, 'Not found'));
+  if (!isControlPlane() || currentTenant()) return next(new HttpError(404, 'Not found'));
   return requireAuth(req, res, (error) => error ? next(error) : requireAdmin(req, res, next));
 }
 
@@ -212,6 +215,57 @@ router.get('/admin/overview', masterOnly, asyncRoute(async (req, res) => {
   res.json({ universities: universities.map(clean), audit: auditRows, assessmentCount, questionCount, defaults: defaults.toObject() });
 }));
 
+router.get('/admin/wallets', masterOnly, asyncRoute(async (req, res) => {
+  const [universities, movements] = await Promise.all([
+    University.find({ deletedAt: null })
+      .select('universityId name coinBalance active serviceStartDate serviceEndDate')
+      .sort({ name: 1 }).lean(),
+    PlatformCoinMovement.find({ universityId: PLATFORM_WALLET_SCOPE })
+      .sort({ createdAt: -1 }).limit(20).lean(),
+  ]);
+  const ids = [...new Set(movements.flatMap((row) => [row.fromUserId, row.toUserId]).filter(Boolean).map(String))];
+  const people = ids.length ? await User.find({ _id: { $in: ids } }).select('name').lean() : [];
+  const names = new Map(people.map((person) => [String(person._id), person.name]));
+  res.set('Cache-Control', 'no-store');
+  res.json({ universities, movements: movements.map((row) => ({
+    id: row._id, kind: row.kind, amount: row.amount, createdAt: row.createdAt,
+    fromName: row.fromUserId ? names.get(String(row.fromUserId)) || 'Former user' : 'PeerPrep',
+    toName: row.toUserId ? names.get(String(row.toUserId)) || 'Former user' : '',
+  })) });
+}));
+
+router.get('/admin/wallet-recipients', masterOnly, asyncRoute(async (req, res) => {
+  const role = String(req.query.role || '');
+  if (!['coordinator', 'student'].includes(role)) throw new HttpError(400, 'Choose coordinators or students');
+  const search = String(req.query.search || '').trim().slice(0, 80);
+  if (search.length < 2) throw new HttpError(400, 'Enter at least two characters to search');
+  const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const users = await User.find({ role, isActive: { $ne: false },
+    $or: ['name', 'email', role === 'student' ? 'studentId' : 'coordinatorId']
+      .map((field) => ({ [field]: { $regex: escaped, $options: 'i' } })) })
+    .select('name email studentId coordinatorId role').sort({ name: 1 }).limit(25).lean();
+  const wallets = users.length ? await PlatformCoinWallet.find({ universityId: PLATFORM_WALLET_SCOPE,
+    userId: { $in: users.map((user) => user._id) } }).select('userId balance').lean() : [];
+  const balances = new Map(wallets.map((wallet) => [String(wallet.userId), wallet.balance]));
+  res.set('Cache-Control', 'private, no-store');
+  res.json({ recipients: users.map((user) => ({
+    id: user._id, name: user.name, email: user.email,
+    accountId: user.studentId || user.coordinatorId || '', balance: balances.get(String(user._id)) || 0,
+  })) });
+}));
+
+router.post('/admin/wallet-recipients/credit', masterOnly, asyncRoute(async (req, res) => {
+  const toRole = req.body?.targetRole;
+  const toUserId = String(req.body?.targetUserId || '');
+  const amount = coinAmount(req.body?.amount);
+  const requestId = coinRequestId(req.body?.requestId);
+  const result = await creditPlatformUser({ actorId: req.user._id, toUserId, toRole, amount, requestId });
+  if (!result.alreadyProcessed) await audit(req, `platform.coins_to_${toRole}`, null, { targetUserId: toUserId, amount, requestId });
+  const wallet = await PlatformCoinWallet.findOne({ universityId: PLATFORM_WALLET_SCOPE, userId: toUserId }).select('balance').lean();
+  res.set('Cache-Control', 'private, no-store');
+  res.json({ ...result, balance: wallet?.balance || 0 });
+}));
+
 router.put('/admin/defaults', masterOnly, asyncRoute(async (req, res) => {
   const defaults = await loadDefaults();
   for (const key of moduleNames) {
@@ -243,6 +297,10 @@ router.post('/admin/universities', masterOnly, asyncRoute(async (req, res) => {
   const universityId = String(req.body?.universityId || '').trim().toLowerCase();
   const name = String(req.body?.name || '').trim();
   if (!idPattern.test(universityId) || name.length < 2 || name.length > 160) throw new HttpError(400, 'Valid university ID and name are required');
+  const period = serviceDates(req.body?.serviceStartDate, req.body?.serviceEndDate);
+  const initialCoins = req.body?.initialCoins === '' || req.body?.initialCoins == null ? 0 : coinAmount(req.body.initialCoins);
+  const coordinatorLimit = accountLimit(req.body?.coordinatorLimit, 'coordinator limit');
+  const studentLimit = accountLimit(req.body?.studentLimit, 'student limit');
   // Validate every field before touching an archived registration with the same ID.
   const details = deploymentRole() === 'shared'
     ? { contactEmail: contactEmail(req.body?.contactEmail) }
@@ -279,7 +337,7 @@ router.post('/admin/universities', masterOnly, asyncRoute(async (req, res) => {
   const defaults = await loadDefaults();
   const apiKey = deploymentRole() === 'shared' ? null : crypto.randomBytes(32).toString('base64url');
   const defaultValues = defaults.toObject();
-  const university = await University.create({ universityId, name, ...details,
+  const university = await University.create({ universityId, name, ...details, ...period, coordinatorLimit, studentLimit, coinBalance: 0,
     ...(apiKey ? { apiKeyHash: keyHash(apiKey) } : {}), permissions: defaultValues.permissions, sources: defaultValues.sources,
     ...(sharedSetup ? { dbUriEncrypted: encryptTenantSecret(sharedSetup.dbUri), judge0UrlEncrypted: encryptTenantSecret(sharedSetup.judge0Url),
       ...(sharedSetup.judge0AuthHeader ? { judge0AuthHeaderEncrypted: encryptTenantSecret(sharedSetup.judge0AuthHeader),
@@ -295,6 +353,12 @@ router.post('/admin/universities', masterOnly, asyncRoute(async (req, res) => {
       await runForTenant(tenant, async () => {
         await seedEmailTemplates();
         await seedDefaultMasterData();
+        const [existingCoordinators, existingStudents] = await Promise.all([
+          User.countDocuments({ role: 'coordinator' }), User.countDocuments({ role: 'student' }),
+        ]);
+        if (existingCoordinators > coordinatorLimit || existingStudents > studentLimit) {
+          throw new HttpError(409, `The university database already has ${existingCoordinators} coordinators and ${existingStudents} students. Increase the account limits before registration.`);
+        }
         const existingAccount = await User.findOne({ email: sharedSetup.adminEmail });
         if (existingAccount && existingAccount.role !== 'admin') {
           throw new HttpError(409, 'The initial admin email belongs to a different university role');
@@ -310,7 +374,17 @@ router.post('/admin/universities', masterOnly, asyncRoute(async (req, res) => {
       throw error;
     }
   }
+  if (initialCoins) {
+    try {
+      await topUpUniversity({ universityId, amount: initialCoins, actorId: req.user._id, requestId: crypto.randomUUID(), kind: 'initial' });
+      university.coinBalance = initialCoins;
+    } catch (error) {
+      await University.deleteOne({ _id: university._id });
+      throw error;
+    }
+  }
   await audit(req, 'university.created', universityId);
+  if (initialCoins) await audit(req, 'university.coins_initial', universityId, { amount: initialCoins });
   res.status(201).json({ university: clean(university), ...(sharedSetup ? {} : { apiKey }) });
 }));
 
@@ -318,6 +392,14 @@ router.patch('/admin/universities/:id', masterOnly, asyncRoute(async (req, res) 
   const university = await University.findOne({ universityId: req.params.id, deletedAt: null })
     .select('+dbUriEncrypted +judge0UrlEncrypted +judge0AuthHeaderEncrypted +judge0AuthTokenEncrypted +interviewUrlEncrypted +interviewSecretEncrypted');
   if (!university) throw new HttpError(404, 'University not found');
+  const limitUpdates = {};
+  if (req.body?.coordinatorLimit !== undefined) limitUpdates.coordinatorLimit = accountLimit(req.body.coordinatorLimit, 'coordinator limit');
+  if (req.body?.studentLimit !== undefined) limitUpdates.studentLimit = accountLimit(req.body.studentLimit, 'student limit');
+  if (Object.keys(limitUpdates).length && req.body?.dbUri) throw new HttpError(400, 'Save the database connection and account limits separately');
+  if (req.body?.serviceStartDate !== undefined || req.body?.serviceEndDate !== undefined) {
+    const period = serviceDates(req.body?.serviceStartDate ?? university.serviceStartDate, req.body?.serviceEndDate ?? university.serviceEndDate);
+    university.set(period);
+  }
   if (deploymentRole() === 'shared' && req.body?.dbUri) {
     const uri = validateTenantMongoUri(req.body.dbUri);
     await testTenantConnection(uri, university.universityId, { claim: true });
@@ -362,11 +444,48 @@ router.patch('/admin/universities/:id', masterOnly, asyncRoute(async (req, res) 
       university.sources[key] = req.body.sources[key];
     }
   }
-  await university.save();
+  const changedRoles = Object.keys(limitUpdates).map((key) => key === 'studentLimit' ? 'student' : 'coordinator');
+  const save = async () => {
+    if (changedRoles.length) {
+      const tenant = await getTenant(university.universityId, { includeInactive: true });
+      const counts = await runForTenant(tenant, async () => Object.fromEntries(await Promise.all(changedRoles.map(async (role) => [
+        role, await User.countDocuments({ role }),
+      ]))));
+      for (const role of changedRoles) {
+        const limit = limitUpdates[role === 'student' ? 'studentLimit' : 'coordinatorLimit'];
+        if (limit < counts[role]) throw new HttpError(409, `Cannot set ${role} limit below the ${counts[role]} existing accounts`);
+      }
+      university.set(limitUpdates);
+    }
+    await university.save();
+  };
+  if (changedRoles.length) await withAccountCreationLocks(university.universityId, changedRoles, save);
+  else await save();
   invalidateTenantRegistration(university.universityId);
   await audit(req, 'university.updated', university.universityId, { permissions: university.permissions, sources: university.sources, active: university.active,
-    fields: Object.keys(editableFields).filter((key) => req.body?.[key] !== undefined) });
+    fields: [...Object.keys(editableFields).filter((key) => req.body?.[key] !== undefined), ...Object.keys(limitUpdates)] });
   res.json({ university: clean(university) });
+}));
+
+router.post('/admin/universities/:id/coins/top-up', masterOnly, asyncRoute(async (req, res) => {
+  const universityId = req.params.id;
+  const amount = coinAmount(req.body?.amount);
+  const requestId = coinRequestId(req.body?.requestId);
+  const result = await topUpUniversity({ universityId, amount, actorId: req.user._id, requestId });
+  if (!result.alreadyProcessed) await audit(req, 'university.coins_topup', universityId, { amount, requestId });
+  const university = await University.findOne({ universityId, deletedAt: null }).select('coinBalance').lean();
+  res.json({ ...result, balance: university?.coinBalance || 0 });
+}));
+
+router.get('/admin/universities/:id/account-counts', masterOnly, asyncRoute(async (req, res) => {
+  const tenant = await getTenant(req.params.id, { includeInactive: true });
+  const counts = await runForTenant(tenant, async () => {
+    const [coordinators, students] = await Promise.all([
+      User.countDocuments({ role: 'coordinator' }), User.countDocuments({ role: 'student' }),
+    ]);
+    return { coordinators, students };
+  });
+  res.set('Cache-Control', 'private, no-store').json(counts);
 }));
 
 router.post('/admin/universities/:id/rotate-key', masterOnly, asyncRoute(async (req, res) => {
@@ -615,6 +734,19 @@ router.get('/inspection/students/:studentId', inspectionOnly, asyncRoute(async (
 router.get('/university/policy', requireAuth, asyncRoute(async (req, res) => {
   if (!isUniversity()) throw new HttpError(404, 'Not found');
   res.json(await universityPolicy());
+}));
+router.get('/university/account-limits', requireAuth, asyncRoute(async (req, res) => {
+  if (!isUniversity() || !['admin', 'coordinator'].includes(req.user.role)) throw new HttpError(403, 'Not available for this account');
+  const universityId = currentTenant().universityId;
+  const [university, coordinators, students] = await Promise.all([
+    University.findOne({ universityId, deletedAt: null }).select('coordinatorLimit studentLimit').lean(),
+    User.countDocuments({ role: 'coordinator' }), User.countDocuments({ role: 'student' }),
+  ]);
+  if (!university) throw new HttpError(404, 'University not found');
+  res.set('Cache-Control', 'private, no-store').json({
+    coordinatorLimit: university.coordinatorLimit, studentLimit: university.studentLimit,
+    coordinators, students,
+  });
 }));
 router.get('/public-questions', requireAuth, asyncRoute(async (req, res) => {
   const questions = isUniversity()

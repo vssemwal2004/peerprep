@@ -374,6 +374,15 @@ async function interviewMediaRequest(path, { method = 'GET', recording, version 
 }
 
 export const api = {
+  wallet: () => request('/wallet', { skipCache: true }),
+  walletRecipients: (search = '') => request(`/wallet/recipients?search=${encodeURIComponent(search)}`, { skipCache: true }),
+  allocateWalletCoins: (body) => request('/wallet/allocate', { method: 'POST', body, skipCache: true }),
+  topUpUniversityCoins: (id, body) => request(`/platform/admin/universities/${encodeURIComponent(id)}/coins/top-up`, { method: 'POST', body, skipCache: true }),
+  platformWallets: () => request('/platform/admin/wallets', { skipCache: true }),
+  platformWalletRecipients: (role, search) => request(`/platform/admin/wallet-recipients?role=${encodeURIComponent(role)}&search=${encodeURIComponent(search)}`, { skipCache: true }),
+  creditPlatformWalletUser: (body) => request('/platform/admin/wallet-recipients/credit', { method: 'POST', body, skipCache: true }),
+  universityAccountCounts: (id) => request(`/platform/admin/universities/${encodeURIComponent(id)}/account-counts`, { skipCache: true }),
+  universityAccountLimits: () => request('/platform/university/account-limits', { skipCache: true }),
   platformOverview: () => request('/platform/admin/overview', { skipCache: true }),
   platformStudents: (id, page = 1, search = '') => request(`/platform/admin/universities/${encodeURIComponent(id)}/students?page=${page}&search=${encodeURIComponent(search)}`, { skipCache: true }),
   platformStudent: (id, studentId) => request(`/platform/admin/universities/${encodeURIComponent(id)}/students/${encodeURIComponent(studentId)}`, { skipCache: true }),

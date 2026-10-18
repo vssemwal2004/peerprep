@@ -5,6 +5,7 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 
 test('central API scopes assessments and revokes university access', async (t) => {
+  const serviceDates = { serviceStartDate: '2020-01-01', serviceEndDate: '2099-12-31', coordinatorLimit: 100, studentLimit: 10000 };
   let mongo;
   try { mongo = await MongoMemoryServer.create({ instance: { ip: '127.0.0.1' } }); }
   catch (error) {
@@ -44,7 +45,7 @@ test('central API scopes assessments and revokes university access', async (t) =
     return { status: response.status, body: await response.json() };
   };
   try {
-    const created = await request('/admin/universities', { method: 'POST', headers: adminHeaders, body: JSON.stringify({ universityId: 'north-campus', name: 'North Campus' }) });
+    const created = await request('/admin/universities', { method: 'POST', headers: adminHeaders, body: JSON.stringify({ universityId: 'north-campus', name: 'North Campus', ...serviceDates }) });
     assert.equal(created.status, 201);
     assert.ok(created.body.apiKey.length >= 32);
     assert.equal(created.body.university.apiKeyHash, undefined);
@@ -90,7 +91,7 @@ test('central API scopes assessments and revokes university access', async (t) =
     assert.deepEqual(safeQuestions.body.questions.map((item) => String(item._id)), [String(manualQuestion)]);
     assert.deepEqual(safeQuestions.body.questions[0].options, ['A', 'B']);
     assert.equal(JSON.stringify(safeQuestions.body).includes('correctAnswer'), false);
-    const secondUniversity = await request('/admin/universities', { method: 'POST', headers: adminHeaders, body: JSON.stringify({ universityId: 'south-campus', name: 'South Campus' }) });
+    const secondUniversity = await request('/admin/universities', { method: 'POST', headers: adminHeaders, body: JSON.stringify({ universityId: 'south-campus', name: 'South Campus', ...serviceDates }) });
     const secondTenantHeaders = { 'X-PeerPrep-University': 'south-campus', 'X-PeerPrep-Key': secondUniversity.body.apiKey };
     assert.equal(secondUniversity.body.university.permissions.events, false);
     assert.equal(secondUniversity.body.university.sources.questions, 'shared');
@@ -109,7 +110,7 @@ test('central API scopes assessments and revokes university access', async (t) =
     assert.deepEqual(deleted.body, { universityId: 'south-campus', deleted: true });
     assert.equal((await request('/tenant/policy', { headers: secondTenantHeaders })).status, 401);
     assert.equal((await request('/admin/overview', { headers: adminHeaders })).body.universities.some((item) => item.universityId === 'south-campus'), false);
-    const recreated = await request('/admin/universities', { method: 'POST', headers: adminHeaders, body: JSON.stringify({ universityId: 'south-campus', name: 'New South Campus' }) });
+    const recreated = await request('/admin/universities', { method: 'POST', headers: adminHeaders, body: JSON.stringify({ universityId: 'south-campus', name: 'New South Campus', ...serviceDates }) });
     assert.equal(recreated.status, 201);
     const newTenantHeaders = { 'X-PeerPrep-University': 'south-campus', 'X-PeerPrep-Key': recreated.body.apiKey };
     assert.equal((await request('/tenant/policy', { headers: newTenantHeaders })).status, 200);
@@ -118,7 +119,7 @@ test('central API scopes assessments and revokes university access', async (t) =
     assert.equal((await request(`/tenant/assessments/${assessmentId}`, { headers: newTenantHeaders })).status, 404);
     await University.create({ universityId: 'legacy-campus', name: 'Old Campus', active: false, deletedAt: new Date(), apiKeyHash: '0'.repeat(64) });
     await Publication.updateOne({ kind: 'assessment', contentId: assessmentId }, { $addToSet: { everUniversityIds: 'legacy-campus' } });
-    const legacyReplacement = await request('/admin/universities', { method: 'POST', headers: adminHeaders, body: JSON.stringify({ universityId: 'legacy-campus', name: 'Replacement Campus' }) });
+    const legacyReplacement = await request('/admin/universities', { method: 'POST', headers: adminHeaders, body: JSON.stringify({ universityId: 'legacy-campus', name: 'Replacement Campus', ...serviceDates }) });
     assert.equal(legacyReplacement.status, 201);
     assert.equal((await request(`/tenant/assessments/${assessmentId}`, { headers: { 'X-PeerPrep-University': 'legacy-campus', 'X-PeerPrep-Key': legacyReplacement.body.apiKey } })).status, 404);
     await Assessment.collection.updateOne({ _id: assessmentId }, { $set: { sections: [{ title: 'Section 1', questions: [{ questionId: String(privateQuestion), questionText: 'Private question' }] }] } });

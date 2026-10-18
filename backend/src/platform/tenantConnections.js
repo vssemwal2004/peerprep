@@ -62,28 +62,31 @@ export async function testTenantConnection(uri, universityId, { claim = false, a
   }
 }
 
-export async function getTenant(universityId) {
+export async function getTenant(universityId, { includeInactive = false } = {}) {
   if (!validUniversityId(universityId)) throw new Error('Invalid university ID');
-  const registration = await loadRegistration(universityId);
+  const cacheKey = includeInactive ? `inactive:${universityId}` : universityId;
+  const registration = await loadRegistration(universityId, includeInactive);
   if (!registration?.dbUriEncrypted) throw new Error('University is unavailable');
   const revision = String(registration.updatedAt || '');
-  const cached = connections.get(universityId);
+  const cached = connections.get(cacheKey);
   if (cached?.revision === revision) return cached.promise;
   if (cached?.uriCipher === registration.dbUriEncrypted) {
     const promise = cached.promise.then((value) => ({ ...value,
       permissions: registration.permissions,
       sources: registration.sources,
+      serviceStartDate: registration.serviceStartDate,
+      serviceEndDate: registration.serviceEndDate,
       judge0Url: registration.judge0UrlEncrypted ? decryptTenantSecret(registration.judge0UrlEncrypted) : '',
       judge0AuthHeader: registration.judge0AuthHeaderEncrypted ? decryptTenantSecret(registration.judge0AuthHeaderEncrypted) : '',
       judge0AuthToken: registration.judge0AuthTokenEncrypted ? decryptTenantSecret(registration.judge0AuthTokenEncrypted) : '',
       interviewServiceUrl: registration.interviewUrlEncrypted ? decryptTenantSecret(registration.interviewUrlEncrypted) : '',
       interviewServiceSecret: registration.interviewSecretEncrypted ? decryptTenantSecret(registration.interviewSecretEncrypted) : '',
     }));
-    connections.set(universityId, { revision, uriCipher: registration.dbUriEncrypted, promise });
+    connections.set(cacheKey, { revision, uriCipher: registration.dbUriEncrypted, promise });
     return promise;
   }
   if (cached) {
-    connections.delete(universityId);
+    connections.delete(cacheKey);
     void cached.promise.then((value) => retireConnection(value.connection)).catch(() => {});
   }
   const promise = (async () => {
@@ -110,6 +113,8 @@ export async function getTenant(universityId) {
         connection,
         permissions: registration.permissions,
         sources: registration.sources,
+        serviceStartDate: registration.serviceStartDate,
+        serviceEndDate: registration.serviceEndDate,
         judge0Url: registration.judge0UrlEncrypted ? decryptTenantSecret(registration.judge0UrlEncrypted) : '',
         judge0AuthHeader: registration.judge0AuthHeaderEncrypted ? decryptTenantSecret(registration.judge0AuthHeaderEncrypted) : '',
         judge0AuthToken: registration.judge0AuthTokenEncrypted ? decryptTenantSecret(registration.judge0AuthTokenEncrypted) : '',
@@ -121,8 +126,8 @@ export async function getTenant(universityId) {
       throw error;
     }
   })();
-  connections.set(universityId, { revision, uriCipher: registration.dbUriEncrypted, promise });
-  promise.catch(() => { if (connections.get(universityId)?.promise === promise) connections.delete(universityId); });
+  connections.set(cacheKey, { revision, uriCipher: registration.dbUriEncrypted, promise });
+  promise.catch(() => { if (connections.get(cacheKey)?.promise === promise) connections.delete(cacheKey); });
   return promise;
 }
 
@@ -133,18 +138,20 @@ export async function ensureTenantIndexes(tenant) {
   }
 }
 
-async function loadRegistration(universityId) {
-  const cached = registrations.get(universityId);
+async function loadRegistration(universityId, includeInactive = false) {
+  const cacheKey = includeInactive ? `inactive:${universityId}` : universityId;
+  const cached = registrations.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.promise;
-  const promise = University.findOne({ universityId, active: true, deletedAt: null })
+  const promise = University.findOne({ universityId, ...(includeInactive ? {} : { active: true }), deletedAt: null })
     .select('+dbUriEncrypted +judge0UrlEncrypted +judge0AuthHeaderEncrypted +judge0AuthTokenEncrypted +interviewUrlEncrypted +interviewSecretEncrypted').lean().exec();
-  registrations.set(universityId, { promise, expiresAt: Date.now() + 5000 });
-  promise.catch(() => { if (registrations.get(universityId)?.promise === promise) registrations.delete(universityId); });
+  registrations.set(cacheKey, { promise, expiresAt: Date.now() + 5000 });
+  promise.catch(() => { if (registrations.get(cacheKey)?.promise === promise) registrations.delete(cacheKey); });
   return promise;
 }
 
 export function invalidateTenantRegistration(universityId) {
   registrations.delete(universityId);
+  registrations.delete(`inactive:${universityId}`);
 }
 
 export async function listActiveUniversityIds() {

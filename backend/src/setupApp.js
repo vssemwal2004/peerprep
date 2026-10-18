@@ -15,6 +15,7 @@ import { enforceUniversityPolicy } from './platform/enforcePolicy.js';
 import { deploymentRole } from './platform/deployment.js';
 import { getTenant, validUniversityId } from './platform/tenantConnections.js';
 import { runForTenant } from './platform/tenantContext.js';
+import { servicePeriodStatus, servicePeriodMessage } from './platform/servicePeriod.js';
 
 const app = express();
 
@@ -175,6 +176,10 @@ if (deploymentRole() === 'shared') {
     if (!validUniversityId(req.params.universityId)) return next(new HttpError(404, 'University not found'));
     try {
       const tenant = await getTenant(req.params.universityId);
+      const period = servicePeriodStatus(tenant);
+      if (period !== 'active' && req.path !== '/auth/logout') {
+        return res.status(403).json({ code: 'SERVICE_INACTIVE', error: servicePeriodMessage(tenant, period), serviceStartDate: tenant.serviceStartDate, serviceEndDate: tenant.serviceEndDate });
+      }
       req.universityId = tenant.universityId;
       return runForTenant(tenant, next);
     } catch {

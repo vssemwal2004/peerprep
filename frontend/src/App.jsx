@@ -4,7 +4,7 @@ import { lazy as reactLazy, Suspense, useEffect, useCallback, useLayoutEffect, u
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
 import { UniversityPolicyProvider } from './platform/UniversityPolicyContext';
-import { canManageInterviewCompanies, SUGGESTED_COMPANIES_PATH } from './platform/universityPermissions';
+import { canManageInterviewCompanies, isUniversityDeployment, SUGGESTED_COMPANIES_PATH } from './platform/universityPermissions';
 import { ToastProvider } from './components/CustomToast';
 import AdminLayout from './admin/AdminLayout';
 import AdminProtectedRoute from './admin/AdminProtectedRoute';
@@ -64,6 +64,8 @@ const StudentResume = lazy(() => import("./student/StudentResume"));
 // Admin Pages
 const AdminOverview = lazy(() => import("./admin/AdminOverview"));
 const PlatformControl = lazy(() => import('./admin/PlatformControl'));
+const WalletPage = lazy(() => import('./wallet/WalletPage'));
+const PlatformWalletPage = lazy(() => import('./wallet/PlatformWalletPage'));
 const AdminLearning = lazy(() => import("./admin/AdminLearning"));
 const AdminLearningDetail = lazy(() => import("./admin/AdminLearningDetail"));
 const StudentOnboarding = lazy(() => import("./admin/StudentOnboarding"));
@@ -393,6 +395,7 @@ function AppContent() {
         {/* Student Routes - Protected */}
         <Route path="/student/change-password" element={<StudentProtectedRoute><ChangePassword /></StudentProtectedRoute>} />
         <Route path="/student/profile" element={<StudentProtectedRoute><StudentProfile /></StudentProtectedRoute>} />
+        <Route path="/student/wallet" element={<StudentProtectedRoute><WalletPage /></StudentProtectedRoute>} />
         <Route path="/student/rankings" element={<StudentProtectedRoute><StudentRankings /></StudentProtectedRoute>} />
         <Route path="/student/quickprep" element={<StudentProtectedRoute><StudentQuests /></StudentProtectedRoute>} />
         <Route path="/student/quickprep/:slug" element={<StudentProtectedRoute><QuestDetail /></StudentProtectedRoute>} />
@@ -429,6 +432,7 @@ function AppContent() {
         {/* Admin Routes - Protected */}
         <Route path="/admin" element={<AdminShell><AdminOverview /></AdminShell>} />
         <Route path="/admin/overview" element={<AdminShell><AdminOverview /></AdminShell>} />
+        <Route path="/admin/wallet" element={<AdminShell>{isUniversityDeployment ? <WalletPage /> : <PlatformWalletPage />}</AdminShell>} />
         <Route path="/admin/dashboard" element={<AdminShell><AdminOverview /></AdminShell>} />
         <Route path="/admin/onboarding" element={<AdminShell><StudentOnboarding /></AdminShell>} />
         <Route path="/admin/students" element={<AdminShell><StudentDirectory /></AdminShell>} />
@@ -526,6 +530,7 @@ function AppContent() {
         <Route path="/coordinator/interviews/past/:id" element={<CoordinatorShell permission="coordinator.interviews.view"><CoordinatorEventDetail /></CoordinatorShell>} />
         <Route path="/coordinator/event/:id" element={<CoordinatorShell permission="coordinator.interviews.view"><CoordinatorEventDetail /></CoordinatorShell>} />
         <Route path="/coordinator/students" element={<CoordinatorShell permission="coordinator.students.view"><CoordinatorStudents /></CoordinatorShell>} />
+        <Route path="/coordinator/wallet" element={<CoordinatorShell><WalletPage /></CoordinatorShell>} />
         <Route path="/coordinator/onboarding" element={<CoordinatorShell permission="coordinator.students.create"><StudentOnboarding /></CoordinatorShell>} />
         <Route path="/coordinator/students/bulk-lists" element={<CoordinatorShell permission="coordinator.students.bulk-lists"><StudentBulkLists /></CoordinatorShell>} />
         <Route path="/coordinator/students/:studentId" element={<CoordinatorShell permission="coordinator.students.profile"><AdminStudentProfile /></CoordinatorShell>} />

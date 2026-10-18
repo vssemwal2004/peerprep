@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "../utils/api";
+import AccountQuotaNotice from '../components/AccountQuotaNotice';
 import { useActivityLogger } from "../hooks/useActivityLogger";
 import { useToast } from "../components/CustomToast";
 import { Upload, CheckCircle, AlertCircle, Plus, Loader2, FileText, Download, Users, BookOpen, Shield, ArrowRight, Mail, X } from "lucide-react";
@@ -507,6 +508,7 @@ export default function StudentOnboarding() {
           </div>
         </div>
 
+        <AccountQuotaNotice role="student" />
         {/* Guidelines Card */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertCircle, CheckCircle2, Download, Eye, EyeOff, FileText, Loader2, ShieldCheck, Upload, UserPlus, Users } from 'lucide-react';
 import { api } from '../utils/api';
+import AccountQuotaNotice from '../components/AccountQuotaNotice';
 import { useToast } from '../components/CustomToast';
 import { defaultCoordinatorPermissions } from './coordinatorPermissions';
 
@@ -242,6 +243,7 @@ export default function CoordinatorOnboarding() {
           </Link>
         </div>
 
+        <AccountQuotaNotice role="coordinator" />
         <div className="mb-5 inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm dark:border-white/10 dark:bg-gray-900">
           {[['bulk', 'Bulk CSV Upload'], ['single', 'Individual Coordinator']].map(([value, label]) => <button key={value} type="button" onClick={() => setMode(value)} className={`rounded-lg px-4 py-2 text-sm font-bold transition ${mode === value ? 'bg-sky-600 text-white' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/[0.04]'}`}>{label}</button>)}
         </div>

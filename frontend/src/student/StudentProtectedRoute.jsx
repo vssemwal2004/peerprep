@@ -25,6 +25,7 @@ export default function StudentProtectedRoute({ children }) {
       || location.pathname === '/student/assessment-history'
       || location.pathname === '/assessment-history'
       || location.pathname === '/student/change-password'
+      || location.pathname === '/student/wallet'
       || location.pathname.startsWith('/student/assessment/');
     if (!assessmentPath) return <Navigate to="/student/assessments" replace />;
   }

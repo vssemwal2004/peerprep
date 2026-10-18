@@ -33,6 +33,11 @@ areas. A session is tied to one university, so opening another university in
 the same browser requires a new login.
 
 Run the existing platform index migration and bootstrap against the main DB.
+The main MongoDB must be a replica set (MongoDB Atlas already is one), because
+PeerPrep coin transfers use transactions. Run `npm run migrate:platform-indexes`
+with the shared backend environment before enabling the wallet; this creates
+the unique transfer request index and wallet indexes. Do not point this command
+at a university database.
 Do not run the old university bootstrap with the main DB URI. API replicas
 should set `START_EXECUTION_WORKERS=false`, `START_SCHEDULED_JOBS=false`, and
 `START_MAIL_WORKER=false`. Start the compiler, assessment and maintenance
@@ -66,7 +71,8 @@ session affinity at a future load balancer.
    jobs disabled if dedicated workers are used. Start compiler and assessment
    queue workers and one maintenance worker with the same shared environment.
 5. In `/admin/platform`, register each university's existing DB URI and its
-   Judge0 endpoint. Existing admins keep their current passwords. Enter
+   Judge0 endpoint, service start/end dates and initial PeerPrep coins. Existing
+   admins keep their current passwords. Enter
    optional Judge0 auth and AI-interview service settings there. Set module
    permissions and publish shared assessments. Test one university before
    repeating this for the others.
@@ -83,13 +89,46 @@ The superadmin page itself shows the registration → permissions → student
 creation → exam flow and the connection status of every university. Browser
 users never enter MongoDB or Judge0 credentials.
 
+## University service dates and PeerPrep coins
+
+New universities require a service start date, end date, maximum coordinator
+count and maximum student count. Both dates are
+inclusive in India time. University API access is rejected before the start
+and after the end; extend the end date from `/admin/platform` to restore it.
+Existing universities without dates remain accessible until dates are assigned,
+so set those dates during rollout. Balances remain recorded after service ends.
+
+Account limits count all coordinator and student accounts in that university,
+including disabled accounts. The superadmin can change either limit from the
+university card. A limit cannot be set below the current account count. Single
+creation and bulk uploads stop creating new accounts when the limit is reached;
+deleting an account frees a slot. Existing universities without limits remain
+unlimited until the superadmin sets them. Use **Check current usage** on the
+university card to see live counts before choosing limits.
+
+The superadmin opens **PeerPrep wallet** at `/admin/wallet` to see university
+wallet balances and add coins. The same page lets the superadmin search and
+credit PeerPrep's own coordinators or students directly. These are main-database
+accounts; university accounts are never shown in that direct-credit search.
+The university card at `/admin/platform` also has a coin top-up control.
+The university admin transfers coins from the university wallet to its
+coordinators. A coordinator transfers coins from their own wallet to students
+assigned to them. PeerPrep coordinators can likewise transfer their coins to
+their assigned PeerPrep students. Students can view their balance and history.
+All balances and transfer records are in the main MongoDB, keyed by a wallet
+scope and user ID; university student profiles remain in the university DB.
+There is no coin spending or automatic coin expiry yet. Back up the main DB
+before deploying and include the new wallet collections in normal backups.
+
 ## Student sign-in
 
-The main landing page opens the regular `/student` login form. Students enter
+The main landing page opens the regular `/student` login form. Users enter
 their registered email and password; no university selector or university field
-is shown. The backend uses a keyed email lookup in the main database to find
-the university, then verifies the password in that university database. The
-main lookup stores no student password or plaintext email. If an email exists
+is shown. PeerPrep's own admin, coordinators and students authenticate against
+the main database. For university users, the backend uses a keyed email lookup
+in the main database to find their university, then verifies the password in
+that university database. The directory stores no university user password or
+plaintext email. If an email exists
 at more than one university, the main login asks the student to use their
 university-specific `/u/<id>/student` link. That direct link still accepts
 student and coordinator IDs.

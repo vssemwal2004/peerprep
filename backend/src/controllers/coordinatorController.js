@@ -271,7 +271,7 @@ export async function createCoordinator(req, res) {
       credentialEmailError: credentialEmailError || undefined,
     });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(err.status || 500).json({ error: err.message });
   }
 }
 
@@ -412,7 +412,7 @@ export async function bulkCreateCoordinators(req, res) {
         created.push({ user, temporaryPassword });
         results.push({ row: row.row, status: 'created', id: user._id, coordinatorId: user.coordinatorId });
       } catch (error) {
-        results.push({ row: row.row, status: 'error', errors: [error?.code === 11000 ? 'Coordinator email or ID already exists' : 'Coordinator could not be created'] });
+        results.push({ row: row.row, status: 'error', errors: [error?.status === 409 ? error.message : error?.code === 11000 ? 'Coordinator email or ID already exists' : 'Coordinator could not be created'] });
       }
     }
 

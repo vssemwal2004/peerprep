@@ -122,12 +122,41 @@ userSchema.pre('save', function(next) {
   next();
 });
 
+// Every portal creation path uses User.create(), including CSV and bulk
+// coordinator uploads. Hold a cross-replica lock until the insert finishes so
+// two concurrent requests cannot both take the last university slot.
+userSchema.pre('save', async function() {
+  const tenant = currentTenant();
+  if (!this.isNew || !tenant || !['student', 'coordinator'].includes(this.role)) return;
+  const { reserveAccountSlot } = await import('../platform/accountLimits.js');
+  this.$locals.releaseAccountSlot = await reserveAccountSlot(
+    tenant.universityId, this.role,
+    (role) => this.constructor.countDocuments({ role }),
+  );
+});
+
 // Main-domain login routes email to a university. Keep only a keyed email
 // digest in the main database; student records and passwords stay local.
 userSchema.post('save', async function(doc) {
   if (!currentTenant() || !this.$locals.syncLoginIdentity) return;
   const { syncTenantLoginIdentity } = await import('../platform/loginDirectory.js');
   await syncTenantLoginIdentity(doc);
+});
+
+userSchema.post('save', async function() {
+  if (!this.$locals.releaseAccountSlot) return;
+  const release = this.$locals.releaseAccountSlot;
+  delete this.$locals.releaseAccountSlot;
+  await release();
+});
+
+userSchema.post('save', async function(error, doc, next) {
+  if (this.$locals.releaseAccountSlot) {
+    const release = this.$locals.releaseAccountSlot;
+    delete this.$locals.releaseAccountSlot;
+    await release();
+  }
+  next(error);
 });
 
 userSchema.post('findOneAndUpdate', async function(doc) {

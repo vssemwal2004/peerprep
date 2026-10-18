@@ -41,9 +41,10 @@ import {
   User,
   X,
   BadgeCheck,
+  Wallet,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { canManageInterviewCompanies, isControlDeployment, SUGGESTED_COMPANIES_PATH } from '../platform/universityPermissions';
+import { canManageInterviewCompanies, isControlDeployment, isUniversityDeployment, SUGGESTED_COMPANIES_PATH } from '../platform/universityPermissions';
 import { useUniversityPolicy } from '../platform/UniversityPolicyContext';
 import { useTheme } from '../context/ThemeContext';
 import { hasPermission } from '../admin/coordinatorPermissions';
@@ -206,7 +207,10 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
       match: (loc) => loc.pathname === '/admin' || loc.pathname.startsWith('/admin/overview') || loc.pathname.startsWith('/admin/dashboard'),
     },
     ...(isControlDeployment
-      ? [{ type: 'link', label: 'Universities', to: '/admin/platform', icon: Building2 }]
+      ? [
+        { type: 'link', label: 'Universities', to: '/admin/platform', icon: Building2 },
+        { type: 'link', label: 'PeerPrep wallet', to: '/admin/wallet', icon: Wallet },
+      ]
       : []),
     { type: 'link', label: 'Prep Analysis', to: '/admin/analysis', icon: BarChart3 },
     {
@@ -370,6 +374,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
   const accent = isCoordinator ? 'emerald' : 'sky';
   const navItems = useMemo(() => {
     const items = buildNavItems(role, user?.accessScope);
+    if (isUniversityDeployment || role !== 'admin') items.unshift({ type: 'link', label: 'PeerPrep wallet', to: `/${role}/wallet`, icon: Wallet });
     if (role !== 'coordinator') return applyPlatformPermissions(items, allowsPath, role);
     return applyPlatformPermissions(items
       .map((item) => {
