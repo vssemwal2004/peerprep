@@ -5,31 +5,31 @@ const DIFFICULTIES = ["Easy", "Medium", "Hard"];
 const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 const round1 = (value) => Math.round(value * 10) / 10;
 
-/** Prep Score points one more solve of each difficulty adds, while under its target. */
-export function pointsPerSolve(formula) {
-  const { weights, targets, progressShare } = formula;
-  const total = DIFFICULTIES.reduce((sum, key) => sum + weights[key], 0);
-  return Object.fromEntries(DIFFICULTIES.map((key) => [key, round1((progressShare * 100 * weights[key]) / total / targets[key])]));
+/** Prep Score points one more solve of each difficulty adds at the student's current quality. */
+export function pointsPerSolve(formula, quality = 100) {
+  const points = formula?.coding?.points || {};
+  return Object.fromEntries(DIFFICULTIES.map((key) => [key, round1(((points[key] || 0) * quality) / 100)]));
 }
 
 function codingLines(coding, formula) {
   const lines = [];
-  const { solved, targets } = coding;
+  const { solved } = coding;
   if (coding.practiceStatus === "never") return [{ tone: "warn", text: "Has not submitted any code yet." }];
   if (coding.practiceStatus === "inactive") lines.push({ tone: "warn", text: `No coding practice for ${coding.daysSinceActive} days.` });
   else if (coding.daysSinceActive === 0) lines.push({ tone: "good", text: "Practised today." });
   else if (coding.daysSinceActive !== null && coding.daysSinceActive <= 3) lines.push({ tone: "good", text: `Practised ${plural(coding.daysSinceActive, "day")} ago.` });
 
-  const reached = DIFFICULTIES.filter((key) => solved[key] >= targets[key]);
-  if (reached.length) lines.push({ tone: "good", text: `Reached the ${reached.join(" and ")} target${reached.length > 1 ? "s" : ""}; more ${reached.join(" or ")} solves no longer raise the Prep Score.` });
+  const fair = formula?.coding?.fairTriesPerSolve;
+  if (fair && solved.total > 0 && coding.quality < 100) {
+    lines.push({ tone: "warn", text: `${coding.triesPerSolve} submissions per solved problem (up to ${fair} is fair), so quality is ${coding.quality}% of the Prep Coding points.` });
+  }
 
-  if (formula && solved.total > 0) {
-    const per = pointsPerSolve(formula);
-    const open = DIFFICULTIES.filter((key) => solved[key] < targets[key]);
+  if (formula?.coding && solved.total > 0) {
+    const per = pointsPerSolve(formula, coding.quality ?? 100);
     if (!solved.Hard && solved.Medium >= 10) {
-      lines.push({ tone: "tip", text: `Ready for Hard problems: ${plural(solved.Medium, "Medium")} solved, no Hard yet. Each Hard solve adds about ${per.Hard} points.` });
-    } else if (solved.total >= 10 && solved.Easy / solved.total >= 0.7 && open.includes("Medium")) {
-      lines.push({ tone: "tip", text: `Mostly Easy problems (${Math.round((solved.Easy / solved.total) * 100)}%). A Medium solve adds about ${per.Medium} points, an Easy one ${per.Easy}.` });
+      lines.push({ tone: "tip", text: `Ready for Hard problems: ${plural(solved.Medium, "Medium")} solved, no Hard yet. Each Hard solve adds ${per.Hard} points.` });
+    } else if (solved.total >= 10 && solved.Easy / solved.total >= 0.7) {
+      lines.push({ tone: "tip", text: `Mostly Easy problems (${Math.round((solved.Easy / solved.total) * 100)}%). A Medium solve adds ${per.Medium} points, an Easy one ${per.Easy}.` });
     }
   }
 

@@ -176,7 +176,7 @@ function emptyCoding() {
     attempted: 0, submissions: 0, accepted: 0, accuracy: 0, activeDays: 0,
     lastActiveAt: null, daysSinceActive: null, practiceStatus: 'never',
     languages: [], solvedTopics: [], solvedTags: [], solvedDifficulties: [],
-    prepScore: 0, progress: 0, points: { Easy: 0, Medium: 0, Hard: 0, accuracy: 0 },
+    prepScore: 0, work: 0, quality: 100, triesPerSolve: 0, points: { Easy: 0, Medium: 0, Hard: 0 },
   };
 }
 
@@ -187,7 +187,8 @@ function emptyCoding() {
 /** Prep Score per feature and overall, with the same formula students see on their dashboard. */
 export function rowScores(row, features) {
   const mocks = row.interview?.mocks || [];
-  const attempts = row.assessment ? [...row.assessment.byTest.values()] : [];
+  // Only marked tests count towards the score.
+  const attempts = row.assessment ? [...row.assessment.byTest.values()].filter((attempt) => Number.isFinite(attempt.percent)) : [];
   return prepScores({
     easySolved: row.coding.solved.Easy, mediumSolved: row.coding.solved.Medium, hardSolved: row.coding.solved.Hard,
     submissions: row.coding.submissions, acceptedSubmissions: row.coding.accepted,
@@ -240,7 +241,9 @@ export function buildStudentRows({
     coding.practiceStatus = coding.submissions === 0 ? 'never' : coding.daysSinceActive > INACTIVE_AFTER_DAYS ? 'inactive' : 'active';
     const score = prepScore({ solved: coding.solved, accepted: coding.accepted, attempts: coding.submissions });
     coding.prepScore = score.score;
-    coding.progress = score.progress;
+    coding.work = score.work;
+    coding.quality = score.quality;
+    coding.triesPerSolve = score.triesPerSolve;
     coding.points = score.points;
     coding.languages = [...languages];
     coding.solvedTopics = [...solvedTopics];

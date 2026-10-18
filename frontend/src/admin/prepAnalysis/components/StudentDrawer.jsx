@@ -6,7 +6,7 @@ import { DIFFICULTY_COLORS, OUTCOME_COLORS } from "../charts/chartTheme";
 import { RANGE_PRESETS } from "../filterModel";
 import { lastSeenText, studentHighlights } from "../studentInsights";
 import { ChartBody } from "./ChartCard";
-import { PrepScoreBreakdown, ScoreRing as OverallRing, ScoreValue } from "../../../student/prepScore/PrepScore";
+import { formatScore, PrepCoin, PrepScoreFlow, ScoreValue } from "../../../student/prepScore/PrepScore";
 import { StatusPill } from "./Insights";
 import { initials, sectionStyle } from "./sectionStyles";
 import { Drawer } from "./ui";
@@ -56,19 +56,13 @@ function Bar({ label, value, max, color, right, sub }) {
   );
 }
 
-function ScoreRing({ score, color = "#0284c7" }) {
-  const radius = 42;
-  const length = 2 * Math.PI * radius;
+/** Prep Coding's points as a coin with "work points × quality". */
+function CodingScore({ coding }) {
   return (
-    <div className="relative h-[108px] w-[108px] shrink-0">
-      <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90" aria-hidden="true">
-        <circle cx="50" cy="50" r={radius} fill="none" strokeWidth="9" className="stroke-slate-100 dark:stroke-white/[0.06]" />
-        <circle cx="50" cy="50" r={radius} fill="none" strokeWidth="9" stroke={color} strokeLinecap="round" strokeDasharray={length} strokeDashoffset={length * (1 - Math.min(100, score) / 100)} className="transition-[stroke-dashoffset] duration-700" />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-[24px] font-extrabold leading-7 tabular-nums text-slate-900 dark:text-white">{score.toFixed(1)}</span>
-        <span className="text-[10px] font-semibold text-slate-400">Prep Score</span>
-      </div>
+    <div className="flex w-[124px] shrink-0 flex-col items-center gap-1.5 text-center">
+      <PrepCoin size={56} />
+      <span className="text-[22px] font-extrabold leading-6 tabular-nums text-slate-900 dark:text-white">{formatScore(coding.prepScore)}</span>
+      <span className="text-[10.5px] leading-tight text-slate-500 dark:text-slate-400">{formatScore(coding.work)} work points × {formatScore(coding.quality)}% quality</span>
     </div>
   );
 }
@@ -81,14 +75,15 @@ function CodingSection({ coding, quickprep }) {
   return (
     <Section section="coding" title="Prep Coding" aside={<StatusPill status={coding.practiceStatus} />}>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-        <ScoreRing score={coding.prepScore} />
+        <CodingScore coding={coding} />
         <div className="min-w-0 flex-1 space-y-2.5">
           {["Easy", "Medium", "Hard"].map((key) => (
-            <Bar key={key} label={key} value={coding.solved[key]} max={coding.targets[key]} color={DIFFICULTY_COLORS[key]}
-              right={<><b className="text-slate-900 dark:text-white">{coding.solved[key]}</b> of {coding.targets[key]} target · {coding.points[key]} pts</>} />
+            <Bar key={key} label={key} value={coding.points[key]} max={coding.prepScore} color={DIFFICULTY_COLORS[key]}
+              right={<><b className="text-slate-900 dark:text-white">{coding.solved[key]}</b> solved · {formatScore(coding.points[key])} points</>} />
           ))}
-          <Bar label="Accuracy" value={coding.accuracy} max={100} color={DIFFICULTY_COLORS.Accuracy}
-            right={<><b className="text-slate-900 dark:text-white">{coding.accuracy}%</b> · {coding.points.accuracy} pts</>} sub={`${coding.accepted} of ${coding.submissions} submissions accepted`} />
+          <Bar label="Quality" value={coding.quality} max={100} color={DIFFICULTY_COLORS.Accuracy}
+            right={<b className="text-slate-900 dark:text-white">{formatScore(coding.quality)}%</b>}
+            sub={coding.solved.total ? `${coding.triesPerSolve} submissions per solve (up to 3 is fair) · ${coding.accuracy}% accepted` : `${coding.accepted} of ${coding.submissions} submissions accepted`} />
         </div>
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -308,15 +303,14 @@ export default function StudentDrawer({ studentId, range = "all", onClose }) {
             <section aria-label="Prep Score" className="rounded-xl border border-slate-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <OverallRing value={profile.prepScore.total} size={48} />
                   <div>
                     <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Prep Score (overall)</p>
-                    <ScoreValue value={profile.prepScore.total} />
+                    <p className="mt-1"><ScoreValue value={profile.prepScore.total} size="lg" /></p>
                   </div>
                 </div>
-                <p className="max-w-[220px] text-right text-[11px] text-slate-500">Average of each feature's score out of 100</p>
+                <p className="max-w-[220px] text-right text-[11px] text-slate-500">Each feature: work points × quality. Overall: their average (no maximum).</p>
               </div>
-              <PrepScoreBreakdown prepScore={profile.prepScore} className="mt-3" />
+              <PrepScoreFlow prepScore={profile.prepScore} className="mt-3" />
             </section>
           )}
 

@@ -79,7 +79,7 @@ export const rankMetrics = (catalog, area) => [
 // The filters shown straight away; the rest sit under "More filters".
 const MAIN_FIELDS = new Set([
   "student.semester", "student.branch", "student.course", "student.group", "student.prepScore",
-  "interview.prepScore", "assessment.prepScore",
+  "learning.prepScore", "interview.prepScore", "assessment.prepScore",
   "coding.practiceStatus", "coding.prepScore", "coding.solved", "coding.solvedHard", "coding.solvedTopics", "quickprep.status", "quickprep.progress",
   "learning.status", "learning.progress", "learning.subjects",
   "interview.status", "interview.done", "interview.mockScore", "interview.aiCompleted",
@@ -117,11 +117,12 @@ const PERCENT_PRESETS = [
   { label: "50–75%", from: "50", to: "75" },
   { label: "75% or more", from: "75", to: "" },
 ];
+// Prep Score has no ceiling (a well-prepared student earns about 500 per feature).
 const SCORE_PRESETS = [
-  { label: "Under 25", from: "", to: "25" },
-  { label: "25–50", from: "25", to: "50" },
-  { label: "50–75", from: "50", to: "75" },
-  { label: "75 or more", from: "75", to: "" },
+  { label: "Under 50", from: "", to: "49.9" },
+  { label: "50–250", from: "50", to: "250" },
+  { label: "250–1,000", from: "250", to: "1000" },
+  { label: "1,000 or more", from: "1000", to: "" },
 ];
 const DAY_PRESETS = [
   { label: "Within 7 days", from: "", to: "7" },
@@ -137,7 +138,7 @@ const RATING_PRESETS = [
 
 /** One-tap ranges for a number filter, in that field's own scale. */
 export function numberPresets(field) {
-  if (field.key === "coding.prepScore") return SCORE_PRESETS;
+  if (field.key.endsWith(".prepScore")) return SCORE_PRESETS;
   if (field.unit === "/ 5") return RATING_PRESETS;
   if (field.kind === "percent") return PERCENT_PRESETS;
   if (field.unit === "days" && field.key.endsWith("daysSinceActive")) return DAY_PRESETS;

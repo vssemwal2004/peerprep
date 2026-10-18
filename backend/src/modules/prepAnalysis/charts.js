@@ -20,6 +20,8 @@ export const GROUP_BY = Object.freeze({
 const NOT_SET = 'Not set';
 const practising = (rows) => rows.filter((row) => row.coding.submissions > 0);
 const byScore = (left, right) => right.coding.prepScore - left.coding.prepScore || left.name.localeCompare(right.name);
+// Lower edges of the Prep Score bands in "How Prep Scores are spread".
+const SCORE_BANDS = [0, 25, 50, 100, 250, 500, 1000, 2500];
 const clampLimit = (value, fallback, max) => Math.min(max, Math.max(1, Number.parseInt(value, 10) || fallback));
 
 function groupRows(rows, groupBy, maxGroups = 12) {
@@ -77,7 +79,7 @@ const CODING_CHARTS = [
     build: ({ rows, options }) => ({
       items: practising(rows).sort(byScore).slice(0, clampLimit(options.limit, 10, 50)).map((row, index) => ({
         id: row.id, name: row.name, position: index + 1, score: row.coding.prepScore,
-        segments: { Easy: row.coding.points.Easy, Medium: row.coding.points.Medium, Hard: row.coding.points.Hard, Accuracy: row.coding.points.accuracy },
+        segments: { Easy: row.coding.points.Easy, Medium: row.coding.points.Medium, Hard: row.coding.points.Hard },
         solved: row.coding.solved,
       })),
     }),
@@ -232,8 +234,11 @@ const CODING_CHARTS = [
     title: 'How Prep Scores are spread',
     question: 'How many students are in each score band?',
     build: ({ rows }) => {
-      const bins = Array.from({ length: 10 }, (_, index) => ({ label: `${index * 10}–${index * 10 + 10}`, count: 0 }));
-      practising(rows).forEach((row) => { bins[Math.min(9, Math.floor(row.coding.prepScore / 10))].count += 1; });
+      // Prep Score has no ceiling, so the bands widen as scores grow.
+      const bins = SCORE_BANDS.map((from, index) => ({
+        label: index === SCORE_BANDS.length - 1 ? `${from.toLocaleString('en-US')}+` : `${from.toLocaleString('en-US')}–${SCORE_BANDS[index + 1].toLocaleString('en-US')}`, count: 0,
+      }));
+      practising(rows).forEach((row) => { bins[SCORE_BANDS.findLastIndex((from) => row.coding.prepScore >= from)].count += 1; });
       return { label: 'Prep Score', bins };
     },
   },

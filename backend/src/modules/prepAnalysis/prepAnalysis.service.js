@@ -9,22 +9,16 @@ import { loadCodingFacts, loadCohort } from './codingFacts.js';
 import { allowedModules, FIELDS, MODULES, STATIC_OPTIONS } from './fields.js';
 import { applyRankCuts, evaluateFilterTree, normalizeFilterTree, normalizeRankCuts } from './filterEngine.js';
 import { loadLearningFacts } from './learningFacts.js';
-import {
-  ACCURACY_FULL_CREDIT_SUBMISSIONS, ACCURACY_SHARE, competitionRanks, DIFFICULTY_WEIGHTS, PREP_SCORE_VERSION, PROGRESS_SHARE, SOLVE_TARGETS,
-} from './prepScore.js';
+import { competitionRanks, PREP_SCORE_VERSION } from './prepScore.js';
+import { PREP_SCORE_RULES } from '../../services/prepScores.js';
 import { buildReport, EXPORT_TYPES } from './prepAnalysis.export.js';
 import { loadAssessmentFacts, PASS_PERCENT } from './assessmentFacts.js';
 import { loadInterviewFacts, RATINGS } from './interviewFacts.js';
 import { loadQuickPrepFacts, sheetVisibleTo } from './quickPrepFacts.js';
 import { buildStudentRows } from './studentRows.js';
 
-export const PREP_SCORE_FORMULA = Object.freeze({
-  weights: DIFFICULTY_WEIGHTS,
-  targets: SOLVE_TARGETS,
-  progressShare: PROGRESS_SHARE,
-  accuracyShare: ACCURACY_SHARE,
-  accuracyFullCreditSubmissions: ACCURACY_FULL_CREDIT_SUBMISSIONS,
-});
+// The live Prep Score constants, for the help dialog and student insights.
+export const PREP_SCORE_FORMULA = PREP_SCORE_RULES;
 
 export const QUERY_LIMITS = Object.freeze({ maxCharts: 24, maxTableLimit: 100, maxRangeDays: 366 * 3, cacheTtlMs: 60_000, cacheEntries: 6 });
 const RANGE_PRESETS = { '7d': 7, '30d': 30, '90d': 90, '180d': 180, '365d': 365, all: null };
@@ -196,7 +190,7 @@ function tableRow(row, position) {
     id: row.id, name: row.name, studentId: row.studentId, email: row.email,
     semester: row.student.semester, branch: row.student.branch, course: row.student.course, group: row.student.group, college: row.student.college,
     position,
-    prepScore: row.coding.prepScore, points: row.coding.points,
+    prepScore: row.coding.prepScore, points: row.coding.points, work: row.coding.work, quality: row.coding.quality,
     solved: row.coding.solved, accuracy: row.coding.accuracy, submissions: row.coding.submissions,
     activeDays: row.coding.activeDays, daysSinceActive: row.coding.daysSinceActive, practiceStatus: row.coding.practiceStatus,
     languages: row.coding.languages,
@@ -343,8 +337,8 @@ function codingProfile(row, range) {
   const daily = new Map([...row.days.entries()].map(([day, value]) => [day, value.attempts]));
   const { coding } = row;
   return {
-    prepScore: coding.prepScore, points: coding.points, progress: coding.progress,
-    solved: coding.solved, targets: SOLVE_TARGETS, accuracy: coding.accuracy,
+    prepScore: coding.prepScore, points: coding.points, work: coding.work, quality: coding.quality, triesPerSolve: coding.triesPerSolve,
+    solved: coding.solved, accuracy: coding.accuracy,
     submissions: coding.submissions, accepted: coding.accepted, attempted: coding.attempted,
     activeDays: coding.activeDays, daysSinceActive: coding.daysSinceActive, practiceStatus: coding.practiceStatus,
     languages: [...languages.entries()].sort((left, right) => right[1] - left[1]).map(([language, submissions]) => ({ language, submissions })),

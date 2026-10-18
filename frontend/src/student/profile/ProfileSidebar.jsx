@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { focusRing } from './format';
 import { levelTheme } from './levelTheme';
-import { ScoreRing } from '../prepScore/PrepScore';
+import { formatScore, PrepCoin } from '../prepScore/PrepScore';
 
 function normalizeHref(href) {
   const raw = typeof href === 'string' ? href.trim() : '';
@@ -179,9 +179,9 @@ export default function ProfileSidebar({
           <div className="flex flex-wrap items-center justify-center gap-1.5">
             <BadgePill badge={badge} level={level} onOpen={onOpenBadges} />
             {prepScore !== null && Number.isFinite(Number(prepScore)) && (
-              <span title="Prep Score: each feature scored out of 100 from your own work, averaged" className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-sky-50 py-0.5 pl-0.5 pr-2.5 text-[11px] font-semibold text-sky-900 ring-1 ring-inset ring-sky-200 dark:bg-sky-500/10 dark:text-sky-100 dark:ring-sky-500/30">
-                <ScoreRing value={prepScore} size={22} stroke={3} />
-                Prep Score {Math.min(100, Math.max(0, Number(prepScore))).toLocaleString(undefined, { maximumFractionDigits: 1 })}
+              <span title="Prep Score: work points × quality in each feature, averaged" className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-50 py-0.5 pl-0.5 pr-2.5 text-[11px] font-semibold text-amber-950 ring-1 ring-inset ring-amber-200 dark:bg-amber-500/10 dark:text-amber-100 dark:ring-amber-500/30">
+                <PrepCoin size={20} />
+                Prep Score {formatScore(prepScore)}
                 {scoreRank ? <span className="font-normal opacity-75">· #{scoreRank}</span> : null}
               </span>
             )}

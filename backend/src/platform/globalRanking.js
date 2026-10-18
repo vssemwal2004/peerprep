@@ -3,8 +3,9 @@ import crypto from 'node:crypto';
 import { University } from './models.js';
 import { HttpError } from '../utils/errors.js';
 
-// 2: scores are the 0-100 Prep Score in tenths (services/prepScores.js). Snapshots on another version are never compared.
-export const GLOBAL_RANK_VERSION = 2;
+// 3: scores are the uncapped Prep Score v3 (work points x quality) in whole points (services/prepScores.js).
+// Snapshots on another version are never compared.
+export const GLOBAL_RANK_VERSION = 3;
 export const SNAPSHOT_MAX_AGE = 30 * 60_000;
 const schema = new mongoose.Schema({
   _id: String, // Authenticated university ID, never a student ID.

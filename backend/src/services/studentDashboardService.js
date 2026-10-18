@@ -103,7 +103,8 @@ export function scoresForRow(metrics = {}) {
     submissions: metrics.submissions, acceptedSubmissions: metrics.acceptedSubmissions,
     completedTopics: metrics.completedTopics, totalTopics: metrics.totalTopics,
     mockInterviews: metrics.interviews, mockAverage: metrics.mockAverage, aiInterviews: metrics.aiInterviews,
-    testsTaken: metrics.assessmentsCompleted, testAverage: metrics.assessmentScore,
+    // Only marked tests count towards the score; one still being marked adds nothing yet.
+    testsTaken: metrics.assessmentsScored ?? metrics.assessmentsCompleted, testAverage: metrics.assessmentScore,
   }, metrics.scoreFeatures || scoreFeatures(null));
 }
 
@@ -330,7 +331,7 @@ async function loadProgressRows(students, permissions, semesters, now, sharedCat
     permissions.assessments ? aggregate(AssessmentSubmission, [
       { $match: { studentId: { $in: ids }, status: 'submitted', evaluationStatus: { $nin: ['failed', 'processing'] } } },
       { $set: { percentage: { $cond: [{ $and: [{ $isNumber: '$score' }, { $gt: ['$maxMarks', 0] }] }, { $min: [100, { $max: [0, { $multiply: [{ $divide: ['$score', '$maxMarks'] }, 100] }] }] }, null] } } },
-      { $group: { _id: '$studentId', assessmentsCompleted: { $sum: 1 }, assessmentPoints: { $sum: '$percentage' }, assessmentScore: { $avg: '$percentage' } } },
+      { $group: { _id: '$studentId', assessmentsCompleted: { $sum: 1 }, assessmentsScored: { $sum: { $cond: [{ $isNumber: '$percentage' }, 1, 0] } }, assessmentPoints: { $sum: '$percentage' }, assessmentScore: { $avg: '$percentage' } } },
     ]) : [],
     permissions.events ? aggregate(Feedback, [
       { $match: { to: { $in: ids } } },

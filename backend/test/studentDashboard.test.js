@@ -478,8 +478,9 @@ test('assessment badge metrics exclude violations and level average ignores unsc
   const rank = await getStudentUniversityRanking(learner, null, now);
   assert.equal(rank.badgeMetrics.assessments, 3);
   assert.equal(rank.levelMetrics.assessmentScore, 100);
-  // Average of the scored tests (100%) for 80, and 3 of 5 tests taken (60%) for 20; the violation does not count.
-  assert.equal(rank.scoreBreakdown.assessment, 92);
+  // Only the one marked test counts: 100% counts as 66.7% with 2 starter tests at 50%, so 1 x 100 x (66.7 - 40) / 60.
+  // Unmarked tests and the violation add nothing.
+  assert.equal(rank.scoreBreakdown.assessment, 44.4);
   assert.equal(rank.earnedBadges, 1);
   assert.equal(rank.level.title, 'Consistent Performer');
   assertProfileProgressContract(rank);
@@ -495,7 +496,7 @@ test('assessment badge metrics exclude violations and level average ignores unsc
   const unscored = await getStudentUniversityRanking({ ...learner, _id: unscoredStudentId }, null, now);
   assert.equal(unscored.badgeMetrics.assessments, 1);
   assert.equal(unscored.levelMetrics.assessmentScore, null);
-  assert.equal(unscored.scoreBreakdown.assessment, 4, 'a submitted but unscored test counts as practice only (1 of 5 for 20)');
+  assert.equal(unscored.scoreBreakdown.assessment, 0, 'a submitted test still being marked adds nothing yet');
   assertProfileProgressContract(unscored);
 });
 
@@ -516,11 +517,12 @@ test('Prep Interview score uses the student\'s own mock scores (both feedback sc
     { tenantKey: 'college:someone-else', studentId: learnerId, sessionId: 'elsewhere', interviewId: 'ai-3', completedAt: now },
   ]);
   const rank = await getStudentUniversityRanking(learner, null, now);
-  // Average mock 71.5% for 60, and 3 interviews of 5 (60%) for 40: 42.9 + 24.
-  assert.equal(rank.scoreBreakdown.interview, 66.9, 'unfinished and other-tenant AI interviews do not count');
+  // Average mock 71.5% counts as 60.75% with 2 starter mocks at 50%: 2 x 250 x (60.75 - 40) / 60 = 172.9, plus 1 AI interview x 5.
+  assert.equal(rank.scoreBreakdown.interview, 177.9, 'unfinished and other-tenant AI interviews do not count');
   assert.equal(rank.score, rank.prepScore.total);
-  assert.ok(Math.abs(rank.score - 66.9 / 4) < 0.01, 'the overall score averages all four features');
+  assert.ok(Math.abs(rank.score - 177.92 / 4) < 0.01, 'the overall score averages all four features');
   assert.equal(rank.rank, 1);
-  assert.deepEqual(rank.prepScore.features.interview.parts.map((part) => part.value), ['71.5% over 2', '3 of 5 (60%)']);
-  assert.match(rank.methodology, /out of 100/);
+  const { work, quality, extra } = rank.prepScore.features.interview;
+  assert.deepEqual([work.value, quality.value, extra.value], [500, 34.6, 5]);
+  assert.match(rank.methodology, /work points × quality/);
 });

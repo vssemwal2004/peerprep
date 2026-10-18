@@ -26,7 +26,7 @@ export default function StudentRankings() {
         <Globe2 className="absolute -right-8 -top-8 h-52 w-52 opacity-10" aria-hidden="true" />
         <p className="text-xs font-semibold uppercase tracking-widest text-sky-100">Your progress, in perspective</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight">Your rankings</h1>
-        <p className="mt-2 max-w-md text-sm text-sky-100">One verified Prep Score out of 100. Your position at university and across connected universities.</p>
+        <p className="mt-2 max-w-md text-sm text-sky-100">One verified Prep Score from your own work. Your position at university and across connected universities.</p>
       </header>
       <div className="grid items-start gap-5 md:grid-cols-2">
         <div><UniversityRankCard ranking={current.data} loading={current.loading} />{current.error && <button type="button" onClick={() => setRetry((value) => value + 1)} className="mt-2 rounded text-sm font-semibold text-sky-600 focus-visible:outline focus-visible:outline-2">Retry university ranking</button>}</div>

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import GlobalRankCard from '../profile/GlobalRankCard';
 import { Link } from 'react-router-dom';
 import { ArrowRight, ArrowUpRight, CalendarClock, ChevronDown, Megaphone, Trophy } from 'lucide-react';
-import { PrepScoreBreakdown, ScoreValue } from '../prepScore/PrepScore';
+import { PrepScoreFlow, PrepScoreRules, ScoreValue } from '../prepScore/PrepScore';
 import { formatRelativeTime, formatSchedule, isImportantAnnouncement, numeric } from './dashboardUtils';
 import { card, CardTitle, focusRing, Skeleton, textLink, Unavailable } from './ui';
 
@@ -50,7 +50,7 @@ export function RankCard({ ranking, loading, error, onRetry }) {
               <div className="h-full rounded-full bg-gradient-to-r from-sky-300 to-sky-600 transition-[width] duration-500 motion-reduce:transition-none" style={{ width: `${position}%` }} />
               <span className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-white bg-sky-600 shadow-[0_2px_6px_rgba(2,132,199,0.45)] dark:border-[#242424]" style={{ left: `clamp(7px, ${position}%, calc(100% - 7px))` }} aria-hidden="true" />
             </div>
-            <PrepScoreBreakdown prepScore={ranking.prepScore} className="mt-3" />
+            <PrepScoreFlow prepScore={ranking.prepScore} className="mt-3" />
           </>}
     {!loading && !error && <>
       <div className="mt-3 flex items-center justify-between gap-3 text-[12px]">
@@ -60,9 +60,9 @@ export function RankCard({ ranking, loading, error, onRetry }) {
           How the Prep Score works<ChevronDown className={`h-3.5 w-3.5 transition-transform ${showMethod ? 'rotate-180' : ''}`} aria-hidden="true" />
         </button>
       </div>
-      {showMethod && <p id="rank-method" className="mt-2 rounded-lg bg-[#f6f7f9] px-3 py-2 text-[12px] leading-relaxed text-slate-600 dark:bg-white/[0.04] dark:text-zinc-400">
-        {ranking?.methodology || 'Each feature is scored out of 100 from your own verified work, and your Prep Score is their average. Equal scores share a rank.'}
-      </p>}
+      {showMethod && <div id="rank-method" className="mt-2 rounded-lg bg-[#f6f7f9] px-3 py-3 dark:bg-white/[0.04]">
+        <PrepScoreRules prepScore={ranking?.prepScore} />
+      </div>}
     </>}
   </section><GlobalRankCard scoreRevision={ranking?.score} /></>;
 }

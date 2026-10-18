@@ -10,34 +10,43 @@ import {
   buildReport, DEFAULT_EXPORT_COLUMNS, EXPORT_COLUMNS, renderCsv, renderPdf, renderXlsx, validateExportOptions,
 } from '../src/modules/prepAnalysis/prepAnalysis.export.js';
 import { mockScore } from '../src/modules/prepAnalysis/interviewFacts.js';
-import { prepScore, SOLVE_TARGETS } from '../src/modules/prepAnalysis/prepScore.js';
+import { DIFFICULTY_POINTS, prepScore } from '../src/modules/prepAnalysis/prepScore.js';
 import { buildStudentRows, indexProblemMeta, qualifiedCodingMetric } from '../src/modules/prepAnalysis/studentRows.js';
 
 const ALL_MODULES = { allowedModules: new Set(['student', 'coding', 'learning', 'interview', 'assessment']) };
 
 // ---------------------------------------------------------------- Prep Score
 
-test('Prep Score uses only the student\'s own work and ranks difficulty above easy-only volume', () => {
-  assert.deepEqual(SOLVE_TARGETS, { Easy: 50, Medium: 40, Hard: 20 });
-  const a = prepScore({ solved: { Easy: 120, Medium: 10, Hard: 0 }, accepted: 60, attempts: 100 });
-  const b = prepScore({ solved: { Easy: 30, Medium: 25, Hard: 12 }, accepted: 75, attempts: 100 });
-  // A: (10*1 + 20*0.25 + 0) / 70 = 21.4% progress -> 0.85*21.43 + 0.15*60 = 27.2
-  assert.equal(a.progress, 21.4);
-  assert.equal(a.score, 27.2);
-  // B: (10*0.6 + 20*0.625 + 40*0.6) / 70 = 60.7% progress -> 0.85*60.71 + 0.15*75 = 62.9
-  assert.equal(b.progress, 60.7);
-  assert.equal(b.score, 62.9);
-  assert.ok(b.score > a.score);
-  const parts = b.points.Easy + b.points.Medium + b.points.Hard + b.points.accuracy;
-  assert.ok(Math.abs(parts - b.score) <= 0.2, 'the parts add up to the score');
-  assert.equal(prepScore({ solved: { Easy: 50, Medium: 40, Hard: 20 }, accepted: 100, attempts: 100 }).score, 100, 'meeting every target with full accuracy is 100');
+test('Prep Coding score = work points (Easy 1, Medium 2, Hard 4) x quality (submissions per solve)', () => {
+  assert.deepEqual(DIFFICULTY_POINTS, { Easy: 1, Medium: 2, Hard: 4 });
+  // 1 Easy + 3 Medium + 2 Hard = 15 work points; quality (3 x 6 + 10) / (20 + 10) = 93.3%.
+  const example = prepScore({ solved: { Easy: 1, Medium: 3, Hard: 2 }, accepted: 8, attempts: 20 });
+  assert.equal(example.work, 15);
+  assert.equal(example.quality, 93.3);
+  assert.equal(example.score, 14);
+  const parts = example.points.Easy + example.points.Medium + example.points.Hard;
+  assert.ok(Math.abs(parts - example.score) <= 0.2, 'the difficulty points add up to the score');
+  // No ceiling: more real work keeps adding.
+  assert.equal(prepScore({ solved: { Easy: 300, Medium: 900, Hard: 400 }, accepted: 2000, attempts: 3000 }).score, 3700);
 });
 
-test('Prep Score caps each difficulty and does not reward one lucky submission', () => {
-  assert.equal(prepScore({ solved: { Easy: 5000 }, accepted: 10, attempts: 10 }).progress, 14.3, 'easy alone is worth at most 10/70');
+test('Prep Coding quality: normal debugging is free, guessing lowers it, one lucky solve stays small', () => {
   assert.equal(prepScore({ solved: {}, accepted: 0, attempts: 0 }).score, 0);
-  assert.equal(prepScore({ solved: { Easy: 1 }, accepted: 1, attempts: 1 }).points.accuracy, 1.5, 'one accepted submission earns a tenth of the accuracy share');
-  assert.equal(prepScore({ solved: { Easy: 1 }, accepted: 10, attempts: 10 }).points.accuracy, 15);
+  assert.equal(prepScore({ solved: { Hard: 1 }, accepted: 1, attempts: 1 }).score, 4, 'one lucky Hard solve is 4 points');
+  const careful = prepScore({ solved: { Easy: 30, Medium: 20, Hard: 5 }, accepted: 55, attempts: 100 });
+  const guesser = prepScore({ solved: { Easy: 30, Medium: 20, Hard: 5 }, accepted: 60, attempts: 900 });
+  assert.equal(careful.quality, 100, 'under 3 submissions per solve costs nothing');
+  assert.equal(guesser.quality, 19.2, '(3 x 55 + 10) / (900 + 10)');
+  assert.ok(guesser.score < careful.score / 4);
+  // Solving a new problem in 3 submissions or fewer never lowers the score.
+  for (const [solved, attempts] of [[{ Easy: 2 }, 40], [{ Medium: 10, Hard: 3 }, 200], [{ Easy: 50, Medium: 50, Hard: 50 }, 1000]]) {
+    const before = prepScore({ solved, attempts }).exact;
+    for (const key of ['Easy', 'Medium', 'Hard']) {
+      for (const tries of [1, 2, 3]) {
+        assert.ok(prepScore({ solved: { ...solved, [key]: (solved[key] || 0) + 1 }, attempts: attempts + tries }).exact >= before, `${key} in ${tries}`);
+      }
+    }
+  }
 });
 
 // ---------------------------------------------------------------- synthetic cohort
@@ -406,20 +415,21 @@ test('Prep Interview: mock interviews out of 100, ratings, interviewer turns and
   assert.equal(profile.coding, null, 'no coding without the licence');
 });
 
-test('Prep Score on analysis rows: 0-100 per licensed feature, overall = their average (the students\' formula)', () => {
+test('Prep Score on analysis rows: points per licensed feature, overall = their average (the students\' formula)', () => {
   const { rows } = interviewsAndTests();
   const asha = rows.find((row) => row.name === 'Asha');
-  // Interview: mocks at 80% and 60% (average 70) for 60, and 3 interviews of 5 (60%) for 40.
-  assert.equal(asha.scores.features.interview.score, 66);
-  // Assessment: tests at 80% and 30% (average 55) for 80, and 2 tests of 5 (40%) for 20.
-  assert.equal(asha.scores.features.assessment.score, 52);
+  // Interview: 2 mocks (80%, 60%) count as 60% with 2 starter mocks at 50%: 2 x 250 x (60 - 40) / 60, plus 1 AI interview x 5.
+  assert.equal(asha.scores.features.interview.score, 171.7);
+  assert.equal(asha.scores.features.interview.extra.value, 5);
+  // Assessment: tests at 80% and 30% count as 52.5%: 2 x 100 x (52.5 - 40) / 60.
+  assert.equal(asha.scores.features.assessment.score, 41.7);
   assert.equal(asha.scores.features.learning, undefined, 'a feature that is not loaded does not count');
   assert.equal(asha.scores.features.coding.score, 0, 'no coding work in this cohort');
-  assert.equal(asha.scores.total, 39.33, 'the overall score averages the features (0, 66, 52), it never adds them up');
+  assert.equal(asha.scores.total, 71.11, 'the overall score averages the features (0, 171.7, 41.7), it never adds them up');
   const { rows: codingRows } = cohort();
   const coder = codingRows.find((row) => row.name === 'Asha');
   assert.equal(coder.scores.features.coding.score, coder.coding.prepScore, 'Prep Coding uses the same formula on both sides');
-  assert.ok(codingRows.every((row) => row.scores.total >= 0 && row.scores.total <= 100), 'bounded 0-100');
+  assert.ok(codingRows.every((row) => row.scores.total >= 0), 'never negative');
   assert.deepEqual(pick(codingRows, null, { cuts: [{ metric: 'student.prepScore', direction: 'top', unit: 'count', value: 1 }] }), ['Asha']);
   assert.deepEqual(pick(rows, { children: [{ field: 'interview.prepScore', operator: 'gte', value: 60 }] }), ['Asha']);
 });
@@ -431,7 +441,7 @@ test('a student profile shows only that student\'s own work, per licensed area',
   assert.equal(asha.student.name, 'Asha');
   assert.equal(asha.student.coordinators, undefined, 'internal ids stay on the server');
   assert.deepEqual(asha.coding.solved, { Easy: 1, Medium: 1, Hard: 1, total: 3 });
-  assert.deepEqual(asha.coding.targets, SOLVE_TARGETS);
+  assert.deepEqual([asha.coding.work, asha.coding.quality], [7, 100], '1 + 2 + 4 work points, 6 submissions for 3 solves is fair');
   assert.deepEqual(asha.coding.topics.map((topic) => [topic.name, topic.solved, topic.attempted]), [['Graphs', 2, 2], ['Arrays', 1, 1]]);
   assert.deepEqual(asha.coding.verdicts.map((verdict) => [verdict.name, verdict.value]), [['Accepted', 3], ['Wrong answer', 3]]);
   assert.deepEqual(asha.coding.calendar.days, [['2026-10-01', 3], ['2026-10-05', 3]]);

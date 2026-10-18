@@ -108,7 +108,8 @@ const builders = {
   rankedStackedBar(data, theme) {
     const items = data.items || [];
     if (!items.length) return null;
-    const keys = ["Easy", "Medium", "Hard", "Accuracy"];
+    // Each difficulty's points after quality; together they make the Prep Score.
+    const keys = ["Easy", "Medium", "Hard"];
     return base(theme, {
       legend: legend(theme, { data: keys }),
       grid: grid({ right: 40 }),
@@ -117,12 +118,12 @@ const builders = {
         formatter: (params) => {
           const item = items[params[0].dataIndex];
           const solved = item.solved || {};
-          return `<b>${escapeHtml(item.name)}</b><br/>Prep Score <b>${item.score}</b> / 100<br/>`
+          return `<b>${escapeHtml(item.name)}</b><br/>Prep Score <b>${item.score.toLocaleString()}</b><br/>`
             + `${DIFFICULTIES.map((key) => `${dot(DIFFICULTY_COLORS[key])}${solved[key] || 0} ${key}`).join(" &nbsp;")}`
             + "<br/><span style=\"opacity:.7\">Click to open this student</span>";
         },
       },
-      xAxis: valueAxis(theme, { max: 100 }),
+      xAxis: valueAxis(theme),
       yAxis: categoryAxis(theme, items.map((item) => `${item.position}. ${truncate(item.name, 20)}`), { inverse: true, axisLine: { show: false } }),
       series: keys.map((key, index) => ({
         name: key, type: "bar", stack: "score", barWidth: 13, cursor: "pointer",
