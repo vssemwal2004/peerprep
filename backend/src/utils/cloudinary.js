@@ -1,3 +1,5 @@
+import { currentTenant } from '../platform/tenantContext.js';
+import { deploymentRole } from '../platform/deployment.js';
 import { v2 as cloudinary } from 'cloudinary';
 
 const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME;
@@ -36,7 +38,7 @@ export async function uploadAvatar(fileBuffer, folder, userId) {
     const uploadStream = cloudinary.uploader.upload_stream(
       {
         folder: folder,
-        public_id: `avatar_${userId}_${Date.now()}`,
+        public_id: `avatar_${deploymentRole() === 'shared' ? `${currentTenant()?.universityId || 'platform'}_` : ''}${userId}_${Date.now()}`,
         transformation: [
           { width: 400, height: 400, crop: 'fill', gravity: 'face' },
           { quality: 'auto', fetch_format: 'auto' }
@@ -63,7 +65,7 @@ export async function uploadProblemAsset(fileBuffer, { ownerId = 'admin', public
   return new Promise((resolve, reject) => {
     const uploadStream = cloudinary.uploader.upload_stream(
       {
-        folder: `peerprep/problem-assets/authored/${String(ownerId)}`,
+        folder: `peerprep/problem-assets/authored/${deploymentRole() === 'shared' ? `${currentTenant()?.universityId || 'platform'}/` : ''}${String(ownerId)}`,
         public_id: publicId,
         resource_type: 'image',
         overwrite: false,

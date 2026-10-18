@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const emailTemplateSchema = new mongoose.Schema({
@@ -30,4 +31,4 @@ emailTemplateSchema.pre('validate', function preValidate(next) {
   next();
 });
 
-export default mongoose.model('EmailTemplate', emailTemplateSchema);
+export default tenantModel(mongoose.model('EmailTemplate', emailTemplateSchema));

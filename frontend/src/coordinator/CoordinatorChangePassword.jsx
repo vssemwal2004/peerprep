@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { api } from "../utils/api";
-import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import { returnToLogin, SESSION_EXPIRED_MESSAGE } from "../auth/sessionNotice";
 import { Lock, Eye, EyeOff, CheckCircle, AlertCircle } from "lucide-react";
 
 export default function CoordinatorChangePassword() {
@@ -12,13 +13,12 @@ export default function CoordinatorChangePassword() {
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
   const [passwordMatch, setPasswordMatch] = useState(null);
   const [passwordStrength, setPasswordStrength] = useState({
     hasMinLength: false
   });
-  const navigate = useNavigate();
+  const { logout } = useAuth();
 
   // Real-time password validation
   useEffect(() => {
@@ -45,7 +45,6 @@ export default function CoordinatorChangePassword() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
-    setSuccess("");
 
     if (!currentPassword || !newPassword || !confirmPassword) {
       setError("All fields are required");
@@ -70,10 +69,8 @@ export default function CoordinatorChangePassword() {
     setLoading(true);
     try {
       await api.changePassword(currentPassword, newPassword);
-      setSuccess("Password changed successfully! Redirecting...");
-      setTimeout(() => {
-        navigate("/coordinator", { replace: true });
-      }, 1500);
+      await logout();
+      returnToLogin(SESSION_EXPIRED_MESSAGE);
     } catch (err) {
       setError(err.message || "Failed to change password");
     } finally {
@@ -115,17 +112,6 @@ export default function CoordinatorChangePassword() {
             >
               <AlertCircle className="w-5 h-5 text-red-500 dark:text-red-400 flex-shrink-0" />
               <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
-            </motion.div>
-          )}
-
-          {success && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex items-center gap-2 p-4 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-lg"
-            >
-              <CheckCircle className="w-5 h-5 text-green-500 dark:text-green-400 flex-shrink-0" />
-              <p className="text-sm text-green-700 dark:text-green-300">{success}</p>
             </motion.div>
           )}
 

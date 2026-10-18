@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const studentActivitySchema = new mongoose.Schema({
@@ -41,4 +42,4 @@ const studentActivitySchema = new mongoose.Schema({
 studentActivitySchema.index({ studentId: 1, date: 1 });
 studentActivitySchema.index({ studentId: 1, activityType: 1 });
 
-export default mongoose.model('StudentActivity', studentActivitySchema);
+export default tenantModel(mongoose.model('StudentActivity', studentActivitySchema));

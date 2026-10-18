@@ -2,6 +2,8 @@ import { randomUUID, createHash } from 'node:crypto';
 import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
 import { buildValkeyUrl, positiveInteger, withDeadline } from '../utils/valkey.js';
+import { currentTenant } from '../platform/tenantContext.js';
+import { deploymentRole } from '../platform/deployment.js';
 
 export const QUEUE_NAMES = Object.freeze({ compiler: 'compiler', submission: 'submission', assessment: 'assessment' });
 export const DEFAULT_ATTEMPTS = positiveInteger(process.env.EXECUTION_JOB_MAX_ATTEMPTS, 3);
@@ -99,9 +101,11 @@ function createQueue(name) {
     name,
     async add(jobName, payload, options = {}) {
       const externalId = String(options.jobId || randomUUID());
+      const universityId = deploymentRole() === 'shared' ? currentTenant()?.universityId || 'platform' : null;
+      const scopedExternalId = universityId ? `${universityId}:${externalId}` : externalId;
       const { queue } = await getQueue(name);
-      const result = await withDeadline(queue.add(jobName, { externalId, payload }, {
-        jobId: internalJobId(externalId),
+      const result = await withDeadline(queue.add(jobName, { externalId, payload, universityId }, {
+        jobId: internalJobId(scopedExternalId),
         attempts: positiveInteger(options.attempts, DEFAULT_ATTEMPTS),
         backoff: { type: 'exponential', delay: positiveInteger(options.backoffMs, DEFAULT_BACKOFF_MS) },
         removeOnComplete: { age: positiveInteger(process.env.QUEUE_COMPLETED_RETENTION_SECONDS, 604800), count: 100000 },
@@ -109,7 +113,7 @@ function createQueue(name) {
       }), positiveInteger(process.env.QUEUE_COMMAND_TIMEOUT_MS, 2000), 'Queue publish');
       if (options.retryFailed === true && await result.getState() === 'failed') {
         const maximumExecutions = positiveInteger(options.attempts, DEFAULT_ATTEMPTS) + positiveInteger(options.recoveryLimit, 3);
-        const current = await queue.getJob(internalJobId(externalId));
+        const current = await queue.getJob(internalJobId(scopedExternalId));
         if (Math.max(current?.attemptsMade || 0, current?.attemptsStarted || 0) >= maximumExecutions) {
           const error = new Error('Queue recovery exhausted; manual evaluation review required');
           error.code = 'QUEUE_RECOVERY_EXHAUSTED';

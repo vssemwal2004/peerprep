@@ -31,7 +31,7 @@ Level requirements are centralized in `backend/src/services/adaptiveEngagementRu
 
 ## Admin controls
 
-Open **Settings → Student progression** (`/admin/settings/student-progression`). University deployments automatically use their configured tenant. In standalone multi-college deployments, load the exact student college name first; an empty name targets only the default standalone scope.
+Open **Settings → Student progression** (`/admin/settings/student-progression`) under the university URL (`/u/<id>`). The university is selected by that URL and its signed session.
 
 Controls include university/semester policy, enable/pause, allocated feature selection, daily time budget, difficulty ceiling, active-day targets, reward amounts, and up to 12 custom badges built from verified metrics. A bounded policy audit records the administrator, timestamp and changes. Existing plans retain their target/reward snapshot; new plans use the new revision. Saving a semester policy creates explicit overrides for submitted fields; omitted fields inherit the university defaults. The 30-day analytics are university-wide, even when editing a semester policy.
 

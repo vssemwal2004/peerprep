@@ -2,15 +2,20 @@ import { isUniversity } from '../platform/deployment.js';
 import { controlRequest, universityPolicy } from '../platform/client.js';
 import { GLOBAL_RANK_VERSION, rankingPolicyKey } from '../platform/globalRanking.js';
 import { getUniversityRankSnapshotRows } from './studentDashboardService.js';
+import { currentTenant } from '../platform/tenantContext.js';
 
 const SYNC_INTERVAL = 5 * 60_000;
-let snapshot = null, pending = null;
+const snapshots = new Map();
+const pendings = new Map();
+const scope = () => currentTenant()?.universityId || process.env.PEERPREP_UNIVERSITY_ID || 'standalone';
 
 export async function syncUniversityGlobalRanking() {
   if (!isUniversity()) return null;
-  if (pending) return pending;
-  if (snapshot && Date.now() - snapshot.at < SYNC_INTERVAL) return snapshot;
-  pending = (async () => {
+  const tenantKey = scope();
+  if (pendings.has(tenantKey)) return pendings.get(tenantKey);
+  const cached = snapshots.get(tenantKey);
+  if (cached && Date.now() - cached.at < SYNC_INTERVAL) return cached;
+  const pending = (async () => {
     const generatedAt = new Date();
     const policy = await universityPolicy();
     if (policy.active !== true) throw new Error('University is inactive');
@@ -29,9 +34,11 @@ export async function syncUniversityGlobalRanking() {
       version: GLOBAL_RANK_VERSION, generatedAt: generatedAt.toISOString(), policyKey: rankingPolicyKey(policy),
       buckets: [...counts].map(([score, count]) => ({ score, count })),
     } });
-    snapshot = { at: Date.now(), generatedAt: generatedAt.toISOString(), scores };
+    const snapshot = { at: Date.now(), generatedAt: generatedAt.toISOString(), scores };
+    snapshots.set(tenantKey, snapshot);
     return snapshot;
-  })().finally(() => { pending = null; });
+  })().finally(() => { pendings.delete(tenantKey); });
+  pendings.set(tenantKey, pending);
   return pending;
 }
 
@@ -42,7 +49,7 @@ export async function getStudentGlobalRanking(student) {
     const own = current.scores.get(String(student._id));
     if (!own) return { status: 'syncing', rank: null };
     const result = await controlRequest(`rankings/self?score=${own.score}&generatedAt=${encodeURIComponent(current.generatedAt)}`);
-    if (result.status === 'syncing') snapshot = null;
+    if (result.status === 'syncing') snapshots.delete(scope());
     const shown = Number.isFinite(Number(result.score)) ? { ...result, score: own.exact } : result;
     if (!own.hasProgress && result.status === 'ready') return { ...shown, status: 'unranked', rank: null, tied: false };
     return shown;

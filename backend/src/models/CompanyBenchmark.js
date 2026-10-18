@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const companyBenchmarkSchema = new mongoose.Schema({
@@ -65,4 +66,4 @@ const companyBenchmarkSchema = new mongoose.Schema({
   },
 }, { timestamps: true });
 
-export default mongoose.model('CompanyBenchmark', companyBenchmarkSchema);
+export default tenantModel(mongoose.model('CompanyBenchmark', companyBenchmarkSchema));

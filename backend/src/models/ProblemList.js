@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const problemListSchema = new mongoose.Schema({
@@ -32,4 +33,4 @@ const problemListSchema = new mongoose.Schema({
 problemListSchema.index({ userId: 1, title: 1 }, { unique: true });
 problemListSchema.index({ userId: 1, updatedAt: -1 });
 
-export default mongoose.model('ProblemList', problemListSchema);
+export default tenantModel(mongoose.model('ProblemList', problemListSchema));

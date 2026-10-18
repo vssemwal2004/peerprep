@@ -4,6 +4,8 @@ import { HttpError } from '../utils/errors.js';
 import crypto from 'crypto';
 import { hasCoordinatorPermission } from '../services/coordinatorPermissions.js';
 import { getValkeyClient, isValkeyEnabled } from '../utils/valkey.js';
+import { currentTenant } from '../platform/tenantContext.js';
+import { deploymentRole } from '../platform/deployment.js';
 
 /**
  * Simple in-memory cache for user data to reduce database hits
@@ -21,6 +23,7 @@ const SESSION_CACHE_TTL = Number(
 const sessionCache = new Map();
 const sessionStateLoads = new Map();
 const SESSION_CACHE_PREFIX = 'peerprep:auth-session:v1:';
+const scopedUserId = (userId) => `${currentTenant()?.universityId || 'platform'}:${String(userId)}`;
 
 function normalizeSessionState(value) {
   if (!value) return null;
@@ -31,6 +34,7 @@ function normalizeSessionState(value) {
 }
 
 function getCachedUser(userId) {
+  userId = scopedUserId(userId);
   const cached = userCache.get(userId);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return cached.user;
@@ -40,12 +44,12 @@ function getCachedUser(userId) {
 }
 
 function setCachedUser(userId, user) {
-  userCache.set(userId, { user, timestamp: Date.now() });
+  userCache.set(scopedUserId(userId), { user, timestamp: Date.now() });
 }
 
 export function invalidateUserCache(userId) {
   if (!userId) return;
-  const key = String(userId);
+  const key = scopedUserId(userId);
   userCache.delete(key);
   sessionCache.delete(key);
   if (isValkeyEnabled()) {
@@ -56,7 +60,7 @@ export function invalidateUserCache(userId) {
 
 export async function cacheUserSessionState(userId, state = {}) {
   if (!userId) return;
-  const key = String(userId);
+  const key = scopedUserId(userId);
   const normalized = normalizeSessionState({ _id: key, ...state });
   userCache.delete(key);
   sessionCache.set(key, { value: normalized, timestamp: Date.now() });
@@ -87,7 +91,7 @@ const cacheCleanupTimer = setInterval(() => {
 cacheCleanupTimer.unref?.();
 
 async function getSessionState(userId) {
-  const key = String(userId);
+  const key = scopedUserId(userId);
   const redisKey = `${SESSION_CACHE_PREFIX}${key}`;
   let sharedCacheAvailable = false;
 
@@ -158,6 +162,10 @@ export async function requireAuth(req, res, next) {
   if (!token) throw new HttpError(401, 'Missing token');
   
   const payload = verifyToken(token);
+  if (deploymentRole() === 'shared') {
+    const expected = currentTenant()?.universityId || 'platform';
+    if (payload.tenantId !== expected) throw new HttpError(401, 'Session belongs to another university');
+  }
 
   // Session-sensitive fields must be read fresh. If activeSessionToken is
   // cached, a just-created login token can be rejected against the old token.
@@ -207,7 +215,7 @@ export async function requireAuth(req, res, next) {
     }
   }
   
-  req.user = user;
+  req.user = { ...user, universityId: currentTenant()?.universityId || null };
   next();
 }
 

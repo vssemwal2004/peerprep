@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const SNAPSHOT_RETENTION_SECONDS = 400 * 24 * 60 * 60;
@@ -66,4 +67,4 @@ studentAnalyticsSnapshotSchema.index(
   { expireAfterSeconds: SNAPSHOT_RETENTION_SECONDS },
 );
 
-export default mongoose.model('StudentAnalyticsSnapshot', studentAnalyticsSnapshotSchema);
+export default tenantModel(mongoose.model('StudentAnalyticsSnapshot', studentAnalyticsSnapshotSchema));

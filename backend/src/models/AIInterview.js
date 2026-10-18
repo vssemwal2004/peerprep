@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from "mongoose";
 const { Schema } = mongoose;
 const schema = new Schema(
@@ -26,4 +27,4 @@ const schema = new Schema(
 );
 schema.index({ ownerId: 1, creationKey: 1 }, { unique: true });
 schema.index({ ownerId: 1, lifecycle: 1, updatedAt: -1, _id: -1 });
-export default mongoose.model("AIInterview", schema);
+export default tenantModel(mongoose.model("AIInterview", schema));

@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 ﻿import mongoose from 'mongoose';
 
 const starterCodeSchema = new mongoose.Schema({
@@ -155,5 +156,5 @@ assessmentSchema.index({ createdBy: 1, createdAt: -1 });
 assessmentSchema.index({ lifecycleStatus: 1, startTime: 1, endTime: 1 });
 assessmentSchema.index({ assignedStudents: 1, lifecycleStatus: 1, startTime: 1 });
 
-export default mongoose.model('Assessment', assessmentSchema);
+export default tenantModel(mongoose.model('Assessment', assessmentSchema));
 

@@ -11,7 +11,7 @@ import Problem from '../models/Problem.js';
 import { loadHiddenExecutionTestCases } from '../controllers/problemController.js';
 import { University, Publication, PlatformAudit, PlatformSettings } from './models.js';
 import { isControlPlane, isUniversity } from './deployment.js';
-import { controlRequest } from './client.js';
+import { controlRequest, universityPolicy } from './client.js';
 import { signInspection, verifyInspection } from './inspectionAuth.js';
 import User from '../models/User.js';
 import AssessmentSubmission from '../models/AssessmentSubmission.js';
@@ -19,6 +19,14 @@ import { interviewReportOptions, interviewReportSummaries, saveInterviewReport }
 import { CENTRAL_QUESTION_FILTER } from './centralQuestions.js';
 import { publishedQuestDefinitions } from '../services/questService.js';
 import { acceptLogoUpload, logoStorage, removeStoredLogo, validateLogoFile } from './universityLogo.js';
+import { deploymentRole } from './deployment.js';
+import { encryptTenantSecret } from './tenantSecrets.js';
+import { getTenant, testTenantConnection, validateTenantMongoUri, invalidateTenantRegistration, ensureTenantIndexes } from './tenantConnections.js';
+import { runForTenant } from './tenantContext.js';
+import { verifiedSharedInternalRequest } from './internalAuth.js';
+import { backfillTenantLoginDirectory } from './loginDirectory.js';
+import { seedEmailTemplates } from '../services/emailTemplateService.js';
+import { seedDefaultMasterData } from '../services/masterDataService.js';
 
 const router = Router();
 const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
@@ -28,7 +36,19 @@ const moduleNames = ['learning', 'assessments', 'questions', 'events', 'intervie
 const sourceNames = ['learning', 'questions'];
 const clean = (doc) => {
   const value = doc.toObject ? doc.toObject() : { ...doc };
+  value.dbConfigured = Boolean(value.dbUriEncrypted || doc.dbUriEncrypted);
+  value.judgeConfigured = Boolean(value.judge0UrlEncrypted || doc.judge0UrlEncrypted);
+  value.judgeAuthConfigured = Boolean((value.judge0AuthHeaderEncrypted || doc.judge0AuthHeaderEncrypted)
+    && (value.judge0AuthTokenEncrypted || doc.judge0AuthTokenEncrypted));
+  value.interviewConfigured = Boolean((value.interviewUrlEncrypted || doc.interviewUrlEncrypted)
+    && (value.interviewSecretEncrypted || doc.interviewSecretEncrypted));
   delete value.apiKeyHash;
+  delete value.dbUriEncrypted;
+  delete value.judge0UrlEncrypted;
+  delete value.judge0AuthHeaderEncrypted;
+  delete value.judge0AuthTokenEncrypted;
+  delete value.interviewUrlEncrypted;
+  delete value.interviewSecretEncrypted;
   return value;
 };
 const audit = (req, action, universityId, details = {}) => PlatformAudit.create({ actor: String(req.user?._id || universityId), action, universityId, details });
@@ -69,6 +89,18 @@ function frontendUrl(value) {
   return text;
 }
 
+function validInterviewServiceUrl(value) {
+  const raw = String(value || '').trim();
+  let parsed;
+  try { parsed = new URL(raw); } catch { throw new HttpError(400, 'Invalid interview service URL'); }
+  if (raw.length > 2048 || parsed.username || parsed.password || parsed.search || parsed.hash
+    || !['/', ''].includes(parsed.pathname) || !['http:', 'https:'].includes(parsed.protocol)
+    || (process.env.NODE_ENV === 'production' && parsed.protocol !== 'https:')) {
+    throw new HttpError(400, 'Interview service URL must be an HTTPS origin');
+  }
+  return parsed.origin;
+}
+
 function universityName(value) {
   const name = String(value ?? '').trim();
   if (name.length < 2 || name.length > 160) throw new HttpError(400, 'Name must be 2 to 160 characters');
@@ -78,6 +110,40 @@ function universityName(value) {
 const editableFields = { name: universityName, contactEmail, deploymentUrl: frontendUrl, apiUrl: inspectionOrigin };
 
 async function inspectUniversity(req, university, path) {
+  if (deploymentRole() === 'shared') {
+    const tenant = await getTenant(university.universityId);
+    return runForTenant(tenant, async () => {
+      if (path.startsWith('/students?')) {
+        const query = new URL(path, 'http://localhost').searchParams;
+        const page = Math.max(1, Math.min(100000, Number.parseInt(query.get('page'), 10) || 1));
+        const search = String(query.get('search') || '').trim().slice(0, 80);
+        const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const filter = { role: 'student', ...(search ? { $or: ['name', 'studentId', 'email'].map((field) => ({ [field]: { $regex: escaped, $options: 'i' } })) } : {}) };
+        const [students, total] = await Promise.all([
+          User.find(filter).select('name email studentId course branch college semester group isActive createdAt').sort({ _id: -1 }).skip((page - 1) * 25).limit(25).lean(),
+          User.countDocuments(filter),
+        ]);
+        return { students, total, page, pageSize: 25 };
+      }
+      const studentId = path.split('/')[2];
+      if (!mongoose.isValidObjectId(studentId)) throw new HttpError(400, 'Invalid student ID');
+      const student = await User.findOne({ _id: studentId, role: 'student' })
+        .select('name email studentId course branch college semester group isActive createdAt').lean();
+      if (!student) throw new HttpError(404, 'Student not found');
+      const submissions = await AssessmentSubmission.find({ studentId: student._id })
+        .select('assessmentId score maxMarks status startedAt submittedAt evaluationStatus').sort({ updatedAt: -1 }).limit(20).lean();
+      const localAssessments = await Assessment.find({ _id: { $in: submissions.map((row) => row.assessmentId) } }).select('title').lean();
+      const names = new Map(localAssessments.map((row) => [String(row._id), row.title]));
+      const references = [student._id, String(student._id)];
+      const interviewSessions = await tenant.connection.collection('aiinterviewsessions')
+        .find({ $or: ['studentId', 'student_id', 'userId', 'user_id', 'candidateId', 'candidate_id']
+          .map((field) => ({ [field]: { $in: references } })) },
+        { projection: { _id: 1, interviewId: 1, status: 1, state: 1, createdAt: 1, updatedAt: 1 } })
+        .sort({ _id: -1 }).limit(20).toArray();
+      return { student, assessments: submissions.map((row) => ({ ...row, title: names.get(String(row.assessmentId)) || 'Shared or removed assessment' })),
+        interviewSessions: interviewSessions.map(({ state, ...row }) => ({ ...row, status: typeof row.status === 'string' ? row.status : typeof state === 'string' ? state : 'Status unavailable' })) };
+    });
+  }
   if (!university.active || !university.apiUrl) throw new HttpError(503, 'University API is not configured or is disabled');
   const origin = inspectionOrigin(university.apiUrl);
   const controller = new AbortController();
@@ -114,12 +180,18 @@ async function tenantOnly(req, res, next) {
     if (!isControlPlane()) throw new HttpError(404, 'Not found');
     const id = String(req.get('X-PeerPrep-University') || '');
     const supplied = String(req.get('X-PeerPrep-Key') || '');
-    if (!idPattern.test(id) || supplied.length < 32 || supplied.length > 512) throw new HttpError(401, 'Invalid university credentials');
+    if (!idPattern.test(id)) throw new HttpError(401, 'Invalid university credentials');
+    const sharedInternal = verifiedSharedInternalRequest(req);
+    if (deploymentRole() === 'shared' && !sharedInternal) throw new HttpError(401, 'Invalid university credentials');
+    if (req.get('X-PeerPrep-Internal-Signature') && !sharedInternal) throw new HttpError(401, 'Invalid university credentials');
+    if (!sharedInternal && (supplied.length < 32 || supplied.length > 512)) throw new HttpError(401, 'Invalid university credentials');
     const tenant = await University.findOne({ universityId: id, active: true, deletedAt: null }).select('+apiKeyHash');
     if (!tenant) throw new HttpError(401, 'Invalid university credentials');
-    const actual = Buffer.from(keyHash(supplied), 'hex');
-    const expected = Buffer.from(tenant.apiKeyHash, 'hex');
-    if (expected.length !== actual.length || !crypto.timingSafeEqual(actual, expected)) throw new HttpError(401, 'Invalid university credentials');
+    if (!sharedInternal) {
+      const actual = Buffer.from(keyHash(supplied), 'hex');
+      const expected = Buffer.from(tenant.apiKeyHash, 'hex');
+      if (expected.length !== actual.length || !crypto.timingSafeEqual(actual, expected)) throw new HttpError(401, 'Invalid university credentials');
+    }
     req.platformUniversity = tenant;
     next();
   } catch (error) { next(error); }
@@ -132,7 +204,7 @@ function requireModule(moduleName) {
 
 router.get('/admin/overview', masterOnly, asyncRoute(async (req, res) => {
   const [universities, auditRows, assessmentCount, questionCount, defaults] = await Promise.all([
-    University.find({ deletedAt: null }).sort({ createdAt: -1 }).lean(),
+    University.find({ deletedAt: null }).select('+dbUriEncrypted +judge0UrlEncrypted +judge0AuthHeaderEncrypted +judge0AuthTokenEncrypted +interviewUrlEncrypted +interviewSecretEncrypted').sort({ createdAt: -1 }).lean(),
     PlatformAudit.find().sort({ createdAt: -1 }).limit(30).lean(),
     Assessment.countDocuments(), QuestionLibrary.countDocuments({ status: 'published', visibility: { $ne: 'private' }, sourceType: { $ne: 'assessment' } }),
     loadDefaults(),
@@ -159,31 +231,119 @@ router.put('/admin/defaults', masterOnly, asyncRoute(async (req, res) => {
   res.json({ defaults });
 }));
 
+router.post('/admin/universities/test-database', masterOnly, asyncRoute(async (req, res) => {
+  const universityId = String(req.body?.universityId || '').trim().toLowerCase();
+  if (!idPattern.test(universityId)) throw new HttpError(400, 'Enter a valid university ID first');
+  await testTenantConnection(req.body?.dbUri, universityId, { allowUnclaimed: true });
+  res.set('Cache-Control', 'no-store');
+  res.json({ connected: true, message: 'MongoDB connection and university database identity verified' });
+}));
+
 router.post('/admin/universities', masterOnly, asyncRoute(async (req, res) => {
   const universityId = String(req.body?.universityId || '').trim().toLowerCase();
   const name = String(req.body?.name || '').trim();
   if (!idPattern.test(universityId) || name.length < 2 || name.length > 160) throw new HttpError(400, 'Valid university ID and name are required');
   // Validate every field before touching an archived registration with the same ID.
-  const details = { contactEmail: contactEmail(req.body?.contactEmail), deploymentUrl: frontendUrl(req.body?.deploymentUrl), apiUrl: inspectionOrigin(req.body?.apiUrl) };
+  const details = deploymentRole() === 'shared'
+    ? { contactEmail: contactEmail(req.body?.contactEmail) }
+    : { contactEmail: contactEmail(req.body?.contactEmail), deploymentUrl: frontendUrl(req.body?.deploymentUrl), apiUrl: inspectionOrigin(req.body?.apiUrl) };
   const previous = await University.findOne({ universityId });
+  if (previous && !previous.deletedAt) throw new HttpError(409, 'University ID already exists');
+  let sharedSetup = null;
+  if (deploymentRole() === 'shared') {
+    const dbUri = validateTenantMongoUri(req.body?.dbUri);
+    const judge0Url = String(req.body?.judge0Url || '').trim();
+    if (!/^https?:\/\//.test(judge0Url) || judge0Url.length > 2048) throw new HttpError(400, 'Valid Judge0 URL is required');
+    const judge0AuthHeader = String(req.body?.judge0AuthHeader || '').trim();
+    const judge0AuthToken = String(req.body?.judge0AuthToken || '').trim();
+    if (Boolean(judge0AuthHeader) !== Boolean(judge0AuthToken)
+      || (judge0AuthHeader && (!/^[A-Za-z0-9-]{1,64}$/.test(judge0AuthHeader) || judge0AuthToken.length > 512))) {
+      throw new HttpError(400, 'Judge0 auth header and token must be provided together');
+    }
+    const adminEmail = contactEmail(req.body?.adminEmail);
+    const adminPassword = String(req.body?.adminPassword || '');
+    if (!adminEmail || adminPassword.length < 12) throw new HttpError(400, 'Admin email and a password of at least 12 characters are required');
+    const interviewServiceUrl = String(req.body?.interviewServiceUrl || '').trim();
+    const interviewServiceSecret = String(req.body?.interviewServiceSecret || '').trim();
+    if (Boolean(interviewServiceUrl) !== Boolean(interviewServiceSecret)) throw new HttpError(400, 'Interview URL and secret must be provided together');
+    if (interviewServiceUrl) validInterviewServiceUrl(interviewServiceUrl);
+    if (interviewServiceUrl && interviewServiceSecret.length < 32) throw new HttpError(400, 'Invalid interview service secret');
+    await testTenantConnection(dbUri, universityId, { claim: true });
+    sharedSetup = { dbUri, judge0Url, judge0AuthHeader, judge0AuthToken, adminEmail, adminPassword, interviewServiceUrl, interviewServiceSecret };
+  }
   if (previous) {
-    if (!previous.deletedAt) throw new HttpError(409, 'University ID already exists');
     // Older deployments archived registrations instead of removing them.
     await clearUniversityAssignments(universityId);
     await University.deleteOne({ _id: previous._id, deletedAt: { $ne: null } });
   }
   const defaults = await loadDefaults();
-  const apiKey = crypto.randomBytes(32).toString('base64url');
+  const apiKey = deploymentRole() === 'shared' ? null : crypto.randomBytes(32).toString('base64url');
   const defaultValues = defaults.toObject();
-  const university = await University.create({ universityId, name, ...details, apiKeyHash: keyHash(apiKey), permissions: defaultValues.permissions, sources: defaultValues.sources });
+  const university = await University.create({ universityId, name, ...details,
+    ...(apiKey ? { apiKeyHash: keyHash(apiKey) } : {}), permissions: defaultValues.permissions, sources: defaultValues.sources,
+    ...(sharedSetup ? { dbUriEncrypted: encryptTenantSecret(sharedSetup.dbUri), judge0UrlEncrypted: encryptTenantSecret(sharedSetup.judge0Url),
+      ...(sharedSetup.judge0AuthHeader ? { judge0AuthHeaderEncrypted: encryptTenantSecret(sharedSetup.judge0AuthHeader),
+        judge0AuthTokenEncrypted: encryptTenantSecret(sharedSetup.judge0AuthToken) } : {}),
+      ...(sharedSetup.interviewServiceUrl ? { interviewUrlEncrypted: encryptTenantSecret(sharedSetup.interviewServiceUrl),
+        interviewSecretEncrypted: encryptTenantSecret(sharedSetup.interviewServiceSecret) } : {}) } : {}),
+  });
+  invalidateTenantRegistration(universityId);
+  if (sharedSetup) {
+    try {
+      const tenant = await getTenant(universityId);
+      await ensureTenantIndexes(tenant);
+      await runForTenant(tenant, async () => {
+        await seedEmailTemplates();
+        await seedDefaultMasterData();
+        const existingAccount = await User.findOne({ email: sharedSetup.adminEmail });
+        if (existingAccount && existingAccount.role !== 'admin') {
+          throw new HttpError(409, 'The initial admin email belongs to a different university role');
+        }
+        if (!existingAccount) {
+          const passwordHash = await User.hashPassword(sharedSetup.adminPassword);
+          await User.create({ role: 'admin', email: sharedSetup.adminEmail, name: `${name} Admin`, passwordHash, mustChangePassword: true });
+        }
+      });
+      await backfillTenantLoginDirectory(tenant);
+    } catch (error) {
+      await University.deleteOne({ _id: university._id });
+      throw error;
+    }
+  }
   await audit(req, 'university.created', universityId);
-  res.status(201).json({ university: clean(university), apiKey });
+  res.status(201).json({ university: clean(university), ...(sharedSetup ? {} : { apiKey }) });
 }));
 
 router.patch('/admin/universities/:id', masterOnly, asyncRoute(async (req, res) => {
-  const university = await University.findOne({ universityId: req.params.id, deletedAt: null });
+  const university = await University.findOne({ universityId: req.params.id, deletedAt: null })
+    .select('+dbUriEncrypted +judge0UrlEncrypted +judge0AuthHeaderEncrypted +judge0AuthTokenEncrypted +interviewUrlEncrypted +interviewSecretEncrypted');
   if (!university) throw new HttpError(404, 'University not found');
+  if (deploymentRole() === 'shared' && req.body?.dbUri) {
+    const uri = validateTenantMongoUri(req.body.dbUri);
+    await testTenantConnection(uri, university.universityId, { claim: true });
+    university.dbUriEncrypted = encryptTenantSecret(uri);
+  }
+  if (deploymentRole() === 'shared' && req.body?.judge0Url !== undefined) {
+    const url = String(req.body.judge0Url).trim();
+    if (!/^https?:\/\//.test(url) || url.length > 2048) throw new HttpError(400, 'Valid Judge0 URL is required');
+    university.judge0UrlEncrypted = encryptTenantSecret(url);
+  }
+  if (deploymentRole() === 'shared' && (req.body?.judge0AuthHeader !== undefined || req.body?.judge0AuthToken !== undefined)) {
+    const header = String(req.body.judge0AuthHeader || '').trim();
+    const token = String(req.body.judge0AuthToken || '').trim();
+    if (!/^[A-Za-z0-9-]{1,64}$/.test(header) || !token || token.length > 512) throw new HttpError(400, 'Judge0 auth header and token must be provided together');
+    university.judge0AuthHeaderEncrypted = encryptTenantSecret(header);
+    university.judge0AuthTokenEncrypted = encryptTenantSecret(token);
+  }
+  if (deploymentRole() === 'shared' && (req.body?.interviewServiceUrl !== undefined || req.body?.interviewServiceSecret !== undefined)) {
+    const url = String(req.body.interviewServiceUrl || '').trim();
+    const secret = String(req.body.interviewServiceSecret || '').trim();
+    if (secret.length < 32) throw new HttpError(400, 'Interview URL and secret must be provided together');
+    university.interviewUrlEncrypted = encryptTenantSecret(validInterviewServiceUrl(url));
+    university.interviewSecretEncrypted = encryptTenantSecret(secret);
+  }
   for (const [key, normalize] of Object.entries(editableFields)) {
+    if (deploymentRole() === 'shared' && ['deploymentUrl', 'apiUrl'].includes(key)) continue;
     if (req.body?.[key] !== undefined) university[key] = normalize(req.body[key]);
   }
   if (req.body?.active !== undefined) {
@@ -203,12 +363,14 @@ router.patch('/admin/universities/:id', masterOnly, asyncRoute(async (req, res) 
     }
   }
   await university.save();
+  invalidateTenantRegistration(university.universityId);
   await audit(req, 'university.updated', university.universityId, { permissions: university.permissions, sources: university.sources, active: university.active,
     fields: Object.keys(editableFields).filter((key) => req.body?.[key] !== undefined) });
   res.json({ university: clean(university) });
 }));
 
 router.post('/admin/universities/:id/rotate-key', masterOnly, asyncRoute(async (req, res) => {
+  if (deploymentRole() === 'shared') throw new HttpError(404, 'Not found');
   const apiKey = crypto.randomBytes(32).toString('base64url');
   const university = await University.findOneAndUpdate({ universityId: req.params.id, deletedAt: null }, { $set: { apiKeyHash: keyHash(apiKey) } });
   if (!university) throw new HttpError(404, 'University not found');
@@ -282,12 +444,13 @@ router.get('/admin/universities/:id/students/:studentId', masterOnly, asyncRoute
 router.delete('/admin/universities/:id', masterOnly, asyncRoute(async (req, res) => {
   const university = await University.findOneAndUpdate(
     { universityId: req.params.id },
-    { $set: { active: false, deletedAt: new Date(), apiKeyHash: keyHash(crypto.randomBytes(32).toString('base64url')) } },
+    { $set: { active: false, deletedAt: new Date() } },
     { new: true },
   );
   if (!university) throw new HttpError(404, 'University not found');
   await clearUniversityAssignments(university.universityId);
   await University.deleteOne({ _id: university._id });
+  invalidateTenantRegistration(university.universityId);
   await removeStoredLogo(university.logo?.publicId, 'university deleted');
   await audit(req, 'university.deleted', university.universityId, { registrationId: String(university._id) });
   res.json({ universityId: university.universityId, deleted: true });
@@ -451,7 +614,7 @@ router.get('/inspection/students/:studentId', inspectionOnly, asyncRoute(async (
 // University-facing routes never expose the shared API key to the browser.
 router.get('/university/policy', requireAuth, asyncRoute(async (req, res) => {
   if (!isUniversity()) throw new HttpError(404, 'Not found');
-  res.json(await controlRequest('policy'));
+  res.json(await universityPolicy());
 }));
 router.get('/public-questions', requireAuth, asyncRoute(async (req, res) => {
   const questions = isUniversity()

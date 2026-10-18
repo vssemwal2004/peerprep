@@ -1,3 +1,4 @@
+import { personalRoom, compilerMonitorRoom } from '../utils/realtime.js';
 import {displayCustomNodeOutput} from '../services/customNodeOutputDisplayService.js';
 import { isSourceSupportedStatefulTolerance } from '../services/statefulFloatingOutputPolicyService.js';
 import { evaluateProblemSubmissionResult } from '../services/problemSubmissionEvaluationService.js';
@@ -1198,12 +1199,12 @@ async function loadProblemShape(
 function emitSubmissionUpdate(req, submission) {
   const io = req.app.get('io');
   if (!io) return;
-  const userRoom = String(submission?.user || '');
-  if (!userRoom) return;
+  if (!submission?.user) return;
+  const userRoom = personalRoom(submission.user);
 
   serializeSubmissionForRealtime(submission)
     .then((payload) => {
-      io.to(userRoom).to('compiler:monitor').emit('compiler-submission-updated', payload);
+      io.to(userRoom).to(compilerMonitorRoom()).emit('compiler-submission-updated', payload);
     })
     .catch((error) => {
       console.warn('[Realtime Submission] emit failed:', error?.message || error);

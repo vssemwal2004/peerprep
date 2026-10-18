@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const feedbackSchema = new mongoose.Schema({
@@ -21,4 +22,4 @@ feedbackSchema.index({ event: 1, createdAt: -1 });
 feedbackSchema.index({ from: 1, createdAt: -1 });
 feedbackSchema.index({ to: 1, createdAt: -1 });
 
-export default mongoose.model('Feedback', feedbackSchema);
+export default tenantModel(mongoose.model('Feedback', feedbackSchema));

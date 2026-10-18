@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 export const SUPPORTED_LANGUAGES = [
@@ -300,4 +301,4 @@ problemSchema.index({ topicIds: 1, status: 1, updatedAt: -1 });
 problemSchema.index({ topicAncestorIds: 1, status: 1, updatedAt: -1 });
 problemSchema.index({ codingTagIds: 1, status: 1, updatedAt: -1 });
 
-export default mongoose.model('Problem', problemSchema);
+export default tenantModel(mongoose.model('Problem', problemSchema));

@@ -10,6 +10,7 @@ import { dashboardPermissions, buildCurriculumTopicMap, getSharedCodingCatalog, 
 import { resolveDailyChallenge } from './codingStreakService.js';
 import { requireEngagementUniqueIndex } from '../utils/engagementIndexes.js';
 import { HttpError } from '../utils/errors.js';
+import { currentTenant } from '../platform/tenantContext.js';
 
 const DAY = 86400000;
 const IST_ROLLOVER_OFFSET = 3.5 * 3600000; // Local 02:00 = previous UTC day 20:30.
@@ -175,7 +176,7 @@ async function refresh(student, now) {
 }
 
 export function refreshStudentEngagement(student, now = new Date()) {
-  const key = String(student._id);
+  const key = `${currentTenant()?.universityId || 'platform'}:${student._id}`;
   if (pendingLoads.has(key)) return pendingLoads.get(key);
   const pending = refresh(student, now).finally(() => pendingLoads.delete(key));
   pendingLoads.set(key, pending);

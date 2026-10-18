@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const codingStreakSchema = new mongoose.Schema({
@@ -9,4 +10,4 @@ const codingStreakSchema = new mongoose.Schema({
   completedDateKeys: { type: [String], default: [] },
 }, { timestamps: true });
 
-export default mongoose.model('CodingStreak', codingStreakSchema);
+export default tenantModel(mongoose.model('CodingStreak', codingStreakSchema));

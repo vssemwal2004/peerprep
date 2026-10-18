@@ -3,11 +3,12 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import { useAuth } from '../context/AuthContext';
 import { api } from '../utils/api';
 import { isUniversityDeployment, moduleEnabled, pathAllowed } from './universityPermissions';
+import { returnToLogin } from '../auth/sessionNotice';
 
 const UniversityPolicyContext = createContext(null);
 
 export function UniversityPolicyProvider({ children }) {
-  const { user, authChecked } = useAuth();
+  const { user, authChecked, logout } = useAuth();
   const [permissions, setPermissions] = useState(null);
   const [status, setStatus] = useState(isUniversityDeployment ? 'loading' : 'ready');
   const [revision, setRevision] = useState(0);
@@ -27,8 +28,14 @@ export function UniversityPolicyProvider({ children }) {
         if (!policy?.active || !policy.permissions) throw new Error('University permissions are unavailable');
         setPermissions((current) => JSON.stringify(current) === JSON.stringify(policy.permissions) ? current : policy.permissions);
         setStatus('ready');
-      } catch {
+      } catch (error) {
         if (mounted) {
+          if (error.response?.status === 401) {
+            mounted = false;
+            await logout();
+            returnToLogin();
+            return;
+          }
           setPermissions(null);
           setStatus('error');
         }
@@ -40,7 +47,7 @@ export function UniversityPolicyProvider({ children }) {
     const onFocus = () => load();
     window.addEventListener('focus', onFocus);
     return () => { mounted = false; clearInterval(timer); window.removeEventListener('focus', onFocus); };
-  }, [authChecked, user, revision]);
+  }, [authChecked, user, revision, logout]);
 
   return <UniversityPolicyContext.Provider value={{ permissions, status, refresh,
     allowsModule: (name) => !isUniversityDeployment || moduleEnabled(permissions, name),

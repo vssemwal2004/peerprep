@@ -4,6 +4,9 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Eye, EyeOff, Mail, Lock, Loader2 } from 'lucide-react';
 import ForgotPasswordModal from './ForgotPasswordModal';
+import { isUniversityDeployment } from '../platform/universityPermissions';
+import { useToast } from '../components/CustomToast';
+import { consumeSessionNotice } from './sessionNotice';
 
 // Small delay to ensure cookie is set before navigation
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -32,14 +35,21 @@ export default function StudentLoginPage() {
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const navigate = useNavigate();
   const { refreshUser } = useAuth();
+  const toast = useToast();
+  const rememberedEmailKey = isUniversityDeployment ? 'rememberedEmail' : 'rememberedRootEmail';
 
   useEffect(() => {
-    const savedEmail = localStorage.getItem('rememberedEmail');
+    const savedEmail = localStorage.getItem(rememberedEmailKey);
     if (savedEmail) {
       setEmail(savedEmail);
       setRememberMe(true);
     }
-  }, []);
+  }, [rememberedEmailKey]);
+
+  useEffect(() => {
+    const notice = consumeSessionNotice();
+    if (notice) toast.info(notice);
+  }, [toast]);
 
   const handleLogin = async () => {
     if (loading) return;
@@ -48,6 +58,10 @@ export default function StudentLoginPage() {
 
     if (!trimmedEmail || !trimmedPassword) {
       setError('Email and password are required.');
+      return;
+    }
+    if (!isUniversityDeployment && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setError('Enter the email address registered by your university.');
       return;
     }
 
@@ -59,9 +73,9 @@ export default function StudentLoginPage() {
       const role = res.user?.role;
 
       if (rememberMe) {
-        localStorage.setItem('rememberedEmail', trimmedEmail);
+        localStorage.setItem(rememberedEmailKey, trimmedEmail);
       } else {
-        localStorage.removeItem('rememberedEmail');
+        localStorage.removeItem(rememberedEmailKey);
       }
 
       const userName = res.user?.name || 'User';
@@ -79,6 +93,18 @@ export default function StudentLoginPage() {
         localStorage.setItem('userId', res.user._id);
       } else if (res.user?.id) {
         localStorage.setItem('userId', res.user.id);
+      }
+
+      if (!isUniversityDeployment && /^[a-z0-9][a-z0-9-]{1,62}$/.test(res.user?.universityId || '')) {
+        const destination = role === 'admin'
+          ? (res.user?.mustChangePassword ? '/admin/change-password' : '/admin')
+          : role === 'coordinator'
+            ? (res.user?.mustChangePassword ? '/coordinator/change-password' : '/coordinator')
+            : (res.user?.mustChangePassword && res.user?.accessScope !== 'assessment_only'
+              ? '/student/change-password'
+              : res.user?.accessScope === 'assessment_only' ? '/student/assessments' : '/student/dashboard');
+        window.location.replace(`/u/${res.user.universityId}${destination}`);
+        return;
       }
 
       // Wait a moment for the cookie to be properly set by the browser
@@ -165,26 +191,26 @@ export default function StudentLoginPage() {
                         alt="Logo"
                         className="mx-auto h-20 w-auto object-contain"
                       />
-                      <h1 className="mt-4 text-2xl font-bold text-slate-800">Student Portal</h1>
-                      <p className="mt-2 text-sm text-slate-500">Access your learning platform</p>
+                      <h1 className="mt-4 text-2xl font-bold text-slate-800">{isUniversityDeployment ? 'Student Portal' : 'Sign in to PeerPrep'}</h1>
+                      <p className="mt-2 text-sm text-slate-500">{isUniversityDeployment ? 'Access your learning platform' : 'Use the email registered with your university.'}</p>
                     </div>
 
                     <div className="mt-8 space-y-5">
                       <div className="group">
                         <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          Email / Student ID / Coordinator ID
+                          {isUniversityDeployment ? 'Email / Student ID / Coordinator ID' : 'Email address'}
                         </label>
                         <div className="relative mt-2">
                           <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                             <Mail size={16} className="text-slate-400" />
                           </div>
                           <input
-                            type="text"
+                            type={isUniversityDeployment ? 'text' : 'email'}
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             onKeyPress={handleKeyPress}
                             className="w-full rounded-lg border border-slate-200 bg-white px-10 py-3 text-sm text-slate-700 placeholder-slate-400 shadow-sm focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-200"
-                            placeholder="Enter email or ID"
+                            placeholder={isUniversityDeployment ? 'Enter email or ID' : 'Enter your email'}
                           />
                         </div>
                       </div>
@@ -257,7 +283,7 @@ export default function StudentLoginPage() {
         </div>
       </div>
 
-      <ForgotPasswordModal isOpen={showForgotPassword} onClose={() => setShowForgotPassword(false)} />
+      <ForgotPasswordModal isOpen={showForgotPassword} onClose={() => setShowForgotPassword(false)} emailOnly={!isUniversityDeployment} />
     </div>
   );
 }

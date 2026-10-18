@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const activitySchema = new mongoose.Schema({
@@ -104,4 +105,4 @@ activitySchema.index({ userEmail: 1, createdAt: -1 });
 activitySchema.index({ userRole: 1, createdAt: -1 });
 activitySchema.index({ actionType: 1, createdAt: -1 });
 
-export default mongoose.model('Activity', activitySchema);
+export default tenantModel(mongoose.model('Activity', activitySchema));

@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const testCaseImageSchema = new mongoose.Schema({
@@ -57,4 +58,4 @@ const testCaseSchema = new mongoose.Schema({
 
 testCaseSchema.index({ problem: 1, kind: 1, position: 1 }, { unique: true });
 
-export default mongoose.model('TestCase', testCaseSchema);
+export default tenantModel(mongoose.model('TestCase', testCaseSchema));

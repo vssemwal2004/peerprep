@@ -1,4 +1,6 @@
 import { supabase } from './supabase.js';
+import { currentTenant } from '../platform/tenantContext.js';
+import { deploymentRole } from '../platform/deployment.js';
 
 const SUPABASE_TESTCASE_BUCKET = String(
   process.env.SUPABASE_TESTCASE_BUCKET
@@ -22,7 +24,8 @@ function ensureTestcaseStorage() {
 function buildObjectKey(key) {
   const prefix = SUPABASE_TESTCASE_PREFIX.replace(/^\/+|\/+$/g, '');
   const suffix = String(key || '').replace(/^\/+/, '');
-  return prefix ? `${prefix}/${suffix}` : suffix;
+  const tenantPrefix = deploymentRole() === 'shared' ? `${currentTenant()?.universityId || 'platform'}/` : '';
+  return prefix ? `${prefix}/${tenantPrefix}${suffix}` : `${tenantPrefix}${suffix}`;
 }
 
 export function isTestcaseStorageEnabled() {
@@ -53,6 +56,11 @@ export async function readTestcaseTextObject(key) {
   const objectKey = String(key || '').trim();
   if (!objectKey) {
     throw new Error('Testcase object key is required.');
+  }
+  if (deploymentRole() === 'shared' && currentTenant()) {
+    const base = SUPABASE_TESTCASE_PREFIX.replace(/^\/+|\/+$/g, '');
+    const prefix = `${base ? `${base}/` : ''}${currentTenant().universityId}/`;
+    if (!objectKey.startsWith(prefix)) throw new Error('Testcase object belongs to another university');
   }
 
   const { data, error } = await supabase.storage

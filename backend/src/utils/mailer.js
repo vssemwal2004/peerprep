@@ -1,3 +1,4 @@
+import { currentTenant } from '../platform/tenantContext.js';
 import nodemailer from 'nodemailer';
 import EmailTemplate from '../models/EmailTemplate.js';
 import { EMAIL_TEMPLATE_TYPES } from '../services/emailTemplateService.js';
@@ -105,7 +106,8 @@ export function renderTemplate(template, vars = {}) {
 
 function getDashboardUrl() {
   const origin = (process.env.FRONTEND_ORIGIN || 'https://peerprep.co.in').split(',')[0].trim();
-  return origin.endsWith('/') ? origin : `${origin}/`;
+  const base = origin.replace(/\/$/, '');
+  return currentTenant() ? `${base}/u/${currentTenant().universityId}/` : `${base}/`;
 }
 
 async function getTemplateByType(type) {

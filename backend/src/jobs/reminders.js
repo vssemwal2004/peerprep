@@ -7,10 +7,11 @@ import Feedback from '../models/Feedback.js';
 import Progress from '../models/Progress.js';
 import Submission from '../models/Submission.js';
 import { createNotifications } from '../services/notificationService.js';
+import { deploymentRole } from '../platform/deployment.js';
 
 // Run every 5 minutes to auto-generate meeting links for upcoming interviews
 // Also sends real-time notifications for interview and assessment reminders
-cron.schedule('*/5 * * * *', async () => {
+export async function sendReminders() {
   const now = new Date();
   const oneHour = new Date(now.getTime() + 60 * 60 * 1000);
   const pairs = await Pair.find({ 
@@ -175,7 +176,8 @@ cron.schedule('*/5 * * * *', async () => {
       }
     ]);
   }
-});
+}
+if (deploymentRole() !== 'shared') cron.schedule('*/5 * * * *', sendReminders);
 
 // Daily learning & practice reminders
 cron.schedule('0 9 * * *', async () => {

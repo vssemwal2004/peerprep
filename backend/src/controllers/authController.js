@@ -15,6 +15,11 @@ import { checkEmailResetLimit, recordEmailResetAttempt } from '../middleware/rat
 import { createNotification } from '../services/notificationService.js';
 import { normalizeCoordinatorPermissions } from '../services/coordinatorPermissions.js';
 import { cacheUserSessionState, invalidateUserCache } from '../middleware/auth.js';
+import { currentTenant } from '../platform/tenantContext.js';
+import { deploymentRole } from '../platform/deployment.js';
+
+const tenantTokenClaims = () => deploymentRole() === 'shared'
+  ? { tenantId: currentTenant()?.universityId || 'platform' } : {};
 
 function getAuthCookieOptions() {
   return {
@@ -198,6 +203,7 @@ export async function me(req, res) {
   // Return fields based on role
   const response = {
     _id: u._id,
+    universityId: u.universityId || null,
     email: u.email,
     username: profile.username || '',
     name: u.name,
@@ -485,7 +491,7 @@ export async function login(req, res) {
     }
     // SECURITY: Log successful auth
     logAuthAttempt(req, true, admin.email, admin._id);
-    const token = signToken({ sub: admin._id, role: admin.role, email: admin.email });
+    const token = signToken({ sub: admin._id, role: admin.role, email: admin.email, ...tenantTokenClaims() });
     
     // SECURITY: Single session per user - store session token hash
     const sessionTokenHash = crypto.createHash('sha256').update(token).digest('hex');
@@ -503,7 +509,13 @@ export async function login(req, res) {
     // SECURITY: Store JWT in HttpOnly cookie instead of sending in response
     res.cookie('accessToken', token, getAuthCookieOptions());
     
-    return res.json({ user: { id: admin._id, email: admin.email, role: admin.role, name: admin.name } });
+    return res.json({ user: { id: admin._id, email: admin.email, role: admin.role, name: admin.name,
+      mustChangePassword: Boolean(admin.mustChangePassword), universityId: currentTenant()?.universityId || null } });
+  }
+
+  if (deploymentRole() === 'shared' && !currentTenant()) {
+    logAuthAttempt(req, false, id, null, 'Platform login requires an admin account');
+    throw new HttpError(401, 'Invalid credentials');
   }
 
   // Try regular student by email OR studentId
@@ -534,7 +546,8 @@ export async function login(req, res) {
       sub: student._id, 
       role: student.role,
       email: student.email,
-      studentId: student.studentId
+      studentId: student.studentId,
+      ...tenantTokenClaims(),
     });
     
     // SECURITY: Single session per user - store session token hash
@@ -553,7 +566,7 @@ export async function login(req, res) {
     // SECURITY: Store JWT in HttpOnly cookie
     res.cookie('accessToken', token, getAuthCookieOptions());
     
-    return res.json({ user: sanitizeUser(student) });
+    return res.json({ user: { ...sanitizeUser(student), universityId: currentTenant()?.universityId || null } });
   }
 
   // Try coordinator by email OR coordinatorId
@@ -577,7 +590,7 @@ export async function login(req, res) {
     }
     // SECURITY: Log successful auth
     logAuthAttempt(req, true, coordinator.email, coordinator._id);
-    const token = signToken({ sub: coordinator._id, role: coordinator.role, email: coordinator.email });
+    const token = signToken({ sub: coordinator._id, role: coordinator.role, email: coordinator.email, ...tenantTokenClaims() });
 
     const sessionTokenHash = crypto.createHash('sha256').update(token).digest('hex');
     await User.updateOne(
@@ -594,7 +607,7 @@ export async function login(req, res) {
     // SECURITY: Store JWT in HttpOnly cookie
     res.cookie('accessToken', token, getAuthCookieOptions());
     
-    return res.json({ user: sanitizeUser(coordinator) });
+    return res.json({ user: { ...sanitizeUser(coordinator), universityId: currentTenant()?.universityId || null } });
   }
 
   // No match found - SECURITY: Log failed attempt without revealing if user exists
@@ -694,9 +707,7 @@ export async function requestPasswordReset(req, res) {
 
   // Send email with reset link - support multiple frontend ports
   const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
-  const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}`;
-  
-  console.log('[Password Reset] Reset URL generated:', resetUrl);
+  const resetUrl = `${frontendUrl}${currentTenant() ? `/u/${currentTenant().universityId}` : ''}/reset-password?token=${resetToken}`;
   
   try {
     await sendPasswordResetEmail({

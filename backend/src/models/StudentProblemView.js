@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 // A visit is navigation history, never evidence of a completed problem or a rank award.
@@ -12,4 +13,4 @@ schema.index({ studentId: 1, problemId: 1, source: 1 }, { unique: true });
 schema.index({ studentId: 1, lastViewedAt: -1 });
 schema.index({ lastViewedAt: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 });
 
-export default mongoose.model('StudentProblemView', schema);
+export default tenantModel(mongoose.model('StudentProblemView', schema));

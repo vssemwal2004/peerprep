@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const announcementSchema = new mongoose.Schema({
@@ -13,4 +14,4 @@ const announcementSchema = new mongoose.Schema({
 announcementSchema.index({ status: 1, expiryDate: 1 });
 announcementSchema.index({ priority: 1, createdAt: -1 });
 
-export default mongoose.model('Announcement', announcementSchema);
+export default tenantModel(mongoose.model('Announcement', announcementSchema));

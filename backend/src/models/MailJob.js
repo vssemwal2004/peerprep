@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const mailJobSchema = new mongoose.Schema({
@@ -39,4 +40,4 @@ const mailJobSchema = new mongoose.Schema({
 mailJobSchema.index({ status: 1, nextAttemptAt: 1, createdAt: 1 });
 mailJobSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0, name: 'mail_job_retention_7d' });
 
-export default mongoose.model('MailJob', mailJobSchema);
+export default tenantModel(mongoose.model('MailJob', mailJobSchema));

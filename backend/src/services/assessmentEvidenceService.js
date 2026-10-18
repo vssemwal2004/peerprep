@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { createClient } from '@supabase/supabase-js';
 import { AssessmentWriteError } from './assessmentPersistenceService.js';
+import { currentTenant } from '../platform/tenantContext.js';
+import { deploymentRole } from '../platform/deployment.js';
 
 const bucketName = () => String(process.env.ASSESSMENT_EVIDENCE_BUCKET || '').trim();
 const evidenceStorageUrl = process.env.SUPABASE_URL;
@@ -29,10 +31,12 @@ export async function createAssessmentEvidenceUpload(doc, { contentType, sizeByt
   if (!types[contentType] || !Number.isSafeInteger(sizeBytes) || sizeBytes <= 0 || sizeBytes > maxBytes()) {
     throw new AssessmentWriteError(400, 'INVALID_EVIDENCE', 'Use a supported image within the evidence size limit.');
   }
-  const objectKey = `${doc.assessmentId}/${doc._id}/${doc.attemptGeneration || 1}/${randomUUID()}.${types[contentType]}`;
+  const universityId = currentTenant()?.universityId || 'platform';
+  const tenantPrefix = deploymentRole() === 'shared' ? `${universityId}/` : '';
+  const objectKey = `${tenantPrefix}${doc.assessmentId}/${doc._id}/${doc.attemptGeneration || 1}/${randomUUID()}.${types[contentType]}`;
   const { data, error } = await supabase.storage.from(bucketName()).createSignedUploadUrl(objectKey, { upsert: false });
   if (error) throw new AssessmentWriteError(503, 'EVIDENCE_UPLOAD_UNAVAILABLE', 'Evidence storage is temporarily unavailable.');
-  const uploadToken = jwt.sign({ kind: 'assessment-evidence', objectKey, submissionId: String(doc._id), studentId: String(doc.studentId), generation: doc.attemptGeneration || 1, sizeBytes, contentType }, requireSecret(), { algorithm: 'HS256', expiresIn: '10m', audience: 'assessment-evidence' });
+  const uploadToken = jwt.sign({ kind: 'assessment-evidence', universityId, objectKey, submissionId: String(doc._id), studentId: String(doc.studentId), generation: doc.attemptGeneration || 1, sizeBytes, contentType }, requireSecret(), { algorithm: 'HS256', expiresIn: '10m', audience: 'assessment-evidence' });
   return { enabled: true, objectKey, uploadToken, uploadUrl: data.signedUrl, method: 'PUT', headers: { 'Content-Type': contentType, 'x-upsert': 'false' }, maxBytes: maxBytes() };
 }
 
@@ -41,6 +45,7 @@ export async function verifyAssessmentEvidenceUpload(doc, snapshot) {
   try { claims = jwt.verify(snapshot.uploadToken, requireSecret(), { algorithms: ['HS256'], audience: 'assessment-evidence' }); }
   catch { throw new AssessmentWriteError(400, 'INVALID_EVIDENCE_TOKEN', 'Invalid or expired evidence upload token.'); }
   if (claims.kind !== 'assessment-evidence' || claims.objectKey !== snapshot.objectKey
+    || (deploymentRole() === 'shared' && claims.universityId !== (currentTenant()?.universityId || 'platform'))
     || claims.submissionId !== String(doc._id) || claims.studentId !== String(doc.studentId)
     || claims.generation !== Number(doc.attemptGeneration || 1)) {
     throw new AssessmentWriteError(403, 'INVALID_EVIDENCE_OWNER', 'Evidence does not belong to this attempt.');
@@ -67,6 +72,9 @@ export function normalizeLegacyEvidence(dataUrl) {
 
 export async function signAssessmentEvidenceRead(objectKey) {
   if (!objectKey || !evidenceStorageEnabled()) return null;
+  if (deploymentRole() === 'shared' && !String(objectKey).startsWith(`${currentTenant()?.universityId || 'platform'}/`)) {
+    throw new AssessmentWriteError(403, 'EVIDENCE_OWNER_MISMATCH', 'Evidence belongs to another university.');
+  }
   const { data, error } = await supabase.storage.from(bucketName()).createSignedUrl(objectKey, 120);
   if (error) throw new AssessmentWriteError(503, 'EVIDENCE_UNAVAILABLE', 'Evidence storage is temporarily unavailable.');
   return data.signedUrl;

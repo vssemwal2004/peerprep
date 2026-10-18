@@ -10,6 +10,7 @@ import Pair from '../models/Pair.js';
 import { HttpError } from '../utils/errors.js';
 import { validateObjectId } from '../utils/validators.js';
 import { logSecurityEvent } from '../utils/logger.js';
+import { currentTenant } from '../platform/tenantContext.js';
 import {
   ANALYTICS_CONTRACT_VERSION,
   upsertStudentAnalytics,
@@ -107,7 +108,7 @@ async function getLatestStudentSignalAt(studentId) {
 }
 
 function getStudentKey(studentId) {
-  return String(studentId);
+  return `${currentTenant()?.universityId || 'platform'}:${studentId}`;
 }
 
 async function buildAnalyticsOnce(studentId) {

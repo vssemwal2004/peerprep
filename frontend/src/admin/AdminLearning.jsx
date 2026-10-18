@@ -1,3 +1,4 @@
+import { isUniversityDeployment } from '../platform/universityPermissions';
 import { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { api } from '../utils/api';
@@ -19,7 +20,7 @@ export default function AdminLearning() {
 
   useEffect(() => {
     loadSemesters();
-    if (import.meta.env.VITE_PEERPREP_DEPLOYMENT_ROLE === 'university') {
+    if (isUniversityDeployment) {
       api.universityPolicy().then((policy) => setSharedLearning(policy.sources?.learning === 'shared')).catch(() => {});
     }
   }, []);

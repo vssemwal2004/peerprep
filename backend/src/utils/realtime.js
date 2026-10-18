@@ -3,6 +3,16 @@ import { createAdapter } from '@socket.io/redis-adapter';
 import { Emitter } from '@socket.io/redis-emitter';
 import { buildValkeyUrl } from './valkey.js';
 import { getIo, setIo } from './io.js';
+import { currentTenant } from '../platform/tenantContext.js';
+import { deploymentRole } from '../platform/deployment.js';
+
+export function personalRoom(userId, universityId = currentTenant()?.universityId || 'platform') {
+  return deploymentRole() === 'shared' ? `university:${universityId}:user:${userId}` : String(userId);
+}
+
+export function compilerMonitorRoom(universityId = currentTenant()?.universityId || 'platform') {
+  return deploymentRole() === 'shared' ? `university:${universityId}:compiler:monitor` : 'compiler:monitor';
+}
 
 const clients = new Set();
 const channelKey = () => process.env.SOCKET_IO_CHANNEL || 'peerprep:socket:v1';

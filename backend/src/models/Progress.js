@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 import { attachAdminAnalyticsInvalidation } from '../modules/adminAnalytics/adminAnalytics.invalidation.js';
 
@@ -66,4 +67,4 @@ attachAdminAnalyticsInvalidation(progressSchema, {
   relevantPaths: ['studentId', 'semesterId', 'subjectId', 'chapterId', 'topicId', 'completed', 'completedAt', 'videoWatchedSeconds', 'videoDuration', 'lastAccessedAt'],
 });
 
-export default mongoose.model('Progress', progressSchema);
+export default tenantModel(mongoose.model('Progress', progressSchema));

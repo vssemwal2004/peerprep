@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import Notification from '../models/Notification.js';
 import { getIo } from '../utils/io.js';
+import { personalRoom } from '../utils/realtime.js';
 
 /**
  * Create a notification exactly once per user and dedupe key, even under concurrent callers.
@@ -14,7 +15,7 @@ export async function notifyOnce({ userId, dedupeKey, title, message, type, acti
   try {
     const result = await Notification.updateOne({ _id }, { $setOnInsert: fields }, { upsert: true, timestamps: false });
     if (!result.upsertedCount) return false;
-    getIo()?.to(String(userId)).emit('new_notification', { _id, ...fields });
+    getIo()?.to(personalRoom(userId)).emit('new_notification', { _id, ...fields });
     return true;
   } catch (error) {
     if (error?.code === 11000) return false;
@@ -51,7 +52,7 @@ export async function createNotification({
 
   const io = getIo();
   if (io) {
-    io.to(String(userId)).emit('new_notification', notification.toObject());
+    io.to(personalRoom(userId)).emit('new_notification', notification.toObject());
   }
 
   return notification;
@@ -98,7 +99,7 @@ export async function createNotifications(notifications = []) {
   const io = getIo();
   if (io) {
     created.forEach(notif => {
-      io.to(String(notif.userId)).emit('new_notification', notif.toObject());
+      io.to(personalRoom(notif.userId)).emit('new_notification', notif.toObject());
     });
   }
 

@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../utils/api';
+import { returnToLogin, SESSION_EXPIRED_MESSAGE } from '../auth/sessionNotice';
 
 export default function ChangePassword() {
   const [currentPassword, setCurrentPassword] = useState('');
@@ -83,7 +84,7 @@ export default function ChangePassword() {
     if (isSigningOut) return;
     setIsSigningOut(true);
     await logout();
-    navigate('/student', { replace: true });
+    returnToLogin(SESSION_EXPIRED_MESSAGE);
   };
 
   const visibilityButton = (visible, toggle, label) => (

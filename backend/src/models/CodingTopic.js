@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const codingTopicSchema = new mongoose.Schema({
@@ -20,4 +21,4 @@ codingTopicSchema.index({ parentId: 1, normalizedName: 1 }, { unique: true });
 codingTopicSchema.index({ ancestorIds: 1, status: 1 });
 codingTopicSchema.index({ status: 1, parentId: 1, displayOrder: 1, name: 1 });
 
-export default mongoose.model('CodingTopic', codingTopicSchema);
+export default tenantModel(mongoose.model('CodingTopic', codingTopicSchema));

@@ -12,21 +12,19 @@ import { startEmbeddedWorkers } from './workers/startEmbeddedWorkers.js';
 import { verifyMailTransport } from './utils/mailer.js';
 import User from './models/User.js';
 import { hasCoordinatorPermission } from './services/coordinatorPermissions.js';
-import { startMailQueueWorker } from './workers/mailQueue.worker.js';
 import { closeValkeyClient } from './utils/valkey.js';
-import { configureSocketAdapter, closeRealtime } from './utils/realtime.js';
+import { configureSocketAdapter, closeRealtime, personalRoom, compilerMonitorRoom } from './utils/realtime.js';
 import { closeQueueWorkers } from './queues/workerRuntime.js';
 import { closeQueues } from './queues/queueManager.js';
-import { startAssessmentEvaluationDispatcher } from './services/assessmentEvaluationDispatchService.js';
-import { startAssessmentReportSummaryWorker } from './services/assessmentReportSummaryService.js';
 import { validateDeploymentConfig } from './platform/deployment.js';
-import { startUniversityHeartbeat } from './platform/heartbeat.js';
+import { getTenant } from './platform/tenantConnections.js';
+import { runForTenant } from './platform/tenantContext.js';
+import { startSharedMaintenance } from './platform/sharedMaintenance.js';
 //fufgv
 const PORT = process.env.PORT || 4000;
 validateDeploymentConfig();
 //new file check
 await connectDb();
-const stopUniversityHeartbeat = startUniversityHeartbeat();
 
 const httpServer = createServer(app);
 
@@ -87,9 +85,13 @@ io.use(async (socket, next) => {
     
     // Verify JWT token
     const payload = verifyToken(token);
-    const user = await User.findById(payload.sub)
-      .select('_id email role isActive activeSessionToken passwordChangedAt coordinatorPermissions')
-      .lean();
+    let tenant = null;
+    const requested = String(socket.handshake.auth.universityId || 'platform');
+    if (payload.tenantId !== requested) return next(new Error('University session mismatch'));
+    if (requested !== 'platform') tenant = await getTenant(requested);
+    const loadUser = () => User.findById(payload.sub)
+      .select('_id email role isActive activeSessionToken passwordChangedAt coordinatorPermissions').lean();
+    const user = tenant ? await runForTenant(tenant, loadUser) : await loadUser();
     if (!user) {
       return next(new Error('Invalid token'));
     }
@@ -109,6 +111,7 @@ io.use(async (socket, next) => {
     }
 
     socket.userId = String(user._id);
+    socket.universityId = tenant?.universityId || 'platform';
     socket.userRole = user.role;
     socket.userEmail = user.email;
     socket.canMonitorCompiler = user.role === 'admin'
@@ -130,7 +133,7 @@ io.on('connection', (socket) => {
   console.log(`Client connected: ${socket.id} (User: ${socket.userEmail})`);
   
   // SECURITY: Limit connections per user
-  const userId = socket.userId;
+  const userId = personalRoom(socket.userId, socket.universityId);
   const currentCount = connectionsPerUser.get(userId) || 0;
   
   if (currentCount >= MAX_CONNECTIONS_PER_USER) {
@@ -143,9 +146,9 @@ io.on('connection', (socket) => {
 
   // Every socket is always placed in its authenticated personal room. Clients
   // cannot choose another user's room, and compiler monitors require permission.
-  socket.join(String(userId));
+  socket.join(userId);
   if (socket.canMonitorCompiler) {
-    socket.join('compiler:monitor');
+    socket.join(compilerMonitorRoom(socket.universityId));
   }
   
   socket.on('disconnect', () => {
@@ -164,10 +167,8 @@ io.on('connection', (socket) => {
   socket.on('register', (userId) => {
     const normalized = userId ? String(userId) : '';
     const socketUserId = socket.userId ? String(socket.userId) : '';
-    const roomToJoin = normalized && normalized === socketUserId ? normalized : socketUserId;
-    if (roomToJoin) {
-      socket.join(roomToJoin);
-    }
+    if (normalized && normalized !== socketUserId) return;
+    if (socketUserId) socket.join(personalRoom(socketUserId, socket.universityId));
   });
   
   // SECURITY: Rate limit events per socket (prevent spam)
@@ -205,31 +206,21 @@ setIo(io);
 startEmbeddedWorkers();
 const scheduledJobsEnabled = String(process.env.START_SCHEDULED_JOBS || 'true').trim().toLowerCase() !== 'false';
 const mailWorkerEnabled = String(process.env.START_MAIL_WORKER || 'true').trim().toLowerCase() !== 'false';
-let stopAssessmentDispatcher = async () => {};
-let stopReportSummaryWorker = async () => {};
-if (scheduledJobsEnabled) {
-  await Promise.all([
-    import('./jobs/reminders.js'),
-    import('./jobs/analytics.js'),
-    import('./jobs/assessmentExpiry.js'),
-  ]);
-  stopAssessmentDispatcher = startAssessmentEvaluationDispatcher();
-  stopReportSummaryWorker = startAssessmentReportSummaryWorker();
+let stopSharedMaintenance = async () => {};
+if (scheduledJobsEnabled || mailWorkerEnabled) {
+  stopSharedMaintenance = startSharedMaintenance({ scheduled: scheduledJobsEnabled, mail: mailWorkerEnabled });
 }
-if (mailWorkerEnabled) startMailQueueWorker();
 
 // SECURITY: Graceful shutdown handlers
 const shutdown = async (signal) => {
   if (isShuttingDown) return;
   isShuttingDown = true;
-  stopUniversityHeartbeat();
   app.set('isShuttingDown', true);
 
   console.log(`\n${signal} received. Starting graceful shutdown...`);
 
   const exitCleanly = async (code) => {
-    await stopAssessmentDispatcher().catch(() => {});
-    await stopReportSummaryWorker().catch(() => {});
+    await stopSharedMaintenance().catch(() => {});
     await closeQueueWorkers().catch(() => {});
     await closeQueues().catch(() => {});
     await closeRealtime().catch(() => {});

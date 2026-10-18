@@ -50,7 +50,7 @@ try {
   await page.route('**/*', async (route) => {
     const url = new URL(route.request().url());
     if (url.origin !== base) return route.abort();
-    if (url.pathname !== '/__engagement-fixture') return route.continue();
+    if (url.pathname !== '/u/test-university/__engagement-fixture') return route.continue();
     fixtureModule = `
       import React from 'react';
       import ReactDOMClient from 'react-dom/client';
@@ -120,14 +120,14 @@ try {
     `;
     if (!bundledFixture) {
       const result = await build({ stdin: { contents: fixtureModule, resolveDir: root, sourcefile: 'engagement-smoke.jsx', loader: 'jsx' }, bundle: true, write: false, format: 'iife', platform: 'browser', jsx: 'automatic', loader: { '.css': 'empty', '.svg': 'dataurl' },
-        define: { 'process.env.NODE_ENV': JSON.stringify('production'), 'import.meta.env': JSON.stringify({ MODE: 'test', VITE_PEERPREP_DEPLOYMENT_ROLE: 'university' }) },
+        define: { 'process.env.NODE_ENV': JSON.stringify('production'), 'import.meta.env': JSON.stringify({ MODE: 'test' }) },
         plugins: [{ name: 'fixture-source-paths', setup(builder) { builder.onResolve({ filter: /^\/src\// }, ({ path }) => ({ path: resolve(root, `.${path}`) })); } }] });
       bundledFixture = result.outputFiles[0].text;
     }
     const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1" /><style>${css}</style></head><body><div id="root"></div><script>${bundledFixture}</script></body></html>`;
     return route.fulfill({ contentType: 'text/html', body: html });
   });
-  await page.goto(`${base}/__engagement-fixture`, { waitUntil: 'commit' });
+  await page.goto(`${base}/u/test-university/__engagement-fixture`, { waitUntil: 'commit' });
   await page.locator('#activity').waitFor();
   await page.locator('#missions').waitFor();
   const header = page.locator('header[aria-label="Student header"]');
@@ -221,7 +221,7 @@ try {
   await page.screenshot({ path: `${output}/missions-mobile.png` });
   await page.setViewportSize({ width: 1366, height: 900 });
   await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await page.goto(`${base}/__engagement-fixture?celebrate`, { waitUntil: 'commit' });
+  await page.goto(`${base}/u/test-university/__engagement-fixture?celebrate`, { waitUntil: 'commit' });
   await page.getByRole('dialog', { name: 'You reached Level 2!' }).waitFor();
   await page.waitForTimeout(350);
   assert.ok(await page.locator('[role="presentation"] .pointer-events-none span').count() >= 50, 'Normal-motion mode includes the confetti burst');
@@ -230,7 +230,7 @@ try {
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
   await page.waitForTimeout(700);
   assert.equal(await page.getByRole('dialog').count(), 0, 'Consumed celebration does not replay');
-  await page.goto(`${base}/__engagement-fixture?restricted`, { waitUntil: 'commit' });
+  await page.goto(`${base}/u/test-university/__engagement-fixture?restricted`, { waitUntil: 'commit' });
   await page.locator('#activity').waitFor();
   await header.getByRole('textbox', { name: 'Search student modules' }).fill('coding');
   assert.equal(await header.getByRole('button', { name: 'PrepCoding Practice problem solving' }).count(), 0, 'Profile header respects university feature allocations');
@@ -241,7 +241,7 @@ try {
   await dailyDrawer.getByText('Your next challenge is on its way', { exact: true }).waitFor();
   assert.equal(await dailyDrawer.getByText('Solve Balanced Brackets', { exact: true }).count(), 0);
   await page.keyboard.press('Escape');
-  await page.goto(`${base}/__engagement-fixture?hub`, { waitUntil: 'commit' });
+  await page.goto(`${base}/u/test-university/__engagement-fixture?hub`, { waitUntil: 'commit' });
   await page.getByRole('button', { name: 'Accept daily challenge', exact: true }).waitFor();
   await header.getByRole('button', { name: 'Switch to light theme' }).click();
   await page.waitForTimeout(350);
@@ -308,7 +308,7 @@ try {
   await dailyDrawer.getByRole('link', { name: /View all challenges/ }).click();
   await dailyDrawer.waitFor({ state: 'hidden' });
   await page.setViewportSize({ width: 320, height: 650 });
-  await page.goto(`${base}/__engagement-fixture?hub&mobile-celebration`, { waitUntil: 'commit' });
+  await page.goto(`${base}/u/test-university/__engagement-fixture?hub&mobile-celebration`, { waitUntil: 'commit' });
   await page.getByRole('button', { name: 'Accept daily challenge', exact: true }).click();
   await acceptancePopup.waitFor();
   const popupBounds = await acceptancePopup.boundingBox();
@@ -319,7 +319,7 @@ try {
   await acceptancePopup.waitFor({ state: 'hidden' });
   assert.equal(await page.locator('body').evaluate(node => node.style.overflow), '', 'Starting a mission restores scrolling');
   await page.setViewportSize({ width: 1366, height: 900 });
-  await page.goto(`${base}/__engagement-fixture?admin`, { waitUntil: 'commit' });
+  await page.goto(`${base}/u/test-university/__engagement-fixture?admin`, { waitUntil: 'commit' });
   await page.getByRole('heading', { name: 'Student progression', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Save progression policy' }).waitFor();
   assert.equal(await page.getByRole('checkbox', { name: 'Peer interviews' }).isDisabled(), true);

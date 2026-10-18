@@ -43,7 +43,7 @@ import {
   BadgeCheck,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { canManageInterviewCompanies, SUGGESTED_COMPANIES_PATH } from '../platform/universityPermissions';
+import { canManageInterviewCompanies, isControlDeployment, SUGGESTED_COMPANIES_PATH } from '../platform/universityPermissions';
 import { useUniversityPolicy } from '../platform/UniversityPolicyContext';
 import { useTheme } from '../context/ThemeContext';
 import { hasPermission } from '../admin/coordinatorPermissions';
@@ -205,7 +205,7 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
       icon: LayoutDashboard,
       match: (loc) => loc.pathname === '/admin' || loc.pathname.startsWith('/admin/overview') || loc.pathname.startsWith('/admin/dashboard'),
     },
-    ...(import.meta.env.VITE_PEERPREP_DEPLOYMENT_ROLE === 'control'
+    ...(isControlDeployment
       ? [{ type: 'link', label: 'Universities', to: '/admin/platform', icon: Building2 }]
       : []),
     { type: 'link', label: 'Prep Analysis', to: '/admin/analysis', icon: BarChart3 },
@@ -294,7 +294,7 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
         { label: 'All QuickPreps', to: '/admin/quickprep', icon: ListChecks, match: (loc) => /^\/admin\/quickprep(\/(?!new$|insights$)[^/]+(\/(edit|questions\/add))?)?\/?$/.test(loc.pathname) },
         { label: 'Create QuickPrep', to: '/admin/quickprep/new', icon: CirclePlus },
         // Student progress lives in each university, so the central platform has no QuickPrep insights.
-        ...(import.meta.env.VITE_PEERPREP_DEPLOYMENT_ROLE === 'control' ? [] : [{ label: 'Insights', to: '/admin/quickprep/insights', icon: BarChart3 }]),
+        ...(isControlDeployment ? [] : [{ label: 'Insights', to: '/admin/quickprep/insights', icon: BarChart3 }]),
       ],
     },
     {

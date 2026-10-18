@@ -1,6 +1,7 @@
 import Assessment from '../models/Assessment.js';
 import { sharedAssessment } from '../platform/sharedContent.js';
 import { getValkeyClient } from '../utils/valkey.js';
+import { currentTenant } from '../platform/tenantContext.js';
 
 const inFlight = new Map();
 const MAX_CACHED_BYTES = 2 * 1024 * 1024;
@@ -12,7 +13,7 @@ export async function loadAssessmentDefinition(query) {
     const metadata = await Assessment.findOne(query).select('-sections -questionSets').lean();
     if (!metadata) return query?._id ? sharedAssessment(query._id) : null;
     const version = new Date(metadata.updatedAt || 0).getTime();
-    const key = `assessment:definition:v2:${metadata._id}:${metadata.version || 1}:${metadata.__v ?? 'legacy'}:${version}`;
+    const key = `assessment:definition:v2:${currentTenant()?.universityId || 'platform'}:${metadata._id}:${metadata.version || 1}:${metadata.__v ?? 'legacy'}:${version}`;
     let content;
     const client = getValkeyClient();
     if (client) {

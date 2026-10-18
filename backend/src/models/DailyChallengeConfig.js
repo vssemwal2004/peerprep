@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const dailyChallengeConfigSchema = new mongoose.Schema({
@@ -13,4 +14,4 @@ const dailyChallengeConfigSchema = new mongoose.Schema({
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 }, { timestamps: true });
 
-export default mongoose.model('DailyChallengeConfig', dailyChallengeConfigSchema);
+export default tenantModel(mongoose.model('DailyChallengeConfig', dailyChallengeConfigSchema));

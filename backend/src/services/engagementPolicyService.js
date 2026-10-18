@@ -1,12 +1,13 @@
 import crypto from 'node:crypto';
 import { EngagementPolicy } from '../models/AdaptiveEngagement.js';
 import { isUniversity } from '../platform/deployment.js';
+import { currentTenant } from '../platform/tenantContext.js';
 import { universityPolicy } from '../platform/client.js';
 import { DEFAULT_POLICY, DOMAIN_ACCESS, BADGES } from './adaptiveEngagementRules.js';
 import { HttpError } from '../utils/errors.js';
 
 export function engagementTenant(user, collegeOverride) {
-  if (isUniversity()) return `university:${process.env.PEERPREP_UNIVERSITY_ID}`;
+  if (isUniversity()) return `university:${currentTenant()?.universityId || process.env.PEERPREP_UNIVERSITY_ID}`;
   const college = String(collegeOverride ?? user.college ?? '').trim().toLowerCase();
   return college ? `college:${crypto.createHash('sha256').update(college).digest('hex').slice(0, 24)}` : 'standalone';
 }

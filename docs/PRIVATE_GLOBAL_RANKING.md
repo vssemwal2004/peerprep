@@ -1,5 +1,9 @@
 # Private global ranking
 
+> The deployment section below describes the retired separate-backend flow.
+> Follow [the current deployment guide](SHARED_UNIVERSITY_DEPLOYMENT.md) for
+> production setup.
+
 Students see their university standing and their own global standing at
 `/student/rankings`, on the dashboard and on their profile. No public leaderboard
 or other-student lookup exists. Assessment-only accounts cannot access the API.

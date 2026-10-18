@@ -1,3 +1,4 @@
+import { currentTenant } from '../platform/tenantContext.js';
 import { sendSlotProposalEmail, sendSlotAcceptanceEmail, sendInterviewScheduledEmail, sendMail, renderTemplate } from '../utils/mailer.js';
 import Pair from '../models/Pair.js';
 import SlotProposal from '../models/SlotProposal.js';
@@ -117,7 +118,7 @@ async function uploadTemplate(file) {
   if (!supabase) throw new HttpError(500, 'Supabase not configured.');
   const bucket = process.env.SUPABASE_BUCKET || 'templates';
   const templateName = file.originalname;
-  const key = `${Date.now()}_${templateName}`;
+  const key = `${currentTenant()?.universityId ? `${currentTenant().universityId}/` : ''}${Date.now()}_${templateName}`;
   const contentType = file.mimetype || 'application/octet-stream';
   // multer provides file.buffer (Buffer) - use it directly for Node environment
   const data = file.buffer;

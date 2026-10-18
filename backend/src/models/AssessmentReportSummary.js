@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 // _id is the assessment ID: joining through authorized Assessment records keeps
@@ -26,4 +27,4 @@ const schema = new mongoose.Schema({
   scoreDistribution: { type: [Number], default: [0, 0, 0, 0, 0] },
 }, { timestamps: true });
 schema.index({ nextRefreshAt: 1, leaseUntil: 1 });
-export default mongoose.model('AssessmentReportSummary', schema);
+export default tenantModel(mongoose.model('AssessmentReportSummary', schema));

@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const executionJobSchema = new mongoose.Schema({
@@ -75,4 +76,4 @@ const executionJobSchema = new mongoose.Schema({
 executionJobSchema.index({ userId: 1, createdAt: -1 });
 executionJobSchema.index({ queueName: 1, status: 1, createdAt: -1 });
 
-export default mongoose.model('ExecutionJob', executionJobSchema);
+export default tenantModel(mongoose.model('ExecutionJob', executionJobSchema));

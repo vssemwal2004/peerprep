@@ -1,6 +1,7 @@
 import { HttpError } from '../utils/errors.js';
 import { judge0OutputFileSizeKb, normalizeJudge0FileSizeKb } from './outputFileBudgetService.js';
 import { validateSqlMutationContract } from './sqlMutationContractService.js';
+import { currentTenant } from '../platform/tenantContext.js';
 
 const JUDGE0_URL_CONFIG = process.env.JUDGE0_URL
   || process.env.JUDGE0_BASE_URLS
@@ -10,6 +11,9 @@ const JUDGE0_BASE_URLS = String(JUDGE0_URL_CONFIG)
   .split(',')
   .map((url) => String(url || '').trim().replace(/\/+$/, ''))
   .filter(Boolean);
+const judge0Targets = () => currentTenant()
+  ? String(currentTenant().judge0Url || '').split(',').map((url) => url.trim().replace(/\/+$/, '')).filter(Boolean)
+  : JUDGE0_BASE_URLS;
 const JUDGE0_AUTH_HEADER = String(process.env.JUDGE0_AUTH_HEADER || '').trim();
 const JUDGE0_AUTH_TOKEN = String(process.env.JUDGE0_AUTH_TOKEN || '').trim();
 
@@ -164,8 +168,10 @@ function buildJudge0Headers() {
   const headers = {
     'Content-Type': 'application/json',
   };
-  if (JUDGE0_AUTH_HEADER && JUDGE0_AUTH_TOKEN) {
-    headers[JUDGE0_AUTH_HEADER] = JUDGE0_AUTH_TOKEN;
+  const authHeader = currentTenant() ? currentTenant().judge0AuthHeader : JUDGE0_AUTH_HEADER;
+  const authToken = currentTenant() ? currentTenant().judge0AuthToken : JUDGE0_AUTH_TOKEN;
+  if (authHeader && authToken) {
+    headers[authHeader] = authToken;
   }
   return headers;
 }
@@ -202,16 +208,17 @@ function extractJudge0ErrorMessage(parsedBody, statusCode) {
 }
 
 function getNextJudge0Targets() {
-  if (JUDGE0_BASE_URLS.length <= 1) {
-    return JUDGE0_BASE_URLS;
+  const targets = judge0Targets();
+  if (targets.length <= 1) {
+    return targets;
   }
 
-  const start = judge0RoundRobinIndex % JUDGE0_BASE_URLS.length;
-  judge0RoundRobinIndex = (judge0RoundRobinIndex + 1) % JUDGE0_BASE_URLS.length;
+  const start = judge0RoundRobinIndex % targets.length;
+  judge0RoundRobinIndex = (judge0RoundRobinIndex + 1) % targets.length;
 
   return [
-    ...JUDGE0_BASE_URLS.slice(start),
-    ...JUDGE0_BASE_URLS.slice(0, start),
+    ...targets.slice(start),
+    ...targets.slice(0, start),
   ];
 }
 
@@ -490,7 +497,7 @@ export function buildJudge0Options(problem) {
 
 export async function checkJudge0Health() {
   const checks = await Promise.all(
-    JUDGE0_BASE_URLS.map(async (baseUrl) => {
+    judge0Targets().map(async (baseUrl) => {
       const startedAt = Date.now();
       try {
         const controller = new AbortController();

@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { api } from '../utils/api';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { returnToLogin, SESSION_EXPIRED_MESSAGE } from '../auth/sessionNotice';
 import { Eye, EyeOff, Lock, CheckCircle, AlertCircle, ArrowLeft } from 'lucide-react';
 
 export default function AdminChangePassword() {
@@ -11,7 +13,6 @@ export default function AdminChangePassword() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [passwordMatch, setPasswordMatch] = useState(null);
   const [passwordStrength, setPasswordStrength] = useState({
@@ -19,6 +20,7 @@ export default function AdminChangePassword() {
     hasSpecialChar: false
   });
   const navigate = useNavigate();
+  const { logout } = useAuth();
 
   // Real-time password validation
   React.useEffect(() => {
@@ -47,7 +49,6 @@ export default function AdminChangePassword() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    setSuccess('');
     setIsLoading(true);
 
     if (!currentPassword || !newPassword || !confirmPassword) {
@@ -73,12 +74,9 @@ export default function AdminChangePassword() {
 
     try {
       await api.changeAdminPassword(currentPassword, newPassword, confirmPassword);
-      setSuccess('Password changed successfully!');
-      setTimeout(() => {
-        navigate('/admin/event', { replace: true });
-      }, 1500);
+      await logout();
+      returnToLogin(SESSION_EXPIRED_MESSAGE);
     } catch (err) {
-      setSuccess('');
       setError(err.message || 'Failed to change password');
     } finally {
       setIsLoading(false);
@@ -242,16 +240,6 @@ export default function AdminChangePassword() {
                 </div>
               </div>
             )}
-            {success && (
-              <div className="flex items-start gap-3 p-4 bg-green-50 dark:bg-green-900/20 border-2 border-green-200 dark:border-green-800 rounded-lg">
-                <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
-                <div>
-                  <div className="font-semibold text-green-800 dark:text-green-300 text-sm">Success</div>
-                  <div className="text-green-700 dark:text-green-400 text-sm mt-0.5">{success}</div>
-                </div>
-              </div>
-            )}
-
             {/* Buttons */}
             <div className="flex gap-4 pt-4">
               {/* Cancel Button */}

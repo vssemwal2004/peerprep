@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const bulletSchema = new mongoose.Schema({
@@ -80,4 +81,4 @@ const resumeSchema = new mongoose.Schema({
   previousVersion: { type: snapshotSchema, default: undefined },
 }, { timestamps: true });
 
-export default mongoose.model('Resume', resumeSchema);
+export default tenantModel(mongoose.model('Resume', resumeSchema));

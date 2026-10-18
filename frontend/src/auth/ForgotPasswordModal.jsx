@@ -3,7 +3,7 @@ import { X, Mail, Loader2, CheckCircle } from 'lucide-react';
 import { api } from '../utils/api';
 import { AnimatePresence, motion } from 'framer-motion';
 
-export default function ForgotPasswordModal({ isOpen, onClose }) {
+export default function ForgotPasswordModal({ isOpen, onClose, emailOnly = false }) {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -15,7 +15,7 @@ export default function ForgotPasswordModal({ isOpen, onClose }) {
     setSuccess(false);
 
     if (!email.trim()) {
-      setError('Please enter your email or student ID');
+      setError(emailOnly ? 'Please enter your email' : 'Please enter your email or student ID');
       return;
     }
 
@@ -65,7 +65,7 @@ export default function ForgotPasswordModal({ isOpen, onClose }) {
               </button>
             </div>
             <p className="mt-2 text-sky-100 text-sm">
-              Enter your email or student ID and we'll send you a password reset link.
+              {emailOnly ? "Enter your registered email and we'll send you a password reset link." : "Enter your email or student ID and we'll send you a password reset link."}
             </p>
           </div>
 
@@ -89,18 +89,18 @@ export default function ForgotPasswordModal({ isOpen, onClose }) {
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Email or Student ID
+                    {emailOnly ? 'Email address' : 'Email or Student ID'}
                   </label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                       <Mail size={18} className="text-gray-400" />
                     </div>
                     <input
-                      type="text"
+                      type={emailOnly ? 'email' : 'text'}
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition-all"
-                      placeholder="Enter your email or student ID"
+                      placeholder={emailOnly ? 'Enter your email' : 'Enter your email or student ID'}
                       disabled={loading}
                     />
                   </div>

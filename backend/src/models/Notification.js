@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const notificationSchema = new mongoose.Schema({
@@ -21,4 +22,4 @@ const notificationSchema = new mongoose.Schema({
 notificationSchema.index({ userId: 1, createdAt: -1 });
 notificationSchema.index({ userId: 1, dedupeKey: 1 });
 
-export default mongoose.model('Notification', notificationSchema);
+export default tenantModel(mongoose.model('Notification', notificationSchema));

@@ -14,7 +14,7 @@ export default function LandingPage() {
   const navigate = useNavigate();
 
   const handleLogin = () => {
-    navigate("/student");
+    navigate('/student');
   };
 
   return (

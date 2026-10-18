@@ -1,3 +1,4 @@
+import { isUniversityDeployment } from '../platform/universityPermissions';
 import { getJudge0LanguageId } from "../admin/compiler/compilerUtils";
 import { getApiBase } from "./apiBase";
 
@@ -200,7 +201,7 @@ async function request(
   } = {},
 ) {
   method = method.toUpperCase();
-  if (import.meta.env.VITE_PEERPREP_DEPLOYMENT_ROLE === 'university' && /^(?:\/admin\/(?:assessment|library)|\/student\/assessment|\/learning|\/subjects)/.test(path)) skipCache = true;
+  if (isUniversityDeployment && /^(?:\/admin\/(?:assessment|library)|\/student\/assessment|\/learning|\/subjects)/.test(path)) skipCache = true;
 
   // Check cache for GET requests
   const cacheKey = getCacheKey(path, method);
@@ -394,11 +395,11 @@ export const api = {
   runSharedCodingPreview: (id, body) => request(`/admin/library/questions/${encodeURIComponent(id)}/shared-coding/run`, { method: 'POST', body, timeoutMs: 0 }),
   submitSharedCodingPreview: (id, body) => request(`/admin/library/questions/${encodeURIComponent(id)}/shared-coding/submit`, { method: 'POST', body, timeoutMs: 0 }),
   platformPublications: () => request('/platform/admin/publications', { skipCache: true }),
-  createUniversity: (body) => request('/platform/admin/universities', { method: 'POST', body }),
+  testUniversityDatabase: (universityId, dbUri) => request('/platform/admin/universities/test-database', { method: 'POST', body: { universityId, dbUri }, timeoutMs: 15000 }),
+  createUniversity: (body) => request('/platform/admin/universities', { method: 'POST', body, timeoutMs: 120000 }),
   updateUniversityDefaults: (body) => request('/platform/admin/defaults', { method: 'PUT', body }),
   updateUniversity: (id, body) => request(`/platform/admin/universities/${encodeURIComponent(id)}`, { method: 'PATCH', body }),
   deleteUniversity: (id) => request(`/platform/admin/universities/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  rotateUniversityKey: (id) => request(`/platform/admin/universities/${encodeURIComponent(id)}/rotate-key`, { method: 'POST' }),
   uploadUniversityLogo: (id, file) => {
     const formData = new FormData();
     formData.append('logo', file);

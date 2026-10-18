@@ -1,3 +1,4 @@
+import { tenantModel } from '../platform/tenantContext.js';
 import mongoose from 'mongoose';
 
 const topicSchema = new mongoose.Schema({
@@ -49,6 +50,6 @@ semesterSchema.index({
   collation: { locale: 'en', strength: 2 } // Case-insensitive comparison
 });
 
-const Semester = mongoose.model('Semester', semesterSchema);
+const Semester = tenantModel(mongoose.model('Semester', semesterSchema));
 
 export default Semester;
