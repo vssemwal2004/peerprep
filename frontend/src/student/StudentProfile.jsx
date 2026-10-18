@@ -22,6 +22,7 @@ import { EditProfileModal, PhotoModal } from './profile/ProfileModals';
 import { focusRing, languageLabel } from './profile/format';
 import { useUniversityPolicy } from '../platform/UniversityPolicyContext';
 import { scopeEngagement } from './engagement/scopeEngagement';
+import { publishRanking } from './prepScore/rankingStore';
 
 const MotionDiv = motion.div;
 
@@ -40,6 +41,9 @@ export default function StudentProfile() {
   const canEvents = allowsModule('events');
   const canEngage = canQuestions || canLearning || canAssessments || canInterviews || canEvents;
   const [user, setUser] = useState(null);
+  const [ranking, setRanking] = useState(null);
+  // The header's Prep Score chip shows the ranking this page loaded (no extra request).
+  useEffect(() => { publishRanking(user?._id || user?.id, ranking); }, [ranking, user]);
   const [avatarFile, setAvatarFile] = useState(null);
   const [avatarPreview, setAvatarPreview] = useState(null);
   const [profileForm, setProfileForm] = useState({
@@ -58,7 +62,6 @@ export default function StudentProfile() {
   const [activity, setActivity] = useState({});
   const [activityStats, setActivityStats] = useState(null);
   const [stats, setStats] = useState(null);
-  const [ranking, setRanking] = useState(null);
   const [rawEngagement, setEngagement] = useState({ data: null, loading: true, error: false });
   const scopedEngagement = useMemo(() => scopeEngagement(rawEngagement.data, allowsModule), [rawEngagement.data, allowsModule]);
   const engagement = { ...rawEngagement, data: scopedEngagement };
@@ -966,6 +969,8 @@ export default function StudentProfile() {
             <ProfileSidebar
               user={user}
               handle={handle}
+              prepScore={ranking ? ranking.score : null}
+              scoreRank={ranking?.rank || null}
               badge={canEngage ? performanceTitle : null}
               level={canEngage ? performanceTitle : null}
               onOpenBadges={canEngage ? setBadgesGallery : undefined}

@@ -5,6 +5,7 @@ import {
 import { DIFFICULTY_COLORS } from "../charts/chartTheme";
 import { LANGUAGE_LABELS } from "../charts/chartOptions";
 import { isKpiActive, kpiRule } from "../filterModel";
+import { ScoreRing } from "../../../student/prepScore/PrepScore";
 import { initials, sectionStyle } from "./sectionStyles";
 import { Dialog, IconButton, focusRing } from "./ui";
 
@@ -136,14 +137,22 @@ const COLUMNS = {
     { label: "Tests", render: (row) => <StatusPill status={row.assessment?.status} /> },
   ],
 };
+const scoreCell = (value) => (value === null || value === undefined ? "—" : (
+  <span className="inline-flex items-center gap-2"><ScoreRing value={value} size={26} stroke={3} /><b className="tabular-nums text-slate-900 dark:text-white">{Number(value).toFixed(1)}</b></span>
+));
+// Prep Coding leads with its Prep Score and Prep Learning with course completed (its score);
+// Prep Interview and Prep Assessment lead with their own 0-100 score.
+for (const area of ["interview", "assessment"]) {
+  COLUMNS[area] = [{ label: "Prep Score", sort: "featureScore", render: (row) => scoreCell(row.scores?.features?.[area]) }, ...COLUMNS[area]];
+}
 COLUMNS.all = [
-  COLUMNS.coding[0],
-  { label: "Course completed", sort: "learningProgress", render: (row) => (row.learning ? <PercentBar value={row.learning.progress} /> : "—") },
-  COLUMNS.interview[0],
-  COLUMNS.assessment[0],
-  COLUMNS.coding[3],
+  { label: "Prep Score (overall)", sort: "overallScore", render: (row) => scoreCell(row.scores?.total) },
+  { ...COLUMNS.coding[0], label: "Prep Coding" },
+  { label: "Prep Learning", sort: "learningProgress", render: (row) => (row.learning ? <PercentBar value={row.learning.progress} /> : "—") },
+  { ...COLUMNS.interview[0], label: "Prep Interview", sort: undefined },
+  { ...COLUMNS.assessment[0], label: "Prep Assessment", sort: undefined },
 ];
-const POSITION_HINT = { coding: "Prep Score", learning: "course completed", interview: "mock score", assessment: "test score", all: "Prep Score" };
+const POSITION_HINT = { coding: "Prep Score", learning: "course completed", interview: "Prep Score", assessment: "Prep Score", all: "overall Prep Score" };
 
 export function StudentTable({ table, area, loading, onChange, onOpen }) {
   if (!table) return null;

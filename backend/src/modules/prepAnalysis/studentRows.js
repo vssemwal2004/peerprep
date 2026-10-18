@@ -2,6 +2,7 @@
 // scores each student from their own work. Filters, rank cuts and charts all
 // read these rows, so one database pass serves every filter change for the period.
 
+import { prepScores } from '../../services/prepScores.js';
 import { PASS_PERCENT, testAssignedTo } from './assessmentFacts.js';
 import { RATINGS } from './interviewFacts.js';
 import { accessibleSemesters } from './learningFacts.js';
@@ -97,6 +98,8 @@ function assessmentRow(student, facts, now, range) {
   const attempts = [...latest.values()];
   const percents = attempts.map((attempt) => attempt.percent);
   const passedIds = attempts.filter((attempt) => attempt.percent >= PASS_PERCENT).map((attempt) => attempt.testId);
+  // Report navigation must also work for a completed test that an admin later hides.
+  const assignedIds = [...facts.tests.values()].filter((test) => test.forEveryone || test.assigned.has(id)).map((test) => test.id);
   // A missed test: meant for the student, over, (started in the period) and not taken.
   const inPeriod = (test) => !range?.from || !test.startTime || new Date(test.startTime) >= range.from;
   const missedIds = [...facts.tests.values()].filter((test) => test.ended && inPeriod(test) && testAssignedTo(test, id) && !latest.has(test.id)).map((test) => test.id);
@@ -113,6 +116,7 @@ function assessmentRow(student, facts, now, range) {
     lastScore: attempts.length ? attempts.at(-1).percent : 0,
     minutes: attempts.reduce((sum, attempt) => sum + attempt.minutes, 0),
     takenIds: attempts.map((attempt) => attempt.testId),
+    assignedIds,
     passedIds,
     missedIds,
     byTest: latest,
@@ -180,8 +184,22 @@ function emptyCoding() {
  * students: lean User docs. facts.byStudent: Map(id -> [{ problemId, language, attempts, accepted }]).
  * facts.days: Map(id -> Map(day -> { attempts, accepted })). problems: indexed meta map.
  */
+/** Prep Score per feature and overall, with the same formula students see on their dashboard. */
+export function rowScores(row, features) {
+  const mocks = row.interview?.mocks || [];
+  const attempts = row.assessment ? [...row.assessment.byTest.values()] : [];
+  return prepScores({
+    easySolved: row.coding.solved.Easy, mediumSolved: row.coding.solved.Medium, hardSolved: row.coding.solved.Hard,
+    submissions: row.coding.submissions, acceptedSubmissions: row.coding.accepted,
+    completedTopics: row.learning?.completedTopics, totalTopics: row.learning?.availableTopics,
+    mockInterviews: mocks.length, mockAverage: mean(mocks.map((mock) => mock.score)), aiInterviews: row.interview?.aiCompleted,
+    testsTaken: attempts.length, testAverage: mean(attempts.map((attempt) => attempt.percent)),
+  }, features);
+}
+
 export function buildStudentRows({
   students, facts, problems, batchNames = new Map(), now = new Date(), learning = null, quickprep = null, assessment = null, interview = null, range = null,
+  scoreFeatures = { coding: true, learning: Boolean(learning), interview: Boolean(interview), assessment: Boolean(assessment) },
 }) {
   const learningTotals = new Map();
   const rows = students.map((student) => {
@@ -254,7 +272,7 @@ export function buildStudentRows({
       qualifiedCache: new Map(),
     };
   });
-
+  for (const row of rows) row.scores = rowScores(row, scoreFeatures);
   return rows;
 }
 

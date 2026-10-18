@@ -9,7 +9,8 @@ import Pair from '../models/Pair.js';
 import StudentActivity from '../models/StudentActivity.js';
 import StudentProblemView from '../models/StudentProblemView.js';
 import StudentChallenge from '../models/StudentChallenge.js';
-import { EngagementReward, StudentProgression } from '../models/AdaptiveEngagement.js';
+import { EngagementReward, InterviewEngagementReceipt, StudentProgression } from '../models/AdaptiveEngagement.js';
+import { prepScoreMethodology, prepScores, scoreFeatures } from './prepScores.js';
 import { LEVELS } from './adaptiveEngagementRules.js';
 import { engagementTenant } from './engagementPolicyService.js';
 import QuestionPracticeAttempt from '../models/QuestionPracticeAttempt.js';
@@ -95,7 +96,19 @@ function learnerLevel({ solved, streak, assessmentScore, interviewScore, challen
   return { level: 1, title: 'Rising Learner' };
 }
 
+/** Prep Score for a progress row (only the features in row.scoreFeatures count). */
+export function scoresForRow(metrics = {}) {
+  return prepScores({
+    easySolved: metrics.easySolved, mediumSolved: metrics.mediumSolved, hardSolved: metrics.hardSolved,
+    submissions: metrics.submissions, acceptedSubmissions: metrics.acceptedSubmissions,
+    completedTopics: metrics.completedTopics, totalTopics: metrics.totalTopics,
+    mockInterviews: metrics.interviews, mockAverage: metrics.mockAverage, aiInterviews: metrics.aiInterviews,
+    testsTaken: metrics.assessmentsCompleted, testAverage: metrics.assessmentScore,
+  }, metrics.scoreFeatures || scoreFeatures(null));
+}
+
 // The acknowledgement endpoint is cosmetic; none of its client-reported awards enters ranking.
+// The rank score is the Prep Score (0-100): only the student's own verified work, per licensed feature.
 export function scoreStudentProgress(metrics = {}, now = new Date()) {
   const easy = count(metrics.easySolved);
   const medium = count(metrics.mediumSolved);
@@ -116,23 +129,19 @@ export function scoreStudentProgress(metrics = {}, now = new Date()) {
     ['active-30', badgeMetrics.activeDays >= 30], ['polyglot', badgeMetrics.languages >= 3],
     ['assessment-1', badgeMetrics.assessments >= 1], ['interview-1', badgeMetrics.interviews >= 1],
   ].filter(([, qualifies]) => qualifies).map(([id]) => id);
-  const verifiedProgress = solved > 0 || count(metrics.completedTopics) > 0 || count(metrics.assessmentsCompleted) > 0 || count(metrics.interviews) > 0 || levelMetrics.challengePoints > 0;
-  const scoreBreakdown = {
-    coding: easy * 10 + medium * 20 + hard * 30,
-    learning: count(metrics.completedTopics) * 5,
-    assessments: Math.round(count(metrics.assessmentPoints)),
-    badges: verifiedProgress ? earned.length * 25 : 0,
-    challenges: levelMetrics.challengePoints,
-  };
+  const prepScore = scoresForRow(metrics);
+  const scoreBreakdown = Object.fromEntries(Object.entries(prepScore.features).map(([key, feature]) => [key, feature.score]));
   return {
-    score: Object.values(scoreBreakdown).reduce((sum, points) => sum + points, 0),
+    score: prepScore.total,
+    prepScore,
+    scoreFeatures: metrics.scoreFeatures || scoreFeatures(null),
     scoreBreakdown,
     earnedBadges: earned.length + count(metrics.challengeBadges),
     milestoneBadges: earned.length,
     challengeBadges: count(metrics.challengeBadges),
     badgeMetrics, levelMetrics,
     level: metrics.adaptiveLevel || learnerLevel({ solved: levelMetrics.solvedCount, streak: levelMetrics.streak, assessmentScore: levelMetrics.assessmentScore ?? 0, interviewScore: levelMetrics.interviewScore, challengePoints: levelMetrics.challengePoints }),
-    hasProgress: verifiedProgress,
+    hasProgress: prepScore.total > 0,
   };
 }
 
@@ -142,11 +151,11 @@ export function rankStudentProgress(rows, studentId, universityName, now = new D
   const base = {
     rank: null, totalStudents: rows.length, universityName: universityName || '', score: 0,
     percentile: null, level: { level: 1, title: 'Rising Learner' }, earnedBadges: 0,
-    scoreBreakdown: { coding: 0, learning: 0, assessments: 0, badges: 0, challenges: 0 }, hasProgress: false, tied: false,
+    scoreBreakdown: {}, prepScore: { total: 0, features: {} }, unit: 'prep-score', hasProgress: false, tied: false,
     milestoneBadges: 0, challengeBadges: 0,
     badgeMetrics: { solved: 0, hardSolved: 0, bestStreak: 0, activeDays: 0, languages: 0, assessments: 0, interviews: 0 },
     levelMetrics: { solvedCount: 0, streak: 0, assessmentScore: null, interviewScore: 0, challengePoints: 0 },
-    methodology: 'Distinct accepted problems: Easy 10, Medium 20, Hard 30 points. Completed topics: 5 points. Submitted assessments: up to 100 points each. Milestone badges: 25 points each. Challenge bonuses: daily 10, weekly 40, monthly 150 points, awarded once per edition without extra badge points. Equal points share a rank.',
+    methodology: prepScoreMethodology(own?.scoreFeatures || undefined),
   };
   if (!own) return base;
   const { studentId: ignored, ...progress } = own;
@@ -305,12 +314,12 @@ async function loadProgressRows(students, permissions, semesters, now, sharedCat
   if (!ids.length) return [];
   const adaptiveScopes = students.map((student) => ({ studentId: objectId(student._id), tenantKey: engagementTenant(student) }));
   const curriculumTopicIds = permissions.learning ? [...buildCurriculumTopicMap(semesters).keys()].map(objectId) : [];
-  const [coding, learning, assessments, interviews, activities, sharedCoding, challenges, missionRewards, progressions] = await Promise.all([
+  const [coding, learning, assessments, interviews, activities, sharedCoding, challenges, missionRewards, progressions, aiInterviews] = await Promise.all([
     permissions.questions ? aggregate(Submission, [
       { $match: { user: { $in: ids }, mode: 'submit' } },
-      { $group: { _id: { studentId: '$user', problem: '$problem' }, accepted: { $max: { $cond: [acceptedExpression, 1, 0] } }, languages: { $addToSet: '$language' } } },
+      { $group: { _id: { studentId: '$user', problem: '$problem' }, accepted: { $max: { $cond: [acceptedExpression, 1, 0] } }, submissions: { $sum: 1 }, acceptedSubmissions: { $sum: { $cond: [acceptedExpression, 1, 0] } }, languages: { $addToSet: '$language' } } },
       ...publicCodingProblemStages('_id.problem'),
-      { $group: { _id: '$_id.studentId', attemptedProblems: { $sum: 1 }, easySolved: { $sum: { $cond: [{ $and: [{ $eq: ['$accepted', 1] }, { $eq: ['$codingProblem.difficulty', 'Easy'] }] }, 1, 0] } }, mediumSolved: { $sum: { $cond: [{ $and: [{ $eq: ['$accepted', 1] }, { $eq: ['$codingProblem.difficulty', 'Medium'] }] }, 1, 0] } }, hardSolved: { $sum: { $cond: [{ $and: [{ $eq: ['$accepted', 1] }, { $eq: ['$codingProblem.difficulty', 'Hard'] }] }, 1, 0] } }, languageSets: { $push: '$languages' },
+      { $group: { _id: '$_id.studentId', attemptedProblems: { $sum: 1 }, submissions: { $sum: '$submissions' }, acceptedSubmissions: { $sum: '$acceptedSubmissions' }, easySolved: { $sum: { $cond: [{ $and: [{ $eq: ['$accepted', 1] }, { $eq: ['$codingProblem.difficulty', 'Easy'] }] }, 1, 0] } }, mediumSolved: { $sum: { $cond: [{ $and: [{ $eq: ['$accepted', 1] }, { $eq: ['$codingProblem.difficulty', 'Medium'] }] }, 1, 0] } }, hardSolved: { $sum: { $cond: [{ $and: [{ $eq: ['$accepted', 1] }, { $eq: ['$codingProblem.difficulty', 'Hard'] }] }, 1, 0] } }, languageSets: { $push: '$languages' },
         ...(includeDiscovery ? { acceptedProblemIds: { $addToSet: { $cond: [{ $eq: ['$accepted', 1] }, '$_id.problem', null] } } } : {}),
       } },
     ]) : [],
@@ -323,16 +332,28 @@ async function loadProgressRows(students, permissions, semesters, now, sharedCat
       { $set: { percentage: { $cond: [{ $and: [{ $isNumber: '$score' }, { $gt: ['$maxMarks', 0] }] }, { $min: [100, { $max: [0, { $multiply: [{ $divide: ['$score', '$maxMarks'] }, 100] }] }] }, null] } } },
       { $group: { _id: '$studentId', assessmentsCompleted: { $sum: 1 }, assessmentPoints: { $sum: '$percentage' }, assessmentScore: { $avg: '$percentage' } } },
     ]) : [],
-    permissions.events ? aggregate(Feedback, [{ $match: { to: { $in: ids } } }, { $group: { _id: '$to', interviews: { $sum: 1 }, interviewScore: { $avg: '$marks' } } }]) : [],
+    permissions.events ? aggregate(Feedback, [
+      { $match: { to: { $in: ids } } },
+      // Detailed feedback stores marks as the 5-25 sum of five ratings; older feedback stored 0-100.
+      { $set: { mockPercent: { $cond: [
+        { $or: [{ $gt: [{ $ifNull: ['$totalMarks', 0] }, 0] }, { $and: [{ $lte: ['$marks', 25] }, { $gt: [{ $ifNull: ['$communication', 0] }, 0] }] }] },
+        { $multiply: [{ $divide: ['$marks', 25] }, 100] }, '$marks',
+      ] } } },
+      { $group: { _id: '$to', interviews: { $sum: 1 }, interviewScore: { $avg: '$marks' }, mockAverage: { $avg: { $min: [100, { $max: [0, '$mockPercent'] }] } } } },
+    ]) : [],
     includeActivity ? getActivityRows(ids, permissions, now) : new Map(),
     permissions.questions && sharedCatalog.length ? aggregate(QuestionPracticeAttempt, [
       { $match: { studentId: { $in: ids }, source: 'shared', questionType: 'coding', questionId: { $in: sharedCatalog.map((row) => objectId(row._id)) } } },
-      { $group: { _id: { studentId: '$studentId', questionId: '$questionId' }, accepted: { $max: { $cond: [{ $eq: ['$result', 'correct'] }, 1, 0] } }, languages: { $addToSet: '$language' } } },
+      { $group: { _id: { studentId: '$studentId', questionId: '$questionId' }, accepted: { $max: { $cond: [{ $eq: ['$result', 'correct'] }, 1, 0] } }, attempts: { $sum: 1 }, correct: { $sum: { $cond: [{ $eq: ['$result', 'correct'] }, 1, 0] } }, languages: { $addToSet: '$language' } } },
     ]) : [],
     aggregate(StudentChallenge, [{ $match: { studentId: { $in: ids }, earnedAt: { $ne: null } } }, { $group: { _id: '$studentId', challengePoints: { $sum: '$rewardPoints' }, challengeBadges: { $sum: { $cond: [{ $in: ['$kind', ['weekly', 'monthly']] }, 1, 0] } } } }]),
     aggregate(EngagementReward, [{ $match: { $or: adaptiveScopes } }, { $group: { _id: '$studentId', points: { $sum: '$points' } } }]),
     StudentProgression.find({ $or: adaptiveScopes }).select('studentId level').maxTimeMS(QUERY_TIMEOUT_MS).lean(),
+    // AI interview completions come from verified receipts (their scores live in the interview service).
+    permissions.interviews ? aggregate(InterviewEngagementReceipt, [{ $match: { $or: adaptiveScopes, completedAt: { $ne: null } } }, { $group: { _id: '$studentId', aiInterviews: { $sum: 1 } } }]) : [],
   ]);
+  const aiMap = new Map(aiInterviews.map((entry) => [String(entry._id), entry.aiInterviews]));
+  const features = scoreFeatures(permissions);
   const maps = [coding, assessments, interviews].map((source) => new Map(source.map((entry) => [String(entry._id), entry])));
   const challengeMap = new Map(challenges.map((entry) => [String(entry._id), entry]));
   for (const reward of missionRewards) {
@@ -360,6 +381,8 @@ async function loadProgressRows(students, permissions, semesters, now, sharedCat
       const question = sharedMap.get(String(entry._id.questionId));
       const difficulty = String(question?.difficulty || question?.questionData?.problemDataSnapshot?.difficulty || '').toLowerCase();
       codingRow.attemptedProblems = count(codingRow.attemptedProblems) + 1;
+      codingRow.submissions = count(codingRow.submissions) + count(entry.attempts);
+      codingRow.acceptedSubmissions = count(codingRow.acceptedSubmissions) + count(entry.correct);
       if (entry.accepted && ['easy', 'medium', 'hard'].includes(difficulty)) codingRow[`${difficulty}Solved`] = count(codingRow[`${difficulty}Solved`]) + 1;
       if (includeDiscovery && entry.accepted) acceptedSharedQuestionIds.push(String(entry._id.questionId));
       entry.languages.filter(Boolean).forEach((language) => languages.add(language));
@@ -372,6 +395,7 @@ async function loadProgressRows(students, permissions, semesters, now, sharedCat
       adaptiveLevel: progressionMap.get(id),
       languages: languages.size,
       completedTopics, totalTopics: topics.size, activityByDate: activities.get(id) || {},
+      aiInterviews: aiMap.get(id) || 0, scoreFeatures: features,
       ...(includeDiscovery ? { completedTopicIds, acceptedSharedQuestionIds } : {}),
     };
   });
@@ -390,8 +414,10 @@ async function loadRankRows(student, permissions, semesters, now, sharedCatalog 
     const rows = await loadProgressRows(students, permissions, semesters, now, sharedCatalog);
     // Keep only compact scores and metrics for the cohort snapshot. Calendars are sorted once
     // here, rather than retained and recalculated for every student's dashboard request.
+    // The per-feature details are only needed for the student's own row, so the cohort keeps totals.
+    const compact = (summary) => ({ ...summary, prepScore: { total: summary.prepScore.total, features: {} } });
     const value = {
-      rows: rows.map((row) => ({ studentId: row.studentId, rankingSummary: scoreStudentProgress(row, now) })),
+      rows: rows.map((row) => ({ studentId: row.studentId, rankingSummary: compact(scoreStudentProgress(row, now)) })),
       universityName,
     };
     if (rankCache.size >= 100) rankCache.delete(rankCache.keys().next().value);

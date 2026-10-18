@@ -41,7 +41,7 @@ export default function ChallengeAcceptance({ plan, kind, enabled = true, nextHr
   };
   return <div ref={acceptanceRef} tabIndex={-1} className={compact ? 'challenge-acceptance' : 'space-y-2 border-t border-slate-100 pt-3 dark:border-zinc-800'}>
     <div className="flex flex-wrap items-center justify-between gap-2">
-      {completed ? <p className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400"><Check size={14} />{plan.rewardPoints} XP added to rank points</p>
+      {completed ? <p className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400"><Check size={14} />{plan.rewardPoints} XP earned</p>
         : accepted ? <p className="inline-flex items-center gap-1 text-xs font-semibold text-sky-700 dark:text-sky-300"><Check size={14} />Challenge accepted</p>
           : <button type="button" disabled={!available || pending} onClick={accept} className={`rounded-lg bg-sky-600 px-3 py-2 text-xs font-semibold text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50 ${focusRing}`}>{pending ? 'Accepting…' : `Accept ${kind} challenge`}</button>}
       {!completed && available && nextHref && (accepted || !compact) && <Link to={nextHref} className={`inline-flex items-center gap-1 rounded text-xs font-semibold text-sky-600 dark:text-sky-400 ${focusRing}`}>Continue {kind} challenge<ArrowRight size={14} /></Link>}

@@ -86,9 +86,10 @@ test('goals adapt to actual available content and disabled goals cannot silently
   assert.equal(goals[0].href, null);
 });
 
-test('verified challenge points feed rank once and the same level formula is used on the profile', () => {
+test('challenge points count for levels and badges but not for the Prep Score rank; the profile uses the same level formula', () => {
   const scored = scoreStudentProgress({ easySolved: 1, challengePoints: 650, challengeBadges: 3 }, now);
-  assert.equal(scored.score, 685); // 10 coding + 25 milestone + 650 challenge; no second badge bonus.
+  assert.equal(scored.score, scoreStudentProgress({ easySolved: 1 }, now).score); // Only the Easy solve counts; challenge XP and badges are not part of the Prep Score.
+  assert.equal(scored.levelMetrics.challengePoints, 650);
   assert.equal(scored.earnedBadges, 4);
   assert.equal(scored.milestoneBadges, 1);
   assert.equal(scored.challengeBadges, 3);
@@ -145,7 +146,8 @@ test('distinct accepted work and completed lessons earn one weekly edition under
   assert.deepEqual(repeated.newAwards, []);
   assert.equal(repeated.lifetime.points, 40);
   const rank = await getStudentUniversityRanking(student, null, now);
-  assert.equal(rank.scoreBreakdown.challenges, 40);
+  assert.equal(rank.levelMetrics.challengePoints, 40, 'the weekly edition is recorded once');
+  assert.equal(rank.scoreBreakdown.challenges, undefined, 'challenge XP is not part of Prep Coins');
   assert.equal(rank.challengeBadges, 1);
   assert.equal(rank.earnedBadges, rank.milestoneBadges + 1);
 });
@@ -275,7 +277,7 @@ test('refresh endpoint ignores forged dates, student IDs, completion flags and r
   assert.equal(await StudentChallenge.countDocuments({ earnedAt: { $ne: null } }), 0);
 });
 
-test('earning a challenge invalidates cached cohort standing as well as the recipient’s own score', async () => {
+test('a peer\'s new verified work updates cached cohort standing; their challenge XP stays out of the coin total', async () => {
   const peer = { ...student, _id: id() };
   await User.collection.insertOne(peer);
   await refreshStudentEngagement(peer, now);
@@ -290,5 +292,7 @@ test('earning a challenge invalidates cached cohort standing as well as the reci
   assert.equal(after.rank, 2);
   assert.equal(after.score, before.score);
   const recipient = await getStudentUniversityRanking(peer, null, now);
-  assert.equal(recipient.scoreBreakdown.challenges, 150);
+  assert.equal(recipient.levelMetrics.challengePoints, 150);
+  assert.equal(recipient.score, recipient.prepScore.total, 'the rank score is exactly the overall Prep Score');
+  assert.ok(recipient.score > after.score);
 });

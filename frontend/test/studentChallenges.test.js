@@ -154,7 +154,7 @@ test('verified refresh updates XP and reads ranking after rewards are reconciled
   rank = { ...rank, rank: 7, score: 420 };
   await click(button('Refresh progress'));
   assert.match(text(), /200/); assert.match(text(), /#7 \/ 100/);
-  assert.match(text(), /20 XP added to rank points/);
+  assert.match(text(), /20 XP earned/);
   assert.deepEqual(calls.slice(-2), ['refresh', 'ranking:true']);
 });
 
@@ -249,7 +249,7 @@ test('drawer filters tasks, accepts without invented rewards, then reflects veri
   assert.equal(control('Daily plan progress').getAttribute('aria-valuenow'), '100');
   assert.match(drawer().textContent, /No pending tasks/);
   assert.match(drawer().textContent, /200 lifetime XP/);
-  assert.match(drawer().textContent, /20 XP added to rank points/);
+  assert.match(drawer().textContent, /20 XP earned/);
 });
 
 test('drawer hides revoked modules, pauses acceptance, and full access is required for the header entry', async () => {

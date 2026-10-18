@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { focusRing } from './format';
 import { levelTheme } from './levelTheme';
+import { ScoreRing } from '../prepScore/PrepScore';
 
 function normalizeHref(href) {
   const raw = typeof href === 'string' ? href.trim() : '';
@@ -128,6 +129,8 @@ export default function ProfileSidebar({
   socialLinks,
   onChangePhoto,
   onEditProfile,
+  prepScore = null,
+  scoreRank = null,
 }) {
   const initial = user?.name ? user.name.charAt(0).toUpperCase() : 'U';
 
@@ -173,7 +176,16 @@ export default function ProfileSidebar({
             {user?.name || 'Student'}
           </h1>
           <p className="max-w-full truncate text-[13px] text-slate-500 dark:text-zinc-400">{handle}</p>
-          <BadgePill badge={badge} level={level} onOpen={onOpenBadges} />
+          <div className="flex flex-wrap items-center justify-center gap-1.5">
+            <BadgePill badge={badge} level={level} onOpen={onOpenBadges} />
+            {prepScore !== null && Number.isFinite(Number(prepScore)) && (
+              <span title="Prep Score: each feature scored out of 100 from your own work, averaged" className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-sky-50 py-0.5 pl-0.5 pr-2.5 text-[11px] font-semibold text-sky-900 ring-1 ring-inset ring-sky-200 dark:bg-sky-500/10 dark:text-sky-100 dark:ring-sky-500/30">
+                <ScoreRing value={prepScore} size={22} stroke={3} />
+                Prep Score {Math.min(100, Math.max(0, Number(prepScore))).toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                {scoreRank ? <span className="font-normal opacity-75">· #{scoreRank}</span> : null}
+              </span>
+            )}
+          </div>
           <p className={`mt-3 text-[13px] leading-relaxed ${hasCustomBio ? 'text-slate-600 dark:text-zinc-300' : 'text-slate-500 dark:text-zinc-400'}`}>
             {bio}
             {!hasCustomBio ? (

@@ -44,7 +44,7 @@ function fixture() {
       { id: 'subject-databases', title: 'Database Fundamentals', semesterName: 'Semester 2', totalTopics: 12, completedTopics: 0, progressPercent: 0, href: '/student/learning/Semester%202/Database%20Fundamentals/teacher-1?semesterId=semester-2&subjectId=subject-databases', state: { semesterId: 'semester-2', subjectId: 'subject-databases', coordinatorId: 'teacher-1' } },
     ],
     ranking: {
-      universityName: 'Test University', rank: 4, totalStudents: 20, score: 143, percentile: 80,
+      universityName: 'Test University', rank: 4, totalStudents: 20, score: 64.3, percentile: 80,
       level: { level: 2, title: 'Builder' }, earnedBadges: 2, hasProgress: true, tied: false,
       scoreBreakdown: { coding: 50, learning: 20, assessments: 43, badges: 30 },
       methodology: 'Coding, completed learning, assessments and earned badges.',
@@ -287,7 +287,7 @@ test('accessible document order follows greeting and recent work, then the progr
     'Recent work comes before the rail, which comes before discovery on small screens');
   assert.ok(rail.compareDocumentPosition(main) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
   assert.deepEqual([...rail.querySelectorAll('h2')].map((heading) => heading.textContent), [
-    'Announcements', 'Coding progress', 'University standing', 'Global standing', 'Coming up',
+    'Announcements', 'Coding progress', 'Prep Score & rank', 'Global standing', 'Coming up',
   ], 'Any announcement leads the rail');
   assert.deepEqual([...main.querySelectorAll('h2')].map((heading) => heading.textContent), [
     'Coding sheets', 'Next in practice',
@@ -369,7 +369,7 @@ for (const disabledModule of [null, 'learning', 'questions']) {
     assert.equal(section('Continue where you left off'), undefined, 'An empty history must not imply unfinished work');
     assert.equal(section('Explore your learning'), undefined);
     assert.equal(section('Next in practice'), undefined);
-    assert.match(section('University standing').textContent, /Not ranked yet/);
+    assert.match(section('Prep Score & rank').textContent, /Not ranked yet/);
     assert.match(section('Coming up').textContent, /Nothing scheduled yet/);
     assert.equal(section('Announcements'), undefined, 'An empty announcements card is not shown');
     for (const [module, label, path] of [['questions', 'Start coding', '/problems'], ['learning', 'Start learning', '/student/learning']]) {
@@ -515,12 +515,12 @@ test('shared gauge distinguishes missing totals from zero and safely handles inv
 
 test('university rank shows the current student’s server-calculated standing without exposing other students', async () => {
   await mount();
-  const ranking = section('University standing');
+  const ranking = section('Prep Score & rank');
   assert.ok(ranking);
   assert.match(ranking.textContent, /Test University/);
   assert.match(ranking.textContent, /#4|4\s*(?:of|\/)/);
   assert.match(ranking.textContent, /20/);
-  assert.match(ranking.textContent, /143/);
+  assert.match(ranking.textContent, /64\.3/);
   const position = ranking.querySelector('[role="progressbar"][aria-label="University rank position"]');
   assert.ok(position);
   assert.equal(position.getAttribute('aria-valuenow'), '4');
@@ -534,7 +534,7 @@ test('admin announcement updates replace the displayed notices and remove listen
   assert.match(section('Announcements').textContent, /Placement registration closes Friday/);
   assert.equal(listeners.get('announcement_update')?.size, 1);
   assert.deepEqual([...document.querySelectorAll('aside[aria-label="Your progress and priorities"] h2')].map((heading) => heading.textContent), [
-    'Announcements', 'Coding progress', 'University standing', 'Global standing', 'Coming up',
+    'Announcements', 'Coding progress', 'Prep Score & rank', 'Global standing', 'Coming up',
   ], 'Announcements are brought ahead of routine rail items');
   const beforeCount = calls.filter(([name]) => name === 'announcements').length;
   announcements = [{ _id: 'notice-2', title: 'Drive postponed', message: 'The updated schedule will be shared tomorrow.', priority: 'high', createdAt: iso(9) }];
@@ -649,11 +649,11 @@ test('new challenge points trigger a fresh ranking snapshot after the older dash
   api.getStudentDashboard = async () => {
     calls.push(['dashboard', true]);
     requests += 1;
-    return { ...structuredClone(dashboard), ranking: { ...dashboard.ranking, score: requests === 1 ? 143 : 183, challengeBadges: requests === 1 ? 0 : 1 } };
+    return { ...structuredClone(dashboard), ranking: { ...dashboard.ranking, score: requests === 1 ? 64.3 : 68.3, challengeBadges: requests === 1 ? 0 : 1 } };
   };
   await mount();
   assert.ok(requests >= 2, 'A verified award must force a snapshot after the initial policy and dashboard load');
-  assert.match(section('University standing').textContent, /183/);
+  assert.match(section('Prep Score & rank').textContent, /68\.3/);
 });
 
 test('challenge request failure is recoverable without wiping practice, rank or announcements', async () => {
@@ -662,7 +662,7 @@ test('challenge request failure is recoverable without wiping practice, rank or 
   assert.match(section('Daily challenge').textContent, /Progress unavailable.*Retry/);
   assert.match(section('Announcements').textContent, /Placement registration/);
   assert.match(section('Next in practice').textContent, /Balanced Brackets/);
-  assert.match(section('University standing').textContent, /143/);
+  assert.match(section('Prep Score & rank').textContent, /64\.3/);
   api.refreshStudentEngagement = async () => structuredClone(engagementFixture());
   await act(async () => section('Daily challenge').querySelector('button').click());
   assert.match(section('Daily challenge').textContent, /Daily Arrays Challenge/);
@@ -739,8 +739,8 @@ test('empty personal activity does not invent unfinished questions, notices, or 
   assert.equal(section('Announcements'), undefined);
   assert.equal(document.querySelector('[aria-label="Latest announcement"]'), null, 'No notification bar without announcements');
   assert.ok(section('Coding progress').querySelector('[role="img"][aria-label="All problems: 0 solved out of 0"]'));
-  assert.equal(section('University standing').querySelector('[role="progressbar"]'), null);
-  assert.doesNotMatch(section('University standing').textContent, /#1/);
+  assert.equal(section('Prep Score & rank').querySelector('[role="progressbar"]'), null);
+  assert.doesNotMatch(section('Prep Score & rank').textContent, /#1/);
 });
 
 test('adaptive daily plans work for learning-only universities and hide stale coding tasks', async () => {

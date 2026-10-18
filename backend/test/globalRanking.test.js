@@ -6,13 +6,14 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { University } from '../src/platform/models.js';
 import User from '../src/models/User.js';
 import StudentChallenge from '../src/models/StudentChallenge.js';
+import AssessmentSubmission from '../src/models/AssessmentSubmission.js';
 import { getStudentGlobalRanking } from '../src/services/globalStudentRankingService.js';
-import { GlobalRankSnapshot, rankingPolicyKey, validateRankSnapshot, saveRankSnapshot, readGlobalRank, summarizeGlobalRank, SNAPSHOT_MAX_AGE } from '../src/platform/globalRanking.js';
+import { GLOBAL_RANK_VERSION, GlobalRankSnapshot, rankingPolicyKey, validateRankSnapshot, saveRankSnapshot, readGlobalRank, summarizeGlobalRank, SNAPSHOT_MAX_AGE } from '../src/platform/globalRanking.js';
 
 let mongo;
 const now = new Date('2026-10-12T12:00:00Z');
 const policy = { permissions: { questions: true, learning: true, assessments: true, interviews: true, events: true }, sources: { questions: 'university', learning: 'university' } };
-const body = (buckets, date = now) => ({ version: 1, generatedAt: date.toISOString(), policyKey: rankingPolicyKey(policy), buckets });
+const body = (buckets, date = now) => ({ version: GLOBAL_RANK_VERSION, generatedAt: date.toISOString(), policyKey: rankingPolicyKey(policy), buckets });
 before(async () => { mongo = await MongoMemoryServer.create(); await mongoose.connect(mongo.getUri()); });
 after(async () => { await mongoose.disconnect(); await mongo?.stop(); });
 beforeEach(async () => { await Promise.all([University.deleteMany({}), GlobalRankSnapshot.deleteMany({})]); });
@@ -86,12 +87,14 @@ test('university service syncs verified server scores without identities or rest
       { role: 'student', isActive: true, accessScope: 'assessment_only' },
       { role: 'student', isActive: false, accessScope: 'full' },
     ]);
+    // Challenge XP no longer counts toward rank; one 50% test on the only licensed module gives Prep Score 0.8 x 50 + 0.2 x 20 = 44.
     await StudentChallenge.collection.insertOne({ studentId: own, kind: 'daily', earnedAt: new Date(), rewardPoints: 20 });
+    await AssessmentSubmission.collection.insertOne({ studentId: own, assessmentId: new mongoose.Types.ObjectId(), status: 'submitted', evaluationStatus: 'completed', score: 50, maxMarks: 100, submittedAt: new Date() });
     const campus = await University.create({ universityId: 'campus-a', name: 'Campus', apiKeyHash: 'test-only', permissions: {}, sources: policy.sources });
     let transmitted;
     globalThis.fetch = async (url, options) => {
       const parsed = new URL(url);
-      if (parsed.pathname.endsWith('/policy')) return { ok: true, json: async () => ({ active: true, permissions: {}, sources: policy.sources }) };
+      if (parsed.pathname.endsWith('/policy')) return { ok: true, json: async () => ({ active: true, permissions: { assessments: true }, sources: policy.sources }) };
       if (parsed.pathname.endsWith('/rankings/snapshot')) {
         transmitted = JSON.parse(options.body);
         return { ok: true, json: async () => saveRankSnapshot(campus, transmitted) };
@@ -100,10 +103,11 @@ test('university service syncs verified server scores without identities or rest
       throw new Error('Unexpected network request');
     };
     // Empty mongoose permissions default to true; explicitly align this fixture's allocation.
-    for (const key of ['questions', 'learning', 'assessments', 'interviews', 'events']) campus.permissions[key] = false;
+    for (const key of ['questions', 'learning', 'interviews', 'events']) campus.permissions[key] = false;
+    campus.permissions.assessments = true;
     await campus.save();
     const rank = await getStudentGlobalRanking({ _id: own, score: 99999 });
-    assert.equal(rank.status, 'ready'); assert.equal(rank.score, 20); assert.equal(rank.rank, 1); assert.equal(rank.totalStudents, 2);
+    assert.equal(rank.status, 'ready'); assert.equal(rank.score, 44, 'Prep Score from the test (synced in tenths, shown out of 100); challenge XP is not added'); assert.equal(rank.rank, 1); assert.equal(rank.totalStudents, 2);
     assert.doesNotMatch(JSON.stringify(transmitted), /Private|private@|studentId|99999/);
     assert.equal((await getStudentGlobalRanking({ _id: other })).status, 'unranked');
   } finally {

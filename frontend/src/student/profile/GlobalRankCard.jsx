@@ -46,7 +46,7 @@ export default function GlobalRankCard({ className = '', scoreRevision, showLink
     </header>
     {loading ? <p role="status" className="mt-3 text-xs text-slate-500">Loading global rank…</p> : ranked ? <>
       <p className="mt-3 text-[28px] font-semibold tracking-tight text-slate-950 dark:text-zinc-50">#{data.rank.toLocaleString()}<span className="ml-2 text-xs font-normal tracking-normal text-slate-500 dark:text-zinc-400">of {data.totalStudents.toLocaleString()} students{data.tied ? ' · tied' : ''}</span></p>
-      <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">{data.score.toLocaleString()} synced points · {data.universities} universities</p>
+      <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">Prep Score {Number(data.score).toLocaleString(undefined, { maximumFractionDigits: 1 })} · {data.universities} universities</p>
     </> : <p role="status" className="mt-3 text-xs leading-relaxed text-slate-500 dark:text-zinc-400">{messages[data?.status] || messages.unavailable}</p>}
     {!loading && data?.partial && <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">Partial coverage: {data.universities} of {data.totalUniversities} universities synced.</p>}
     {!loading && data?.updatedAt && <p className="mt-2 text-[11px] text-slate-500 dark:text-zinc-400">Synced {new Date(data.updatedAt).toLocaleString()} · Updates about every 5 minutes</p>}

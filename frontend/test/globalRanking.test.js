@@ -60,7 +60,7 @@ test('retry recovers without modifying points and restricted accounts make no re
   assert.match(document.body.textContent, /temporarily unavailable/);
   api.getStudentGlobalRanking = async () => ({ ranking: ready });
   await act(async () => document.querySelector('button').click());
-  assert.match(document.body.textContent, /120 synced points/);
+  assert.match(document.body.textContent, /Prep Score 120/);
 });
 
 test('a late response for a previous student cannot expose their rank', async () => {

@@ -6,6 +6,7 @@ import { DIFFICULTY_COLORS, OUTCOME_COLORS } from "../charts/chartTheme";
 import { RANGE_PRESETS } from "../filterModel";
 import { lastSeenText, studentHighlights } from "../studentInsights";
 import { ChartBody } from "./ChartCard";
+import { PrepScoreBreakdown, ScoreRing as OverallRing, ScoreValue } from "../../../student/prepScore/PrepScore";
 import { StatusPill } from "./Insights";
 import { initials, sectionStyle } from "./sectionStyles";
 import { Drawer } from "./ui";
@@ -302,6 +303,22 @@ export default function StudentDrawer({ studentId, range = "all", onClose }) {
               {student.status === "inactive" && <p className="mt-0.5 text-[11px] font-semibold text-rose-600">Account disabled</p>}
             </div>
           </div>
+
+          {profile.prepScore && (
+            <section aria-label="Prep Score" className="rounded-xl border border-slate-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <OverallRing value={profile.prepScore.total} size={48} />
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Prep Score (overall)</p>
+                    <ScoreValue value={profile.prepScore.total} />
+                  </div>
+                </div>
+                <p className="max-w-[220px] text-right text-[11px] text-slate-500">Average of each feature's score out of 100</p>
+              </div>
+              <PrepScoreBreakdown prepScore={profile.prepScore} className="mt-3" />
+            </section>
+          )}
 
           {highlights.length > 0 && (
             <section aria-label="What stands out" className="space-y-1.5">

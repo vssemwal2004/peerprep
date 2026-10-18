@@ -93,7 +93,7 @@ function LegacyDailyChallengeCard({ section, onRetry, autoRefresh = true }) {
   const remaining = `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
   return <Card title="Daily challenge" icon={Sparkles} action={<span className="engagement-today-tag">TODAY</span>} className={`engagement-daily-card ${daily?.completed ? 'is-completed' : ''}`} loading={section?.loading}>
     {section?.loading ? <Loading /> : section?.error || !section?.data ? <Failure onRetry={onRetry} /> : !daily?.problem ? <div className="engagement-daily-empty"><CodingStartIllustration /><p>{daily?.enabled === false ? 'Daily challenge is paused' : 'New challenge coming soon'}</p></div> : <>
-      <div className="engagement-daily-meta"><span className={`engagement-difficulty difficulty-${String(daily.problem.difficulty).toLowerCase()}`}>{daily.problem.difficulty}</span><span className="engagement-reward">+{daily.rewardPoints} rank points</span></div>
+      <div className="engagement-daily-meta"><span className={`engagement-difficulty difficulty-${String(daily.problem.difficulty).toLowerCase()}`}>{daily.problem.difficulty}</span><span className="engagement-reward">+{daily.rewardPoints} XP</span></div>
       <div className="engagement-daily-question"><span className="engagement-code-tile"><Code2 size={25} strokeWidth={1.5} aria-hidden="true" /></span><h3 className="engagement-daily-title">{daily.problem.title}</h3></div>
       <div className="engagement-daily-status">{daily.completed ? <span><Check size={13} aria-hidden="true" />Completed today</span> : <span><Clock3 size={12} aria-hidden="true" />{remaining} left</span>}<span>2 AM IST reset</span></div>
       <Link className={`engagement-primary-link ${daily.completed ? 'is-completed' : ''}`} to={daily.problem.href}>{daily.completed ? 'Review solution' : 'Solve challenge'}<ArrowRight size={14} aria-hidden="true" /></Link>
@@ -124,7 +124,7 @@ function LegacyChallengeGoalsCard({ section, onRetry, canQuestions = true, canLe
       {['weekly', 'monthly'].map((kind) => <button key={kind} type="button" data-period={kind} role="tab" id={`${tabsId}-${kind}`} aria-controls={`${tabsId}-panel`} aria-selected={tab === kind} tabIndex={tab === kind ? 0 : -1} onClick={() => setTab(kind)}>{kind === 'weekly' ? 'This week' : 'This month'}</button>)}
     </div>
     {section?.loading ? <Loading /> : section?.error || !section?.data ? <Failure onRetry={onRetry} /> : !period ? <div className="engagement-goals-empty"><BadgeEmblem /><span>Explore a subject or question to begin</span></div> : <div role="tabpanel" id={`${tabsId}-panel`} aria-labelledby={`${tabsId}-${tab}`}>
-      <div className="engagement-period-header"><BadgeEmblem mark={tab === 'weekly' ? 'W' : 'M'} earned={period.earned} /><div><h3>{period.title}</h3><p>{edition(tab, period.periodKey)}{tab === 'weekly' ? ' week' : ' edition'}</p></div><span className="engagement-reward">+{period.rewardPoints}<small>rank points</small></span></div>
+      <div className="engagement-period-header"><BadgeEmblem mark={tab === 'weekly' ? 'W' : 'M'} earned={period.earned} /><div><h3>{period.title}</h3><p>{edition(tab, period.periodKey)}{tab === 'weekly' ? ' week' : ' edition'}</p></div><span className="engagement-reward">+{period.rewardPoints}<small>XP</small></span></div>
       <div className="engagement-goals">{period.goals.map((goal) => {
         const Icon = goal.completed ? Check : goal.paused ? LockKeyhole : goal.metric === 'coding' ? Code2 : goal.metric === 'learning' ? BookOpen : CalendarDays;
         return <div key={goal.metric} className={`engagement-goal ${goal.completed ? 'is-completed' : ''}`}>
@@ -136,6 +136,6 @@ function LegacyChallengeGoalsCard({ section, onRetry, canQuestions = true, canLe
     </div>}
     {earned.length > 0 && <BadgeCollection data={section.data} />}
     {section?.data?.rules && <details className="engagement-rules"><summary>How rewards work</summary><p>{section.data.rules}</p></details>}
-    {section?.data?.newAwards?.length > 0 && <p className="engagement-award-update" role="status"><Check size={12} aria-hidden="true" />{section.data.newAwards.length === 1 ? 'Challenge reward earned' : `${section.data.newAwards.length} challenge rewards earned`} · +{section.data.newAwards.reduce((sum, award) => sum + finite(award.rewardPoints), 0)} rank points</p>}
+    {section?.data?.newAwards?.length > 0 && <p className="engagement-award-update" role="status"><Check size={12} aria-hidden="true" />{section.data.newAwards.length === 1 ? 'Challenge reward earned' : `${section.data.newAwards.length} challenge rewards earned`} · +{section.data.newAwards.reduce((sum, award) => sum + finite(award.rewardPoints), 0)} XP</p>}
   </Card>;
 }

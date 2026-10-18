@@ -40,6 +40,9 @@ export const EXPORT_COLUMNS = [
   { key: 'coordinators', label: 'Coordinators', group: 'Student details', module: 'student', width: 18, get: (row) => list(row.student.coordinators) },
   { key: 'lists', label: 'Uploaded lists', group: 'Student details', module: 'student', width: 22, get: (row) => list(row.student.batchNames) },
   { key: 'account', label: 'Account', group: 'Student details', module: 'student', width: 10, get: (row) => (row.student.status === 'inactive' ? 'Disabled' : 'Active') },
+  { key: 'overallPrepScore', label: 'Prep Score (overall)', group: 'Student details', module: 'student', kind: 'decimal', width: 11, get: (row) => row.scores?.total ?? 0 },
+  { key: 'interviewPrepScore', label: 'Prep Interview score', group: 'Prep Interview', module: 'interview', kind: 'decimal', width: 11, get: (row) => row.scores?.features.interview?.score ?? null },
+  { key: 'assessmentPrepScore', label: 'Prep Assessment score', group: 'Prep Assessment', module: 'assessment', kind: 'decimal', width: 11, get: (row) => row.scores?.features.assessment?.score ?? null },
 
   { key: 'prepScore', label: 'Prep Score', group: 'Prep Coding', module: 'coding', kind: 'decimal', width: 11, get: (row) => row.coding.prepScore },
   { key: 'solvedTotal', label: 'Problems solved', group: 'Prep Coding', module: 'coding', kind: 'number', width: 10, get: (row) => row.coding.solved.total },
@@ -96,11 +99,11 @@ const COLUMN_BY_KEY = new Map(EXPORT_COLUMNS.map((column) => [column.key, column
 // Ticked when the download popup opens; the admin can add or remove any column.
 export const DEFAULT_EXPORT_COLUMNS = Object.freeze({
   // Each default fits on a PDF page (EXPORT_LIMITS.maxPdfColumns).
-  coding: ['position', 'name', 'studentId', 'semester', 'branch', 'prepScore', 'solvedEasy', 'solvedMedium', 'solvedHard', 'accuracy', 'practiceStatus', 'sheetProgress'],
+  coding: ['position', 'name', 'studentId', 'semester', 'branch', 'sheetProgress', 'prepScore', 'solvedEasy', 'solvedMedium', 'solvedHard', 'accuracy', 'practiceStatus'],
   learning: ['position', 'name', 'studentId', 'semester', 'branch', 'learningProgress', 'topicsCompleted', 'topicsAvailable', 'videoMinutes', 'learningStatus', 'daysSinceLesson'],
-  interview: ['position', 'name', 'studentId', 'semester', 'branch', 'interviewsDone', 'mockDone', 'mockScore', 'bestMockScore', 'aiInterviews', 'interviewStatus', 'daysSinceInterview'],
-  assessment: ['position', 'name', 'studentId', 'semester', 'branch', 'testsTaken', 'testsPassed', 'testsMissed', 'testScore', 'bestTestScore', 'testStatus', 'daysSinceTest'],
-  all: ['position', 'name', 'studentId', 'semester', 'branch', 'prepScore', 'sheetProgress', 'learningProgress', 'mockScore', 'testScore', 'practiceStatus'],
+  interview: ['position', 'name', 'studentId', 'semester', 'branch', 'interviewPrepScore', 'interviewsDone', 'mockDone', 'mockScore', 'bestMockScore', 'aiInterviews', 'interviewStatus'],
+  assessment: ['position', 'name', 'studentId', 'semester', 'branch', 'assessmentPrepScore', 'testsTaken', 'testsPassed', 'testsMissed', 'testScore', 'bestTestScore', 'testStatus'],
+  all: ['position', 'name', 'studentId', 'semester', 'branch', 'overallPrepScore', 'prepScore', 'sheetProgress', 'learningProgress', 'mockScore', 'testScore', 'practiceStatus'],
 });
 
 export function publicExportColumns(permissions) {

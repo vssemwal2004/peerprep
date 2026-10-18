@@ -1,7 +1,9 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowRight, CalendarDays, Check, RefreshCw, Sparkles, Trophy, Zap } from 'lucide-react';
 import useChallengeHub from './engagement/useChallengeHub';
+import { useAuth } from '../context/AuthContext';
+import { publishRanking } from './prepScore/rankingStore';
 import ChallengeArtwork, { ChallengeGlyph } from './engagement/ChallengeArtwork';
 import ChallengePlanBoard from './engagement/ChallengePlanBoard';
 import './engagement/challengeStudio.css';
@@ -39,6 +41,9 @@ function MonthCalendar({ data, accepted }) {
 
 export default function StudentChallenges() {
   const { section, ranking, rankingError, refresh, hasAccess } = useChallengeHub();
+  const { user } = useAuth();
+  // The header's Prep Score chip shows the ranking this page loaded (no extra request).
+  useEffect(() => { publishRanking(user?._id || user?.id, ranking); }, [ranking, user]);
   const [params, setParams] = useSearchParams();
   const [accepted, setAccepted] = useState({});
   const tab = PERIODS.some(([kind]) => kind === params.get('period')) ? params.get('period') : 'daily';
@@ -60,7 +65,7 @@ export default function StudentChallenges() {
         <div className="challenge-hero__copy"><span className="challenge-hero__eyebrow"><span />BUILT AROUND YOU</span><h2>Small steps.<br /><span>Big possibilities.</span></h2><p>Your pace. Your path. Your next win.</p></div>
         <ChallengeArtwork className="challenge-hero__art" />
         <div className="challenge-hero__stats">
-          <div><Zap size={16} /><span><small>Challenge XP / rank points</small><strong>{data ? integer(data.lifetime.points) : '—'}</strong></span></div>
+          <div><Zap size={16} /><span><small>Challenge XP</small><strong>{data ? integer(data.lifetime.points) : '—'}</strong></span></div>
           <div><Trophy size={16} /><span><small>University rank</small><strong>{ranking?.rank ? `#${ranking.rank} / ${ranking.totalStudents}` : rankingError ? 'Unavailable' : section.loading ? '—' : 'Not ranked yet'}</strong></span></div>
           <div><Sparkles size={16} /><span><small>{data?.level?.title || 'Current level'}</small><strong>{data ? `Level ${data.level.level}` : '—'}</strong></span></div>
         </div>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import GlobalRankCard from '../profile/GlobalRankCard';
 import { Link } from 'react-router-dom';
 import { ArrowRight, ArrowUpRight, CalendarClock, ChevronDown, Megaphone, Trophy } from 'lucide-react';
+import { PrepScoreBreakdown, ScoreValue } from '../prepScore/PrepScore';
 import { formatRelativeTime, formatSchedule, isImportantAnnouncement, numeric } from './dashboardUtils';
 import { card, CardTitle, focusRing, Skeleton, textLink, Unavailable } from './ui';
 
@@ -20,10 +21,10 @@ export function RankCard({ ranking, loading, error, onRetry }) {
   const unranked = !loading && !error && !rank;
   const unrankedMessage = !ranking ? 'Your university standing is unavailable right now.'
     : !ranking.universityName ? 'Ask your coordinator to add your university details.'
-      : 'Complete a question or lesson to get ranked.';
+      : 'Solve a problem, finish a lesson or take a test to start your Prep Score.';
 
   return <><section aria-labelledby="rank-title" aria-busy={Boolean(loading)} className={railCard}>
-    <CardTitle id="rank-title" title="University standing" icon={Trophy} tone="amber"
+    <CardTitle id="rank-title" title="Prep Score & rank" icon={Trophy} tone="amber"
       action={!loading && topPercent ? <span className="rounded-full bg-sky-600 px-2.5 py-0.5 text-[11.5px] font-semibold text-white">Top {topPercent}%</span> : null} />
     {loading ? <Skeleton className="mt-3 h-[72px]" />
       : error ? <Unavailable className="mt-3" message="Your university rank could not be loaded." onRetry={onRetry} />
@@ -41,25 +42,26 @@ export function RankCard({ ranking, loading, error, onRetry }) {
                 <span className="text-[12.5px] text-slate-500 dark:text-zinc-400">of {total.toLocaleString()} students{ranking.tied ? ' · tied' : ''}</span>
               </p>
               <p className="text-right leading-none">
-                <span className="block text-[17px] font-bold tabular-nums text-slate-900 dark:text-zinc-100">{score.toLocaleString(undefined, { maximumFractionDigits: 1 })}</span>
-                <span className="text-[11.5px] text-slate-500 dark:text-zinc-400">points</span>
+                <ScoreValue value={score} />
+                <span className="mt-1 block text-[11.5px] text-slate-500 dark:text-zinc-400">Prep Score</span>
               </p>
             </div>
             <div className="relative mt-3 h-2 rounded-full bg-[#eef0f3] dark:bg-white/[0.08]" role="progressbar" aria-label="University rank position" aria-valuemin={1} aria-valuemax={total} aria-valuenow={rank} aria-valuetext={`Rank ${rank} of ${total} students`}>
               <div className="h-full rounded-full bg-gradient-to-r from-sky-300 to-sky-600 transition-[width] duration-500 motion-reduce:transition-none" style={{ width: `${position}%` }} />
               <span className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-white bg-sky-600 shadow-[0_2px_6px_rgba(2,132,199,0.45)] dark:border-[#242424]" style={{ left: `clamp(7px, ${position}%, calc(100% - 7px))` }} aria-hidden="true" />
             </div>
+            <PrepScoreBreakdown prepScore={ranking.prepScore} className="mt-3" />
           </>}
     {!loading && !error && <>
       <div className="mt-3 flex items-center justify-between gap-3 text-[12px]">
         <span className="min-w-0 truncate text-slate-500 dark:text-zinc-400">{ranking?.universityName || ''}</span>
         <button type="button" onClick={() => setShowMethod((value) => !value)} aria-expanded={showMethod} aria-controls="rank-method"
           className={`inline-flex shrink-0 items-center gap-0.5 rounded font-medium text-slate-600 hover:text-sky-700 dark:text-zinc-300 dark:hover:text-sky-300 ${focusRing}`}>
-          How ranking works<ChevronDown className={`h-3.5 w-3.5 transition-transform ${showMethod ? 'rotate-180' : ''}`} aria-hidden="true" />
+          How the Prep Score works<ChevronDown className={`h-3.5 w-3.5 transition-transform ${showMethod ? 'rotate-180' : ''}`} aria-hidden="true" />
         </button>
       </div>
       {showMethod && <p id="rank-method" className="mt-2 rounded-lg bg-[#f6f7f9] px-3 py-2 text-[12px] leading-relaxed text-slate-600 dark:bg-white/[0.04] dark:text-zinc-400">
-        {ranking?.methodology || 'Based on completed coding, learning and assessments. Equal points share the same rank.'}
+        {ranking?.methodology || 'Each feature is scored out of 100 from your own verified work, and your Prep Score is their average. Equal scores share a rank.'}
       </p>}
     </>}
   </section><GlobalRankCard scoreRevision={ranking?.score} /></>;

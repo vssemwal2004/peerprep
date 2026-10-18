@@ -25,6 +25,7 @@ import { useTheme } from '../context/ThemeContext';
 import NotificationBell from './NotificationBell';
 import { useUniversityPolicy } from '../platform/UniversityPolicyContext';
 import DailyChallengeDrawer from '../student/engagement/DailyChallengeDrawer';
+import HeaderPrepScore from '../student/prepScore/HeaderPrepScore';
 
 const modules = [
   { label: 'Dashboard', hint: 'Your placement overview', to: '/student/dashboard', icon: LayoutDashboard },
@@ -82,6 +83,7 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
   const profileRef = useRef(null);
   const canShowChallenges = user?.role === 'student' && user?.accessScope !== 'assessment_only' && allowsModule('challenges');
   const challengesOpen = canShowChallenges && challengeRoute === location.key;
+  const canShowPrepScore = user?.role === 'student' && user?.accessScope !== 'assessment_only';
   const closeChallenges = useCallback(() => setChallengeRoute(null), []);
 
   const displayName = user?.name || 'Student';
@@ -191,6 +193,7 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
             <DailyTicketIcon />
             <span className="relative hidden text-[12.5px] font-semibold tracking-[-0.005em] [text-shadow:0_1px_0_rgba(3,105,161,0.45)] xl:inline">Daily challenges</span>
           </button>}
+          {canShowPrepScore && <HeaderPrepScore userId={user?._id || user?.id} />}
           <div ref={appsRef} className="hidden sm:relative sm:block">
             <button type="button" onClick={() => { setAppsOpen((open) => !open); setProfileOpen(false); }} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200" aria-label="Open module launcher" aria-expanded={appsOpen}><Grid2X2 className="h-4 w-4" /></button>
             {appsOpen && <div className="absolute left-3 right-3 top-[calc(100%+0.65rem)] rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_18px_50px_rgba(15,23,42,0.16)] dark:border-slate-700 dark:bg-slate-900 sm:left-auto sm:right-0 sm:w-[19rem]">

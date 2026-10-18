@@ -70,11 +70,16 @@ export function featureFields(catalog, area) {
 }
 
 export const studentFields = (catalog) => catalog.fields.filter((field) => field.module === "student");
-export const rankMetrics = (catalog, area) => featureFields(catalog, area).filter((field) => field.rankable);
+/** Measures a top / bottom rule can rank by: the overall Prep Score, then the feature's own measures. */
+export const rankMetrics = (catalog, area) => [
+  ...catalog.fields.filter((field) => field.key === "student.prepScore"),
+  ...featureFields(catalog, area).filter((field) => field.rankable),
+];
 
 // The filters shown straight away; the rest sit under "More filters".
 const MAIN_FIELDS = new Set([
-  "student.semester", "student.branch", "student.course", "student.group",
+  "student.semester", "student.branch", "student.course", "student.group", "student.prepScore",
+  "interview.prepScore", "assessment.prepScore",
   "coding.practiceStatus", "coding.prepScore", "coding.solved", "coding.solvedHard", "coding.solvedTopics", "quickprep.status", "quickprep.progress",
   "learning.status", "learning.progress", "learning.subjects",
   "interview.status", "interview.done", "interview.mockScore", "interview.aiCompleted",

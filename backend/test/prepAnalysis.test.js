@@ -366,11 +366,13 @@ test('Prep Assessment: each student\'s own tests, scores, passes and missed test
     [2, 1, 1, 0, 55, 80, 30, 50],
   );
   assert.deepEqual(byName('Bilal').assessment.missedIds, ['t2'], 'an assigned test that is over and not taken is missed');
+  assert.deepEqual(byName('Bilal').assessment.assignedIds.sort(), ['t1', 't2', 't3'], 'assigned tests include active tests and tests not yet attempted');
   assert.deepEqual(byName('Chen').assessment.missedIds, ['t1'], 'tests for everyone count, unfinished tests do not');
   assert.equal(byName('Chen').assessment.status, 'never');
   assert.deepEqual(pick(rows, { children: [{ field: 'assessment.missed', operator: 'gte', value: 1 }] }).sort(), ['Bilal', 'Chen', 'Dev']);
   assert.deepEqual(pick(rows, { children: [{ field: 'assessment.averageScore', operator: 'gte', value: 50, qualifiers: { tests: ['t1'] } }] }), ['Asha'], 'narrowed to one test');
   assert.deepEqual(pick(rows, { children: [{ field: 'assessment.passedTests', operator: 'anyOf', value: ['t1'] }] }), ['Asha']);
+  assert.deepEqual(pick(rows, { children: [{ field: 'assessment.assignedTests', operator: 'anyOf', value: ['t2'] }] }).sort(), ['Asha', 'Bilal']);
   const results = CHARTS.find((chart) => chart.id === 'assessment-tests').build({ rows, options: {}, range: {}, tests });
   assert.deepEqual(results.groups.find((group) => group.label === 'Mid term').values, { Passed: 1, Failed: 1, Missed: 2 });
   const scores = CHARTS.find((chart) => chart.id === 'assessment-scores').build({ rows, options: {}, range: {}, tests });
@@ -402,6 +404,24 @@ test('Prep Interview: mock interviews out of 100, ratings, interviewer turns and
   assert.deepEqual(profile.assessment.tests.map((test) => [test.title, test.percent, test.passed]), [['Quiz 2', 30, false], ['Mid term', 80, true]]);
   assert.deepEqual(profile.interview.mocks.map((mock) => mock.score), [60, 80], 'latest first');
   assert.equal(profile.coding, null, 'no coding without the licence');
+});
+
+test('Prep Score on analysis rows: 0-100 per licensed feature, overall = their average (the students\' formula)', () => {
+  const { rows } = interviewsAndTests();
+  const asha = rows.find((row) => row.name === 'Asha');
+  // Interview: mocks at 80% and 60% (average 70) for 60, and 3 interviews of 5 (60%) for 40.
+  assert.equal(asha.scores.features.interview.score, 66);
+  // Assessment: tests at 80% and 30% (average 55) for 80, and 2 tests of 5 (40%) for 20.
+  assert.equal(asha.scores.features.assessment.score, 52);
+  assert.equal(asha.scores.features.learning, undefined, 'a feature that is not loaded does not count');
+  assert.equal(asha.scores.features.coding.score, 0, 'no coding work in this cohort');
+  assert.equal(asha.scores.total, 39.33, 'the overall score averages the features (0, 66, 52), it never adds them up');
+  const { rows: codingRows } = cohort();
+  const coder = codingRows.find((row) => row.name === 'Asha');
+  assert.equal(coder.scores.features.coding.score, coder.coding.prepScore, 'Prep Coding uses the same formula on both sides');
+  assert.ok(codingRows.every((row) => row.scores.total >= 0 && row.scores.total <= 100), 'bounded 0-100');
+  assert.deepEqual(pick(codingRows, null, { cuts: [{ metric: 'student.prepScore', direction: 'top', unit: 'count', value: 1 }] }), ['Asha']);
+  assert.deepEqual(pick(rows, { children: [{ field: 'interview.prepScore', operator: 'gte', value: 60 }] }), ['Asha']);
 });
 
 test('a student profile shows only that student\'s own work, per licensed area', () => {

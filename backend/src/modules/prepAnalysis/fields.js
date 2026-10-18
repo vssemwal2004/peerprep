@@ -72,6 +72,12 @@ const FIELD_LIST = [
   { key: 'student.status', module: 'student', group: 'Account', label: 'Account', kind: 'enum', options: 'statuses', get: (row) => row.student.status },
   { key: 'student.search', module: 'student', group: 'Account', label: 'Name, email or student ID', kind: 'text', get: (row) => `${row.name} ${row.email} ${row.studentId}` },
 
+  // ---- Prep Score (0-100, same formula the student sees; the overall score averages the licensed features).
+  // Prep Coding's score is coding.prepScore and Prep Learning's is learning.progress.
+  { key: 'student.prepScore', module: 'student', group: 'Prep Score', label: 'Prep Score (overall)', kind: 'number', unit: '/ 100', rankable: true, get: (row) => row.scores?.total ?? 0 },
+  { key: 'interview.prepScore', module: 'interview', group: 'Prep Score', label: 'Prep Interview score', kind: 'number', unit: '/ 100', rankable: true, get: (row) => row.scores?.features.interview?.score ?? 0 },
+  { key: 'assessment.prepScore', module: 'assessment', group: 'Prep Score', label: 'Prep Assessment score', kind: 'number', unit: '/ 100', rankable: true, get: (row) => row.scores?.features.assessment?.score ?? 0 },
+
   // ---- Prep Coding: activity
   { key: 'coding.practiceStatus', module: 'coding', group: 'Practice', label: 'Practice status', kind: 'enum', options: 'practiceStatuses', quick: true, get: (row) => row.coding.practiceStatus },
   { key: 'coding.languages', module: 'coding', group: 'Practice', label: 'Programming language used', kind: 'set', options: 'languages', quick: true, get: (row) => row.coding.languages },
@@ -124,6 +130,7 @@ const FIELD_LIST = [
 
   // ---- Prep Assessment
   { key: 'assessment.status', module: 'assessment', group: 'Activity', label: 'Test status', kind: 'enum', options: 'assessmentStatuses', quick: true, get: (row) => row.assessment?.status },
+  { key: 'assessment.assignedTests', module: 'assessment', group: 'Tests', label: 'Assigned test', kind: 'set', options: 'tests', get: (row) => row.assessment?.assignedIds || [] },
   { key: 'assessment.takenTests', module: 'assessment', group: 'Tests', label: 'Test taken', kind: 'set', options: 'tests', get: (row) => row.assessment?.takenIds || [] },
   { key: 'assessment.passedTests', module: 'assessment', group: 'Tests', label: `Test passed (${PASS_PERCENT}%+)`, kind: 'set', options: 'tests', get: (row) => row.assessment?.passedIds || [] },
   { key: 'assessment.missedTests', module: 'assessment', group: 'Tests', label: 'Test missed', kind: 'set', options: 'tests', get: (row) => row.assessment?.missedIds || [] },
@@ -139,7 +146,7 @@ const FIELD_LIST = [
 
 // The measure "Who to show: Top / Bottom N" ranks by in each area.
 export const DEFAULT_RANK_METRIC = Object.freeze({
-  coding: 'coding.prepScore', learning: 'learning.progress', interview: 'interview.mockScore', assessment: 'assessment.averageScore', all: 'coding.prepScore',
+  coding: 'coding.prepScore', learning: 'learning.progress', interview: 'interview.prepScore', assessment: 'assessment.prepScore', all: 'student.prepScore',
 });
 
 export const FIELDS = new Map(FIELD_LIST.map((field) => [field.key, field]));

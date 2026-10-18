@@ -122,7 +122,7 @@ test('acceptance rejects expired, foreign and disabled plans without changing re
   assert.equal(await MissionAssignment.countDocuments({ acceptedAt: { $ne: null } }), 0);
 });
 
-test('verified challenge completion adds rank points once and marks the monthly calendar', async () => {
+test('verified challenge completion records XP once, the solve earns Prep Coins, and the monthly calendar is marked', async () => {
   const first = await refreshAdaptiveEngagement(student, at);
   const before = await getStudentUniversityRanking(student, null, at);
   await acceptChallenge(student, 'daily', first.daily.periodKey, at);
@@ -133,8 +133,9 @@ test('verified challenge completion adds rank points once and marks the monthly 
   await solve(new mongoose.Types.ObjectId(core.key.split(':').at(-1)), completedAt);
   const done = await refreshAdaptiveEngagement(student, completedAt);
   const after = await getStudentUniversityRanking(student, null, completedAt);
-  assert.equal(after.scoreBreakdown.challenges, first.daily.rewardPoints);
-  assert.ok(after.score >= before.score + first.daily.rewardPoints);
+  assert.equal(after.levelMetrics.challengePoints, first.daily.rewardPoints, 'challenge XP is recorded once');
+  assert.equal(after.scoreBreakdown.challenges, undefined, 'challenge XP is not part of Prep Coins');
+  assert.ok(after.score > before.score, 'the verified solve itself earns coins');
   assert.equal(done.month.dailyPlans[0].completed, true);
   await acceptChallenge(student, 'daily', first.daily.periodKey, completedAt);
   await refreshAdaptiveEngagement(student, completedAt);

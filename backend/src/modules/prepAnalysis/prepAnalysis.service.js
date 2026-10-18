@@ -41,15 +41,18 @@ const TABLE_SORTS = {
   testScore: (row) => row.assessment?.averageScore ?? -1,
   testsTaken: (row) => row.assessment?.taken ?? -1,
   testsMissed: (row) => row.assessment?.missed ?? -1,
+  overallScore: (row) => row.scores?.total ?? 0,
+  featureScore: (row, area) => row.scores?.features[area]?.score ?? 0,
 };
 // The order "#" uses in the table, per area.
 const POSITION_BY = {
   coding: (row) => row.coding.prepScore,
   learning: (row) => row.learning?.progress ?? 0,
-  interview: (row) => row.interview?.mockScore ?? 0,
-  assessment: (row) => row.assessment?.averageScore ?? 0,
+  interview: (row) => row.scores?.features.interview?.score ?? 0,
+  assessment: (row) => row.scores?.features.assessment?.score ?? 0,
+  all: (row) => row.scores?.total ?? 0,
 };
-const DEFAULT_SORT = { coding: 'prepScore', learning: 'learningProgress', interview: 'mockScore', assessment: 'testScore', all: 'prepScore' };
+const DEFAULT_SORT = { coding: 'prepScore', learning: 'learningProgress', interview: 'featureScore', assessment: 'featureScore', all: 'overallScore' };
 
 /** Which interview data a university may see: mock interviews ("events") and AI interviews ("interviews"). */
 export const interviewParts = (permissions) => ({ peer: !permissions || permissions.events === true, ai: !permissions || permissions.interviews === true });
@@ -160,6 +163,7 @@ async function buildContext(user, range, modules, parts) {
   ]);
   const rows = buildStudentRows({
     students: cohort.students, facts: coding, problems: coding.problems, batchNames: cohort.batchNames, learning, quickprep, assessment, interview, range,
+    scoreFeatures: { coding: modules.has('coding'), learning: modules.has('learning'), interview: modules.has('interview'), assessment: modules.has('assessment') },
   });
   return {
     rows, topics: coding.topics, batchNames: cohort.batchNames, truncated: cohort.truncated, loadedAt: new Date(),
@@ -212,6 +216,10 @@ function tableRow(row, position) {
       taken: row.assessment.taken, passed: row.assessment.passed, missed: row.assessment.missed, averageScore: row.assessment.averageScore,
       bestScore: row.assessment.bestScore, status: row.assessment.status, daysSinceActive: row.assessment.daysSinceActive,
     } : null,
+    scores: {
+      total: row.scores?.total ?? 0,
+      features: Object.fromEntries(Object.entries(row.scores?.features || {}).map(([key, feature]) => [key, feature.score])),
+    },
   };
 }
 
@@ -221,7 +229,7 @@ function studentTable(rows, table, area) {
   const direction = table.direction === 'asc' ? 1 : -1;
   const sorter = table.sort === 'name'
     ? (left, right) => direction * left.name.localeCompare(right.name)
-    : (left, right) => direction * (TABLE_SORTS[table.sort](left) - TABLE_SORTS[table.sort](right)) || left.name.localeCompare(right.name);
+    : (left, right) => direction * (TABLE_SORTS[table.sort](left, area) - TABLE_SORTS[table.sort](right, area)) || left.name.localeCompare(right.name);
   const sorted = [...rows].sort(sorter);
   const start = (table.page - 1) * table.limit;
   return {
@@ -266,7 +274,7 @@ export async function exportPrepAnalysis({ user, query, options }) {
   const selected = selectRows(context.rows, query.filter, query.rank);
   const sortKey = TABLE_SORTS[query.table.sort] ? query.table.sort : DEFAULT_SORT[query.module];
   const direction = query.table.direction === 'asc' ? 1 : -1;
-  const ordered = [...selected].sort((left, right) => direction * (TABLE_SORTS[sortKey](left) - TABLE_SORTS[sortKey](right)) || left.name.localeCompare(right.name));
+  const ordered = [...selected].sort((left, right) => direction * (TABLE_SORTS[sortKey](left, query.module) - TABLE_SORTS[sortKey](right, query.module)) || left.name.localeCompare(right.name));
   const report = buildReport({
     rows: ordered, columns: options.columns, summary: options.summary, query,
     cohortSize: context.rows.length, positionOf: POSITION_BY[query.module] || POSITION_BY.coding,
@@ -414,6 +422,7 @@ export function buildStudentProfile(row, { range, modules, sheets = new Map(), t
     learning: modules.has('learning') && row.learning ? learningProfile(row, range) : null,
     interview: modules.has('interview') && row.interview ? interviewProfile(row, range) : null,
     assessment: modules.has('assessment') && row.assessment ? assessmentProfile(row, tests, range) : null,
+    prepScore: row.scores || { total: 0, features: {} },
     formula: PREP_SCORE_FORMULA,
   };
 }

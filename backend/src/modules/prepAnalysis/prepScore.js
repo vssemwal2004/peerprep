@@ -41,8 +41,11 @@ export function prepScore({ solved = {}, accepted = 0, attempts = 0 }, targets =
     difficulty,
     round1((DIFFICULTY_WEIGHTS[difficulty] * progressByDifficulty[difficulty] / WEIGHT_TOTAL) * 100 * PROGRESS_SHARE),
   ]));
+  const exact = PROGRESS_SHARE * progress + ACCURACY_SHARE * accuracy * confidence;
   return {
-    score: round1(PROGRESS_SHARE * progress + ACCURACY_SHARE * accuracy * confidence),
+    score: round1(exact),
+    // Unrounded, for averaging into an overall score without piling up rounding.
+    exact,
     progress: round1(progress),
     accuracy: round1(accuracy),
     points: { ...points, accuracy: round1(ACCURACY_SHARE * accuracy * confidence) },
