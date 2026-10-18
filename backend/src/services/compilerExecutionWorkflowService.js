@@ -102,12 +102,8 @@ export async function resolveActiveProblem(problemId, { userId, assessmentId, ac
 
   const visibility = localProblem ? (problem.visibility || 'public') : 'assessment';
   const requiresAssessmentContext = accessScope === 'assessment_only';
-  if (visibility === 'public' && !requiresAssessmentContext) {
+  if (visibility === 'public' && !requiresAssessmentContext && !assessmentId) {
     return problem;
-  }
-
-  if (visibility !== 'assessment' && !requiresAssessmentContext) {
-    throw new HttpError(404, 'Problem not found.');
   }
 
   if (!assessmentId || !userId) {
@@ -175,6 +171,13 @@ function validateProblemSourceCode(problem, languageKey, sourceCode, { action = 
     starterCode: getProblemStarterCode(problem, languageKey),
     action,
   });
+}
+
+function isCandidateSourceValidationError(error) {
+  if (Number(error?.status || error?.statusCode) !== 400) return false;
+  const message = String(error?.message || '');
+  return message === 'Source code is required.'
+    || message === 'Please write or modify the starter code before submitting this problem.';
 }
 
 export function pickReferenceSolution(problem, preferredLanguageKey = '') {
@@ -1485,6 +1488,39 @@ async function processAssessmentFinalCodingJob(job) {
     await markExecutionJobCompleted(executionJobId, resultPayload);
     return resultPayload;
   } catch (error) {
+    // Empty or untouched starter code is a valid zero-mark student outcome.
+    // It must not make the whole assessment report unavailable for review.
+    if (assessment && isCandidateSourceValidationError(error)) {
+      const response = {
+        mode: 'submit',
+        status: 'Compilation Error',
+        error: error.message,
+        passed: 0,
+        total: 0,
+        passedTestCaseMarks: 0,
+        totalTestCaseMarks: 0,
+        time: 0,
+        memory: 0,
+      };
+      await updateAssessmentAnswerExecutionState({
+        ...job.data,
+        assessment,
+        executionStatus: 'completed',
+        executionVerdict: 'CE',
+        executionResult: response,
+      });
+      const resultPayload = {
+        kind: 'assessment-submit',
+        assessmentSubmissionId,
+        sectionIndex,
+        questionIndex,
+        response,
+        persisted: { status: 'CE' },
+      };
+      await markExecutionJobCompleted(executionJobId, resultPayload);
+      return resultPayload;
+    }
+
     const executionVerdict = isFinalAttempt
       ? ((error?.status === 400) ? 'CE' : 'FAILED')
       : 'PENDING';

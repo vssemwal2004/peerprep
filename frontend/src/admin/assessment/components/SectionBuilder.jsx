@@ -623,7 +623,10 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
                 onChange={(e) => updateQuestion(sectionIndex, questionIndex, { points: e.target.value === '' ? '' : Number(e.target.value), marksMode: 'custom' })}
                 className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
               />
-              {question.marksMode === 'custom' ? <button type="button" onClick={() => updateQuestion(sectionIndex, questionIndex, { points: testCaseMarks, marksMode: 'test_cases' })} className="mt-1 text-[10px] font-semibold text-sky-700 hover:text-sky-600 dark:text-sky-300">Use {testCaseMarks} from hidden tests</button> : <p className="mt-1 text-[10px] text-slate-400">Automatically calculated</p>}
+              {question.marksMode === 'custom' ? <button type="button" onClick={() => updateQuestion(sectionIndex, questionIndex, { points: testCaseMarks, marksMode: 'test_cases' })} className="mt-1 text-[10px] font-semibold text-sky-700 hover:text-sky-600 dark:text-sky-300">Use {testCaseMarks} from hidden tests</button> : <p className="mt-1 text-[10px] text-slate-400">Automatically calculated from hidden tests</p>}
+              <p className="mt-1 max-w-52 text-[10px] leading-4 text-slate-500 dark:text-gray-400">
+                Partial score = question marks × passed hidden-case weight ÷ total hidden-case weight.
+              </p>
             </div>
             <div>
               <label className="text-[11px] text-slate-500 dark:text-gray-400">Negative Marks</label>
@@ -682,7 +685,11 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
         const isCollapsed = collapsedSections[section.__key];
         const isCodingSection = section.type === 'coding';
         const questionCount = section.questions?.length || 0;
-                    const totalMarks = (section.questions || []).reduce((sum, question) => sum + (Number(question.points || section.marksPerQuestion || 0) || 0), 0);
+        const questionMarks = (section.questions || []).map((question) => Number(question.points || section.marksPerQuestion || 0) || 0);
+        const totalMarks = questionMarks.reduce((sum, marks) => sum + marks, 0);
+        const uniformMarks = questionMarks.length > 0 && questionMarks.every((marks) => marks === questionMarks[0])
+          ? questionMarks[0]
+          : null;
         const sectionTitle = section.sectionName || `${typeLabelMap[section.type] || 'Question'} Section`;
 
         return (
@@ -714,6 +721,11 @@ export default function SectionBuilder({ sections, onChange, onOpenCodingEditor,
                       <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
                         {totalMarks} marks
                       </span>
+                      {uniformMarks !== null && questionCount > 1 && (
+                        <span className="text-[11px] font-medium text-slate-500 dark:text-gray-400">
+                          {questionCount} × {uniformMarks} = {totalMarks}
+                        </span>
+                      )}
                     </div>
                     <div className="mt-1.5 text-sm font-semibold text-slate-900 dark:text-white">{sectionTitle}</div>
                     <div className="mt-1 text-xs text-slate-500 dark:text-gray-400">

@@ -62,6 +62,40 @@ test('legacy passed/total coding results still receive equal partial marks', () 
   assert.equal(result.earnedMarks, 2.5);
 });
 
+test('ten equal hidden cases scale to the configured question marks', () => {
+  const result = getCodingQuestionScore({ type: 'coding', points: 10 }, {
+    code: 'solution',
+    executionStatus: 'completed',
+    executionVerdict: 'WA',
+    executionResult: {
+      passed: 7,
+      total: 10,
+      passedTestCaseMarks: 7,
+      totalTestCaseMarks: 10,
+    },
+  }, codingSection);
+
+  assert.equal(result.earnedMarks, 7);
+  assert.equal(result.maxMarks, 10);
+});
+
+test('hidden-case weights are proportionally scaled to a custom question total', () => {
+  const result = getCodingQuestionScore({ type: 'coding', points: 20 }, {
+    code: 'solution',
+    executionStatus: 'completed',
+    executionVerdict: 'WA',
+    executionResult: {
+      passed: 2,
+      total: 3,
+      passedTestCaseMarks: 5,
+      totalTestCaseMarks: 10,
+    },
+  }, codingSection);
+
+  assert.equal(result.earnedMarks, 10);
+  assert.equal(result.maxMarks, 20);
+});
+
 test('multiple-answer MCQ requires the complete correct set', () => {
   const assessment = { sections: [{ type: 'mcq', questions: [{ type: 'mcq', points: 4, allowMultipleAnswers: true, correctOptionIndexes: [0, 2] }] }] };
   const result = scoreAssessmentWithTestCases(assessment, [{ sectionIndex: 0, questionIndex: 0, answer: [2, 0] }]);
