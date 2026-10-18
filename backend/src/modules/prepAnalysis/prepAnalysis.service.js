@@ -10,16 +10,32 @@ import { loadCodingFacts, loadCohort } from './codingFacts.js';
 import { allowedModules, FIELDS, MODULES, STATIC_OPTIONS } from './fields.js';
 import { applyRankCuts, evaluateFilterTree, normalizeFilterTree, normalizeRankCuts } from './filterEngine.js';
 import { loadLearningFacts } from './learningFacts.js';
+<<<<<<< Updated upstream
 import { competitionRanks, PREP_SCORE_VERSION } from './prepScore.js';
 import { PREP_SCORE_RULES } from '../../services/prepScores.js';
+=======
+import {
+  ACCURACY_FULL_CREDIT_SUBMISSIONS, ACCURACY_SHARE, competitionRanks, DIFFICULTY_WEIGHTS, PREP_SCORE_VERSION, PROGRESS_SHARE, SOLVE_TARGETS,
+} from './prepScore.js';
+>>>>>>> Stashed changes
 import { buildReport, EXPORT_TYPES } from './prepAnalysis.export.js';
 import { loadAssessmentFacts, PASS_PERCENT } from './assessmentFacts.js';
 import { loadInterviewFacts, RATINGS } from './interviewFacts.js';
 import { loadQuickPrepFacts, sheetVisibleTo } from './quickPrepFacts.js';
 import { buildStudentRows } from './studentRows.js';
 
+<<<<<<< Updated upstream
 // The live Prep Score constants, for the help dialog and student insights.
 export const PREP_SCORE_FORMULA = PREP_SCORE_RULES;
+=======
+export const PREP_SCORE_FORMULA = Object.freeze({
+  weights: DIFFICULTY_WEIGHTS,
+  targets: SOLVE_TARGETS,
+  progressShare: PROGRESS_SHARE,
+  accuracyShare: ACCURACY_SHARE,
+  accuracyFullCreditSubmissions: ACCURACY_FULL_CREDIT_SUBMISSIONS,
+});
+>>>>>>> Stashed changes
 
 export const QUERY_LIMITS = Object.freeze({ maxCharts: 24, maxTableLimit: 100, maxRangeDays: 366 * 3, cacheTtlMs: 60_000, cacheEntries: 6 });
 const RANGE_PRESETS = { '7d': 7, '30d': 30, '90d': 90, '180d': 180, '365d': 365, all: null };
@@ -36,18 +52,28 @@ const TABLE_SORTS = {
   testScore: (row) => row.assessment?.averageScore ?? -1,
   testsTaken: (row) => row.assessment?.taken ?? -1,
   testsMissed: (row) => row.assessment?.missed ?? -1,
+<<<<<<< Updated upstream
   overallScore: (row) => row.scores?.total ?? 0,
   featureScore: (row, area) => row.scores?.features[area]?.score ?? 0,
+=======
+>>>>>>> Stashed changes
 };
 // The order "#" uses in the table, per area.
 const POSITION_BY = {
   coding: (row) => row.coding.prepScore,
   learning: (row) => row.learning?.progress ?? 0,
+<<<<<<< Updated upstream
   interview: (row) => row.scores?.features.interview?.score ?? 0,
   assessment: (row) => row.scores?.features.assessment?.score ?? 0,
   all: (row) => row.scores?.total ?? 0,
 };
 const DEFAULT_SORT = { coding: 'prepScore', learning: 'learningProgress', interview: 'featureScore', assessment: 'featureScore', all: 'overallScore' };
+=======
+  interview: (row) => row.interview?.mockScore ?? 0,
+  assessment: (row) => row.assessment?.averageScore ?? 0,
+};
+const DEFAULT_SORT = { coding: 'prepScore', learning: 'learningProgress', interview: 'mockScore', assessment: 'testScore', all: 'prepScore' };
+>>>>>>> Stashed changes
 
 /** Which interview data a university may see: mock interviews ("events") and AI interviews ("interviews"). */
 export const interviewParts = (permissions) => ({ peer: !permissions || permissions.events === true, ai: !permissions || permissions.interviews === true });
@@ -158,7 +184,10 @@ async function buildContext(user, range, modules, parts) {
   ]);
   const rows = buildStudentRows({
     students: cohort.students, facts: coding, problems: coding.problems, batchNames: cohort.batchNames, learning, quickprep, assessment, interview, range,
+<<<<<<< Updated upstream
     scoreFeatures: { coding: modules.has('coding'), learning: modules.has('learning'), interview: modules.has('interview'), assessment: modules.has('assessment'), mock: parts.peer, ai: parts.ai },
+=======
+>>>>>>> Stashed changes
   });
   return {
     rows, topics: coding.topics, batchNames: cohort.batchNames, truncated: cohort.truncated, loadedAt: new Date(),
@@ -191,7 +220,11 @@ function tableRow(row, position) {
     id: row.id, name: row.name, studentId: row.studentId, email: row.email,
     semester: row.student.semester, branch: row.student.branch, course: row.student.course, group: row.student.group, college: row.student.college,
     position,
+<<<<<<< Updated upstream
     prepScore: row.coding.prepScore, points: row.coding.points, work: row.coding.work, quality: row.coding.quality,
+=======
+    prepScore: row.coding.prepScore, points: row.coding.points,
+>>>>>>> Stashed changes
     solved: row.coding.solved, accuracy: row.coding.accuracy, submissions: row.coding.submissions,
     activeDays: row.coding.activeDays, daysSinceActive: row.coding.daysSinceActive, practiceStatus: row.coding.practiceStatus,
     languages: row.coding.languages,
@@ -211,10 +244,13 @@ function tableRow(row, position) {
       taken: row.assessment.taken, passed: row.assessment.passed, missed: row.assessment.missed, averageScore: row.assessment.averageScore,
       bestScore: row.assessment.bestScore, status: row.assessment.status, daysSinceActive: row.assessment.daysSinceActive,
     } : null,
+<<<<<<< Updated upstream
     scores: {
       total: row.scores?.total ?? 0,
       features: Object.fromEntries(Object.entries(row.scores?.features || {}).map(([key, feature]) => [key, feature.score])),
     },
+=======
+>>>>>>> Stashed changes
   };
 }
 
@@ -224,7 +260,11 @@ function studentTable(rows, table, area) {
   const direction = table.direction === 'asc' ? 1 : -1;
   const sorter = table.sort === 'name'
     ? (left, right) => direction * left.name.localeCompare(right.name)
+<<<<<<< Updated upstream
     : (left, right) => direction * (TABLE_SORTS[table.sort](left, area) - TABLE_SORTS[table.sort](right, area)) || left.name.localeCompare(right.name);
+=======
+    : (left, right) => direction * (TABLE_SORTS[table.sort](left) - TABLE_SORTS[table.sort](right)) || left.name.localeCompare(right.name);
+>>>>>>> Stashed changes
   const sorted = [...rows].sort(sorter);
   const start = (table.page - 1) * table.limit;
   return {
@@ -269,7 +309,11 @@ export async function exportPrepAnalysis({ user, query, options }) {
   const selected = selectRows(context.rows, query.filter, query.rank);
   const sortKey = TABLE_SORTS[query.table.sort] ? query.table.sort : DEFAULT_SORT[query.module];
   const direction = query.table.direction === 'asc' ? 1 : -1;
+<<<<<<< Updated upstream
   const ordered = [...selected].sort((left, right) => direction * (TABLE_SORTS[sortKey](left, query.module) - TABLE_SORTS[sortKey](right, query.module)) || left.name.localeCompare(right.name));
+=======
+  const ordered = [...selected].sort((left, right) => direction * (TABLE_SORTS[sortKey](left) - TABLE_SORTS[sortKey](right)) || left.name.localeCompare(right.name));
+>>>>>>> Stashed changes
   const report = buildReport({
     rows: ordered, columns: options.columns, summary: options.summary, query,
     cohortSize: context.rows.length, positionOf: POSITION_BY[query.module] || POSITION_BY.coding,
@@ -338,8 +382,13 @@ function codingProfile(row, range) {
   const daily = new Map([...row.days.entries()].map(([day, value]) => [day, value.attempts]));
   const { coding } = row;
   return {
+<<<<<<< Updated upstream
     prepScore: coding.prepScore, points: coding.points, work: coding.work, quality: coding.quality, triesPerSolve: coding.triesPerSolve,
     solved: coding.solved, accuracy: coding.accuracy,
+=======
+    prepScore: coding.prepScore, points: coding.points, progress: coding.progress,
+    solved: coding.solved, targets: SOLVE_TARGETS, accuracy: coding.accuracy,
+>>>>>>> Stashed changes
     submissions: coding.submissions, accepted: coding.accepted, attempted: coding.attempted,
     activeDays: coding.activeDays, daysSinceActive: coding.daysSinceActive, practiceStatus: coding.practiceStatus,
     languages: [...languages.entries()].sort((left, right) => right[1] - left[1]).map(([language, submissions]) => ({ language, submissions })),
@@ -417,7 +466,10 @@ export function buildStudentProfile(row, { range, modules, sheets = new Map(), t
     learning: modules.has('learning') && row.learning ? learningProfile(row, range) : null,
     interview: modules.has('interview') && row.interview ? interviewProfile(row, range) : null,
     assessment: modules.has('assessment') && row.assessment ? assessmentProfile(row, tests, range) : null,
+<<<<<<< Updated upstream
     prepScore: row.scores || { total: 0, features: {} },
+=======
+>>>>>>> Stashed changes
     formula: PREP_SCORE_FORMULA,
   };
 }

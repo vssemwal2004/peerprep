@@ -18,10 +18,16 @@ export const GROUP_BY = Object.freeze({
 });
 
 const NOT_SET = 'Not set';
+<<<<<<< Updated upstream
 const practising = (rows) => rows.filter((row) => row.coding.submissions > 0);
 const byScore = (left, right) => right.coding.prepScore - left.coding.prepScore || left.name.localeCompare(right.name);
 // Lower edges of the Prep Score bands in "How Prep Scores are spread".
 const SCORE_BANDS = [0, 25, 50, 100, 250, 500, 1000, 2500];
+=======
+const round1 = (value) => Math.round(value * 10) / 10;
+const practising = (rows) => rows.filter((row) => row.coding.submissions > 0);
+const byScore = (left, right) => right.coding.prepScore - left.coding.prepScore || left.name.localeCompare(right.name);
+>>>>>>> Stashed changes
 const clampLimit = (value, fallback, max) => Math.min(max, Math.max(1, Number.parseInt(value, 10) || fallback));
 
 function groupRows(rows, groupBy, maxGroups = 12) {
@@ -79,7 +85,11 @@ const CODING_CHARTS = [
     build: ({ rows, options }) => ({
       items: practising(rows).sort(byScore).slice(0, clampLimit(options.limit, 10, 50)).map((row, index) => ({
         id: row.id, name: row.name, position: index + 1, score: row.coding.prepScore,
+<<<<<<< Updated upstream
         segments: { Easy: row.coding.points.Easy, Medium: row.coding.points.Medium, Hard: row.coding.points.Hard },
+=======
+        segments: { Easy: row.coding.points.Easy, Medium: row.coding.points.Medium, Hard: row.coding.points.Hard, Accuracy: row.coding.points.accuracy },
+>>>>>>> Stashed changes
         solved: row.coding.solved,
       })),
     }),
@@ -234,11 +244,16 @@ const CODING_CHARTS = [
     title: 'How Prep Scores are spread',
     question: 'How many students are in each score band?',
     build: ({ rows }) => {
+<<<<<<< Updated upstream
       // Prep Score has no ceiling, so the bands widen as scores grow.
       const bins = SCORE_BANDS.map((from, index) => ({
         label: index === SCORE_BANDS.length - 1 ? `${from.toLocaleString('en-US')}+` : `${from.toLocaleString('en-US')}–${SCORE_BANDS[index + 1].toLocaleString('en-US')}`, count: 0,
       }));
       practising(rows).forEach((row) => { bins[SCORE_BANDS.findLastIndex((from) => row.coding.prepScore >= from)].count += 1; });
+=======
+      const bins = Array.from({ length: 10 }, (_, index) => ({ label: `${index * 10}–${index * 10 + 10}`, count: 0 }));
+      practising(rows).forEach((row) => { bins[Math.min(9, Math.floor(row.coding.prepScore / 10))].count += 1; });
+>>>>>>> Stashed changes
       return { label: 'Prep Score', bins };
     },
   },
@@ -585,6 +600,7 @@ const ASSESSMENT_CHARTS = [
     },
   },
   {
+<<<<<<< Updated upstream
     id: 'assessment-scores', type: 'stackedBar', size: 'full',
     title: 'Scores by test',
     question: 'For every test conducted: how many students scored in each band, and how many missed it?',
@@ -628,6 +644,8 @@ const ASSESSMENT_CHARTS = [
     }),
   },
   {
+=======
+>>>>>>> Stashed changes
     id: 'assessment-funnel', type: 'funnel', size: 'sm',
     title: 'How far students get in tests',
     question: 'From taking a test to passing every test they took, where do students stop?',
@@ -842,7 +860,11 @@ export const DEFAULT_LAYOUT = Object.freeze({
     'quickprep-sheets', 'quickprep-funnel', 'quickprep-matrix', 'quickprep-leaders', 'quickprep-needs-attention'],
   learning: ['learning-subjects', 'learning-funnel', 'learning-trend', 'learning-leaders', 'learning-needs-attention', 'learning-spread', 'learning-calendar'],
   interview: ['interview-trend', 'interview-funnel', 'interview-ratings', 'interview-mix', 'interview-leaders', 'interview-needs-attention', 'interview-spread', 'interview-calendar'],
+<<<<<<< Updated upstream
   assessment: ['assessment-tests', 'assessment-funnel', 'assessment-scores', 'assessment-by-class', 'assessment-leaders', 'assessment-needs-attention', 'assessment-trend', 'assessment-spread', 'assessment-calendar'],
+=======
+  assessment: ['assessment-tests', 'assessment-funnel', 'assessment-trend', 'assessment-leaders', 'assessment-needs-attention', 'assessment-spread', 'assessment-calendar'],
+>>>>>>> Stashed changes
   // "All": a short view of each feature, side by side.
   all: ['top-students', 'practice-funnel', 'quickprep-sheets', 'learning-subjects', 'learning-funnel', 'interview-funnel', 'interview-trend', 'assessment-tests', 'assessment-funnel'],
 });
@@ -850,6 +872,7 @@ export const DEFAULT_LAYOUT = Object.freeze({
 /** The charts an area offers: its own, or every licensed area's for "All". */
 export const chartsForArea = (area, modules) => CHARTS.filter((chart) => modules.has(chart.module) && (area === 'all' || chart.module === area));
 
+<<<<<<< Updated upstream
 // Headline numbers: only a few per feature, each a count of students the admin can
 // act on (click one to list those students). No totals of submissions or averages.
 const share = (count, total) => (total ? `${Math.round((count / total) * 100)}% of ${total.toLocaleString()} students` : '');
@@ -865,26 +888,58 @@ const learningKpis = (rows) => {
     studentKpi('halfway', 'Halfway through the course', withData, (row) => row.learning.progress >= 50),
     studentKpi('subjectDone', 'Finished a subject', withData, (row) => row.learning.subjectsFinished.length > 0),
     studentKpi('stopped', 'Not learning', withData, (row) => row.learning.status !== 'active', { tone: 'warning' }),
+=======
+const learningKpis = (rows) => {
+  const withData = rows.filter((row) => row.learning);
+  return [
+    { id: 'students', label: 'Students', value: withData.length, format: 'count' },
+    { id: 'active', label: 'Learning now', value: withData.filter((row) => row.learning.status === 'active').length, format: 'count', hint: `in the last ${INACTIVE_AFTER_DAYS} days` },
+    { id: 'topics', label: 'Topics completed', value: withData.reduce((sum, row) => sum + row.learning.completedTopics, 0), format: 'count', hint: 'across all students' },
+    { id: 'halfway', label: 'Halfway or more', value: withData.filter((row) => row.learning.progress >= 50).length, format: 'count', hint: 'students past 50% of course' },
+    { id: 'video', label: 'Video watched', value: Math.round(withData.reduce((sum, row) => sum + row.learning.videoMinutes, 0) / 60), format: 'count', hint: 'hours, all students' },
+    { id: 'stopped', label: 'Not learning', value: withData.filter((row) => row.learning.status !== 'active').length, format: 'count', hint: 'stopped or never started', tone: 'warning' },
+>>>>>>> Stashed changes
   ];
 };
 
 const interviewKpis = (rows) => {
   const withData = rows.filter((row) => row.interview);
   return [
+<<<<<<< Updated upstream
     studentKpi('students', 'Interviewed', withData, (row) => row.interview.done > 0),
     studentKpi('strong', 'Mock score 60%+', withData, (row) => row.interview.mockDone > 0 && row.interview.mockScore >= 60),
     studentKpi('scheduled', 'Mock interview coming up', withData, (row) => row.interview.scheduled > 0),
     studentKpi('never', 'Never interviewed', withData, (row) => row.interview.status === 'never', { tone: 'warning' }),
+=======
+    { id: 'students', label: 'Interviewed', value: interviewees(withData).length, format: 'count', hint: 'students with an interview' },
+    { id: 'mocks', label: 'Mock interviews', value: withData.reduce((sum, row) => sum + row.interview.mockDone, 0), format: 'count', hint: 'done' },
+    { id: 'ai', label: 'AI interviews', value: withData.reduce((sum, row) => sum + row.interview.aiCompleted, 0), format: 'count', hint: 'completed' },
+    { id: 'strong', label: 'Scored 60%+', value: withData.filter((row) => row.interview.mockDone > 0 && row.interview.mockScore >= 60).length, format: 'count', hint: 'students, own mock average' },
+    { id: 'scheduled', label: 'Scheduled', value: withData.filter((row) => row.interview.scheduled > 0).length, format: 'count', hint: 'students with a mock coming up' },
+    { id: 'never', label: 'Never interviewed', value: withData.filter((row) => row.interview.status === 'never').length, format: 'count', tone: 'warning' },
+>>>>>>> Stashed changes
   ];
 };
 
 const assessmentKpis = (rows) => {
   const withData = rows.filter((row) => row.assessment);
+<<<<<<< Updated upstream
   return [
     studentKpi('students', 'Took a test', withData, (row) => row.assessment.taken > 0),
     studentKpi('passedStudents', `Passed a test (${PASS_PERCENT}%+)`, withData, (row) => row.assessment.passed > 0),
     studentKpi('missed', 'Missed a test', withData, (row) => row.assessment.missed > 0, { tone: 'warning' }),
     studentKpi('never', 'Never took a test', withData, (row) => row.assessment.status === 'never', { tone: 'warning' }),
+=======
+  const taken = withData.reduce((sum, row) => sum + row.assessment.taken, 0);
+  const passed = withData.reduce((sum, row) => sum + row.assessment.passed, 0);
+  return [
+    { id: 'students', label: 'Took a test', value: testTakers(withData).length, format: 'count', hint: 'students' },
+    { id: 'taken', label: 'Tests taken', value: taken, format: 'count', hint: 'across all students' },
+    { id: 'passed', label: 'Tests passed', value: passed, format: 'count', hint: `${PASS_PERCENT}% or more` },
+    { id: 'passRate', label: 'Passed', value: taken ? round1((passed / taken) * 100) : 0, format: 'percent', hint: `${passed} of ${taken} tests taken` },
+    { id: 'missed', label: 'Tests missed', value: withData.reduce((sum, row) => sum + row.assessment.missed, 0), format: 'count', hint: 'assigned, over, not taken', tone: 'warning' },
+    { id: 'never', label: 'Never took a test', value: withData.filter((row) => row.assessment.status === 'never').length, format: 'count', tone: 'warning' },
+>>>>>>> Stashed changes
   ];
 };
 
@@ -896,6 +951,7 @@ export function buildKpiGroups(area, modules, rows) {
     .map(([key, section]) => ({ key, module: section.module, label: section.label, kpis: builders[key](rows) }));
 }
 
+<<<<<<< Updated upstream
 /** Headline counts for Prep Coding, Quick Prep sheets included. */
 export function buildKpis(rows) {
   return [
@@ -906,5 +962,28 @@ export function buildKpis(rows) {
       studentKpi('sheetFinished', 'Finished a sheet', rows, (row) => row.quickprep?.finished > 0),
     ] : []),
     studentKpi('stopped', 'Not practising', rows, (row) => row.coding.practiceStatus !== 'active', { tone: 'warning' }),
+=======
+/** Headline counts for Prep Coding, Quick Prep sheets included (no cohort averages). */
+export function buildKpis(rows) {
+  const active = practising(rows);
+  const totals = active.reduce((sum, row) => ({
+    submissions: sum.submissions + row.coding.submissions,
+    accepted: sum.accepted + row.coding.accepted,
+    hard: sum.hard + row.coding.solved.Hard,
+  }), { submissions: 0, accepted: 0, hard: 0 });
+  const distinctSolved = new Set(active.flatMap((row) => row.entries.filter((entry) => entry.accepted > 0).map((entry) => entry.problemId)));
+  const stopped = rows.filter((row) => row.coding.practiceStatus !== 'active').length;
+  return [
+    { id: 'students', label: 'Students', value: rows.length, format: 'count' },
+    { id: 'active', label: 'Practising now', value: rows.filter((row) => row.coding.practiceStatus === 'active').length, format: 'count', hint: `in the last ${INACTIVE_AFTER_DAYS} days` },
+    { id: 'solved', label: 'Problems solved', value: distinctSolved.size, format: 'count', hint: 'different problems' },
+    { id: 'hard', label: 'Hard solves', value: totals.hard, format: 'count', hint: 'across all students' },
+    { id: 'accuracy', label: 'Accepted submissions', value: totals.submissions ? round1((totals.accepted / totals.submissions) * 100) : 0, format: 'percent', hint: `${totals.accepted} of ${totals.submissions}` },
+    ...(rows.some((row) => row.quickprep) ? [
+      { id: 'sheetStarted', label: 'Started a sheet', value: rows.filter((row) => row.quickprep?.started > 0).length, format: 'count', hint: 'Quick Prep, students' },
+      { id: 'sheetFinished', label: 'Finished a sheet', value: rows.filter((row) => row.quickprep?.finished > 0).length, format: 'count', hint: 'Quick Prep, students' },
+    ] : []),
+    { id: 'stopped', label: 'Not practising', value: stopped, format: 'count', hint: 'stopped or never started', tone: 'warning' },
+>>>>>>> Stashed changes
   ];
 }

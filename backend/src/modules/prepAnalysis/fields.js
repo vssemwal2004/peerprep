@@ -72,6 +72,7 @@ const FIELD_LIST = [
   { key: 'student.status', module: 'student', group: 'Account', label: 'Account', kind: 'enum', options: 'statuses', get: (row) => row.student.status },
   { key: 'student.search', module: 'student', group: 'Account', label: 'Name, email or student ID', kind: 'text', get: (row) => `${row.name} ${row.email} ${row.studentId}` },
 
+<<<<<<< Updated upstream
   // ---- Prep Score (points with no ceiling, same formula the student sees; the overall score averages the licensed features).
   // Prep Coding's score is coding.prepScore.
   { key: 'student.prepScore', module: 'student', group: 'Prep Score', label: 'Prep Score (overall)', kind: 'number', unit: 'points', rankable: true, get: (row) => row.scores?.total ?? 0 },
@@ -79,6 +80,8 @@ const FIELD_LIST = [
   { key: 'learning.prepScore', module: 'learning', group: 'Prep Score', label: 'Prep Learning score', kind: 'number', unit: 'points', rankable: true, get: (row) => row.scores?.features.learning?.score ?? 0 },
   { key: 'assessment.prepScore', module: 'assessment', group: 'Prep Score', label: 'Prep Assessment score', kind: 'number', unit: 'points', rankable: true, get: (row) => row.scores?.features.assessment?.score ?? 0 },
 
+=======
+>>>>>>> Stashed changes
   // ---- Prep Coding: activity
   { key: 'coding.practiceStatus', module: 'coding', group: 'Practice', label: 'Practice status', kind: 'enum', options: 'practiceStatuses', quick: true, get: (row) => row.coding.practiceStatus },
   { key: 'coding.languages', module: 'coding', group: 'Practice', label: 'Programming language used', kind: 'set', options: 'languages', quick: true, get: (row) => row.coding.languages },
@@ -88,7 +91,11 @@ const FIELD_LIST = [
   { key: 'coding.activeDays', module: 'coding', group: 'Practice', label: 'Days practised', kind: 'number', unit: 'days', rankable: true, get: (row) => row.coding.activeDays },
 
   // ---- Prep Coding: results
+<<<<<<< Updated upstream
   { key: 'coding.prepScore', module: 'coding', group: 'Results', label: 'Prep Score', kind: 'number', unit: 'points', rankable: true, get: (row) => row.coding.prepScore },
+=======
+  { key: 'coding.prepScore', module: 'coding', group: 'Results', label: 'Prep Score', kind: 'number', unit: '/ 100', rankable: true, get: (row) => row.coding.prepScore },
+>>>>>>> Stashed changes
   { key: 'coding.solved', module: 'coding', group: 'Results', label: 'Problems solved', kind: 'number', qualifiers: 'coding', rankable: true, get: codingMetric('solved') },
   { key: 'coding.solvedEasy', module: 'coding', group: 'Results', label: 'Easy problems solved', kind: 'number', qualifiers: 'coding', rankable: true, get: codingMetric('solved', { difficulties: ['Easy'] }) },
   { key: 'coding.solvedMedium', module: 'coding', group: 'Results', label: 'Medium problems solved', kind: 'number', qualifiers: 'coding', rankable: true, get: codingMetric('solved', { difficulties: ['Medium'] }) },
@@ -131,7 +138,10 @@ const FIELD_LIST = [
 
   // ---- Prep Assessment
   { key: 'assessment.status', module: 'assessment', group: 'Activity', label: 'Test status', kind: 'enum', options: 'assessmentStatuses', quick: true, get: (row) => row.assessment?.status },
+<<<<<<< Updated upstream
   { key: 'assessment.assignedTests', module: 'assessment', group: 'Tests', label: 'Assigned test', kind: 'set', options: 'tests', get: (row) => row.assessment?.assignedIds || [] },
+=======
+>>>>>>> Stashed changes
   { key: 'assessment.takenTests', module: 'assessment', group: 'Tests', label: 'Test taken', kind: 'set', options: 'tests', get: (row) => row.assessment?.takenIds || [] },
   { key: 'assessment.passedTests', module: 'assessment', group: 'Tests', label: `Test passed (${PASS_PERCENT}%+)`, kind: 'set', options: 'tests', get: (row) => row.assessment?.passedIds || [] },
   { key: 'assessment.missedTests', module: 'assessment', group: 'Tests', label: 'Test missed', kind: 'set', options: 'tests', get: (row) => row.assessment?.missedIds || [] },
@@ -147,7 +157,11 @@ const FIELD_LIST = [
 
 // The measure "Who to show: Top / Bottom N" ranks by in each area.
 export const DEFAULT_RANK_METRIC = Object.freeze({
+<<<<<<< Updated upstream
   coding: 'coding.prepScore', learning: 'learning.progress', interview: 'interview.prepScore', assessment: 'assessment.prepScore', all: 'student.prepScore',
+=======
+  coding: 'coding.prepScore', learning: 'learning.progress', interview: 'interview.mockScore', assessment: 'assessment.averageScore', all: 'coding.prepScore',
+>>>>>>> Stashed changes
 });
 
 export const FIELDS = new Map(FIELD_LIST.map((field) => [field.key, field]));

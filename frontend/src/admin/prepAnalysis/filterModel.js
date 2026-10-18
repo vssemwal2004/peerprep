@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 // The Prep Analysis filter, in the simplest form that still covers any combination:
 //
 //   - Pick the feature to analyse (All, Prep Coding with its Quick Prep sheets, …).
@@ -23,6 +24,37 @@ export const OPERATORS = Object.freeze({
   number: [{ value: "gte", label: "at least" }, { value: "lte", label: "at most" }, { value: "between", label: "between" }, { value: "eq", label: "exactly" }],
   percent: [{ value: "gte", label: "at least" }, { value: "lte", label: "at most" }, { value: "between", label: "between" }, { value: "eq", label: "exactly" }],
   text: [{ value: "contains", label: "contains" }],
+=======
+// The Prep Analysis filter, built the way an admin thinks about it:
+//
+//   1. Feature   which part of prep to analyse (All, Prep Coding, Prep Learning, …)
+//                and conditions on that feature (Quick Prep is part of Prep Coding).
+//   2. Students  conditions on the students themselves (semester, branch, …).
+//   3. Top / bottom rules, applied after the filters (top 10, bottom 5%, …).
+//
+// Sections 1 and 2 are condition groups: rows joined with AND or OR, with
+// sub-groups and sub-sub-groups for combinations such as
+//   Semester is 5  AND  (Branch is CSE  OR  (Branch is IT AND Section is A)).
+//
+// State:  { area, range, feature: group, students: group, rank: { join, rules: [rankRule] } }
+// group:  { id, type: "group", join: "and" | "or", negate, children: [group | rule] }
+// rule:   { id, type: "rule", field, operator, value, labels, qualifiers }
+// rankRule: { id, direction: "top" | "bottom", value, unit: "count" | "percent", metric }
+
+// Plain operator names per field kind (all supported by the API).
+export const OPERATORS = Object.freeze({
+  enum: [{ value: "anyOf", label: "is any of" }, { value: "noneOf", label: "is none of" }],
+  set: [{ value: "anyOf", label: "has any of" }, { value: "allOf", label: "has all of" }, { value: "noneOf", label: "has none of" }],
+  number: [
+    { value: "gte", label: "is at least" }, { value: "lte", label: "is at most" }, { value: "between", label: "is between" },
+    { value: "eq", label: "is exactly" }, { value: "gt", label: "is more than" }, { value: "lt", label: "is less than" }, { value: "neq", label: "is not" },
+  ],
+  percent: [
+    { value: "gte", label: "is at least" }, { value: "lte", label: "is at most" }, { value: "between", label: "is between" },
+    { value: "eq", label: "is exactly" }, { value: "gt", label: "is more than" }, { value: "lt", label: "is less than" },
+  ],
+  text: [{ value: "contains", label: "contains" }, { value: "notContains", label: "does not contain" }, { value: "equals", label: "is exactly" }, { value: "startsWith", label: "starts with" }],
+>>>>>>> Stashed changes
 });
 
 export const RANGE_PRESETS = Object.freeze([
@@ -33,6 +65,7 @@ export const RANGE_PRESETS = Object.freeze([
   { value: "all", label: "All time" },
 ]);
 
+<<<<<<< Updated upstream
 export const MAX_GROUPS = 6;
 export const MAX_RANK_RULES = 6;
 const LIST_OPERATORS = ["anyOf", "noneOf", "allOf"];
@@ -41,6 +74,16 @@ let sequence = 0;
 export const nodeId = () => `n${Date.now().toString(36)}${(sequence += 1).toString(36)}`;
 export const groupName = (index) => `Group ${String.fromCharCode(65 + index)}`;
 
+=======
+// Section groups nest two more levels: group > sub-group > sub-sub-group.
+export const MAX_GROUP_DEPTH = 3;
+export const MAX_RANK_RULES = 6;
+
+let sequence = 0;
+export const nodeId = () => `n${Date.now().toString(36)}${(sequence += 1).toString(36)}`;
+
+const LIST_OPERATORS = ["anyOf", "noneOf", "allOf"];
+>>>>>>> Stashed changes
 export const operatorLabel = (field, operator) => (OPERATORS[field?.kind] || []).find((entry) => entry.value === operator)?.label || operator;
 
 export function defaultValue(operator) {
@@ -49,6 +92,7 @@ export function defaultValue(operator) {
   return "";
 }
 
+<<<<<<< Updated upstream
 export const newGroup = (rules = []) => ({ id: nodeId(), rules });
 export const newRankRule = (metric, direction = "top") => ({ id: nodeId(), direction, value: 10, unit: "count", metric });
 
@@ -59,16 +103,41 @@ export function defaultFilterState(area = "coding") {
 // ---------------------------------------------------------------- features and fields
 
 /** The modules a feature covers: "all" is every licensed feature. */
+=======
+export function newRule(field = null) {
+  const operator = field ? OPERATORS[field.kind]?.[0]?.value || "anyOf" : "";
+  return { id: nodeId(), type: "rule", field: field?.key || "", operator, value: defaultValue(operator), labels: {}, qualifiers: {} };
+}
+
+export const newGroup = (join = "and", children = []) => ({ id: nodeId(), type: "group", join, negate: false, children });
+
+export function newRankRule(metric, direction = "top") {
+  return { id: nodeId(), direction, value: 10, unit: "count", metric };
+}
+
+export function defaultFilterState(area = "coding") {
+  return { area, range: { preset: "all" }, feature: newGroup(), students: newGroup(), rank: { join: "and", rules: [] } };
+}
+
+// ---------------------------------------------------------------- areas and fields
+
+/** The modules an area covers: "all" is every licensed feature. */
+>>>>>>> Stashed changes
 export const areaModules = (area, catalog) => (area === "all"
   ? (catalog?.areas || []).map((entry) => entry.key).filter((key) => key !== "all")
   : [area]);
 
+<<<<<<< Updated upstream
 /** The chosen feature's own fields (Quick Prep fields belong to Prep Coding). */
+=======
+/** Fields for section 1: the chosen feature's own fields (Quick Prep fields belong to Prep Coding). */
+>>>>>>> Stashed changes
 export function featureFields(catalog, area) {
   const modules = new Set(areaModules(area, catalog));
   return catalog.fields.filter((field) => field.module !== "student" && modules.has(field.module));
 }
 
+<<<<<<< Updated upstream
 export const studentFields = (catalog) => catalog.fields.filter((field) => field.module === "student");
 /** Measures a top / bottom rule can rank by: the overall Prep Score, then the feature's own measures. */
 export const rankMetrics = (catalog, area) => [
@@ -223,6 +292,127 @@ export function switchArea(state, area, fieldMap, catalog) {
 }
 
 // ---------------------------------------------------------------- request shape
+=======
+/** Fields for section 2: details of the student. */
+export const studentFields = (catalog) => catalog.fields.filter((field) => field.module === "student");
+
+/** Measures a top / bottom rule can rank by in an area. */
+export const rankMetrics = (catalog, area) => featureFields(catalog, area).filter((field) => field.rankable);
+
+// ---------------------------------------------------------------- tree editing (immutable)
+
+/** A copy of `group` with `fn` applied to the node `id` (fn may return null to remove it). */
+export function updateNode(group, id, fn) {
+  if (group.id === id) return fn(group);
+  let changed = false;
+  const children = [];
+  for (const child of group.children) {
+    const next = child.id === id ? fn(child) : child.type === "group" ? updateNode(child, id, fn) : child;
+    if (next !== child) changed = true;
+    if (next) children.push(next);
+  }
+  return changed ? { ...group, children } : group;
+}
+
+export const removeNode = (group, id) => updateNode(group, id, () => null);
+export const addChild = (group, parentId, node) => updateNode(group, parentId, (parent) => ({ ...parent, children: [...parent.children, node] }));
+
+/** A deep copy with fresh ids (for "Duplicate"). */
+export function cloneNode(node) {
+  return node.type === "group"
+    ? { ...node, id: nodeId(), children: node.children.map(cloneNode) }
+    : { ...node, id: nodeId(), value: Array.isArray(node.value) ? [...node.value] : node.value, labels: { ...node.labels }, qualifiers: { ...node.qualifiers } };
+}
+
+export function duplicateNode(group, id) {
+  const visit = (parent) => {
+    const index = parent.children.findIndex((child) => child.id === id);
+    if (index >= 0) {
+      const children = [...parent.children];
+      children.splice(index + 1, 0, cloneNode(children[index]));
+      return { ...parent, children };
+    }
+    let changed = false;
+    const children = parent.children.map((child) => {
+      if (child.type !== "group") return child;
+      const next = visit(child);
+      if (next !== child) changed = true;
+      return next;
+    });
+    return changed ? { ...parent, children } : parent;
+  };
+  return visit(group);
+}
+
+/** Removes rules whose field fails `keep`, and groups left empty. */
+export function pruneTree(group, keep) {
+  const children = group.children
+    .map((child) => (child.type === "group" ? pruneTree(child, keep) : child))
+    .filter((child) => (child.type === "group" ? child.children.length > 0 : keep(child)));
+  return { ...group, children };
+}
+
+/** Rules in a tree, depth first. */
+export const rulesOf = (group) => group.children.flatMap((child) => (child.type === "group" ? rulesOf(child) : [child]));
+
+// ---------------------------------------------------------------- stored state
+
+function cleanGroup(input, depth = 1) {
+  if (!input || input.type !== "group" || depth > MAX_GROUP_DEPTH) return newGroup();
+  return {
+    id: input.id || nodeId(),
+    type: "group",
+    join: input.join === "or" ? "or" : "and",
+    negate: input.negate === true,
+    children: (Array.isArray(input.children) ? input.children : [])
+      .map((child) => (child?.type === "group" ? (depth < MAX_GROUP_DEPTH ? cleanGroup(child, depth + 1) : null) : child?.field ? { labels: {}, qualifiers: {}, ...child, id: child.id || nodeId(), type: "rule" } : null))
+      .filter(Boolean),
+  };
+}
+
+/** Older or broken saved states are repaired (and older flat filter lists moved into the sections). */
+export function normalizeState(stored, fallbackArea = "coding") {
+  const base = defaultFilterState(fallbackArea);
+  if (!stored || typeof stored !== "object") return base;
+  const state = {
+    area: typeof stored.area === "string" ? stored.area : base.area,
+    range: stored.range?.preset ? stored.range : base.range,
+    feature: cleanGroup(stored.feature),
+    students: cleanGroup(stored.students),
+    rank: {
+      join: stored.rank?.join === "or" ? "or" : "and",
+      rules: (Array.isArray(stored.rank?.rules) ? stored.rank.rules : []).filter((rule) => rule?.metric).slice(0, MAX_RANK_RULES)
+        .map((rule) => ({ id: rule.id || nodeId(), direction: rule.direction === "bottom" ? "bottom" : "top", value: rule.value ?? 10, unit: rule.unit === "percent" ? "percent" : "count", metric: rule.metric })),
+    },
+  };
+  // Version 3 kept one flat list of filters and one "Show" choice.
+  if (Array.isArray(stored.filters)) {
+    for (const filter of stored.filters.filter((entry) => entry?.field)) {
+      const rule = { labels: {}, qualifiers: {}, ...filter, id: filter.id || nodeId(), type: "rule" };
+      const target = filter.field.startsWith("student.") ? "students" : "feature";
+      state[target] = { ...state[target], children: [...state[target].children, rule] };
+    }
+  }
+  if (stored.ranking?.mode && stored.ranking.mode !== "everyone" && stored.ranking.metric && !state.rank.rules.length) {
+    state.rank.rules = [{ id: nodeId(), direction: stored.ranking.mode === "bottom" ? "bottom" : "top", value: stored.ranking.value ?? 10, unit: stored.ranking.unit === "percent" ? "percent" : "count", metric: stored.ranking.metric }];
+  }
+  return state;
+}
+
+/** Changing the feature keeps student conditions and drops the old feature's conditions and rankings. */
+export function switchArea(state, area, fieldMap, catalog) {
+  const modules = new Set(areaModules(area, catalog));
+  const keep = (rule) => modules.has(fieldMap.get(rule.field)?.module);
+  return {
+    ...state,
+    area,
+    feature: pruneTree(state.feature, (rule) => !rule.field || keep(rule)),
+    rank: { ...state.rank, rules: state.rank.rules.filter((rule) => modules.has(fieldMap.get(rule.metric)?.module)) },
+  };
+}
+
+// ---------------------------------------------------------------- completeness and request shape
+>>>>>>> Stashed changes
 
 const filled = (value) => value !== "" && value !== null && value !== undefined;
 
@@ -249,6 +439,7 @@ function requestQualifiers(qualifiers) {
   return entries.length ? Object.fromEntries(entries) : undefined;
 }
 
+<<<<<<< Updated upstream
 const completeRules = (group, fieldMap) => (group?.rules || []).filter((rule) => isRuleComplete(rule, fieldMap.get(rule.field)));
 
 /** One group's filters, all applied together, or null when it has none. */
@@ -269,6 +460,29 @@ export function toRequestFilter(state, fieldMap) {
 }
 
 const isRankComplete = (rule) => Boolean(rule.metric) && Number(rule.value) > 0 && (rule.unit === "percent" ? Number(rule.value) <= 100 : Number.isInteger(Number(rule.value)));
+=======
+/** The API shape of a group, or null when it holds no finished condition. */
+export function toRequestGroup(group, fieldMap) {
+  if (!group) return null;
+  const children = group.children.map((child) => {
+    if (child.type === "group") return toRequestGroup(child, fieldMap);
+    const field = fieldMap.get(child.field);
+    if (!isRuleComplete(child, field)) return null;
+    const qualifiers = field.qualifiers ? requestQualifiers(child.qualifiers) : undefined;
+    return { type: "rule", field: child.field, operator: child.operator, value: requestValue(child, field), ...(qualifiers ? { qualifiers } : {}) };
+  }).filter(Boolean);
+  if (!children.length) return null;
+  return { type: "group", join: group.join === "or" ? "or" : "and", ...(group.negate ? { negate: true } : {}), children };
+}
+
+/** Feature conditions AND student conditions. */
+export function toRequestFilter(state, fieldMap) {
+  const children = [toRequestGroup(state.feature, fieldMap), toRequestGroup(state.students, fieldMap)].filter(Boolean);
+  return { type: "group", join: "and", children };
+}
+
+const isRankComplete = (rule) => Boolean(rule.metric) && Number(rule.value) > 0 && (rule.unit !== "percent" || Number(rule.value) <= 100) && (rule.unit === "percent" || Number.isInteger(Number(rule.value)));
+>>>>>>> Stashed changes
 
 export function toRequestRank(rank) {
   const cuts = (rank?.rules || []).filter(isRankComplete)
@@ -292,6 +506,7 @@ export function toQueryRequest({ state, layout = [], table }, fieldMap) {
   };
 }
 
+<<<<<<< Updated upstream
 export const countRules = (group, fieldMap) => completeRules(group, fieldMap).length;
 export const countRankRules = (rank) => (rank?.rules || []).filter(isRankComplete).length;
 export const countActive = (state, fieldMap) => state.groups.reduce((sum, group) => sum + countRules(group, fieldMap), 0) + countRankRules(state.rank);
@@ -299,12 +514,25 @@ export const countActive = (state, fieldMap) => state.groups.reduce((sum, group)
 // ---------------------------------------------------------------- in words
 
 const UNIT_TEXT = { days: " days", min: " min", "/ 5": " of 5" };
+=======
+export const countConditions = (group, fieldMap) => (group ? rulesOf(group).filter((rule) => isRuleComplete(rule, fieldMap.get(rule.field))).length : 0);
+export const countRankRules = (rank) => (rank?.rules || []).filter(isRankComplete).length;
+export const countActive = (state, fieldMap) => countConditions(state.feature, fieldMap) + countConditions(state.students, fieldMap) + countRankRules(state.rank);
+
+// ---------------------------------------------------------------- in words
+
+const UNIT_TEXT = { days: " days", min: " min" };
+>>>>>>> Stashed changes
 const unitOf = (field) => (field.kind === "percent" ? "%" : UNIT_TEXT[field.unit] || "");
 
 /** (field, value) → label from the catalog's fixed lists (status names, semesters, languages). */
 export const optionLookup = (catalog) => (field, value) => catalog?.staticOptions?.[field.options]?.find((option) => String(option.value) === String(value))?.label;
 
+<<<<<<< Updated upstream
 /** "Semester 5" → "5" after "Semester"; "Stopped (no practice…)" → "Stopped". */
+=======
+/** "Semester 5" → "5" after "Semester is any of"; "Stopped (no practice…)" → "Stopped". */
+>>>>>>> Stashed changes
 export function compactOption(label, field) {
   let text = String(label ?? "").replace(/\s*\(.*\)\s*$/, "");
   const prefix = `${field?.label || ""} `;
@@ -312,6 +540,7 @@ export function compactOption(label, field) {
   return text;
 }
 
+<<<<<<< Updated upstream
 /** A filter in a few plain words: "Semester 5 or 6", "Prep Score 250 or more", "Branch not CSE". */
 export function ruleText(rule, fieldMap, lookup = () => undefined, { max = 3 } = {}) {
   const field = fieldMap.get(rule.field);
@@ -372,6 +601,64 @@ export function summaryLines(state, fieldMap, metricLabel, lookup) {
   if (groups.length > 1) groups.forEach((text, index) => lines.push(`${index ? "Or " : ""}${groupName(index)}: ${text}`));
   const ranking = rankText(state.rank, metricLabel);
   if (ranking) lines.push(`Showing: ${ranking}`);
+=======
+/** The value of a rule in words: "5, 6", "50%", "20 and 60 days". */
+export function valueWords(rule, field, lookup = () => undefined, { max = 3 } = {}) {
+  if (!field || !isRuleComplete(rule, field)) return "";
+  const unit = unitOf(field);
+  if (rule.operator === "between") return `${rule.value[0]} and ${rule.value[1]}${unit}`;
+  if (Array.isArray(rule.value)) {
+    const names = rule.value.map((value) => compactOption(rule.labels?.[value] ?? lookup(field, value) ?? value, field));
+    return names.length > max ? `${names.slice(0, max).join(", ")} +${names.length - max}` : names.join(", ");
+  }
+  if (field.kind === "text") return `“${String(rule.value).trim()}”`;
+  return `${rule.value}${unit}`;
+}
+
+const onlyWords = (rule) => {
+  const only = Object.values(rule.qualifiers || {}).flat().filter(Boolean);
+  return only.length ? ` (counting only ${only.join(", ")})` : "";
+};
+
+/** "Prep Score is at least 50", or "" for an unfinished rule. */
+export function ruleText(rule, fieldMap, lookup, options) {
+  const field = fieldMap.get(rule.field);
+  if (!isRuleComplete(rule, field)) return "";
+  return `${field.label} ${operatorLabel(field, rule.operator)} ${valueWords(rule, field, lookup, options)}${onlyWords(rule)}`;
+}
+
+/** A whole group in words, with brackets for sub-groups: "A and (B or C)". */
+export function groupText(group, fieldMap, lookup, options) {
+  if (!group) return "";
+  const parts = group.children.map((child) => {
+    if (child.type === "rule") return ruleText(child, fieldMap, lookup, options);
+    const inner = groupText(child, fieldMap, lookup, options);
+    const count = child.children.filter((entry) => entry.type === "group" || isRuleComplete(entry, fieldMap.get(entry.field))).length;
+    return inner && count > 1 ? `(${inner})` : inner;
+  }).filter(Boolean);
+  const text = parts.join(group.join === "or" ? " OR " : " AND ");
+  return text && group.negate ? `NOT (${text})` : text;
+}
+
+export function rankRuleText(rule, metricLabel) {
+  return `${rule.direction === "bottom" ? "Bottom" : "Top"} ${rule.value}${rule.unit === "percent" ? "%" : ""} by ${metricLabel(rule.metric)}`;
+}
+
+export function rankText(rank, metricLabel) {
+  return (rank?.rules || []).filter(isRankComplete).map((rule) => rankRuleText(rule, metricLabel)).join(rank?.join === "or" ? " OR " : " AND ");
+}
+
+/** The whole filter in plain sentences, for the top of a downloaded file. */
+export function summaryLines(state, fieldMap, metricLabel, lookup, areaLabel = "") {
+  const lines = [];
+  if (areaLabel) lines.push(`Analysing: ${areaLabel}`);
+  const feature = groupText(state.feature, fieldMap, lookup, { max: 20 });
+  const students = groupText(state.students, fieldMap, lookup, { max: 20 });
+  const ranking = rankText(state.rank, metricLabel);
+  if (feature) lines.push(`${areaLabel || "Feature"} filters: ${feature}`);
+  if (students) lines.push(`Student filters: ${students}`);
+  if (ranking) lines.push(`Top / bottom: ${ranking}`);
+>>>>>>> Stashed changes
   return lines;
 }
 
@@ -385,7 +672,10 @@ const KPI_RULES = Object.freeze({
   "coding.sheetFinished": { field: "quickprep.status", operator: "anyOf", value: ["finished"] },
   "learning.active": { field: "learning.status", operator: "anyOf", value: ["active"] },
   "learning.halfway": { field: "learning.progress", operator: "gte", value: "50" },
+<<<<<<< Updated upstream
   "assessment.passedStudents": { field: "assessment.passed", operator: "gte", value: "1" },
+=======
+>>>>>>> Stashed changes
   "learning.stopped": { field: "learning.status", operator: "anyOf", value: ["inactive", "never"] },
   "interview.students": { field: "interview.done", operator: "gte", value: "1" },
   "interview.strong": { field: "interview.mockScore", operator: "gte", value: "60" },
@@ -397,14 +687,21 @@ const KPI_RULES = Object.freeze({
 });
 
 const same = (left, right) => JSON.stringify([].concat(left).map(String).sort()) === JSON.stringify([].concat(right).map(String).sort());
+<<<<<<< Updated upstream
 const matches = (rule, wanted) => Boolean(rule) && rule.operator === wanted.operator && same(rule.value, wanted.value);
 
 /** The filter behind a headline number, or null when it is not clickable. */
+=======
+const matches = (rule, wanted) => rule.type === "rule" && rule.field === wanted.field && rule.operator === wanted.operator && same(rule.value, wanted.value);
+
+/** The condition behind a headline number, or null when it is not clickable. */
+>>>>>>> Stashed changes
 export function kpiRule(section, kpiId, fieldMap) {
   const rule = KPI_RULES[`${section}.${kpiId}`];
   return rule && (!fieldMap || fieldMap.has(rule.field)) ? rule : null;
 }
 
+<<<<<<< Updated upstream
 export const isKpiActive = (rule, state) => Boolean(rule) && state.groups.every((group) => matches(ruleFor(group, rule.field), rule));
 
 /** Sets the number's filter in every group, or removes it when it is already set. */
@@ -414,4 +711,16 @@ export function toggleKpi(rule, state) {
     ...state,
     groups: state.groups.map((group) => setRule(group, rule.field, active ? null : { id: nodeId(), field: rule.field, operator: rule.operator, value: rule.value, labels: {}, qualifiers: {} })),
   };
+=======
+export const isKpiActive = (rule, state) => Boolean(rule) && state.feature.children.some((child) => matches(child, rule));
+
+/** Adds the condition at the top of the feature section, or removes it when it is there. */
+export function toggleKpi(rule, state) {
+  if (isKpiActive(rule, state)) return { ...state, feature: { ...state.feature, children: state.feature.children.filter((child) => !matches(child, rule)) } };
+  const condition = { ...newRule(), field: rule.field, operator: rule.operator, value: rule.value };
+  const feature = state.feature.join === "and" || !state.feature.children.length
+    ? { ...state.feature, children: [...state.feature.children, condition] }
+    : newGroup("and", [state.feature, condition]);
+  return { ...state, feature };
+>>>>>>> Stashed changes
 }
