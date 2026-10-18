@@ -8,6 +8,7 @@ const APPLY = process.argv.includes('--apply');
 const ALL_FAILED = process.argv.includes('--all-failed');
 const value = (name) => process.argv.find((entry) => entry.startsWith(`--${name}=`))?.slice(name.length + 3) || '';
 const ids = value('submission-ids').split(',').map((entry) => entry.trim()).filter(Boolean);
+const waitMs = Math.min(300_000, Math.max(0, Number(value('wait-ms')) || 0));
 const hash = (input) => createHash('sha256').update(String(input || '')).digest('hex');
 
 for (const id of ids) assert.ok(mongoose.isValidObjectId(id), `Invalid submission id: ${id}`);
@@ -117,6 +118,28 @@ try {
       recovered.push({ submissionId: String(submission._id), evaluationVersion: nextVersion });
     }
     console.log(JSON.stringify({ recovered: recovered.length, submissions: recovered, answersPreserved: true, attemptsPreserved: true }, null, 2));
+    if (waitMs > 0 && recovered.length) {
+      const deadline = Date.now() + waitMs;
+      let statuses = [];
+      do {
+        statuses = await AssessmentSubmission.find({
+          _id: { $in: recovered.map((row) => row.submissionId) },
+        }).select('evaluationStatus score maxMarks codingJobsPending codingJobsCompleted pendingWork.status').lean();
+        if (statuses.every((row) => row.evaluationStatus === 'completed')) break;
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      } while (Date.now() < deadline);
+      const verification = statuses.map((row) => ({
+        submissionId: String(row._id),
+        evaluationStatus: row.evaluationStatus,
+        score: row.score,
+        maxMarks: row.maxMarks,
+        codingJobsPending: row.codingJobsPending,
+        codingJobsCompleted: row.codingJobsCompleted,
+        pendingWorkStatus: row.pendingWork?.status,
+      }));
+      console.log(JSON.stringify({ verification }, null, 2));
+      if (verification.some((row) => row.evaluationStatus !== 'completed')) process.exitCode = 2;
+    }
   }
 } finally {
   await mongoose.disconnect();
