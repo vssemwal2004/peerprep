@@ -141,6 +141,31 @@ try {
       if (verification.some((row) => row.evaluationStatus !== 'completed')) process.exitCode = 2;
     }
   }
+  if (APPLY && waitMs > 0 && ids.length && submissions.length === 0) {
+    const selected = ids.map((id) => new mongoose.Types.ObjectId(id));
+    const deadline = Date.now() + waitMs;
+    let statuses = [];
+    do {
+      statuses = await AssessmentSubmission.find({ _id: { $in: selected } })
+        .select('evaluationStatus score maxMarks codingJobsPending codingJobsCompleted pendingWork.status')
+        .lean();
+      if (statuses.length === ids.length && statuses.every((row) => row.evaluationStatus === 'completed')) break;
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    } while (Date.now() < deadline);
+    const verification = statuses.map((row) => ({
+      submissionId: String(row._id),
+      evaluationStatus: row.evaluationStatus,
+      score: row.score,
+      maxMarks: row.maxMarks,
+      codingJobsPending: row.codingJobsPending,
+      codingJobsCompleted: row.codingJobsCompleted,
+      pendingWorkStatus: row.pendingWork?.status,
+    }));
+    console.log(JSON.stringify({ alreadyRecovered: true, verification }, null, 2));
+    if (verification.length !== ids.length || verification.some((row) => row.evaluationStatus !== 'completed')) {
+      process.exitCode = 2;
+    }
+  }
 } finally {
   await mongoose.disconnect();
 }
