@@ -320,7 +320,7 @@ try {
   assert.equal(await page.locator('body').evaluate(node => node.style.overflow), '', 'Starting a mission restores scrolling');
   await page.setViewportSize({ width: 1366, height: 900 });
   await page.goto(`${base}/u/test-university/__engagement-fixture?admin`, { waitUntil: 'commit' });
-  await page.getByRole('heading', { name: 'Student progression', exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'Challenges & badges', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Save progression policy' }).waitFor();
   assert.equal(await page.getByRole('checkbox', { name: 'Peer interviews' }).isDisabled(), true);
   await page.getByRole('spinbutton', { name: 'Daily time budget (minutes)' }).fill('30');

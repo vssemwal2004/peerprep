@@ -205,7 +205,7 @@ export default function PlatformWalletPage() {
           <div><p className="font-semibold">{item.name}</p><p className="text-xs text-slate-500 dark:text-slate-400">{item.universityId}</p></div>
           <div className="flex items-center gap-4"><span className="text-right"><strong className="block tabular-nums">{formatCoins(item.coinBalance)}</strong><span className="text-xs text-slate-500">coins available</span></span><button type="button" className="rounded-lg border border-sky-300 px-3 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-50 dark:border-sky-700 dark:text-sky-300 dark:hover:bg-sky-950" onClick={() => { pendingRequestId.current = null; setUniversityId(item.universityId); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>Add coins</button></div>
         </li>)}
-      </ul> : <p className="mt-5 text-sm text-slate-500">{universities.length ? 'No universities match your search.' : <>No universities yet. <Link className="font-semibold text-sky-600 underline" to="/admin/platform">Create a university</Link> to start.</>}</p>}
+      </ul> : <p className="mt-5 text-sm text-slate-500">{universities.length ? 'No universities match your search.' : <>No universities yet. <Link className="font-semibold text-sky-600 underline" to="/admin/universities/new">Add a university</Link> to start.</>}</p>}
     </section>
 
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900 sm:p-6">

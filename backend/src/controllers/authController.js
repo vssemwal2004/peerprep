@@ -21,6 +21,19 @@ import { deploymentRole } from '../platform/deployment.js';
 const tenantTokenClaims = () => deploymentRole() === 'shared'
   ? { tenantId: currentTenant()?.universityId || 'platform' } : {};
 
+function passwordResetFrontendUrl() {
+  // The shared production deployment has one canonical browser origin. Do not
+  // let a stale or misspelled environment value generate unusable (or unsafe)
+  // password-reset links.
+  if (deploymentRole() === 'shared' && process.env.NODE_ENV === 'production') {
+    return 'https://peerprep.co.in';
+  }
+  const configured = deploymentRole() === 'shared'
+    ? (process.env.FRONTEND_ORIGIN || process.env.FRONTEND_URL)
+    : (process.env.FRONTEND_URL || process.env.FRONTEND_ORIGIN);
+  return String(configured || 'http://localhost:5173').split(',')[0].trim().replace(/\/$/, '');
+}
+
 function getAuthCookieOptions() {
   return {
     httpOnly: true,
@@ -700,7 +713,7 @@ export async function requestPasswordReset(req, res) {
   await user.save();
 
   // Send email with reset link - support multiple frontend ports
-  const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+  const frontendUrl = passwordResetFrontendUrl();
   const resetUrl = `${frontendUrl}${currentTenant() ? `/u/${currentTenant().universityId}` : ''}/reset-password?token=${resetToken}`;
   
   try {

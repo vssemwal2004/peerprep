@@ -63,7 +63,13 @@ const StudentResume = lazy(() => import("./student/StudentResume"));
 
 // Admin Pages
 const AdminOverview = lazy(() => import("./admin/AdminOverview"));
-const PlatformControl = lazy(() => import('./admin/PlatformControl'));
+const UniversitiesOverview = lazy(() => import('./admin/universities/UniversitiesOverview'));
+const UniversityList = lazy(() => import('./admin/universities/UniversityList'));
+const AddUniversity = lazy(() => import('./admin/universities/AddUniversity'));
+const UniversityDetail = lazy(() => import('./admin/universities/UniversityDetail'));
+const SharedAssessments = lazy(() => import('./admin/universities/SharedAssessments'));
+const UniversityDefaults = lazy(() => import('./admin/universities/UniversityDefaults'));
+const UniversityActivity = lazy(() => import('./admin/universities/UniversityActivity'));
 const PrepScoreAdjustment = lazy(() => import('./admin/PrepScoreAdjustment'));
 const WalletPage = lazy(() => import('./wallet/WalletPage'));
 const PlatformWalletPage = lazy(() => import('./wallet/PlatformWalletPage'));
@@ -474,7 +480,15 @@ function AppContent() {
         <Route path="/admin/ai-interviews/*" element={<AdminShell><AIInterviewWorkspace /></AdminShell>} />
         <Route path="/admin/change-password" element={<AdminShell><AdminChangePassword /></AdminShell>} />
         <Route path="/admin/learning" element={<AdminShell><AdminLearning /></AdminShell>} />
-        <Route path="/admin/platform" element={<AdminShell><PlatformControl /></AdminShell>} />
+        {/* Universities (Master Admin): each task has its own page; the old single page redirects here. */}
+        <Route path="/admin/platform" element={<Navigate to="/admin/universities" replace />} />
+        <Route path="/admin/universities" element={<AdminShell><UniversitiesOverview /></AdminShell>} />
+        <Route path="/admin/universities/all" element={<AdminShell><UniversityList /></AdminShell>} />
+        <Route path="/admin/universities/new" element={<AdminShell><AddUniversity /></AdminShell>} />
+        <Route path="/admin/universities/assessments" element={<AdminShell><SharedAssessments /></AdminShell>} />
+        <Route path="/admin/universities/defaults" element={<AdminShell><UniversityDefaults /></AdminShell>} />
+        <Route path="/admin/universities/activity" element={<AdminShell><UniversityActivity /></AdminShell>} />
+        <Route path="/admin/universities/:universityId" element={<AdminShell><UniversityDetail /></AdminShell>} />
         <Route path={PREP_SCORE_ADJUSTMENT_PATH} element={canAdjustPrepScore ? <AdminShell><PrepScoreAdjustment /></AdminShell> : <Navigate to="/admin/dashboard" replace />} />
         <Route path={PREP_COIN_PRICING_PATH} element={canAdjustPrepScore ? <AdminShell><PrepCoinPricing /></AdminShell> : <Navigate to="/admin/dashboard" replace />} />
         <Route path="/admin/learning/:semester/:subject/:teacherId" element={<AdminShell><AdminLearningDetail /></AdminShell>} />

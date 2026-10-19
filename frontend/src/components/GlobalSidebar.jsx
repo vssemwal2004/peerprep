@@ -44,6 +44,8 @@ import {
   Wallet,
   SlidersHorizontal,
   Coins,
+  Trophy,
+  Inbox,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { canManageInterviewCompanies, isControlDeployment, isUniversityDeployment, SUGGESTED_COMPANIES_PATH } from '../platform/universityPermissions';
@@ -188,13 +190,28 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
         label: 'Settings',
         icon: Settings,
         items: [
-          { label: 'Promote Students', to: '/coordinator/settings/promote-students', icon: GraduationCap, permissionKey: 'coordinator.students.promote' },
-          { label: 'Master Data', to: '/coordinator/settings/master-data', icon: Database, permissionKey: 'coordinator.master-data.manage' },
-          { label: 'Email Templates', to: '/coordinator/settings/email-templates', icon: Mail, permissionKey: 'coordinator.email-templates.manage' },
-          { label: 'Email Queue', to: '/coordinator/email-queue', icon: Mail, permissionKey: 'coordinator.email-queue.manage' },
-          { label: 'My Activity', to: '/coordinator/activity', icon: Activity, permissionKey: 'coordinator.activity.view' },
-          { label: 'Profile', to: '/coordinator/profile', icon: User, permissionKey: 'coordinator.profile.manage' },
-          { label: 'Change Password', to: '/coordinator/change-password', icon: Lock, permissionKey: 'coordinator.profile.manage' },
+          {
+            label: 'Students & Data', icon: GraduationCap, folder: true,
+            children: [
+              { label: 'Promote Students', to: '/coordinator/settings/promote-students', icon: GraduationCap, permissionKey: 'coordinator.students.promote' },
+              { label: 'Master Data', to: '/coordinator/settings/master-data', icon: Database, permissionKey: 'coordinator.master-data.manage' },
+            ],
+          },
+          {
+            label: 'Communication', icon: Mail, folder: true,
+            children: [
+              { label: 'Email Templates', to: '/coordinator/settings/email-templates', icon: Mail, permissionKey: 'coordinator.email-templates.manage' },
+              { label: 'Email Queue', to: '/coordinator/email-queue', icon: Inbox, permissionKey: 'coordinator.email-queue.manage' },
+            ],
+          },
+          {
+            label: 'My Account', icon: User, folder: true,
+            children: [
+              { label: 'Profile', to: '/coordinator/profile', icon: User, permissionKey: 'coordinator.profile.manage' },
+              { label: 'Change Password', to: '/coordinator/change-password', icon: Lock, permissionKey: 'coordinator.profile.manage' },
+              { label: 'My Activity', to: '/coordinator/activity', icon: Activity, permissionKey: 'coordinator.activity.view' },
+            ],
+          },
         ],
       },
     ];
@@ -210,7 +227,21 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
     },
     ...(isControlDeployment
       ? [
-        { type: 'link', label: 'Universities', to: '/admin/platform', icon: Building2 },
+        {
+          type: 'group',
+          key: 'universities',
+          label: 'Universities',
+          icon: Building2,
+          items: [
+            { label: 'Overview', to: '/admin/universities', icon: LayoutDashboard, match: (loc) => loc.pathname === '/admin/universities' },
+            // A single university's page belongs to the list it was opened from.
+            { label: 'All Universities', to: '/admin/universities/all', icon: Building2, match: (loc) => loc.pathname === '/admin/universities/all' || (/^\/admin\/universities\/[^/]+\/?$/.test(loc.pathname) && !UNIVERSITY_SECTIONS.has(loc.pathname.split('/')[3])) },
+            { label: 'Add University', to: '/admin/universities/new', icon: CirclePlus },
+            { label: 'Shared Assessments', to: '/admin/universities/assessments', icon: ClipboardList },
+            { label: 'New-University Defaults', to: '/admin/universities/defaults', icon: SlidersHorizontal },
+            { label: 'Activity Log', to: '/admin/universities/activity', icon: History },
+          ],
+        },
         { type: 'link', label: 'Prep Coin management', to: '/admin/wallet', icon: Wallet },
       ]
       : []),
@@ -328,22 +359,54 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
       key: 'settings',
       label: 'Settings',
       icon: Settings,
+      // Folders keep related settings together; Master-Admin-only settings exist only on the central platform.
       items: [
-        { label: 'Bulk Uploads', to: '/admin/settings/bulk-uploads', icon: FileSpreadsheet },
-        { label: 'Master Data', to: '/admin/settings/master-data', icon: Database },
-        ...(isControlDeployment ? [
-          { label: 'Prep Score Adjustment', to: '/admin/settings/prep-score-adjustment', icon: SlidersHorizontal },
-          { label: 'Prep Coin Pricing', to: '/admin/settings/prep-coin-pricing', icon: Coins },
-        ] : []),
-        ...(canManageInterviewCompanies ? [{ label: 'Suggested Companies', to: SUGGESTED_COMPANIES_PATH, icon: BadgeCheck }] : []),
-        { label: 'Email Templates', to: '/admin/settings/email-templates', icon: Mail },
-        { label: 'Email Queue', to: '/admin/email-queue', icon: Mail },
-        { label: 'Promote Students', to: '/admin/settings/promote-students', icon: GraduationCap },
-        { label: 'Student Progression', to: '/admin/settings/student-progression', icon: Activity },
+        {
+          label: 'Scoring & Rewards',
+          icon: Trophy,
+          folder: true,
+          children: [
+            ...(isControlDeployment ? [
+              { label: 'Prep Score Adjustment', to: '/admin/settings/prep-score-adjustment', icon: SlidersHorizontal },
+              { label: 'Prep Coin Pricing', to: '/admin/settings/prep-coin-pricing', icon: Coins },
+            ] : []),
+            { label: 'Challenges & Badges', to: '/admin/settings/student-progression', icon: Activity },
+          ],
+        },
+        {
+          label: 'Students',
+          icon: GraduationCap,
+          folder: true,
+          children: [
+            { label: 'Bulk Uploads', to: '/admin/settings/bulk-uploads', icon: FileSpreadsheet },
+            { label: 'Promote Students', to: '/admin/settings/promote-students', icon: GraduationCap },
+          ],
+        },
+        {
+          label: 'Communication',
+          icon: Mail,
+          folder: true,
+          children: [
+            { label: 'Email Templates', to: '/admin/settings/email-templates', icon: Mail },
+            { label: 'Email Queue', to: '/admin/email-queue', icon: Inbox },
+          ],
+        },
+        {
+          label: 'Reference Data',
+          icon: Database,
+          folder: true,
+          children: [
+            { label: 'Master Data', to: '/admin/settings/master-data', icon: Database },
+            ...(canManageInterviewCompanies ? [{ label: 'Suggested Companies', to: SUGGESTED_COMPANIES_PATH, icon: BadgeCheck }] : []),
+          ],
+        },
       ],
     },
   ];
 };
+
+// Fixed pages under /admin/universities; any other segment is one university's own page.
+const UNIVERSITY_SECTIONS = new Set(['all', 'new', 'assessments', 'defaults', 'activity']);
 
 function applyPlatformPermissions(items, allowsPath, role) {
   return items.map((item) => {
@@ -441,23 +504,27 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
     }
   }, [storagePrefix, user]);
 
-  const previousNavigation = useRef(location.key);
-  useEffect(() => {
-    if (previousNavigation.current === location.key) return;
-    previousNavigation.current = location.key;
-    if (getInterviewSection(location.pathname, location.search)) {
-      setOpenGroup('interviews');
-      setOpenNestedGroup('interviews:One-to-One Interviews');
-    } else if (location.pathname === '/admin/ai-interviews' || location.pathname.startsWith('/admin/ai-interviews/')) {
-      setOpenGroup('interviews');
-      setOpenNestedGroup('interviews:AI Interviews');
-    }
-  }, [location.key, location.pathname, location.search]);
-
   const isRouteActive = (item) => {
     if (item.match) return item.match(location);
+    if (item.children) return item.children.some((child) => isRouteActive(child));
     return location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
   };
+
+  // Open the group (and folder) holding the current page, on first load and after every navigation,
+  // so the admin always sees where they are without hunting through closed menus.
+  const navigationKey = `${location.pathname}${location.search}`;
+  useEffect(() => {
+    for (const item of navItems) {
+      if (item.type !== 'group') continue;
+      const child = item.items.find((entry) => isRouteActive(entry));
+      if (!child) continue;
+      setOpenGroup(item.key);
+      if (child.children?.length) setOpenNestedGroup(`${item.key}:${child.label}`);
+      return;
+    }
+    // isRouteActive reads the current location, which navigationKey tracks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigationKey, navItems]);
 
   const isGroupActive = (group) => group.items.some((child) => isRouteActive(child));
 
@@ -519,7 +586,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
           )}
         </div>
 
-        <nav className={`min-h-0 flex-1 overflow-x-hidden overflow-y-auto [scrollbar-width:thin] ${isStudent ? 'space-y-1 px-2 py-3' : 'space-y-1 px-1.5 py-3'}`} aria-label={`${roleLabel} navigation`}>
+        <nav className={`min-h-0 flex-1 overflow-x-hidden overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${isStudent ? 'space-y-1 px-2 py-3' : 'space-y-1 px-1.5 py-3'}`} aria-label={`${roleLabel} navigation`}>
         {navItems.map((item) => {
           if (item.type === 'link') {
             const Icon = item.icon;
@@ -599,27 +666,44 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
                       const nestedKey = `${item.key}:${child.label}`;
                       const nestedOpen = openNestedGroup === nestedKey;
                       const nestedPanelId = `${groupPanelId}-${child.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+                      const rowTone = childActive ? 'text-sky-700 dark:text-sky-300' : 'text-slate-600 hover:bg-slate-50 dark:text-gray-300 dark:hover:bg-gray-800';
                       return (
                         <div key={child.label} className="space-y-0.5">
-                          <div className={`flex items-center rounded-lg transition-colors ${childActive ? 'bg-sky-50 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300' : 'text-slate-600 hover:bg-slate-50 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
-                            <NavLink to={child.to} onClick={() => setOpenNestedGroup(nestedKey)} className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-[12px] font-semibold">
-                              <ChildIcon className="h-3.5 w-3.5 shrink-0" />
-                              <span className="min-w-0 leading-tight">{child.label}</span>
-                            </NavLink>
+                          {child.folder ? (
+                            // A folder only groups pages: the whole row opens and closes it.
                             <button
                               type="button"
-                              aria-label={`${nestedOpen ? 'Collapse' : 'Expand'} ${child.label}`}
                               aria-expanded={nestedOpen}
                               aria-controls={nestedPanelId}
                               data-platform-disclosure="navigation"
                               onClick={() => setOpenNestedGroup(nestedOpen ? null : nestedKey)}
-                              className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-white hover:text-sky-700 dark:hover:bg-gray-700 dark:hover:text-sky-300"
+                              className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[12px] font-semibold transition-colors ${rowTone}`}
                             >
-                              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${nestedOpen ? 'rotate-180' : ''}`} />
+                              <ChildIcon className="h-3.5 w-3.5 shrink-0" />
+                              <span className="min-w-0 flex-1 leading-tight">{child.label}</span>
+                              <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform ${nestedOpen ? 'rotate-180' : ''}`} />
                             </button>
-                          </div>
+                          ) : (
+                            <div className={`flex items-center rounded-lg transition-colors ${childActive ? 'bg-sky-50 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300' : 'text-slate-600 hover:bg-slate-50 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
+                              <NavLink to={child.to} onClick={() => setOpenNestedGroup(nestedKey)} className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-[12px] font-semibold">
+                                <ChildIcon className="h-3.5 w-3.5 shrink-0" />
+                                <span className="min-w-0 leading-tight">{child.label}</span>
+                              </NavLink>
+                              <button
+                                type="button"
+                                aria-label={`${nestedOpen ? 'Collapse' : 'Expand'} ${child.label}`}
+                                aria-expanded={nestedOpen}
+                                aria-controls={nestedPanelId}
+                                data-platform-disclosure="navigation"
+                                onClick={() => setOpenNestedGroup(nestedOpen ? null : nestedKey)}
+                                className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-white hover:text-sky-700 dark:hover:bg-gray-700 dark:hover:text-sky-300"
+                              >
+                                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${nestedOpen ? 'rotate-180' : ''}`} />
+                              </button>
+                            </div>
+                          )}
                           <div id={nestedPanelId} inert={!nestedOpen} className={`overflow-hidden transition-[max-height,opacity] duration-200 ${nestedOpen ? 'max-h-64 opacity-100' : 'max-h-0 opacity-0'}`}>
-                            <div className="ml-3 space-y-0.5 border-l border-slate-200 pl-2 dark:border-gray-700">
+                            <div className="ml-3 space-y-0.5 pl-2">
                               {child.children.map((nestedChild) => {
                                 const NestedIcon = nestedChild.icon;
                                 const nestedActive = isRouteActive(nestedChild);

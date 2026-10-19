@@ -225,6 +225,49 @@ test('AI Interviews label opens its submenu and each option navigates with an ex
   assert.equal(toggle.getAttribute('aria-expanded'), 'true');
 });
 
+async function mountAt(path, role = 'admin') {
+  await act(async () => root.render(h(MemoryRouter, { initialEntries: [path] },
+    h(AuthContext.Provider, { value: { user: { role, accessScope: 'full', name: 'Test User', permissions }, logout: async () => {} } },
+      h(UniversityPolicyProvider, null, h(ThemeProvider, null, h(Dismiss), h(Shell, { role }), h(Location)))))));
+}
+
+test('Master Admin universities live in one dropdown with a page per task', async () => {
+  await mount();
+  await click(titled('Universities'));
+  const panel = document.getElementById(titled('Universities').getAttribute('aria-controls'));
+  assert.deepEqual([...panel.querySelectorAll('a')].map((link) => link.textContent),
+    ['Overview', 'All Universities', 'Add University', 'Shared Assessments', 'New-University Defaults', 'Activity Log']);
+  for (const link of panel.querySelectorAll('a')) {
+    await click(link);
+    assert.equal(document.getElementById('location').textContent, link.getAttribute('href'));
+  }
+});
+
+test('opening one university shows the Universities menu with All Universities active', async () => {
+  await mountAt('/admin/universities/graphic-era?tab=plan');
+  await act(async () => document.querySelector('aside').dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true })));
+  assert.equal(titled('Universities').getAttribute('aria-expanded'), 'true', 'the current section opens by itself');
+  const active = [...document.querySelectorAll('nav a')].find((link) => link.textContent === 'All Universities');
+  assert.ok(active.className.includes('text-sky-700'));
+});
+
+test('Settings is organised into folders that open in place and navigate', async () => {
+  await mount();
+  await click(titled('Settings'));
+  const panel = document.getElementById(titled('Settings').getAttribute('aria-controls'));
+  const folders = [...panel.querySelectorAll(':scope > div > div > button[aria-expanded]')];
+  assert.deepEqual(folders.map((folder) => folder.textContent), ['Scoring & Rewards', 'Students', 'Communication', 'Reference Data']);
+  for (const folder of folders) {
+    await click(folder);
+    assert.equal(folder.getAttribute('aria-expanded'), 'true');
+    const links = [...document.getElementById(folder.getAttribute('aria-controls')).querySelectorAll('a')];
+    assert.ok(links.length > 0, `${folder.textContent} has pages`);
+    await click(links[0]);
+    assert.equal(document.getElementById('location').textContent, links[0].getAttribute('href'));
+    assert.equal(folder.getAttribute('aria-expanded'), 'true', 'the folder stays open on its own page');
+  }
+});
+
 test('assessment-only students can open and use their only group', async () => {
   await mount('student', undefined, 'assessment_only');
   await click(titled('Assessments'));

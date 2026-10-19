@@ -226,7 +226,7 @@ export default function ProblemManagement() {
               <div><h3 className="text-sm font-semibold text-slate-900 dark:text-white">{canAuthorQuickPrep ? 'Daily challenges and QuickPrep' : 'Daily challenges'}</h3><p className="mt-1 text-xs leading-5 text-slate-600 dark:text-gray-300">Each student gets a personal daily problem.{canAuthorQuickPrep ? ' Build curated QuickPreps from the question library.' : ''}</p></div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <button type="button" onClick={() => navigate('/admin/settings/student-progression')} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white dark:bg-white dark:text-slate-900">Manage progression<ArrowRight className="h-3.5 w-3.5" /></button>
+              <button type="button" onClick={() => navigate('/admin/settings/student-progression')} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white dark:bg-white dark:text-slate-900">Manage challenges<ArrowRight className="h-3.5 w-3.5" /></button>
             </div>
           </div>
         </section>

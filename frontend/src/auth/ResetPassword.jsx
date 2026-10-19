@@ -35,7 +35,7 @@ export default function ResetPassword() {
     if (newPassword) {
       setPasswordStrength({
         hasMinLength: newPassword.length >= 8,
-        hasSpecialChar: /[#*]/.test(newPassword)
+        hasSpecialChar: /[@#]/.test(newPassword)
       });
     } else {
       setPasswordStrength({
@@ -63,8 +63,8 @@ export default function ResetPassword() {
       setError('Password must be at least 8 characters');
       return false;
     }
-    if (!/[#*]/.test(newPassword)) {
-      setError('Password must contain at least one * or #');
+    if (!/[@#]/.test(newPassword)) {
+      setError('Password must contain at least one @ or #');
       return false;
     }
     if (newPassword !== confirmPassword) {
@@ -183,7 +183,7 @@ export default function ResetPassword() {
                           <XCircle size={14} className="text-red-500" />
                         )}
                         <span className={passwordStrength.hasSpecialChar ? 'text-green-600' : 'text-red-600'}>
-                          Contains * or #
+                          Contains @ or #
                         </span>
                       </div>
                     </div>

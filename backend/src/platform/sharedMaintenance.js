@@ -41,6 +41,15 @@ export function startSharedMaintenance({ scheduled = true, mail = true } = {}) {
       if (scheduled && due('platform', 'coinCharges', 60_000)) {
         await runForPlatform(() => sweepPendingCharges({ scope: PLATFORM_WALLET_SCOPE, verifiers: chargeVerifiers })).catch(logCoinFailure);
       }
+      // The shared PeerPrep deployment also owns users and queued mail in the
+      // platform database. Drain it before tenant discovery so mail still runs
+      // when no university tenants are registered.
+      if (mail && due('platform', 'mail', 5000)) {
+        await runForPlatform(async () => {
+          if (due('platform', 'mailRetention', 24 * 60 * 60_000)) await ensureMailQueueRetention();
+          await drainMailQueue();
+        });
+      }
       if (!universityIds.length) return;
       const id = universityIds[cursor++ % universityIds.length];
       const tenant = await getTenant(id);

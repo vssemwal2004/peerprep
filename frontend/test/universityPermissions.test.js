@@ -52,6 +52,9 @@ test('disabled university modules are hidden on admin, coordinator and student r
     assert.equal(pathAllowed(path, policy, 'student', '', university), true, path);
   }
   assert.equal(pathAllowed('/admin/platform', policy, 'admin', '', university), false);
+  for (const path of ['/admin/universities', '/admin/universities/new', '/admin/universities/north', '/admin/settings/prep-score-adjustment', '/admin/settings/prep-coin-pricing']) {
+    assert.equal(pathAllowed(path, policy, 'admin', '', university), false, `${path} is Master Admin only`);
+  }
   assert.equal(moduleForPath('/admin/assessment-feedback'), 'assessments');
 });
 

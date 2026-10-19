@@ -41,7 +41,7 @@ export function pathAllowed(pathname, permissions, role = 'admin', search = '', 
   // University admins neither see nor manage QuickPreps; the super admin designs them centrally.
   if (QUICKPREP_ADMIN_PATH.test(pathname) || SUGGESTED_COMPANIES_ADMIN_PATH.test(pathname) || MASTER_ONLY_SETTINGS_PATH.test(pathname)) return false;
   if (!permissions) return false;
-  if (pathname.startsWith('/admin/platform')) return false;
+  if (pathname.startsWith('/admin/platform') || pathname.startsWith('/admin/universities')) return false;
   const moduleName = moduleForPath(pathname);
   if (!moduleName) return true;
   if (moduleName !== 'analysis') return moduleEnabled(permissions, moduleName);
