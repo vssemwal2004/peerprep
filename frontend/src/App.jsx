@@ -4,7 +4,7 @@ import { lazy as reactLazy, Suspense, useEffect, useCallback, useLayoutEffect, u
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
 import { UniversityPolicyProvider } from './platform/UniversityPolicyContext';
-import { canAdjustPrepScore, canManageInterviewCompanies, isUniversityDeployment, PREP_COIN_PRICING_PATH, PREP_SCORE_ADJUSTMENT_PATH, SUGGESTED_COMPANIES_PATH } from './platform/universityPermissions';
+import { canAdjustPrepScore, canManageInterviewCompanies, isUniversityDeployment, LEGACY_PREP_COIN_PRICING_PATH, PREP_COIN_PRICING_PATH, PREP_SCORE_ADJUSTMENT_PATH, SUGGESTED_COMPANIES_PATH } from './platform/universityPermissions';
 import { ToastProvider } from './components/CustomToast';
 import AdminLayout from './admin/AdminLayout';
 import AdminProtectedRoute from './admin/AdminProtectedRoute';
@@ -72,7 +72,10 @@ const UniversityDefaults = lazy(() => import('./admin/universities/UniversityDef
 const UniversityActivity = lazy(() => import('./admin/universities/UniversityActivity'));
 const PrepScoreAdjustment = lazy(() => import('./admin/PrepScoreAdjustment'));
 const WalletPage = lazy(() => import('./wallet/WalletPage'));
-const PlatformWalletPage = lazy(() => import('./wallet/PlatformWalletPage'));
+const PrepCoinsOverview = lazy(() => import('./admin/prepCoins/PrepCoinsOverview'));
+const IssueCoins = lazy(() => import('./admin/prepCoins/IssueCoins'));
+const CoinWallets = lazy(() => import('./admin/prepCoins/CoinWallets'));
+const CoinLedger = lazy(() => import('./admin/prepCoins/CoinLedger'));
 const StudentCoinHistory = lazy(() => import('./student/prepCoin/StudentCoinHistory'));
 const PrepCoinPricing = lazy(() => import('./admin/PrepCoinPricing'));
 const AdminLearning = lazy(() => import("./admin/AdminLearning"));
@@ -441,7 +444,13 @@ function AppContent() {
         {/* Admin Routes - Protected */}
         <Route path="/admin" element={<AdminShell><AdminOverview /></AdminShell>} />
         <Route path="/admin/overview" element={<AdminShell><AdminOverview /></AdminShell>} />
-        <Route path="/admin/wallet" element={<AdminShell>{isUniversityDeployment ? <WalletPage /> : <PlatformWalletPage />}</AdminShell>} />
+        {/* Universities keep one wallet page; the Master Admin has the Prep Coins console. */}
+        <Route path="/admin/wallet" element={isUniversityDeployment ? <AdminShell><WalletPage /></AdminShell> : <Navigate to="/admin/prep-coins" replace />} />
+        <Route path="/admin/prep-coins" element={canAdjustPrepScore ? <AdminShell><PrepCoinsOverview /></AdminShell> : <Navigate to="/admin/wallet" replace />} />
+        <Route path="/admin/prep-coins/issue" element={canAdjustPrepScore ? <AdminShell><IssueCoins /></AdminShell> : <Navigate to="/admin/wallet" replace />} />
+        <Route path="/admin/prep-coins/wallets" element={canAdjustPrepScore ? <AdminShell><CoinWallets /></AdminShell> : <Navigate to="/admin/wallet" replace />} />
+        <Route path="/admin/prep-coins/ledger" element={canAdjustPrepScore ? <AdminShell><CoinLedger /></AdminShell> : <Navigate to="/admin/wallet" replace />} />
+        <Route path={LEGACY_PREP_COIN_PRICING_PATH} element={<Navigate to={PREP_COIN_PRICING_PATH} replace />} />
         <Route path="/admin/dashboard" element={<AdminShell><AdminOverview /></AdminShell>} />
         <Route path="/admin/onboarding" element={<AdminShell><StudentOnboarding /></AdminShell>} />
         <Route path="/admin/students" element={<AdminShell><StudentDirectory /></AdminShell>} />

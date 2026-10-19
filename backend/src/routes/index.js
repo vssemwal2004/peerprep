@@ -39,6 +39,8 @@ import interviewCompanyRoutes from './interviewCompanies.js';
 import walletRoutes from './wallet.js';
 import prepScoreSettingsRoutes from './prepScoreSettings.js';
 import coinPricingSettingsRoutes from './coinPricingSettings.js';
+import overviewRoutes from './overview.js';
+import coinAdminRoutes from './coinAdmin.js';
 import { requireAuth, requireFullStudent } from '../middleware/auth.js';
 
 const router = Router();
@@ -46,6 +48,7 @@ router.use('/platform', platformRoutes);
 router.use('/wallet', walletRoutes);
 router.use('/platform/admin/prep-score', prepScoreSettingsRoutes);
 router.use('/platform/admin/coin-pricing', coinPricingSettingsRoutes);
+router.use('/platform/admin/coins', coinAdminRoutes);
 router.use('/student/questions', requireAuth, requireFullStudent, questionPracticeRoutes);
 // Reserved feature routes must precede the interview identifier routes.
 router.use('/ai-interviews/avatars', avatarRoutes);
@@ -65,6 +68,7 @@ router.use('/coordinators', coordinatorRoutes);
 router.use('/subjects', requireAuth, requireFullStudent, subjectRoutes);
 router.use('/learning', requireAuth, requireFullStudent, learningRoutes);
 router.use('/activity', requireAuth, requireFullStudent, activityRoutes);
+router.use('/overview', overviewRoutes);
 // Compiler routes perform their own student scope checks. Assessment-only
 // students must be able to execute coding questions inside an assigned test.
 router.use('/compiler', requireAuth, compilerRoutes);

@@ -1,4 +1,5 @@
-import { Coins, Loader2, X } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
+import PrepCoinIcon from '../../components/prepCoin/PrepCoinIcon';
 
 const coins = (value) => `${Number(value || 0).toLocaleString()} Prep Coin${Number(value) === 1 ? '' : 's'}`;
 
@@ -11,7 +12,7 @@ export default function CoinCostDialog({ state, onConfirm, onCancel }) {
       <div role="dialog" aria-modal="true" aria-labelledby="prep-coin-cost-title" className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-5 shadow-xl dark:border-zinc-800 dark:bg-[#242424]" onClick={(event) => event.stopPropagation()}>
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2">
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"><Coins className="h-4 w-4" aria-hidden="true" /></span>
+            <PrepCoinIcon size={36} shine />
             <h2 id="prep-coin-cost-title" className="text-base font-semibold text-slate-950 dark:text-zinc-50">{quote.label}</h2>
           </div>
           <button type="button" onClick={onCancel} disabled={busy} aria-label="Close" className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10"><X className="h-4 w-4" /></button>

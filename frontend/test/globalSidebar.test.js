@@ -86,13 +86,16 @@ for (const role of ['admin', 'coordinator', 'student']) {
       await click(group);
       assert.equal(group.getAttribute('aria-expanded'), 'true');
       assert.equal(expandedGroups().length, 1);
-      const panel = document.getElementById(group.getAttribute('aria-controls'));
+      let panel = document.getElementById(group.getAttribute('aria-controls'));
       assert.ok(panel && !panel.hasAttribute('inert'));
-      const links = [...panel.querySelectorAll('a')].filter((item) => !item.closest('[inert]'));
-      for (const link of links) {
+      const destinations = [...panel.querySelectorAll('a')].filter((item) => !item.closest('[inert]') && !item.hasAttribute('data-submenu-trigger')).map((link) => link.getAttribute('href'));
+      for (const destination of destinations) {
+        panel = document.getElementById(group.getAttribute('aria-controls'));
+        const link = [...panel.querySelectorAll('a')].find((item) => item.getAttribute('href') === destination && !item.closest('[inert]'));
         await click(link);
-        assert.equal(document.getElementById('location').textContent, link.getAttribute('href'));
-        assert.equal(group.getAttribute('aria-expanded'), 'true');
+        assert.equal(document.getElementById('location').textContent, destination);
+        assert.equal(group.getAttribute('aria-expanded'), 'false', 'Selecting a destination closes the flyout');
+        await click(group);
       }
       await click(group);
       assert.equal(group.getAttribute('aria-expanded'), 'false');
@@ -107,13 +110,18 @@ for (const role of ['admin', 'coordinator']) {
     await click(parent);
     await click(document.querySelector('[aria-label="Expand One-to-One Interviews"]'));
     assert.equal(parent.getAttribute('aria-expanded'), 'true');
-    const toggle = document.querySelector('[aria-label="Collapse One-to-One Interviews"]');
-    const panel = toggle.parentElement.nextElementSibling;
-    for (const link of panel.querySelectorAll('a')) {
+    let toggle = document.querySelector('[aria-label="Collapse One-to-One Interviews"]');
+    let panel = toggle.parentElement.nextElementSibling;
+    const destinations = [...panel.querySelectorAll('a')].map((link) => link.getAttribute('href'));
+    for (const destination of destinations) {
+      const link = [...panel.querySelectorAll('a')].find((item) => item.getAttribute('href') === destination);
       await click(link);
-      assert.equal(document.getElementById('location').textContent, link.getAttribute('href'));
-      assert.equal(parent.getAttribute('aria-expanded'), 'true');
-      assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+      assert.equal(document.getElementById('location').textContent, destination);
+      assert.equal(parent.getAttribute('aria-expanded'), 'false');
+      await click(parent);
+      await click(document.querySelector('[aria-label="Expand One-to-One Interviews"]'));
+      toggle = document.querySelector('[aria-label="Collapse One-to-One Interviews"]');
+      panel = toggle.parentElement.nextElementSibling;
     }
     await click(toggle);
     assert.equal(toggle.getAttribute('aria-expanded'), 'false');
@@ -152,7 +160,7 @@ test('student assessment module keeps its title outside the content scroller', a
   assert.ok(content.contains(document.getElementById('assessment-rows')));
 });
 
-test('account popup still supports theme switching, outside dismissal and Escape without closing navigation', async () => {
+test('account popup is exclusive and still supports theme switching, outside dismissal and Escape', async () => {
   await mount();
   const group = titled('Assessments');
   await click(group);
@@ -165,11 +173,11 @@ test('account popup still supports theme switching, outside dismissal and Escape
   assert.equal(document.querySelector('[role="switch"]').getAttribute('aria-checked'), 'true');
   await act(async () => document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
   assert.equal(account.getAttribute('aria-expanded'), 'false');
-  assert.equal(group.getAttribute('aria-expanded'), 'true');
+  assert.equal(group.getAttribute('aria-expanded'), 'false');
   await click(account);
   await click(document.getElementById('outside'));
   assert.equal(account.getAttribute('aria-expanded'), 'false');
-  assert.equal(group.getAttribute('aria-expanded'), 'true');
+  assert.equal(group.getAttribute('aria-expanded'), 'false');
 });
 
 test('portaled action menu survives capture pointerdown and executes its item click', async () => {
@@ -208,21 +216,26 @@ test('switching groups keeps just the selected section open', async () => {
 test('AI Interviews label opens its submenu and each option navigates with an exact active state', async () => {
   await mount();
   await click(titled('Interviews'));
-  await click([...document.querySelectorAll('nav a')].find((link) => link.textContent === 'AI Interviews'));
+  await click(document.querySelector('[aria-label="AI Interviews"]'));
   const toggle = document.querySelector('[aria-label="Collapse AI Interviews"]');
   assert.ok(toggle, 'Clicking the label must expand the AI submenu');
   const panel = document.getElementById(toggle.getAttribute('aria-controls'));
   const links = [...panel.querySelectorAll('a')];
   assert.deepEqual(links.map((link) => link.textContent), ['All AI Interviews', 'Create AI Interview', 'Avatars', 'Reports']);
-  for (const link of links) {
+  let currentPanel = panel;
+  for (const destination of links.map((link) => link.getAttribute('href'))) {
+    const link = [...currentPanel.querySelectorAll('a')].find((item) => item.getAttribute('href') === destination);
     await click(link);
-    assert.equal(document.getElementById('location').textContent, link.getAttribute('href'));
-    assert.deepEqual([...panel.querySelectorAll('[aria-current="page"]')], [link]);
+    assert.equal(document.getElementById('location').textContent, destination);
+    assert.equal(titled('Interviews').getAttribute('aria-expanded'), 'false');
+    await click(titled('Interviews'));
+    await click(document.querySelector('[aria-label="AI Interviews"]'));
+    currentPanel = document.getElementById(document.querySelector('[aria-label="Collapse AI Interviews"]').getAttribute('aria-controls'));
+    assert.equal(currentPanel.querySelector('[aria-current="page"]').getAttribute('href'), destination);
   }
-  await click(toggle);
-  assert.equal(toggle.getAttribute('aria-expanded'), 'false');
-  await click(toggle);
-  assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+  const liveToggle = document.querySelector('[aria-label="Collapse AI Interviews"]');
+  await click(liveToggle);
+  assert.equal(liveToggle.getAttribute('aria-expanded'), 'false');
 });
 
 async function mountAt(path, role = 'admin') {
@@ -235,43 +248,66 @@ test('Master Admin universities live in one dropdown with a page per task', asyn
   await mount();
   await click(titled('Universities'));
   const panel = document.getElementById(titled('Universities').getAttribute('aria-controls'));
-  assert.deepEqual([...panel.querySelectorAll('a')].map((link) => link.textContent),
+  assert.deepEqual([...panel.querySelectorAll('a')].map((link) => link.getAttribute('aria-label')),
     ['Overview', 'All Universities', 'Add University', 'Shared Assessments', 'New-University Defaults', 'Activity Log']);
-  for (const link of panel.querySelectorAll('a')) {
+  for (const destination of [...panel.querySelectorAll('a')].map((link) => link.getAttribute('href'))) {
+    const livePanel = document.getElementById(titled('Universities').getAttribute('aria-controls'));
+    const link = [...livePanel.querySelectorAll('a')].find((item) => item.getAttribute('href') === destination);
     await click(link);
-    assert.equal(document.getElementById('location').textContent, link.getAttribute('href'));
+    assert.equal(document.getElementById('location').textContent, destination);
+    await click(titled('Universities'));
   }
 });
 
-test('opening one university shows the Universities menu with All Universities active', async () => {
+test('Master Admin Prep Coins is one dropdown with a page per task, and pricing left Settings', async () => {
+  await mount();
+  await click(titled('Prep Coins'));
+  const panel = document.getElementById(titled('Prep Coins').getAttribute('aria-controls'));
+  const links = [...panel.querySelectorAll('a')];
+  assert.deepEqual(links.map((link) => link.getAttribute('aria-label')), ['Overview', 'Issue Coins', 'Wallets', 'Ledger', 'Pricing']);
+  assert.deepEqual(links.map((link) => link.getAttribute('href')), ['/admin/prep-coins', '/admin/prep-coins/issue', '/admin/prep-coins/wallets', '/admin/prep-coins/ledger', '/admin/prep-coins/pricing']);
+  await click(links[3]);
+  assert.equal(document.getElementById('location').textContent, '/admin/prep-coins/ledger');
+  assert.equal(document.querySelector('[aria-label="Prep Coin Pricing"]'), null, 'pricing is no longer a Settings page');
+});
+
+test('opening one university highlights Universities without opening its flyout automatically', async () => {
   await mountAt('/admin/universities/graphic-era?tab=plan');
   await act(async () => document.querySelector('aside').dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true })));
-  assert.equal(titled('Universities').getAttribute('aria-expanded'), 'true', 'the current section opens by itself');
-  const active = [...document.querySelectorAll('nav a')].find((link) => link.textContent === 'All Universities');
-  assert.ok(active.className.includes('text-sky-700'));
+  assert.equal(titled('Universities').getAttribute('aria-expanded'), 'false');
+  assert.ok(titled('Universities').className.includes('text-sky-700'));
+  await click(titled('Universities'));
+  const active = document.querySelector('[aria-label="All Universities"]');
+  assert.ok(active.className.includes('bg-sky-50'));
 });
 
 test('Settings is organised into folders that open in place and navigate', async () => {
   await mount();
   await click(titled('Settings'));
   const panel = document.getElementById(titled('Settings').getAttribute('aria-controls'));
-  const folders = [...panel.querySelectorAll(':scope > div > div > button[aria-expanded]')];
-  assert.deepEqual(folders.map((folder) => folder.textContent), ['Scoring & Rewards', 'Students', 'Communication', 'Reference Data']);
-  for (const folder of folders) {
+  const folderNames = ['Scoring & Rewards', 'Students', 'Communication', 'Reference Data'];
+  assert.deepEqual([...panel.querySelectorAll('button[aria-expanded]')].map((folder) => folder.getAttribute('aria-label')), folderNames);
+  for (const folderName of folderNames) {
+    let folder = document.querySelector(`button[aria-label="${folderName}"]`);
     await click(folder);
     assert.equal(folder.getAttribute('aria-expanded'), 'true');
     const links = [...document.getElementById(folder.getAttribute('aria-controls')).querySelectorAll('a')];
-    assert.ok(links.length > 0, `${folder.textContent} has pages`);
+    assert.ok(links.length > 0, `${folderName} has pages`);
     await click(links[0]);
     assert.equal(document.getElementById('location').textContent, links[0].getAttribute('href'));
-    assert.equal(folder.getAttribute('aria-expanded'), 'true', 'the folder stays open on its own page');
+    assert.equal(titled('Settings').getAttribute('aria-expanded'), 'false');
+    await click(titled('Settings'));
   }
 });
 
 test('assessment-only students can open and use their only group', async () => {
   await mount('student', undefined, 'assessment_only');
   await click(titled('Assessments'));
-  const links = document.querySelectorAll('nav a');
+  const links = document.getElementById(titled('Assessments').getAttribute('aria-controls')).querySelectorAll('a');
   assert.equal(links.length, 3);
-  for (const link of links) await click(link);
+  for (const destination of [...links].map((link) => link.getAttribute('href'))) {
+    const panel = document.getElementById(titled('Assessments').getAttribute('aria-controls'));
+    await click([...panel.querySelectorAll('a')].find((link) => link.getAttribute('href') === destination));
+    await click(titled('Assessments'));
+  }
 });

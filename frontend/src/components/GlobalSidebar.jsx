@@ -21,6 +21,7 @@ import {
   Zap,
   CirclePlus,
   ChevronDown,
+  ChevronRight,
   Settings,
   Mail,
   Megaphone,
@@ -42,13 +43,16 @@ import {
   X,
   BadgeCheck,
   Wallet,
+  Send,
+  ReceiptText,
+  Tag,
   SlidersHorizontal,
   Coins,
   Trophy,
   Inbox,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { canManageInterviewCompanies, isControlDeployment, isUniversityDeployment, SUGGESTED_COMPANIES_PATH } from '../platform/universityPermissions';
+import { canManageInterviewCompanies, isControlDeployment, isUniversityDeployment, PREP_COIN_PRICING_PATH, SUGGESTED_COMPANIES_PATH } from '../platform/universityPermissions';
 import { useUniversityPolicy } from '../platform/UniversityPolicyContext';
 import { useTheme } from '../context/ThemeContext';
 import { hasPermission } from '../admin/coordinatorPermissions';
@@ -233,16 +237,28 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
           label: 'Universities',
           icon: Building2,
           items: [
-            { label: 'Overview', to: '/admin/universities', icon: LayoutDashboard, match: (loc) => loc.pathname === '/admin/universities' },
+            { label: 'Overview', description: 'See platform-wide university activity and key totals.', to: '/admin/universities', icon: LayoutDashboard, match: (loc) => loc.pathname === '/admin/universities' },
             // A single university's page belongs to the list it was opened from.
-            { label: 'All Universities', to: '/admin/universities/all', icon: Building2, match: (loc) => loc.pathname === '/admin/universities/all' || (/^\/admin\/universities\/[^/]+\/?$/.test(loc.pathname) && !UNIVERSITY_SECTIONS.has(loc.pathname.split('/')[3])) },
-            { label: 'Add University', to: '/admin/universities/new', icon: CirclePlus },
-            { label: 'Shared Assessments', to: '/admin/universities/assessments', icon: ClipboardList },
-            { label: 'New-University Defaults', to: '/admin/universities/defaults', icon: SlidersHorizontal },
-            { label: 'Activity Log', to: '/admin/universities/activity', icon: History },
+            { label: 'All Universities', description: 'Browse and manage every connected institution.', to: '/admin/universities/all', icon: Building2, match: (loc) => loc.pathname === '/admin/universities/all' || (/^\/admin\/universities\/[^/]+\/?$/.test(loc.pathname) && !UNIVERSITY_SECTIONS.has(loc.pathname.split('/')[3])) },
+            { label: 'Add University', description: 'Create and configure a new university workspace.', to: '/admin/universities/new', icon: CirclePlus },
+            { label: 'Shared Assessments', description: 'Publish assessments for multiple universities.', to: '/admin/universities/assessments', icon: ClipboardList },
+            { label: 'New-University Defaults', description: 'Set the modules and preferences used at creation.', to: '/admin/universities/defaults', icon: SlidersHorizontal },
+            { label: 'Activity Log', description: 'Review recent platform administration changes.', to: '/admin/universities/activity', icon: History },
           ],
         },
-        { type: 'link', label: 'Prep Coin management', to: '/admin/wallet', icon: Wallet },
+        {
+          type: 'group',
+          key: 'prep-coins',
+          label: 'Prep Coins',
+          icon: Coins,
+          items: [
+            { label: 'Overview', description: 'Live balances, coin flow and spending.', to: '/admin/prep-coins', icon: LayoutDashboard, match: (loc) => loc.pathname === '/admin/prep-coins' || loc.pathname === '/admin/wallet' },
+            { label: 'Issue Coins', description: 'Add coins to a university or a PeerPrep account.', to: '/admin/prep-coins/issue', icon: Send },
+            { label: 'Wallets', description: 'University wallets and PeerPrep account balances.', to: '/admin/prep-coins/wallets', icon: Wallet },
+            { label: 'Ledger', description: 'Every coin movement, filterable.', to: '/admin/prep-coins/ledger', icon: ReceiptText },
+            { label: 'Pricing', description: 'What paid features cost students.', to: PREP_COIN_PRICING_PATH, icon: Tag },
+          ],
+        },
       ]
       : []),
     { type: 'link', label: 'Prep Analysis', to: '/admin/analysis', icon: BarChart3 },
@@ -368,7 +384,6 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
           children: [
             ...(isControlDeployment ? [
               { label: 'Prep Score Adjustment', to: '/admin/settings/prep-score-adjustment', icon: SlidersHorizontal },
-              { label: 'Prep Coin Pricing', to: '/admin/settings/prep-coin-pricing', icon: Coins },
             ] : []),
             { label: 'Challenges & Badges', to: '/admin/settings/student-progression', icon: Activity },
           ],
@@ -463,6 +478,9 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
   }, [role, user, allowsPath]);
   const [openGroup, setOpenGroup] = useState(null);
   const [openNestedGroup, setOpenNestedGroup] = useState(null);
+  const [groupPanelTop, setGroupPanelTop] = useState(88);
+  const groupButtonRefs = useRef(new Map());
+  const groupPanelRef = useRef(null);
   const hoverTimerRef = useRef(null);
   const resolvedSidebarWidth = isStudent
     ? (isExpanded ? STUDENT_SIDEBAR_PANEL_WIDTH : STUDENT_SIDEBAR_RAIL_WIDTH)
@@ -476,7 +494,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
 
   const handleSidebarLeave = () => {
     window.clearTimeout(hoverTimerRef.current);
-    if (profileOpenRef.current || (isStudent && isPinned)) return;
+    if (profileOpenRef.current || openGroup || (isStudent && isPinned)) return;
     hoverTimerRef.current = window.setTimeout(onCollapse, isStudent ? 160 : 0);
   };
 
@@ -510,27 +528,50 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
     return location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
   };
 
-  // Open the group (and folder) holding the current page, on first load and after every navigation,
-  // so the admin always sees where they are without hunting through closed menus.
   const navigationKey = `${location.pathname}${location.search}`;
   useEffect(() => {
-    for (const item of navItems) {
-      if (item.type !== 'group') continue;
-      const child = item.items.find((entry) => isRouteActive(entry));
-      if (!child) continue;
-      setOpenGroup(item.key);
-      if (child.children?.length) setOpenNestedGroup(`${item.key}:${child.label}`);
-      return;
-    }
-    // isRouteActive reads the current location, which navigationKey tracks.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigationKey, navItems]);
+    setOpenGroup(null);
+    setOpenNestedGroup(null);
+  }, [navigationKey]);
+
+  useEffect(() => {
+    if (!openGroup) return undefined;
+    const closeOnOutsideClick = (event) => {
+      if (profileOpenRef.current) return;
+      if (groupPanelRef.current?.contains(event.target)) return;
+      if (groupButtonRefs.current.get(openGroup)?.contains(event.target)) return;
+      if (event.target.closest('aside')) return;
+      setOpenGroup(null);
+      setOpenNestedGroup(null);
+    };
+    const closeOnEscape = (event) => {
+      if (event.key !== 'Escape' || profileOpenRef.current) return;
+      setOpenGroup(null);
+      setOpenNestedGroup(null);
+      groupButtonRefs.current.get(openGroup)?.focus();
+    };
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [openGroup]);
 
   const isGroupActive = (group) => group.items.some((child) => isRouteActive(child));
 
-  const handleGroupToggle = (key) => {
+  const handleGroupToggle = (item, button) => {
     if (!isExpanded) onExpand();
-    setOpenGroup((prev) => (prev === key ? null : key));
+    if (openGroup === item.key) {
+      setOpenGroup(null);
+      setOpenNestedGroup(null);
+      return;
+    }
+    const rect = button.getBoundingClientRect();
+    const estimatedHeight = Math.min(620, 104 + item.items.length * 68);
+    setGroupPanelTop(Math.max(12, Math.min(rect.top - 10, window.innerHeight - estimatedHeight - 12)));
+    setOpenNestedGroup(null);
+    setOpenGroup(item.key);
   };
 
   const handleLogout = async () => {
@@ -622,12 +663,16 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
           const groupPanelId = `${storagePrefix}-nav-${item.key}`;
 
           return (
-            <div key={item.key} className="space-y-0.5">
+            <div key={item.key}>
               <button
+                ref={(node) => {
+                  if (node) groupButtonRefs.current.set(item.key, node);
+                  else groupButtonRefs.current.delete(item.key);
+                }}
                 type="button"
-                onClick={() => handleGroupToggle(item.key)}
+                onClick={(event) => handleGroupToggle(item, event.currentTarget)}
                 title={item.label}
-                aria-expanded={isOpen && isExpanded}
+                aria-expanded={isOpen}
                 aria-controls={groupPanelId}
                 data-platform-disclosure="navigation"
                 className={`relative flex min-h-10 w-full items-center rounded-xl py-1 text-[13px] transition-[background-color,color,box-shadow] duration-200 ${groupActive ? 'font-semibold' : 'font-medium'} ${
@@ -647,18 +692,47 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
                   {item.label}
                 </span>
                 {isExpanded && (
-                  <ChevronDown className={`absolute right-3 h-4 w-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                  <ChevronRight className={`absolute right-3 h-4 w-4 text-slate-400 transition-transform ${isOpen ? 'translate-x-0.5 text-sky-600' : ''}`} />
                 )}
               </button>
 
-              <div
-                id={groupPanelId}
-                inert={!(isOpen && isExpanded)}
-                className={`overflow-hidden transition-[max-height,opacity] duration-300 ${
-                  isOpen && isExpanded ? 'max-h-[32rem] opacity-100' : 'max-h-0 opacity-0'
-                }`}
-              >
-                <div className="space-y-0.5 pl-7 pr-2 pb-1">
+              {isOpen && createPortal(
+                <section
+                  ref={groupPanelRef}
+                  id={groupPanelId}
+                  role="dialog"
+                  aria-label={`${item.label} navigation`}
+                  className="fixed z-[9998] flex w-[21rem] flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 shadow-[0_24px_70px_rgba(15,23,42,0.22)] ring-1 ring-white/80 backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900/95 dark:ring-slate-800"
+                  style={{
+                    left: `calc(${resolvedSidebarWidth} + 0.75rem)`,
+                    top: `${groupPanelTop}px`,
+                    maxWidth: `calc(100vw - ${resolvedSidebarWidth} - 1.5rem)`,
+                    maxHeight: `calc(100vh - ${groupPanelTop + 12}px)`,
+                  }}
+                >
+                  <header className="relative shrink-0 overflow-hidden border-b border-sky-100 bg-gradient-to-br from-sky-50 via-white to-cyan-50 px-4 py-4 dark:border-sky-950 dark:from-slate-800 dark:via-slate-900 dark:to-sky-950/60">
+                    <div className="absolute -right-8 -top-10 h-28 w-28 rounded-full bg-sky-200/35 blur-2xl dark:bg-sky-600/10" />
+                    <div className="relative flex items-start gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-600 text-white shadow-[0_8px_20px_rgba(2,132,199,0.24)]">
+                        <GroupIcon className="h-5 w-5" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-600 dark:text-sky-400">Sub navigation</p>
+                        <h2 className="mt-0.5 truncate text-base font-bold text-slate-900 dark:text-white">{item.label}</h2>
+                        <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Choose one of {item.items.length} available sections.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => { setOpenGroup(null); setOpenNestedGroup(null); }}
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white hover:text-slate-700 hover:shadow-sm dark:hover:bg-slate-800 dark:hover:text-white"
+                        aria-label={`Close ${item.label} navigation`}
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </header>
+
+                  <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2.5 [scrollbar-width:thin]">
                   {item.items.map((child) => {
                     const ChildIcon = child.icon;
                     const childActive = isRouteActive(child);
@@ -666,28 +740,36 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
                       const nestedKey = `${item.key}:${child.label}`;
                       const nestedOpen = openNestedGroup === nestedKey;
                       const nestedPanelId = `${groupPanelId}-${child.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
-                      const rowTone = childActive ? 'text-sky-700 dark:text-sky-300' : 'text-slate-600 hover:bg-slate-50 dark:text-gray-300 dark:hover:bg-gray-800';
                       return (
-                        <div key={child.label} className="space-y-0.5">
+                        <div key={child.label} className="overflow-hidden rounded-xl border border-transparent transition-colors hover:border-slate-100 dark:hover:border-slate-700">
                           {child.folder ? (
-                            // A folder only groups pages: the whole row opens and closes it.
                             <button
                               type="button"
+                              aria-label={child.label}
                               aria-expanded={nestedOpen}
                               aria-controls={nestedPanelId}
                               data-platform-disclosure="navigation"
                               onClick={() => setOpenNestedGroup(nestedOpen ? null : nestedKey)}
-                              className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[12px] font-semibold transition-colors ${rowTone}`}
+                              className={`flex w-full items-center gap-3 rounded-xl p-3 text-left transition-colors ${childActive ? 'bg-sky-50 text-sky-800 dark:bg-sky-950/60 dark:text-sky-200' : 'text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800'}`}
                             >
-                              <ChildIcon className="h-3.5 w-3.5 shrink-0" />
-                              <span className="min-w-0 flex-1 leading-tight">{child.label}</span>
-                              <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform ${nestedOpen ? 'rotate-180' : ''}`} />
+                              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${childActive ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300'}`}><ChildIcon className="h-4 w-4" /></span>
+                              <span className="min-w-0 flex-1"><span className="block text-[13px] font-semibold leading-tight">{child.label}</span><span className="mt-1 block text-[11px] font-normal leading-snug text-slate-500 dark:text-slate-400">{child.description || `Explore ${child.label.toLowerCase()} options.`}</span></span>
+                              <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${nestedOpen ? 'rotate-180' : ''}`} />
                             </button>
                           ) : (
-                            <div className={`flex items-center rounded-lg transition-colors ${childActive ? 'bg-sky-50 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300' : 'text-slate-600 hover:bg-slate-50 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
-                              <NavLink to={child.to} onClick={() => setOpenNestedGroup(nestedKey)} className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-[12px] font-semibold">
-                                <ChildIcon className="h-3.5 w-3.5 shrink-0" />
-                                <span className="min-w-0 leading-tight">{child.label}</span>
+                            <div className={`flex items-center rounded-xl transition-colors ${childActive ? 'bg-sky-50 text-sky-800 dark:bg-sky-950/60 dark:text-sky-200' : 'text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800'}`}>
+                              <NavLink
+                                to={child.to}
+                                aria-label={child.label}
+                                data-submenu-trigger="true"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  setOpenNestedGroup(nestedOpen ? null : nestedKey);
+                                }}
+                                className="flex min-w-0 flex-1 items-center gap-3 p-3"
+                              >
+                                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${childActive ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300'}`}><ChildIcon className="h-4 w-4" /></span>
+                                <span className="min-w-0 flex-1"><span className="block text-[13px] font-semibold leading-tight">{child.label}</span><span className="mt-1 block text-[11px] font-normal leading-snug text-slate-500 dark:text-slate-400">{child.description || `Open ${child.label.toLowerCase()} and related tools.`}</span></span>
                               </NavLink>
                               <button
                                 type="button"
@@ -696,19 +778,19 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
                                 aria-controls={nestedPanelId}
                                 data-platform-disclosure="navigation"
                                 onClick={() => setOpenNestedGroup(nestedOpen ? null : nestedKey)}
-                                className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-white hover:text-sky-700 dark:hover:bg-gray-700 dark:hover:text-sky-300"
+                                className="mr-3 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-white hover:text-sky-700 hover:shadow-sm dark:hover:bg-slate-700 dark:hover:text-sky-300"
                               >
                                 <ChevronDown className={`h-3.5 w-3.5 transition-transform ${nestedOpen ? 'rotate-180' : ''}`} />
                               </button>
                             </div>
                           )}
-                          <div id={nestedPanelId} inert={!nestedOpen} className={`overflow-hidden transition-[max-height,opacity] duration-200 ${nestedOpen ? 'max-h-64 opacity-100' : 'max-h-0 opacity-0'}`}>
-                            <div className="ml-3 space-y-0.5 pl-2">
+                          <div id={nestedPanelId} inert={!nestedOpen} className={`overflow-hidden transition-[max-height,opacity] duration-200 ${nestedOpen ? 'max-h-72 opacity-100' : 'max-h-0 opacity-0'}`}>
+                            <div className="mb-2 ml-[3.75rem] mr-2 space-y-1 border-l border-slate-200 pl-3 dark:border-slate-700">
                               {child.children.map((nestedChild) => {
                                 const NestedIcon = nestedChild.icon;
                                 const nestedActive = isRouteActive(nestedChild);
                                 return (
-                                  <Link key={nestedChild.label} to={nestedChild.to} aria-current={nestedActive ? 'page' : undefined} onClick={() => { setOpenGroup(item.key); setOpenNestedGroup(nestedKey); }} className={`flex min-h-8 items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12px] font-medium transition ${nestedActive ? 'bg-white text-sky-700 shadow-sm ring-1 ring-slate-100 dark:bg-gray-800 dark:text-sky-300 dark:ring-gray-700' : 'text-slate-500 hover:bg-white hover:text-slate-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white'}`}>
+                                  <Link key={nestedChild.label} to={nestedChild.to} aria-label={nestedChild.label} aria-current={nestedActive ? 'page' : undefined} className={`flex min-h-9 items-center gap-2 rounded-lg px-2.5 py-2 text-[12px] font-medium transition ${nestedActive ? 'bg-white text-sky-700 shadow-sm ring-1 ring-slate-100 dark:bg-slate-800 dark:text-sky-300 dark:ring-slate-700' : 'text-slate-500 hover:bg-white hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white'}`}>
                                     <NestedIcon className="h-3 w-3 shrink-0" />
                                     <span className="min-w-0 leading-tight">{nestedChild.label}</span>
                                   </Link>
@@ -723,19 +805,26 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
                       <NavLink
                         key={child.label}
                         to={child.to}
-                        className={`flex items-center gap-2 rounded-lg px-2 py-1 text-[12px] font-semibold transition-colors ${
+                        aria-label={child.label}
+                        className={`group/flyout flex items-center gap-3 rounded-xl border p-3 transition-all ${
                           childActive
-                            ? 'bg-sky-50 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
-                            : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100'
+                            ? 'border-sky-200 bg-sky-50 text-sky-800 shadow-sm dark:border-sky-900 dark:bg-sky-950/60 dark:text-sky-200'
+                            : 'border-transparent text-slate-700 hover:border-slate-100 hover:bg-slate-50 hover:text-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-800 dark:hover:text-white'
                         }`}
                       >
-                        <ChildIcon className="h-3.5 w-3.5 shrink-0" />
-                        <span className="min-w-0 leading-tight">{child.label}</span>
+                        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors ${childActive ? 'bg-sky-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 group-hover/flyout:bg-white group-hover/flyout:text-sky-700 dark:bg-slate-700 dark:text-slate-300 dark:group-hover/flyout:bg-slate-700'}`}><ChildIcon className="h-4 w-4" /></span>
+                        <span className="min-w-0 flex-1"><span className="block text-[13px] font-semibold leading-tight">{child.label}</span><span className="mt-1 block text-[11px] font-normal leading-snug text-slate-500 dark:text-slate-400">{child.description || `Open ${child.label.toLowerCase()} and related tools.`}</span></span>
+                        <ChevronRight className={`h-4 w-4 shrink-0 transition-transform group-hover/flyout:translate-x-0.5 ${childActive ? 'text-sky-600 dark:text-sky-400' : 'text-slate-300 dark:text-slate-600'}`} />
                       </NavLink>
                     );
                   })}
-                </div>
-              </div>
+                  </div>
+                  <footer className="shrink-0 border-t border-slate-100 bg-slate-50/80 px-4 py-2.5 text-[10px] font-medium text-slate-400 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-500">
+                    Press Esc or click outside to close
+                  </footer>
+                </section>,
+                document.body,
+              )}
             </div>
           );
         })}

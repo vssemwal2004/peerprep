@@ -145,6 +145,8 @@ export function startMailQueueWorker() {
   if (timer) return;
   ensureMailQueueRetention().catch((error) => console.error('[MailQueue] Retention setup failed:', error.message));
   const intervalMs = Math.max(2000, Number(process.env.MAIL_QUEUE_POLL_MS || 5000));
+  const concurrency = Math.max(1, Math.min(5, Number(process.env.MAIL_QUEUE_CONCURRENCY || 1)));
+  console.info(`[MailQueue] Worker started (poll=${intervalMs}ms, concurrency=${concurrency}).`);
   timer = setInterval(() => drainMailQueue().catch((error) => console.error('[MailQueue]', error.message)), intervalMs);
   timer.unref?.();
   drainMailQueue().catch((error) => console.error('[MailQueue]', error.message));

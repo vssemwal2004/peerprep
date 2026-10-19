@@ -11,8 +11,10 @@ const SUGGESTED_COMPANIES_ADMIN_PATH = /^\/admin\/settings\/suggested-companies(
 // The Prep Score formula and its values are set once, by the Master Admin, for every university.
 export const canAdjustPrepScore = !isUniversityDeployment;
 export const PREP_SCORE_ADJUSTMENT_PATH = '/admin/settings/prep-score-adjustment';
-export const PREP_COIN_PRICING_PATH = '/admin/settings/prep-coin-pricing';
-const MASTER_ONLY_SETTINGS_PATH = /^\/admin\/settings\/(?:prep-score-adjustment|prep-coin-pricing)(?:\/|$)/;
+export const PREP_COIN_PRICING_PATH = '/admin/prep-coins/pricing';
+export const LEGACY_PREP_COIN_PRICING_PATH = '/admin/settings/prep-coin-pricing';
+// Master Admin only: the Prep Score policy and the whole Prep Coin console (universities use /admin/wallet).
+const MASTER_ONLY_SETTINGS_PATH = /^\/admin\/(?:settings\/(?:prep-score-adjustment|prep-coin-pricing)|prep-coins)(?:\/|$)/;
 
 export function moduleForPath(pathname = '') {
   const path = pathname.split('?')[0];

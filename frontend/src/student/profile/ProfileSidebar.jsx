@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { focusRing } from './format';
 import { levelTheme } from './levelTheme';
+import ProfilePrepCoin from '../prepCoin/ProfilePrepCoin';
 
 function normalizeHref(href) {
   const raw = typeof href === 'string' ? href.trim() : '';
@@ -200,6 +201,8 @@ export default function ProfileSidebar({
             Edit Profile
           </button>
         </div>
+
+        {user?.role === 'student' && user?.accessScope !== 'assessment_only' ? <ProfilePrepCoin focusRing={focusRing} /> : null}
 
         <section aria-labelledby="about-title" className="border-t border-slate-100 pt-4 dark:border-zinc-800">
           <SectionTitle><span id="about-title">About</span></SectionTitle>

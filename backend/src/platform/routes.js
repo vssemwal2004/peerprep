@@ -30,6 +30,8 @@ import { seedDefaultMasterData } from '../services/masterDataService.js';
 import { serviceDates } from './servicePeriod.js';
 import { coinAmount, coinRequestId, creditPlatformUser, PLATFORM_WALLET_SCOPE, topUpUniversity } from './coins.js';
 import { accountLimit, withAccountCreationLocks } from './accountLimits.js';
+import { buildOverview, universitySnapshot } from '../services/overviewInsights.js';
+import { platformCentralSummary } from './platformInsights.js';
 
 const router = Router();
 const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
@@ -213,6 +215,38 @@ router.get('/admin/overview', masterOnly, asyncRoute(async (req, res) => {
     loadDefaults(),
   ]);
   res.json({ universities: universities.map(clean), audit: auditRows, assessmentCount, questionCount, defaults: defaults.toObject() });
+}));
+
+// Cross-university numbers for the Master Admin overview. Each university is read in its own tenant
+// context; one unreachable database marks only that row as unavailable. Cached briefly because it fans out.
+let insightsCache = null;
+const INSIGHTS_TTL_MS = 60_000;
+router.get('/admin/insights', masterOnly, asyncRoute(async (req, res) => {
+  if (!insightsCache || insightsCache.expires < Date.now() || req.query.refresh === '1') {
+    const universities = await University.find({ deletedAt: null }).select('+dbUriEncrypted universityId name active logo permissions coinBalance serviceStartDate serviceEndDate studentLimit coordinatorLimit').sort({ name: 1 }).lean();
+    const rows = [];
+    for (let index = 0; index < universities.length; index += 4) {
+      rows.push(...await Promise.all(universities.slice(index, index + 4).map(async (university) => {
+        const base = { universityId: university.universityId, name: university.name, active: university.active !== false, logo: university.logo?.url || '', modules: university.permissions || {}, coinBalance: university.coinBalance || 0, studentLimit: university.studentLimit ?? null, coordinatorLimit: university.coordinatorLimit ?? null };
+        // Without a stored database there is nothing to read; say so instead of reporting a failure.
+        if (!university.dbUriEncrypted) return { ...base, reachable: false, reason: 'no_database' };
+        try {
+          const tenant = await getTenant(university.universityId, { includeInactive: true });
+          const snapshot = await runForTenant(tenant, () => universitySnapshot());
+          return { ...base, reachable: true, ...snapshot };
+        } catch (error) {
+          console.warn('[PlatformInsights] university unavailable', { universityId: university.universityId, error: error?.message });
+          return { ...base, reachable: false, reason: 'unreachable' };
+        }
+      })));
+    }
+    insightsCache = {
+      expires: Date.now() + INSIGHTS_TTL_MS,
+      // workspace: the main database's own students and activity, counted like a university overview.
+      body: { generatedAt: new Date().toISOString(), universities: rows, central: await platformCentralSummary(), workspace: await buildOverview(req.user) },
+    };
+  }
+  res.set('Cache-Control', 'private, no-store').json(insightsCache.body);
 }));
 
 // Platform activity log, newest first: optional university and action-prefix filters, cursor paging.

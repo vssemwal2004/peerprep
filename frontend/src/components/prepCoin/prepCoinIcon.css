@@ -1,0 +1,61 @@
+/* The Prep Coin: the same gold PeerPrep coin that lands in the accepted-submission celebration,
+   drawn flat for headers, cards and tables. Size comes from --pc-size. */
+.prep-coin-icon {
+  --pc-size: 20px;
+  position: relative;
+  display: inline-grid;
+  flex-shrink: 0;
+  width: var(--pc-size);
+  height: var(--pc-size);
+  place-items: center;
+  overflow: hidden;
+  border-radius: 50%;
+  vertical-align: middle;
+  background: radial-gradient(circle at 34% 28%, #fffbeb 0%, #fde68a 16%, #fbbf24 42%, #f59e0b 68%, #b45309 100%);
+  box-shadow:
+    inset 0 0 0 max(1px, calc(var(--pc-size) * .045)) #d97706,
+    inset 0 calc(var(--pc-size) * -.07) calc(var(--pc-size) * .14) rgb(120 53 15 / .4),
+    inset 0 calc(var(--pc-size) * .06) calc(var(--pc-size) * .1) rgb(255 255 255 / .55),
+    0 1px 2px rgb(120 53 15 / .25);
+}
+/* Reeded edge, shown only where it stays crisp. */
+.prep-coin-icon--detailed::before {
+  content: '';
+  position: absolute;
+  inset: 5%;
+  border-radius: 50%;
+  background: repeating-conic-gradient(rgb(146 64 14 / .42) 0 3deg, transparent 3deg 9deg);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+}
+.prep-coin-icon__ring {
+  position: absolute;
+  inset: 14%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 62% 72%, #f59e0b, #fbbf24 55%, #fde68a);
+  box-shadow: inset 0 1px 2px rgb(120 53 15 / .5), inset 0 -1px 1px rgb(255 251 235 / .75);
+}
+.prep-coin-icon__mark {
+  position: relative;
+  width: 56%;
+  height: 56%;
+  background: linear-gradient(150deg, #fef3c7 0%, #f59e0b 28%, #92400e 66%, #b45309 100%);
+  -webkit-mask: url(/images/peerprep-mark.png) center / contain no-repeat;
+  mask: url(/images/peerprep-mark.png) center / contain no-repeat;
+  filter: drop-shadow(0 .5px 0 rgb(255 251 235 / .9));
+}
+.prep-coin-icon__sheen {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: linear-gradient(105deg, transparent 38%, rgb(255 255 255 / .85) 50%, transparent 62%);
+  transform: translateX(-130%);
+  mix-blend-mode: soft-light;
+  animation: prep-coin-icon-sheen 4.2s ease-in-out 1s infinite;
+}
+.prep-coin-icon--pop { animation: prep-coin-icon-pop .7s cubic-bezier(.3, 1.6, .5, 1); }
+@keyframes prep-coin-icon-sheen { 0%, 60% { transform: translateX(-130%); } 85%, 100% { transform: translateX(130%); } }
+@keyframes prep-coin-icon-pop { 0% { transform: scale(1) rotateY(0); } 45% { transform: scale(1.28) rotateY(180deg); } 100% { transform: scale(1) rotateY(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .prep-coin-icon__sheen, .prep-coin-icon--pop { animation: none; }
+}

@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Coins, Save } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { AlertCircle, CheckCircle2, Gift, LayoutDashboard, Loader2, Save, Undo2 } from 'lucide-react';
 import { api } from '../utils/api';
-import { card, helperText, inputClass, sectionTitle } from './prepScore/fields';
+import { CardHeader, Glass } from '../overview/ui';
+import PrepCoinIcon from '../components/prepCoin/PrepCoinIcon';
+import { CoinPage } from './prepCoins/shared';
+import { buttonClass, inputClass } from './prepCoins/coinModel';
 
 const whole = (value) => Number.isSafeInteger(value) && value >= 0;
 
@@ -36,45 +40,66 @@ export default function PrepCoinPricing() {
     } finally { setBusy(false); }
   }
 
-  if (!pricing) return <div className="p-8 text-sm text-slate-500">{error || 'Loading Prep Coin prices…'}</div>;
   return (
-    <div className="mx-auto max-w-5xl space-y-5 px-4 py-6 sm:px-6">
-      <header>
-        <p className="text-xs font-bold uppercase tracking-[.16em] text-sky-600">Master Admin settings</p>
-        <h1 className="mt-1 text-2xl font-bold text-slate-950 dark:text-white">Prep Coin Pricing</h1>
-        <p className="mt-1 max-w-3xl text-sm text-slate-500 dark:text-slate-400">Prep Coins are credits students spend on features. A price of 0 makes a feature free. Free uses each month come before any coins, so every student can keep practising, and coins never change Prep Score or rank.</p>
-      </header>
-      {error && <p role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-200">{error}</p>}
-      {notice && <p role="status" className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">{notice}</p>}
+    <CoinPage title="Pricing" subtitle="What paid features cost students. Free monthly uses come first, and coins never change Prep Score or rank"
+      actions={<Link to="/admin/prep-coins" className={buttonClass.secondary}><LayoutDashboard className="h-4 w-4" />Overview</Link>}>
+      {error && <p role="alert" className="mb-4 flex items-center gap-2 rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:bg-rose-400/10 dark:text-rose-200"><AlertCircle className="h-4 w-4 shrink-0" />{error}</p>}
+      {notice && <p role="status" className="mb-4 flex items-center gap-2 rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200"><CheckCircle2 className="h-4 w-4 shrink-0" />{notice}</p>}
+      {!pricing ? <p className="text-sm text-slate-500">{error ? '' : 'Loading Prep Coin prices…'}</p> : (
+        <>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {pricing.catalog.map((feature) => {
+              const value = features[feature.key] || { price: 0, freePerMonth: 0 };
+              const saved = pricing.features[feature.key] || { price: 0, freePerMonth: 0 };
+              const changed = value.price !== saved.price || value.freePerMonth !== saved.freePerMonth;
+              const free = value.price === 0;
+              return (
+                <Glass key={feature.key} className={`p-5 transition ${changed ? 'ring-2 ring-amber-300/70 dark:ring-amber-400/40' : ''}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h2 className="text-sm font-semibold text-slate-950 dark:text-white">{feature.label}</h2>
+                      <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{feature.detail}</p>
+                    </div>
+                    {changed ? <span className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-200 dark:bg-amber-400/10 dark:text-amber-200 dark:ring-amber-400/20">Unsaved</span>
+                      : <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${free ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200' : 'bg-slate-900/[0.05] text-slate-600 dark:bg-white/[0.06] dark:text-slate-300'}`}>{free ? 'Free' : 'Paid'}</span>}
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-3">
+                    <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Price
+                      <span className="relative mt-1 block">
+                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2"><PrepCoinIcon size={18} /></span>
+                        <input aria-label={`${feature.label} price`} className={`${inputClass} pl-10 font-semibold tabular-nums`} type="number" min={0} step={1}
+                          value={Number.isFinite(value.price) ? value.price : ''} onChange={(event) => set(feature.key, 'price', event.target.value)} />
+                      </span>
+                    </label>
+                    <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Free uses per month
+                      <span className="relative mt-1 block">
+                        <Gift className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-emerald-500" aria-hidden="true" />
+                        <input aria-label={`${feature.label} free uses per month`} className={`${inputClass} pl-9 tabular-nums`} type="number" min={0} step={1} disabled={free}
+                          value={Number.isFinite(value.freePerMonth) ? value.freePerMonth : ''} onChange={(event) => set(feature.key, 'freePerMonth', event.target.value)} />
+                      </span>
+                    </label>
+                  </div>
+                  <p className="mt-4 flex items-center gap-2 rounded-xl bg-slate-900/[0.03] px-3 py-2 text-xs text-slate-600 dark:bg-white/[0.04] dark:text-slate-300">
+                    <PrepCoinIcon size={16} />
+                    Students see: {free ? 'free, no coins needed' : `${value.price} coin${value.price === 1 ? '' : 's'} per use${value.freePerMonth ? ` after ${value.freePerMonth} free use${value.freePerMonth === 1 ? '' : 's'} a month` : ''}`}
+                  </p>
+                </Glass>
+              );
+            })}
+          </div>
 
-      <section className={card} aria-labelledby="coin-prices-title">
-        <div className="flex items-center gap-2"><Coins className="h-5 w-5 text-sky-600" aria-hidden="true" /><h2 id="coin-prices-title" className={sectionTitle}>Feature prices</h2></div>
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[560px] text-sm" data-no-serial>
-            <thead className="text-xs uppercase tracking-wide text-slate-500"><tr><th className="py-2 text-left font-semibold">Feature</th><th className="py-2 text-left font-semibold">Price (coins)</th><th className="py-2 text-left font-semibold">Free uses per month</th></tr></thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {pricing.catalog.map((feature) => {
-                const value = features[feature.key] || { price: 0, freePerMonth: 0 };
-                return (
-                  <tr key={feature.key} className="align-top">
-                    <td className="py-3 pr-4"><p className="font-semibold text-slate-900 dark:text-white">{feature.label}</p><p className={`mt-0.5 ${helperText}`}>{feature.detail}</p></td>
-                    <td className="py-3 pr-4"><input aria-label={`${feature.label} price`} className={`${inputClass} w-28`} type="number" min={0} step={1} value={Number.isFinite(value.price) ? value.price : ''} onChange={(event) => set(feature.key, 'price', event.target.value)} />{value.price === 0 && <span className={`mt-1 block ${helperText}`}>Free</span>}</td>
-                    <td className="py-3"><input aria-label={`${feature.label} free uses per month`} className={`${inputClass} w-28`} type="number" min={0} step={1} disabled={value.price === 0} value={Number.isFinite(value.freePerMonth) ? value.freePerMonth : ''} onChange={(event) => set(feature.key, 'freePerMonth', event.target.value)} /></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        {invalid && <p role="alert" className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">Use whole numbers of 0 or more.</p>}
-        <label className="mt-4 block text-sm font-semibold text-slate-700 dark:text-slate-200">Reason for this change (optional)
-          <input className={`${inputClass} mt-1`} maxLength={300} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="For example: AI interviews now use a paid speech model." />
-        </label>
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button type="button" onClick={save} disabled={busy || !unsaved || invalid} className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-40"><Save className="h-4 w-4" aria-hidden="true" />{busy ? 'Saving…' : 'Save prices'}</button>
-          <span className={helperText}>{pricing.updatedAt ? `Last changed ${new Date(pricing.updatedAt).toLocaleString()}` : 'Every feature is free until a price is saved.'}</span>
-        </div>
-      </section>
-    </div>
+          <Glass className="sticky bottom-4 mt-4 p-4">
+            {invalid && <p role="alert" className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-400/10 dark:text-amber-200">Use whole numbers of 0 or more.</p>}
+            <CardHeader title="Save changes" subtitle={pricing.updatedAt ? `Version ${pricing.version} · last changed ${new Date(pricing.updatedAt).toLocaleString()}` : 'Every feature is free until a price is saved.'} Icon={Save} />
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <input className={inputClass} maxLength={300} value={reason} onChange={(event) => setReason(event.target.value)} aria-label="Reason for this change (optional)"
+                placeholder="Reason for this change (optional), e.g. AI interviews now use a paid speech model" />
+              <button type="button" onClick={() => setFeatures(structuredClone(pricing.features))} disabled={busy || !unsaved} className={`${buttonClass.secondary} h-10 shrink-0`}><Undo2 className="h-4 w-4" />Discard</button>
+              <button type="button" onClick={save} disabled={busy || !unsaved || invalid} className={`${buttonClass.primary} h-10 shrink-0`}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{busy ? 'Saving…' : 'Save prices'}</button>
+            </div>
+          </Glass>
+        </>
+      )}
+    </CoinPage>
   );
 }
