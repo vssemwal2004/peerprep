@@ -101,7 +101,7 @@ function PeerPrepAccountCredits({ onCredited }) {
           {recipients.map((person) => <option key={person.id} value={person.id}>{person.name} · {person.email} {person.accountId ? `· ${person.accountId}` : ''}</option>)}
         </select>
       </label>
-      <label className="grid gap-1 text-sm">Coins
+      <label className="grid gap-1 text-sm">Prep Coins
         <input className="w-44 rounded-lg border border-slate-300 bg-white px-3 py-2 dark:border-slate-600 dark:bg-slate-800" type="number" min="1" max="1000000000" step="1" value={amount} onChange={(event) => { pendingRequestId.current = null; setAmount(event.target.value); }} required />
       </label>
       <button className="rounded-lg bg-sky-600 px-5 py-2 font-semibold text-white hover:bg-sky-700 disabled:opacity-50" disabled={busy || !targetUserId}>{busy ? 'Adding…' : 'Add coins'}</button>
@@ -167,8 +167,8 @@ export default function PlatformWalletPage() {
     <header className="flex items-start gap-3">
       <Wallet className="mt-1 h-8 w-8 shrink-0 text-sky-600" />
       <div>
-        <h1 className="text-2xl font-bold">PeerPrep wallet</h1>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Issue coins to university wallets or PeerPrep's own coordinators and students.</p>
+        <h1 className="text-2xl font-bold">Prep Coin management</h1>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Issue Prep Coins to university wallets or PeerPrep's own coordinators and students.</p>
       </div>
     </header>
 
@@ -185,7 +185,7 @@ export default function PlatformWalletPage() {
             {universities.map((item) => <option key={item.universityId} value={item.universityId}>{item.name} ({item.universityId})</option>)}
           </select>
         </label>
-        <label className="grid gap-1 text-sm">Coins
+        <label className="grid gap-1 text-sm">Prep Coins
           <input className="w-44 rounded-lg border border-slate-300 bg-white px-3 py-2 dark:border-slate-600 dark:bg-slate-800" type="number" min="1" max="1000000000" step="1" value={amount} onChange={(event) => { pendingRequestId.current = null; setAmount(event.target.value); }} required />
         </label>
         <button className="rounded-lg bg-sky-600 px-5 py-2 font-semibold text-white hover:bg-sky-700 disabled:opacity-50" disabled={busy || loading || !universities.length}>{busy ? 'Adding…' : 'Add coins'}</button>

@@ -2,10 +2,17 @@ import mongoose from 'mongoose';
 import crypto from 'node:crypto';
 import { University } from './models.js';
 import { HttpError } from '../utils/errors.js';
+import { getActivePrepScorePolicy } from '../services/prepScore/policy.js';
 
-// 3: scores are the uncapped Prep Score v3 (work points x quality) in whole points (services/prepScores.js).
-// Snapshots on another version are never compared.
-export const GLOBAL_RANK_VERSION = 3;
+// 5: buckets are the Prep Score scaled to its policy's decimal places (12.34 -> 1234 at 2 places),
+// so small scores do not collapse into mass ties. Snapshots on another version are never compared.
+export const GLOBAL_RANK_VERSION = 5;
+
+/** A score as an integer bucket. Anyone with progress is at least 1, never sharing 0 with non-starters. */
+export function snapshotScore(total, hasProgress, decimalPlaces = 2) {
+  if (!hasProgress) return 0;
+  return Math.max(1, Math.round((Number(total) || 0) * (10 ** decimalPlaces)));
+}
 export const SNAPSHOT_MAX_AGE = 30 * 60_000;
 const schema = new mongoose.Schema({
   _id: String, // Authenticated university ID, never a student ID.
@@ -13,15 +20,17 @@ const schema = new mongoose.Schema({
   generatedAt: Date,
   receivedAt: Date,
   policyKey: String,
+  scorePolicyVersion: Number,
   buckets: [{ _id: false, score: Number, count: Number }],
 }, { versionKey: false });
 export const GlobalRankSnapshot = mongoose.models.GlobalRankSnapshot || mongoose.model('GlobalRankSnapshot', schema);
 
-export function rankingPolicyKey(policy) {
+export function rankingPolicyKey(policy, scorePolicyVersion = null) {
   const modules = ['questions', 'learning', 'assessments', 'interviews', 'events'];
   return crypto.createHash('sha256').update(JSON.stringify([
     modules.map((key) => policy.permissions?.[key] === true),
     policy.sources?.questions || 'university', policy.sources?.learning || 'university',
+    Number(scorePolicyVersion) || null,
   ])).digest('hex');
 }
 
@@ -29,6 +38,7 @@ export function validateRankSnapshot(body, now = new Date()) {
   const generatedAt = new Date(body?.generatedAt);
   if (body?.version !== GLOBAL_RANK_VERSION || !Number.isFinite(generatedAt.getTime()) ||
       generatedAt > new Date(now.getTime() + 60_000) || now - generatedAt > SNAPSHOT_MAX_AGE ||
+      !Number.isSafeInteger(body?.scorePolicyVersion) || body.scorePolicyVersion < 1 ||
       !/^[a-f0-9]{64}$/.test(body?.policyKey || '') || !Array.isArray(body?.buckets) || body.buckets.length > 20_000) {
     throw new HttpError(400, 'Invalid ranking snapshot');
   }
@@ -43,12 +53,13 @@ export function validateRankSnapshot(body, now = new Date()) {
   });
   if (buckets.reduce((sum, row) => sum + row.count, 0) > 10_000_000) throw new HttpError(400, 'Ranking population too large');
   // Explicit allowlist drops names, emails, IDs and all unrelated input fields.
-  return { version: GLOBAL_RANK_VERSION, generatedAt, policyKey: body.policyKey, buckets: buckets.sort((a, b) => a.score - b.score) };
+  return { version: GLOBAL_RANK_VERSION, scorePolicyVersion: body.scorePolicyVersion, generatedAt, policyKey: body.policyKey, buckets: buckets.sort((a, b) => a.score - b.score) };
 }
 
 export async function saveRankSnapshot(university, body, now = new Date()) {
   const value = validateRankSnapshot(body, now);
-  if (value.policyKey !== rankingPolicyKey(university)) throw new HttpError(409, 'University policy changed; resync rankings');
+  const scorePolicy = await getActivePrepScorePolicy();
+  if (value.scorePolicyVersion !== scorePolicy.version || value.policyKey !== rankingPolicyKey(university, scorePolicy.version)) throw new HttpError(409, 'Scoring policy changed; resync rankings');
   try {
     const saved = await GlobalRankSnapshot.findOneAndUpdate(
       { _id: university.universityId, $or: [{ generatedAt: { $lt: value.generatedAt } }, { generatedAt: { $exists: false } }] },
@@ -82,9 +93,10 @@ export async function readGlobalRank(university, query, now = new Date()) {
   const score = Number(query.score), generatedAt = new Date(query.generatedAt);
   if (!Number.isSafeInteger(score) || score < 0 || score > 1_000_000_000 || !Number.isFinite(+generatedAt)) throw new HttpError(400, 'Invalid ranking query');
   const universities = await University.find({ active: true, deletedAt: null }).select('universityId permissions sources').maxTimeMS(8000).lean();
-  const policies = new Map(universities.map((row) => [row.universityId, rankingPolicyKey(row)]));
+  const scorePolicy = await getActivePrepScorePolicy();
+  const policies = new Map(universities.map((row) => [row.universityId, rankingPolicyKey(row, scorePolicy.version)]));
   const snapshots = (await GlobalRankSnapshot.find({
-    _id: { $in: [...policies.keys()] }, version: GLOBAL_RANK_VERSION,
+    _id: { $in: [...policies.keys()] }, version: GLOBAL_RANK_VERSION, scorePolicyVersion: scorePolicy.version,
     generatedAt: { $gte: new Date(now.getTime() - SNAPSHOT_MAX_AGE), $lte: new Date(now.getTime() + 60_000) },
   }).maxTimeMS(8000).lean()).filter((row) => row.policyKey === policies.get(row._id));
   const own = snapshots.find((row) => row._id === university.universityId);

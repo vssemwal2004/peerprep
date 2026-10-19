@@ -68,6 +68,7 @@ const auditSchema = new mongoose.Schema({
   details: mongoose.Schema.Types.Mixed,
 }, { timestamps: true });
 auditSchema.index({ createdAt: -1 });
+auditSchema.index({ universityId: 1, createdAt: -1 });
 
 const settingsSchema = new mongoose.Schema({
   _id: { type: String, default: 'defaults' },
@@ -111,17 +112,51 @@ coinWalletSchema.index({ universityId: 1, userId: 1 }, { unique: true });
 const coinMovementSchema = new mongoose.Schema({
   universityId: { type: String, required: true, index: true },
   requestId: { type: String, required: true, unique: true },
-  kind: { type: String, enum: ['initial', 'topup', 'admin_to_coordinator', 'coordinator_to_student', 'superadmin_to_coordinator', 'superadmin_to_student'], required: true },
+  kind: { type: String, enum: ['initial', 'topup', 'admin_to_coordinator', 'coordinator_to_student', 'superadmin_to_coordinator', 'superadmin_to_student', 'student_spend', 'student_refund'], required: true },
   amount: { type: Number, required: true, min: 1 },
   actorId: { type: mongoose.Schema.Types.ObjectId, required: true },
   fromRole: { type: String, required: true },
   fromUserId: mongoose.Schema.Types.ObjectId,
   toRole: { type: String, required: true },
   toUserId: mongoose.Schema.Types.ObjectId,
+  // Spends and refunds only: what the coins paid for.
+  featureKey: String,
+  chargeId: mongoose.Schema.Types.ObjectId,
 }, { timestamps: true });
 coinMovementSchema.index({ universityId: 1, createdAt: -1 });
 coinMovementSchema.index({ universityId: 1, toUserId: 1, createdAt: -1 });
 coinMovementSchema.index({ universityId: 1, fromUserId: 1, createdAt: -1 });
+
+// One paid (or free-quota) use of a feature by one student. The unique chargeKey makes retries,
+// double clicks and parallel tabs pay once; `pending` charges are settled by the request or the sweeper.
+const coinChargeSchema = new mongoose.Schema({
+  universityId: { type: String, required: true },
+  userId: { type: mongoose.Schema.Types.ObjectId, required: true },
+  featureKey: { type: String, required: true },
+  resourceKey: { type: String, required: true },
+  chargeKey: { type: String, required: true, unique: true },
+  price: { type: Number, required: true, min: 0 },
+  freeQuota: { type: Boolean, default: false },
+  pricingVersion: { type: Number, default: 0 },
+  attempt: { type: Number, default: 1 },
+  status: { type: String, enum: ['pending', 'captured', 'refunded'], required: true },
+  quotaMonth: { type: String, required: true },
+  capturedAt: Date,
+  refundedAt: Date,
+  refundReason: String,
+}, { timestamps: true });
+coinChargeSchema.index({ status: 1, updatedAt: 1 }, { partialFilterExpression: { status: 'pending' } });
+coinChargeSchema.index({ universityId: 1, userId: 1, featureKey: 1, quotaMonth: 1, freeQuota: 1 });
+coinChargeSchema.index({ universityId: 1, featureKey: 1, resourceKey: 1, status: 1 });
+
+// Master Admin feature prices (singleton). A missing feature is free.
+const coinPricingSchema = new mongoose.Schema({
+  _id: { type: String, default: 'current' },
+  version: { type: Number, default: 0 },
+  features: { type: mongoose.Schema.Types.Mixed, default: {} },
+  updatedBy: mongoose.Schema.Types.ObjectId,
+  reason: { type: String, default: '' },
+}, { timestamps: true, minimize: false });
 
 // Serializes account creation across API replicas while a university's live
 // account count is checked. An expired lease recovers after a process crash.
@@ -139,4 +174,6 @@ export const PlatformLoginIdentity = mongoose.models.PlatformLoginIdentity || mo
 export const PlatformLoginDirectoryState = mongoose.models.PlatformLoginDirectoryState || mongoose.model('PlatformLoginDirectoryState', loginDirectoryStateSchema);
 export const PlatformCoinWallet = mongoose.models.PlatformCoinWallet || mongoose.model('PlatformCoinWallet', coinWalletSchema);
 export const PlatformCoinMovement = mongoose.models.PlatformCoinMovement || mongoose.model('PlatformCoinMovement', coinMovementSchema);
-export const PlatformAccountCreationLock = mongoose.models.PlatformAccountCreationLock || mongoose.model('PlatformAccountCreationLock', accountCreationLockSchema);
+export const PlatformCoinCharge = mongoose.models.PlatformCoinCharge || mongoose.model('PlatformCoinCharge', coinChargeSchema);
+export const PlatformCoinPricing = mongoose.models.PlatformCoinPricing || mongoose.model('PlatformCoinPricing', coinPricingSchema);
+export const PlatformAccountCreationLock =mongoose.models.PlatformAccountCreationLock || mongoose.model('PlatformAccountCreationLock', accountCreationLockSchema);

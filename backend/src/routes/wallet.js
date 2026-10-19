@@ -6,6 +6,8 @@ import { currentTenant } from '../platform/tenantContext.js';
 import { isControlPlane } from '../platform/deployment.js';
 import { allocateCoins, PLATFORM_WALLET_SCOPE, walletBalance, walletMovements } from '../platform/coins.js';
 import User from '../models/User.js';
+import { COIN_FEATURES } from '../platform/coinFeatures.js';
+import { featureQuote } from '../platform/coinSpend.js';
 
 const router = Router();
 const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
@@ -23,14 +25,34 @@ router.get('/', asyncRoute(async (req, res) => {
   const ids = [...new Set(movements.flatMap((row) => [row.fromUserId, row.toUserId]).filter(Boolean).map(String))];
   const people = ids.length ? await User.find({ _id: { $in: ids } }).select('name role').lean() : [];
   const names = new Map(people.map((person) => [String(person._id), person.name]));
+  const features = new Map(COIN_FEATURES.map((feature) => [feature.key, feature.label]));
   res.set('Cache-Control', 'private, no-store').json({
     universityId, role: req.user.role, balance,
     movements: movements.map((row) => ({
       id: row._id, kind: row.kind, amount: row.amount, createdAt: row.createdAt,
       fromRole: row.fromRole, toRole: row.toRole,
+      // Spent coins leave the wallet (negative); everything else adds to it.
+      direction: row.fromUserId && String(row.fromUserId) === String(req.user._id) ? 'out' : 'in',
+      feature: row.featureKey ? features.get(row.featureKey) || 'PeerPrep feature' : null,
       fromName: row.fromUserId ? names.get(String(row.fromUserId)) || 'Former user' : 'PeerPrep',
-      toName: row.toUserId ? names.get(String(row.toUserId)) || 'Former user' : 'University wallet',
+      toName: row.toUserId ? names.get(String(row.toUserId)) || 'Former user' : row.toRole === 'platform' ? 'PeerPrep' : 'University wallet',
     })),
+  });
+}));
+
+router.get('/summary', asyncRoute(async (req, res) => {
+  const universityId = currentTenant()?.universityId || PLATFORM_WALLET_SCOPE;
+  const balance = await walletBalance(universityId, req.user);
+  res.set('Cache-Control', 'private, no-store').json({ balance, unit: 'prep-coin' });
+}));
+
+/** What each priced feature costs this student right now, including free uses left this month. */
+router.get('/pricing', asyncRoute(async (req, res) => {
+  if (req.user.role !== 'student') throw new HttpError(403, 'Prices apply to student accounts');
+  const universityId = currentTenant()?.universityId || PLATFORM_WALLET_SCOPE;
+  const quotes = await Promise.all(COIN_FEATURES.map((feature) => featureQuote({ scope: universityId, userId: req.user._id, featureKey: feature.key })));
+  res.set('Cache-Control', 'private, no-store').json({
+    features: quotes.map((quote) => ({ ...quote, label: COIN_FEATURES.find((feature) => feature.key === quote.featureKey).label })),
   });
 }));
 

@@ -12,7 +12,7 @@ const MAX_BALANCE = Number.MAX_SAFE_INTEGER;
 export function coinAmount(value) {
   const amount = Number(value);
   if (!Number.isSafeInteger(amount) || amount < 1 || amount > MAX_ALLOCATION) {
-    throw new HttpError(400, `Enter a whole number of PeerPrep coins from 1 to ${MAX_ALLOCATION}`);
+    throw new HttpError(400, `Enter a whole number of Prep Coins from 1 to ${MAX_ALLOCATION}`);
   }
   return amount;
 }
@@ -131,12 +131,12 @@ export async function allocateCoins({ universityId, actorId, fromRole, fromUserI
     if (fromRole === 'university') {
       const sender = await University.findOne({ universityId, deletedAt: null }).session(session);
       if (!sender) throw new HttpError(404, 'University not found');
-      if ((sender.coinBalance || 0) < expected.amount) throw new HttpError(409, 'Not enough PeerPrep coins in the university wallet');
+      if ((sender.coinBalance || 0) < expected.amount) throw new HttpError(409, 'Not enough Prep Coins in the university wallet');
       sender.coinBalance -= expected.amount;
       await sender.save({ session });
     } else if (fromRole === 'coordinator') {
       const sender = await PlatformCoinWallet.findOne({ universityId, userId: fromUserId, role: 'coordinator' }).session(session);
-      if (!sender || sender.balance < expected.amount) throw new HttpError(409, 'Not enough PeerPrep coins in your wallet');
+      if (!sender || sender.balance < expected.amount) throw new HttpError(409, 'Not enough Prep Coins in your wallet');
       sender.balance -= expected.amount;
       await sender.save({ session });
     }
@@ -164,8 +164,7 @@ export async function walletBalance(universityId, user) {
 }
 
 export async function walletMovements(universityId, user, limit = 20) {
-  const scope = user.role === 'admin' ? {} : user.role === 'coordinator'
-    ? { $or: [{ fromUserId: user._id }, { toUserId: user._id }] }
-    : { toUserId: user._id };
+  // Admins see the university's flow; coordinators and students see coins in and out of their own wallet.
+  const scope = user.role === 'admin' ? {} : { $or: [{ fromUserId: user._id }, { toUserId: user._id }] };
   return PlatformCoinMovement.find({ universityId, ...scope }).sort({ createdAt: -1 }).limit(limit).lean();
 }

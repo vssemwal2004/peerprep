@@ -7,7 +7,8 @@ import { RANGE_PRESETS } from "../filterModel";
 import { lastSeenText, studentHighlights } from "../studentInsights";
 import { ChartBody } from "./ChartCard";
 import { formatScore } from "../../../student/prepScore/formatScore";
-import { PrepCoin, PrepScoreFlow, ScoreValue } from "../../../student/prepScore/PrepScore";
+import { ScoreValue } from "../../../student/prepScore/PrepScore";
+import ModuleScores from "./ModuleScores";
 import { StatusPill } from "./Insights";
 import { initials, sectionStyle } from "./sectionStyles";
 import { Drawer } from "./ui";
@@ -57,13 +58,12 @@ function Bar({ label, value, max, color, right, sub }) {
   );
 }
 
-/** Prep Coding's points as a coin with "work points × quality". */
 function CodingScore({ coding }) {
   return (
     <div className="flex w-[124px] shrink-0 flex-col items-center gap-1.5 text-center">
-      <PrepCoin size={56} />
+      <span className="text-[10.5px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Prep Coding</span>
       <span className="text-[22px] font-extrabold leading-6 tabular-nums text-slate-900 dark:text-white">{formatScore(coding.prepScore)}</span>
-      <span className="text-[10.5px] leading-tight text-slate-500 dark:text-slate-400">{formatScore(coding.work)} work points × {formatScore(coding.quality)}% quality</span>
+      <span className="text-[10.5px] leading-tight text-slate-500 dark:text-slate-400">Current score, as the student sees it</span>
     </div>
   );
 }
@@ -79,12 +79,12 @@ function CodingSection({ coding, quickprep }) {
         <CodingScore coding={coding} />
         <div className="min-w-0 flex-1 space-y-2.5">
           {["Easy", "Medium", "Hard"].map((key) => (
-            <Bar key={key} label={key} value={coding.points[key]} max={coding.prepScore} color={DIFFICULTY_COLORS[key]}
+            <Bar key={key} label={key} value={coding.points[key]} max={Math.max(1, coding.points.Easy + coding.points.Medium + coding.points.Hard)} color={DIFFICULTY_COLORS[key]}
               right={<><b className="text-slate-900 dark:text-white">{coding.solved[key]}</b> solved · {formatScore(coding.points[key])} points</>} />
           ))}
-          <Bar label="Quality" value={coding.quality} max={100} color={DIFFICULTY_COLORS.Accuracy}
-            right={<b className="text-slate-900 dark:text-white">{formatScore(coding.quality)}%</b>}
-            sub={coding.solved.total ? `${coding.triesPerSolve} submissions per solve (up to 3 is fair) · ${coding.accuracy}% accepted` : `${coding.accepted} of ${coding.submissions} submissions accepted`} />
+          <Bar label="Accepted submissions" value={coding.accepted} max={Math.max(1, coding.submissions)} color={DIFFICULTY_COLORS.Accuracy}
+            right={<b className="text-slate-900 dark:text-white">{formatScore(coding.accuracy)}%</b>}
+            sub={`${coding.accepted} of ${coding.submissions} submissions accepted`} />
         </div>
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -309,9 +309,9 @@ export default function StudentDrawer({ studentId, range = "all", onClose }) {
                     <p className="mt-1"><ScoreValue value={profile.prepScore.total} size="lg" /></p>
                   </div>
                 </div>
-                <p className="max-w-[220px] text-right text-[11px] text-slate-500">Each feature: work points × quality. Overall: their average (no maximum).</p>
+                <p className="max-w-[220px] text-right text-[11px] text-slate-500">Calculated from verified activity using the active Master Admin policy.</p>
               </div>
-              <PrepScoreFlow prepScore={profile.prepScore} own={false} className="mt-3" />
+              <ModuleScores prepScore={profile.prepScore} className="mt-3" />
             </section>
           )}
 

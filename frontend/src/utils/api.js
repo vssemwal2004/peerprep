@@ -184,6 +184,9 @@ export function setToken(t) {
   clearLegacyToken();
 }
 
+/** The Prep Coin cost a student confirmed, sent as a header so bodies forwarded upstream stay untouched. */
+const coinCostHeader = (cost) => (cost === null || cost === undefined ? {} : { 'X-Prep-Coin-Cost': String(cost) });
+
 async function request(
   path,
   {
@@ -384,6 +387,17 @@ export const api = {
   universityAccountCounts: (id) => request(`/platform/admin/universities/${encodeURIComponent(id)}/account-counts`, { skipCache: true }),
   universityAccountLimits: () => request('/platform/university/account-limits', { skipCache: true }),
   platformOverview: () => request('/platform/admin/overview', { skipCache: true }),
+  prepScorePolicy: () => request('/platform/admin/prep-score', { skipCache: true }),
+  savePrepScorePolicyDraft: (body) => request('/platform/admin/prep-score/draft', { method: 'PUT', body, skipCache: true }),
+  simulatePrepScore: (body) => request('/platform/admin/prep-score/simulate', { method: 'POST', body, skipCache: true }),
+  prepScoreImpact: (body) => request('/platform/admin/prep-score/impact', { method: 'POST', body, skipCache: true }),
+  prepScoreSyncStatus: (universityId = 'platform') => request(`/platform/admin/prep-score/status?universityId=${encodeURIComponent(universityId)}`, { skipCache: true }),
+  publishPrepScorePolicy: (body) => request('/platform/admin/prep-score/publish', { method: 'POST', body, skipCache: true }),
+  restorePrepScorePolicy: (version) => request(`/platform/admin/prep-score/versions/${encodeURIComponent(version)}/restore`, { method: 'POST', skipCache: true }),
+  walletSummary: () => request('/wallet/summary', { skipCache: true }),
+  walletPricing: () => request('/wallet/pricing', { skipCache: true }),
+  adminCoinPricing: () => request('/platform/admin/coin-pricing', { skipCache: true }),
+  saveAdminCoinPricing: (body) => request('/platform/admin/coin-pricing', { method: 'PUT', body, skipCache: true }),
   platformStudents: (id, page = 1, search = '') => request(`/platform/admin/universities/${encodeURIComponent(id)}/students?page=${page}&search=${encodeURIComponent(search)}`, { skipCache: true }),
   platformStudent: (id, studentId) => request(`/platform/admin/universities/${encodeURIComponent(id)}/students/${encodeURIComponent(studentId)}`, { skipCache: true }),
   listPracticeQuestions: (params = {}) => request(`/student/questions?${new URLSearchParams(params).toString()}`, { skipCache: true }),
@@ -416,10 +430,12 @@ export const api = {
   },
   deleteUniversityLogo: (id) => request(`/platform/admin/universities/${encodeURIComponent(id)}/logo`, { method: 'DELETE' }),
   publishPlatformContent: (kind, id, body) => request(`/platform/admin/publications/${kind}/${encodeURIComponent(id)}`, { method: 'PUT', body }),
+  platformAudit: ({ universityId = '', action = '', before = '' } = {}) => request(`/platform/admin/audit?${new URLSearchParams(Object.entries({ universityId, action, before }).filter(([, value]) => value))}`, { skipCache: true }),
   universityPolicy: () => request('/platform/university/policy', { skipCache: true }),
   aiInterviewRequest: (path = '', options = {}) => request(`/ai-interviews${path}`, { ...options, skipCache: true, skipDedupe: true }),
   listStudentAIInterviews: () => request('/student/ai-interviews', { skipCache: true }),
-  startStudentAIInterview: (id, resumeConsent = false) => request(`/student/ai-interviews/${id}/start`, { method: 'POST', body: { resumeConsent }, timeoutMs: 60000, skipQueue: true }),
+  // expectedCost: the Prep Coin cost the student confirmed; the server refuses if it has changed.
+  startStudentAIInterview: (id, resumeConsent = false, expectedCost = null) => request(`/student/ai-interviews/${id}/start`, { method: 'POST', body: { resumeConsent }, timeoutMs: 60000, skipQueue: true, headers: coinCostHeader(expectedCost) }),
   getStudentAIInterviewSession: (id) => request(`/student/ai-interviews/sessions/${id}`, { skipCache: true }),
   answerStudentAIInterview: (id, version, transcriptId) => request(`/student/ai-interviews/sessions/${id}/answer`, { method: 'POST', body: { version, transcriptId }, timeoutMs: 60000, skipQueue: true }),
   transcribeStudentAIAnswer: (id, recording, version) => interviewMediaRequest(`/student/ai-interviews/sessions/${id}/transcribe`, { method: 'POST', recording, version }),
@@ -919,8 +935,8 @@ export const api = {
     if (csv) fd.append("csv", csv);
     return request("/events/special", { method: "POST", formData: fd });
   },
-  joinEvent: (eventId) =>
-    request(`/events/${eventId}/join`, { method: "POST" }),
+  joinEvent: (eventId, expectedCost = null) =>
+    request(`/events/${eventId}/join`, { method: "POST", headers: coinCostHeader(expectedCost) }),
   exportParticipantsCsv: (eventId) =>
     request(`/events/${eventId}/participants.csv`),
   updateEventTemplate: (eventId, file) => {

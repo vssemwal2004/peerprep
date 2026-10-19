@@ -13,8 +13,6 @@ import {
 } from 'lucide-react';
 import { focusRing } from './format';
 import { levelTheme } from './levelTheme';
-import { formatScore } from '../prepScore/formatScore';
-import { PrepCoin } from '../prepScore/PrepScore';
 
 function normalizeHref(href) {
   const raw = typeof href === 'string' ? href.trim() : '';
@@ -130,8 +128,6 @@ export default function ProfileSidebar({
   socialLinks,
   onChangePhoto,
   onEditProfile,
-  prepScore = null,
-  scoreRank = null,
 }) {
   const initial = user?.name ? user.name.charAt(0).toUpperCase() : 'U';
 
@@ -179,13 +175,6 @@ export default function ProfileSidebar({
           <p className="max-w-full truncate text-[13px] text-slate-500 dark:text-zinc-400">{handle}</p>
           <div className="flex flex-wrap items-center justify-center gap-1.5">
             <BadgePill badge={badge} level={level} onOpen={onOpenBadges} />
-            {prepScore !== null && Number.isFinite(Number(prepScore)) && (
-              <span title="Prep Score: work points × quality in each feature, averaged" className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-50 py-0.5 pl-0.5 pr-2.5 text-[11px] font-semibold text-amber-950 ring-1 ring-inset ring-amber-200 dark:bg-amber-500/10 dark:text-amber-100 dark:ring-amber-500/30">
-                <PrepCoin size={20} />
-                Prep Score {formatScore(prepScore)}
-                {scoreRank ? <span className="font-normal opacity-75">· #{scoreRank}</span> : null}
-              </span>
-            )}
           </div>
           <p className={`mt-3 text-[13px] leading-relaxed ${hasCustomBio ? 'text-slate-600 dark:text-zinc-300' : 'text-slate-500 dark:text-zinc-400'}`}>
             {bio}

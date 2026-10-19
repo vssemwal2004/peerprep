@@ -8,6 +8,11 @@ const QUICKPREP_ADMIN_PATH = /^\/admin\/(?:quests|quickprep)(?:\/|$)/;
 export const canManageInterviewCompanies = !isUniversityDeployment;
 export const SUGGESTED_COMPANIES_PATH = '/admin/settings/suggested-companies';
 const SUGGESTED_COMPANIES_ADMIN_PATH = /^\/admin\/settings\/suggested-companies(?:\/|$)/;
+// The Prep Score formula and its values are set once, by the Master Admin, for every university.
+export const canAdjustPrepScore = !isUniversityDeployment;
+export const PREP_SCORE_ADJUSTMENT_PATH = '/admin/settings/prep-score-adjustment';
+export const PREP_COIN_PRICING_PATH = '/admin/settings/prep-coin-pricing';
+const MASTER_ONLY_SETTINGS_PATH = /^\/admin\/settings\/(?:prep-score-adjustment|prep-coin-pricing)(?:\/|$)/;
 
 export function moduleForPath(pathname = '') {
   const path = pathname.split('?')[0];
@@ -34,7 +39,7 @@ export function moduleEnabled(permissions, moduleName) {
 export function pathAllowed(pathname, permissions, role = 'admin', search = '', { university = isUniversityDeployment } = {}) {
   if (!university) return true;
   // University admins neither see nor manage QuickPreps; the super admin designs them centrally.
-  if (QUICKPREP_ADMIN_PATH.test(pathname) || SUGGESTED_COMPANIES_ADMIN_PATH.test(pathname)) return false;
+  if (QUICKPREP_ADMIN_PATH.test(pathname) || SUGGESTED_COMPANIES_ADMIN_PATH.test(pathname) || MASTER_ONLY_SETTINGS_PATH.test(pathname)) return false;
   if (!permissions) return false;
   if (pathname.startsWith('/admin/platform')) return false;
   const moduleName = moduleForPath(pathname);

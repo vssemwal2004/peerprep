@@ -15,8 +15,8 @@ const istToday = () => new Date(Date.now() + 3.5 * 3600000).toISOString().slice(
 const shift = (key, days) => new Date(Date.parse(`${key}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
 
 const questions = () => [
-  { _id: 'q1', source: 'university', questionType: 'coding', sourceProblemId: 'p1', questionText: 'Two Sum', difficulty: 'Easy', tags: ['Array', 'Hash Table'], reportedCompanies: [{ company: 'Google', latestDate: '2026-09-01' }], result: 'correct' },
-  { _id: 'q2', source: 'university', questionType: 'coding', sourceProblemId: 'p2', questionText: 'Course Schedule', difficulty: 'Medium', tags: ['Graph'], reportedCompanies: [], result: 'incorrect' },
+  { _id: 'q1', source: 'university', questionType: 'coding', sourceProblemId: 'p1', questionText: 'Two Sum', difficulty: 'Easy', displayOrder: 722, sourceNumber: 1, tags: ['Array', 'Hash Table'], reportedCompanies: [{ company: 'Google', latestDate: '2026-09-01' }], result: 'correct' },
+  { _id: 'q2', source: 'university', questionType: 'coding', sourceProblemId: 'p2', questionText: 'Course Schedule', difficulty: 'Medium', displayOrder: 1729, sourceNumber: 207, tags: ['Graph'], reportedCompanies: [], result: 'incorrect' },
   { _id: 'q3', source: 'university', questionType: 'mcq', questionText: 'Big-O of binary search', difficulty: 'Hard', tags: ['Array'], reportedCompanies: [], result: null },
 ];
 
@@ -175,6 +175,9 @@ test('rows show real solved and attempted status and open the coding workspace',
   assert.match(rows[0].textContent, /Solved.*Two Sum.*Google.*Coding.*Easy/);
   assert.match(rows[1].textContent, /Attempted.*Course Schedule/);
   assert.match(rows[2].textContent, /Not attempted.*Big-O of binary search.*Multiple choice.*Hard/);
+  assert.match(rows[0].textContent, /722/);
+  assert.doesNotMatch(document.body.textContent, /PP #/);
+  assert.doesNotMatch(document.body.textContent, /LC #/);
   assert.match(document.body.textContent, /1 of 3 solved on this page/);
   await click(rows[0]);
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 150)); });
@@ -249,7 +252,7 @@ test('search waits for typing to pause, resets to page 1 and names a question-nu
   await settle(300);
   assert.equal(calls.length, before + 1, 'One request after the pause');
   assert.deepEqual([lastCall().search, lastCall().page], ['#12', 1]);
-  assert.ok(document.querySelector('button[aria-label="Remove filter: Question #12"]'));
+  assert.ok(document.querySelector('button[aria-label="Remove filter: 12"]'));
   await click(document.querySelector('button[aria-label="Clear search"]'));
   assert.equal(lastCall().search, '', 'Clearing applies at once');
 });

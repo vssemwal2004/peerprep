@@ -6,7 +6,7 @@ import Progress from '../models/Progress.js';
 import Problem from '../models/Problem.js';
 import Semester from '../models/Subject.js';
 import { learningSemesters } from '../platform/sharedContent.js';
-import { dashboardPermissions, buildCurriculumTopicMap, getSharedCodingCatalog, publicCodingProblemStages, publicProblemMatch, invalidateChallengeRanking } from './studentDashboardService.js';
+import { dashboardPermissions, buildCurriculumTopicMap, getSharedCodingCatalog, publicCodingProblemStages, publicProblemMatch } from './studentDashboardService.js';
 import { resolveDailyChallenge } from './codingStreakService.js';
 import { requireEngagementUniqueIndex } from '../utils/engagementIndexes.js';
 import { HttpError } from '../utils/errors.js';
@@ -161,7 +161,6 @@ async function refresh(student, now) {
       daily = { ...daily, completed: Boolean(assignment.earnedAt), earnedAt: assignment.earnedAt, problem: { id: String(problem._id), title: problem.title, difficulty: problem.difficulty, href: problem.href || `/problems/${problem._id}` } };
     }
   }
-  if (newAwards.length) invalidateChallengeRanking();
   const [summary, collection] = await Promise.all([
     query(StudentChallenge, [{ $match: { studentId, earnedAt: { $ne: null } } }, { $group: { _id: null, points: { $sum: '$rewardPoints' }, badges: { $sum: { $cond: [{ $in: ['$kind', ['weekly', 'monthly']] }, 1, 0] } }, dailyCompleted: { $sum: { $cond: [{ $eq: ['$kind', 'daily'] }, 1, 0] } } } }]),
     listStudentChallengeBadges(student, { limit: 6 }),

@@ -39,8 +39,10 @@ function readPageSize() {
 
 /** The search chip names a question-number search as such; other searches show the typed text. */
 function searchLabel(value) {
-  const serial = value.match(/^#?(\d+)$/);
-  return serial ? `Question #${serial[1]}` : `“${value}”`;
+  const source = value.match(/^(?:lc|leetcode)\s*(?::\s*)?#?\s*(\d+)$/i);
+  if (source) return source[1];
+  const serial = value.match(/^(?:(?:pp|peerprep)\s*(?::\s*)?)?#?(\d+)$/i);
+  return serial ? serial[1] : `“${value}”`;
 }
 
 function FilterChip({ label, onRemove }) {
@@ -233,7 +235,7 @@ export default function ProblemsPage() {
               <span className="sr-only">Search questions</span>
               <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
               <input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} maxLength={100}
-                placeholder="Search title, company, #topic or question no." title="Type 12 or #12 for a question number, #two-pointers for a topic"
+                placeholder="Search title, company, #topic or question no." title="Use 12 or #12 for a question number, or #two-pointers for a topic"
                 className={`w-full pl-10 pr-9 [&::-webkit-search-cancel-button]:hidden ${fieldBase}`} />
               {searchQuery && <button type="button" onClick={clearSearch} aria-label="Clear search" className={`absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:text-slate-700 ${focusRing}`}><X className="h-4 w-4" /></button>}
             </label>

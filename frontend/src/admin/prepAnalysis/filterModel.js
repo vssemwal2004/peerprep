@@ -117,12 +117,12 @@ const PERCENT_PRESETS = [
   { label: "50–75%", from: "50", to: "75" },
   { label: "75% or more", from: "75", to: "" },
 ];
-// Prep Score has no ceiling (a well-prepared student earns about 500 per feature).
+// Prep Score has no ceiling; with the default values a steady student is around 10–40.
 const SCORE_PRESETS = [
-  { label: "Under 50", from: "", to: "49.99" },
-  { label: "50–250", from: "50", to: "249.99" },
-  { label: "250–1,000", from: "250", to: "999.99" },
-  { label: "1,000 or more", from: "1000", to: "" },
+  { label: "Under 5", from: "", to: "4.99" },
+  { label: "5–15", from: "5", to: "14.99" },
+  { label: "15–40", from: "15", to: "39.99" },
+  { label: "40 or more", from: "40", to: "" },
 ];
 const DAY_PRESETS = [
   { label: "Within 7 days", from: "", to: "7" },

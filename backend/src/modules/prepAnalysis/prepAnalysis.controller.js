@@ -1,7 +1,7 @@
 import { CHARTS, DEFAULT_LAYOUT, GROUP_BY, SECTIONS } from './charts.js';
 import { publicFieldCatalog } from './fields.js';
 import {
-  countPrepAnalysis, exportPrepAnalysis, getStudentProfile, listFieldOptions, PREP_SCORE_FORMULA, runPrepAnalysis, validatePrepAnalysisQuery,
+  countPrepAnalysis, exportPrepAnalysis, getStudentProfile, listFieldOptions, runPrepAnalysis, validatePrepAnalysisQuery,
 } from './prepAnalysis.service.js';
 import { DEFAULT_EXPORT_COLUMNS, EXPORT_LIMITS, publicExportColumns, validateExportOptions } from './prepAnalysis.export.js';
 import { FILTER_LIMITS } from './filterEngine.js';
@@ -22,7 +22,6 @@ export async function getPrepAnalysisCatalog(req, res) {
     charts: CHARTS.filter((chart) => modules.has(chart.module)).map(({ build, ...chart }) => chart),
     sections: Object.entries(SECTIONS).filter(([, section]) => modules.has(section.module)).map(([key, section]) => ({ key, ...section })),
     defaultLayout: Object.fromEntries(catalog.areas.map((area) => [area.key, (DEFAULT_LAYOUT[area.key] || []).filter(licensedChart)])),
-    formula: PREP_SCORE_FORMULA,
     exportColumns: publicExportColumns(req.platformPermissions),
     exportDefaults: DEFAULT_EXPORT_COLUMNS,
     exportLimits: EXPORT_LIMITS,

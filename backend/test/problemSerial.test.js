@@ -1,57 +1,81 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  PEERPREP_SERIAL_INVERSE,
+  PEERPREP_SERIAL_MOD,
+  PEERPREP_SERIAL_MULTIPLIER,
   assignPeerPrepSerials,
+  decodeProblemSerial,
+  encodeProblemSerial,
+  matchesSerialSearch,
   parseSerialSearch,
   serialSearchClause,
-  shuffleIndex,
 } from '../src/utils/problemSerial.js';
 
-test('shuffleIndex is a bijection on 0..count-1 for many sizes', () => {
-  for (const count of [1, 2, 3, 5, 16, 17, 100, 1000, 3992, 4096, 5001]) {
-    const seen = new Set();
-    for (let index = 0; index < count; index += 1) {
-      const value = shuffleIndex(index, count);
-      assert.ok(value >= 0 && value < count, `value in range for count=${count}`);
-      seen.add(value);
-    }
-    assert.equal(seen.size, count, `every slot used once for count=${count}`);
+test('affine encoding is a full-duplex bijection over 1..4012', () => {
+  assert.equal((PEERPREP_SERIAL_MULTIPLIER * PEERPREP_SERIAL_INVERSE) % PEERPREP_SERIAL_MOD, 1);
+  const encoded = [];
+  const decoded = [];
+  for (let value = 1; value <= PEERPREP_SERIAL_MOD; value += 1) {
+    const serial = encodeProblemSerial(value);
+    const position = decodeProblemSerial(value);
+    encoded.push(serial);
+    decoded.push(position);
+    assert.equal(decodeProblemSerial(serial), value, `decode(encode(${value}))`);
+    assert.equal(encodeProblemSerial(position), value, `encode(decode(${value}))`);
+  }
+  assert.equal(new Set(encoded).size, PEERPREP_SERIAL_MOD);
+  assert.equal(new Set(decoded).size, PEERPREP_SERIAL_MOD);
+  assert.deepEqual([...encoded].sort((a, b) => a - b), Array.from({ length: PEERPREP_SERIAL_MOD }, (_, index) => index + 1));
+  assert.throws(() => encodeProblemSerial(0), RangeError);
+  assert.throws(() => decodeProblemSerial(PEERPREP_SERIAL_MOD + 1), RangeError);
+});
+
+test('known Python mapping values produce the same JavaScript results', () => {
+  assert.equal(encodeProblemSerial(1), 722);
+  assert.equal(encodeProblemSerial(2), 1729);
+  assert.equal(encodeProblemSerial(3), 2736);
+  assert.equal(encodeProblemSerial(4), 3743);
+  assert.equal(encodeProblemSerial(5), 738);
+  for (const position of [1, 2, 3, 4, 5, 1007, 2000, 4012]) {
+    assert.equal(decodeProblemSerial(encodeProblemSerial(position)), position);
   }
 });
 
-test('shuffleIndex is deterministic, keyed and actually shuffles', () => {
-  const count = 4000;
-  const first = Array.from({ length: count }, (_, index) => shuffleIndex(index, count));
-  const again = Array.from({ length: count }, (_, index) => shuffleIndex(index, count));
-  assert.deepEqual(first, again, 'same input, same serials');
-  const otherKey = Array.from({ length: count }, (_, index) => shuffleIndex(index, count, 'another-key'));
-  assert.notDeepEqual(first, otherKey, 'a different key gives a different order');
-  const fixedPoints = first.filter((value, index) => value === index).length;
-  assert.ok(fixedPoints < 20, `almost nothing keeps its catalogue position (${fixedPoints})`);
-  const adjacentSteps = first.slice(1).filter((value, index) => Math.abs(value - first[index]) === 1).length;
-  assert.ok(adjacentSteps < 40, `neighbours in the catalogue are not neighbours in PeerPrep (${adjacentSteps})`);
-  assert.throws(() => shuffleIndex(count, count), RangeError);
-});
-
-test('assignPeerPrepSerials numbers catalogue problems 1..N and originals after them', () => {
+test('catalogue positions use affine serials and originals follow the reserved range', () => {
   const problems = [
     ...Array.from({ length: 300 }, (_, index) => ({ _id: `lc${index + 1}`, sourceNumber: (index + 1) * 2, title: `LC ${index}` })),
     { _id: 'orig-b', title: 'Second original', createdAt: '2026-09-02' },
     { _id: 'orig-a', title: 'First original', createdAt: '2026-09-01' },
   ];
   const serials = assignPeerPrepSerials(problems);
-  const catalogueSerials = problems.slice(0, 300).map((problem) => serials.get(problem._id)).sort((a, b) => a - b);
-  assert.deepEqual(catalogueSerials, Array.from({ length: 300 }, (_, index) => index + 1));
-  assert.equal(serials.get('orig-a'), 301);
-  assert.equal(serials.get('orig-b'), 302);
-  assert.notEqual(serials.get('lc1'), 1, 'LeetCode #2 (rank 0) is not PeerPrep #1');
+  const catalogueSerials = problems.slice(0, 300).map((problem) => serials.get(problem._id));
+  assert.equal(new Set(catalogueSerials).size, 300);
+  assert.ok(catalogueSerials.every((serial) => serial >= 1 && serial <= PEERPREP_SERIAL_MOD));
+  assert.equal(serials.get('lc1'), encodeProblemSerial(1));
+  assert.equal(serials.get('lc300'), encodeProblemSerial(300));
+  assert.equal(serials.get('orig-a'), PEERPREP_SERIAL_MOD + 1);
+  assert.equal(serials.get('orig-b'), PEERPREP_SERIAL_MOD + 2);
   assert.deepEqual(assignPeerPrepSerials([...problems].reverse()), serials, 'input order does not matter');
+  assert.throws(() => assignPeerPrepSerials(Array.from({ length: PEERPREP_SERIAL_MOD + 1 }, (_, index) => ({
+    _id: `too-many-${index}`,
+    sourceNumber: index + 1,
+  }))), RangeError);
 });
 
-test('numeric search matches either number through indexed fields', () => {
-  assert.equal(parseSerialSearch('56'), 56);
-  assert.equal(parseSerialSearch(' #56 '), 56);
+test('plain number search matches either identifier and prefixes can restrict it', () => {
+  assert.deepEqual(parseSerialSearch('56'), { kind: 'either', number: 56 });
+  assert.deepEqual(parseSerialSearch(' #56 '), { kind: 'either', number: 56 });
+  assert.deepEqual(parseSerialSearch('pp:56'), { kind: 'peerprep', number: 56 });
+  assert.deepEqual(parseSerialSearch('LC:56'), { kind: 'leetcode', number: 56 });
+  assert.deepEqual(parseSerialSearch('leetcode #56'), { kind: 'leetcode', number: 56 });
+  assert.deepEqual(parseSerialSearch('leetcode:#56'), { kind: 'leetcode', number: 56 });
   assert.equal(parseSerialSearch('merge'), null);
   assert.equal(parseSerialSearch('56a'), null);
-  assert.deepEqual(serialSearchClause(56), { $or: [{ displayOrder: 56 }, { sourceNumber: 56 }] });
+  assert.deepEqual(serialSearchClause(parseSerialSearch('#56')), { $or: [{ displayOrder: 56 }, { sourceNumber: 56 }] });
+  assert.deepEqual(serialSearchClause(parseSerialSearch('pp:56')), { displayOrder: 56 });
+  assert.deepEqual(serialSearchClause(parseSerialSearch('lc:56')), { sourceNumber: 56 });
+  assert.equal(matchesSerialSearch({ displayOrder: 56, sourceNumber: 99 }, parseSerialSearch('#56')), true);
+  assert.equal(matchesSerialSearch({ displayOrder: 99, sourceNumber: 56 }, parseSerialSearch('#56')), true);
+  assert.equal(matchesSerialSearch({ displayOrder: 99, sourceNumber: 56 }, parseSerialSearch('lc:56')), true);
 });

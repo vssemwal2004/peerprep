@@ -2,7 +2,7 @@ import { useState } from 'react';
 import GlobalRankCard from '../profile/GlobalRankCard';
 import { Link } from 'react-router-dom';
 import { ArrowRight, ArrowUpRight, CalendarClock, ChevronDown, Megaphone, Trophy } from 'lucide-react';
-import { PrepScoreFlow, ScoreValue } from '../prepScore/PrepScore';
+import { ScoreValue } from '../prepScore/PrepScore';
 import { formatRelativeTime, formatSchedule, isImportantAnnouncement, numeric } from './dashboardUtils';
 import { card, CardTitle, focusRing, Skeleton, textLink, Unavailable } from './ui';
 
@@ -20,7 +20,7 @@ export function RankCard({ ranking, loading, error, onRetry }) {
   const unranked = !loading && !error && !rank;
   const unrankedMessage = !ranking ? 'Your university standing is unavailable right now.'
     : !ranking.universityName ? 'Ask your coordinator to add your university details.'
-      : 'Solve a problem, finish a lesson or take a test to start your Prep Score.';
+      : 'Your Prep Score and rank will appear here.';
 
   return <><section aria-labelledby="rank-title" aria-busy={Boolean(loading)} className={railCard}>
     <CardTitle id="rank-title" title="Prep Score & rank" icon={Trophy} tone="amber"
@@ -49,7 +49,6 @@ export function RankCard({ ranking, loading, error, onRetry }) {
               <div className="h-full rounded-full bg-gradient-to-r from-sky-300 to-sky-600 transition-[width] duration-500 motion-reduce:transition-none" style={{ width: `${position}%` }} />
               <span className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-white bg-sky-600 shadow-[0_2px_6px_rgba(2,132,199,0.45)] dark:border-[#242424]" style={{ left: `clamp(7px, ${position}%, calc(100% - 7px))` }} aria-hidden="true" />
             </div>
-            <PrepScoreFlow prepScore={ranking.prepScore} className="mt-3" />
           </>}
     {!loading && !error && <>
       <div className="mt-3 flex items-center justify-between gap-3 text-[12px]">

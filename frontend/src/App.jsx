@@ -4,7 +4,7 @@ import { lazy as reactLazy, Suspense, useEffect, useCallback, useLayoutEffect, u
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
 import { UniversityPolicyProvider } from './platform/UniversityPolicyContext';
-import { canManageInterviewCompanies, isUniversityDeployment, SUGGESTED_COMPANIES_PATH } from './platform/universityPermissions';
+import { canAdjustPrepScore, canManageInterviewCompanies, isUniversityDeployment, PREP_COIN_PRICING_PATH, PREP_SCORE_ADJUSTMENT_PATH, SUGGESTED_COMPANIES_PATH } from './platform/universityPermissions';
 import { ToastProvider } from './components/CustomToast';
 import AdminLayout from './admin/AdminLayout';
 import AdminProtectedRoute from './admin/AdminProtectedRoute';
@@ -64,8 +64,11 @@ const StudentResume = lazy(() => import("./student/StudentResume"));
 // Admin Pages
 const AdminOverview = lazy(() => import("./admin/AdminOverview"));
 const PlatformControl = lazy(() => import('./admin/PlatformControl'));
+const PrepScoreAdjustment = lazy(() => import('./admin/PrepScoreAdjustment'));
 const WalletPage = lazy(() => import('./wallet/WalletPage'));
 const PlatformWalletPage = lazy(() => import('./wallet/PlatformWalletPage'));
+const StudentCoinHistory = lazy(() => import('./student/prepCoin/StudentCoinHistory'));
+const PrepCoinPricing = lazy(() => import('./admin/PrepCoinPricing'));
 const AdminLearning = lazy(() => import("./admin/AdminLearning"));
 const AdminLearningDetail = lazy(() => import("./admin/AdminLearningDetail"));
 const StudentOnboarding = lazy(() => import("./admin/StudentOnboarding"));
@@ -395,7 +398,7 @@ function AppContent() {
         {/* Student Routes - Protected */}
         <Route path="/student/change-password" element={<StudentProtectedRoute><ChangePassword /></StudentProtectedRoute>} />
         <Route path="/student/profile" element={<StudentProtectedRoute><StudentProfile /></StudentProtectedRoute>} />
-        <Route path="/student/wallet" element={<StudentProtectedRoute><WalletPage /></StudentProtectedRoute>} />
+        <Route path="/student/wallet" element={<StudentProtectedRoute><StudentCoinHistory /></StudentProtectedRoute>} />
         <Route path="/student/rankings" element={<StudentProtectedRoute><StudentRankings /></StudentProtectedRoute>} />
         <Route path="/student/quickprep" element={<StudentProtectedRoute><StudentQuests /></StudentProtectedRoute>} />
         <Route path="/student/quickprep/:slug" element={<StudentProtectedRoute><QuestDetail /></StudentProtectedRoute>} />
@@ -472,6 +475,8 @@ function AppContent() {
         <Route path="/admin/change-password" element={<AdminShell><AdminChangePassword /></AdminShell>} />
         <Route path="/admin/learning" element={<AdminShell><AdminLearning /></AdminShell>} />
         <Route path="/admin/platform" element={<AdminShell><PlatformControl /></AdminShell>} />
+        <Route path={PREP_SCORE_ADJUSTMENT_PATH} element={canAdjustPrepScore ? <AdminShell><PrepScoreAdjustment /></AdminShell> : <Navigate to="/admin/dashboard" replace />} />
+        <Route path={PREP_COIN_PRICING_PATH} element={canAdjustPrepScore ? <AdminShell><PrepCoinPricing /></AdminShell> : <Navigate to="/admin/dashboard" replace />} />
         <Route path="/admin/learning/:semester/:subject/:teacherId" element={<AdminShell><AdminLearningDetail /></AdminShell>} />
         <Route path="/admin/activity" element={<AdminShell><AdminActivity /></AdminShell>} />
         <Route path="/admin/analysis" element={<AdminShell><PrepAnalysisPage /></AdminShell>} />

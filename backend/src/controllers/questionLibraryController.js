@@ -26,6 +26,7 @@ import {
   buildSearchPrefixes,
   syncProblemToLibrary,
 } from '../services/questionLibraryService.js';
+import { matchesSerialSearch, parseSerialSearch } from '../utils/problemSerial.js';
 
 /** Keeps sample-case images on copied problems, limited to the fields and https URLs TestCase accepts. */
 function copySampleImages(images) {
@@ -169,8 +170,8 @@ function escapeRegExp(value = '') {
 function librarySearchRank(question = {}, search = '') {
   const query = normalizeSearchText(search);
   if (!query) return 0;
-  if (/^\d+$/.test(query) && Number(question.displayOrder) === Number(query)) return 0;
-  if (/^\d+$/.test(query) && Number(question.sourceNumber) === Number(query)) return 1;
+  const numberSearch = parseSerialSearch(query);
+  if (numberSearch && matchesSerialSearch(question, numberSearch)) return 0;
   const titles = [question.questionText, question.sourceProblemTitle]
     .map(normalizeSearchText)
     .filter(Boolean);
@@ -378,9 +379,9 @@ function matchesSharedQuestion(question, query = {}) {
   if (query.tag && !(question.tags || []).includes(query.tag)) return false;
   if (query.search) {
     const normalizedSearch = normalizeSearchText(query.search);
-    if (/^\d+$/.test(normalizedSearch)) {
-      if (Number(question.displayOrder) !== Number(normalizedSearch)
-        && Number(question.sourceNumber) !== Number(normalizedSearch)) return false;
+    const numberSearch = parseSerialSearch(normalizedSearch);
+    if (numberSearch) {
+      if (!matchesSerialSearch(question, numberSearch)) return false;
     } else if (![question.questionText, ...(question.tags || [])]
       .some((value) => String(value || '').toLowerCase().includes(normalizedSearch))) return false;
   }
@@ -446,7 +447,14 @@ export async function listLibraryQuestions(req, res) {
     const limitNum = Math.min(100, Math.max(1, Number(limit) || 25));
     const skip = (pageNum - 1) * limitNum;
     const normalizedSearch = normalizeSearchText(search);
-    const serialSearch = /^\d+$/.test(normalizedSearch) ? Number(normalizedSearch) : null;
+    const serialSearch = parseSerialSearch(normalizedSearch);
+    const serialSearchExpressions = !serialSearch ? []
+      : serialSearch.kind === 'leetcode' ? [{ $eq: ['$sourceNumber', serialSearch.number] }]
+        : serialSearch.kind === 'peerprep' ? [{ $eq: ['$displayOrder', serialSearch.number] }]
+          : [
+            { $eq: ['$displayOrder', serialSearch.number] },
+            { $eq: ['$sourceNumber', serialSearch.number] },
+          ];
 
     const baseMatch = {
       ...buildLibrarySearchMatch(search),
@@ -568,7 +576,7 @@ export async function listLibraryQuestions(req, res) {
                   {
                     case: {
                       $or: [
-                        ...(serialSearch ? [{ $eq: ['$displayOrder', serialSearch] }, { $eq: ['$sourceNumber', serialSearch] }] : []),
+                        ...serialSearchExpressions,
                         { $eq: [{ $toLower: { $trim: { input: { $ifNull: ['$questionText', ''] } } } }, normalizedSearch] },
                         { $eq: [{ $toLower: { $trim: { input: { $ifNull: ['$sourceProblemTitle', ''] } } } }, normalizedSearch] },
                       ],

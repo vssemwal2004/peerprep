@@ -109,6 +109,37 @@ test('list endpoint omits editorial fields; detail exposes editorial, meta and v
   assert.ok(!detailJson.includes('not validated'));
 });
 
+test('student and admin plain-number searches return both identifier matches', async () => {
+  const [peerPrepMatch, leetCodeMatch] = await Problem.create([
+    {
+      title: 'PeerPrep Serial Match', displayOrder: 722, sourceNumber: 1,
+      status: 'published', visibility: 'public', createdBy: adminId,
+    },
+    {
+      title: 'LeetCode Source Match', displayOrder: 1, sourceNumber: 722,
+      status: 'published', visibility: 'public', createdBy: adminId,
+    },
+  ]);
+
+  for (const role of ['student', 'admin']) {
+    const request = (search) => ({ user: { _id: role === 'admin' ? adminId : studentId, role }, query: { search } });
+
+    const combinedResponse = responseCapture();
+    await listProblems(request('#722'), combinedResponse);
+    assert.deepEqual(new Set(combinedResponse.state.body.problems.map((row) => String(row._id))), new Set([
+      String(peerPrepMatch._id), String(leetCodeMatch._id),
+    ]));
+
+    const peerPrepResponse = responseCapture();
+    await listProblems(request('pp:722'), peerPrepResponse);
+    assert.deepEqual(peerPrepResponse.state.body.problems.map((row) => String(row._id)), [String(peerPrepMatch._id)]);
+
+    const leetCodeResponse = responseCapture();
+    await listProblems(request('lc:722'), leetCodeResponse);
+    assert.deepEqual(leetCodeResponse.state.body.problems.map((row) => String(row._id)), [String(leetCodeMatch._id)]);
+  }
+});
+
 test('legacy problems without editorialMeta serialize meta as null and still expose editorial', () => {
   const serialized = serializeProblem({
     _id: 'legacy', title: 'Legacy', editorial: 'Old text', validatedLanguages: ['java'],

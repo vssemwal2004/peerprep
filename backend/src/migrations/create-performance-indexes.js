@@ -9,6 +9,9 @@ import EventParticipant from '../models/EventParticipant.js';
 import User from '../models/User.js';
 import Submission from '../models/Submission.js';
 import Feedback from '../models/Feedback.js';
+import Progress from '../models/Progress.js';
+import QuestionPracticeAttempt from '../models/QuestionPracticeAttempt.js';
+import { PrepScoreState, StudentPrepScore } from '../models/StudentPrepScore.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, '../../.env') });
@@ -24,7 +27,8 @@ async function run() {
     maxPoolSize: 5,
   });
 
-  const models = [Assessment, AssessmentSubmission, Event, EventParticipant, User, Submission, Feedback];
+  // Prep Score sync reads activity by updatedAt and ranks from StudentPrepScore.
+  const models = [Assessment, AssessmentSubmission, Event, EventParticipant, User, Submission, Feedback, Progress, QuestionPracticeAttempt, StudentPrepScore, PrepScoreState];
   for (const model of models) {
     const created = await model.createIndexes();
     console.log(`[Indexes] ${model.modelName}: ${created || 'already current'}`);

@@ -131,6 +131,8 @@ const submissionSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 submissionSchema.index({ createdAt: -1 });
+// Prep Score sync reads students whose submissions changed since its last pass.
+submissionSchema.index({ updatedAt: 1 });
 submissionSchema.index({ problem: 1, createdAt: -1 });
 submissionSchema.index({ mode: 1, status: 1, createdAt: -1 });
 submissionSchema.index({ user: 1, mode: 1, createdAt: -1 });

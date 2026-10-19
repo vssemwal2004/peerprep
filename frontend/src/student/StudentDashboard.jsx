@@ -17,7 +17,6 @@ import { card, CardTitle, TitleIcon, Unavailable } from './dashboard/ui';
 import BadgeShelf from './dashboard/BadgeShelf';
 import { badgeShelfData, getGreeting, getUpcomingItems, getWeekActivity, numeric, sortAnnouncements } from './dashboard/dashboardUtils';
 import AchievementCelebration from './engagement/AchievementCelebration';
-import { publishRanking } from './prepScore/rankingStore';
 
 // The student shell's sticky header is 64px tall plus a 1px border. The rail sticks 16px below
 // it and is capped to the viewport, so only the main column scrolls on large screens.
@@ -55,8 +54,6 @@ export default function StudentDashboard() {
 
   const progress = sections.dashboard;
   const data = progress.data;
-  // The header's Prep Score chip shows the ranking this page loaded (no extra request).
-  useEffect(() => { publishRanking(user?._id || user?.id, data?.ranking); }, [data?.ranking, user]);
   const permittedItems = (items) => (Array.isArray(items) ? items : []).filter((item) => item.href && allowsPath(item.href.split('?')[0], 'student'));
   const resumeItems = permittedItems(data?.resumeItems).filter((item) => item.type === 'coding' || item.type === 'quest' ? canQuestions : item.type === 'learning' && canLearning);
   const suggestions = canQuestions ? permittedItems(data?.suggestedPractice) : [];

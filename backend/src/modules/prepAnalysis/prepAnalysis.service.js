@@ -10,16 +10,14 @@ import { loadCodingFacts, loadCohort } from './codingFacts.js';
 import { allowedModules, FIELDS, MODULES, STATIC_OPTIONS } from './fields.js';
 import { applyRankCuts, evaluateFilterTree, normalizeFilterTree, normalizeRankCuts } from './filterEngine.js';
 import { loadLearningFacts } from './learningFacts.js';
-import { competitionRanks, PREP_SCORE_VERSION } from './prepScore.js';
-import { PREP_SCORE_RULES } from '../../services/prepScores.js';
+import { competitionRanks } from './ranking.js';
+import { getPrepScorePolicyVersion } from '../../services/prepScore/policy.js';
+import { storedScoresFor } from '../../services/prepScore/sync.js';
 import { buildReport, EXPORT_TYPES } from './prepAnalysis.export.js';
 import { loadAssessmentFacts, PASS_PERCENT } from './assessmentFacts.js';
 import { loadInterviewFacts, RATINGS } from './interviewFacts.js';
 import { loadQuickPrepFacts, sheetVisibleTo } from './quickPrepFacts.js';
-import { buildStudentRows } from './studentRows.js';
-
-// The live Prep Score constants, for the help dialog and student insights.
-export const PREP_SCORE_FORMULA = PREP_SCORE_RULES;
+import { attachStoredScores, buildStudentRows } from './studentRows.js';
 
 export const QUERY_LIMITS = Object.freeze({ maxCharts: 24, maxTableLimit: 100, maxRangeDays: 366 * 3, cacheTtlMs: 60_000, cacheEntries: 6 });
 const RANGE_PRESETS = { '7d': 7, '30d': 30, '90d': 90, '180d': 180, '365d': 365, all: null };
@@ -148,20 +146,26 @@ async function buildContext(user, range, modules, parts) {
   const cohort = await loadCohort(user);
   const studentIds = cohort.students.map((student) => String(student._id));
   const empty = { byStudent: new Map(), days: new Map(), problems: new Map(), topics: new Map() };
-  const [coding, learning, quickprep, assessment, interview] = await Promise.all([
+  const [coding, learning, quickprep, assessment, interview, stored] = await Promise.all([
     modules.has('coding') ? loadCodingFacts({ studentIds, range }) : empty,
     modules.has('learning') ? loadLearningFacts({ studentIds, range }) : null,
     // Quick Prep sheets are part of Prep Coding.
     modules.has('coding') ? loadQuickPrepFacts({ studentIds, range }) : null,
     modules.has('assessment') ? loadAssessmentFacts({ user, studentIds, range }) : null,
     modules.has('interview') ? loadInterviewFacts({ studentIds, range, ...parts }) : null,
+    storedScoresFor(studentIds),
   ]);
   const rows = buildStudentRows({
     students: cohort.students, facts: coding, problems: coding.problems, batchNames: cohort.batchNames, learning, quickprep, assessment, interview, range,
-    scoreFeatures: { coding: modules.has('coding'), learning: modules.has('learning'), interview: modules.has('interview'), assessment: modules.has('assessment'), mock: parts.peer, ai: parts.ai },
+  });
+  // The same stored Prep Score each student sees and ranks on, whatever period is selected here.
+  const policy = await getPrepScorePolicyVersion(stored.version);
+  attachStoredScores(rows, stored.scores, {
+    features: { coding: modules.has('coding'), learning: modules.has('learning'), interview: modules.has('interview'), assessment: modules.has('assessment') },
+    points: policy.config.modules.coding.points,
   });
   return {
-    rows, topics: coding.topics, batchNames: cohort.batchNames, truncated: cohort.truncated, loadedAt: new Date(),
+    rows, scoreVersion: stored.version, topics: coding.topics, batchNames: cohort.batchNames, truncated: cohort.truncated, loadedAt: new Date(),
     curriculum: learning?.curriculum || [], sheets: quickprep?.sheets || new Map(), tests: assessment?.tests || new Map(),
   };
 }
@@ -191,7 +195,7 @@ function tableRow(row, position) {
     id: row.id, name: row.name, studentId: row.studentId, email: row.email,
     semester: row.student.semester, branch: row.student.branch, course: row.student.course, group: row.student.group, college: row.student.college,
     position,
-    prepScore: row.coding.prepScore, points: row.coding.points, work: row.coding.work, quality: row.coding.quality,
+    prepScore: row.coding.prepScore, points: row.coding.points,
     solved: row.coding.solved, accuracy: row.coding.accuracy, submissions: row.coding.submissions,
     activeDays: row.coding.activeDays, daysSinceActive: row.coding.daysSinceActive, practiceStatus: row.coding.practiceStatus,
     languages: row.coding.languages,
@@ -247,7 +251,7 @@ export async function runPrepAnalysis({ user, query }) {
   });
   return {
     meta: {
-      version: PREP_SCORE_VERSION,
+      scoreVersion: context.scoreVersion,
       generatedAt: new Date().toISOString(),
       dataLoadedAt: context.loadedAt.toISOString(),
       module: query.module,
@@ -255,7 +259,6 @@ export async function runPrepAnalysis({ user, query }) {
       cohortSize: context.rows.length,
       matched: selected.length,
       truncated: context.truncated,
-      formula: PREP_SCORE_FORMULA,
     },
     kpiGroups: buildKpiGroups(query.module, query.modules, selected),
     charts,
@@ -338,7 +341,7 @@ function codingProfile(row, range) {
   const daily = new Map([...row.days.entries()].map(([day, value]) => [day, value.attempts]));
   const { coding } = row;
   return {
-    prepScore: coding.prepScore, points: coding.points, work: coding.work, quality: coding.quality, triesPerSolve: coding.triesPerSolve,
+    prepScore: coding.prepScore, points: coding.points,
     solved: coding.solved, accuracy: coding.accuracy,
     submissions: coding.submissions, accepted: coding.accepted, attempted: coding.attempted,
     activeDays: coding.activeDays, daysSinceActive: coding.daysSinceActive, practiceStatus: coding.practiceStatus,
@@ -418,7 +421,6 @@ export function buildStudentProfile(row, { range, modules, sheets = new Map(), t
     interview: modules.has('interview') && row.interview ? interviewProfile(row, range) : null,
     assessment: modules.has('assessment') && row.assessment ? assessmentProfile(row, tests, range) : null,
     prepScore: row.scores || { total: 0, features: {} },
-    formula: PREP_SCORE_FORMULA,
   };
 }
 

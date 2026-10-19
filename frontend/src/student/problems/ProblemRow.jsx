@@ -20,13 +20,13 @@ export default function ProblemRow({ problem, number, saved, opening, onOpen, on
   const companies = (problem.reportedCompanies || []).slice(0, 3);
   return <li>
     <div role="button" tabIndex={0} onClick={() => onOpen(problem)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(problem); } }}
-      aria-label={`${number}. ${problem.title}${problem.difficulty ? `, ${problem.difficulty}` : ''}`}
+      aria-label={`PeerPrep ${number}. ${problem.title}${problem.difficulty ? `, ${problem.difficulty}` : ''}`}
       className={`group relative grid cursor-pointer grid-cols-[24px_minmax(0,1fr)_auto] items-center gap-3 overflow-hidden rounded-xl border border-[#eef0f3] bg-white py-3 pl-4 pr-3 transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-px hover:border-sky-200 hover:shadow-[0_12px_26px_-20px_rgba(2,132,199,0.6)] motion-reduce:transform-none dark:border-white/[0.06] dark:bg-[#232325] dark:hover:border-sky-400/30 sm:grid-cols-[24px_minmax(0,1fr)_100px_78px_32px] ${focusRing}`}>
       <span className={`absolute inset-y-3 left-0 w-[3px] rounded-r-full ${difficulty?.rail || 'bg-slate-300'}`} aria-hidden="true" />
       <StatusMark status={problemStatus(problem)} />
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <span className="shrink-0 text-[12px] tabular-nums text-slate-400 dark:text-zinc-500">{number}</span>
+          <span title={`Question serial ${number}`} className="w-10 shrink-0 text-right text-[13px] font-medium tabular-nums text-slate-900 dark:text-zinc-100">{number}</span>
           <span className="truncate text-[14.5px] font-medium text-slate-900 transition-colors group-hover:text-sky-700 dark:text-zinc-50 dark:group-hover:text-sky-300" title={problem.title}>{problem.title}</span>          {opening && <LoaderCircle className="h-4 w-4 shrink-0 animate-spin text-sky-500" aria-label="Opening" />}
         </div>
         {(tags.length > 0 || companies.length > 0) && <div className="mt-1.5 flex flex-wrap items-center gap-1.5">

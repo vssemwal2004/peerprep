@@ -12,6 +12,12 @@ async function curriculumSemester(id) {
 import Progress from '../models/Progress.js';
 import User from '../models/User.js';
 import { logStudentActivity } from './activityController.js';
+import { getActivePrepScorePolicy, videoCompletionPercent } from '../services/prepScore/policy.js';
+
+async function requiredWatchSeconds(duration) {
+  const percent = videoCompletionPercent(await getActivePrepScorePolicy());
+  return Number(duration) > 0 ? Math.ceil(Number(duration) * percent / 100) : Number.POSITIVE_INFINITY;
+}
 
 // Get all semesters with all subjects from all coordinators
 export const getAllSemestersForStudent = async (req, res) => {
@@ -300,23 +306,19 @@ export const updateTopicProgress = async (req, res) => {
     }
 
     const previousWatchedSeconds = progress.videoWatchedSeconds || 0;
-    const wasCompleted = progress.completed;
+    const submittedWatchedSeconds = Math.max(0, Math.floor(Number(videoWatchedSeconds) || 0));
 
-    progress.videoWatchedSeconds = videoWatchedSeconds;
+    progress.videoWatchedSeconds = Math.max(previousWatchedSeconds, submittedWatchedSeconds);
     progress.lastAccessedAt = new Date();
 
-    // Mark as completed if watched for 3 minutes (180 seconds)
-    if (videoWatchedSeconds >= 180 && !progress.completed) {
-      progress.completed = true;
-      progress.completedAt = new Date();
-      console.log('[updateTopicProgress] Topic marked as completed!');
-    }
+    // This legacy endpoint records progress only. Completion is accepted only by
+    // the dedicated watch-time endpoint, which also receives the media duration.
 
     await progress.save();
     console.log('[updateTopicProgress] Progress saved successfully');
 
     // Log video watching activity (only if significant time added)
-    if (videoWatchedSeconds > previousWatchedSeconds + 10) {
+    if (submittedWatchedSeconds > previousWatchedSeconds + 10) {
       await logStudentActivity({
         studentId,
         studentModel: 'User',
@@ -326,28 +328,10 @@ export const updateTopicProgress = async (req, res) => {
           subjectId,
           chapterId,
           semesterId,
-          watchedSeconds: videoWatchedSeconds,
+          watchedSeconds: progress.videoWatchedSeconds,
           coordinatorId
         }
       });
-    }
-
-    // Log topic completion activity (only once)
-    if (!wasCompleted && progress.completed) {
-      await logStudentActivity({
-        studentId,
-        studentModel: 'User',
-        activityType: 'TOPIC_COMPLETED',
-        metadata: {
-          topicId,
-          subjectId,
-          chapterId,
-          semesterId,
-          coordinatorId,
-          totalWatchedSeconds: videoWatchedSeconds
-        }
-      });
-      // Removed PROBLEM_SOLVED activity logging - not essential
     }
 
     res.json({
@@ -356,7 +340,6 @@ export const updateTopicProgress = async (req, res) => {
     });
   } catch (error) {
     console.error('[updateTopicProgress] Error:', error);
-    res.status(500).json({ message: 'Failed to update progress', error: error.message });
     res.status(500).json({ message: 'Failed to update progress', error: error.message });
   }
 };
@@ -519,56 +502,13 @@ export const startVideoTracking = async (req, res) => {
       });
     }
 
-    const wasCompleted = progress.completed;
-    
     progress.lastAccessedAt = new Date();
     await progress.save();
 
     // Removed VIDEO_STARTED and TOPIC_VIEWED activity logging - not essential
 
-    // Set video watched to 180 seconds and mark as completed immediately
-    // This ensures progress is saved even if the server restarts
-    progress.videoWatchedSeconds = 180;
-    progress.completed = true;
-    progress.completedAt = new Date();
-    await progress.save();
-    
-    console.log('[startVideoTracking] Topic marked as completed:', topicId);
-
-    // Log completion activities if this is the first completion
-    if (!wasCompleted) {
-      await logStudentActivity({
-        studentId,
-        studentModel: 'User',
-        activityType: 'VIDEO_WATCH',
-        metadata: {
-          topicId,
-          subjectId,
-          chapterId,
-          semesterId,
-          watchedSeconds: 180,
-          coordinatorId
-        }
-      });
-
-      await logStudentActivity({
-        studentId,
-        studentModel: 'User',
-        activityType: 'TOPIC_COMPLETED',
-        metadata: {
-          topicId,
-          subjectId,
-          chapterId,
-          semesterId,
-          coordinatorId,
-          totalWatchedSeconds: 180
-        }
-      });
-      // Removed PROBLEM_SOLVED activity logging - not essential
-    }
-
     res.json({
-      message: 'Video tracking started and completed',
+      message: 'Video tracking started',
       progress
     });
   } catch (error) {
@@ -588,8 +528,9 @@ export const trackWatchTime = async (req, res) => {
       return res.status(400).json({ message: 'Coordinator ID is required' });
     }
 
-    const seconds = Math.max(0, Math.floor(Number(watchedSeconds) || 0));
+    const submittedSeconds = Math.max(0, Math.floor(Number(watchedSeconds) || 0));
     const duration = Math.max(0, Math.floor(Number(videoDuration) || 0));
+    const seconds = duration > 0 ? Math.min(submittedSeconds, duration) : submittedSeconds;
 
     // Find or create progress record
     let progress = await Progress.findOne({ studentId, topicId });
@@ -622,8 +563,7 @@ export const trackWatchTime = async (req, res) => {
 
     progress.lastAccessedAt = new Date();
 
-    // Mark completed if watched >= 80% of video, or >= 180 seconds as fallback
-    const completionThreshold = duration > 0 ? duration * 0.8 : 180;
+    const completionThreshold = await requiredWatchSeconds(progress.videoDuration);
     if (progress.videoWatchedSeconds >= completionThreshold && !progress.completed) {
       progress.completed = true;
       progress.completedAt = new Date();
@@ -706,11 +646,14 @@ export const markTopicComplete = async (req, res) => {
 
     const wasCompleted = progress.completed;
     
-    // Mark as completed
+    const completionThreshold = await requiredWatchSeconds(progress.videoDuration);
+    if (progress.videoWatchedSeconds < completionThreshold) {
+      return res.status(409).json({ message: 'Watch the complete video before marking this topic complete.' });
+    }
+
     progress.completed = true;
     progress.completedAt = new Date();
     progress.lastAccessedAt = new Date();
-    progress.videoWatchedSeconds = 180; // Set default watched time
     await progress.save();
     
     console.log('[markTopicComplete] Topic marked as completed:', topicId);
@@ -729,7 +672,7 @@ export const markTopicComplete = async (req, res) => {
           chapterId,
           semesterId,
           coordinatorId,
-          totalWatchedSeconds: 180
+          totalWatchedSeconds: progress.videoWatchedSeconds
         }
       });
       // Removed PROBLEM_SOLVED activity logging - not essential

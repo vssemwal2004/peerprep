@@ -13,8 +13,6 @@ import BadgesGallery from './profile/BadgesGallery';
 import ProfileSidebar from './profile/ProfileSidebar';
 import StudentSummary from './profile/StudentSummary';
 import CodingProgress from './profile/CodingProgress';
-import UniversityRankCard from './profile/UniversityRankCard';
-import GlobalRankCard from './profile/GlobalRankCard';
 import ActivitySection from './profile/ActivitySection';
 import PeerPrepProgress from './profile/PeerPrepProgress';
 import PracticeHistory from './profile/SubmissionsSection';
@@ -22,7 +20,6 @@ import { EditProfileModal, PhotoModal } from './profile/ProfileModals';
 import { focusRing, languageLabel } from './profile/format';
 import { useUniversityPolicy } from '../platform/UniversityPolicyContext';
 import { scopeEngagement } from './engagement/scopeEngagement';
-import { publishRanking } from './prepScore/rankingStore';
 
 const MotionDiv = motion.div;
 
@@ -42,8 +39,6 @@ export default function StudentProfile() {
   const canEngage = canQuestions || canLearning || canAssessments || canInterviews || canEvents;
   const [user, setUser] = useState(null);
   const [ranking, setRanking] = useState(null);
-  // The header's Prep Score chip shows the ranking this page loaded (no extra request).
-  useEffect(() => { publishRanking(user?._id || user?.id, ranking); }, [ranking, user]);
   const [avatarFile, setAvatarFile] = useState(null);
   const [avatarPreview, setAvatarPreview] = useState(null);
   const [profileForm, setProfileForm] = useState({
@@ -969,8 +964,6 @@ export default function StudentProfile() {
             <ProfileSidebar
               user={user}
               handle={handle}
-              prepScore={ranking ? ranking.score : null}
-              scoreRank={ranking?.rank || null}
               badge={canEngage ? performanceTitle : null}
               level={canEngage ? performanceTitle : null}
               onOpenBadges={canEngage ? setBadgesGallery : undefined}
@@ -980,8 +973,6 @@ export default function StudentProfile() {
               onChangePhoto={openPhotoModal}
               onEditProfile={openEditModal}
             />
-            <UniversityRankCard ranking={ranking} loading={loadingRanking} className="mt-4" />
-            <GlobalRankCard scoreRevision={ranking?.score} className="mt-4" />
           </aside>
 
           {/* Summary and Coding keep their existing design. Activity is immediately below them. */}

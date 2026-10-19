@@ -1,5 +1,9 @@
 import { listActiveUniversityIds, getTenant } from './tenantConnections.js';
-import { runForTenant } from './tenantContext.js';
+import { runForPlatform, runForTenant } from './tenantContext.js';
+import { syncPrepScores } from '../services/prepScore/sync.js';
+import { sweepPendingCharges } from './coinSpend.js';
+import { PLATFORM_WALLET_SCOPE } from './coins.js';
+import { chargeVerifiers } from '../services/coinEntitlements.js';
 import { dispatchPendingAssessmentEvaluations } from '../services/assessmentEvaluationDispatchService.js';
 import { discoverAssessmentReportRefreshes, refreshPendingAssessmentReports } from '../services/assessmentReportSummaryService.js';
 import { drainMailQueue } from '../workers/mailQueue.worker.js';
@@ -7,6 +11,10 @@ import { ensureMailQueueRetention } from '../services/mailQueueService.js';
 import { sweepAssessmentExpiry } from '../jobs/assessmentExpiry.js';
 import { sendReminders } from '../jobs/reminders.js';
 import { runDailyAnalytics } from '../jobs/analytics.js';
+
+// A failed score pass is retried next minute; it must not skip mail or assessment work.
+const logPrepScoreFailure = (error) => console.error(`[SharedMaintenance] Prep Score sync failed (${error?.name || 'Error'}).`);
+const logCoinFailure = (error) => console.error(`[SharedMaintenance] Prep Coin charge sweep failed (${error?.name || 'Error'}).`);
 
 export function startSharedMaintenance({ scheduled = true, mail = true } = {}) {
   let stopped = false;
@@ -28,6 +36,11 @@ export function startSharedMaintenance({ scheduled = true, mail = true } = {}) {
         universityIds = await listActiveUniversityIds();
         nextRefresh = Date.now() + 60_000;
       }
+      // PeerPrep's own students live in the main database, outside every university.
+      if (scheduled && due('platform', 'prepScores', 60_000)) await runForPlatform(() => syncPrepScores()).catch(logPrepScoreFailure);
+      if (scheduled && due('platform', 'coinCharges', 60_000)) {
+        await runForPlatform(() => sweepPendingCharges({ scope: PLATFORM_WALLET_SCOPE, verifiers: chargeVerifiers })).catch(logCoinFailure);
+      }
       if (!universityIds.length) return;
       const id = universityIds[cursor++ % universityIds.length];
       const tenant = await getTenant(id);
@@ -39,6 +52,10 @@ export function startSharedMaintenance({ scheduled = true, mail = true } = {}) {
             await refreshPendingAssessmentReports({ limit: 5 });
           }
           if (due(id, 'expiry', 60_000)) await sweepAssessmentExpiry();
+          // A rebuild (new policy or edited content) advances one batch per university per pass.
+          if (due(id, 'prepScores', 60_000)) await syncPrepScores().catch(logPrepScoreFailure);
+          // Settles Prep Coin charges a crash left pending (verified against this university's data).
+          if (due(id, 'coinCharges', 60_000)) await sweepPendingCharges({ scope: id, verifiers: chargeVerifiers }).catch(logCoinFailure);
           if (due(id, 'reminders', 300_000)) await sendReminders();
           const now = new Date();
           const day = now.toISOString().slice(0, 10);

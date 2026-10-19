@@ -6,7 +6,7 @@
 
 import { PASS_PERCENT } from './assessmentFacts.js';
 import { RATINGS } from './interviewFacts.js';
-import { DIFFICULTIES } from './prepScore.js';
+import { DIFFICULTIES } from './ranking.js';
 import { INACTIVE_AFTER_DAYS } from './studentRows.js';
 
 export const GROUP_BY = Object.freeze({
@@ -21,7 +21,8 @@ const NOT_SET = 'Not set';
 const practising = (rows) => rows.filter((row) => row.coding.submissions > 0);
 const byScore = (left, right) => right.coding.prepScore - left.coding.prepScore || left.name.localeCompare(right.name);
 // Lower edges of the Prep Score bands in "How Prep Scores are spread".
-const SCORE_BANDS = [0, 25, 50, 100, 250, 500, 1000, 2500];
+// Prep Score bands for the default values (a steady student is around 10–40); the score has no ceiling.
+const SCORE_BANDS = [0, 2.5, 5, 10, 20, 40, 80, 160];
 const clampLimit = (value, fallback, max) => Math.min(max, Math.max(1, Number.parseInt(value, 10) || fallback));
 
 function groupRows(rows, groupBy, maxGroups = 12) {
@@ -236,7 +237,7 @@ const CODING_CHARTS = [
     build: ({ rows }) => {
       // Prep Score has no ceiling, so the bands widen as scores grow.
       const bins = SCORE_BANDS.map((from, index) => ({
-        label: index === SCORE_BANDS.length - 1 ? `${from.toLocaleString('en-US')}+` : `${from.toLocaleString('en-US')}–${SCORE_BANDS[index + 1].toLocaleString('en-US')}`, count: 0,
+        label: index === SCORE_BANDS.length - 1 ? `${from}+` : `${from}–${SCORE_BANDS[index + 1]}`, count: 0,
       }));
       practising(rows).forEach((row) => { bins[SCORE_BANDS.findLastIndex((from) => row.coding.prepScore >= from)].count += 1; });
       return { label: 'Prep Score', bins };

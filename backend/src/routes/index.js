@@ -37,11 +37,15 @@ import platformRoutes from '../platform/routes.js';
 import questionPracticeRoutes from '../platform/questionPractice.js';
 import interviewCompanyRoutes from './interviewCompanies.js';
 import walletRoutes from './wallet.js';
+import prepScoreSettingsRoutes from './prepScoreSettings.js';
+import coinPricingSettingsRoutes from './coinPricingSettings.js';
 import { requireAuth, requireFullStudent } from '../middleware/auth.js';
 
 const router = Router();
 router.use('/platform', platformRoutes);
 router.use('/wallet', walletRoutes);
+router.use('/platform/admin/prep-score', prepScoreSettingsRoutes);
+router.use('/platform/admin/coin-pricing', coinPricingSettingsRoutes);
 router.use('/student/questions', requireAuth, requireFullStudent, questionPracticeRoutes);
 // Reserved feature routes must precede the interview identifier routes.
 router.use('/ai-interviews/avatars', avatarRoutes);

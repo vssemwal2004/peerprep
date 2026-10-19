@@ -9,7 +9,7 @@ import { HttpError } from '../../utils/errors.js';
 import { PASS_PERCENT } from './assessmentFacts.js';
 import { allowedModules } from './fields.js';
 import { RATINGS } from './interviewFacts.js';
-import { competitionRanks } from './prepScore.js';
+import { competitionRanks } from './ranking.js';
 
 export const EXPORT_LIMITS = Object.freeze({ maxRows: 50000, maxPdfRows: 3000, maxPdfColumns: 12, maxColumns: 60, maxSummaryLines: 30 });
 

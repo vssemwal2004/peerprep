@@ -4,7 +4,7 @@ import { MissionAssignment, EngagementReward, EngagementActivity, StudentProgres
 import { engagementTenant, engagementPermissions, getEngagementPolicy } from './engagementPolicyService.js';
 import { loadEvidenceAndCandidates } from './engagementEvidenceService.js';
 import { BADGES, LEVELS, DOMAIN_ACCESS, dayKey, periodsAt, enabledDomains, abilityFrom, selectDailyMissions, evaluateGoals, assignmentComplete, assignmentCompletedAt, assignmentPaused, progressionView, bestStreak, badgeCategoryAllowed } from './adaptiveEngagementRules.js';
-import { invalidateChallengeRanking, getStudentUniversityRanking } from './studentDashboardService.js';
+import { getStudentProgressSummary } from './studentDashboardService.js';
 import { requireEngagementUniqueIndex } from '../utils/engagementIndexes.js';
 import { notifyOnce } from './notificationService.js';
 import { HttpError } from '../utils/errors.js';
@@ -18,7 +18,6 @@ async function insertOnce(model, filter, data) {
 async function awardXp(scope, key, points, kind, now) {
   try {
     const result = await EngagementReward.updateOne({ ...scope, key }, { $setOnInsert: { points, kind, earnedAt: now } }, { upsert: true }).maxTimeMS(8000);
-    if (result.upsertedCount) invalidateChallengeRanking();
     return Boolean(result.upsertedCount);
   } catch (error) { if (error.code !== 11000) throw error; return false; }
 }
@@ -57,7 +56,7 @@ async function refresh(student, now) {
   ]);
   let progression = await StudentProgression.findOne(scope).lean();
   if (!progression) {
-    const previous = await getStudentUniversityRanking(student, permissions, now);
+    const previous = await getStudentProgressSummary(student, permissions, now);
     const baseline = Math.max(1, Math.min(6, previous.level?.level || 1));
     progression = await insertOnce(StudentProgression, scope, { joinedAt: now, level: baseline,
       levelHistory: baseline > 1 ? [{ level: baseline, title: previous.level.title, achievedAt: now, imported: true }] : [] });
@@ -71,7 +70,7 @@ async function refresh(student, now) {
       await insertOnce(StudentBadge, { ...scope, badgeId: definition.id }, { definition, earnedAt: edition.earnedAt, evidence: { imported: true, periodKey: edition.periodKey } });
     }
     // Legacy acknowledgement records are client-reported cosmetics. Preserve only badges proven by server metrics.
-    const verified = (await getStudentUniversityRanking(student, permissions, now)).badgeMetrics;
+    const verified = (await getStudentProgressSummary(student, permissions, now)).badgeMetrics;
     for (const [id, title, metric, target, category] of [
       ['first-accept', 'First Accept', 'solved', 1, 'coding'], ['solver-10', 'Problem Solver', 'solved', 10, 'coding'],
       ['solver-50', 'Half Century', 'solved', 50, 'coding'], ['hard-1', 'Hard Hitter', 'hardSolved', 1, 'coding'],

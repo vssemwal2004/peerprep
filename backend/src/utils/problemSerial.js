@@ -1,108 +1,129 @@
 // PeerPrep problem serials.
 //
-// Every coding problem keeps two numbers:
-//   displayOrder  - the PeerPrep serial students see (#1, #2, ...).
-//   sourceNumber  - the LeetCode catalogue number, when the problem came from it.
+// Every imported coding problem keeps two identifiers:
+//   sourceNumber - the original LeetCode catalogue number.
+//   displayOrder - the PeerPrep number shown to students and administrators.
 //
-// Serials for catalogue problems are a keyed pseudo-random shuffle of their
-// catalogue order, so PeerPrep's sequence does not mirror LeetCode's:
+// The visible number is an affine permutation of the problem's one-based
+// position after catalogue problems are sorted by sourceNumber:
 //
-//   rank(p)   = position of p when catalogue problems are sorted by sourceNumber (0-based)
-//   serial(p) = shuffle(rank(p), N) + 1,  N = number of catalogue problems
+//   displayOrder = ((position - 1) * 1007 + 721) mod 4012 + 1
 //
-// shuffle() is a 4-round Feistel network over the smallest 2^(2h) >= N with
-// cycle-walking (re-apply until the value is < N). A Feistel network is a
-// bijection for any round function, and cycle-walking keeps it a bijection on
-// [0, N), so every serial in 1..N is used exactly once. PeerPrep-original
-// problems follow at N+1, N+2, ... by creation date.
-//
-// Both numbers are stored and indexed. A search for "56" is an indexed equality
-// lookup on either field (O(log n)), so it never recomputes the shuffle.
+// Its inverse uses 251 because (1007 * 251) mod 4012 = 1. This gives a
+// deterministic one-to-one mapping in both directions over 1..4012, without
+// the former bit/Feistel implementation. PeerPrep-original problems use IDs
+// after the reserved catalogue range, beginning at 4013.
 
-export const PEERPREP_SERIAL_KEY = 'peerprep-serial-v1';
-const FEISTEL_ROUNDS = 4;
+export const PEERPREP_SERIAL_MOD = 4012;
+export const PEERPREP_SERIAL_MULTIPLIER = 1007;
+export const PEERPREP_SERIAL_OFFSET = 721;
+export const PEERPREP_SERIAL_INVERSE = 251;
 
-// 32-bit FNV-1a, used to turn the key text into round keys.
-function hashText(text) {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
+if ((PEERPREP_SERIAL_MULTIPLIER * PEERPREP_SERIAL_INVERSE) % PEERPREP_SERIAL_MOD !== 1) {
+  throw new Error('Invalid PeerPrep serial configuration: multiplier has no configured modular inverse');
+}
+
+function validateCatalogueValue(value, name) {
+  if (!Number.isInteger(value) || value < 1 || value > PEERPREP_SERIAL_MOD) {
+    throw new RangeError(`${name} must be an integer from 1 to ${PEERPREP_SERIAL_MOD}`);
   }
-  return hash >>> 0;
 }
 
-// Integer mixer (murmur3 finaliser); any deterministic function works here.
-function mix(value, roundKey) {
-  let hash = (value ^ roundKey) >>> 0;
-  hash = Math.imul(hash ^ (hash >>> 16), 0x85ebca6b) >>> 0;
-  hash = Math.imul(hash ^ (hash >>> 13), 0xc2b2ae35) >>> 0;
-  return (hash ^ (hash >>> 16)) >>> 0;
+/** Map a one-based catalogue position to its unique PeerPrep serial. */
+export function encodeProblemSerial(position) {
+  validateCatalogueValue(position, 'position');
+  return (((position - 1) * PEERPREP_SERIAL_MULTIPLIER + PEERPREP_SERIAL_OFFSET)
+    % PEERPREP_SERIAL_MOD) + 1;
 }
 
-function feistel(value, halfBits, roundKeys) {
-  const mask = (1 << halfBits) - 1;
-  let left = value >>> halfBits;
-  let right = value & mask;
-  for (const roundKey of roundKeys) {
-    const next = (left ^ mix(right, roundKey)) & mask;
-    left = right;
-    right = next;
-  }
-  return ((left << halfBits) | right) >>> 0;
+/** Recover the one-based catalogue position from a PeerPrep serial. */
+export function decodeProblemSerial(serial) {
+  validateCatalogueValue(serial, 'serial');
+  const zeroBased = ((serial - 1 - PEERPREP_SERIAL_OFFSET) * PEERPREP_SERIAL_INVERSE)
+    % PEERPREP_SERIAL_MOD;
+  return ((zeroBased + PEERPREP_SERIAL_MOD) % PEERPREP_SERIAL_MOD) + 1;
 }
 
-/** Maps index (0..count-1) to a unique shuffled index in 0..count-1. */
-export function shuffleIndex(index, count, key = PEERPREP_SERIAL_KEY) {
-  if (!Number.isInteger(count) || count < 1) throw new RangeError('count must be a positive integer');
-  if (!Number.isInteger(index) || index < 0 || index >= count) throw new RangeError('index out of range');
-  if (count === 1) return 0;
-  let halfBits = 1;
-  while (2 ** (2 * halfBits) < count) halfBits += 1;
-  if (halfBits > 15) throw new RangeError('count is too large for the serial shuffle');
-  const roundKeys = Array.from({ length: FEISTEL_ROUNDS }, (_, round) => hashText(`${key}:${round}`));
-  let value = index;
-  do {
-    value = feistel(value, halfBits, roundKeys);
-  } while (value >= count);
-  return value;
-}
-
+const validSourceNumber = (value) => Number.isInteger(value) && value > 0;
 const createdTime = (problem) => new Date(problem.createdAt || 0).getTime() || 0;
 
 /**
- * Computes PeerPrep serials for a whole problem set.
- * problems: [{ _id, sourceNumber?, createdAt?, title? }]
- * Returns Map(String(_id) -> serial). Catalogue problems get 1..N (shuffled),
- * the rest N+1.. in creation order.
+ * Compute PeerPrep serials for a complete problem set.
+ *
+ * Catalogue problems are sorted by sourceNumber and their one-based positions
+ * are encoded into the reserved 1..4012 range. Original problems are assigned
+ * 4013, 4014, ... in stable creation order.
  */
-export function assignPeerPrepSerials(problems, key = PEERPREP_SERIAL_KEY) {
+export function assignPeerPrepSerials(problems) {
   const catalogue = problems
-    .filter((problem) => Number.isInteger(problem.sourceNumber) && problem.sourceNumber > 0)
-    .sort((left, right) => left.sourceNumber - right.sourceNumber || String(left._id).localeCompare(String(right._id)));
+    .filter((problem) => validSourceNumber(problem.sourceNumber))
+    .sort((left, right) => left.sourceNumber - right.sourceNumber
+      || String(left._id).localeCompare(String(right._id)));
   const originals = problems
-    .filter((problem) => !(Number.isInteger(problem.sourceNumber) && problem.sourceNumber > 0))
+    .filter((problem) => !validSourceNumber(problem.sourceNumber))
     .sort((left, right) => createdTime(left) - createdTime(right)
       || String(left.title || '').localeCompare(String(right.title || ''))
       || String(left._id).localeCompare(String(right._id)));
 
+  if (catalogue.length > PEERPREP_SERIAL_MOD) {
+    throw new RangeError(`The catalogue has ${catalogue.length} problems but the affine mapping supports ${PEERPREP_SERIAL_MOD}`);
+  }
+
   const serials = new Map();
-  catalogue.forEach((problem, rank) => {
-    serials.set(String(problem._id), shuffleIndex(rank, catalogue.length, key) + 1);
+  catalogue.forEach((problem, index) => {
+    serials.set(String(problem._id), encodeProblemSerial(index + 1));
   });
   originals.forEach((problem, index) => {
-    serials.set(String(problem._id), catalogue.length + index + 1);
+    serials.set(String(problem._id), PEERPREP_SERIAL_MOD + index + 1);
   });
   return serials;
 }
 
-/** '56' or '#56' -> 56; anything else -> null. */
+/**
+ * Parse an unambiguous question-number search.
+ *
+ *   56, #56              -> either PeerPrep or source number
+ *   pp:56                -> PeerPrep display number only
+ *   lc:56, leetcode:#56  -> original source number only
+ */
 export function parseSerialSearch(value) {
-  const match = String(value || '').trim().match(/^#?(\d{1,9})$/);
-  return match ? Number(match[1]) : null;
+  const text = String(value || '').trim().toLowerCase();
+  let match = text.match(/^#?(\d{1,9})$/);
+  let kind = 'either';
+  if (!match) {
+    match = text.match(/^(?:pp|peerprep)\s*(?::\s*)?#?\s*(\d{1,9})$/);
+    if (match) kind = 'peerprep';
+  }
+  if (!match) {
+    const sourceMatch = text.match(/^(?:lc|leetcode)\s*(?::\s*)?#?\s*(\d{1,9})$/);
+    if (sourceMatch) {
+      match = sourceMatch;
+      kind = 'leetcode';
+    }
+  }
+  if (!match) return null;
+  const number = Number(match[1]);
+  return Number.isSafeInteger(number) && number > 0 ? { kind, number } : null;
 }
 
-/** Mongo clause matching a PeerPrep serial or a LeetCode number. Both fields are indexed. */
-export function serialSearchClause(serial) {
-  return { $or: [{ displayOrder: serial }, { sourceNumber: serial }] };
+/** Build the indexed Mongo equality clause for a parsed number search. */
+export function serialSearchClause(search) {
+  const parsed = typeof search === 'number'
+    ? { kind: 'peerprep', number: search }
+    : (typeof search === 'string' ? parseSerialSearch(search) : search);
+  if (!parsed || !Number.isSafeInteger(parsed.number) || parsed.number < 1) {
+    throw new TypeError('A valid question-number search is required');
+  }
+  if (parsed.kind === 'leetcode') return { sourceNumber: parsed.number };
+  if (parsed.kind === 'peerprep') return { displayOrder: parsed.number };
+  return { $or: [{ displayOrder: parsed.number }, { sourceNumber: parsed.number }] };
+}
+
+/** Apply the same number-search semantics to an in-memory/shared question. */
+export function matchesSerialSearch(question, search) {
+  if (!search) return true;
+  if (search.kind === 'leetcode') return Number(question.sourceNumber) === search.number;
+  if (search.kind === 'peerprep') return Number(question.displayOrder) === search.number;
+  return Number(question.displayOrder) === search.number
+    || Number(question.sourceNumber) === search.number;
 }

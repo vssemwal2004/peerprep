@@ -215,6 +215,36 @@ router.get('/admin/overview', masterOnly, asyncRoute(async (req, res) => {
   res.json({ universities: universities.map(clean), audit: auditRows, assessmentCount, questionCount, defaults: defaults.toObject() });
 }));
 
+// Platform activity log, newest first: optional university and action-prefix filters, cursor paging.
+router.get('/admin/audit', masterOnly, asyncRoute(async (req, res) => {
+  const filter = {};
+  const universityId = String(req.query.universityId || '').trim();
+  if (universityId) {
+    if (!idPattern.test(universityId)) throw new HttpError(400, 'Invalid university ID');
+    filter.universityId = universityId;
+  }
+  const action = String(req.query.action || '').trim();
+  if (action) {
+    if (!/^[a-z_]+(\.[a-z_]*)?$/.test(action)) throw new HttpError(400, 'Invalid action filter');
+    filter.action = { $regex: `^${action.replace('.', '\\.')}` };
+  }
+  if (req.query.before) {
+    const before = new Date(String(req.query.before));
+    if (Number.isNaN(before.getTime())) throw new HttpError(400, 'Invalid cursor');
+    filter.createdAt = { $lt: before };
+  }
+  const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 50));
+  const rows = await PlatformAudit.find(filter).sort({ createdAt: -1 }).limit(limit + 1).lean();
+  const page = rows.slice(0, limit);
+  const actorIds = [...new Set(page.map((row) => row.actor).filter((value) => mongoose.isValidObjectId(value)))];
+  const actors = actorIds.length ? await User.find({ _id: { $in: actorIds } }).select('name email').lean() : [];
+  const names = new Map(actors.map((person) => [String(person._id), person.name || person.email]));
+  res.set('Cache-Control', 'private, no-store').json({
+    entries: page.map((row) => ({ id: row._id, action: row.action, universityId: row.universityId || '', createdAt: row.createdAt, actorName: names.get(String(row.actor)) || 'System', details: row.details || {} })),
+    nextCursor: rows.length > limit ? page.at(-1).createdAt : null,
+  });
+}));
+
 router.get('/admin/wallets', masterOnly, asyncRoute(async (req, res) => {
   const [universities, movements] = await Promise.all([
     University.find({ deletedAt: null })

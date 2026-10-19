@@ -17,7 +17,7 @@ import { engagementTenant } from '../src/services/engagementPolicyService.js';
 import { getStudentStats, getStudentActivity } from '../src/controllers/activityController.js';
 import { recordStudentTopicView, recordStudentProblemView } from '../src/controllers/studentDashboardController.js';
 import {
-  calculateActivityStreak, scoreStudentProgress, rankStudentProgress, universityCohort,
+  calculateActivityStreak, scoreStudentProgress, universityCohort,
   buildCurriculumTopicMap, learningResumeItem, combineResumeItems, getStudentDashboardData, getStudentUniversityRanking, buildLearningSubjectCards, codePreviewLines,
 } from '../src/services/studentDashboardService.js';
 import { computeAwards } from '../../frontend/src/student/profile/achievements.js';
@@ -33,53 +33,40 @@ function assertProfileProgressContract(ranking) {
   assert.equal(profileLevel.title, ranking.level.title);
 }
 
-test('rank derives verified progress, preserves ties, and never returns another student identity', () => {
-  const rows = [
-    { studentId: 'a', easySolved: 1 }, { studentId: 'b', easySolved: 1 },
-    { studentId: 'c', mediumSolved: 1 }, { studentId: 'idle', learnerProgress: { awards: [{ id: 'solver-50' }], celebratedLevel: 6 } },
-  ];
-  const own = rankStudentProgress(rows, 'a', 'Example University', now);
-  assert.equal(own.rank, 2);
-  assert.equal(own.tied, true);
-  assert.equal(own.totalStudents, 4);
-  assert.equal(own.score, scoreStudentProgress(rows[0], now).score, 'the Prep Score of one Easy solve; badges add nothing');
-  assert.ok(own.score > 0 && own.score < 1);
-  assert.equal(own.percentile, 33);
-  assert.equal(own.earnedBadges, 1);
-  assert.equal(Object.hasOwn(own, 'studentId'), false);
-  assert.equal(Object.hasOwn(own, 'students'), false);
-  const idle = rankStudentProgress(rows, 'idle', 'Example University', now);
-  assert.equal(idle.rank, null);
+const times = (count, item) => Array.from({ length: count }, () => ({ ...item }));
+
+test('progress scores each module from its own evidence and averages the licensed modules', () => {
+  const idle = scoreStudentProgress({}, now);
   assert.equal(idle.score, 0);
+  assert.equal(idle.hasProgress, false);
   assert.equal(idle.level.level, 1);
   assert.deepEqual(idle.badgeMetrics, { solved: 0, hardSolved: 0, bestStreak: 0, activeDays: 0, languages: 0, assessments: 0, interviews: 0 });
   assert.deepEqual(idle.levelMetrics, { solvedCount: 0, streak: 0, assessmentScore: null, interviewScore: 0, challengePoints: 0 });
-  const missing = rankStudentProgress([], 'unknown', 'Example University', now);
-  assert.deepEqual(missing.badgeMetrics, idle.badgeMetrics);
-  assert.deepEqual(missing.levelMetrics, idle.levelMetrics);
-  assert.equal(rankStudentProgress(rows, 'a', '', now).rank, null);
-  // Every feature is work points x quality; the overall Prep Score is their average.
+  // Each module: N^0.4 × (average points)^1.5 with Easy 1, Medium 2, Hard 4; overall is their average.
   const scored = scoreStudentProgress({
-    easySolved: 10, mediumSolved: 4, hardSolved: 2, submissions: 20, acceptedSubmissions: 10,
-    completedTopics: 6, totalTopics: 12, interviews: 2, mockAverage: 70, aiInterviews: 1, assessmentsCompleted: 3, assessmentScore: 80,
+    easySolved: 10, mediumSolved: 4, hardSolved: 2,
+    scoreEvidence: {
+      problemSolved: [{ level: 'Easy', count: 10 }, { level: 'Medium', count: 4 }, { level: 'Hard', count: 2 }],
+      videoCompleted: times(6, { topicLevel: 'medium' }),
+      mockCompleted: times(2, { percent: 70 }), aiCompleted: [{ level: null }],
+      assessmentCompleted: times(3, { level: null, percent: 80 }),
+    },
   }, now);
-  // Coding: 10 + 4 x 2 + 2 x 4 = 26 work points, 20 submissions for 16 solves is fair (100%).
-  // Learning: 6 x 14. Interview: 2 x 250 x (70 - 40) / 60 + 1 x 5. Assessment: 3 x 100 x (80 - 40) / 60.
-  assert.deepEqual(scored.scoreBreakdown, { coding: 26, learning: 84, interview: 255, assessment: 200 });
-  assert.equal(scored.score, 141.25);
-  // A mark at or below the pass mark never adds points: it can only pull the average down.
-  const strong = scoreStudentProgress({ assessmentsCompleted: 1, assessmentScore: 90, interviews: 1, mockAverage: 90 }, now);
-  const withFailures = scoreStudentProgress({ assessmentsCompleted: 3, assessmentScore: (90 + 20 + 35) / 3, interviews: 3, mockAverage: (90 + 20 + 35) / 3 }, now);
-  assert.ok(withFailures.scoreBreakdown.assessment <= strong.scoreBreakdown.assessment && withFailures.scoreBreakdown.interview <= strong.scoreBreakdown.interview, 'failing attempts never raise the score');
-  const lowButWorking = scoreStudentProgress({ assessmentsCompleted: 2, assessmentScore: 30 }, now);
+  assert.deepEqual(scored.scoreBreakdown, { coding: 6.28, learning: 5.79, interview: 4.39, assessment: 4.39 });
+  assert.equal(scored.score, 5.21);
+  // Harder content earns more than the same amount of easier content.
+  const hardTests = scoreStudentProgress({ scoreEvidence: { assessmentCompleted: times(2, { level: 'Hard', percent: 80 }) } }, now);
+  const easyTests = scoreStudentProgress({ scoreEvidence: { assessmentCompleted: times(2, { level: 'Easy', percent: 80 }) } }, now);
+  assert.ok(hardTests.scoreBreakdown.assessment > easyTests.scoreBreakdown.assessment);
+  // Below the pass mark nothing is earned, but the student is still ranked (at the bottom), not "not started".
+  const lowButWorking = scoreStudentProgress({ scoreEvidence: { assessmentCompleted: times(2, { level: null, percent: 30 }) } }, now);
   assert.equal(lowButWorking.score, 0);
-  assert.equal(lowButWorking.hasProgress, true, 'work below the pass mark is progress that scores 0, not "not started"');
-  const huge = scoreStudentProgress({ easySolved: 3000, mediumSolved: 3000, hardSolved: 3000, submissions: 1e4, acceptedSubmissions: 1e4, completedTopics: 1e6, totalTopics: 10, interviews: 100, mockAverage: 100, aiInterviews: 100, assessmentsCompleted: 100, assessmentScore: 100 }, now);
-  assert.ok(huge.score > 1000 && Number.isFinite(huge.score), 'no ceiling: more real work keeps adding');
-  assert.equal(huge.scoreBreakdown.learning, 140, 'topics count only up to the topics open to the student');
-  const codingOnly = scoreStudentProgress({ easySolved: 3, completedTopics: 9, scoreFeatures: { coding: true, learning: false, interview: false, assessment: false } }, now);
+  assert.equal(lowButWorking.hasProgress, true);
+  const huge = scoreStudentProgress({ scoreEvidence: { videoCompleted: times(1e6, { topicLevel: 'medium' }) } }, now);
+  assert.equal(huge.scoreBreakdown.learning, 710.47, 'the formula has no fixed ceiling');
+  const codingOnly = scoreStudentProgress({ scoreEvidence: { problemSolved: [{ level: 'Easy', count: 3 }], videoCompleted: times(9, {}) }, scoreFeatures: { coding: true, learning: false, interview: false, assessment: false } }, now);
   assert.deepEqual(Object.keys(codingOnly.prepScore.features), ['coding'], 'unlicensed features do not count and are not listed');
-  assert.ok(Math.abs(codingOnly.score - codingOnly.prepScore.features.coding.score) < 0.05, 'with one licensed feature the overall score is that feature (shown to 1 decimal, ranked to 2)');
+  assert.equal(codingOnly.score, codingOnly.prepScore.features.coding.score);
   assert.equal(scoreStudentProgress({ challengePoints: 500 }, now).score, 0, 'challenge XP is not part of the Prep Score');
 });
 
@@ -94,27 +81,6 @@ test('university matching is exact, escapes regex names, excludes disabled and a
   assert.deepEqual(scope.accessScope, { $ne: 'assessment_only' });
   assert.equal(universityCohort({ college: '' }, false), null);
   assert.equal(Object.hasOwn(universityCohort({ college: '' }, true), 'college'), false);
-});
-
-test('compact cached cohort summaries retain ties and accept a freshly updated own progress row', () => {
-  const raw = [
-    { studentId: 'own', easySolved: 1, activityByDate: { '2026-10-10': 1 } },
-    { studentId: 'tie', easySolved: 1, activityByDate: { '2026-10-10': 1 } },
-    { studentId: 'higher', mediumSolved: 1, activityByDate: { '2026-10-10': 1 } },
-  ];
-  const cached = raw.map((row) => ({ studentId: row.studentId, rankingSummary: scoreStudentProgress(row, now) }));
-  assert.ok(cached.every((row) => !Object.hasOwn(row, 'activityByDate')));
-  assert.deepEqual(rankStudentProgress(cached, 'own', 'Example University', now), rankStudentProgress(raw, 'own', 'Example University', now));
-  const own = { ...raw[0], mediumSolved: 1 };
-  const mixed = [...cached.filter((row) => row.studentId !== 'own'), own];
-  const freshRaw = raw.map((row) => row.studentId === 'own' ? own : row);
-  const result = rankStudentProgress(mixed, 'own', 'Example University', now);
-  assert.deepEqual(result, rankStudentProgress(freshRaw, 'own', 'Example University', now));
-  assert.equal(result.rank, 1);
-  assert.equal(result.score, scoreStudentProgress(own, now).score, 'the fresh own row is scored, not the cached one');
-  assert.ok(result.score > cached.find((row) => row.studentId === 'own').rankingSummary.score);
-  assert.equal(result.tied, false);
-  assert.ok(!JSON.stringify(result).includes('higher'));
 });
 
 test('streak tolerates yesterday, resets after a gap, and ignores zero activity', () => {
@@ -306,7 +272,7 @@ test('profile and dashboard refresh the current score within cohort cache TTL; m
   await Submission.collection.insertOne({ _id: id(), user: students.own, problem: problems.medium, mode: 'submit', status: 'AC', language: 'python', createdAt: new Date('2026-10-11T11:00:00Z') });
   const profileRank = await getStudentUniversityRanking(ownStudent, null, now);
   const dashboard = await getStudentDashboardData(ownStudent, now);
-  assert.equal(profileRank.rank, 1);
+  assert.equal(profileRank.rank, 2);
   assert.equal(profileRank.score, profileRank.prepScore.total, 'the rank score is the overall Prep Score');
   assert.ok(profileRank.prepScore.features.coding.score > 0 && profileRank.score <= 100);
   assert.deepEqual(profileRank, dashboard.ranking);
@@ -488,8 +454,8 @@ test('assessment badge metrics exclude violations and level average ignores unsc
   const rank = await getStudentUniversityRanking(learner, null, now);
   assert.equal(rank.badgeMetrics.assessments, 3);
   assert.equal(rank.levelMetrics.assessmentScore, 100);
-  // Only the one marked test counts: 1 x 100 x (100 - 40) / 60. Unmarked tests and the violation add nothing.
-  assert.equal(rank.scoreBreakdown.assessment, 100);
+  // Only the one marked test counts; unmarked tests and the violation add nothing.
+  assert.equal(rank.scoreBreakdown.assessment, 2.83);
   assert.equal(rank.earnedBadges, 1);
   assert.equal(rank.level.title, 'Consistent Performer');
   assertProfileProgressContract(rank);
@@ -526,12 +492,11 @@ test('Prep Interview score uses the student\'s own mock scores (both feedback sc
     { tenantKey: 'college:someone-else', studentId: learnerId, sessionId: 'elsewhere', interviewId: 'ai-3', completedAt: now },
   ]);
   const rank = await getStudentUniversityRanking(learner, null, now);
-  // Average mock 71.5%: 2 x 250 x (71.5 - 40) / 60 = 262.5, plus 1 AI interview x 5.
-  assert.equal(rank.scoreBreakdown.interview, 267.5, 'unfinished and other-tenant AI interviews do not count');
+  assert.equal(rank.scoreBreakdown.interview, 4.39, 'two mocks and one verified AI completion count; unfinished and other-tenant AI interviews do not');
   assert.equal(rank.score, rank.prepScore.total);
-  assert.ok(Math.abs(rank.score - 267.5 / 4) < 0.01, 'the overall score averages all four features');
+  assert.ok(Math.abs(rank.score - 4.39 / 4) < 0.01, 'the overall score averages all four features');
   assert.equal(rank.rank, 1);
-  const { work, quality, extra } = rank.prepScore.features.interview;
-  assert.deepEqual([work.value, quality.value, extra.value], [500, 52.5, 5]);
-  assert.match(rank.methodology, /work points × quality/);
+  const interview = rank.prepScore.features.interview;
+  assert.deepEqual(interview.counts, { Easy: 0, Medium: 3, Hard: 0 });
+  assert.equal(interview.volume, 3);
 });

@@ -61,6 +61,7 @@ progressSchema.index({ studentId: 1, subjectId: 1 });
 progressSchema.index({ studentId: 1, semesterId: 1 });
 progressSchema.index({ studentId: 1, completed: 1, lastAccessedAt: -1 });
 progressSchema.index({ studentId: 1, completed: 1, completedAt: -1 });
+progressSchema.index({ updatedAt: 1 });
 
 attachAdminAnalyticsInvalidation(progressSchema, {
   source: 'learning-progress',

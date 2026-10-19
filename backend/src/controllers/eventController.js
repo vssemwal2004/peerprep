@@ -16,6 +16,17 @@ import { createNotifications } from '../services/notificationService.js';
 import { enqueueMailJobs } from '../services/mailQueueService.js';
 import crypto from 'crypto';
 import { interviewListFilter, interviewListSort } from '../utils/interviewListQuery.js';
+import { refundResource } from '../platform/coinSpend.js';
+import { walletScope } from '../middleware/requireCoins.js';
+
+/** Returns Prep Coins paid to join an interview that will not happen. Never blocks the change itself. */
+async function refundEventCoins(eventId, studentId, reason) {
+  try {
+    await refundResource({ scope: walletScope(), featureKey: 'mock_interview.join', resourceKey: String(eventId), userId: studentId || null, reason });
+  } catch (error) {
+    console.warn(`[PrepCoin] Refund for interview ${eventId} failed: ${error.message}`);
+  }
+}
 
 // Fisher-Yates shuffle algorithm for random array shuffling
 function shuffleArray(array) {
@@ -1322,6 +1333,7 @@ export async function updateEventStatus(req, res) {
   if (status === 'published') event.publishedAt = new Date();
   if (status === 'cancelled') event.cancelledAt = new Date();
   await event.save();
+  if (status === 'cancelled') await refundEventCoins(event._id, null, 'Interview cancelled');
   logActivity({
     userEmail: req.user.email,
     userRole: req.user.role,
@@ -1388,6 +1400,7 @@ export async function removeEventParticipant(req, res) {
   if (!assignment) throw new HttpError(404, 'Student assignment not found');
   event.participants = event.participants.filter((id) => id.toString() !== req.params.studentId);
   await event.save();
+  await refundEventCoins(event._id, assignment.studentId, 'Removed from the interview');
   res.json({ removed: true });
 }
 
@@ -1427,6 +1440,7 @@ export async function deleteEvent(req, res) {
     EventParticipant.deleteMany({ eventId: event._id }),
     Event.deleteOne({ _id: event._id }),
   ]);
+  await refundEventCoins(event._id, null, 'Interview deleted');
 
   logActivity({
     userEmail: req.user.email,

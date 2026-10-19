@@ -2,7 +2,7 @@ import Assessment from '../models/Assessment.js';
 import Problem from '../models/Problem.js';
 import QuestionLibrary from '../models/QuestionLibrary.js';
 import TestCase from '../models/TestCase.js';
-import { serialSearchClause } from '../utils/problemSerial.js';
+import { parseSerialSearch, serialSearchClause } from '../utils/problemSerial.js';
 
 const LIBRARY_SYNC_COOLDOWN_MS = Math.max(0, Number(process.env.QUESTION_LIBRARY_SYNC_COOLDOWN_MS || 60000));
 
@@ -526,12 +526,11 @@ export async function cleanupDraftQuestionsFromLibrary() {
 }
 
 export function buildLibrarySearchMatch(search = '') {
+  const numberSearch = parseSerialSearch(search);
+  if (numberSearch) return serialSearchClause(numberSearch);
   const terms = Array.from(new Set(tokenizeSearchValue(search))).slice(0, 8);
   if (!terms.length) return {};
-  const normalized = String(search || '').trim();
-  const serialNumber = /^\d+$/.test(normalized) ? Number(normalized) : null;
-  if (!serialNumber) return { searchPrefixes: { $all: terms } };
-  return serialSearchClause(serialNumber);
+  return { searchPrefixes: { $all: terms } };
 }
 
 export function formatLibraryQuestionSummary(question = {}) {

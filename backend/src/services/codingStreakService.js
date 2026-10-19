@@ -6,7 +6,7 @@ import DailyChallengeDay from '../models/DailyChallengeDay.js';
 import StudentChallenge from '../models/StudentChallenge.js';
 import Submission from '../models/Submission.js';
 import QuestionPracticeAttempt from '../models/QuestionPracticeAttempt.js';
-import { invalidateChallengeRanking, getSharedCodingCatalog } from './studentDashboardService.js';
+import { getSharedCodingCatalog } from './studentDashboardService.js';
 import { createNotification } from './notificationService.js';
 import { requireEngagementUniqueIndex } from '../utils/engagementIndexes.js';
 
@@ -152,12 +152,10 @@ export async function recordDailyChallengeCompletion({ userId, problemId, source
     : await Submission.exists({ user: userId, problem: problemId, mode: 'submit', assessmentId: null, status: { $in: ['AC', 'ACCEPTED', 'ACCEPT'] }, $or: [{ completedAt: range }, { completedAt: null, createdAt: range }] }).maxTimeMS(8000);
   if (!accepted) return null;
   try {
-    const result = await StudentChallenge.updateOne({ studentId: userId, kind: 'daily', periodKey: dateKey }, { $setOnInsert: { startsAt, endsAt, problemId, problemSource: source, rewardPoints: 10, earnedAt: completedAt } }, { upsert: true }).maxTimeMS(8000);
-    if (result.upsertedCount) invalidateChallengeRanking();
+    await StudentChallenge.updateOne({ studentId: userId, kind: 'daily', periodKey: dateKey }, { $setOnInsert: { startsAt, endsAt, problemId, problemSource: source, rewardPoints: 10, earnedAt: completedAt } }, { upsert: true }).maxTimeMS(8000);
   } catch (error) { if (error.code !== 11000) throw error; }
   // Also award an assignment inserted concurrently by another tab or server process.
-  const earned = await StudentChallenge.updateOne({ studentId: userId, kind: 'daily', periodKey: dateKey, earnedAt: null }, { $set: { earnedAt: completedAt } }).maxTimeMS(8000);
-  if (earned.modifiedCount) invalidateChallengeRanking();
+  await StudentChallenge.updateOne({ studentId: userId, kind: 'daily', periodKey: dateKey, earnedAt: null }, { $set: { earnedAt: completedAt } }).maxTimeMS(8000);
 
   const yesterdayKey = getCodingDayDateKey(new Date(completedAt.getTime() - 86400000), config);
   await requireEngagementUniqueIndex(CodingStreak, { user: 1 });

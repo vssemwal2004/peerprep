@@ -6,6 +6,8 @@ import { createEvent, listEvents, joinEvent, exportJoinedCsv, eventAnalytics, re
 import { supabase } from '../utils/supabase.js';
 import { requireAuth, requireAdmin, requireCoordinatorPermission, requireStudent } from '../middleware/auth.js';
 import { cacheJsonResponse, invalidateResponseCache } from '../middleware/responseCache.js';
+import { requireCoins } from '../middleware/requireCoins.js';
+import { eventAssigned, eventJoined } from '../services/coinEntitlements.js';
 
 const router = Router();
 const upload = multer({
@@ -56,7 +58,13 @@ router.post('/:id/participants', requireAuth, requireCoordinatorPermission('coor
 router.post('/:id/invitations', requireAuth, requireCoordinatorPermission('coordinator.interviews.participants'), sendEventInvitations);
 router.delete('/:id/participants/:studentId', requireAuth, requireCoordinatorPermission('coordinator.interviews.participants'), invalidateResponseCache('events'), removeEventParticipant);
 router.delete('/:id', requireAuth, requireCoordinatorPermission('coordinator.interviews.delete'), invalidateResponseCache('events'), deleteEvent);
-router.post('/:id/join', requireAuth, requireStudent, invalidateResponseCache('events'), joinEvent);
+// Joining an open mock interview can cost Prep Coins; assigned events and re-joins never do.
+router.post('/:id/join', requireAuth, requireStudent, invalidateResponseCache('events'), requireCoins('mock_interview.join', {
+	resourceKey: (req) => req.params.id,
+	exempt: (req) => eventAssigned(req.params.id),
+	alreadyEntitled: (req) => eventJoined(req.user, req.params.id),
+	verify: (req) => eventJoined(req.user, req.params.id),
+}), joinEvent);
 router.post('/:id/template', requireAuth, requireAdmin, invalidateResponseCache('events'), upload.single('template'), replaceEventTemplate);
 router.get('/:id/participants.csv', requireAuth, requireCoordinatorPermission('coordinator.interviews.view'), exportJoinedCsv);
 router.get('/:id/analytics', requireAuth, requireCoordinatorPermission('coordinator.interviews.view'), eventAnalytics);

@@ -17,6 +17,8 @@ import Notification from '../src/models/Notification.js';
 import { engagementPeriods, challengeGoals, goalProgress, refreshStudentEngagement, listStudentChallengeBadges } from '../src/services/studentEngagementService.js';
 import { refreshStudentChallenges } from '../src/controllers/studentDashboardController.js';
 import { getStudentUniversityRanking, scoreStudentProgress } from '../src/services/studentDashboardService.js';
+import { PrepScoreState, StudentPrepScore } from '../src/models/StudentPrepScore.js';
+import { syncPrepScores } from '../src/services/prepScore/sync.js';
 import { resolveDailyChallenge, recordDailyChallengeCompletion, getCodingStreakStatus } from '../src/services/codingStreakService.js';
 import { requireEngagementUniqueIndex } from '../src/utils/engagementIndexes.js';
 import { getLearnerLevel } from '../../frontend/src/student/profileBadge.js';
@@ -29,7 +31,7 @@ const originalNodeEnv = process.env.NODE_ENV;
 const originalFetch = globalThis.fetch;
 const originalControlUrl = process.env.PEERPREP_CONTROL_URL;
 let mongo, student, problems, topics, semesterId, subjectId, chapterId;
-const models = [User, Problem, Submission, Progress, Semester, StudentChallenge, DailyChallengeDay, DailyChallengeConfig, CodingStreak, QuestionPracticeAttempt, StudentActivity, Notification];
+const models = [User, Problem, Submission, Progress, Semester, StudentChallenge, DailyChallengeDay, DailyChallengeConfig, CodingStreak, QuestionPracticeAttempt, StudentActivity, Notification, StudentPrepScore, PrepScoreState];
 
 before(async () => {
   process.env.PEERPREP_DEPLOYMENT_ROLE = 'standalone';
@@ -277,17 +279,20 @@ test('refresh endpoint ignores forged dates, student IDs, completion flags and r
   assert.equal(await StudentChallenge.countDocuments({ earnedAt: { $ne: null } }), 0);
 });
 
-test('a peer\'s new verified work updates cached cohort standing; their challenge XP stays out of the coin total', async () => {
+test('a peer\'s new verified work reaches stored cohort standing on the next sync; their challenge XP stays out of the score', async () => {
   const peer = { ...student, _id: id() };
   await User.collection.insertOne(peer);
   await refreshStudentEngagement(peer, now);
   await Submission.collection.insertOne(accepted(problems[11]._id, now));
   const before = await getStudentUniversityRanking(student, null, now);
   assert.equal(before.rank, 1);
-  await Submission.collection.insertMany(problems.slice(0, 10).map((problem, index) => accepted(problem._id, `2026-10-${String(index + 1).padStart(2, '0')}T10:00:00Z`, { user: peer._id })));
-  await Progress.collection.insertMany(topics.map((topic, index) => ({ ...completed(topic._id, `2026-10-0${index + 1}T10:00:00Z`), studentId: peer._id })));
+  const changedAt = new Date();
+  await Submission.collection.insertMany(problems.slice(0, 10).map((problem, index) => accepted(problem._id, `2026-10-${String(index + 1).padStart(2, '0')}T10:00:00Z`, { user: peer._id, updatedAt: changedAt })));
+  await Progress.collection.insertMany(topics.map((topic, index) => ({ ...completed(topic._id, `2026-10-0${index + 1}T10:00:00Z`), studentId: peer._id, updatedAt: changedAt })));
   const awarded = await refreshStudentEngagement(peer, now);
   assert.equal(awarded.lifetime.points, 150);
+  assert.equal((await getStudentUniversityRanking(student, null, now)).rank, 1, 'stored standing until the sync folds the change in');
+  assert.deepEqual(await syncPrepScores(), { status: 'current', updated: 1 });
   const after = await getStudentUniversityRanking(student, null, now);
   assert.equal(after.rank, 2);
   assert.equal(after.score, before.score);

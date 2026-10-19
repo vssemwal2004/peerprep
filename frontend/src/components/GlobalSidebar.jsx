@@ -42,6 +42,8 @@ import {
   X,
   BadgeCheck,
   Wallet,
+  SlidersHorizontal,
+  Coins,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { canManageInterviewCompanies, isControlDeployment, isUniversityDeployment, SUGGESTED_COMPANIES_PATH } from '../platform/universityPermissions';
@@ -209,7 +211,7 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
     ...(isControlDeployment
       ? [
         { type: 'link', label: 'Universities', to: '/admin/platform', icon: Building2 },
-        { type: 'link', label: 'PeerPrep wallet', to: '/admin/wallet', icon: Wallet },
+        { type: 'link', label: 'Prep Coin management', to: '/admin/wallet', icon: Wallet },
       ]
       : []),
     { type: 'link', label: 'Prep Analysis', to: '/admin/analysis', icon: BarChart3 },
@@ -329,6 +331,10 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
       items: [
         { label: 'Bulk Uploads', to: '/admin/settings/bulk-uploads', icon: FileSpreadsheet },
         { label: 'Master Data', to: '/admin/settings/master-data', icon: Database },
+        ...(isControlDeployment ? [
+          { label: 'Prep Score Adjustment', to: '/admin/settings/prep-score-adjustment', icon: SlidersHorizontal },
+          { label: 'Prep Coin Pricing', to: '/admin/settings/prep-coin-pricing', icon: Coins },
+        ] : []),
         ...(canManageInterviewCompanies ? [{ label: 'Suggested Companies', to: SUGGESTED_COMPANIES_PATH, icon: BadgeCheck }] : []),
         { label: 'Email Templates', to: '/admin/settings/email-templates', icon: Mail },
         { label: 'Email Queue', to: '/admin/email-queue', icon: Mail },
@@ -374,7 +380,7 @@ export default function GlobalSidebar({ role = 'admin', isExpanded = false, isPi
   const accent = isCoordinator ? 'emerald' : 'sky';
   const navItems = useMemo(() => {
     const items = buildNavItems(role, user?.accessScope);
-    if (isUniversityDeployment || role !== 'admin') items.unshift({ type: 'link', label: 'PeerPrep wallet', to: `/${role}/wallet`, icon: Wallet });
+    if (role !== 'student' && (isUniversityDeployment || role !== 'admin')) items.unshift({ type: 'link', label: 'Prep Coin management', to: `/${role}/wallet`, icon: Wallet });
     if (role !== 'coordinator') return applyPlatformPermissions(items, allowsPath, role);
     return applyPlatformPermissions(items
       .map((item) => {

@@ -1,6 +1,6 @@
 import { useId } from 'react';
 import { Medal, Trophy } from 'lucide-react';
-import { PrepScoreFlow, ScoreValue } from '../prepScore/PrepScore';
+import { ScoreValue } from '../prepScore/PrepScore';
 
 function finiteNumber(value, fallback = 0) {
   const numeric = Number(value);
@@ -28,7 +28,7 @@ export default function UniversityRankCard({ ranking, loading = false, className
       ? 'Ask your coordinator to add your university details to see your standing.'
       : totalStudents === 0
         ? 'Your university ranking will appear as students start making progress.'
-        : 'Solve a problem, finish a lesson or take a test to start your Prep Score.';
+        : 'Your Prep Score and rank will appear here.';
 
   if (firstProgress) {
     return (
@@ -39,7 +39,7 @@ export default function UniversityRankCard({ ranking, loading = false, className
           <div className="min-w-0">
             <h3 className="text-[14px] font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Not ranked yet</h3>
             <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-zinc-400">{ranking.universityName
-              ? 'Solve a problem, finish a lesson or take a test to start your Prep Score and enter your university ranking.'
+              ? 'Your Prep Score and university rank will appear here.'
               : 'Ask your coordinator to add your university details.'}</p>
           </div>
         </div>
@@ -101,7 +101,6 @@ export default function UniversityRankCard({ ranking, loading = false, className
       {!loading && level ? <p className="mt-2 text-[10px] text-slate-500 dark:text-zinc-400">{level}</p> : null}
       </div>
       </div>
-      {!loading && ranking?.prepScore ? <PrepScoreFlow prepScore={ranking.prepScore} className="mt-3 border-t border-slate-100 pt-3 dark:border-zinc-800" /> : null}
     </section>
   );
 }

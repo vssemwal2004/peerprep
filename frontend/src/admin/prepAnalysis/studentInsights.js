@@ -1,17 +1,9 @@
 // "What stands out" for one student, from their own profile only (never
 // compared with other students). Each line: { tone: "good" | "warn" | "tip", text }.
 
-const DIFFICULTIES = ["Easy", "Medium", "Hard"];
 const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
-const round1 = (value) => Math.round(value * 10) / 10;
 
-/** Prep Score points one more solve of each difficulty adds at the student's current quality. */
-export function pointsPerSolve(formula, quality = 100) {
-  const points = formula?.coding?.points || {};
-  return Object.fromEntries(DIFFICULTIES.map((key) => [key, round1(((points[key] || 0) * quality) / 100)]));
-}
-
-function codingLines(coding, formula) {
+function codingLines(coding) {
   const lines = [];
   const { solved } = coding;
   if (coding.practiceStatus === "never") return [{ tone: "warn", text: "Has not submitted any code yet." }];
@@ -19,17 +11,11 @@ function codingLines(coding, formula) {
   else if (coding.daysSinceActive === 0) lines.push({ tone: "good", text: "Practised today." });
   else if (coding.daysSinceActive !== null && coding.daysSinceActive <= 3) lines.push({ tone: "good", text: `Practised ${plural(coding.daysSinceActive, "day")} ago.` });
 
-  const fair = formula?.coding?.fairTriesPerSolve;
-  if (fair && solved.total > 0 && coding.quality < 100) {
-    lines.push({ tone: "warn", text: `${coding.triesPerSolve} submissions per solved problem (up to ${fair} is fair), so quality is ${coding.quality}% of the Prep Coding points.` });
-  }
-
-  if (formula?.coding && solved.total > 0) {
-    const per = pointsPerSolve(formula, coding.quality ?? 100);
+  if (solved.total > 0) {
     if (!solved.Hard && solved.Medium >= 10) {
-      lines.push({ tone: "tip", text: `Ready for Hard problems: ${plural(solved.Medium, "Medium")} solved, no Hard yet. Each Hard solve adds ${per.Hard} points.` });
+      lines.push({ tone: "tip", text: `Ready for Hard problems: ${plural(solved.Medium, "Medium")} solved, no Hard yet.` });
     } else if (solved.total >= 10 && solved.Easy / solved.total >= 0.7) {
-      lines.push({ tone: "tip", text: `Mostly Easy problems (${Math.round((solved.Easy / solved.total) * 100)}%). A Medium solve adds ${per.Medium} points, an Easy one ${per.Easy}.` });
+      lines.push({ tone: "tip", text: `Mostly Easy problems (${Math.round((solved.Easy / solved.total) * 100)}%). Medium and Hard problems raise Prep Coding more.` });
     }
   }
 
@@ -103,7 +89,7 @@ function assessmentLines(assessment) {
 export function studentHighlights(profile, limit = 7) {
   if (!profile) return [];
   const lines = [
-    ...(profile.coding ? codingLines(profile.coding, profile.formula) : []),
+    ...(profile.coding ? codingLines(profile.coding) : []),
     ...quickPrepLines(profile.quickprep),
     ...learningLines(profile.learning),
     ...interviewLines(profile.interview),

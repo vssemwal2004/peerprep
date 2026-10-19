@@ -21,5 +21,6 @@ const feedbackSchema = new mongoose.Schema({
 feedbackSchema.index({ event: 1, createdAt: -1 });
 feedbackSchema.index({ from: 1, createdAt: -1 });
 feedbackSchema.index({ to: 1, createdAt: -1 });
+feedbackSchema.index({ updatedAt: 1 });
 
 export default tenantModel(mongoose.model('Feedback', feedbackSchema));

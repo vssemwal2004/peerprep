@@ -12,7 +12,7 @@
 import { SUPPORTED_LANGUAGES } from '../../models/Problem.js';
 import { HttpError } from '../../utils/errors.js';
 import { FIELDS, KIND_OPERATORS, QUALIFIER_SETS } from './fields.js';
-import { DIFFICULTIES } from './prepScore.js';
+import { DIFFICULTIES } from './ranking.js';
 
 export const FILTER_LIMITS = Object.freeze({ maxDepth: 4, maxRules: 120, maxValues: 500, maxCuts: 6, maxText: 120 });
 

@@ -44,14 +44,17 @@ export function errorHandler(err, req, res, next) {
     // Generic message for 500 errors in production
     res.status(500).json({ error: 'Internal server error' });
   } else {
-    // Show actual error message for client errors (4xx) or in development
-    res.status(status).json({ error: err.message || 'Server Error' });
+    // Show actual error message for client errors (4xx) or in development.
+    // `details` carries safe, structured fields a client acts on (e.g. a Prep Coin shortfall).
+    const details = status < 500 && err.details && typeof err.details === 'object' ? err.details : {};
+    res.status(status).json({ ...details, error: err.message || 'Server Error' });
   }
 }
 
 export class HttpError extends Error {
-  constructor(status, message) {
+  constructor(status, message, details = null) {
     super(message);
     this.status = status;
+    if (details) this.details = details;
   }
 }

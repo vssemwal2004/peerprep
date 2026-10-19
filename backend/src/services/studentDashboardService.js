@@ -10,7 +10,10 @@ import StudentActivity from '../models/StudentActivity.js';
 import StudentProblemView from '../models/StudentProblemView.js';
 import StudentChallenge from '../models/StudentChallenge.js';
 import { EngagementReward, InterviewEngagementReceipt, StudentProgression } from '../models/AdaptiveEngagement.js';
-import { prepScoreMethodology, prepScores, scoreFeatures } from './prepScores.js';
+import Assessment from '../models/Assessment.js';
+import AIInterview from '../models/AIInterview.js';
+import { aiInterviewLevel, assessmentLevel, prepScore, scoreFeatures } from './prepScore/engine.js';
+import { ensurePrepScoreStore, rankFromStore, saveOwnScore, servingPolicy } from './prepScore/sync.js';
 import { LEVELS } from './adaptiveEngagementRules.js';
 import { engagementTenant } from './engagementPolicyService.js';
 import QuestionPracticeAttempt from '../models/QuestionPracticeAttempt.js';
@@ -23,14 +26,6 @@ import { universityPolicy } from '../platform/client.js';
 const DAY_MS = 86_400_000;
 const QUERY_TIMEOUT_MS = 8_000;
 const ACCEPTED = ['AC', 'ACCEPTED', 'ACCEPT'];
-const rankCache = new Map();
-const rankLoads = new Map();
-const cacheLifetimeMs = 30_000;
-let challengeRankRevision = 0;
-export function invalidateChallengeRanking() {
-  challengeRankRevision += 1;
-  rankCache.clear();
-}
 const publicProblemMatch = {
   status: { $in: ['published', 'Active', 'active'] },
   $or: [{ visibility: 'public' }, { visibility: { $exists: false } }],
@@ -49,6 +44,16 @@ const dateExpression = (field) => ({ $dateToString: { date: field, format: '%Y-%
 const acceptedExpression = { $in: [{ $toUpper: { $ifNull: ['$status', ''] } }, ACCEPTED] };
 const objectId = (value) => new mongoose.Types.ObjectId(String(value));
 const aggregate = (model, pipeline) => model.aggregate(pipeline).option({ maxTimeMS: QUERY_TIMEOUT_MS });
+const QUESTION_LEVEL_FIELDS = ['marksPerQuestion', 'questions.type', 'questions.difficulty', 'questions.coding.difficulty', 'questions.marks', 'questions.points'];
+const ASSESSMENT_LEVEL_FIELDS = [...QUESTION_LEVEL_FIELDS.map((field) => `sections.${field}`), ...QUESTION_LEVEL_FIELDS.map((field) => `questionSets.sections.${field}`)].join(' ');
+
+/** Map(id -> Easy/Medium/Hard) for the tests or AI interviews behind a cohort's Prep Score evidence. */
+async function contentLevels(model, rawIds, fields, levelOf) {
+  const ids = [...new Set(rawIds.filter((id) => id && mongoose.isValidObjectId(id)).map(String))];
+  if (!ids.length) return new Map();
+  const rows = await model.find({ _id: { $in: ids.map(objectId) } }).select(fields).maxTimeMS(QUERY_TIMEOUT_MS).lean();
+  return new Map(rows.map((row) => [String(row._id), levelOf(row)]));
+}
 
 export function publicCodingProblemStages(problemField = 'problem') {
   return [
@@ -98,20 +103,13 @@ function learnerLevel({ solved, streak, assessmentScore, interviewScore, challen
 }
 
 /** Prep Score for a progress row (only the features in row.scoreFeatures count). */
-export function scoresForRow(metrics = {}) {
-  return prepScores({
-    easySolved: metrics.easySolved, mediumSolved: metrics.mediumSolved, hardSolved: metrics.hardSolved,
-    submissions: metrics.submissions, acceptedSubmissions: metrics.acceptedSubmissions,
-    completedTopics: metrics.completedTopics, totalTopics: metrics.totalTopics,
-    mockInterviews: metrics.interviews, mockAverage: metrics.mockAverage, aiInterviews: metrics.aiInterviews,
-    // Only marked tests count towards the score; one still being marked adds nothing yet.
-    testsTaken: metrics.assessmentsScored ?? metrics.assessmentsCompleted, testAverage: metrics.assessmentScore,
-  }, metrics.scoreFeatures || scoreFeatures(null));
+export function scoresForRow(metrics = {}, policy = {}) {
+  return prepScore(metrics.scoreEvidence || {}, metrics.scoreFeatures || scoreFeatures(null), policy);
 }
 
 // The acknowledgement endpoint is cosmetic; none of its client-reported awards enters ranking.
-// The rank score is the Prep Score (0-100): only the student's own verified work, per licensed feature.
-export function scoreStudentProgress(metrics = {}, now = new Date()) {
+// The rank score is the Prep Score: only the student's own verified work, per licensed feature.
+export function scoreStudentProgress(metrics = {}, now = new Date(), policy = {}) {
   const easy = count(metrics.easySolved);
   const medium = count(metrics.mediumSolved);
   const hard = count(metrics.hardSolved);
@@ -131,11 +129,11 @@ export function scoreStudentProgress(metrics = {}, now = new Date()) {
     ['active-30', badgeMetrics.activeDays >= 30], ['polyglot', badgeMetrics.languages >= 3],
     ['assessment-1', badgeMetrics.assessments >= 1], ['interview-1', badgeMetrics.interviews >= 1],
   ].filter(([, qualifies]) => qualifies).map(([id]) => id);
-  const prepScore = scoresForRow(metrics);
-  const scoreBreakdown = Object.fromEntries(Object.entries(prepScore.features).map(([key, feature]) => [key, feature.score]));
+  const score = scoresForRow(metrics, policy);
+  const scoreBreakdown = Object.fromEntries(Object.entries(score.features).map(([key, feature]) => [key, feature.score]));
   return {
-    score: prepScore.total,
-    prepScore,
+    score: score.total,
+    prepScore: score,
     scoreFeatures: metrics.scoreFeatures || scoreFeatures(null),
     scoreBreakdown,
     earnedBadges: earned.length + count(metrics.challengeBadges),
@@ -144,32 +142,32 @@ export function scoreStudentProgress(metrics = {}, now = new Date()) {
     badgeMetrics, levelMetrics,
     level: metrics.adaptiveLevel || learnerLevel({ solved: levelMetrics.solvedCount, streak: levelMetrics.streak, assessmentScore: levelMetrics.assessmentScore ?? 0, interviewScore: levelMetrics.interviewScore, challengePoints: levelMetrics.challengePoints }),
     // Work counts even when low marks earn no points yet: the student is ranked, at the bottom, not "not started".
-    hasProgress: Object.values(prepScore.features).some((feature) => (Number(feature.work?.value) || 0) + (Number(feature.extra?.value) || 0) > 0),
+    hasProgress: score.hasProgress,
   };
 }
 
-export function rankStudentProgress(rows, studentId, universityName, now = new Date()) {
-  const scored = rows.map((row) => ({ studentId: String(row.studentId), ...(row.rankingSummary || scoreStudentProgress(row, now)) }));
-  const own = scored.find((row) => row.studentId === String(studentId));
-  const base = {
-    rank: null, totalStudents: rows.length, universityName: universityName || '', score: 0,
-    percentile: null, level: { level: 1, title: 'Rising Learner' }, earnedBadges: 0,
-    scoreBreakdown: {}, prepScore: { total: 0, features: {} }, unit: 'prep-score', hasProgress: false, tied: false,
-    milestoneBadges: 0, challengeBadges: 0,
-    badgeMetrics: { solved: 0, hardSolved: 0, bestStreak: 0, activeDays: 0, languages: 0, assessments: 0, interviews: 0 },
-    levelMetrics: { solvedCount: 0, streak: 0, assessmentScore: null, interviewScore: 0, challengePoints: 0 },
-    methodology: prepScoreMethodology(own?.scoreFeatures || undefined),
-  };
-  if (!own) return base;
-  const { studentId: ignored, ...progress } = own;
-  if (!own.hasProgress || !universityName) return { ...base, ...progress, totalStudents: universityName ? rows.length : 0 };
-  const higher = scored.filter((row) => row.score > own.score).length;
-  const lower = scored.filter((row) => row.score < own.score).length;
-  return {
-    ...base, ...progress, rank: higher + 1,
-    percentile: scored.length > 1 ? Math.round((lower / (scored.length - 1)) * 100) : 100,
-    tied: scored.some((row) => row.studentId !== String(studentId) && row.score === own.score),
-  };
+const rankable = (student) => student.isActive !== false && student.accessScope !== 'assessment_only' && (!student.role || student.role === 'student');
+
+function universityNameFor(student) {
+  return String(student.college || (isUniversity() ? currentTenant()?.universityId || process.env.PEERPREP_UNIVERSITY_NAME || process.env.PEERPREP_UNIVERSITY_ID : '')).trim();
+}
+
+/**
+ * The student's own Prep Score (computed fresh at the serving policy version) and their place in
+ * the university, counted from the stored scores of everyone else.
+ */
+async function rankOwnProgress(student, own, now) {
+  const state = await ensurePrepScoreStore();
+  const policy = await servingPolicy(state);
+  const progress = scoreStudentProgress(own || {}, now, policy);
+  const universityName = universityNameFor(student);
+  const cohort = universityName ? universityCohort(student) : null;
+  if (rankable(student)) await saveOwnScore(student, progress.prepScore, policy.version);
+  const base = { ...progress, rank: null, percentile: null, tied: false, universityName, totalStudents: 0, unit: 'prep-score', policyVersion: policy.version };
+  if (!cohort) return base;
+  const position = await rankFromStore(student, { total: progress.score }, policy.version, cohort);
+  if (!progress.hasProgress || !rankable(student)) return { ...base, totalStudents: position.totalStudents };
+  return { ...base, ...position };
 }
 
 export function universityCohort(student, universityDeployment = isUniversity()) {
@@ -196,6 +194,7 @@ export function buildCurriculumTopicMap(semesters = [], student = {}) {
             subjectId: String(subject._id), subjectName: subject.subjectName,
             chapterId: String(chapter._id), chapterName: chapter.chapterName,
             coordinatorId: String(semester.coordinatorId), hasVideo: Boolean(topic.topicVideoLink),
+            difficultyLevel: topic.difficultyLevel || null,
             hasNotes: Boolean(topic.notesPDF), hasQuestions: Boolean(topic.questionPDF),
           });
         }
@@ -241,11 +240,6 @@ export async function getSharedCodingCatalog() {
   if (!isUniversity()) return [];
   return (await sharedQuestions() || []).filter((question) => question.questionType === 'coding'
     && question.status === 'published' && question.visibility !== 'private' && question.sourceType !== 'assessment');
-}
-
-function refreshRankingRows(rows, own, student) {
-  if (student.isActive === false || student.accessScope === 'assessment_only') return rows;
-  return [...rows.filter((row) => row.studentId !== String(student._id)), own];
 }
 
 function codingTotals(localTotals, sharedCatalog) {
@@ -319,7 +313,8 @@ async function loadProgressRows(students, permissions, semesters, now, sharedCat
   const curriculumTopicIds = permissions.learning ? [...buildCurriculumTopicMap(semesters).keys()].map(objectId) : [];
   const [coding, learning, assessments, interviews, activities, sharedCoding, challenges, missionRewards, progressions, aiInterviews] = await Promise.all([
     permissions.questions ? aggregate(Submission, [
-      { $match: { user: { $in: ids }, mode: 'submit' } },
+      // Practice only: solves inside a test already count towards Prep Assessment.
+      { $match: { user: { $in: ids }, mode: 'submit', assessmentId: null } },
       { $group: { _id: { studentId: '$user', problem: '$problem' }, accepted: { $max: { $cond: [acceptedExpression, 1, 0] } }, submissions: { $sum: 1 }, acceptedSubmissions: { $sum: { $cond: [acceptedExpression, 1, 0] } }, languages: { $addToSet: '$language' } } },
       ...publicCodingProblemStages('_id.problem'),
       { $group: { _id: '$_id.studentId', attemptedProblems: { $sum: 1 }, submissions: { $sum: '$submissions' }, acceptedSubmissions: { $sum: '$acceptedSubmissions' }, easySolved: { $sum: { $cond: [{ $and: [{ $eq: ['$accepted', 1] }, { $eq: ['$codingProblem.difficulty', 'Easy'] }] }, 1, 0] } }, mediumSolved: { $sum: { $cond: [{ $and: [{ $eq: ['$accepted', 1] }, { $eq: ['$codingProblem.difficulty', 'Medium'] }] }, 1, 0] } }, hardSolved: { $sum: { $cond: [{ $and: [{ $eq: ['$accepted', 1] }, { $eq: ['$codingProblem.difficulty', 'Hard'] }] }, 1, 0] } }, languageSets: { $push: '$languages' },
@@ -333,7 +328,7 @@ async function loadProgressRows(students, permissions, semesters, now, sharedCat
     permissions.assessments ? aggregate(AssessmentSubmission, [
       { $match: { studentId: { $in: ids }, status: 'submitted', evaluationStatus: { $nin: ['failed', 'processing'] } } },
       { $set: { percentage: { $cond: [{ $and: [{ $isNumber: '$score' }, { $gt: ['$maxMarks', 0] }] }, { $min: [100, { $max: [0, { $multiply: [{ $divide: ['$score', '$maxMarks'] }, 100] }] }] }, null] } } },
-      { $group: { _id: '$studentId', assessmentsCompleted: { $sum: 1 }, assessmentsScored: { $sum: { $cond: [{ $isNumber: '$percentage' }, 1, 0] } }, assessmentPoints: { $sum: '$percentage' }, assessmentScore: { $avg: '$percentage' } } },
+      { $group: { _id: '$studentId', assessmentsCompleted: { $sum: 1 }, assessmentsScored: { $sum: { $cond: [{ $isNumber: '$percentage' }, 1, 0] } }, assessmentPoints: { $sum: '$percentage' }, assessmentScore: { $avg: '$percentage' }, assessmentAttempts: { $push: { assessmentId: '$assessmentId', percent: '$percentage' } } } },
     ]) : [],
     permissions.events ? aggregate(Feedback, [
       { $match: { to: { $in: ids } } },
@@ -342,7 +337,8 @@ async function loadProgressRows(students, permissions, semesters, now, sharedCat
         { $or: [{ $gt: [{ $ifNull: ['$totalMarks', 0] }, 0] }, { $and: [{ $lte: ['$marks', 25] }, { $gt: [{ $ifNull: ['$communication', 0] }, 0] }] }] },
         { $multiply: [{ $divide: ['$marks', 25] }, 100] }, '$marks',
       ] } } },
-      { $group: { _id: '$to', interviews: { $sum: 1 }, interviewScore: { $avg: '$marks' }, mockAverage: { $avg: { $min: [100, { $max: [0, '$mockPercent'] }] } } } },
+      { $set: { mockPercent: { $min: [100, { $max: [0, '$mockPercent'] }] } } },
+      { $group: { _id: '$to', interviews: { $sum: 1 }, interviewScore: { $avg: '$marks' }, mockAverage: { $avg: '$mockPercent' }, mockPercents: { $push: '$mockPercent' } } },
     ]) : [],
     includeActivity ? getActivityRows(ids, permissions, now) : new Map(),
     permissions.questions && sharedCatalog.length ? aggregate(QuestionPracticeAttempt, [
@@ -353,9 +349,13 @@ async function loadProgressRows(students, permissions, semesters, now, sharedCat
     aggregate(EngagementReward, [{ $match: { $or: adaptiveScopes } }, { $group: { _id: '$studentId', points: { $sum: '$points' } } }]),
     StudentProgression.find({ $or: adaptiveScopes }).select('studentId level').maxTimeMS(QUERY_TIMEOUT_MS).lean(),
     // AI interview completions come from verified receipts (their scores live in the interview service).
-    permissions.interviews ? aggregate(InterviewEngagementReceipt, [{ $match: { $or: adaptiveScopes, completedAt: { $ne: null } } }, { $group: { _id: '$studentId', aiInterviews: { $sum: 1 } } }]) : [],
+    permissions.interviews ? aggregate(InterviewEngagementReceipt, [{ $match: { $or: adaptiveScopes, completedAt: { $ne: null } } }, { $group: { _id: '$studentId', aiInterviews: { $sum: 1 }, interviewIds: { $push: '$interviewId' } } }]) : [],
   ]);
-  const aiMap = new Map(aiInterviews.map((entry) => [String(entry._id), entry.aiInterviews]));
+  const aiMap = new Map(aiInterviews.map((entry) => [String(entry._id), entry]));
+  const [testLevels, aiLevels] = await Promise.all([
+    contentLevels(Assessment, assessments.flatMap((entry) => entry.assessmentAttempts.map((attempt) => attempt.assessmentId)), ASSESSMENT_LEVEL_FIELDS, assessmentLevel),
+    contentLevels(AIInterview, aiInterviews.flatMap((entry) => entry.interviewIds), 'data.difficulty publishedSnapshot.data.difficulty', aiInterviewLevel),
+  ]);
   const features = scoreFeatures(permissions);
   const maps = [coding, assessments, interviews].map((source) => new Map(source.map((entry) => [String(entry._id), entry])));
   const challengeMap = new Map(challenges.map((entry) => [String(entry._id), entry]));
@@ -387,64 +387,62 @@ async function loadProgressRows(students, permissions, semesters, now, sharedCat
       codingRow.submissions = count(codingRow.submissions) + count(entry.attempts);
       codingRow.acceptedSubmissions = count(codingRow.acceptedSubmissions) + count(entry.correct);
       if (entry.accepted && ['easy', 'medium', 'hard'].includes(difficulty)) codingRow[`${difficulty}Solved`] = count(codingRow[`${difficulty}Solved`]) + 1;
+      else if (entry.accepted) codingRow.unknownSolved = count(codingRow.unknownSolved) + 1;
       if (includeDiscovery && entry.accepted) acceptedSharedQuestionIds.push(String(entry._id.questionId));
       entry.languages.filter(Boolean).forEach((language) => languages.add(language));
     }
     const topics = permissions.learning ? buildCurriculumTopicMap(semesters, student) : new Map();
     const completedTopicIds = [...(completedByStudent.get(id) || [])].filter((topicId) => topics.has(topicId));
     const completedTopics = completedTopicIds.length;
+    const { assessmentAttempts = [], ...assessmentRow } = maps[1].get(id) || {};
+    const { mockPercents = [], ...interviewRow } = maps[2].get(id) || {};
+    const ai = aiMap.get(id);
     return {
-      studentId: id, ...codingRow, ...maps[1].get(id), ...maps[2].get(id), ...challengeMap.get(id),
+      studentId: id, ...codingRow, ...assessmentRow, ...interviewRow, ...challengeMap.get(id),
       adaptiveLevel: progressionMap.get(id),
       languages: languages.size,
       completedTopics, totalTopics: topics.size, activityByDate: activities.get(id) || {},
-      aiInterviews: aiMap.get(id) || 0, scoreFeatures: features,
+      aiInterviews: ai?.aiInterviews || 0, scoreFeatures: features,
+      scoreEvidence: {
+        problemSolved: [
+          { level: 'Easy', count: count(codingRow.easySolved) }, { level: 'Medium', count: count(codingRow.mediumSolved) },
+          { level: 'Hard', count: count(codingRow.hardSolved) }, { level: null, count: count(codingRow.unknownSolved) },
+        ].filter((item) => item.count > 0),
+        assessmentCompleted: assessmentAttempts.map((attempt) => ({ level: testLevels.get(String(attempt.assessmentId)) || null, percent: attempt.percent })),
+        mockCompleted: mockPercents.map((percent) => ({ percent })),
+        aiCompleted: (ai?.interviewIds || []).map((interviewId) => ({ level: aiLevels.get(String(interviewId)) || null })),
+        videoCompleted: completedTopicIds.map((topicId) => ({ topicLevel: topics.get(topicId)?.difficultyLevel || null })),
+      },
       ...(includeDiscovery ? { completedTopicIds, acceptedSharedQuestionIds } : {}),
     };
   });
 }
 
-async function loadRankRows(student, permissions, semesters, now, sharedCatalog = []) {
-  const scope = universityCohort(student);
-  if (!scope) return { rows: [], universityName: '' };
-  const universityName = String(student.college || (isUniversity() ? currentTenant()?.universityId || process.env.PEERPREP_UNIVERSITY_NAME || process.env.PEERPREP_UNIVERSITY_ID : '')).trim();
-  const key = JSON.stringify({ universityId: currentTenant()?.universityId || 'platform', scope, permissions, challenges: challengeRankRevision, shared: sharedCatalog.map((row) => [String(row._id), row.difficulty]) });
-  const cached = rankCache.get(key);
-  if (cached && now.getTime() - cached.at < cacheLifetimeMs) return cached.value;
-  if (rankLoads.has(key)) return rankLoads.get(key);
-  const pending = (async () => {
-    const students = await User.find(scope).select('_id semester college').maxTimeMS(QUERY_TIMEOUT_MS).lean();
-    const rows = await loadProgressRows(students, permissions, semesters, now, sharedCatalog);
-    // Keep only compact scores and metrics for the cohort snapshot. Calendars are sorted once
-    // here, rather than retained and recalculated for every student's dashboard request.
-    // The per-feature details are only needed for the student's own row, so the cohort keeps totals.
-    const compact = (summary) => ({ ...summary, prepScore: { total: summary.prepScore.total, features: {} } });
-    const value = {
-      rows: rows.map((row) => ({ studentId: row.studentId, rankingSummary: compact(scoreStudentProgress(row, now)) })),
-      universityName,
-    };
-    if (rankCache.size >= 100) rankCache.delete(rankCache.keys().next().value);
-    rankCache.set(key, { at: now.getTime(), value });
-    return value;
-  })().finally(() => rankLoads.delete(key));
-  rankLoads.set(key, pending);
-  return pending;
+/** Prep Score rows for the store: { studentId, score } computed at the given policy. */
+export async function computePrepScoreRows(students, permissions, policy, now = new Date()) {
+  const [semesters, sharedCatalog] = await Promise.all([permissions.learning ? curriculum() : [], permissions.questions ? getSharedCodingCatalog() : []]);
+  const rows = await loadProgressRows(students, permissions, semesters, now, sharedCatalog, false);
+  return rows.map((row) => ({ studentId: row.studentId, score: scoresForRow(row, policy) }));
 }
 
-export async function getUniversityRankSnapshotRows(permissions, now = new Date()) {
-  if (!isUniversity()) throw new Error('Global snapshots require a university deployment');
+async function loadOwnRow(student, permissions, now) {
   const [semesters, sharedCatalog] = await Promise.all([permissions.learning ? curriculum() : [], permissions.questions ? getSharedCodingCatalog() : []]);
-  return (await loadRankRows({}, permissions, semesters, now, sharedCatalog)).rows;
+  const [own] = await loadProgressRows([student], permissions, semesters, now, sharedCatalog);
+  return { own: own || {} };
+}
+
+/** Badges, level and their metrics for the student's own work, without touching ranks. */
+export async function getStudentProgressSummary(student, permissions = null, now = new Date()) {
+  const allowed = permissions || await dashboardPermissions(student);
+  const { own } = await loadOwnRow(student, allowed, now);
+  const state = await ensurePrepScoreStore();
+  return scoreStudentProgress(own, now, await servingPolicy(state));
 }
 
 export async function getStudentUniversityRanking(student, permissions = null, now = new Date()) {
   const allowed = permissions || await dashboardPermissions(student);
-  const [semesters, sharedCatalog] = await Promise.all([allowed.learning ? curriculum() : [], allowed.questions ? getSharedCodingCatalog() : []]);
-  const [ownRows, { rows, universityName }] = await Promise.all([
-    loadProgressRows([student], allowed, semesters, now, sharedCatalog),
-    loadRankRows(student, allowed, semesters, now, sharedCatalog),
-  ]);
-  return rankStudentProgress(refreshRankingRows(rows, ownRows[0], student), student._id, universityName, now);
+  const { own } = await loadOwnRow(student, allowed, now);
+  return rankOwnProgress(student, own, now);
 }
 
 export async function getStudentCodingSummary(student, now = new Date()) {
@@ -654,9 +652,8 @@ export async function getStudentDashboardData(student, now = new Date()) {
   const permissions = await dashboardPermissions(student);
   const [semesters, sharedCatalog] = await Promise.all([permissions.learning ? curriculum() : [], permissions.questions ? getSharedCodingCatalog() : []]);
   const accessibleTopics = buildCurriculumTopicMap(semesters, student);
-  const [ownRows, rankData, totals, codingResume, learningProgress, sharedResume] = await Promise.all([
+  const [ownRows, totals, codingResume, learningProgress, sharedResume] = await Promise.all([
     loadProgressRows([student], permissions, semesters, now, sharedCatalog, true, true),
-    loadRankRows(student, permissions, semesters, now, sharedCatalog),
     permissions.questions ? aggregate(Problem, [{ $match: publicProblemMatch }, { $group: { _id: '$difficulty', count: { $sum: 1 } } }]) : [],
     permissions.questions ? codingResumeItems(objectId(student._id)) : [],
     permissions.learning ? Progress.find({ studentId: student._id, completed: { $ne: true }, topicId: { $in: [...accessibleTopics.keys()].map(objectId) } }).sort({ lastAccessedAt: -1, _id: 1 }).limit(20).select('topicId completed videoWatchedSeconds videoDuration lastAccessedAt updatedAt lastViewedContentType').maxTimeMS(QUERY_TIMEOUT_MS).lean() : [],
@@ -667,8 +664,7 @@ export async function getStudentDashboardData(student, now = new Date()) {
   const totalsByDifficulty = codingTotals(totals, sharedCatalog);
   const topics = buildCurriculumTopicMap(semesters, student);
   const learningResume = learningProgress.map((row) => learningResumeItem(row, topics.get(String(row.topicId))));
-  // Compute the current student fresh even while the cohort cache is still within its short TTL.
-  const rankingRows = refreshRankingRows(rankData.rows, own, student);
+  const ranking = await rankOwnProgress(student, own, now);
   const resumeItems = combineResumeItems([...codingResume, ...sharedResume, ...learningResume]);
   if (resumeItems[0]) resumeItems[0] = await attachCodePreview(resumeItems[0], objectId(student._id));
   const suggestedPractice = permissions.questions ? await suggestedPracticeItems(own, sharedCatalog, resumeItems) : [];
@@ -681,7 +677,7 @@ export async function getStudentDashboardData(student, now = new Date()) {
       attemptedProblems: count(own.attemptedProblems), streak: calculateActivityStreak(activityByDate, now), activity: activityByDate,
     } : null,
     learning: permissions.learning ? { completedTopics: count(own.completedTopics), totalTopics: count(own.totalTopics), completionPercent: own.totalTopics > 0 ? Math.round((own.completedTopics / own.totalTopics) * 100) : 0 } : null,
-    activityByDate, ranking: rankStudentProgress(rankingRows, student._id, rankData.universityName, now),
+    activityByDate, ranking,
     resumeItems, generatedAt: now.toISOString(),
     suggestedPractice, learningSubjects,
   };

@@ -19,17 +19,38 @@ export async function getStudentChallengeBadges(req, res) {
 }
 import { dashboardPermissions, getStudentDashboardData, getStudentUniversityRanking, getAccessibleCurriculumTopic, getSharedCodingCatalog, publicProblemMatch } from '../services/studentDashboardService.js';
 
+function publicRanking(ranking = {}) {
+  return {
+    score: Number(ranking.score) || 0,
+    rank: Number(ranking.rank) > 0 ? Number(ranking.rank) : null,
+    totalStudents: Number(ranking.totalStudents) || 0,
+    universityName: String(ranking.universityName || ''),
+    percentile: Number.isFinite(Number(ranking.percentile)) ? Number(ranking.percentile) : null,
+    hasProgress: Boolean(ranking.hasProgress),
+    tied: Boolean(ranking.tied),
+    level: ranking.level || null,
+    earnedBadges: Number(ranking.earnedBadges) || 0,
+    milestoneBadges: Number(ranking.milestoneBadges) || 0,
+    challengeBadges: Number(ranking.challengeBadges) || 0,
+    badgeMetrics: ranking.badgeMetrics || null,
+    levelMetrics: ranking.levelMetrics || null,
+    unit: 'prep-score',
+    calculatedAt: new Date().toISOString(),
+  };
+}
+
 export async function getStudentDashboard(req, res) {
   res.set('Cache-Control', 'private, no-store');
   const [data, quest] = await Promise.all([getStudentDashboardData(req.user), latestQuestResume(req.user).catch(() => null)]);
   // The quest a student last opened competes with their other unfinished work on recency.
   if (quest) data.resumeItems = [quest, ...(data.resumeItems || [])].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)).slice(0, 4);
+  data.ranking = publicRanking(data.ranking);
   res.json(data);
 }
 
 export async function getStudentRanking(req, res) {
   res.set('Cache-Control', 'private, no-store');
-  res.json({ ranking: await getStudentUniversityRanking(req.user) });
+  res.json({ ranking: publicRanking(await getStudentUniversityRanking(req.user)) });
 }
 
 export async function recordStudentProblemView(req, res) {

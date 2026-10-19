@@ -10,7 +10,7 @@ import {
   newRankRule, normalizeState, numberPresets, OPERATORS, rangeOf, rangeRule, rankMetrics, rankText, ruleText, setRule, studentFields, summaryLines,
   switchArea, toggleKpi, toQueryRequest, toRequestRank, valueParts,
 } from '../src/admin/prepAnalysis/filterModel.js';
-import { pointsPerSolve, studentHighlights } from '../src/admin/prepAnalysis/studentInsights.js';
+import { studentHighlights } from '../src/admin/prepAnalysis/studentInsights.js';
 import { pathAllowed } from '../src/platform/universityPermissions.js';
 import { assessmentAnalysisPath, prepAnalysisStateFromSearch } from '../src/admin/prepAnalysis/analysisPreset.js';
 
@@ -115,7 +115,7 @@ test('another group adds "or these students"; an empty group means everyone', ()
 });
 
 test('number filters are one-tap ranges in the field\'s own scale, or a custom from-to', () => {
-  assert.equal(numberPresets(field('coding.prepScore'))[3].label, '1,000 or more', 'Prep Score has no ceiling');
+  assert.equal(numberPresets(field('coding.prepScore'))[3].label, '40 or more', 'Prep Score has no ceiling');
   assert.ok(numberPresets(field('interview.communication')).some((preset) => preset.label === '4 or more'), 'ratings use a 1-5 scale');
   assert.ok(numberPresets(field('coding.daysSinceActive')).some((preset) => preset.label === 'Over 14 days'));
   assert.equal(range('coding.prepScore', '80', '20').operator, 'between');
@@ -305,33 +305,27 @@ test('charts speak the area\'s own units and colours, and escape names', () => {
 
 // ---------------------------------------------------------------- one student
 
-const FORMULA = { coding: { points: { Easy: 1, Medium: 2, Hard: 4 }, fairTriesPerSolve: 3, starterSubmissions: 10 } };
-
 test('a student profile says what stands out, from that student\'s own work only', () => {
-  assert.deepEqual(pointsPerSolve(FORMULA), { Easy: 1, Medium: 2, Hard: 4 });
-  assert.deepEqual(pointsPerSolve(FORMULA, 50), { Easy: 0.5, Medium: 1, Hard: 2 }, 'at the student\'s current quality');
   const coding = {
-    practiceStatus: 'inactive', daysSinceActive: 21, solved: { Easy: 50, Medium: 12, Hard: 0, total: 62 }, quality: 100, triesPerSolve: 1.9,
+    practiceStatus: 'inactive', daysSinceActive: 21, solved: { Easy: 50, Medium: 12, Hard: 0, total: 62 },
     submissions: 120, accuracy: 31, verdicts: [{ key: 'AC', name: 'Accepted', value: 37 }, { key: 'TLE', name: 'Too slow', value: 60 }, { key: 'WA', name: 'Wrong answer', value: 23 }],
     topics: [{ name: 'Arrays', solved: 30, attempted: 32 }, { name: 'Dynamic Programming', solved: 1, attempted: 6 }],
   };
   const quickprep = { status: 'inProgress', finished: 0, sheets: [{ title: 'Graphs sprint', solved: 1, total: 10, progress: 10, finished: false }], notStarted: [] };
   const learning = { status: 'active', progress: 12, daysSinceActive: 2, subjects: [] };
-  const lines = studentHighlights({ coding, quickprep, learning, formula: FORMULA }, 20);
+  const lines = studentHighlights({ coding, quickprep, learning }, 20);
   const texts = lines.map((line) => line.text);
   assert.ok(texts.includes('No coding practice for 21 days.'));
   assert.ok(texts.includes('Low accuracy: 31% of submissions accepted; most failures are “Too slow”.'));
-  assert.ok(texts.includes('Ready for Hard problems: 12 Mediums solved, no Hard yet. Each Hard solve adds 4 points.'));
-  assert.ok(!texts.some((text) => text.includes('submissions per solved problem')), 'fair submissions are not flagged');
-  const guessing = studentHighlights({ coding: { ...coding, quality: 47.8, triesPerSolve: 6.5 }, formula: FORMULA }, 20).map((line) => line.text);
-  assert.ok(guessing.includes('6.5 submissions per solved problem (up to 3 is fair), so quality is 47.8% of the Prep Coding points.'));
+  assert.ok(texts.includes('Ready for Hard problems: 12 Mediums solved, no Hard yet.'));
+  assert.ok(!texts.some((text) => /points|quality/.test(text)), 'no scoring arithmetic in the highlights');
   assert.ok(texts.includes('Finding Dynamic Programming hard: 1 of 6 tried problems solved.'));
   assert.ok(texts.includes('Stuck in “Graphs sprint”: 1 of 10 questions solved.'));
   assert.ok(texts.includes('Behind in the course: 12% of the topics open to them completed.'));
   assert.equal(lines[0].tone, 'warn', 'problems come first');
   assert.ok(texts.every((text) => !/average|class|cohort|other students/i.test(text)), 'never compared with others');
-  assert.deepEqual(studentHighlights({ coding: { practiceStatus: 'never', solved: { total: 0 } }, formula: FORMULA }), [{ tone: 'warn', text: 'Has not submitted any code yet.' }]);
-  assert.equal(studentHighlights({ coding, formula: FORMULA }).length, 5, 'a short list by default');
+  assert.deepEqual(studentHighlights({ coding: { practiceStatus: 'never', solved: { total: 0 } } }), [{ tone: 'warn', text: 'Has not submitted any code yet.' }]);
+  assert.equal(studentHighlights({ coding }).length, 5, 'a short list by default');
 });
 
 test('the old analytics page stays reachable for assessment analysis only when assessments are licensed', () => {

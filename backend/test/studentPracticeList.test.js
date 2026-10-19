@@ -9,16 +9,19 @@ test('the search box reads question numbers, hashtags and plain text', async () 
   process.env.JWT_SECRET ||= 'test-secret-abcdefghijklmnopqrstuvwxyz-123456';
   const { matchesPracticeCriteria, parsePracticeSearch } = await import('../src/platform/questionPractice.js');
   if (priorSecret === undefined) delete process.env.JWT_SECRET;
-  assert.deepEqual(parsePracticeSearch('12'), { serial: 12, tagTerms: [], text: '' });
-  assert.deepEqual(parsePracticeSearch(' #12 '), { serial: 12, tagTerms: [], text: '' });
+  assert.deepEqual(parsePracticeSearch('12'), { serial: { kind: 'either', number: 12 }, tagTerms: [], text: '' });
+  assert.deepEqual(parsePracticeSearch(' #12 '), { serial: { kind: 'either', number: 12 }, tagTerms: [], text: '' });
+  assert.deepEqual(parsePracticeSearch('lc:1012'), { serial: { kind: 'leetcode', number: 1012 }, tagTerms: [], text: '' });
   assert.deepEqual(parsePracticeSearch('#two-pointers'), { serial: null, tagTerms: [['two', 'pointers']], text: '' });
   assert.deepEqual(parsePracticeSearch('#Array Two  Sum'), { serial: null, tagTerms: [['array']], text: 'two sum' });
   assert.deepEqual(parsePracticeSearch('#'), { serial: null, tagTerms: [], text: '' });
   assert.equal(parsePracticeSearch('3sum').serial, null, 'Digits inside a title stay text');
-  const question = { _id: 'q1', questionText: 'Two Sum', tags: ['Two Pointers', 'Array'], keywords: ['Acme'], displayOrder: 7, difficulty: 'Easy' };
+  const question = { _id: 'q1', questionText: 'Two Sum', tags: ['Two Pointers', 'Array'], keywords: ['Acme'], displayOrder: 7, sourceNumber: 1, difficulty: 'Easy' };
   const criteria = (search, extra = {}) => ({ search: parsePracticeSearch(search), type: '', difficulty: '', tags: [], companies: [], ids: null, ...extra });
   assert.equal(matchesPracticeCriteria(question, [], criteria('#7')), true);
   assert.equal(matchesPracticeCriteria(question, [], criteria('#8')), false);
+  assert.equal(matchesPracticeCriteria(question, [], criteria('lc:1')), true);
+  assert.equal(matchesPracticeCriteria(question, [], criteria('lc:7')), false);
   assert.equal(matchesPracticeCriteria(question, [], criteria('#two-pointers')), true);
   assert.equal(matchesPracticeCriteria(question, [], criteria('#graph')), false);
   assert.equal(matchesPracticeCriteria(question, [], criteria('acme')), true, 'Plain text also matches companies');
@@ -54,7 +57,7 @@ test('the student list pages, searches and sorts in the database', async (t) => 
     await QuestionLibrary.collection.insertMany(Array.from({ length: 30 }, (_, index) => ({
       sourceKey: `manual:${index + 1}`, sourceType: 'manual', status: 'published', visibility: 'public', questionType: 'mcq',
       questionText: index === 0 ? 'Two Sum (pairs)' : `Question ${String(index + 1).padStart(2, '0')}`,
-      difficulty: difficulties[index % 3], displayOrder: index + 1,
+      difficulty: difficulties[index % 3], displayOrder: index + 1, sourceNumber: index === 20 ? 12 : 1001 + index,
       tags: index % 5 === 0 ? ['Two Pointers', 'Array'] : ['Graph'], keywords: index === 3 ? ['Acme'] : [],
       questionData: { options: ['A', 'B'], correctOptionIndex: 0, bulky: 'x'.repeat(2000) },
     })));
@@ -79,8 +82,11 @@ test('the student list pages, searches and sorts in the database', async (t) => 
     assert.equal((await list('limit=5000')).pagination.limit, 200, 'The page size is capped');
     assert.deepEqual(orders(await list('sortOrder=desc&limit=3')), [30, 29, 28]);
 
-    assert.deepEqual(orders(await list('search=12')), [12], 'A number finds that question');
-    assert.deepEqual(orders(await list(`search=${encodeURIComponent('#12')}`)), [12]);
+    assert.deepEqual(orders(await list('search=12')), [12, 21], 'A number finds both the PeerPrep-ID and source-ID questions');
+    assert.deepEqual(orders(await list(`search=${encodeURIComponent('#12')}`)), [12, 21]);
+    assert.deepEqual(orders(await list(`search=${encodeURIComponent('pp:12')}`)), [12]);
+    assert.deepEqual(orders(await list(`search=${encodeURIComponent('lc:12')}`)), [21]);
+    assert.deepEqual(orders(await list(`search=${encodeURIComponent('lc:1012')}`)), [12], 'An lc: prefix finds the original LeetCode number');
     assert.deepEqual(orders(await list(`search=${encodeURIComponent('#two-pointers')}`)), [1, 6, 11, 16, 21, 26]);
     assert.deepEqual(orders(await list(`search=${encodeURIComponent('#arr')}`)), [1, 6, 11, 16, 21, 26], 'A hashtag matches the start of a topic');
     assert.deepEqual(orders(await list(`search=${encodeURIComponent('#two-pointers sum')}`)), [1]);

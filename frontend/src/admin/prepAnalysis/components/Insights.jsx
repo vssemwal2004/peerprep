@@ -6,7 +6,6 @@ import { DIFFICULTY_COLORS } from "../charts/chartTheme";
 import { LANGUAGE_LABELS } from "../charts/chartOptions";
 import { isKpiActive, kpiRule } from "../filterModel";
 import { formatScore } from "../../../student/prepScore/formatScore";
-import { PrepCoin } from "../../../student/prepScore/PrepScore";
 import { initials, sectionStyle } from "./sectionStyles";
 import { Dialog, IconButton, focusRing } from "./ui";
 
@@ -92,10 +91,9 @@ function ScoreCell({ row }) {
   const total = segments.reduce((sum, segment) => sum + segment.value, 0);
   return (
     <div className="flex items-center gap-2">
-      <PrepCoin size={18} />
       <span className="min-w-[3.25rem] text-right text-[12px] font-bold tabular-nums text-slate-900 dark:text-white">{formatScore(row.prepScore)}</span>
       <div className="flex h-1.5 w-16 overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.06]"
-        title={`${segments.map((segment) => `${segment.key} ${formatScore(segment.value)}`).join(" · ")} · quality ${formatScore(row.quality ?? 0)}%`}>
+        title={segments.map((segment) => `${segment.key} ${formatScore(segment.value)}`).join(" · ")}>
         {total > 0 && segments.map((segment) => <span key={segment.key} style={{ width: `${(segment.value / total) * 100}%`, backgroundColor: DIFFICULTY_COLORS[segment.key] }} />)}
       </div>
     </div>
@@ -142,7 +140,7 @@ const COLUMNS = {
   ],
 };
 const scoreCell = (value) => (value === null || value === undefined ? "—" : (
-  <span className="inline-flex items-center gap-1.5"><PrepCoin size={18} /><b className="tabular-nums text-slate-900 dark:text-white">{formatScore(value)}</b></span>
+  <b className="tabular-nums text-slate-900 dark:text-white">{formatScore(value?.score ?? value)}</b>
 ));
 // Prep Coding leads with its Prep Score and Prep Learning with course completed;
 // Prep Interview and Prep Assessment lead with their own Prep Score points.
@@ -226,37 +224,25 @@ export function StudentTable({ table, area, loading, onChange, onOpen }) {
   );
 }
 
-/** Prep Score in plain words, with the live points and rules (PREP_SCORE_RULES). */
-export function ScoreHelpDialog({ open, onClose, formula }) {
-  if (!open || !formula?.coding) return null;
-  const { coding } = formula;
+/** Explains the analysis workflow without duplicating the centrally managed score policy. */
+export function ScoreHelpDialog({ open, onClose }) {
+  if (!open) return null;
   return (
     <Dialog open={open} onClose={onClose} size="max-w-lg" title="How to use Prep Analysis" subtitle="Every number belongs to one student and comes only from that student's own work.">
       <div className="space-y-3 p-4 text-[12.5px] leading-5 text-slate-600 dark:text-slate-300">
         <p className="font-bold text-slate-900 dark:text-white">Finding students</p>
         <ul className="list-disc space-y-1 pl-5">
           <li>Press <b>Filters</b> and pick what to analyse: All, Prep Coding (with Quick Prep sheets), Prep Learning, Prep Interview or Prep Assessment.</li>
-          <li>Under <b>Which students?</b> tap the options you want, e.g. Semester <b>5</b> and <b>6</b>, Prep Score <b>250–1,000</b>. Several options in one row mean any of them; different rows all apply together.</li>
+          <li>Under <b>Which students?</b> tap the options you want, e.g. Semester <b>5</b> and <b>6</b>, Prep Score <b>10–25</b>. Several options in one row mean any of them; different rows all apply together.</li>
           <li>Need a second kind of student too? Press <b>Add another group of students</b>: students who fit group A <b>or</b> group B are shown.</li>
           <li>Optionally show only the <b>Top</b> or <b>Bottom</b> students (a number or a %). The button at the bottom shows how many students match; press it to apply.</li>
           <li>What is in use shows next to the Filters button: click it to change, or × to clear.</li>
           <li>The big numbers are shortcuts: click “Not practising” to see just those students; click again to undo.</li>
           <li>Click any student (in the table or a chart) to see their full profile.</li>
         </ul>
-        <p className="flex items-center gap-1.5 font-bold text-slate-900 dark:text-white"><PrepCoin size={18} />Prep Score: work points × quality, no maximum</p>
-        <div className="grid grid-cols-3 gap-2">
-          {["Easy", "Medium", "Hard"].map((key) => (
-            <div key={key} className="rounded-lg border border-slate-200 px-3 py-2 dark:border-gray-700">
-              <p className="text-[11px] font-bold" style={{ color: DIFFICULTY_COLORS[key] }}>{key}</p>
-              <p className="text-[11.5px]"><b className="text-slate-900 dark:text-white">{coding.points[key]}</b> point{coding.points[key] === 1 ? "" : "s"} per solve</p>
-            </div>
-          ))}
-        </div>
-        <ol className="list-decimal space-y-1 pl-5">
-          <li><b>Work points</b>: Prep Coding as above; Prep Learning {formula.learning.perTopic} per topic completed; Prep Interview {formula.interview.perMock} per mock interview (+{formula.interview.perAiInterview} per AI interview); Prep Assessment {formula.assessment.perTest} per test taken.</li>
-          <li><b>× Quality</b>, the student's own average. Coding: up to {coding.fairTriesPerSolve} submissions per solved problem are fair (the first {coding.starterSubmissions} are free); more lowers it. Interviews and tests: the average mark above the {formula.passMark}% pass mark (a failing attempt earns nothing).</li>
-          <li><b>Overall Prep Score</b> = the average of the features your university uses. A well-prepared student earns about 500 in each feature; there is no maximum.</li>
-        </ol>
+        <p className="font-bold text-slate-900 dark:text-white">Prep Score</p>
+        <p>Each student's current Prep Score: exactly the number they see and are ranked on, from verified Coding, Assessment, Interview and Learning work. The values behind it are set by the Master Admin in Prep Score Adjustment.</p>
+        <p>The selected period narrows activity figures, not the Prep Score. Use the module columns and the student drawer to see which module each score comes from.</p>
         <p><b className="text-slate-900 dark:text-white">Course completed (Prep Learning)</b>: topics a student completed out of the topics they can open (their semester and earlier).</p>
         <p><b className="text-slate-900 dark:text-white">Sheet progress (Quick Prep sheets, part of Prep Coding)</b>: questions solved out of all questions in the sheets the student started.</p>
       </div>

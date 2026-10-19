@@ -18,7 +18,6 @@ import {
   Sun,
   User,
   UserCog,
-  Wallet,
   X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -26,7 +25,7 @@ import { useTheme } from '../context/ThemeContext';
 import NotificationBell from './NotificationBell';
 import { useUniversityPolicy } from '../platform/UniversityPolicyContext';
 import DailyChallengeDrawer from '../student/engagement/DailyChallengeDrawer';
-import HeaderPrepScore from '../student/prepScore/HeaderPrepScore';
+import HeaderPrepCoin from '../student/prepCoin/HeaderPrepCoin';
 
 const modules = [
   { label: 'Dashboard', hint: 'Your placement overview', to: '/student/dashboard', icon: LayoutDashboard },
@@ -84,7 +83,7 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
   const profileRef = useRef(null);
   const canShowChallenges = user?.role === 'student' && user?.accessScope !== 'assessment_only' && allowsModule('challenges');
   const challengesOpen = canShowChallenges && challengeRoute === location.key;
-  const canShowPrepScore = user?.role === 'student' && user?.accessScope !== 'assessment_only';
+  const canShowPrepCoin = user?.role === 'student' && user?.accessScope !== 'assessment_only';
   const closeChallenges = useCallback(() => setChallengeRoute(null), []);
 
   const displayName = user?.name || 'Student';
@@ -194,7 +193,7 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
             <DailyTicketIcon />
             <span className="relative hidden text-[12.5px] font-semibold tracking-[-0.005em] [text-shadow:0_1px_0_rgba(3,105,161,0.45)] xl:inline">Daily challenges</span>
           </button>}
-          {canShowPrepScore && <HeaderPrepScore userId={user?._id || user?.id} />}
+          {canShowPrepCoin && <HeaderPrepCoin />}
           <div ref={appsRef} className="hidden sm:relative sm:block">
             <button type="button" onClick={() => { setAppsOpen((open) => !open); setProfileOpen(false); }} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200" aria-label="Open module launcher" aria-expanded={appsOpen}><Grid2X2 className="h-4 w-4" /></button>
             {appsOpen && <div className="absolute left-3 right-3 top-[calc(100%+0.65rem)] rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_18px_50px_rgba(15,23,42,0.16)] dark:border-slate-700 dark:bg-slate-900 sm:left-auto sm:right-0 sm:w-[19rem]">
@@ -206,8 +205,6 @@ export default function StudentDashboardHeader({ sidebarPinned = false, onToggle
           <button type="button" onClick={toggleTheme} className="hidden h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 sm:flex" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} title="Change theme">{theme === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}</button>
 
           <NotificationBell buttonClassName="shrink-0" />
-          <button type="button" onClick={() => goTo('/student/wallet')} className="flex h-9 w-9 items-center justify-center rounded-xl text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-950" aria-label="PeerPrep wallet" title="PeerPrep wallet"><Wallet className="h-5 w-5" /></button>
-
           <span className="mx-0.5 hidden h-6 w-px bg-slate-200 dark:bg-slate-800 sm:block" aria-hidden="true" />
           <div ref={profileRef} className="relative">
             <button type="button" onClick={() => { setProfileOpen((open) => !open); setAppsOpen(false); }} className="flex h-10 items-center gap-2 rounded-xl border border-transparent p-1 pr-1 transition hover:border-sky-100 hover:bg-sky-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:hover:border-sky-900 dark:hover:bg-sky-950/40 sm:pr-2" aria-label="Open profile menu" aria-expanded={profileOpen}>

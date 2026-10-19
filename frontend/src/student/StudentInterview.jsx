@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import DateTimePicker from "../components/DateTimePicker";
 import { useAuth } from "../context/AuthContext";
+import { usePrepCoinCheckout } from "./prepCoin/usePrepCoinCheckout";
 
 export default function StudentInterview() {
   const navigate = useNavigate();
@@ -19,6 +20,7 @@ export default function StudentInterview() {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [joinMsg, setJoinMsg] = useState("");
   const [showJoinRestriction, setShowJoinRestriction] = useState(false);
+  const { checkout: coinCheckout, dialog: coinDialog } = usePrepCoinCheckout("mock_interview.join");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedKey, setSelectedKey] = useState("regular-all");
   
@@ -191,10 +193,20 @@ export default function StudentInterview() {
     setMessage("");
   }, []);
 
+  // Joining an open interview may cost Prep Coins (confirmed first); assigned ones are always free.
   const handleJoinEvent = async () => {
     if (!selectedEvent) return;
+    const assigned = selectedEvent.isSpecial || ["selected", "filters", "csv"].includes(selectedEvent.selectionMode);
+    await coinCheckout((cost) => api.joinEvent(selectedEvent._id, cost), {
+      alreadyStarted: Boolean(selectedEvent.joined || assigned),
+      onSuccess: afterJoin,
+      onError: (err) => afterJoin(null, err),
+    });
+  };
+
+  const afterJoin = async (res, failure = null) => {
     try {
-      const res = await api.joinEvent(selectedEvent._id);
+      if (failure) throw failure;
       setJoinMsg(res?.message || "Successfully joined the interview!");
       setSelectedEvent((prev) => (prev ? { ...prev, joined: true } : prev));
       setEvents((prev) => prev.map((e) => (e._id === selectedEvent._id ? { ...e, joined: true } : e)));
@@ -3158,6 +3170,7 @@ export default function StudentInterview() {
           </div>
         </div>
       </div>
+      {coinDialog}
     </RequirePasswordChange>
   );
 }

@@ -121,7 +121,7 @@ export default function PrepAnalysisPage() {
         onClose={() => setSettingsId(null)}
         onSave={(draft) => { updateChart(settingsId, { filter: draft.filter, options: draft.options, labels: draft.labels }); setSettingsId(null); }} />
       <ChartExpandDialog chart={expanded?.chart} view={expanded?.view} onClose={() => setExpanded(null)} onStudent={(id) => { setExpanded(null); setStudentId(id); }} />
-      <ScoreHelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} formula={meta?.formula || catalog.formula} />
+      <ScoreHelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
       {studentId && <StudentDrawer studentId={studentId} range={state.range.preset} onClose={() => setStudentId(null)} />}
     </main>
   );

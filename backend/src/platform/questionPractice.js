@@ -24,7 +24,7 @@ import { universityPolicy, controlRequest } from './client.js';
 import { problemUsedInAssessment, serializeProblem, studentFailedCase } from '../controllers/compilerHelpers.js';
 import { interviewReportOptions, interviewReportSummaries, reporterKey, saveInterviewReport } from './interviewQuestionReports.js';
 import { questionQuickPreps } from '../services/questService.js';
-import { serialSearchClause } from '../utils/problemSerial.js';
+import { matchesSerialSearch, parseSerialSearch, serialSearchClause } from '../utils/problemSerial.js';
 
 const router = Router();
 const published = { status: 'published', visibility: { $ne: 'private' }, sourceType: { $ne: 'assessment' } };
@@ -46,6 +46,7 @@ export const publicShape = (question, source) => ({
   tags: question.tags || [],
   companyTags: question.keywords || question.questionData?.problemDataSnapshot?.companyTags || [],
   displayOrder: question.displayOrder || 2147483647,
+  sourceNumber: Number(question.sourceNumber) > 0 ? Number(question.sourceNumber) : null,
   options: Array.isArray(question.questionData?.options)
     ? question.questionData.options.map((option) => typeof option === 'string' ? option : String(option?.text || option?.label || ''))
     : [],
@@ -69,7 +70,7 @@ export const publicShape = (question, source) => ({
 });
 
 // The list reads only these fields of a page's questions; a full library row carries its whole problem snapshot.
-const LIST_FIELDS = ['questionType', 'sourceProblemId', 'questionText', 'difficulty', 'tags', 'keywords', 'displayOrder',
+const LIST_FIELDS = ['questionType', 'sourceProblemId', 'questionText', 'difficulty', 'tags', 'keywords', 'displayOrder', 'sourceNumber',
   'questionData.problemId', 'questionData.problemDataSnapshot.companyTags', 'questionData.problemDataSnapshot.description',
   'questionData.problemDataSnapshot.supportedLanguages', 'questionData.coding.statement', 'questionData.coding.supportedLanguages',
   'questionData.options', 'questionData.allowMultipleAnswers', 'questionData.libraryItemKind', 'questionData.passage',
@@ -89,13 +90,14 @@ const tagPattern = (words) => new RegExp(`^${words.map(escapeRegExp).join('[-_\\
 const companyNames = (question) => question.keywords || question.questionData?.problemDataSnapshot?.companyTags || [];
 
 /**
- * Reads the search box. '12' or '#12' is a question number: the PeerPrep serial or the LeetCode number;
+ * Reads the search box. '12' or '#12' matches either stored question number;
+ * 'pp:12' and 'lc:12' can restrict diagnostic searches to one identifier;
  * '#two-pointers' matches a topic starting with "two pointers"; other words match title, topic or company text.
  */
 export function parsePracticeSearch(raw) {
   const value = String(raw || '').trim().slice(0, 100);
-  const serial = value.match(/^#?(\d{1,9})$/);
-  if (serial) return { serial: Number(serial[1]), tagTerms: [], text: '' };
+  const serial = parseSerialSearch(value);
+  if (serial) return { serial, tagTerms: [], text: '' };
   const tokens = value.split(/\s+/).filter((token) => token && !/^#+$/.test(token));
   return {
     serial: null,
@@ -115,7 +117,7 @@ export function matchesPracticeCriteria(question, reportedCompanies, criteria) {
     && (!criteria.tags.length || criteria.tags.some((value) => tags.includes(value)))
     && (!criteria.companies.length || criteria.companies.some((value) => companies.includes(value)))
     && (!criteria.ids || criteria.ids.has(String(question._id)) || criteria.ids.has(String(question.sourceProblemId || '')))
-    && (search.serial == null || Number(question.displayOrder) === search.serial || Number(question.sourceNumber) === search.serial)
+    && matchesSerialSearch(question, search.serial)
     && search.tagTerms.every((words) => (question.tags || []).some((tag) => tagPattern(words).test(String(tag))))
     && (!search.text || [question.questionText, ...tags, ...companies].some((value) => String(value || '').toLowerCase().includes(search.text)));
 }

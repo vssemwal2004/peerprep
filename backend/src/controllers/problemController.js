@@ -19,6 +19,7 @@ import { prepareFunctionSourceForExecution } from '../services/functionProblemAd
 import { sqlStatementKinds } from '../services/sqlMutationContractService.js';
 import { questionQuickPreps } from '../services/questService.js';
 import { persistedTestCaseInputLimitBytes } from '../services/trustedLargeInputPolicyService.js';
+import { parseSerialSearch, serialSearchClause } from '../utils/problemSerial.js';
 
 const STATUS_MAP = {
   draft: 'draft',
@@ -1389,7 +1390,9 @@ export async function getCompilerOverview(req, res) {
 
 export async function listProblems(req, res) {
   const { page, limit } = validatePagination(req.query.page, req.query.limit);
-  const search = sanitizeSearchQuery(req.query.search || '');
+  const rawSearch = String(req.query.search || '').trim().slice(0, 200);
+  const numberSearch = parseSerialSearch(rawSearch);
+  const search = sanitizeSearchQuery(rawSearch);
   const difficulty = String(req.query.difficulty || '').trim();
   const status = String(req.query.status || '').trim();
   const tagFilters = parseCommaOrJsonList(req.query.tags);
@@ -1438,18 +1441,12 @@ export async function listProblems(req, res) {
   }
 
   if (search) {
-    const regex = new RegExp(search, 'i');
-    const serialNumber = /^\d+$/.test(search) ? Number(search) : null;
-    query.$and = [
-      {
-        $or: [
-          ...(serialNumber ? [{ displayOrder: serialNumber }, { sourceNumber: serialNumber }] : []),
-          { title: regex },
-          { tags: regex },
-          { companyTags: regex },
-        ],
-      },
-    ];
+    if (numberSearch) {
+      query.$and = [serialSearchClause(numberSearch)];
+    } else {
+      const regex = new RegExp(search, 'i');
+      query.$and = [{ $or: [{ title: regex }, { tags: regex }, { companyTags: regex }] }];
+    }
   }
 
   const sortMap = {

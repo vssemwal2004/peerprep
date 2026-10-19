@@ -14,7 +14,7 @@ function retireConnection(connection) {
   timer.unref?.();
 }
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,62}$/;
-const CENTRAL_MODELS = new Set(['GlobalRankSnapshot', 'InterviewCompany', 'InterviewCompanySettings', 'InterviewQuestionReport']);
+const CENTRAL_MODELS = new Set(['GlobalRankSnapshot', 'InterviewCompany', 'InterviewCompanySettings', 'InterviewQuestionReport', 'PrepScorePolicy']);
 const isUniversityModel = (name) => !name.startsWith('Platform') && !CENTRAL_MODELS.has(name);
 
 export function validUniversityId(value) {

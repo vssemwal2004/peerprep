@@ -117,6 +117,7 @@ assessmentSubmissionSchema.index({ assessmentId: 1, status: 1, startedAt: -1 });
 assessmentSubmissionSchema.index({ studentId: 1, status: 1, activeSessionHeartbeatAt: -1 });
 assessmentSubmissionSchema.index({ status: 1, deadlineAt: 1, _id: 1 });
 assessmentSubmissionSchema.index({ status: 1, _id: 1 });
+assessmentSubmissionSchema.index({ updatedAt: 1 });
 assessmentSubmissionSchema.index({ 'pendingWork.status': 1, 'pendingWork.nextAttemptAt': 1, 'pendingWork.leaseUntil': 1 });
 
 attachAdminAnalyticsInvalidation(assessmentSubmissionSchema, {

@@ -1,8 +1,8 @@
 import { isUniversity } from '../platform/deployment.js';
 import { controlRequest, universityPolicy } from '../platform/client.js';
-import { GLOBAL_RANK_VERSION, rankingPolicyKey } from '../platform/globalRanking.js';
-import { getUniversityRankSnapshotRows } from './studentDashboardService.js';
+import { GLOBAL_RANK_VERSION, rankingPolicyKey, snapshotScore } from '../platform/globalRanking.js';
 import { currentTenant } from '../platform/tenantContext.js';
+import { ensurePrepScoreStore, servingPolicy, servingRows } from './prepScore/sync.js';
 
 const SYNC_INTERVAL = 5 * 60_000;
 const snapshots = new Map();
@@ -17,21 +17,18 @@ export async function syncUniversityGlobalRanking() {
   if (cached && Date.now() - cached.at < SYNC_INTERVAL) return cached;
   const pending = (async () => {
     const generatedAt = new Date();
-    const policy = await universityPolicy();
+    const [policy, state] = await Promise.all([universityPolicy(), ensurePrepScoreStore()]);
     if (policy.active !== true) throw new Error('University is inactive');
-    const rows = await getUniversityRankSnapshotRows(policy.permissions || {}, generatedAt);
+    const [scorePolicy, rows] = await Promise.all([servingPolicy(state), servingRows(state)]);
     const scores = new Map(), counts = new Map();
     for (const row of rows) {
-      // Snapshots carry whole Prep Score points (484.4 -> 484), which keeps the bucket count small for any cohort size.
-      // Anyone with progress is at least 1, so they never share the 0 bucket with students who have not started.
-      const exact = Number(row.rankingSummary.score || 0);
-      const { hasProgress } = row.rankingSummary;
-      const score = hasProgress ? Math.max(1, Math.round(exact)) : 0;
-      scores.set(String(row.studentId), { score, exact, hasProgress });
+      const exact = Number(row.total || 0);
+      const score = snapshotScore(exact, row.hasProgress, scorePolicy.config.formula.decimalPlaces);
+      scores.set(String(row.studentId), { score, exact, hasProgress: row.hasProgress });
       counts.set(score, (counts.get(score) || 0) + 1);
     }
     await controlRequest('rankings/snapshot', { method: 'POST', body: {
-      version: GLOBAL_RANK_VERSION, generatedAt: generatedAt.toISOString(), policyKey: rankingPolicyKey(policy),
+      version: GLOBAL_RANK_VERSION, scorePolicyVersion: scorePolicy.version, generatedAt: generatedAt.toISOString(), policyKey: rankingPolicyKey(policy, scorePolicy.version),
       buckets: [...counts].map(([score, count]) => ({ score, count })),
     } });
     const snapshot = { at: Date.now(), generatedAt: generatedAt.toISOString(), scores };

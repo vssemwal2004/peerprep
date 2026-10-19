@@ -93,6 +93,7 @@ const userSchema = new mongoose.Schema({
 userSchema.index({ role: 1, semester: 1, createdAt: 1 });
 userSchema.index({ role: 1, teacherIds: 1, semester: 1, createdAt: 1 });
 userSchema.index({ role: 1, createdAt: -1 });
+userSchema.index({ role: 1, updatedAt: 1 });
 
 attachAdminAnalyticsInvalidation(userSchema, {
   source: 'analytics-cohort',

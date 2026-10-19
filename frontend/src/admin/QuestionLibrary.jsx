@@ -1303,7 +1303,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
             <input
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Search by serial number, question, answer, tag or topic"
+              placeholder="Search question number, question, answer, tag or topic"
               className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
             />
             {searchInput && <button type="button" onClick={() => setSearchInput('')} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-gray-800"><X className="h-3.5 w-3.5" /></button>}
@@ -1487,7 +1487,7 @@ export default function QuestionLibrary({ embedded = false, onCategoryCountsChan
                 )}
                 <div className="min-w-0">
                   <div className="flex min-w-0 items-center gap-1.5 font-semibold text-slate-800 dark:text-gray-100">
-                    <span className="flex h-6 min-w-7 shrink-0 items-center justify-center rounded-md bg-slate-100 px-1.5 text-[11px] font-bold tabular-nums text-slate-500 dark:bg-gray-800 dark:text-gray-300">
+                    <span title="Question serial" className="w-10 shrink-0 text-right text-xs font-medium tabular-nums text-slate-900 dark:text-gray-100">
                       {getQuestionSerial(question, (page - 1) * pageSize + questionIndex + 1)}
                     </span>
                     {isPassageSet(question) && <BookOpenText className="h-4 w-4 shrink-0 text-sky-600" />}

@@ -2,11 +2,11 @@
 // scores each student from their own work. Filters, rank cuts and charts all
 // read these rows, so one database pass serves every filter change for the period.
 
-import { prepScores } from '../../services/prepScores.js';
+import { roundScore } from '../../services/prepScore/engine.js';
 import { PASS_PERCENT, testAssignedTo } from './assessmentFacts.js';
 import { RATINGS } from './interviewFacts.js';
 import { accessibleSemesters } from './learningFacts.js';
-import { DIFFICULTIES, prepScore } from './prepScore.js';
+import { DIFFICULTIES } from './ranking.js';
 import { sheetVisibleTo } from './quickPrepFacts.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -176,31 +176,32 @@ function emptyCoding() {
     attempted: 0, submissions: 0, accepted: 0, accuracy: 0, activeDays: 0,
     lastActiveAt: null, daysSinceActive: null, practiceStatus: 'never',
     languages: [], solvedTopics: [], solvedTags: [], solvedDifficulties: [],
-    prepScore: 0, work: 0, quality: 100, triesPerSolve: 0, points: { Easy: 0, Medium: 0, Hard: 0 },
+    prepScore: 0, points: { Easy: 0, Medium: 0, Hard: 0 },
   };
+}
+
+/**
+ * Prep Scores are read from the stored rows students rank on, never recomputed here: the
+ * admin's period filter narrows activity, not the score. `stored`: Map(id -> stored row).
+ * `points` (Easy/Medium/Hard per solve) splits the coding score's work for the top-students chart.
+ */
+export function attachStoredScores(rows, stored, { features = {}, points = { Easy: 1, Medium: 2, Hard: 4 } } = {}) {
+  for (const row of rows) {
+    const saved = stored.get(row.id);
+    const modules = Object.fromEntries(Object.entries(saved?.modules || {}).filter(([key]) => features[key] !== false));
+    row.scores = { total: saved?.total ?? 0, features: modules };
+    row.coding.prepScore = modules.coding?.score ?? 0;
+    row.coding.points = Object.fromEntries(DIFFICULTIES.map((level) => [level, roundScore((modules.coding?.counts?.[level] || 0) * points[level], 2)]));
+  }
+  return rows;
 }
 
 /**
  * students: lean User docs. facts.byStudent: Map(id -> [{ problemId, language, attempts, accepted }]).
  * facts.days: Map(id -> Map(day -> { attempts, accepted })). problems: indexed meta map.
  */
-/** Prep Score per feature and overall, with the same formula students see on their dashboard. */
-export function rowScores(row, features) {
-  const mocks = row.interview?.mocks || [];
-  // The score counts the same tests as the student's own dashboard: submitted and marked (not violations or expired attempts).
-  const attempts = row.assessment ? [...row.assessment.byTest.values()].filter((attempt) => attempt.status === 'submitted' && Number.isFinite(attempt.percent)) : [];
-  return prepScores({
-    easySolved: row.coding.solved.Easy, mediumSolved: row.coding.solved.Medium, hardSolved: row.coding.solved.Hard,
-    submissions: row.coding.submissions, acceptedSubmissions: row.coding.accepted,
-    completedTopics: row.learning?.completedTopics, totalTopics: row.learning?.availableTopics,
-    mockInterviews: mocks.length, mockAverage: mean(mocks.map((mock) => mock.score)), aiInterviews: row.interview?.aiCompleted,
-    testsTaken: attempts.length, testAverage: mean(attempts.map((attempt) => attempt.percent)),
-  }, features);
-}
-
 export function buildStudentRows({
   students, facts, problems, batchNames = new Map(), now = new Date(), learning = null, quickprep = null, assessment = null, interview = null, range = null,
-  scoreFeatures = { coding: true, learning: Boolean(learning), interview: Boolean(interview), assessment: Boolean(assessment) },
 }) {
   const learningTotals = new Map();
   const rows = students.map((student) => {
@@ -239,12 +240,6 @@ export function buildStudentRows({
     coding.lastActiveAt = lastDay || null;
     coding.daysSinceActive = lastDay ? Math.max(0, Math.floor((now.getTime() - Date.parse(`${lastDay}T00:00:00Z`)) / DAY_MS)) : null;
     coding.practiceStatus = coding.submissions === 0 ? 'never' : coding.daysSinceActive > INACTIVE_AFTER_DAYS ? 'inactive' : 'active';
-    const score = prepScore({ solved: coding.solved, accepted: coding.accepted, attempts: coding.submissions });
-    coding.prepScore = score.score;
-    coding.work = score.work;
-    coding.quality = score.quality;
-    coding.triesPerSolve = score.triesPerSolve;
-    coding.points = score.points;
     coding.languages = [...languages];
     coding.solvedTopics = [...solvedTopics];
     coding.solvedTags = [...solvedTags];
@@ -273,9 +268,9 @@ export function buildStudentRows({
       entries,
       days,
       qualifiedCache: new Map(),
+      scores: { total: 0, features: {} },
     };
   });
-  for (const row of rows) row.scores = rowScores(row, scoreFeatures);
   return rows;
 }
 

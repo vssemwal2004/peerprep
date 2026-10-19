@@ -45,7 +45,7 @@ function UniversityCoinControls({ university, disabled, onSaved, onError }) {
     finally { setSaving(false); }
   }
   return <section className="mt-4 rounded-xl border border-sky-200 bg-sky-50/50 p-4 dark:border-sky-900 dark:bg-sky-950/20">
-    <h4 className="font-semibold">Service period and PeerPrep coins</h4>
+    <h4 className="font-semibold">Service period and Prep Coins</h4>
     <div className="mt-3 flex flex-wrap items-end gap-3">
       <label className="grid gap-1 text-sm">Starts <input className={input} type="date" value={start} onChange={(event) => setStart(event.target.value)} /></label>
       <label className="grid gap-1 text-sm">Ends (inclusive) <input className={input} type="date" value={end} onChange={(event) => setEnd(event.target.value)} /></label>
@@ -195,7 +195,7 @@ export default function PlatformControl() {
           ['dbUri', 'MongoDB URI'], ['judge0Url', 'Judge0 URL'],
           ['judge0AuthHeader', 'Judge0 auth header (optional)'], ['judge0AuthToken', 'Judge0 auth token (optional)'],
           ['adminEmail', 'University admin email'], ['adminPassword', 'Initial admin password (unused for an existing admin)'],
-          ['serviceStartDate', 'Service start date'], ['serviceEndDate', 'Service end date'], ['initialCoins', 'Initial PeerPrep coins'],
+          ['serviceStartDate', 'Service start date'], ['serviceEndDate', 'Service end date'], ['initialCoins', 'Initial Prep Coins'],
           ['coordinatorLimit', 'Maximum coordinators'], ['studentLimit', 'Maximum students'],
           ['interviewServiceUrl', 'AI interview service URL (optional)'], ['interviewServiceSecret', 'AI interview secret (optional)'],
         ].map(([field, label]) => <label key={field} className="grid gap-1 text-sm">{label}

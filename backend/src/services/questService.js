@@ -7,7 +7,7 @@ import QuestionPracticeAttempt from '../models/QuestionPracticeAttempt.js';
 import { Quest, QuestEnrollment, StudentBadge, EngagementReward } from '../models/AdaptiveEngagement.js';
 import { engagementScope, createAchievement } from './adaptiveEngagementService.js';
 import { engagementTenant, engagementPermissions } from './engagementPolicyService.js';
-import { getSharedCodingCatalog, invalidateChallengeRanking, publicProblemMatch } from './studentDashboardService.js';
+import { getSharedCodingCatalog, publicProblemMatch } from './studentDashboardService.js';
 import { notifyOnce } from './notificationService.js';
 import { HttpError } from '../utils/errors.js';
 import { isControlPlane, isUniversity } from '../platform/deployment.js';
@@ -678,8 +678,7 @@ async function settleEnrollment(scope, quest, enrollment, solved, total, now) {
   if (!result.modifiedCount) return { ...enrollment, ...counts, completedAt: enrollment.completedAt || now };
   const badge = questBadge(quest, total);
   try {
-    const reward = await EngagementReward.updateOne({ ...scope, key: `quest:${quest._id}` }, { $setOnInsert: { points: quest.rewardXp, kind: 'quest', earnedAt: now } }, { upsert: true });
-    if (reward.upsertedCount) invalidateChallengeRanking();
+    await EngagementReward.updateOne({ ...scope, key: `quest:${quest._id}` }, { $setOnInsert: { points: quest.rewardXp, kind: 'quest', earnedAt: now } }, { upsert: true });
   } catch (error) { if (error.code !== 11000) throw error; }
   try { await StudentBadge.updateOne({ ...scope, badgeId: badge.id }, { $setOnInsert: { definition: badge, earnedAt: now, evidence: { questId: String(quest._id), total } } }, { upsert: true }); }
   catch (error) { if (error.code !== 11000) throw error; }
