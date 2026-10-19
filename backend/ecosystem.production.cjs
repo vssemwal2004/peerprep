@@ -14,7 +14,10 @@ module.exports = {
         NODE_ENV: 'production',
         START_EXECUTION_WORKERS: 'false',
         START_SCHEDULED_JOBS: 'false',
-        START_MAIL_WORKER: 'false',
+        // Keep platform email delivery attached to the always-on API process.
+        // MailJob claims are atomic, so the maintenance worker can safely run
+        // alongside this consumer without sending a job twice.
+        START_MAIL_WORKER: 'true',
       },
     },
     {
