@@ -7,6 +7,7 @@ import {
 import {
   acquireIdentifierCompletions,
   getIdentifierCompletionState,
+  provideIdentifierSignatureHelp,
 } from '../src/student/editor/identifierCompletion.js';
 
 const kindsOf = (source, language) => Object.fromEntries(
@@ -184,19 +185,26 @@ test('large files stay fast', () => {
 
 function createFakeMonaco() {
   const registered = [];
+  const signatureProviders = [];
   const editors = [];
   const monaco = {
     languages: {
       CompletionItemKind: { Method: 0, Function: 1, Field: 3, Variable: 4, Class: 5, Module: 8, Keyword: 17, Text: 18, Reference: 21 },
+      CompletionItemInsertTextRule: { InsertAsSnippet: 4 },
       registerCompletionItemProvider(languageId, provider) {
         const entry = { languageId, provider, disposed: false };
         registered.push(entry);
         return { dispose() { entry.disposed = true; } };
       },
+      registerSignatureHelpProvider(languageId, provider) {
+        const entry = { languageId, provider, disposed: false };
+        signatureProviders.push(entry);
+        return { dispose() { entry.disposed = true; } };
+      },
     },
     editor: { getEditors: () => editors },
   };
-  return { monaco, registered, editors };
+  return { monaco, registered, signatureProviders, editors };
 }
 
 function createModel(text, languageId) {
@@ -226,7 +234,7 @@ function createModel(text, languageId) {
 }
 
 test('providers are registered once, scoped to student editors and disposed with the last one', () => {
-  const { monaco, registered, editors } = createFakeMonaco();
+  const { monaco, registered, signatureProviders, editors } = createFakeMonaco();
   const studentNode = { id: 'student-editor' };
   const studentScope = { contains: (node) => node === studentNode };
   const otherScope = { contains: () => false };
@@ -240,9 +248,9 @@ test('providers are registered once, scoped to student editors and disposed with
     assert.ok(registered.some((entry) => entry.languageId === language), `${language} is covered`);
   }
 
-  const model = createModel('def helper(count):\n    total = count\n    to', 'python');
+  const model = createModel('def helper(count):\n    total = count\n    ', 'python');
   const python = registered.find((entry) => entry.languageId === 'python').provider;
-  const position = { lineNumber: 3, column: 7 };
+  const position = { lineNumber: 3, column: 5 };
 
   assert.equal(python.provideCompletionItems(model, position), undefined, 'Models outside student editors are left alone');
 
@@ -251,34 +259,55 @@ test('providers are registered once, scoped to student editors and disposed with
   const nameOf = (item) => (typeof item.label === 'string' ? item.label : item.label.label);
   const byName = new Map(result.suggestions.map((item) => [nameOf(item), item]));
   for (const name of ['count', 'helper', 'total']) assert.ok(byName.get(name).sortText.startsWith('0'), `${name} is a declared name`);
-  assert.ok(!byName.has('to'), 'The word being typed is not suggested back');
-  assert.ok(byName.get('return').sortText.startsWith('4'), 'Keywords stay available beside declared names');
-  assert.ok(byName.get('range').sortText.startsWith('3'), 'Library names stay available');
+  assert.ok(!byName.has('return'), 'Keywords are not suggested');
+  assert.ok(!byName.has('range'), 'Library names are not suggested');
   const helper = byName.get('helper');
   assert.equal(helper.kind, 1);
   assert.equal(helper.detail, 'def helper(count)', 'Functions show their signature');
+  assert.equal(helper.insertText, 'helper(${1:count})$0', 'Functions insert a callable snippet with parameter stops');
+  assert.equal(helper.insertTextRules, 4);
   assert.equal(byName.get('total').kind, 4);
-  assert.deepEqual(helper.range, { startLineNumber: 3, endLineNumber: 3, startColumn: 5, endColumn: 7 });
+  assert.deepEqual(helper.range, { startLineNumber: 3, endLineNumber: 3, startColumn: 5, endColumn: 5 });
   const sorted = [...result.suggestions].sort((a, b) => a.sortText.localeCompare(b.sortText)).map(nameOf);
-  assert.deepEqual(sorted.slice(0, 3), ['count', 'helper', 'total'], 'Declared names rank first');
+  assert.deepEqual(sorted, ['count', 'helper', 'total'], 'Only declared variables and functions are returned');
 
   const memberModel = createModel('stack = []\nstack.sort()\nstack.ap', 'python');
   editors.push({ getModel: () => memberModel, getDomNode: () => studentNode });
   const members = python.provideCompletionItems(memberModel, { lineNumber: 3, column: 9 }).suggestions.map(nameOf);
-  assert.ok(members.includes('append'), 'Container methods are offered after a dot');
-  assert.ok(members.includes('sort'), 'Members already used in the file are offered');
-  assert.ok(!members.includes('stack') && !members.includes('return'), 'Variables and keywords are not members');
+  assert.deepEqual(members, [], 'Library and member names are not suggested after a dot');
 
   const typedModel = createModel('vector<int> nums;\nint best = 0;\nnu', 'cpp');
   editors.push({ getModel: () => typedModel, getDomNode: () => studentNode });
   const cpp = registered.find((entry) => entry.languageId === 'cpp').provider;
   const typed = new Map(cpp.provideCompletionItems(typedModel, { lineNumber: 3, column: 3 }).suggestions.map((item) => [nameOf(item), item]));
   assert.equal(typed.get('nums').label.description, 'vector<int>', 'Variables show their declared type');
-  assert.equal(typed.get('best').label.description, 'int');
+  assert.ok(!typed.has('best'), 'Non-matching declared names stay hidden');
 
   const comparison = createModel('a = 1\nif a >', 'python');
   editors.push({ getModel: () => comparison, getDomNode: () => studentNode });
   assert.deepEqual(python.provideCompletionItems(comparison, { lineNumber: 2, column: 7 }, { triggerKind: 1 }).suggestions, [], '`>` alone does not open the list');
+
+  const unmatchedModel = createModel('int total = 0;\ncount', 'cpp');
+  editors.push({ getModel: () => unmatchedModel, getDomNode: () => studentNode });
+  assert.deepEqual(
+    cpp.provideCompletionItems(unmatchedModel, { lineNumber: 2, column: 6 }).suggestions,
+    [],
+    'An undeclared unmatched word does not show unrelated declarations',
+  );
+
+  const orderedModel = createModel('int early = 0;\nea\nint later = 1;', 'cpp');
+  editors.push({ getModel: () => orderedModel, getDomNode: () => studentNode });
+  const ordered = cpp.provideCompletionItems(orderedModel, { lineNumber: 2, column: 3 }).suggestions.map(nameOf);
+  assert.ok(ordered.includes('early'), 'A variable declared before the cursor is suggested');
+  assert.ok(!ordered.includes('later'), 'A declaration after the cursor is not suggested');
+
+  const callModel = createModel('def helper(count, total=0):\n    return count + total\nhelper(1, ', 'python');
+  editors.push({ getModel: () => callModel, getDomNode: () => studentNode });
+  const signature = provideIdentifierSignatureHelp(monaco, callModel, { lineNumber: 3, column: 11 });
+  assert.equal(signature.value.signatures[0].label, 'def helper(count, total=0)');
+  assert.equal(signature.value.activeParameter, 1);
+  assert.deepEqual(signature.value.signatures[0].parameters.map((item) => item.label), ['count', 'total=0']);
+  assert.equal(signatureProviders.length, providerCount, 'Each completion language also receives signature help');
 
   releaseFirst();
   releaseFirst();
@@ -286,8 +315,29 @@ test('providers are registered once, scoped to student editors and disposed with
   assert.ok(registered.every((entry) => !entry.disposed), 'Providers stay while an editor is mounted');
   releaseSecond();
   assert.ok(registered.every((entry) => entry.disposed), 'The last editor disposes every provider');
+  assert.ok(signatureProviders.every((entry) => entry.disposed), 'Signature providers are disposed too');
   assert.deepEqual(getIdentifierCompletionState(), { providers: 0, holders: 0 });
 
   acquireIdentifierCompletions(monaco, studentScope)();
   assert.equal(registered.length, providerCount * 2, 'A later mount registers again');
+});
+
+test('automatic suggestions use explicit model ownership without Monaco editor enumeration', () => {
+  const { monaco, registered } = createFakeMonaco();
+  delete monaco.editor.getEditors;
+  const model = createModel('int total = 0;\ntotal', 'cpp');
+  const release = acquireIdentifierCompletions(
+    monaco,
+    { contains: () => false },
+    (candidateModel) => candidateModel === model,
+  );
+
+  const cpp = registered.find((entry) => entry.languageId === 'cpp').provider;
+  const result = cpp.provideCompletionItems(model, { lineNumber: 2, column: 6 });
+  const labels = result.suggestions.map((item) => (
+    typeof item.label === 'string' ? item.label : item.label.label
+  ));
+
+  assert.ok(labels.includes('total'), 'The fully typed declared variable remains suggestible');
+  release();
 });

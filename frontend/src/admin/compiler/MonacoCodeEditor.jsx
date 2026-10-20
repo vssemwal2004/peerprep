@@ -1,9 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
-import * as bundledMonaco from 'monaco-editor/esm/vs/editor/editor.api';
+// Load Monaco's editor contributions as well as its API. `editor.api` alone
+// renders text but does not register the Suggest Controller, so completion
+// providers can return items while no autocomplete widget ever opens.
+import * as bundledMonaco from 'monaco-editor/esm/vs/editor/edcore.main';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import { getMonacoLanguage } from './compilerUtils';
-import { acquireIdentifierCompletions } from '../../student/editor/identifierCompletion';
+import {
+  acquireIdentifierCompletions,
+  provideIdentifierCompletions,
+} from '../../student/editor/identifierCompletion';
 
 const internalEditorClipboards = new Map();
 const MAX_CACHED_MODELS = 24;
@@ -256,6 +262,7 @@ export default function MonacoCodeEditor({
   const [fallbackValue, setFallbackValue] = useState(value || '');
   const [loadError, setLoadError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [assistMessage, setAssistMessage] = useState('Type to see suggestions automatically');
 
   const resolvedHeight = typeof height === 'number' ? `${height}px` : height;
 
@@ -354,10 +361,14 @@ export default function MonacoCodeEditor({
     let focusSubscription;
     let widgetFocusSubscription;
     let readOnlyAttemptSubscription;
+    let typingSubscription;
     let mutationObserver;
     let resizeObserver;
     let layoutFrame;
     let releaseIdentifierCompletions;
+    let applySuggestionAction;
+    let assistMessageTimer;
+    let automaticSuggestionTimer;
     let cancelled = false;
     const modelEntries = modelEntriesRef.current;
 
@@ -401,27 +412,49 @@ export default function MonacoCodeEditor({
         codeLens: false,
         links: false,
         contextmenu: !latestBlockContextMenuRef.current,
-        hover: { enabled: false },
-        parameterHints: { enabled: false },
+        hover: { enabled: true, delay: 350, sticky: true },
+        parameterHints: { enabled: true, cycle: true },
         inlayHints: { enabled: 'off' },
         lightbulb: { enabled: 'off' },
-        quickSuggestions: { other: true, comments: false, strings: false },
-        suggestOnTriggerCharacters: true,
-        wordBasedSuggestions: 'currentDocument',
-        inlineSuggest: { enabled: false },
+        // The student completion provider opens the widget only when an actual
+        // previously-declared variable/function matches. This avoids Monaco's
+        // empty "No suggestions" popup.
+        quickSuggestions: false,
+        quickSuggestionsDelay: 80,
+        suggestOnTriggerCharacters: false,
+        wordBasedSuggestions: 'off',
+        inlineSuggest: { enabled: true, showToolbar: 'onHover' },
+        suggest: {
+          showIcons: true,
+          showStatusBar: true,
+          preview: true,
+          snippetsPreventQuickSuggestions: false,
+          localityBonus: true,
+          shareSuggestSelections: true,
+          showKeywords: false,
+          showWords: false,
+          showClasses: false,
+          showModules: false,
+        },
+        snippetSuggestions: 'top',
+        suggestSelection: 'recentlyUsedByPrefix',
         tabCompletion: 'on',
         acceptSuggestionOnEnter: 'smart',
-        bracketPairColorization: { enabled: false, independentColorPoolPerBracketType: false },
+        acceptSuggestionOnCommitCharacter: true,
+        autoClosingBrackets: 'always',
+        autoClosingQuotes: 'always',
+        autoSurround: 'languageDefined',
+        bracketPairColorization: { enabled: true, independentColorPoolPerBracketType: true },
         guides: {
-          bracketPairs: false,
+          bracketPairs: 'active',
           bracketPairsHorizontal: false,
-          highlightActiveBracketPair: false,
+          highlightActiveBracketPair: true,
           indentation: false,
           highlightActiveIndentation: false,
         },
-        matchBrackets: 'never',
-        occurrencesHighlight: 'off',
-        selectionHighlight: false,
+        matchBrackets: 'always',
+        occurrencesHighlight: 'singleFile',
+        selectionHighlight: true,
         renderValidationDecorations: 'off',
         stickyScroll: { enabled: false },
         tabSize: 2,
@@ -432,7 +465,7 @@ export default function MonacoCodeEditor({
         copyWithSyntaxHighlighting: false,
         largeFileOptimizations: true,
         maxTokenizationLineLength: 20000,
-        renderLineHighlight: 'none',
+        renderLineHighlight: 'line',
         renderWhitespace: 'none',
         mouseWheelZoom: true,
         fixedOverflowWidgets: true,
@@ -451,7 +484,56 @@ export default function MonacoCodeEditor({
 
       editorRef.current = editor;
       if (identifierSuggestions) {
-        releaseIdentifierCompletions = acquireIdentifierCompletions(bundledMonaco, containerRef.current);
+        releaseIdentifierCompletions = acquireIdentifierCompletions(
+          bundledMonaco,
+          containerRef.current,
+          (candidateModel) => {
+            for (const entry of modelEntriesRef.current.values()) {
+              if (entry.model === candidateModel) return true;
+            }
+            return false;
+          },
+        );
+        applySuggestionAction = editor.addAction({
+          id: 'peerprep.apply-best-intellisense-suggestion',
+          label: 'Apply best IntelliSense suggestion',
+          keybindings: [bundledMonaco.KeyMod.Alt | bundledMonaco.KeyCode.Enter],
+          run: async (activeEditor) => {
+            setAssistMessage('Finding the best suggestion…');
+            await activeEditor.getAction('editor.action.triggerSuggest')?.run();
+            window.setTimeout(async () => {
+              await activeEditor.getAction('acceptSelectedSuggestion')?.run();
+              setAssistMessage('Suggestion applied · Undo with Ctrl+Z');
+              window.clearTimeout(assistMessageTimer);
+              assistMessageTimer = window.setTimeout(
+                () => setAssistMessage('Type to see suggestions automatically'),
+                2600,
+              );
+            }, 90);
+          },
+        });
+
+        // Monaco's internal quick-suggestion scheduler can be suppressed by
+        // host-page focus/read-only transitions. Trigger the same native
+        // suggestion command after real identifier typing so the popup is
+        // dependable without requiring Ctrl+Space.
+        typingSubscription = editor.onDidType((typedText) => {
+          if (!/[A-Za-z0-9_$.:>]/.test(typedText)) return;
+          window.clearTimeout(automaticSuggestionTimer);
+          const activeModel = editor.getModel();
+          const activePosition = editor.getPosition();
+          const available = activeModel && activePosition
+            ? provideIdentifierCompletions(bundledMonaco, activeModel, activePosition)
+            : null;
+          if (!available?.suggestions?.length) {
+            editor.trigger('peerprep.identifier-completion', 'hideSuggestWidget', null);
+            return;
+          }
+          automaticSuggestionTimer = window.setTimeout(() => {
+            if (cancelled || latestReadOnlyRef.current || !editor.hasTextFocus()) return;
+            void editor.getAction('editor.action.triggerSuggest')?.run();
+          }, 80);
+        });
       }
       if (!latestReadOnlyRef.current) ensureEditorWritable(editor);
 
@@ -516,7 +598,11 @@ export default function MonacoCodeEditor({
       focusSubscription?.dispose();
       widgetFocusSubscription?.dispose();
       readOnlyAttemptSubscription?.dispose();
+      typingSubscription?.dispose();
+      applySuggestionAction?.dispose();
       releaseIdentifierCompletions?.();
+      window.clearTimeout(assistMessageTimer);
+      window.clearTimeout(automaticSuggestionTimer);
       editor?.setModel(null);
       editor?.dispose();
       modelEntries.forEach((entry) => entry.model.dispose());
@@ -705,11 +791,25 @@ export default function MonacoCodeEditor({
       onPointerDownCapture={enforceWritableState}
       onFocusCapture={enforceWritableState}
       onClickCapture={enforceWritableState}
-      className="relative h-full min-h-0 overflow-hidden rounded-lg bg-white dark:bg-gray-900"
+      className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-lg bg-white dark:bg-gray-900"
       style={{ height: resolvedHeight }}
     >
-      {isLoading ? <div className="absolute inset-0 z-10">{basicEditor}</div> : null}
-      <div ref={containerRef} aria-hidden={isLoading ? 'true' : undefined} className="h-full w-full" style={{ visibility: isLoading ? 'hidden' : 'visible' }} />
+      <div className="relative min-h-0 flex-1">
+        {isLoading ? <div className="absolute inset-0 z-10">{basicEditor}</div> : null}
+        <div ref={containerRef} aria-hidden={isLoading ? 'true' : undefined} className="h-full w-full" style={{ visibility: isLoading ? 'hidden' : 'visible' }} />
+      </div>
+      {identifierSuggestions && !readOnly ? (
+        <div className="flex h-7 shrink-0 items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-3 text-[10px] font-medium text-slate-500 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-400">
+          <span className="inline-flex min-w-0 items-center gap-1.5 truncate">
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />
+            {assistMessage}
+          </span>
+          <span className="hidden shrink-0 items-center gap-2 sm:inline-flex" aria-label="Editor completion shortcuts">
+            <span><kbd className="rounded border border-slate-300 bg-white px-1 py-0.5 font-mono text-[9px] text-slate-600 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300">Tab</kbd> accept</span>
+            <span><kbd className="rounded border border-slate-300 bg-white px-1 py-0.5 font-mono text-[9px] text-slate-600 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300">Alt Enter</kbd> apply best</span>
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }
