@@ -1,0 +1,234 @@
+/* ==========================================================================
+   Features — "The spec sheet"
+   A ruled specification table: stage groups as rows (sticky label column on
+   desktop), features as name + one precise line. Hairlines only; the single
+   accent is the logo blue on the serif word, the "+" marks and the filter
+   underline. Filtering collapses groups with a grid-rows height transition.
+   ========================================================================== */
+
+.features {
+  --fx-label: clamp(200px, 24vw, 320px);
+  /* Secondary text: --ink-3 nudged toward --ink so small labels clear 4.5:1
+     on the near-black dark background too (raw --ink-3 is ~4.4:1 there). */
+  --fx-mute: color-mix(in srgb, var(--ink-3) 82%, var(--ink));
+}
+
+/* ---------- Head: spec-sheet header on the table's own columns ---------- */
+.features__head {
+  display: grid;
+  grid-template-columns: var(--fx-label) minmax(0, 1fr);
+  gap: 24px clamp(24px, 4vw, 64px);
+  align-items: start;
+  padding-top: 28px;
+  border-top: 1px solid var(--line-strong);
+  margin-bottom: clamp(56px, 7vw, 88px);
+}
+.features__head-label { display: grid; gap: 12px; justify-items: start; padding-top: 0.35em; }
+.features__head-meta {
+  padding-left: 18px;
+  font-family: var(--font-mono); font-size: 12px; font-weight: 500;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--fx-mute);
+}
+.features__head-main { display: grid; gap: 28px; justify-items: start; }
+.features__title { max-width: 16ch; text-wrap: balance; }
+.features__title .serif { padding-right: 0.04em; }
+.features__accent { color: var(--brand-ink); }
+.features__title .features-line { display: block; overflow: hidden; padding-bottom: 0.06em; }
+.features__lead { max-width: 52ch; }
+/* ---------- Filter row ---------- */
+.features__bar {
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 16px 32px;
+  border-bottom: 1px solid var(--line-strong);
+}
+.features:not(.is-ready) .features__bar { visibility: hidden; }
+.features__filters {
+  position: relative;
+  display: flex; gap: clamp(18px, 2.4vw, 36px);
+  min-width: 0;
+}
+.features__filter {
+  position: relative;
+  padding: 10px 0 16px;
+  font-size: 15px; font-weight: 600; letter-spacing: -0.005em;
+  color: var(--fx-mute);
+  white-space: nowrap;
+  transition: color 0.3s var(--ease-out);
+}
+.features__filter:hover { color: var(--ink-2); }
+.features__filter[aria-pressed="true"] { color: var(--ink); }
+.features__filter:focus-visible { outline-offset: 2px; }
+.features__ink {
+  position: absolute; left: 0; bottom: -1px;
+  width: 1px; height: 2px;
+  background: var(--brand);
+  transform-origin: 0 50%;
+  transform: translateX(var(--ink-x, 0px)) scaleX(var(--ink-w, 0));
+  transition: transform 0.7s var(--ease-out);
+}
+.features__filters.is-instant .features__ink { transition: none; }
+.features__count {
+  flex: none;
+  padding-bottom: 17px;
+  font-family: var(--font-mono); font-size: 12px; font-weight: 500;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--fx-mute);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Spec table ---------- */
+.features__table { position: relative; }
+
+/* Collapsible group: rows animate 1fr ⇄ 0fr */
+.features__group {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows 0.8s var(--ease-out),
+    opacity 0.5s var(--ease-out) 0.15s;
+}
+.features__group.is-collapsed {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 0.75s var(--ease-out),
+    opacity 0.35s var(--ease-out);
+}
+.features.is-instant .features__group { transition: none; }
+.features__row {
+  position: relative;
+  min-height: 0;
+  overflow: clip;            /* clip, not hidden: keeps the sticky label column working */
+  display: grid;
+  grid-template-columns: var(--fx-label) minmax(0, 1fr);
+  gap: 0 clamp(24px, 4vw, 64px);
+}
+
+/* Group rule draws in from the left on reveal */
+.features .features__rule {
+  position: absolute; left: 0; right: 0; top: 0;
+  height: 1px;
+  background: var(--line-strong);
+  transform-origin: 0 50%;
+  transform: scaleX(0);
+  opacity: 1;
+}
+.features .features__rule.is-revealed {
+  transform: scaleX(1);
+  transition: transform 1.2s var(--ease-out);
+}
+/* The filter bar's rule already sits above the first visible group. */
+.features__group:first-child .features__rule,
+.features__group.is-lead .features__rule { display: none; }
+
+/* Label column */
+.features__gh {
+  align-self: start;
+  position: sticky;
+  top: calc(var(--nav-h) + 40px);
+  display: grid; gap: 10px; justify-items: start;
+  padding: 30px 0 36px;
+}
+.features__gname {
+  display: flex; align-items: flex-start; gap: 10px;
+  font-size: clamp(24px, 2.3vw, 32px);
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+}
+.features__gcount {
+  margin-top: 0.2em;
+  font-family: var(--font-mono); font-size: 12px; font-weight: 500;
+  letter-spacing: 0.08em; line-height: 1;
+  color: var(--fx-mute);
+}
+.features__gnote {
+  font-family: var(--font-serif); font-style: italic;
+  font-size: 19px; line-height: 1.3; letter-spacing: -0.005em;
+  color: var(--ink-2);
+  max-width: 26ch;
+}
+.features__gl { margin-top: 10px; font-size: 14px; }
+
+/* Feature list: items separated by hairlines; the clip wrapper hides
+   the first row's top rule so it never doubles the group rule. */
+.features__clip { min-width: 0; overflow: clip; }
+.features__list {
+  margin: -1px 0 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: clamp(28px, 4vw, 56px);
+}
+.features__item {
+  display: grid; align-content: start; gap: 8px;
+  padding: 32px 0 36px;
+  border-top: 1px solid var(--line);
+}
+.features__item dt {
+  font-size: 18px; font-weight: 600; line-height: 1.3; letter-spacing: -0.018em;
+  color: var(--ink);
+}
+.features__item dd {
+  margin: 0;
+  font-size: 15.5px; line-height: 1.55;
+  color: var(--ink-2);
+  max-width: 42ch;
+}
+
+/* Footnote */
+.features__foot {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+  gap: 14px 32px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line-strong);
+  font-size: 13.5px; line-height: 1.5;
+  color: var(--fx-mute);
+}
+.features__foot .link-arrow { font-size: 14px; }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 899px) {
+  .features__head { grid-template-columns: 1fr; gap: 20px; }
+  .features__head-label { display: flex; align-items: center; gap: 16px; padding-top: 0; }
+  .features__head-meta { padding-left: 0; }
+  .features__row { grid-template-columns: 1fr; }
+  .features__gh { position: static; padding: 28px 0 6px; gap: 6px; }
+  .features__gname { font-size: 26px; }
+  .features__gnote { font-size: 18px; max-width: none; }
+  .features__gl { margin-top: 6px; }
+  .features__item { padding: 22px 0 24px; }
+  .features__bar { flex-direction: column-reverse; align-items: stretch; gap: 10px; }
+  .features__count { padding-bottom: 0; }
+  /* Tabs scroll sideways inside the row, never the page */
+  .features__filters {
+    overflow-x: auto; overflow-y: hidden;
+    scrollbar-width: none;
+    margin-inline: calc(var(--gutter) * -1);
+    padding-inline: var(--gutter);
+    scroll-padding-inline: var(--gutter);
+  }
+  .features__filters::-webkit-scrollbar { display: none; }
+  /* The rule stays inside the container like every other rule; the tab row
+     bleeds to the screen edge only so it can scroll, fading at the right. */
+  .features__ink { bottom: 0; }
+  .features__filters {
+    --fx-fl: 0px; --fx-fr: 40px;
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 var(--fx-fl), #000 calc(100% - var(--fx-fr)), transparent 100%);
+    mask-image: linear-gradient(90deg, transparent 0, #000 var(--fx-fl), #000 calc(100% - var(--fx-fr)), transparent 100%);
+  }
+  .features__filters.is-scrolled { --fx-fl: 40px; }
+  .features__filters.is-end { --fx-fr: 0px; }
+}
+@media (max-width: 640px) {
+  .features__list { grid-template-columns: 1fr; }
+  .features__list { margin-top: 0; }
+  .features__item:first-child { border-top: 0; padding-top: 20px; }
+  .features__item dd { max-width: none; }
+}
+
+/* ---------- Reduced motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .features__group, .features__group.is-collapsed, .features__ink { transition: none; }
+  .features .features__rule { transform: none; }
+}

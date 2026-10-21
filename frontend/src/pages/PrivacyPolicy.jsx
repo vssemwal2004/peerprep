@@ -200,9 +200,7 @@ export default function PrivacyPolicy() {
                 If you have any questions about this Privacy Policy or our data practices, please contact us at:
               </p>
               <div className="mt-3 p-4 bg-sky-50 rounded-lg border border-sky-200">
-                <p className="text-gray-800 font-medium">Email: <a href="mailto:peerprep62@gmail.com" className="text-sky-600 hover:text-sky-700">peerprep62@gmail.com</a></p>
-                <p className="text-gray-800 font-medium mt-1">Support Contact: <a href="mailto:gehuashishharg@gmail.com" className="text-sky-600 hover:text-sky-700">gehuashishharg@gmail.com</a></p>
-              </div>
+                <p className="text-gray-800 font-medium">Email: <a href="mailto:peerprep62@gmail.com" className="text-sky-600 hover:text-sky-700">peerprep62@gmail.com</a></p>              </div>
             </section>
           </div>
         </div>

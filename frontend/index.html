@@ -32,7 +32,8 @@
     </script>
     
     <!-- Preload critical assets before anything else -->
-    <link rel="preload" as="image" href="/images/logo.png" />
+    <link rel="preload" as="image" href="/landing-page/assets/mark-light.png" />
+    <link rel="preload" as="image" href="/landing-page/assets/logo-light.png" />
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
     <link rel="dns-prefetch" href="https://cdn.jsdelivr.net" />
     
@@ -62,67 +63,111 @@
           : `${window.location.origin}/api`);
       fetch(apiBase + '/health', { method: 'GET', credentials: 'omit', mode: 'cors' })
         .catch(() => { /* ignore errors — this is a best-effort warm-up */ });
-
-      // Update loader status text with reassuring messages while server wakes up
-      const messages = [
-        'Starting up…',
-        'Warming up the server…',
-        'Almost ready…',
-        'Loading PeerPrep…',
-      ];
-      let idx = 0;
-      let statusEl = null;
-
-      function tick() {
-        if (!statusEl) statusEl = document.getElementById('loader-status');
-        if (statusEl && idx < messages.length) statusEl.textContent = messages[idx++];
-      }
-
-      // First message immediately, then every 8 s
-      document.addEventListener('DOMContentLoaded', () => {
-        statusEl = document.getElementById('loader-status');
-        tick();
-        setInterval(tick, 8000);
-      });
     </script>
-    
-    <style>
-      /* Minimal boot loader shown only until React renders its route fallback. */
-      #global-loader {
-        position: fixed; inset: 0; background: #ffffff;
-        display: flex; flex-direction: column;
-        align-items: center; justify-content: center;
-        z-index: 9999; transition: opacity 0.3s ease-out;
-      }
-      html.dark #global-loader { background: #111827; }
-      #global-loader.fade-out { opacity: 0; pointer-events: none; }
-      .loader-logo { width: 180px; height: auto; margin-bottom: 24px; animation: fadeInLogo 0.6s ease-out; }
-      .loader-spinner {
-        width: 48px; height: 48px;
-        border: 4px solid #e0f2fe; border-top-color: #0ea5e9;
-        border-radius: 50%; animation: spin 0.8s linear infinite;
-      }
-      html.dark .loader-spinner { border-color: #1e293b; border-top-color: #38bdf8; }
-      #loader-status {
-        margin-top: 20px;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        font-size: 14px; color: #64748b; letter-spacing: 0.02em; min-height: 1.4em;
-      }
-      html.dark #loader-status { color: #94a3b8; }
-      @keyframes spin { to { transform: rotate(360deg); } }
-      @keyframes fadeInLogo {
-        from { opacity: 0; transform: scale(0.9); }
-        to   { opacity: 1; transform: scale(1); }
-      }
 
+    <style>
+      /* The app's only loading screen: shown before JS loads, hidden by hideGlobalLoader() (src/utils/globalLoader.js).
+         Only transform/opacity are animated so it stays on the compositor and does not stutter while the JS bundle parses.
+         The two halves of the mark meet, then the wordmark (cropped from logo-light.png, text from x=108 of 321x99) slides in. */
+      #global-loader {
+        --gl-h: 84px; --gl-gap: 14px; --gl-brand: #00a1db; --gl-ease: cubic-bezier(.22, 1, .36, 1);
+        --gl-word-w: calc(var(--gl-h) * 213 / 99);
+        position: fixed; inset: 0; z-index: 9999;
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 34px;
+        overflow: hidden;
+        background: radial-gradient(ellipse at 50% 45%, #ffffff 0, #f7f6f2 70%);
+        transition: opacity .45s ease;
+      }
+      #global-loader.fade-out { opacity: 0; pointer-events: none; }
+      #global-loader img { display: block; max-width: none; user-select: none; }
+      .gl-lockup { display: flex; align-items: center; }
+      .gl-slot {
+        transform: translate3d(calc((var(--gl-word-w) + var(--gl-gap)) / 2), 0, 0);
+        animation: gl-slide .7s .62s var(--gl-ease) forwards;
+        will-change: transform;
+      }
+      .gl-mark { position: relative; width: var(--gl-h); height: var(--gl-h); }
+      .gl-mark > img { position: absolute; inset: 0; width: 100%; height: 100%; }
+      .gl-half { opacity: 0; will-change: transform, opacity; }
+      .gl-half--a { clip-path: polygon(0 0, 100% 0, 0 100%); animation: gl-in-a .62s var(--gl-ease) forwards, gl-out .01s .64s forwards; }
+      .gl-half--b { clip-path: polygon(100% 0, 100% 100%, 0 100%); animation: gl-in-b .62s var(--gl-ease) forwards, gl-out .01s .64s forwards; }
+      .gl-full { opacity: 0; animation: gl-fade .01s .62s forwards; }
+      .gl-glow {
+        position: absolute; inset: -50%; border-radius: 50%; pointer-events: none;
+        background: radial-gradient(circle, rgba(0,161,219,.26) 0, rgba(0,161,219,.06) 40%, transparent 68%);
+        opacity: 0; animation: gl-flash 1s .45s ease-out forwards;
+        will-change: transform, opacity;
+      }
+      .gl-orbit {
+        position: absolute; left: -22%; top: -22%; width: 144%; height: 144%; pointer-events: none;
+        opacity: 0; animation: gl-fade .5s 1s ease forwards, gl-orbit 1.6s linear infinite;
+        will-change: transform, opacity;
+      }
+      .gl-word {
+        width: var(--gl-word-w); height: var(--gl-h); margin-left: var(--gl-gap); overflow: hidden;
+        opacity: 0; transform: translate3d(-20px, 0, 0);
+        animation: gl-word .65s .8s var(--gl-ease) forwards;
+        will-change: transform, opacity;
+      }
+      .gl-word img { height: var(--gl-h); width: auto; margin-left: calc(var(--gl-h) * -108 / 99); }
+      .gl-bar {
+        position: relative; width: 168px; height: 2px; border-radius: 2px; overflow: hidden;
+        background: rgba(14,15,18,.08);
+        opacity: 0; animation: gl-fade .4s 1.1s ease forwards;
+      }
+      .gl-bar::after {
+        content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 40%; border-radius: inherit;
+        background: linear-gradient(90deg, transparent, var(--gl-brand), transparent);
+        animation: gl-bar 1.3s ease-in-out infinite;
+        will-change: transform;
+      }
+      .gl-tag {
+        margin: -14px 0 0; font-family: ui-monospace, 'SF Mono', Consolas, 'Liberation Mono', monospace;
+        font-size: 11px; font-weight: 500; letter-spacing: .22em; text-transform: uppercase; color: #6b6e77;
+        opacity: 0; animation: gl-fade .5s 1.15s ease forwards;
+      }
+      @keyframes gl-in-a { from { opacity: 0; transform: translate3d(-42%, -42%, 0) rotate(-90deg) scale(.8); } to { opacity: 1; transform: none; } }
+      @keyframes gl-in-b { from { opacity: 0; transform: translate3d(42%, 42%, 0) rotate(-90deg) scale(.8); } to { opacity: 1; transform: none; } }
+      @keyframes gl-out { to { opacity: 0; } }
+      @keyframes gl-fade { to { opacity: 1; } }
+      @keyframes gl-flash { 0% { opacity: 0; transform: scale(.7); } 40% { opacity: 1; } 100% { opacity: .6; transform: scale(1); } }
+      @keyframes gl-slide { to { transform: none; } }
+      @keyframes gl-word { to { opacity: 1; transform: none; } }
+      @keyframes gl-orbit { to { transform: rotate(360deg); } }
+      @keyframes gl-bar { from { transform: translate3d(-100%, 0, 0); } to { transform: translate3d(250%, 0, 0); } }
+      @media (max-width: 420px) { #global-loader { --gl-h: 60px; --gl-gap: 10px; } }
+      @media (prefers-reduced-motion: reduce) {
+        #global-loader *, #global-loader *::after { animation-duration: 0s !important; animation-delay: 0s !important; animation-iteration-count: 1 !important; }
+        .gl-bar::after { width: 100%; opacity: .5; }
+      }
     </style>
   </head>
   <body>
-    <!-- Removed after React's first paint by useHideGlobalLoader() in App.jsx. -->
-    <div id="global-loader">
-      <img src="/images/logo.png" alt="PeerPrep" class="loader-logo" />
-      <div class="loader-spinner"></div>
-      <p id="loader-status">Loading PeerPrep&hellip;</p>
+    <div id="global-loader" role="status" aria-label="Loading PeerPrep">
+      <div class="gl-lockup" aria-hidden="true">
+        <div class="gl-slot">
+          <div class="gl-mark">
+            <span class="gl-glow"></span>
+            <svg class="gl-orbit" viewBox="0 0 100 100" fill="none">
+              <defs>
+                <linearGradient id="gl-orbit-grad" gradientUnits="userSpaceOnUse" x1="98" y1="44" x2="44" y2="98">
+                  <stop offset="0" stop-color="#00a1db" stop-opacity="0" />
+                  <stop offset="1" stop-color="#00a1db" />
+                </linearGradient>
+              </defs>
+              <circle cx="50" cy="50" r="48" stroke="rgba(14,15,18,.08)" stroke-width="1" />
+              <circle cx="50" cy="50" r="48" stroke="url(#gl-orbit-grad)" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="70 232" />
+              <circle cx="98" cy="50" r="1.8" fill="#00a1db" transform="rotate(83 50 50)" />
+            </svg>
+            <img class="gl-half gl-half--a" src="/landing-page/assets/mark-light.png" alt="" draggable="false" />
+            <img class="gl-half gl-half--b" src="/landing-page/assets/mark-light.png" alt="" draggable="false" />
+            <img class="gl-full" src="/landing-page/assets/mark-light.png" alt="" draggable="false" />
+          </div>
+        </div>
+        <div class="gl-word"><img src="/landing-page/assets/logo-light.png" alt="" draggable="false" /></div>
+      </div>
+      <div class="gl-bar" aria-hidden="true"></div>
+      <p class="gl-tag">Learn &middot; Practice &middot; Prove you&rsquo;re ready</p>
     </div>
 
     <div id="root"></div>

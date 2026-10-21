@@ -1,0 +1,315 @@
+/* ==========================================================================
+   Manifesto — "Who we are" as a statement sequence
+   Two layouts share one DOM:
+   - Default (no JS, phones, reduced motion): the three statements stack as an
+     editorial column (problem lines receded, the answer in full ink), followed
+     by a static grid of framed product screens and the audience row.
+   - .is-cine (added by js/sections/manifesto.js at >= 900px with motion):
+     a full-viewport pinned stage. Statements sit centred on top of each other
+     and are sequenced by a scrubbed timeline; the nine screens form a single
+     tilted 3 x 3 plane that rises, flattens and comes toward the viewer.
+   ========================================================================== */
+
+.manifesto { border-top: 1px solid var(--line); }
+
+/* ---------- Theme-matched screenshots ---------- */
+.manifesto__img { width: 100%; height: auto; }
+.manifesto__img--dark { display: none; }
+:root[data-theme="dark"] .manifesto__img--light,
+[data-force-theme="dark"] .manifesto__img--light { display: none; }
+:root[data-theme="dark"] .manifesto__img--dark,
+[data-force-theme="dark"] .manifesto__img--dark { display: block; }
+
+/* ---------- Stage (default: stacked editorial column) ---------- */
+.manifesto__stage {
+  width: 100%;
+  max-width: calc(var(--container) + var(--gutter) * 2);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+.manifesto__head { display: flex; align-items: center; gap: 18px; margin-bottom: clamp(32px, 5vw, 56px); }
+.manifesto__eyebrow { margin: 0; }
+.manifesto__meter { display: none; }
+
+.manifesto__beats { display: grid; gap: clamp(20px, 3vw, 36px); }
+.manifesto__line {
+  max-width: 15ch;
+  font-size: clamp(36px, 6.2vw, 72px);
+  font-weight: 700;
+  line-height: 1.02;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+  color: var(--ink-3);
+}
+.manifesto__beat--3 .manifesto__line { color: var(--ink); }
+.manifesto__accent { color: var(--brand-ink); padding-right: 0.06em; letter-spacing: -0.01em; }
+.manifesto__cap {
+  margin-top: 16px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 1.6;
+  color: var(--ink-3);
+}
+
+/* Static wall: a plain grid of framed screens. */
+.manifesto__wall { margin-top: clamp(56px, 8vw, 96px); }
+.manifesto__plane {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(14px, 1.6vw, 24px);
+}
+
+/* Each screen in a thin browser frame. */
+.manifesto__tile {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-elev);
+  box-shadow: 0 1px 2px rgba(14, 15, 18, 0.05), 0 24px 48px -28px rgba(14, 15, 18, 0.32);
+}
+:root[data-theme="dark"] .manifesto__tile {
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 30px 60px -30px rgba(0, 0, 0, 0.9);
+}
+.manifesto__bar {
+  display: flex; align-items: center; gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-2);
+}
+.manifesto__bar i {
+  width: 8px; height: 8px; flex: none;
+  border-radius: 50%;
+  background: var(--line-strong);
+}
+.manifesto__bar span {
+  margin-left: 10px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--ink-3);
+}
+.manifesto__shot { background: var(--bg-sunken); }
+
+.manifesto__payoff {
+  margin: clamp(28px, 4vw, 44px) auto 0;
+  max-width: 40ch;
+  text-align: center;
+  font-size: clamp(18px, 1.6vw, 22px);
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: -0.01em;
+  color: var(--ink-2);
+}
+
+/* ---------- Audience row ---------- */
+.manifesto__audience {
+  margin-top: clamp(72px, 9vw, 120px);
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 9fr);
+  column-gap: clamp(32px, 4vw, 64px);
+  align-items: start;
+}
+.manifesto__audience-label {
+  padding-top: 26px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.manifesto__audience-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid var(--line-strong);
+}
+.manifesto__aud {
+  display: grid; gap: 10px; justify-items: start; align-content: start;
+  padding: 24px clamp(16px, 2vw, 32px) 4px;
+}
+.manifesto__aud:first-child { padding-left: 0; }
+.manifesto__aud:last-child { padding-right: 0; }
+.manifesto__aud + .manifesto__aud { border-left: 1px solid var(--line); }
+.manifesto__aud .link-arrow { font-size: 17px; }
+.manifesto__aud-line { font-size: 14.5px; line-height: 1.5; color: var(--ink-3); max-width: 30ch; }
+.manifesto__access {
+  grid-column: 2;
+  margin-top: 32px;
+  font-size: 13.5px; line-height: 1.55;
+  color: var(--ink-3);
+}
+
+/* ==========================================================================
+   Cinematic pinned stage (desktop, motion allowed — set by JS)
+   ========================================================================== */
+.manifesto.is-cine { padding-top: 0; border-top: 0; }
+
+.is-cine .manifesto__stage {
+  position: relative;
+  height: 100vh;
+  height: 100svh;
+  max-width: none;
+  padding: 0;
+  overflow: hidden;
+  /* Logical size of one screen tile — the centre tile ends at this size. */
+  --tw: min(74vw, calc((100svh - 250px) * 1.58), 1180px);
+}
+
+.is-cine .manifesto__head {
+  position: absolute; z-index: 3;
+  top: calc(var(--nav-h) + 28px); left: 0; right: 0;
+  margin: 0;
+  flex-direction: column; gap: 14px;
+}
+.is-cine .manifesto__meter {
+  display: block;
+  width: 96px; height: 1px;
+  background: var(--line-strong);
+  overflow: hidden;
+}
+.is-cine .manifesto__meter span {
+  display: block; height: 100%;
+  background: var(--brand);
+  transform-origin: 0 50%;
+  transform: scaleX(0);
+}
+
+.is-cine .manifesto__beats { display: block; }
+.is-cine .manifesto__beat {
+  position: absolute; z-index: 2;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  padding-inline: var(--gutter);
+  pointer-events: none;
+}
+.is-cine .manifesto__line {
+  max-width: 12.5em;
+  font-size: clamp(56px, 6.6vw, 104px);
+  line-height: 1;
+  letter-spacing: -0.05em;
+  text-align: center;
+  color: var(--ink);
+}
+.is-cine .manifesto__beat--1 .manifesto__line { max-width: 8em; }
+.is-cine .manifesto__beat--2 .manifesto__line { max-width: 10.5em; }
+.is-cine .manifesto__beat--3 .manifesto__line { max-width: 9.5em; }
+.is-cine .manifesto__cap { margin-top: 32px; font-size: 12.5px; }
+.is-cine .manifesto__cap span { display: inline-block; }
+
+/* Word masks from SplitText: room for descenders and the italic overhang. */
+.manifesto__line .mf-w,
+.manifesto__line [class$="-mask"] { display: inline-block; position: relative; }
+.manifesto__line [class$="-mask"] { padding: 0.02em 0.08em 0.16em; margin: -0.02em -0.08em -0.16em; }
+
+.is-cine .manifesto__wall {
+  position: absolute; inset: 0; z-index: 1;
+  margin: 0;
+  perspective: 1700px;
+  perspective-origin: 50% 35%;
+  pointer-events: none;
+}
+.is-cine .manifesto__plane {
+  position: absolute; left: 50%; top: 50%;
+  grid-template-columns: repeat(3, var(--tw));
+  gap: calc(var(--tw) * 0.1);
+  transform-origin: 50% 50%;
+}
+.is-cine .manifesto__tile { border-radius: calc(var(--tw) * 0.011); }
+/* Each screen is its own layer, which Chrome draws as a directly composited
+   image at its own resolution: zooming the plane no longer re-rasterises and
+   re-decodes nine large screenshots at every scale step (measured ~9x fewer
+   raster tiles). */
+.is-cine .manifesto__img { will-change: transform; }
+/* Dims the background tiles (manifesto.js fades it in); see the JS note. */
+.manifesto__veil {
+  position: absolute; inset: 0; z-index: 2;
+  border-radius: inherit;
+  background: var(--bg);
+  opacity: 0;
+  pointer-events: none;
+  will-change: opacity;
+}
+.is-cine .manifesto__bar { height: calc(var(--tw) * 0.028); padding: 0 calc(var(--tw) * 0.012); gap: calc(var(--tw) * 0.006); }
+.is-cine .manifesto__bar i { width: calc(var(--tw) * 0.0075); height: calc(var(--tw) * 0.0075); }
+.is-cine .manifesto__bar span { font-size: calc(var(--tw) * 0.0105); margin-left: calc(var(--tw) * 0.01); }
+/* Shadow blur is kept moderate: it is rasterised with the plane, which is
+   re-rasterised as the plane zooms. */
+:root:not([data-theme="dark"]) .is-cine .manifesto__tile {
+  box-shadow: 0 2px 4px rgba(14, 15, 18, 0.05), 0 44px 64px -40px rgba(14, 15, 18, 0.45);
+}
+:root[data-theme="dark"] .is-cine .manifesto__tile {
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 52px 76px -40px rgba(0, 0, 0, 0.95);
+}
+
+/* The payoff sits in the gutter just below the final centre tile:
+   plane ends 3vh above centre; tile height = 0.6308 * tw; gutter = 0.1 * tw. */
+.is-cine .manifesto__payoff {
+  position: absolute; z-index: 2;
+  left: 0; right: 0;
+  top: calc(50% - 3vh + var(--tw) * 0.3654);
+  max-width: none;
+  margin: 0;
+  padding-inline: var(--gutter);
+  white-space: nowrap;
+  color: var(--ink);
+  transition: none; /* GSAP drives it here, not the [data-reveal] transition */
+}
+
+/* Soft floor fade at the stage foot: the plane emerges from it and the
+   bottom row never ends on a hard cut when the pin releases. */
+.is-cine .manifesto__stage::after {
+  content: "";
+  position: absolute; z-index: 1;
+  left: 0; right: 0; bottom: 0;
+  height: 16vh;
+  background: linear-gradient(to top, var(--bg) 8%, color-mix(in srgb, var(--bg) 0%, transparent));
+  pointer-events: none;
+}
+
+.manifesto.is-cine .manifesto__audience { margin-top: clamp(72px, 8vw, 112px); }
+
+/* ---------- Responsive (static layout) ---------- */
+@media (max-width: 1100px) {
+  .manifesto__audience { grid-template-columns: minmax(0, 1fr); }
+  .manifesto__audience-label { padding: 0 0 14px; }
+  .manifesto__access { grid-column: 1; }
+}
+
+@media (max-width: 899px) {
+  .manifesto__plane { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .manifesto__tile--center { order: -1; grid-column: 1 / -1; }
+  /* Phones: the dashboard plus practise / assess / interview / improve. */
+  .manifesto__tile:nth-child(1),
+  .manifesto__tile:nth-child(3),
+  .manifesto__tile:nth-child(8),
+  .manifesto__tile:nth-child(9) { display: none; }
+  .manifesto__tile { border-radius: 9px; }
+  .manifesto__bar { height: 20px; padding: 0 8px; gap: 4px; }
+  .manifesto__bar i { width: 5px; height: 5px; }
+  .manifesto__tile:not(.manifesto__tile--center) .manifesto__bar span { display: none; }
+  .manifesto__bar span { font-size: 9.5px; margin-left: 6px; }
+}
+
+@media (max-width: 760px) {
+  .manifesto__audience-list { grid-template-columns: minmax(0, 1fr); }
+  .manifesto__aud, .manifesto__aud:first-child, .manifesto__aud:last-child { padding: 20px 0 22px; }
+  .manifesto__aud + .manifesto__aud { border-left: 0; border-top: 1px solid var(--line); }
+  .manifesto__aud-line { max-width: none; }
+  .manifesto__access { margin-top: 20px; }
+}
+
+@media (max-width: 520px) {
+  .manifesto__line { font-size: clamp(32px, 9.4vw, 40px); line-height: 1.06; letter-spacing: -0.04em; }
+  .manifesto__cap { font-size: 11px; letter-spacing: 0.08em; }
+  .manifesto__payoff { text-align: left; margin-left: 0; }
+}

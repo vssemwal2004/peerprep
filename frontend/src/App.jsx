@@ -11,6 +11,7 @@ import AdminProtectedRoute from './admin/AdminProtectedRoute';
 import CoordinatorProtectedRoute from './coordinator/CoordinatorProtectedRoute';
 import StudentProtectedRoute from './student/StudentProtectedRoute';
 import { LandingPageSkeleton, PageSkeleton, DashboardSkeleton } from './components/Skeletons';
+import { hideGlobalLoader } from './utils/globalLoader';
 import { useAuth } from './context/AuthContext';
 import { hasPermission } from './admin/coordinatorPermissions';
 import PopupDismissManager from './components/PopupDismissManager';
@@ -244,19 +245,12 @@ function ScrollToTop() {
   return null;
 }
 
-// Hide the HTML global-loader once React has mounted and rendered
-function useHideGlobalLoader() {
+// Hide the HTML global-loader once React has mounted and rendered.
+// The landing page keeps it up until its iframe is ready, so "/" shows a single loading screen.
+function useHideGlobalLoader(pathname) {
   useEffect(() => {
-    const loader = document.getElementById('global-loader');
-    if (!loader) return;
-    // rAF ensures the browser has painted at least one frame before we hide
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        loader.classList.add('fade-out');
-        setTimeout(() => loader.remove(), 300);
-      });
-    });
-  }, []);
+    if (pathname !== '/') hideGlobalLoader();
+  }, [pathname]);
 }
 
 // QuickPrep questions are picked in the existing Question Library; the old picker address goes there.
@@ -312,8 +306,8 @@ function CoordinatorShell({ children, layout = true, permission }) {
 }
 
 function AppContent() {
-  useHideGlobalLoader();
   const location = useLocation();
+  useHideGlobalLoader(location.pathname);
   const { user } = useAuth();
   const [isStudentSidebarPinned, setIsStudentSidebarPinned] = useState(() => {
     try {
