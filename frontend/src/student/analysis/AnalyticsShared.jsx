@@ -349,15 +349,3 @@ export function CheckList({ items = [], emptyText = "Nothing to show yet." }) {
   );
 }
 
-export function EvidenceChips({ items = [] }) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      {items.filter(Boolean).map((item) => (
-        <span key={item} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1.5 text-[11px] font-medium text-slate-600 dark:bg-white/5 dark:text-slate-300">
-          <Check className="h-3 w-3 text-emerald-500" />
-          {item}
-        </span>
-      ))}
-    </div>
-  );
-}

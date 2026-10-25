@@ -20,6 +20,8 @@ import { validateDeploymentConfig } from './platform/deployment.js';
 import { getTenant } from './platform/tenantConnections.js';
 import { runForTenant } from './platform/tenantContext.js';
 import { startSharedMaintenance } from './platform/sharedMaintenance.js';
+import { registerAnviSocketHandlers } from './modules/anviInterview/anviInterview.socket.js';
+import { flushAnviUsage } from './modules/anviInterview/anviInterview.usage.js';
 //fufgv
 const PORT = process.env.PORT || 4000;
 validateDeploymentConfig();
@@ -178,6 +180,8 @@ io.on('connection', (socket) => {
   
   socket.use((packet, next) => {
     const eventName = packet[0];
+    // ANVI streams ~10 audio frames a second and enforces its own frame and byte budget.
+    if (eventName === 'anvi:audio' || eventName === 'anvi:seg-chunk') return next();
     const now = Date.now();
     
     const eventData = eventCounts.get(eventName) || { count: 0, resetTime: now + EVENT_WINDOW };
@@ -199,6 +203,8 @@ io.on('connection', (socket) => {
     }
   });
 });
+// Live ANVI interviews (audio relay to Gemini Live); registered after the limiter above.
+registerAnviSocketHandlers(io);
 
 // Make io available globally
 app.set('io', io);
@@ -224,6 +230,8 @@ const shutdown = async (signal) => {
     await closeQueueWorkers().catch(() => {});
     await closeQueues().catch(() => {});
     await closeRealtime().catch(() => {});
+    // ANVI usage rows still buffered (released sessions, hybrid calls) are written before the DB closes.
+    await flushAnviUsage().catch(() => {});
     try {
       io.close(() => {
         console.log('WebSocket server closed');

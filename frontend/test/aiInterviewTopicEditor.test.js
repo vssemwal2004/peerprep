@@ -112,7 +112,8 @@ after(async () => {
 function Wrapper({
   initial,
   readOnly = false,
-  limits = { questions: 200, followUps: 3 },
+  limits = { questions: 200, followUps: 5 },
+  onGenerate,
 }) {
   const [group, setGroup] = useState(initial);
   current = group;
@@ -130,6 +131,7 @@ function Wrapper({
       group,
       limits,
       readOnly,
+      onGenerate,
       onChange: (next) => {
         changes.push(next);
         setGroup(next);
@@ -261,7 +263,7 @@ test("source switching protects authored content and preserves topic settings", 
   });
   await click(
     [...document.querySelectorAll("[aria-pressed]")].find((element) =>
-      element.textContent.includes("ANNU AI"),
+      element.textContent.includes("ANVI AI"),
     ),
   );
   assert.match(activeDrawer().textContent, /Change question source/);
@@ -269,7 +271,7 @@ test("source switching protects authored content and preserves topic settings", 
   assert.equal(current.source, "manual");
   await click(
     [...document.querySelectorAll("[aria-pressed]")].find((element) =>
-      element.textContent.includes("ANNU AI"),
+      element.textContent.includes("ANVI AI"),
     ),
   );
   await click(button("Change source"));
@@ -281,7 +283,7 @@ test("source switching protects authored content and preserves topic settings", 
   assert.equal(current.ruleOverrides.responseSeconds, 90);
   assert.equal(current.annu.targetCount, 3);
   assert.match(document.body.textContent, /available interview/);
-  await type(labelled("What should ANNU ask? *"), "Ask about API design.");
+  await type(labelled("What should ANVI ask? *"), "Ask about API design.");
   assert.equal(current.annu.requirements, "Ask about API design.");
   assert.equal(
     [...document.querySelectorAll("details")].every((element) => !element.open),
@@ -309,7 +311,7 @@ test("question reorder and removal work without entering the editor", async () =
   assert.equal(current.questions[0].prompt, "First");
 });
 test("Library import snapshots questions and respects available capacity", async () => {
-  await mount(factory(), { limits: { questions: 1, followUps: 3 } });
+  await mount(factory(), { limits: { questions: 1, followUps: 5 } });
   await click(button("Library"));
   const checks = activeDrawer().querySelectorAll('input[type="checkbox"]');
   await click(checks[0]);
@@ -411,20 +413,20 @@ test("a changed question base requires an explicit recovery decision before savi
   assert.equal(current.questions[0].prompt, "Unsaved previous version");
 });
 
-test("switching an empty topic to ANNU respects remaining interview capacity", async () => {
+test("switching an empty topic to ANVI respects remaining interview capacity", async () => {
   await mount(factory(), {
-    limits: { questions: 2, followUps: 3, plannedQuestionsPerGroup: 50 },
+    limits: { questions: 2, followUps: 5, plannedQuestionsPerGroup: 50 },
   });
   await click(
     [...document.querySelectorAll("[aria-pressed]")].find((element) =>
-      element.textContent.includes("ANNU AI"),
+      element.textContent.includes("ANVI AI"),
     ),
   );
   assert.equal(current.source, "annu");
   assert.equal(current.annu.targetCount, 2);
 });
 
-test("ANNU prompt presentation keeps authoring status and a live character count", async () => {
+test("ANVI prompt presentation keeps authoring status and a live character count", async () => {
   await mount({
     ...factory(),
     source: "annu",
@@ -439,25 +441,158 @@ test("ANNU prompt presentation keeps authoring status and a live character count
   });
   const panel = document.querySelector("[data-annu-prompt]");
   assert.ok(panel);
-  assert.match(panel.textContent, /ANNU AI/);
+  assert.match(panel.textContent, /ANVI AI/);
   assert.match(panel.textContent, /Generated during student interviews/);
   assert.match(panel.textContent, /available interview/);
   assert.equal(
-    panel.querySelector('[aria-label="ANNU prompt character count"]')
+    panel.querySelector('[aria-label="ANVI prompt character count"]')
       .textContent,
     "0 / 12,000",
   );
-  await type(labelled("What should ANNU ask? *"), "Ask about APIs");
+  await type(labelled("What should ANVI ask? *"), "Ask about APIs");
   assert.equal(current.annu.requirements, "Ask about APIs");
   assert.equal(
-    panel.querySelector('[aria-label="ANNU prompt character count"]')
+    panel.querySelector('[aria-label="ANVI prompt character count"]')
       .textContent,
     "14 / 12,000",
   );
   assert.equal(current.annu.targetCount, 3);
   assert.equal(button("Generate questions"), undefined);
   assert.equal(
+    document.querySelector("[data-generate-review]").disabled,
+    true,
+    "Generate & review needs a saved interview to call the server",
+  );
+  assert.equal(
     [...document.querySelectorAll("details")].every((element) => !element.open),
     true,
   );
+});
+
+const annuTopic = (requirements = "") => ({
+  ...factory(),
+  source: "annu",
+  questions: undefined,
+  annu: { requirements, skills: [], exclusions: "", targetCount: 3, maxFollowUps: 0 },
+});
+test("generate & review explains both choices and needs ANVI instructions first", async () => {
+  const requests = [];
+  await mount(annuTopic(), {
+    onGenerate: async (body) => {
+      requests.push(body);
+      return { questions: [] };
+    },
+  });
+  const card = document.querySelector("[data-generate-review]");
+  assert.match(card.textContent, /Generate now & review/);
+  assert.match(
+    document.querySelector("[data-annu-mode]").textContent,
+    /Live.*New questions for each student/,
+  );
+  assert.equal(card.disabled, true);
+  assert.match(document.body.textContent, /Describe what ANVI should ask to generate/);
+  await type(labelled("What should ANVI ask? *"), "Ask about queues.");
+  assert.equal(card.disabled, false);
+  await click(card);
+  assert.match(activeDrawer().textContent, /Generate now & review/);
+  const count = labelled("Number of questions");
+  assert.equal(count.value, "3");
+  assert.equal(count.max, "20");
+  await type(count, "25");
+  assert.equal(button("Generate questions", activeDrawer()).disabled, true);
+  await type(count, "4");
+  await click(button("Generate questions", activeDrawer()));
+  assert.equal(requests[0].count, 4);
+  assert.match(activeDrawer().textContent, /did not return any questions/);
+  assert.equal(current.source, "annu");
+});
+
+test("generated questions are capped by the remaining interview capacity", async () => {
+  await mount(annuTopic("Ask about queues."), {
+    limits: { questions: 1, followUps: 5 },
+    onGenerate: async () => ({
+      questions: [
+        { prompt: "What is a message queue?", expectedAnswer: "" },
+        { prompt: "When would you use a dead-letter queue?", expectedAnswer: "" },
+      ],
+    }),
+  });
+  await click(document.querySelector("[data-generate-review]"));
+  assert.equal(labelled("Number of questions").value, "1");
+  await type(labelled("Number of questions"), "2");
+  assert.equal(button("Generate questions", activeDrawer()).disabled, true);
+  await type(labelled("Number of questions"), "1");
+  await click(button("Generate questions", activeDrawer()));
+  assert.match(activeDrawer().textContent, /room for 1 more main questions/);
+  assert.equal(button("Use these questions (2)", activeDrawer()).disabled, true);
+  await click(activeDrawer().querySelector('[aria-label="Remove question 2"]'));
+  assert.equal(button("Use these questions (1)", activeDrawer()).disabled, false);
+  await click(button("Use these questions (1)", activeDrawer()));
+  await click(button("Replace with these questions", activeDrawer()));
+  assert.equal(current.source, "manual");
+  assert.equal(current.questions.length, 1);
+  assert.equal(current.questions[0].provenance.generated, true);
+});
+
+test("question drawer saves marks, competency, skippable and promoted timing as overrides", async () => {
+  await mount();
+  await click(button("Add question"));
+  await type(labelled("Main question *"), "Design a rate limiter.");
+  assert.equal(labelled("Marks *").value, "10");
+  assert.equal(labelled("Marks *").getAttribute("aria-required"), "true");
+  await type(labelled("Marks *"), "0");
+  await click(button("Add question", activeDrawer()));
+  assert.match(activeDrawer().textContent, /1–100 marks/);
+  await type(labelled("Marks *"), "25");
+  await type(labelled("Competency"), "System design");
+  await type(labelled("Max answer time (seconds)"), "180");
+  await type(labelled("Think time (seconds)"), "30");
+  const skip = activeDrawer().querySelector(
+    '[role="switch"][aria-label="Students can skip this question"]',
+  );
+  assert.equal(skip.getAttribute("aria-checked"), "true");
+  await click(skip);
+  assert.equal(skip.getAttribute("aria-checked"), "false");
+  await click(button("Add question", activeDrawer()));
+  const question = current.questions[0];
+  assert.equal(question.marks, 25);
+  assert.equal(question.competency, "System design");
+  assert.equal(question.skippable, false);
+  assert.deepEqual(question.ruleOverrides, {
+    responseSeconds: 180,
+    preparationSeconds: 30,
+  });
+  await click(document.querySelector('[aria-label="Edit question 1"]'));
+  await type(labelled("Think time (seconds)"), "");
+  await click(
+    activeDrawer().querySelector('[aria-label="Unlimited max answer time (seconds)"]'),
+  );
+  await click(button("Save question", activeDrawer()));
+  assert.deepEqual(current.questions[0].ruleOverrides, { responseSeconds: null });
+});
+
+test("follow-ups allow up to five in total across AI follow-ups and cross-questions", async () => {
+  await mount();
+  await click(button("Add question"));
+  await type(labelled("Main question *"), "Explain caching.");
+  const aiFollowUps = labelled("AI follow-ups after each answer");
+  assert.equal(aiFollowUps.max, "5");
+  await type(aiFollowUps, "6");
+  await click(button("Add question", activeDrawer()));
+  assert.match(activeDrawer().textContent, /Choose 0–5 AI follow-ups/);
+  await type(aiFollowUps, "4");
+  await click(button("Add cross-question", activeDrawer()));
+  assert.equal(button("Add cross-question", activeDrawer()).disabled, true);
+  assert.equal(aiFollowUps.max, "4");
+  await type(
+    document.querySelector('[aria-label="Cross-questions 1"]'),
+    "How would you invalidate it?",
+  );
+  await type(aiFollowUps, "5");
+  await click(button("Add question", activeDrawer()));
+  assert.match(activeDrawer().textContent, /at most 5 follow-ups in total/);
+  await type(aiFollowUps, "4");
+  await click(button("Add question", activeDrawer()));
+  assert.equal(current.questions[0].maxFollowUps, 4);
+  assert.equal(current.questions[0].followUps.length, 1);
 });

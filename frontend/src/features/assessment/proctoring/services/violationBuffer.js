@@ -127,8 +127,6 @@ export class ViolationBuffer {
   }
 }
 
-export const createViolationBuffer = (options) => new ViolationBuffer(options);
-
 function getConfirmationReasons({ durationReady, countReady, repeatReady }) {
   return [
     durationReady ? 'duration' : null,

@@ -97,15 +97,18 @@ export function useInterviewDraft(id) {
     const timer = setTimeout(save, 1200);
     return () => clearTimeout(timer);
   }, [dirty, data, saving, conflict, error, save]);
+  // Adopts a document returned by a lifecycle action (publish, archive…) without reloading.
+  const adopt = (value) => accept(value, JSON.stringify(current.current.data));
+  // Resolves with the validated document, or null when saving or validation failed.
   const validate = async () => {
     setNotice("");
     let value = await save();
-    if (!value) return;
+    if (!value) return null;
     // A request may have started before the last edit. Flush that edit before validating.
     if (JSON.stringify(current.current.data) !== saved.current)
       value = await save();
     if (!value || JSON.stringify(current.current.data) !== saved.current)
-      return;
+      return null;
     setSaving(true);
     setValidating(true);
     setError("");
@@ -120,12 +123,14 @@ export function useInterviewDraft(id) {
             : `${next.validation.issues.length} configuration issues need attention.`,
         );
       }
+      return next;
     } catch (err) {
       setError(err.message);
       if (err.response?.status === 409) {
         blocked.current = true;
         setConflict(true);
       }
+      return null;
     } finally {
       setSaving(false);
       setValidating(false);
@@ -167,6 +172,7 @@ export function useInterviewDraft(id) {
     conflict,
     save,
     validate,
+    adopt,
     reload: load,
   };
 }

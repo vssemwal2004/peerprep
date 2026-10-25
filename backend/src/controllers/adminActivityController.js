@@ -4,6 +4,79 @@ function escapeRegex(value = '') {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+const DEFAULT_WINDOW_DAYS = 10;
+
+function startOfWindow(days = DEFAULT_WINDOW_DAYS) {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() - (days - 1));
+  date.setUTCHours(0, 0, 0, 0);
+  return date;
+}
+
+function parseBoundary(value, endOfDay = false) {
+  if (!value) return null;
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return null;
+  if (endOfDay && /^\d{4}-\d{2}-\d{2}$/.test(String(value))) {
+    date.setUTCHours(23, 59, 59, 999);
+  }
+  return date;
+}
+
+function buildActivityQuery(req) {
+  const {
+    actionType,
+    targetType,
+    startDate,
+    endDate,
+    search,
+    coordinatorEmail,
+    actorScope,
+  } = req.query;
+  const conditions = [];
+
+  // Activity is a tenant model, so this query can only read the current
+  // university database. No cross-university merge is performed here.
+  if (req.user.role === 'coordinator') {
+    conditions.push({
+      $or: [
+        { userEmail: req.user.email, userRole: 'coordinator' },
+        { userRole: 'admin', 'metadata.coordinatorId': req.user.coordinatorId },
+      ],
+    });
+  } else if (req.user.role === 'admin') {
+    if (coordinatorEmail) {
+      conditions.push({ userEmail: String(coordinatorEmail).trim().slice(0, 254), userRole: 'coordinator' });
+    } else if (actorScope === 'admin' || actorScope === 'coordinator') {
+      conditions.push({ userRole: actorScope });
+    }
+  }
+
+  if (actionType) conditions.push({ actionType: String(actionType).toUpperCase() });
+  if (targetType) conditions.push({ targetType: String(targetType).toUpperCase() });
+
+  const parsedStart = parseBoundary(startDate) || startOfWindow();
+  const parsedEnd = parseBoundary(endDate, true);
+  const createdAt = { $gte: parsedStart };
+  if (parsedEnd) createdAt.$lte = parsedEnd;
+  conditions.push({ createdAt });
+
+  if (search) {
+    const safeSearch = escapeRegex(String(search).trim().slice(0, 120));
+    if (safeSearch) {
+      conditions.push({
+        $or: [
+          { description: { $regex: safeSearch, $options: 'i' } },
+          { userEmail: { $regex: safeSearch, $options: 'i' } },
+          { targetId: { $regex: safeSearch, $options: 'i' } },
+        ],
+      });
+    }
+  }
+
+  return conditions.length === 1 ? conditions[0] : { $and: conditions };
+}
+
 // Log activity helper function
 const logActivity = async ({
   userEmail,
@@ -45,80 +118,8 @@ const logActivity = async ({
 // Get activities with filters
 const getActivities = async (req, res) => {
   try {
-    const {
-      page = 1,
-      limit = 50,
-      actionType,
-      targetType,
-      startDate,
-      endDate,
-      search,
-      coordinatorEmail
-    } = req.query;
-
-    const query = {};
-
-    // Role-based filtering
-    if (req.user.role === 'coordinator') {
-      // Coordinators see:
-      // 1. Their own activities
-      // 2. Admin activities that affected their resources (check metadata.coordinatorId)
-      query.$or = [
-        { userEmail: req.user.email, userRole: 'coordinator' },
-        { userRole: 'admin', 'metadata.coordinatorId': req.user.coordinatorId }
-      ];
-    } else if (req.user.role === 'admin') {
-      // Admin can filter by coordinator email or see all admin activities
-      if (coordinatorEmail) {
-        query.userEmail = coordinatorEmail;
-        query.userRole = 'coordinator';
-      } else {
-        query.userRole = 'admin';
-      }
-    }
-
-    // Filter by action type
-    if (actionType) {
-      query.actionType = actionType;
-    }
-
-    // Filter by target type
-    if (targetType) {
-      query.targetType = targetType;
-    }
-
-    // Date range filter
-    if (startDate || endDate) {
-      query.createdAt = {};
-      if (startDate) {
-        const parsedStart = new Date(startDate);
-        if (!Number.isNaN(parsedStart.getTime())) query.createdAt.$gte = parsedStart;
-      }
-      if (endDate) {
-        const parsedEnd = new Date(endDate);
-        if (!Number.isNaN(parsedEnd.getTime())) query.createdAt.$lte = parsedEnd;
-      }
-      if (!Object.keys(query.createdAt).length) delete query.createdAt;
-    }
-
-    // Search in description
-    if (search) {
-      const safeSearch = escapeRegex(String(search).trim().slice(0, 120));
-      const searchCondition = {
-        $or: [
-          { description: { $regex: safeSearch, $options: 'i' } },
-          { userEmail: { $regex: safeSearch, $options: 'i' } }
-        ]
-      };
-      // If we already have a role-based $or, combine with $and
-      if (query.$or) {
-        const roleCondition = { $or: query.$or };
-        delete query.$or;
-        query.$and = [roleCondition, searchCondition];
-      } else {
-        query.$or = searchCondition.$or;
-      }
-    }
+    const { page = 1, limit = 50 } = req.query;
+    const query = buildActivityQuery(req);
 
     const pageNum = Math.max(1, Number.parseInt(page, 10) || 1);
     const limitNum = Math.min(250, Math.max(1, Number.parseInt(limit, 10) || 50));
@@ -140,7 +141,8 @@ const getActivities = async (req, res) => {
         limit: limitNum,
         total,
         pages: Math.max(1, Math.ceil(total / limitNum))
-      }
+      },
+      windowDays: DEFAULT_WINDOW_DAYS,
     });
   } catch (error) {
     console.error('Error fetching activities:', error);
@@ -151,20 +153,9 @@ const getActivities = async (req, res) => {
 // Get activity statistics
 const getActivityStats = async (req, res) => {
   try {
-    const query = {};
-
-    if (req.user.role === 'coordinator') {
-      // Coordinators see:
-      // 1. Their own activities
-      // 2. Admin activities that affected their resources
-      query.$or = [
-        { userEmail: req.user.email, userRole: 'coordinator' },
-        { userRole: 'admin', 'metadata.coordinatorId': req.user.coordinatorId }
-      ];
-    } else if (req.user.role === 'admin') {
-      // Admin sees only admin activities (shared between all admins)
-      query.userRole = 'admin';
-    }
+    const query = buildActivityQuery(req);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
     const [
       totalActivities,
@@ -176,7 +167,7 @@ const getActivityStats = async (req, res) => {
       Activity.countDocuments({
         ...query,
         createdAt: {
-          $gte: new Date(new Date().setHours(0, 0, 0, 0))
+          $gte: today
         }
       }),
       Activity.aggregate([
@@ -195,7 +186,8 @@ const getActivityStats = async (req, res) => {
       totalActivities,
       todayActivities,
       actionTypeStats,
-      targetTypeStats
+      targetTypeStats,
+      windowDays: DEFAULT_WINDOW_DAYS,
     });
   } catch (error) {
     console.error('Error fetching activity stats:', error);
@@ -206,23 +198,8 @@ const getActivityStats = async (req, res) => {
 // Export activities as CSV
 const exportActivitiesCSV = async (req, res) => {
   try {
-    const query = {};
-
-    if (req.user.role === 'coordinator') {
-      query.userEmail = req.user.email;
-      query.userRole = 'coordinator';
-    }
-
-    // Apply same filters as getActivities
-    const { actionType, targetType, startDate, endDate } = req.query;
-
-    if (actionType) query.actionType = actionType;
-    if (targetType) query.targetType = targetType;
-    if (startDate || endDate) {
-      query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
-    }
+    // Export exactly the same tenant, actor, search and date scope as the page.
+    const query = buildActivityQuery(req);
 
     const activities = await Activity.find(query)
       .sort({ createdAt: -1 })

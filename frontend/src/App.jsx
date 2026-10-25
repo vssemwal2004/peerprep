@@ -495,7 +495,7 @@ function AppContent() {
         <Route path={PREP_SCORE_ADJUSTMENT_PATH} element={canAdjustPrepScore ? <AdminShell><PrepScoreAdjustment /></AdminShell> : <Navigate to="/admin/dashboard" replace />} />
         <Route path={PREP_COIN_PRICING_PATH} element={canAdjustPrepScore ? <AdminShell><PrepCoinPricing /></AdminShell> : <Navigate to="/admin/dashboard" replace />} />
         <Route path="/admin/learning/:semester/:subject/:teacherId" element={<AdminShell><AdminLearningDetail /></AdminShell>} />
-        <Route path="/admin/activity" element={<AdminShell><AdminActivity /></AdminShell>} />
+        <Route path="/admin/activity" element={<AdminShell>{isUniversityDeployment ? <AdminActivity /> : <UniversityActivity />}</AdminShell>} />
         <Route path="/admin/analysis" element={<AdminShell><PrepAnalysisPage /></AdminShell>} />
         <Route path="/admin/analysis/assessments" element={<AdminShell><AdminAnalyticsPage /></AdminShell>} />
         <Route path="/admin/assessment" element={<AdminShell><AssessmentDashboard /></AdminShell>} />

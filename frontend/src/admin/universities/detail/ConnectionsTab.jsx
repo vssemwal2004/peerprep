@@ -49,7 +49,7 @@ export default function ConnectionsTab({ university, run, busy }) {
           }, 'Code judge settings saved.')}>Save code judge</Button>
       </Card>
 
-      <Card id="ai-title" title="AI interview service" icon={Bot} actions={<Status on={university.interviewConfigured} optional />} description="Optional. Needed for AI interviews with ANNU.">
+      <Card id="ai-title" title="AI interview service" icon={Bot} actions={<Status on={university.interviewConfigured} optional />} description="Optional and no longer required. AI interviews with ANVI run on the backend and only need GEMINI_API_KEY set there.">
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="Service URL"><input className={inputClass} type="url" value={ai.interviewServiceUrl} onChange={(event) => setAi({ ...ai, interviewServiceUrl: event.target.value })} placeholder="https://interviews.university.edu" /></Field>
           <Field label="Service secret" hint="At least 32 characters"><input className={inputClass} type="password" autoComplete="off" value={ai.interviewServiceSecret} onChange={(event) => setAi({ ...ai, interviewServiceSecret: event.target.value })} /></Field>

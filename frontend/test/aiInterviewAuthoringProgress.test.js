@@ -8,7 +8,7 @@ const definition = () => ({
   experience: "junior",
   difficulty: "medium",
   rules: { responseSeconds: 120, preparationSeconds: 15, minimumSeconds: 0 },
-  interviewer: { displayName: "ANNU" },
+  interviewer: { displayName: "ANVI" },
   rubric: [{ name: "Clarity", weight: 100 }],
   sections: [
     {
@@ -35,11 +35,15 @@ const definition = () => ({
   ],
 });
 
-test("progress exposes only three primary authoring steps and never a validation result", () => {
+test("progress exposes the four wizard steps in order and never a validation result", () => {
   const progress = getAuthoringProgress(definition());
   assert.deepEqual(
     progress.steps.map((step) => step.id),
-    ["basics", "sections", "review"],
+    ["basics", "questions", "anvi", "review"],
+  );
+  assert.deepEqual(
+    progress.steps.map((step) => step.label),
+    ["Basics", "Questions", "ANVI settings", "Review & publish"],
   );
   assert.equal(
     progress.steps.every((step) => step.ready),
@@ -55,9 +59,10 @@ test("missing required basics are actionable without requiring company or descri
   const progress = getAuthoringProgress(data);
   assert.equal(progress.issues.length, 4);
   assert.ok(progress.issues.every((issue) => issue.path === "basics"));
-  assert.equal(progress.steps[0].ready, false);
-  assert.equal(progress.steps[1].ready, true);
-  assert.equal(progress.steps[2].ready, false);
+  assert.deepEqual(
+    progress.steps.map((step) => step.ready),
+    [false, true, true, false],
+  );
 });
 test("empty sections, unnamed topics, and empty manual questions are not ready", () => {
   const data = definition();
@@ -72,13 +77,13 @@ test("empty sections, unnamed topics, and empty manual questions are not ready",
     progress.issues.every((issue) => issue.path === "sections/s1/groups/g1"),
   );
 });
-test("ANNU requires instructions but never generated questions for setup readiness", () => {
+test("ANVI requires instructions but never generated questions for setup readiness", () => {
   const data = definition();
   const group = data.sections[0].groups[0];
   delete group.questions;
   group.source = "annu";
   group.annu = { requirements: "", targetCount: 3, maxFollowUps: 1 };
-  assert.match(getAuthoringProgress(data).issues[0].message, /Tell ANNU/);
+  assert.match(getAuthoringProgress(data).issues[0].message, /Tell ANVI/);
   group.annu.requirements = "Ask about REST API design and authentication.";
   assert.equal(getAuthoringProgress(data).ready, true);
 });
@@ -94,14 +99,26 @@ test("blank main, sub-, and cross-questions provide topic edit paths", () => {
     progress.issues.every((issue) => issue.path === "sections/s1/groups/g1"),
   );
 });
-test("interviewer, rubric names and rubric weights are review requirements", () => {
+test("interviewer and rubric issues both mark the ANVI settings step", () => {
   const data = definition();
   data.interviewer = null;
   data.rubric = [{ name: "", weight: 50 }];
   const progress = getAuthoringProgress(data);
-  assert.equal(progress.steps[0].ready, true);
-  assert.equal(progress.steps[1].ready, true);
-  assert.equal(progress.steps[2].ready, false);
+  assert.deepEqual(
+    progress.steps.map((step) => [step.id, step.ready]),
+    [
+      ["basics", true],
+      ["questions", true],
+      ["anvi", false],
+      ["review", false],
+    ],
+  );
+  data.interviewer = { displayName: "ANVI" };
+  assert.deepEqual(
+    getAuthoringProgress(data).steps.map((step) => step.ready),
+    [true, true, false, false],
+  );
+  data.interviewer = null;
   assert.deepEqual(
     progress.issues.map((issue) => issue.path),
     ["interviewer", "rules", "rules"],
@@ -141,5 +158,32 @@ test("section and topic weights are checked independently with rounding toleranc
   );
   data.sections[0].weight = 100;
   data.sections[0].groups[0].weight = 99.9999;
+  assert.equal(getAuthoringProgress(data).ready, true);
+});
+test("AI follow-ups allow 0–5 and the combined follow-up budget is at most five", () => {
+  const data = definition();
+  const question = data.sections[0].groups[0].questions[0];
+  question.maxFollowUps = 5;
+  assert.equal(getAuthoringProgress(data).ready, true);
+  question.maxFollowUps = 6;
+  assert.match(getAuthoringProgress(data).issues[0].message, /Choose 0–5 AI follow-ups/);
+  question.maxFollowUps = 3;
+  question.followUps = [{ prompt: "Why?" }, { prompt: "How?" }, { prompt: "When?" }];
+  const progress = getAuthoringProgress(data);
+  assert.equal(progress.issues.length, 1);
+  assert.match(progress.issues[0].message, /at most 5 follow-ups in total/);
+  assert.equal(progress.issues[0].path, "sections/s1/groups/g1");
+  question.maxFollowUps = 2;
+  assert.equal(getAuthoringProgress(data).ready, true);
+});
+test("question marks must be whole numbers from 1 to 100, defaulting to 10", () => {
+  const data = definition();
+  const question = data.sections[0].groups[0].questions[0];
+  assert.equal(getAuthoringProgress(data).ready, true, "Older questions without marks use 10");
+  for (const marks of [0, 101, 2.5, Number.NaN]) {
+    question.marks = marks;
+    assert.match(getAuthoringProgress(data).issues[0].message, /1–100 marks/);
+  }
+  question.marks = 100;
   assert.equal(getAuthoringProgress(data).ready, true);
 });

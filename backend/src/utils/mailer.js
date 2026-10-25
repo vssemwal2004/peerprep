@@ -29,17 +29,6 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-export function isSmtpConfigured() {
-  return smtpConfigured;
-}
-
-export function isEmailFeatureEnabled(feature) {
-  if (isEmailGloballyDisabled()) return false;
-  if (process.env.EMAIL_ENABLED === 'true') return true;
-  const key = `EMAIL_ON_${String(feature || '').trim().toUpperCase()}`;
-  return process.env[key] === 'true';
-}
-
 export async function verifyMailTransport() {
   if (isEmailGloballyDisabled()) {
     console.warn('[MAIL] EMAIL_ENABLED=false. Email sending is globally disabled.');
@@ -73,26 +62,6 @@ export async function sendMail({ to, subject, html, text, attachments }) {
   const info = await transporter.sendMail({ from, to, subject, html, text, attachments });
   console.log(`[MAIL] Sent to: ${to} | Subject: ${subject}`);
   return info;
-}
-
-// Send multiple emails in parallel (faster for bulk operations)
-export async function sendBulkMail(emails) {
-  if (!emails || emails.length === 0) return [];
-  
-  console.log(`[MAIL] Sending ${emails.length} emails in parallel...`);
-  const startTime = Date.now();
-  
-  const results = await Promise.allSettled(
-    emails.map(email => sendMail(email))
-  );
-  
-  const successful = results.filter(r => r.status === 'fulfilled').length;
-  const failed = results.filter(r => r.status === 'rejected').length;
-  const elapsed = Date.now() - startTime;
-  
-  console.log(`[MAIL] Bulk send complete: ${successful} sent, ${failed} failed in ${elapsed}ms`);
-  
-  return results;
 }
 
 export function renderTemplate(template, vars = {}) {
@@ -209,31 +178,6 @@ export async function sendEventCancellationEmail({ to, event, studentName, cance
     reason: reason || 'Administrative reason',
     dashboardUrl: getDashboardUrl(),
   };
-  return sendMail({
-    to,
-    subject: renderTemplate(template.subject, vars),
-    html: renderTemplate(template.htmlContent, vars),
-  });
-}
-
-// Assessment notification email
-export async function sendAssessmentNotificationEmail({ to, assessment, student }) {
-  const start = assessment.startTime ? new Date(assessment.startTime) : null;
-  const end = assessment.endTime ? new Date(assessment.endTime) : null;
-  const startLabel = start ? start.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : '-';
-  const endLabel = end ? end.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : '-';
-  const duration = assessment.duration ? `${assessment.duration} minutes` : '-';
-
-  const template = await getTemplateByType(EMAIL_TEMPLATE_TYPES.ASSESSMENT_NOTIFICATION);
-  const vars = {
-    studentName: student?.name || 'Student',
-    assessmentTitle: assessment.title,
-    startLabel,
-    endLabel,
-    duration,
-    dashboardUrl: getDashboardUrl(),
-  };
-
   return sendMail({
     to,
     subject: renderTemplate(template.subject, vars),

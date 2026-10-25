@@ -58,39 +58,3 @@ export function LearningStartIllustration({ className = '' }) {
   );
 }
 
-export function QuietScheduleIllustration({ className = '' }) {
-  return (
-    <svg className={className} width="80" height="64" viewBox="0 0 80 64" fill="none" aria-hidden="true" focusable="false" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="17" y="14" width="46" height="42" rx="6" fill="#f1f5f9" />
-      <rect x="13" y="10" width="46" height="42" rx="6" fill="white" stroke="#cbd5e1" strokeWidth="1.3" />
-      <path d="M19 10h34a6 6 0 0 1 6 6v7H13v-7a6 6 0 0 1 6-6Z" fill="var(--illustration-soft, #f0f9ff)" />
-      <path d="M13 23h46" stroke="var(--illustration-line, #bae6fd)" />
-      <path d="M25 7v8M47 7v8" stroke="#94a3b8" strokeWidth="2" />
-      <g fill="#cbd5e1">
-        <rect x="22" y="30" width="4" height="4" rx="1" />
-        <rect x="34" y="30" width="4" height="4" rx="1" />
-        <rect x="46" y="30" width="4" height="4" rx="1" />
-        <rect x="22" y="41" width="4" height="4" rx="1" />
-      </g>
-      <rect x="34" y="41" width="4" height="4" rx="1" fill="var(--illustration-accent, #38bdf8)" />
-      <circle cx="59" cy="48" r="10" fill="var(--illustration-soft, #f0f9ff)" stroke="var(--illustration-line, #7dd3fc)" strokeWidth="1.3" />
-      <path d="m54.5 48 3 3 6-6" stroke="var(--illustration-ink, #0284c7)" strokeWidth="1.8" />
-    </svg>
-  );
-}
-
-export function QuietAnnouncementsIllustration({ className = '' }) {
-  return (
-    <svg className={className} width="80" height="64" viewBox="0 0 80 64" fill="none" aria-hidden="true" focusable="false" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="15" y="13" width="52" height="40" rx="6" fill="#f1f5f9" />
-      <rect x="11" y="9" width="52" height="40" rx="6" fill="white" stroke="#cbd5e1" strokeWidth="1.3" />
-      <path d="M18 16h38v25H18V16Z" fill="#f8fafc" stroke="#e2e8f0" />
-      <path d="M23 23h13" stroke="var(--illustration-accent, #38bdf8)" strokeWidth="2.5" />
-      <path d="M23 29h26M23 35h19" stroke="#cbd5e1" strokeWidth="2" />
-      <path d="M47 34h9v7l-9-7Z" fill="var(--illustration-soft, #e0f2fe)" />
-      <circle cx="37" cy="16" r="3" fill="var(--illustration-accent, #0ea5e9)" />
-      <path d="M25 49v7M49 49v7M20 56h10M44 56h10" stroke="#94a3b8" strokeWidth="1.5" />
-      <circle cx="69" cy="19" r="2" fill="var(--illustration-line, #bae6fd)" />
-    </svg>
-  );
-}

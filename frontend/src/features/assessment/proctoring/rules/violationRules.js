@@ -54,7 +54,6 @@ export const AI_PROCTORING_RULES = Object.freeze({
   },
 });
 
-export const AI_PROCTORING_TRACKED_EVENTS = Object.freeze(Object.keys(AI_PROCTORING_RULES));
 export const AI_PROCTORING_INTERMITTENT_EVENTS = Object.freeze(
   Object.entries(AI_PROCTORING_RULES)
     .filter(([, rule]) => rule.allowIntermittent)

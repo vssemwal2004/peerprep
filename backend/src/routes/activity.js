@@ -1,5 +1,5 @@
 import express from 'express';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireAdminOrCoordinator } from '../middleware/auth.js';
 import {
   getActivities,
   getActivityStats,
@@ -11,6 +11,7 @@ const router = express.Router();
 
 // All routes require authentication
 router.use(requireAuth);
+router.use(requireAdminOrCoordinator);
 
 // Get activities (admin sees all, coordinator sees only their own)
 router.get('/', cacheJsonResponse({ namespace: 'activity', ttlSeconds: Number(process.env.RESPONSE_CACHE_ACTIVITY_TTL_SECONDS || 15) }), getActivities);

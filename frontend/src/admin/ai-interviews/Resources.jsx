@@ -15,6 +15,7 @@ import {
   TextInput,
   primaryClass,
   secondaryClass,
+  surfaceClass,
 } from "./ui";
 
 export function ResourcePicker({ kind, selected, onSelect, disabled }) {
@@ -77,7 +78,7 @@ export function ResourceList({ kind, picker = false, onSelect }) {
       name: search,
       active: true,
       data: {
-        displayName: "ANNU",
+        displayName: "ANVI",
         avatar: "annu",
         tone: "Professional",
         language: "English",
@@ -128,11 +129,11 @@ export function ResourceList({ kind, picker = false, onSelect }) {
         </Notice>
       )}
       {remote.loading ? (
-        <div role="status" className="p-6 text-sm text-slate-500">
+        <div role="status" className="p-6 text-sm text-slate-500 dark:text-gray-400">
           Loading {kind}…
         </div>
       ) : (
-        <div className="rounded-xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+        <div className={surfaceClass}>
           {!remote.result?.items.length ? (
             <EmptyState
               title={`No ${isProfile ? "profiles" : "companies"} found`}
@@ -160,7 +161,7 @@ export function ResourceList({ kind, picker = false, onSelect }) {
                       {item.name}
                     </p>
                     {isProfile && (
-                      <p className="mt-0.5 text-xs text-slate-500">
+                      <p className="mt-0.5 text-xs text-slate-500 dark:text-gray-400">
                         {item.data.language} · {item.data.tone} · Static profile
                       </p>
                     )}
@@ -202,7 +203,7 @@ export function ResourceList({ kind, picker = false, onSelect }) {
         >
           <form onSubmit={save} className="space-y-4">
             {error && <Notice error>{error}</Notice>}
-            <Field label={isProfile ? "Profile name *" : "Company name *"}>
+            <Field label={isProfile ? "Profile name" : "Company name"} required>
               <TextInput
                 autoFocus
                 required
@@ -213,7 +214,7 @@ export function ResourceList({ kind, picker = false, onSelect }) {
             </Field>
             {isProfile && (
               <>
-                <Field label="Display name *">
+                <Field label="Display name" required>
                   <TextInput
                     required
                     maxLength={120}
@@ -232,7 +233,7 @@ export function ResourceList({ kind, picker = false, onSelect }) {
                     {["annu", "orbit", "spark"].map((avatar) => (
                       <label
                         key={avatar}
-                        className={`flex items-center gap-2 rounded-xl border p-3 ${editor.data.avatar === avatar ? "border-sky-400 bg-sky-50" : "border-slate-200"}`}
+                        className={`flex items-center gap-2 rounded-xl border p-3 ${editor.data.avatar === avatar ? "border-sky-400 bg-sky-50 dark:border-sky-500 dark:bg-sky-400/10" : "border-slate-200 dark:border-gray-700"}`}
                       >
                         <input
                           type="radio"

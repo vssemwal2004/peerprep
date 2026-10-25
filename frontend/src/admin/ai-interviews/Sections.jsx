@@ -21,6 +21,7 @@ import {
   summarize,
 } from "./definition";
 import { GroupEditor, TimingFields } from "./Editors";
+import { interviewApi } from "./api";
 import { AnnuBrand } from "./AnnuBrand";
 import { useStagedDraft } from "./useStagedDraft";
 import {
@@ -47,7 +48,7 @@ const countSection = (section) =>
       sum +
       (group.source === "manual"
         ? group.questions.reduce((count, question) => count + questionSlots(question), 0)
-        : group.annu.targetCount),
+        : group.annu.targetCount ?? 0),
     0,
   );
 
@@ -110,7 +111,7 @@ function SectionDrawer({
       {!readOnly && <RecoveryNotice {...staged} />}
       <Panel>
         <fieldset disabled={readOnly} className="space-y-4">
-          <Field label="Section name *">
+          <Field label="Section name" required>
             <TextInput
               autoFocus
               maxLength={120}
@@ -163,6 +164,7 @@ function TopicDrawer({
   onSave,
   limits,
   readOnly,
+  onGenerate,
 }) {
   const staged = useStagedDraft({ cacheKey, initial, isNew, onClose });
   const { draft, setDraft, close, commit } = staged;
@@ -174,12 +176,12 @@ function TopicDrawer({
     const count =
       draft.source === "manual"
         ? draft.questions.reduce((sum, question) => sum + (question.kind === "resume" ? question.resumeCount || 1 : 1), 0)
-        : draft.annu.targetCount;
+        : draft.annu.targetCount ?? 0;
+    // A null count means the topic shares the interview's question total by priority.
+    const pooled = draft.source === "annu" && draft.annu.targetCount == null;
     if (
       draft.source === "annu" &&
-      (!Number.isInteger(count) ||
-        count < 1 ||
-        count > (limits.plannedQuestionsPerGroup ?? 50) ||
+      ((!pooled && (!Number.isInteger(count) || count < 1 || count > (limits.plannedQuestionsPerGroup ?? 50))) ||
         !Number.isInteger(draft.annu.maxFollowUps) ||
         draft.annu.maxFollowUps < 0 ||
         draft.annu.maxFollowUps > limits.followUps)
@@ -245,6 +247,7 @@ function TopicDrawer({
           recoveryKey={cacheKey}
           limits={limits}
           readOnly={readOnly}
+          onGenerate={onGenerate}
           onChange={(value) => {
             setError("");
             setDraft(value);
@@ -262,10 +265,10 @@ function TopicDrawer({
             },
             {
               source: "annu",
-              label: "ANNU AI",
+              label: "ANVI AI",
               Icon: Bot,
               detail:
-                "Describe what to ask. Save instructions for future AI-led questioning.",
+                "Describe what to ask. ANVI asks new questions live, or generates them now for you to review.",
             },
           ].map(({ source, label, Icon, detail }) => (
             <button
@@ -355,7 +358,7 @@ function SectionCard({
           onClick={() => setOpen(!open)}
           className="flex min-w-0 flex-1 items-center gap-3 text-left"
         >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sm font-semibold text-sky-700 dark:bg-sky-950">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sm font-semibold text-sky-700 dark:bg-sky-950 dark:text-sky-300">
             {index + 1}
           </span>
           <span className="min-w-0">
@@ -422,12 +425,16 @@ function SectionCard({
                       <>
                         <AnnuBrand compact icon={false} />
                         <span aria-hidden="true">·</span>
-                        <span>{group.annu.targetCount} planned questions</span>
+                        <span>
+                          {group.annu.targetCount == null
+                            ? "Shares the question total by priority"
+                            : `${group.annu.targetCount} planned questions`}
+                        </span>
                       </>
                     )}
                   </span>
                 </span>
-                <span className="text-xs font-medium text-sky-700">
+                <span className="text-xs font-medium text-sky-700 dark:text-sky-300">
                   {readOnly ? "View" : "Edit"}
                 </span>
               </Link>
@@ -436,7 +443,7 @@ function SectionCard({
         ) : (
           <EmptyState
             title="What should this section cover?"
-            detail="Add a topic, then choose manual questions or ANNU AI instructions."
+            detail="Add a topic, then choose manual questions or ANVI AI instructions."
             action={
               <button
                 type="button"
@@ -552,7 +559,7 @@ function SectionCard({
                     section.groups.length >= limits.groups ||
                     (group.source === "manual"
                       ? group.questions.length
-                      : group.annu.targetCount) > remaining
+                      : group.annu.targetCount ?? 0) > remaining
                   }
                   aria-label={`Duplicate ${group.name}`}
                   onClick={() => {
@@ -602,7 +609,7 @@ function SectionCard({
                       groups: equalWeights(section.groups),
                     })
                   }
-                  className="text-sky-700"
+                  className="text-sky-700 dark:text-sky-300"
                 >
                   Use equal topic weights
                 </button>
@@ -712,7 +719,7 @@ export default function Sections({
         <Panel>
           <EmptyState
             title="Start with your first section"
-            detail="Choose a round, then add topics with manual questions or ANNU AI instructions."
+            detail="Choose a round, then add topics with manual questions or ANVI AI instructions."
             action={
               <div className="flex flex-wrap justify-center gap-2">
                 {categories.slice(0, 3).map((category) => (
@@ -759,7 +766,7 @@ export default function Sections({
           </div>
           <button
             disabled={readOnly}
-            className="mt-3 text-xs text-sky-700"
+            className="mt-3 text-xs text-sky-700 dark:text-sky-300"
             onClick={() => setSections(equalWeights(data.sections))}
           >
             Use equal section weights
@@ -793,6 +800,7 @@ export default function Sections({
           isNew={Boolean(addingTopicTo)}
           sectionName={topicSection.name}
           readOnly={readOnly}
+          onGenerate={(body) => interviewApi.generateQuestions(interviewId, body)}
           onClose={closeTopic}
           limits={{
             ...limits,
@@ -803,7 +811,7 @@ export default function Sections({
                   ? 0
                   : topic.source === "manual"
                     ? topic.questions.reduce((sum, question) => sum + (question.kind === "resume" ? question.resumeCount || 1 : 1), 0)
-                    : topic.annu.targetCount),
+                    : topic.annu.targetCount ?? 0),
             ),
           }}
           onSave={(value) => {

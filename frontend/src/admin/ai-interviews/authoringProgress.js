@@ -1,3 +1,5 @@
+import { FOLLOW_UP_LIMIT, MARKS_LIMIT, divisions } from "./definition.js";
+
 // Local guidance only: the server validates the saved revision before setup
 // can be marked complete. These checks never replace that validation.
 export function getAuthoringProgress(data = {}) {
@@ -55,7 +57,7 @@ export function getAuthoringProgress(data = {}) {
       timing(rules, groupPath, topic);
       if (group.source === "annu") {
         if (!filled(group.annu?.requirements))
-          add(groupPath, `Tell ANNU what to ask in ${topic}.`);
+          add(groupPath, `Tell ANVI what to ask in ${topic}.`);
       } else {
         const questions = group.questions || [];
         if (!questions.length) add(groupPath, `Add a question to ${topic}.`);
@@ -63,7 +65,14 @@ export function getAuthoringProgress(data = {}) {
           const label = `${topic}, question ${questionIndex + 1}`;
           if (question.kind !== "resume" && !filled(question.prompt)) add(groupPath, `Write ${label}.`);
           if (question.kind === "resume" && (!Number.isInteger(question.resumeCount) || question.resumeCount < 1 || question.resumeCount > 50)) add(groupPath, `Choose 1–50 resume questions in ${label}.`);
-          if (!Number.isInteger(question.maxFollowUps ?? 0) || (question.maxFollowUps ?? 0) < 0 || (question.maxFollowUps ?? 0) > 3) add(groupPath, `Choose 0–3 AI follow-ups in ${label}.`);
+          const aiFollowUps = question.maxFollowUps ?? 0;
+          if (!Number.isInteger(aiFollowUps) || aiFollowUps < 0 || aiFollowUps > FOLLOW_UP_LIMIT)
+            add(groupPath, `Choose 0–${FOLLOW_UP_LIMIT} AI follow-ups in ${label}.`);
+          else if ((question.followUps || []).length + aiFollowUps > FOLLOW_UP_LIMIT)
+            add(groupPath, `Use at most ${FOLLOW_UP_LIMIT} follow-ups in total in ${label}.`);
+          const marks = question.marks ?? 10;
+          if (!Number.isInteger(marks) || marks < 1 || marks > MARKS_LIMIT)
+            add(groupPath, `Give ${label} 1–${MARKS_LIMIT} marks.`);
           if ((question.subquestions || []).some((sub) => !filled(sub.prompt)))
             add(
               groupPath,
@@ -99,20 +108,22 @@ export function getAuthoringProgress(data = {}) {
     add("rules", "Name each evaluation criterion.");
   weights(rubric, "rules", "Evaluation");
   const ready = issues.length === 0;
+  // One entry per wizard step, in the same order as `divisions`. The ANVI
+  // settings step owns both the interviewer and the rules/rubric checks.
+  const stepReady = {
+    basics: !issues.some((issue) => issue.path === "basics"),
+    questions: !issues.some((issue) => issue.path.startsWith("sections")),
+    anvi: !issues.some(
+      (issue) => issue.path === "interviewer" || issue.path === "rules",
+    ),
+    review: ready,
+  };
   return {
-    steps: [
-      {
-        id: "basics",
-        label: "Interview details",
-        ready: !issues.some((issue) => issue.path === "basics"),
-      },
-      {
-        id: "sections",
-        label: "Sections & questions",
-        ready: !issues.some((issue) => issue.path.startsWith("sections")),
-      },
-      { id: "review", label: "Review & finish", ready },
-    ],
+    steps: divisions.map(({ id, label }) => ({
+      id,
+      label,
+      ready: stepReady[id],
+    })),
     issues,
     ready,
   };

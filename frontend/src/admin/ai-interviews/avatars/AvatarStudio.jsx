@@ -249,7 +249,7 @@ function AvatarLibrary({ capabilities }) {
             if (!busy) setArchive(null);
           }}
         >
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-slate-600 dark:text-gray-300">
             {archive.active === false
               ? "Return this avatar to your active library."
               : "Move this avatar out of your active library. You can restore it later."}

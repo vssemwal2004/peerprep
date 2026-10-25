@@ -56,6 +56,22 @@ const clean = (doc) => {
   delete value.interviewSecretEncrypted;
   return value;
 };
+// A student's interview sessions for inspection: ANVI attempts, plus rows left in the legacy
+// aiinterviewsessions collection (which may use other schema versions). Newest first.
+async function studentInterviewSessions(connection, studentId) {
+  const references = [studentId, String(studentId)];
+  const projection = { _id: 1, interviewId: 1, status: 1, state: 1, createdAt: 1, updatedAt: 1 };
+  const [attempts, legacy] = await Promise.all([
+    connection.collection('anviattempts').find({ studentId: { $in: references } }, { projection }).sort({ _id: -1 }).limit(20).toArray(),
+    connection.collection('aiinterviewsessions')
+      .find({ $or: ['studentId', 'student_id', 'userId', 'user_id', 'candidateId', 'candidate_id'].map((field) => ({ [field]: { $in: references } })) }, { projection })
+      .sort({ _id: -1 }).limit(20).toArray(),
+  ]);
+  return [...attempts, ...legacy]
+    .sort((a, b) => String(b._id).localeCompare(String(a._id)))
+    .slice(0, 20)
+    .map(({ state, ...row }) => ({ ...row, status: typeof row.status === 'string' ? row.status : typeof state === 'string' ? state : 'Status unavailable' }));
+}
 const audit = (req, action, universityId, details = {}) => PlatformAudit.create({ actor: String(req.user?._id || universityId), action, universityId, details });
 const loadDefaults = async () => await PlatformSettings.findById('defaults') || new PlatformSettings({ _id: 'defaults' });
 
@@ -139,14 +155,9 @@ async function inspectUniversity(req, university, path) {
         .select('assessmentId score maxMarks status startedAt submittedAt evaluationStatus').sort({ updatedAt: -1 }).limit(20).lean();
       const localAssessments = await Assessment.find({ _id: { $in: submissions.map((row) => row.assessmentId) } }).select('title').lean();
       const names = new Map(localAssessments.map((row) => [String(row._id), row.title]));
-      const references = [student._id, String(student._id)];
-      const interviewSessions = await tenant.connection.collection('aiinterviewsessions')
-        .find({ $or: ['studentId', 'student_id', 'userId', 'user_id', 'candidateId', 'candidate_id']
-          .map((field) => ({ [field]: { $in: references } })) },
-        { projection: { _id: 1, interviewId: 1, status: 1, state: 1, createdAt: 1, updatedAt: 1 } })
-        .sort({ _id: -1 }).limit(20).toArray();
+      const interviewSessions = await studentInterviewSessions(tenant.connection, student._id);
       return { student, assessments: submissions.map((row) => ({ ...row, title: names.get(String(row.assessmentId)) || 'Shared or removed assessment' })),
-        interviewSessions: interviewSessions.map(({ state, ...row }) => ({ ...row, status: typeof row.status === 'string' ? row.status : typeof state === 'string' ? state : 'Status unavailable' })) };
+        interviewSessions };
     });
   }
   if (!university.active || !university.apiUrl) throw new HttpError(503, 'University API is not configured or is disabled');
@@ -249,26 +260,35 @@ router.get('/admin/insights', masterOnly, asyncRoute(async (req, res) => {
   res.set('Cache-Control', 'private, no-store').json(insightsCache.body);
 }));
 
-// Platform activity log, newest first: optional university and action-prefix filters, cursor paging.
+// Master activity is intentionally limited to the control-plane database. Each
+// university keeps its own admin/coordinator Activity collection in its tenant
+// database, and those records are never joined into this feed.
 router.get('/admin/audit', masterOnly, asyncRoute(async (req, res) => {
-  const filter = {};
-  const universityId = String(req.query.universityId || '').trim();
-  if (universityId) {
-    if (!idPattern.test(universityId)) throw new HttpError(400, 'Invalid university ID');
-    filter.universityId = universityId;
-  }
+  const windowStart = new Date();
+  windowStart.setUTCDate(windowStart.getUTCDate() - 9);
+  windowStart.setUTCHours(0, 0, 0, 0);
+  const baseFilter = { createdAt: { $gte: windowStart } };
   const action = String(req.query.action || '').trim();
   if (action) {
     if (!/^[a-z_]+(\.[a-z_]*)?$/.test(action)) throw new HttpError(400, 'Invalid action filter');
-    filter.action = { $regex: `^${action.replace('.', '\\.')}` };
+    baseFilter.action = { $regex: `^${action.replace('.', '\\.')}` };
   }
+  const filter = { ...baseFilter, createdAt: { ...baseFilter.createdAt } };
   if (req.query.before) {
     const before = new Date(String(req.query.before));
     if (Number.isNaN(before.getTime())) throw new HttpError(400, 'Invalid cursor');
-    filter.createdAt = { $lt: before };
+    filter.createdAt.$lt = before;
   }
   const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 50));
-  const rows = await PlatformAudit.find(filter).sort({ createdAt: -1 }).limit(limit + 1).lean();
+  const [rows, total, actionCounts] = await Promise.all([
+    PlatformAudit.find(filter).sort({ createdAt: -1 }).limit(limit + 1).lean(),
+    PlatformAudit.countDocuments(baseFilter),
+    PlatformAudit.aggregate([
+      { $match: baseFilter },
+      { $group: { _id: { $arrayElemAt: [{ $split: ['$action', '.'] }, 0] }, count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]),
+  ]);
   const page = rows.slice(0, limit);
   const actorIds = [...new Set(page.map((row) => row.actor).filter((value) => mongoose.isValidObjectId(value)))];
   const actors = actorIds.length ? await User.find({ _id: { $in: actorIds } }).select('name email').lean() : [];
@@ -276,6 +296,10 @@ router.get('/admin/audit', masterOnly, asyncRoute(async (req, res) => {
   res.set('Cache-Control', 'private, no-store').json({
     entries: page.map((row) => ({ id: row._id, action: row.action, universityId: row.universityId || '', createdAt: row.createdAt, actorName: names.get(String(row.actor)) || 'System', details: row.details || {} })),
     nextCursor: rows.length > limit ? page.at(-1).createdAt : null,
+    total,
+    actionCounts,
+    windowDays: 10,
+    scope: 'platform',
   });
 }));
 
@@ -783,15 +807,9 @@ router.get('/inspection/students/:studentId', inspectionOnly, asyncRoute(async (
   const localIds = submissions.map((row) => row.assessmentId);
   const localAssessments = await Assessment.find({ _id: { $in: localIds } }).select('title').lean();
   const names = new Map(localAssessments.map((row) => [String(row._id), row.title]));
-  // Interview sessions belong to the university interview runtime and may use different schema versions.
-  const studentReferences = [student._id, String(student._id)];
-  const interviewSessions = await mongoose.connection.collection('aiinterviewsessions')
-    .find({ $or: ['studentId', 'student_id', 'userId', 'user_id', 'candidateId', 'candidate_id']
-      .map((field) => ({ [field]: { $in: studentReferences } })) },
-      { projection: { _id: 1, interviewId: 1, status: 1, state: 1, createdAt: 1, updatedAt: 1 } })
-    .sort({ _id: -1 }).limit(20).toArray();
+  const interviewSessions = await studentInterviewSessions(mongoose.connection, student._id);
   res.json({ student, assessments: submissions.map((row) => ({ ...row, title: names.get(String(row.assessmentId)) || 'Shared or removed assessment' })),
-    interviewSessions: interviewSessions.map(({ state, ...row }) => ({ ...row, status: typeof row.status === 'string' ? row.status : typeof state === 'string' ? state : 'Status unavailable' })) });
+    interviewSessions });
 }));
 
 // University-facing routes never expose the shared API key to the browser.

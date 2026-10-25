@@ -1,4 +1,5 @@
-// AI Proctoring placeholder - implementation will be added in later steps.
+import { useState } from 'react';
+
 export const DEFAULT_AI_PROCTORING_SETTINGS = {
   enabled: false,
   detectMobile: true,
@@ -38,16 +39,32 @@ function Toggle({ value, onChange, disabled = false }) {
   );
 }
 
-function NumberInput({ value, onChange, min, max, placeholder, unit, disabled = false }) {
+// While it has focus the field keeps the text as typed ("1" on the way to "15" is not replaced by the
+// minimum) and reports each number as before; on blur it settles on the nearest value in range, or
+// `fallback` when left empty, and reports that once if it differs from the shown value or from the
+// number last reported while typing (a parent that stores raw input still ends up in range).
+function NumberInput({ value, onChange, min, max, fallback, placeholder, unit, disabled = false }) {
+  const [draft, setDraft] = useState(null);
+  const settle = () => {
+    if (draft === null) return;
+    const typed = draft.trim() === '' ? NaN : Number(draft);
+    const next = Number.isFinite(typed) ? Math.max(min, Math.min(max, typed)) : fallback;
+    setDraft(null);
+    if (next !== value || next !== typed) onChange(next);
+  };
   return (
     <div className="flex items-center gap-2">
       <input
         type="number"
         min={min}
         max={max}
-        value={value ?? ''}
+        value={draft ?? value ?? ''}
         disabled={disabled}
-        onChange={(event) => onChange(event.target.value === '' ? undefined : Number(event.target.value))}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          onChange(event.target.value === '' ? undefined : Number(event.target.value));
+        }}
+        onBlur={settle}
         placeholder={placeholder}
         className="w-24 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 outline-none focus:border-sky-400 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:disabled:bg-gray-800/60 dark:disabled:text-gray-500"
       />
@@ -107,6 +124,7 @@ export default function AIProctoringSettings({ value, onChange, disabled = false
             onChange={(next) => update('faceOutOfFrameGraceSec', next)}
             min={3}
             max={60}
+            fallback={DEFAULT_AI_PROCTORING_SETTINGS.faceOutOfFrameGraceSec}
             placeholder="10"
             unit="sec"
             disabled={disabled || (!settings.detectNoFace && !settings.detectFaceOutOfFrame)}
@@ -122,6 +140,7 @@ export default function AIProctoringSettings({ value, onChange, disabled = false
           onChange={(next) => update('detectionIntervalMs', next)}
           min={500}
           max={5000}
+          fallback={DEFAULT_AI_PROCTORING_SETTINGS.detectionIntervalMs}
           placeholder="500"
           unit="ms"
           disabled={disabled}
@@ -133,6 +152,7 @@ export default function AIProctoringSettings({ value, onChange, disabled = false
           onChange={(next) => update('ignoreLimit', next)}
           min={0}
           max={50}
+          fallback={DEFAULT_AI_PROCTORING_SETTINGS.ignoreLimit}
           placeholder="5"
           unit="violations"
           disabled={disabled}
@@ -144,6 +164,7 @@ export default function AIProctoringSettings({ value, onChange, disabled = false
           onChange={(next) => update('violationCooldownSec', next)}
           min={5}
           max={120}
+          fallback={DEFAULT_AI_PROCTORING_SETTINGS.violationCooldownSec}
           placeholder="20"
           unit="sec"
           disabled={disabled}

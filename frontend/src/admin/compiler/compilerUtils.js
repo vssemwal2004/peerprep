@@ -382,36 +382,6 @@ export function buildProblemFormData(problemForm, status) {
   return formData;
 }
 
-export function buildPreviewApprovalFormData(problemForm) {
-  const formData = new FormData();
-  formData.append('referenceSolutions', JSON.stringify(problemForm.referenceSolutions || {}));
-  return formData;
-}
-
-export function buildPreviewRunFormData(problemForm, language, customInput) {
-  const formData = new FormData();
-  formData.append('language', language);
-  formData.append('supportedLanguages', JSON.stringify(problemForm.supportedLanguages || []));
-  formData.append('codeTemplates', JSON.stringify(problemForm.codeTemplates || {}));
-  formData.append('executionMode', problemForm.executionMode || 'function');
-  formData.append('functionContract', JSON.stringify(problemForm.functionContract || {}));
-  formData.append('executionHarnesses', JSON.stringify(problemForm.executionHarnesses || {}));
-  formData.append('sampleTestCases', JSON.stringify(problemForm.sampleTestCases || []));
-  formData.append('timeLimitSeconds', String(problemForm.timeLimitSeconds || 2));
-  formData.append('category', problemForm.category === 'SQL' ? 'SQL' : 'DSA');
-  formData.append('sqlConfig', JSON.stringify(problemForm.sqlConfig || {}));
-  formData.append('customInput', customInput || '');
-  return formData;
-}
-
-export function buildExecutionFormData({ language, sourceCode, customInput = '' }) {
-  const formData = new FormData();
-  formData.append('language', language);
-  formData.append('sourceCode', sourceCode || '');
-  formData.append('customInput', customInput || '');
-  return formData;
-}
-
 export function deriveHiddenFilePairs(files = []) {
   const pairs = new Map();
   const issues = [];
@@ -461,23 +431,6 @@ export function problemStatusClass(status) {
   return normalized === 'published' || normalized === 'active'
     ? 'bg-sky-50 text-sky-700 border border-sky-200 dark:bg-sky-900/20 dark:text-sky-300 dark:border-sky-800'
     : 'bg-slate-100 text-slate-700 border border-slate-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700';
-}
-
-export function submissionStatusClass(status) {
-  switch (status) {
-    case 'AC':
-      return 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800';
-    case 'WA':
-      return 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800';
-    case 'TLE':
-    case 'RE':
-    case 'CE':
-      return 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-900/20 dark:text-rose-300 dark:border-rose-800';
-    case 'RUNNING':
-      return 'bg-sky-50 text-sky-700 border border-sky-200 dark:bg-sky-900/20 dark:text-sky-300 dark:border-sky-800';
-    default:
-      return 'bg-slate-100 text-slate-700 border border-slate-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700';
-  }
 }
 
 export function formatPercent(value) {

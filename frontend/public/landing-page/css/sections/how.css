@@ -1,9 +1,7 @@
 /* ---------- How it works: "the loop, panel by panel" ----------
-   Default (no JS, phones, reduced motion): a vertical ruled sequence of five
-   steps, each with its framed product screen.
-   .how--pinned (added by js/sections/how.js at ≥900px with motion allowed):
-   the stage pins and the five panels travel sideways; a rail at the foot of
-   the stage tracks progress. Motion is transform/opacity only. */
+   Default (without JS): a vertical ruled sequence of five framed screens.
+   With JS, a sticky stage maps native vertical scroll progress to horizontal
+   scene movement; the rail at its foot reports the current step. */
 
 .how {
   --how-shadow:
@@ -136,6 +134,23 @@
   box-shadow: var(--how-shadow);
   transform-origin: 50% 100%;
 }
+.how__live {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1360 / 880;
+  overflow: hidden;
+  background: var(--app-bg);
+}
+.how__live.device { aspect-ratio: auto; }
+.how__frame.is-live {
+  border-color: color-mix(in srgb, var(--brand) 22%, var(--line-strong));
+}
+.how--enhanced .how__panel {
+  opacity: 0;
+  transform: translateY(34px);
+  transition: opacity .8s var(--ease-out), transform .9s var(--ease-out);
+}
+.how--enhanced .how__panel.is-visible { opacity: 1; transform: none; }
 .how__bar {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
@@ -204,6 +219,8 @@
     gap: clamp(40px, 5vw, 88px);
   }
   .how__num { font-size: clamp(120px, 12vw, 200px); }
+  .how__panel:nth-child(even) .how__text { grid-column: 2; grid-row: 1; }
+  .how__panel:nth-child(even) .how__shot { grid-column: 1; grid-row: 1; }
 }
 
 /* ======================================================================
@@ -313,6 +330,9 @@
   .how__inner { gap: 32px; }
   .how__shot::after { bottom: -18px; height: 30px; }
 }
+@media (prefers-reduced-motion: reduce) {
+  .how--enhanced .how__panel { opacity: 1; transform: none; transition: none; }
+}
 @media (max-width: 600px) {
   .how__num { font-size: 76px; margin-bottom: 14px; }
   .how__frame { border-radius: 10px; }
@@ -323,4 +343,339 @@
   .how__url svg { width: 9px; height: 9px; }
   .how__tools { max-width: none; }
   .how__coda { flex-direction: column; gap: 12px; }
+}
+
+/* ======================================================================
+   Click-controlled horizontal carousel
+   ====================================================================== */
+.how--carousel .how__stage { position: relative; }
+.how--carousel .how__track {
+  display: grid;
+  overflow: hidden;
+  overflow: clip;
+  touch-action: pan-y;
+}
+.how--carousel .how__panel {
+  grid-area: 1 / 1;
+  padding-block: clamp(36px, 5vw, 64px);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateX(0);
+}
+.how--carousel .how__panel.is-active {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  position: relative;
+  z-index: 1;
+}
+.how--carousel .how__panel.is-entering-right,
+.how--carousel .how__panel.is-entering-left,
+.how--carousel .how__panel.is-leaving-right,
+.how--carousel .how__panel.is-leaving-left {
+  visibility: visible;
+  position: relative;
+}
+.how--carousel .how__panel.is-entering-right,
+.how--carousel .how__panel.is-entering-left { z-index: 2; }
+.how--carousel .how__panel.is-leaving-right,
+.how--carousel .how__panel.is-leaving-left { z-index: 1; }
+
+.how--carousel .how__panel.is-entering-right { animation: how-panel-in-right .74s var(--ease-out) both; }
+.how--carousel .how__panel.is-entering-left { animation: how-panel-in-left .74s var(--ease-out) both; }
+.how--carousel .how__panel.is-leaving-left { animation: how-panel-out-left .58s cubic-bezier(.4, 0, 1, 1) both; }
+.how--carousel .how__panel.is-leaving-right { animation: how-panel-out-right .58s cubic-bezier(.4, 0, 1, 1) both; }
+
+@keyframes how-panel-in-right {
+  from { opacity: 0; transform: translateX(12%); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes how-panel-in-left {
+  from { opacity: 0; transform: translateX(-12%); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes how-panel-out-left {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(-7%); }
+}
+@keyframes how-panel-out-right {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(7%); }
+}
+
+/* Text and product frame travel at different speeds for a layered transition. */
+.how--carousel .is-entering-right .how__text { animation: how-detail-in-right .78s .06s var(--ease-out) both; }
+.how--carousel .is-entering-right .how__shot { animation: how-visual-in-right .82s var(--ease-out) both; }
+.how--carousel .is-entering-left .how__text { animation: how-detail-in-left .78s .06s var(--ease-out) both; }
+.how--carousel .is-entering-left .how__shot { animation: how-visual-in-left .82s var(--ease-out) both; }
+@keyframes how-detail-in-right { from { opacity: 0; transform: translateX(42px); } }
+@keyframes how-detail-in-left { from { opacity: 0; transform: translateX(-42px); } }
+@keyframes how-visual-in-right { from { opacity: .2; transform: translateX(84px) scale(.975); } }
+@keyframes how-visual-in-left { from { opacity: .2; transform: translateX(-84px) scale(.975); } }
+
+/* A brief blue scan makes each live screen feel like a newly opened workspace. */
+.how--carousel .is-entering-right .how__frame::after,
+.how--carousel .is-entering-left .how__frame::after {
+  content: "";
+  position: absolute; inset: 0; z-index: 8;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent 0, color-mix(in srgb, var(--brand) 12%, transparent) 44%, color-mix(in srgb, var(--brand) 55%, transparent) 50%, transparent 56%);
+  transform: translateX(-110%);
+  animation: how-screen-scan .82s .04s var(--ease-in-out) both;
+}
+@keyframes how-screen-scan { to { transform: translateX(110%); } }
+
+.how--carousel .how__switcher {
+  width: 100%;
+  max-width: calc(var(--container) + var(--gutter) * 2);
+  margin: 18px auto 0;
+  padding-inline: var(--gutter);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+.how__status { display: flex; align-items: baseline; gap: 14px; color: var(--ink-3); }
+.how__status > span {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+  letter-spacing: .16em; text-transform: uppercase;
+}
+.how__status strong {
+  display: inline-flex; align-items: baseline; gap: 5px;
+  font-family: var(--font-mono); font-size: 13px; letter-spacing: .08em;
+  color: var(--ink);
+}
+.how__status strong span:first-child { color: var(--brand-ink); }
+.how__status i { font-style: normal; color: var(--ink-3); }
+.how__arrows { display: flex; align-items: center; gap: 8px; }
+.how__arrow {
+  min-width: 44px; height: 44px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  padding-inline: 12px;
+  border: 1px solid var(--line-strong); border-radius: 999px;
+  background: var(--bg-elev); color: var(--ink);
+  box-shadow: var(--shadow-sm);
+  transition: transform .25s var(--ease-out), border-color .25s, background-color .25s;
+}
+.how__arrow svg { width: 18px; height: 18px; }
+.how__arrow span { font-size: 13px; font-weight: 650; }
+.how__arrow--next { padding-left: 18px; background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.how__arrow:hover { transform: translateX(-3px); border-color: var(--brand); }
+.how__arrow--next:hover { transform: translateX(3px); }
+
+.how--carousel .how__rail {
+  display: block;
+  width: 100%;
+  max-width: calc(var(--container) + var(--gutter) * 2);
+  margin: 22px auto 0;
+  padding-inline: var(--gutter);
+}
+.how--carousel .how__rail-step { position: relative; padding-bottom: 10px; }
+.how--carousel .how__rail-step::after {
+  content: ""; position: absolute; left: 0; right: 14px; bottom: 0; height: 2px;
+  background: var(--brand); transform: scaleX(0); transform-origin: 0 50%;
+  transition: transform .45s var(--ease-out);
+}
+.how--carousel .how__rail-step.is-active::after { transform: scaleX(1); }
+
+@media (min-width: 900px) {
+  .how--carousel .how__inner { grid-template-columns: minmax(0, .62fr) minmax(0, 1.38fr); }
+  .how--carousel .how__panel:nth-child(even) .how__text,
+  .how--carousel .how__panel:nth-child(even) .how__shot { grid-column: auto; grid-row: auto; }
+  .how--carousel .how__num { font-size: clamp(118px, 11vw, 176px); }
+}
+@media (max-width: 700px) {
+  .how--carousel .how__rail { overflow-x: auto; scrollbar-width: none; }
+  .how--carousel .how__rail::-webkit-scrollbar { display: none; }
+  .how--carousel .how__rail-inner { min-width: 620px; }
+  .how__status > span { display: none; }
+  .how__arrow--next span { display: none; }
+  .how__arrow--next { padding-inline: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .how--carousel .how__panel,
+  .how--carousel .how__text,
+  .how--carousel .how__shot { animation: none !important; }
+  .how--carousel .how__frame::after { display: none; }
+}
+
+/* ======================================================================
+   Native scroll story
+   The tall shell supplies vertical distance; its sticky stage converts that
+   progress into a continuous right-to-left product journey.
+   ====================================================================== */
+.how--scroll {
+  padding-top: clamp(72px, 7vw, 112px);
+}
+.how--scroll .how__head { margin-bottom: clamp(12px, 2vw, 24px); }
+.how--scroll .how__scroll-shell {
+  position: relative;
+  height: 360svh;
+}
+.how--scroll .how__stage {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  min-height: 580px;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  padding-top: calc(var(--nav-h) + clamp(8px, 1.5vh, 18px));
+  overflow: hidden;
+  overflow: clip;
+  isolation: isolate;
+}
+.how--scroll .how__track {
+  display: grid;
+  align-items: center;
+  min-height: 0;
+  overflow: visible;
+  touch-action: pan-y;
+}
+.how--scroll .how__panel {
+  grid-area: 1 / 1;
+  width: 100%;
+  padding-block: clamp(18px, 3vh, 38px);
+  border: 0;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  will-change: transform, opacity;
+  transition:
+    transform .66s var(--ease-out),
+    opacity .42s ease;
+}
+.how--scroll .how__panel.is-scroll-visible { visibility: visible; }
+.how--scroll .how__panel.is-active { pointer-events: auto; z-index: 2; }
+.how--scroll .how__inner {
+  grid-template-columns: minmax(0, .6fr) minmax(0, 1.4fr);
+  gap: clamp(36px, 4.5vw, 72px);
+}
+.how--scroll .how__panel:nth-child(even) .how__text,
+.how--scroll .how__panel:nth-child(even) .how__shot {
+  grid-column: auto;
+  grid-row: auto;
+}
+.how--scroll .how__text,
+.how--scroll .how__shot {
+  will-change: transform;
+  transition: transform .72s var(--ease-out);
+}
+.how--scroll .how__num {
+  font-size: clamp(102px, 10vw, 160px);
+  margin-bottom: clamp(10px, 1.8vh, 18px);
+}
+.how--scroll .how__shot {
+  --bleed: max(0px, min(48px, (100vw - 1300px) / 2));
+  justify-self: end;
+  width: calc(100% + var(--bleed));
+  margin-right: calc(var(--bleed) * -1);
+  max-width: min(1000px, calc((100svh - var(--nav-h) - 180px) * 1.62));
+}
+.how--scroll .how__frame {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+  box-shadow: none;
+  transition:
+    transform .48s var(--ease-out);
+}
+.how--scroll .how__frame::before,
+.how--scroll .how__shot::after { display: none; }
+.how--scroll .how__live.device {
+  overflow: visible;
+  background: transparent;
+}
+.how--scroll .how__rail {
+  display: block;
+  width: 100%;
+  padding: 0 var(--gutter) clamp(18px, 2.5vh, 30px);
+}
+.how--scroll .how__rail-step {
+  position: relative;
+  cursor: default;
+  user-select: none;
+}
+.how--scroll .how__rail-step::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 16px;
+  bottom: 0;
+  height: 2px;
+  background: var(--brand);
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  transition: transform .42s var(--ease-out);
+}
+.how--scroll .how__rail-step.is-active::after { transform: scaleX(1); }
+
+@media (hover: hover) and (pointer: fine) {
+  .how--scroll .how__shot:hover .how__frame {
+    transform: translateY(-10px) scale(1.012);
+  }
+}
+
+@media (max-height: 760px) and (min-width: 900px) {
+  .how--scroll .how__num { font-size: clamp(86px, 8.5vw, 126px); margin-bottom: 9px; }
+  .how--scroll .how__copy { margin-top: 10px; }
+  .how--scroll .how__tools { margin-top: 14px; }
+  .how--scroll .how__tools li { padding-block: 7px; }
+}
+
+@media (max-width: 899.98px) {
+  .how--scroll { padding-top: clamp(64px, 16vw, 88px); }
+  .how--scroll .how__scroll-shell { height: 390svh; }
+  .how--scroll .how__stage {
+    min-height: 560px;
+    padding-top: calc(var(--nav-h) + 4px);
+  }
+  .how--scroll .how__track { align-items: center; }
+  .how--scroll .how__panel { padding-block: 10px; }
+  .how--scroll .how__inner {
+    grid-template-columns: 1fr;
+    gap: clamp(18px, 3vh, 28px);
+  }
+  .how--scroll .how__num {
+    font-size: clamp(62px, 18vw, 92px);
+    margin-bottom: 9px;
+  }
+  .how--scroll .how__title { font-size: clamp(32px, 9vw, 46px); }
+  .how--scroll .how__copy { margin-top: 10px; font-size: 15.5px; line-height: 1.45; }
+  .how--scroll .how__tools { margin-top: 14px; max-width: none; }
+  .how--scroll .how__tools li { padding-block: 6px; font-size: 10px; }
+  .how--scroll .how__shot {
+    width: 100%;
+    max-width: 720px;
+    margin-right: 0;
+    justify-self: center;
+  }
+  .how--scroll .how__rail { overflow: hidden; padding-bottom: 14px; }
+  .how--scroll .how__rail-inner { min-width: 0; }
+  .how--scroll .how__rail-step {
+    justify-content: center;
+    padding: 11px 3px 3px;
+    font-size: 0;
+  }
+  .how--scroll .how__rail-n { font-size: 9px; }
+  .how--scroll .how__rail-step::after { right: 4px; }
+}
+
+@media (max-width: 520px) and (max-height: 740px) {
+  .how--scroll .how__num { font-size: 54px; margin-bottom: 6px; }
+  .how--scroll .how__title { font-size: 30px; }
+  .how--scroll .how__copy { font-size: 14px; line-height: 1.35; }
+  .how--scroll .how__tools { margin-top: 10px; }
+  .how--scroll .how__tools li { padding-block: 4px; }
+  .how--scroll .how__inner { gap: 14px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .how--scroll .how__panel,
+  .how--scroll .how__text,
+  .how--scroll .how__shot,
+  .how--scroll .how__frame { transition: none !important; }
 }

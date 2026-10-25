@@ -6,7 +6,6 @@ import { RefreshCw } from 'lucide-react';
 export const card = 'rounded-2xl border border-[#e9eaee] bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04)] dark:border-white/[0.07] dark:bg-[#242424] dark:shadow-none';
 export const interactiveCard = `${card} transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-[#dcdee4] hover:shadow-[0_12px_32px_-20px_rgba(16,24,40,0.28)] motion-reduce:transform-none dark:hover:border-white/[0.14]`;
 export const focusRing = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-[#1a1a1a]';
-export const softButton = 'inline-flex shrink-0 items-center gap-1.5 rounded-[10px] bg-[#f1f2f5] px-3 py-[7px] text-[12.5px] font-medium text-slate-700 transition-colors group-hover:bg-slate-900 group-hover:text-white dark:bg-white/[0.07] dark:text-zinc-200 dark:group-hover:bg-zinc-100 dark:group-hover:text-zinc-900';
 export const textLink = `inline-flex items-center gap-1 rounded text-[12px] font-semibold text-sky-700 hover:text-sky-800 dark:text-sky-400 dark:hover:text-sky-300 ${focusRing}`;
 
 const DIFFICULTY_TAGS = Object.fromEntries(Object.entries(DIFFICULTY_THEME).map(([key, theme]) => [key.toLowerCase(), theme.pill]));

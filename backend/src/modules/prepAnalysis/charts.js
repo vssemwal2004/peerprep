@@ -7,7 +7,6 @@
 import { PASS_PERCENT } from './assessmentFacts.js';
 import { RATINGS } from './interviewFacts.js';
 import { DIFFICULTIES } from './ranking.js';
-import { INACTIVE_AFTER_DAYS } from './studentRows.js';
 
 export const GROUP_BY = Object.freeze({
   semester: { label: 'Semester', get: (row) => (row.student.semester ? `Sem ${row.student.semester}` : '') },
@@ -305,7 +304,6 @@ const CODING_CHARTS = [
 // ---------------------------------------------------------------- Prep Learning
 
 const learners = (rows) => rows.filter((row) => row.learning && row.learning.status !== 'never');
-const byLearning = (left, right) => right.learning.progress - left.learning.progress || right.learning.completedTopics - left.learning.completedTopics || left.name.localeCompare(right.name);
 const lastLesson = (row) => (row.learning.daysSinceActive === null ? 'Never started'
   : row.learning.daysSinceActive === 0 ? 'Studied today' : `Last lesson ${row.learning.daysSinceActive} day${row.learning.daysSinceActive === 1 ? '' : 's'} ago`);
 
@@ -847,9 +845,6 @@ export const DEFAULT_LAYOUT = Object.freeze({
   // "All": a short view of each feature, side by side.
   all: ['top-students', 'practice-funnel', 'quickprep-sheets', 'learning-subjects', 'learning-funnel', 'interview-funnel', 'interview-trend', 'assessment-tests', 'assessment-funnel'],
 });
-
-/** The charts an area offers: its own, or every licensed area's for "All". */
-export const chartsForArea = (area, modules) => CHARTS.filter((chart) => modules.has(chart.module) && (area === 'all' || chart.module === area));
 
 // Headline numbers: only a few per feature, each a count of students the admin can
 // act on (click one to list those students). No totals of submissions or averages.

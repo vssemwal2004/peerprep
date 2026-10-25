@@ -17,7 +17,7 @@ export async function listMailJobs(req, res) {
   const dateTo = String(req.query.dateTo || '').trim();
 
   if (['queued', 'processing', 'sent', 'failed', 'cancelled'].includes(status)) query.status = status;
-  if (['student_credentials', 'coordinator_onboarding', 'assessment_invitation', 'event_invitation', 'event_cancellation'].includes(type)) query.type = type;
+  if (['student_credentials', 'coordinator_onboarding', 'assessment_invitation', 'event_invitation', 'event_cancellation', 'anvi_interview'].includes(type)) query.type = type;
   if (search) {
     const regex = new RegExp(escapeRegex(search), 'i');
     query.$or = [

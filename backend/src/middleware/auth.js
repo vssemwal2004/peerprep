@@ -224,12 +224,6 @@ export function requireAdmin(req, res, next) {
   next();
 }
 
-export function requireAdminOrStudent(req, res, next) {
-  if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'student')) {
-    throw new HttpError(403, 'Admin or Student only');
-  }
-  next();
-}
 export function requireAdminCoordinatorOrStudent(req, res, next) {
   if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'coordinator' && req.user.role !== 'student')) {
     throw new HttpError(403, 'Admin, Coordinator, or Student only');

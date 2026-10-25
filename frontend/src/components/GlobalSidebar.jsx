@@ -288,6 +288,7 @@ const buildNavItems = (role = 'admin', accessScope = 'full') => {
           children: [
             { label: 'All AI Interviews', to: '/admin/ai-interviews', icon: ClipboardList, match: (loc) => loc.pathname === '/admin/ai-interviews' },
             { label: 'Create AI Interview', to: '/admin/ai-interviews/new', icon: CalendarPlus },
+            { label: 'Schedules', to: '/admin/ai-interviews/schedules', icon: CalendarClock },
             { label: 'Avatars', to: '/admin/ai-interviews/avatars', icon: UserCog },
             { label: 'Reports', to: '/admin/ai-interviews/reports', icon: BarChart3 },
           ],

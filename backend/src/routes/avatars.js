@@ -20,6 +20,7 @@ export function createAvatarRouter(authenticate = requireAuth, dependencies = {}
   router.get("/:id", asyncRoute(controller.get));
   router.put("/:id", asyncRoute(controller.save));
   router.post("/:id/uploads", costly, upload.single("file"), asyncRoute(controller.upload));
+  router.post("/:id/gestures/:gesture", costly, upload.single("file"), asyncRoute(controller.uploadGesture));
   router.post("/:id/render", costly, asyncRoute(controller.render));
   router.get("/:id/render", asyncRoute(controller.refresh));
   router.post("/:id/transcribe", costly, asyncRoute(controller.transcribe));

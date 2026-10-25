@@ -1,16 +1,7 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { motion } from "framer-motion";
 import { AlertCircle, ArrowUpRight, Loader2 } from "lucide-react";
 import { clamp, getToneClasses } from "./analyticsUtils";
-
-export function fadeIn(delay = 0, y = 16) {
-  return {
-    initial: { opacity: 0, y },
-    whileInView: { opacity: 1, y: 0 },
-    viewport: { once: true, margin: "-80px" },
-    transition: { duration: 0.45, ease: [0.22, 1, 0.36, 1], delay },
-  };
-}
 
 export function AnimatedNumber({ value, suffix = "", prefix = "", duration = 600 }) {
   const [display, setDisplay] = useState(0);
@@ -76,86 +67,6 @@ export function SectionHeader({ eyebrow, title, subtitle, action = null, classNa
         ) : null}
       </div>
       {action}
-    </div>
-  );
-}
-
-export function TonePill({ children, tone = "sky", className = "" }) {
-  const toneClasses = getToneClasses(tone);
-  return (
-    <span
-      className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ring-1 ${toneClasses.pill} ${className}`}
-    >
-      <span className={`h-1.5 w-1.5 rounded-full ${toneClasses.dot}`} />
-      {children}
-    </span>
-  );
-}
-
-export function IconBadge({ Icon, tone = "sky", className = "" }) {
-  const toneClasses = getToneClasses(tone);
-  return (
-    <div
-      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl shadow-[0_14px_28px_-20px_rgba(14,165,233,0.9)] ${toneClasses.icon} ${className}`}
-    >
-      <Icon className="h-4 w-4" />
-    </div>
-  );
-}
-
-export function MetricCard({ label, value, helper, Icon, tone = "sky", suffix = "", prefix = "", delay = 0, compact = false }) {
-  const toneClasses = getToneClasses(tone);
-  return (
-    <motion.div
-      {...fadeIn(delay, 10)}
-      whileHover={{ y: -3 }}
-      className={[
-        "group relative overflow-hidden rounded-[16px] border border-slate-200 bg-white shadow-sm transition-all duration-300 hover:border-sky-200 hover:shadow-[0_18px_44px_-36px_rgba(14,165,233,0.8)] dark:border-white/10 dark:bg-slate-950/75",
-        compact ? "p-3" : "p-3.5",
-      ].join(" ")}
-    >
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-slate-300 to-transparent opacity-70 dark:via-white/20" />
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="truncate text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
-            {label}
-          </div>
-          <div className={`${compact ? "mt-1.5 text-xl" : "mt-2 text-2xl"} font-bold tracking-tight text-slate-950 dark:text-white`}>
-            <AnimatedNumber value={value} prefix={prefix} suffix={suffix} />
-          </div>
-          {helper ? <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">{helper}</p> : null}
-        </div>
-        {Icon ? <IconBadge Icon={Icon} tone={tone} /> : null}
-      </div>
-      <div className={`${compact ? "mt-3" : "mt-4"} h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10`}>
-        <motion.div
-          className={`h-full rounded-full ${toneClasses.bar}`}
-          initial={{ width: 0 }}
-          whileInView={{ width: `${clamp(value)}%` }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-        />
-      </div>
-    </motion.div>
-  );
-}
-
-export function MiniMetric({ label, value, helper, tone = "sky", Icon }) {
-  const toneClasses = getToneClasses(tone);
-  return (
-    <div className={`rounded-[16px] border p-3.5 ${toneClasses.panel}`}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="truncate text-[10px] font-semibold uppercase tracking-[0.16em] opacity-70">{label}</div>
-          <div className="mt-1 truncate text-lg font-bold">{value}</div>
-          {helper ? <p className="mt-1 text-xs leading-relaxed opacity-75">{helper}</p> : null}
-        </div>
-        {Icon ? (
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white/55 dark:bg-white/10">
-            <Icon className="h-4 w-4" />
-          </div>
-        ) : null}
-      </div>
     </div>
   );
 }
@@ -305,38 +216,3 @@ export function ErrorBanner({ error, onRetry }) {
   );
 }
 
-export function DataChip({ label, value, tone = "sky" }) {
-  const toneClasses = getToneClasses(tone);
-  return (
-    <div className={`rounded-2xl px-3 py-2 ring-1 ${toneClasses.pill}`}>
-      <div className="text-[10px] font-semibold uppercase tracking-[0.16em] opacity-70">{label}</div>
-      <div className="mt-0.5 text-sm font-bold">{value}</div>
-    </div>
-  );
-}
-
-export function ActivityDots({ points = [], tone = "sky" }) {
-  const toneClasses = getToneClasses(tone);
-  const max = useMemo(() => Math.max(1, ...points.map((point) => Number(point.count || point.value || 0))), [points]);
-
-  return (
-    <div className="grid grid-cols-7 gap-2">
-      {points.map((point, index) => {
-        const value = Number(point.count || point.value || 0);
-        const opacity = value ? 0.28 + (value / max) * 0.72 : 0.12;
-        return (
-          <div key={`${point.date || point.label}-${index}`} className="flex flex-col items-center gap-1">
-            <div
-              title={`${point.date || point.label}: ${value}`}
-              className={`h-8 w-full rounded-xl ${toneClasses.bar}`}
-              style={{ opacity }}
-            />
-            <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500">
-              {point.label || ""}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}

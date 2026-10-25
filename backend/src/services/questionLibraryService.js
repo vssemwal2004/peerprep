@@ -481,12 +481,6 @@ export async function ensureQuestionLibrarySynchronized({ force = false, blockin
   }
 }
 
-export async function backfillQuestionLibraryIfEmpty() {
-  const existingCount = await QuestionLibrary.estimatedDocumentCount();
-  if (existingCount > 0) return;
-  await ensureQuestionLibrarySynchronized({ force: true });
-}
-
 export async function cleanupDuplicateLibraryEntries() {
   // Find and remove duplicate entries with same sourceKey, keeping the most recent
   const duplicates = await QuestionLibrary.aggregate([

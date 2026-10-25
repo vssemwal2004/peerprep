@@ -1,5 +1,5 @@
-// The index.html intro forms the full logo by ~1.2s after navigation; never cut it off half-way.
-const MIN_VISIBLE_MS = 1200;
+// Keep the boot screen perceptible without delaying a page that is already ready.
+const MIN_VISIBLE_MS = 420;
 
 // Fades out and removes the boot loader defined in index.html. Safe to call more than once.
 export function hideGlobalLoader() {
@@ -12,7 +12,7 @@ export function hideGlobalLoader() {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         loader.classList.add('fade-out');
-        setTimeout(() => loader.remove(), 450);
+        setTimeout(() => loader.remove(), 280);
       });
     });
   }, wait);

@@ -57,7 +57,8 @@ export default function StudentDashboard() {
   const permittedItems = (items) => (Array.isArray(items) ? items : []).filter((item) => item.href && allowsPath(item.href.split('?')[0], 'student'));
   const resumeItems = permittedItems(data?.resumeItems).filter((item) => item.type === 'coding' || item.type === 'quest' ? canQuestions : item.type === 'learning' && canLearning);
   const suggestions = canQuestions ? permittedItems(data?.suggestedPractice) : [];
-  const upcoming = useMemo(() => getUpcomingItems(canAssessments ? sections.assessments.data || [] : [], canEvents ? sections.events.data || [] : [], now), [canAssessments, canEvents, sections.assessments.data, sections.events.data, now]);
+  const upcoming = useMemo(() => getUpcomingItems(canAssessments ? sections.assessments.data || [] : [], canEvents ? sections.events.data || [] : [], now, canInterviews ? sections.anvi.data || [] : []),
+    [canAssessments, canEvents, canInterviews, sections.assessments.data, sections.events.data, sections.anvi.data, now]);
   const week = getWeekActivity(data?.activityByDate || {}, now);
   const name = String(user?.name || '').trim().replace(/\s+/g, ' ') || 'Student';
   const firstSession = Boolean(data) && !progress.loading && !progress.error && !resumeItems.length && !data.ranking?.hasProgress
@@ -73,8 +74,8 @@ export default function StudentDashboard() {
       target?.focus({ preventScroll: true });
     });
   };
-  const dueLoading = (canAssessments && sections.assessments.loading) || (canEvents && sections.events.loading);
-  const dueError = (canAssessments && sections.assessments.error) || (canEvents && sections.events.error);
+  const dueLoading = (canAssessments && sections.assessments.loading) || (canEvents && sections.events.loading) || (canInterviews && sections.anvi.loading);
+  const dueError = (canAssessments && sections.assessments.error) || (canEvents && sections.events.error) || (canInterviews && sections.anvi.error);
   const showChallenges = canQuestions || canLearning || canAssessments || canEvents || canInterviews;
   const showDaily = showChallenges && (canQuestions || sections.engagement.data?.version === 2);
   const showPractice = canQuestions && (progress.loading || progress.error || suggestions.length > 0);
@@ -110,7 +111,7 @@ export default function StudentDashboard() {
             : <CodingProgress {...(data?.coding || {})} compact loading={progress.loading} description={null} titleIcon={<TitleIcon icon={Gauge} tone="sky" />}
               className="!rounded-2xl !border-[#e9eaee] !p-4 !shadow-[0_1px_2px_rgba(16,24,40,0.04)] dark:!border-white/[0.07]" />)}
           <RankCard ranking={data?.ranking} loading={progress.loading} error={progress.error} onRetry={sections.refresh} />
-          {(canEvents || canAssessments) && <ComingUpCard items={upcoming} loading={dueLoading} error={dueError} onRetry={sections.refresh} canAssessments={canAssessments} canEvents={canEvents} />}
+          {(canEvents || canAssessments || canInterviews) && <ComingUpCard items={upcoming} loading={dueLoading} error={dueError} onRetry={sections.refresh} canAssessments={canAssessments} canEvents={canEvents} canInterviews={canInterviews} />}
         </aside>
 
         <div className="min-w-0 space-y-8 [grid-area:body]" data-dashboard-main>

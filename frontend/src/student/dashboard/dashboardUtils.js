@@ -1,4 +1,5 @@
 import { computeAwards } from '../profile/achievements';
+import { IST_ZONE, upcomingAnviItems } from '../anvi/anviSchedule';
 
 export function getGreeting(now = new Date()) {
   const hour = now.getHours();
@@ -19,9 +20,11 @@ export function formatRelativeTime(value, now = new Date()) {
   return new Date(timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-export function formatSchedule(value) {
+// `ist`: institution-scheduled times (ANVI) are always shown in India Standard Time and labelled.
+export function formatSchedule(value, { ist = false } = {}) {
   const date = new Date(value || '');
   if (!Number.isFinite(date.getTime())) return 'Date to be confirmed';
+  if (ist) return `${date.toLocaleString('en-IN', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: IST_ZONE })} IST`;
   return date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
@@ -36,7 +39,7 @@ export function getWeekActivity(activity = {}, now = new Date()) {
   });
 }
 
-export function getUpcomingItems(assessments = [], events = [], now = new Date()) {
+export function getUpcomingItems(assessments = [], events = [], now = new Date(), anviAssignments = []) {
   const timestamp = now.getTime();
   const items = assessments.filter((item) => {
     if (['Completed', 'Violation'].includes(item.status) || item.submittedAt) return false;
@@ -50,6 +53,7 @@ export function getUpcomingItems(assessments = [], events = [], now = new Date()
   events.filter((item) => item.joined && new Date(item.startDate || '').getTime() > timestamp).forEach((item) => {
     items.push({ id: `interview-${item._id}`, type: 'interview', title: item.name || 'Peer interview', href: '/student/interview', label: 'Joined interview', timeLabel: 'Starts', time: item.startDate, available: false });
   });
+  items.push(...upcomingAnviItems(anviAssignments, timestamp));
   return items.sort((a, b) => Number(b.available) - Number(a.available) || new Date(a.time) - new Date(b.time));
 }
 

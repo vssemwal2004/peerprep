@@ -102,21 +102,3 @@ export async function dispatchPendingAssessmentEvaluations({ limit = 25, now = n
   return { dispatched, failed };
 }
 
-export function startAssessmentEvaluationDispatcher({ intervalMs = 1000 } = {}) {
-  let stopped = false;
-  let timer;
-  let running = Promise.resolve();
-  const tick = () => {
-    running = dispatchPendingAssessmentEvaluations().catch((error) => {
-      console.error(`[AssessmentDispatch] Sweep failed (${error?.name || 'Error'}).`);
-    }).finally(() => {
-      if (!stopped) timer = setTimeout(tick, Math.max(250, intervalMs));
-    });
-  };
-  tick();
-  return async () => {
-    stopped = true;
-    clearTimeout(timer);
-    await running;
-  };
-}

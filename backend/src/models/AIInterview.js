@@ -22,9 +22,29 @@ const schema = new Schema(
     publishedRevision: Number,
     requiresResume: Boolean,
     archivedAt: Date,
+    // Publish-time question audio outbox (ANVI hybrid). Written in the publish CAS; a background pass
+    // and the maintenance tick voice the revision's static lines. Holds counts only, never text.
+    audioPregen: {
+      type: new Schema(
+        {
+          revision: Number,
+          status: { type: String, enum: ["pending", "running", "done", "partial", "inactive"] },
+          attempts: { type: Number, default: 0 },
+          nextAt: { type: Date, default: null },
+          leaseUntil: { type: Date, default: null },
+          requestedAt: Date,
+          startedAt: Date,
+          finishedAt: Date,
+          counts: { total: Number, ready: Number, failed: Number },
+        },
+        { _id: false },
+      ),
+      default: undefined,
+    },
   },
   { timestamps: true, minimize: false },
 );
 schema.index({ ownerId: 1, creationKey: 1 }, { unique: true });
 schema.index({ ownerId: 1, lifecycle: 1, updatedAt: -1, _id: -1 });
+schema.index({ "audioPregen.status": 1, "audioPregen.nextAt": 1 }, { sparse: true });
 export default tenantModel(mongoose.model("AIInterview", schema));

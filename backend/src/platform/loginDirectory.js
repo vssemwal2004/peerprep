@@ -28,10 +28,6 @@ export async function syncTenantLoginIdentity(user, universityId = currentTenant
   await PlatformLoginIdentity.updateOne(filter, { $set: { emailKey } }, { upsert: true });
 }
 
-export async function removeTenantLoginIdentity(userId, universityId = currentTenant()?.universityId) {
-  if (universityId && userId) await PlatformLoginIdentity.deleteOne({ universityId, userId });
-}
-
 export async function loginDirectoryCandidates(email) {
   const emailKey = loginEmailKey(email);
   if (!emailKey) return [];

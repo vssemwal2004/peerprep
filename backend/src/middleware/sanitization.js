@@ -50,25 +50,6 @@ export const mongoSanitizeMiddleware = mongoSanitize({
 export const xssProtectionMiddleware = xss();
 
 /**
- * Additional Input Validation Helpers
- */
-
-/**
- * Validates and sanitizes file upload metadata
- * Prevents path traversal and malicious filenames
- */
-export function sanitizeFilename(filename) {
-  if (!filename) return null;
-  
-  // Remove path traversal attempts
-  return filename
-    .replace(/\.\./g, '') // Remove ../
-    .replace(/\//g, '')   // Remove /
-    .replace(/\\/g, '')   // Remove \
-    .slice(0, 255);       // Limit length
-}
-
-/**
  * Validates MongoDB ObjectId format
  * Prevents invalid ID attacks that could cause crashes
  */

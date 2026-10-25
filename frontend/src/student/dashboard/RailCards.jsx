@@ -58,7 +58,7 @@ export function RankCard({ ranking, loading, error, onRetry }) {
   </section><GlobalRankCard scoreRevision={ranking?.score} /></>;
 }
 
-export function ComingUpCard({ items, loading, error, onRetry, canAssessments, canEvents }) {
+export function ComingUpCard({ items, loading, error, onRetry, canAssessments, canEvents, canInterviews = false }) {
   return <section aria-labelledby="coming-up-title" className={railCard}>
     <CardTitle id="coming-up-title" title="Coming up" icon={CalendarClock} tone="emerald" />
     {error && <Unavailable className="mt-3" message="Some upcoming items could not be loaded." onRetry={onRetry} />}
@@ -69,16 +69,17 @@ export function ComingUpCard({ items, loading, error, onRetry, canAssessments, c
             <span className={`h-2 w-2 shrink-0 rounded-full ${item.available ? 'bg-emerald-500 ring-4 ring-emerald-500/15' : 'bg-slate-300 dark:bg-zinc-600'}`} aria-hidden="true" />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[13px] font-medium text-slate-800 dark:text-zinc-100">{item.title}</span>
-              <span className="block truncate text-[12px] text-slate-500 dark:text-zinc-400">{item.label} · {item.timeLabel} {formatSchedule(item.time)}</span>
+              <span className="block truncate text-[12px] text-slate-500 dark:text-zinc-400">{item.label} · {item.timeLabel} {formatSchedule(item.time, { ist: item.ist })}</span>
             </span>
             <ArrowUpRight className="h-4 w-4 shrink-0 text-slate-300 group-hover:text-sky-600 dark:text-zinc-600 dark:group-hover:text-sky-300" aria-hidden="true" />
           </Link>
         </li>)}
       </ul>
         : !error && <p className="mt-2.5 text-[13px] text-slate-500 dark:text-zinc-400">Nothing scheduled yet</p>}
-    {(canAssessments || canEvents) && <div className="mt-3 flex gap-2">
+    {(canAssessments || canEvents || canInterviews) && <div className="mt-3 flex gap-2">
       {canAssessments && <Link to="/student/assessments" className={`group ${railChip} ${focusRing}`}>Assessments<ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" /></Link>}
       {canEvents && <Link to="/student/interview" className={`group ${railChip} ${focusRing}`}>Interviews<ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" /></Link>}
+      {canInterviews && <Link to="/student/ai-interviews" className={`group ${railChip} ${focusRing}`}>AI interviews<ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" /></Link>}
     </div>}
   </section>;
 }

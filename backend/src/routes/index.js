@@ -29,6 +29,8 @@ import masterDataRoutes from './masterData.js';
 import aiInterviewRoutes from './aiInterviews.js';
 import aiInterviewStudentRoutes from './aiInterviewStudent.js';
 import avatarRoutes from './avatars.js';
+import anviAdminReportRoutes from '../modules/anviInterview/anviInterview.adminRoutes.js';
+import { createAnviSchedulingAdminRouter, createAnviSchedulingStudentRouter } from '../modules/anviInterview/anviInterview.scheduling.routes.js';
 import bulkUploadRoutes from './bulkUploads.js';
 import problemListRoutes from './problemLists.js';
 import adminAnalyticsRoutes from '../modules/adminAnalytics/adminAnalytics.routes.js';
@@ -52,6 +54,11 @@ router.use('/platform/admin/coins', coinAdminRoutes);
 router.use('/student/questions', requireAuth, requireFullStudent, questionPracticeRoutes);
 // Reserved feature routes must precede the interview identifier routes.
 router.use('/ai-interviews/avatars', avatarRoutes);
+router.use('/ai-interviews/reports', anviAdminReportRoutes);
+router.use('/ai-interviews/schedules', createAnviSchedulingAdminRouter());
+// Student scheduling owns only /assignments and /bookings paths (guarded per route); anything else,
+// such as POST /assignments/:aid/start, falls through to the ANVI student router below.
+router.use('/student/ai-interviews', createAnviSchedulingStudentRouter());
 router.use('/ai-interviews', aiInterviewRoutes);
 router.use('/student/ai-interviews', aiInterviewStudentRoutes);
 router.use('/bulk-uploads', bulkUploadRoutes);

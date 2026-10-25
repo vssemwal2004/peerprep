@@ -433,24 +433,3 @@ export function hasPermission(user, permission) {
   return normalizePermissions(user.permissions).includes(permission);
 }
 
-export function countPermissions(permissions) {
-  return normalizePermissions(permissions).length;
-}
-
-export const coordinatorNavPermissionIcons = {
-  overview: LayoutDashboard,
-  createInterview: CalendarPlus,
-  scheduledInterview: CalendarClock,
-  students: Users,
-  learning: BookOpen,
-  courses: Building2,
-  feedback: MessageSquare,
-  assessment: ClipboardList,
-  library: Library,
-  announcement: Megaphone,
-  compiler: FileCode2,
-  company: Building2,
-  activity: Activity,
-  access: ShieldCheck,
-  settings: UserCog,
-};

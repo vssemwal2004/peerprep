@@ -79,5 +79,3 @@ export default function ProctoringFooter({
     </div>
   );
 }
-
-export { DEFAULT_STATUS as DEFAULT_PROCTORING_FOOTER_STATUS };

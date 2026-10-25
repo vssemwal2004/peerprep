@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import { randomUUID } from "node:crypto";
 import AIAvatar from "../models/AIAvatar.js";
-import { AVATAR_LANGUAGES, AVATAR_LIMITS, avatarError, avatarFingerprint, inspectUpload, normalizeAvatar } from "../services/avatarDefinition.js";
+import { AVATAR_GESTURES, AVATAR_GESTURE_IDS, AVATAR_LANGUAGES, AVATAR_LIMITS, avatarError, avatarFingerprint, inspectUpload, normalizeAvatar } from "../services/avatarDefinition.js";
 import { createAvatarStorage } from "../services/avatarStorage.js";
 import { createAvatarProviders } from "../services/avatarProviders.js";
 
@@ -48,6 +48,7 @@ export function createAvatarController({ model = AIAvatar, storage = createAvata
     copy._id = String(doc._id);
     delete copy.ownerId; delete copy.activeRenderOwner;
     copy.assets = Object.fromEntries(Object.entries(doc.assets || {}).filter(([, asset]) => asset?.key).map(([name, asset]) => [name, { ...asset, url: storage.ready ? storage.signedUrl(asset.key) : "" }]));
+    copy.gestures = Object.fromEntries(Object.entries(doc.gestures || {}).filter(([id, asset]) => AVATAR_GESTURE_IDS.includes(id) && asset?.key).map(([id, asset]) => [id, { ...asset, url: storage.ready ? storage.signedUrl(asset.key, "GET", 7200) : "" }]));
     copy.languagePreviews = Object.fromEntries(Object.entries(previewVersions(doc)).filter(([language, asset]) => AVATAR_LANGUAGES.some((item) => item.value === language) && asset?.key).map(([language, asset]) => [language, {
       ...asset, url: storage.ready ? storage.signedUrl(asset.key) : "",
       stale: !doc.data.consent || asset.sourceKey !== doc.assets?.source?.key || (language === doc.data.language && asset.fingerprint !== avatarFingerprint(doc)),
@@ -104,7 +105,7 @@ export function createAvatarController({ model = AIAvatar, storage = createAvata
     async capabilities(_req, res) {
       const health = await providers.health();
       const ttsReady = providers.tts && Boolean(health?.capabilities?.tts);
-      res.json({ storage: { ready: storage.ready, reason: storage.reason }, renderer: { configured: providers.configured, available: Boolean(health?.capabilities?.render) }, languages: AVATAR_LANGUAGES, voices: ttsReady ? [{ value: "default", label: "Default configured voice" }] : [], limits: { maxUploadMB: AVATAR_LIMITS.maxUploadMB, maxIntroSeconds: AVATAR_LIMITS.maxIntroSeconds }, tts: { configured: ttsReady }, stt: { configured: providers.stt && Boolean(health?.capabilities?.stt) }, gemini: { configured: providers.gemini } });
+      res.json({ storage: { ready: storage.ready, reason: storage.reason }, renderer: { configured: providers.configured, available: Boolean(health?.capabilities?.render) }, languages: AVATAR_LANGUAGES, gestures: AVATAR_GESTURES, voices: ttsReady ? [{ value: "default", label: "Default configured voice" }] : [], limits: { maxUploadMB: AVATAR_LIMITS.maxUploadMB, maxIntroSeconds: AVATAR_LIMITS.maxIntroSeconds }, tts: { configured: ttsReady }, stt: { configured: providers.stt && Boolean(health?.capabilities?.stt) }, gemini: { configured: providers.gemini } });
     },
     async list(req, res) {
       const page = Math.max(1, Math.min(10000, Number.parseInt(req.query.page, 10) || 1));
@@ -140,6 +141,21 @@ export function createAvatarController({ model = AIAvatar, storage = createAvata
       await storage.write(key, req.file.buffer, asset.mime);
       const updated = await mutate(req, doc, { [`assets.${req.body.kind}`]: { ...asset, key, ...(req.body.kind === "audio" ? { language: doc.data.language } : {}), createdAt: new Date() }, previewStale: true });
       if (!updated) await cleanup(key);
+      res.json(present(conflict(updated)));
+    },
+    async uploadGesture(req, res) {
+      const doc = await find(req, true); ensureActive(doc); requireStorage();
+      const gesture = String(req.params.gesture || "");
+      if (!AVATAR_GESTURE_IDS.includes(gesture)) avatarError(422, "INVALID_GESTURE", "Choose a supported interview gesture.");
+      if (!req.file) avatarError(422, "FILE_REQUIRED", "Choose an MP4 or WebM gesture clip.");
+      if (!doc.data.consent) avatarError(422, "CONSENT_REQUIRED", "Confirm permission to use the person's video before uploading.");
+      const { extension, ...asset } = inspectUpload(req.file.buffer, "gesture", req.file.originalname);
+      const key = `avatars/${String(req.user._id)}/${doc._id}/gestures/${gesture}/${randomUUID()}.${extension}`;
+      await storage.write(key, req.file.buffer, asset.mime);
+      const previousKey = doc.gestures?.[gesture]?.key;
+      const updated = await mutate(req, doc, { [`gestures.${gesture}`]: { ...asset, key, createdAt: new Date() } });
+      if (!updated) await cleanup(key);
+      else if (previousKey && previousKey !== key) cleanup(previousKey);
       res.json(present(conflict(updated)));
     },
     async render(req, res) {

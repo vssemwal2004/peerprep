@@ -159,25 +159,4 @@ export function InlineLoader({ message = 'Loading...' }) {
   );
 }
 
-// Event/form page skeleton 
-export function FormSkeleton() {
-  return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 py-8 px-4">
-      <div className="max-w-4xl mx-auto mt-16">
-        <Shimmer className="w-48 h-8 mb-6" />
-        
-        <div className="bg-white dark:bg-gray-800 rounded-xl p-8 shadow-sm border border-gray-200 dark:border-gray-700 space-y-6">
-          {[1, 2, 3, 4].map(i => (
-            <div key={i}>
-              <Shimmer className="w-24 h-4 mb-2" />
-              <Shimmer className="w-full h-10 rounded-lg" />
-            </div>
-          ))}
-          <Shimmer className="w-32 h-10 rounded-lg" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default PageSkeleton;

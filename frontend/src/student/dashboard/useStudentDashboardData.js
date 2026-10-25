@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../utils/api';
 import socketService from '../../utils/socket';
-import { PROGRESS_TYPES } from '../../components/notificationKinds';
+import { PROGRESS_TYPES, isAnviNotification } from '../../components/notificationKinds';
 
 const initialSection = () => ({ data: null, loading: true, error: false });
 const unwrap = (value, key) => Array.isArray(value) ? value : Array.isArray(value?.[key]) ? value[key] : [];
 
 export default function useStudentDashboardData({ userId, canQuestions, canLearning, canEvents, canAssessments, canInterviews }) {
-  const [sections, setSections] = useState(() => ({ dashboard: initialSection(), engagement: initialSection(), events: initialSection(), assessments: initialSection(), announcements: initialSection() }));
+  const [sections, setSections] = useState(() => ({ dashboard: initialSection(), engagement: initialSection(), events: initialSection(), assessments: initialSection(), announcements: initialSection(), anvi: initialSection() }));
   const [revision, setRevision] = useState(0);
   const refreshedAt = useRef(0);
   const previousUser = useRef(userId);
@@ -40,19 +40,22 @@ export default function useStudentDashboardData({ userId, canQuestions, canLearn
       return value;
     });
     const loadAnnouncements = () => load('announcements', () => api.listStudentAnnouncements(), (data) => unwrap(data, 'announcements'));
+    // Scheduled ANVI interviews (assignments and bookings) for "Coming up".
+    const loadAnvi = () => load('anvi', () => canInterviews ? api.listStudentAnviAssignments() : [], (data) => unwrap(data, 'assignments'));
     const loadAll = () => {
       refreshedAt.current = Date.now();
       return Promise.allSettled([
         loadDashboard(), loadEngagement(), loadAnnouncements(),
         load('events', () => canEvents ? api.listEvents() : [], (data) => unwrap(data, 'events')),
         load('assessments', () => canAssessments ? api.listStudentAssessments() : [], (data) => unwrap(data, 'assessments')),
+        loadAnvi(),
       ]);
     };
     const differentUser = previousUser.current !== userId;
     previousUser.current = userId;
     if (differentUser) challengePoints.current = null;
     setSections((previous) => differentUser
-      ? { dashboard: initialSection(), engagement: initialSection(), events: initialSection(), assessments: initialSection(), announcements: initialSection() }
+      ? { dashboard: initialSection(), engagement: initialSection(), events: initialSection(), assessments: initialSection(), announcements: initialSection(), anvi: initialSection() }
       : Object.fromEntries(Object.entries(previous).map(([key, section]) => [key, key === 'engagement' ? initialSection() : { ...section, loading: section.data === null }])));
     void loadAll();
     socketService.connect();
@@ -61,7 +64,10 @@ export default function useStudentDashboardData({ userId, canQuestions, canLearn
       ['compiler-submission-updated', () => Promise.allSettled([loadDashboard(), loadEngagement()])],
       ['learning-updated', () => Promise.allSettled([loadDashboard(), loadEngagement()])],
       // Challenge, badge and level notices can come from a refresh in another tab; resync XP and rank.
-      ['new_notification', (notification) => { if (PROGRESS_TYPES.has(notification?.type)) void Promise.allSettled([loadDashboard(), loadEngagement()]); }],
+      ['new_notification', (notification) => {
+        if (PROGRESS_TYPES.has(notification?.type)) void Promise.allSettled([loadDashboard(), loadEngagement()]);
+        if (isAnviNotification(notification)) void loadAnvi();
+      }],
     ];
     updates.forEach(([event, handler]) => socketService.on(event, handler));
     const onFocus = () => { if (Date.now() - refreshedAt.current > 30000) void loadAll(); };

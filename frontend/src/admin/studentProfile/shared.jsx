@@ -119,23 +119,6 @@ function DailyTooltip({ active, payload, unit }) {
   return <ChartTooltipBox title={point.full} rows={[{ label: unit, value: point.count }]} />;
 }
 
-/** Single-series daily bar chart (no legend needed; the heading names the series). */
-export function DailyBarChart({ data, unit = 'Activities', label, height = 'h-36' }) {
-  return (
-    <div className={`${height} w-full`} role="img" aria-label={label}>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: -28 }} barCategoryGap={2}>
-          <CartesianGrid vertical={false} stroke="currentColor" className="text-slate-100 dark:text-zinc-800" />
-          <XAxis dataKey="tick" interval={6} tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
-          <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} width={36} />
-          <Tooltip content={<DailyTooltip unit={unit} />} cursor={{ fill: 'rgba(14,165,233,0.08)' }} />
-          <Bar dataKey="count" fill="#0ea5e9" radius={[4, 4, 0, 0]} maxBarSize={14} isAnimationActive={false} />
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
 export function SearchInput({ value, onChange, label, placeholder = 'Search problems' }) {
   return (
     <label className="relative block min-w-0">

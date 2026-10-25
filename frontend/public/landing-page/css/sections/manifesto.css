@@ -150,7 +150,11 @@
 /* ==========================================================================
    Cinematic pinned stage (desktop, motion allowed — set by JS)
    ========================================================================== */
-.manifesto.is-cine { padding-top: 0; border-top: 0; }
+.manifesto.is-cine {
+  padding-top: 0;
+  padding-bottom: clamp(24px, 3vw, 48px);
+  border-top: 0;
+}
 
 .is-cine .manifesto__stage {
   position: relative;

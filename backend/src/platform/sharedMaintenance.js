@@ -11,10 +11,15 @@ import { ensureMailQueueRetention } from '../services/mailQueueService.js';
 import { sweepAssessmentExpiry } from '../jobs/assessmentExpiry.js';
 import { sendReminders } from '../jobs/reminders.js';
 import { runDailyAnalytics } from '../jobs/analytics.js';
+import { dispatchAnviEvaluations, sweepStaleAnviAttempts } from '../modules/anviInterview/anviInterview.maintenance.js';
+import { sweepAnviScheduling } from '../modules/anviInterview/anviInterview.scheduling.maintenance.js';
 
 // A failed score pass is retried next minute; it must not skip mail or assessment work.
 const logPrepScoreFailure = (error) => console.error(`[SharedMaintenance] Prep Score sync failed (${error?.name || 'Error'}).`);
 const logCoinFailure = (error) => console.error(`[SharedMaintenance] Prep Coin charge sweep failed (${error?.name || 'Error'}).`);
+const logAnviFailure = (error) => console.error(`[SharedMaintenance] ANVI stale attempt sweep failed (${error?.name || 'Error'}).`);
+const logAnviEvalFailure = (error) => console.error(`[SharedMaintenance] ANVI evaluation dispatch failed (${error?.name || 'Error'}).`);
+const logAnviScheduleFailure = (error) => console.error(`[SharedMaintenance] ANVI schedule sweep failed (${error?.name || 'Error'}).`);
 
 export function startSharedMaintenance({ scheduled = true, mail = true } = {}) {
   let stopped = false;
@@ -41,6 +46,11 @@ export function startSharedMaintenance({ scheduled = true, mail = true } = {}) {
       if (scheduled && due('platform', 'coinCharges', 60_000)) {
         await runForPlatform(() => sweepPendingCharges({ scope: PLATFORM_WALLET_SCOPE, verifiers: chargeVerifiers })).catch(logCoinFailure);
       }
+      if (scheduled && due('platform', 'anviStale', 60_000)) await runForPlatform(() => sweepStaleAnviAttempts()).catch(logAnviFailure);
+      // Only claims due ANVI evaluations; the Gemini work continues detached (at most two per process).
+      if (scheduled && due('platform', 'anviEval', 10_000)) await runForPlatform(() => dispatchAnviEvaluations()).catch(logAnviEvalFailure);
+      // Opens and closes ANVI assignments, sends slot reminders and marks no-shows.
+      if (scheduled && due('platform', 'anviSchedule', 60_000)) await runForPlatform(() => sweepAnviScheduling(new Date())).catch(logAnviScheduleFailure);
       // The shared PeerPrep deployment also owns users and queued mail in the
       // platform database. Drain it before tenant discovery so mail still runs
       // when no university tenants are registered.
@@ -65,6 +75,11 @@ export function startSharedMaintenance({ scheduled = true, mail = true } = {}) {
           if (due(id, 'prepScores', 60_000)) await syncPrepScores().catch(logPrepScoreFailure);
           // Settles Prep Coin charges a crash left pending (verified against this university's data).
           if (due(id, 'coinCharges', 60_000)) await sweepPendingCharges({ scope: id, verifiers: chargeVerifiers }).catch(logCoinFailure);
+          // Closes ANVI interviews whose student left and can no longer resume.
+          if (due(id, 'anviStale', 60_000)) await sweepStaleAnviAttempts().catch(logAnviFailure);
+          if (due(id, 'anviEval', 10_000)) await dispatchAnviEvaluations().catch(logAnviEvalFailure);
+          // Skips universities whose AI interviews are disabled or whose service period is not active.
+          if (due(id, 'anviSchedule', 60_000)) await sweepAnviScheduling(new Date(), { tenant }).catch(logAnviScheduleFailure);
           if (due(id, 'reminders', 300_000)) await sendReminders();
           const now = new Date();
           const day = now.toISOString().slice(0, 10);

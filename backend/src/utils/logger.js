@@ -43,23 +43,6 @@ export const securityLogger = winston.createLogger({
   ]
 });
 
-// Error logger - tracks application errors and exceptions
-export const errorLogger = winston.createLogger({
-  level: 'error',
-  format: winston.format.combine(
-    winston.format.timestamp(),
-    winston.format.json()
-  ),
-  transports: [
-    new winston.transports.File({ 
-      filename: path.join(logsDir, 'errors.log'),
-      maxsize: 10485760, // 10MB
-      maxFiles: 5,
-      tailable: true
-    })
-  ]
-});
-
 /**
  * Log security event with context
  * 
@@ -105,26 +88,6 @@ export function logAuthAttempt(req, success, email, userId = null, reason = null
 }
 
 /**
- * Log authorization failure (access denied)
- */
-export function logAuthzFailure(req, requiredRole, userRole) {
-  logSecurityEvent({
-    type: 'AUTHZ_FAILURE',
-    userId: req.user?._id,
-    email: req.user?.email,
-    ip: req.ip,
-    userAgent: req.get('user-agent'),
-    message: `Authorization failed: ${userRole || 'unauthenticated'} attempted to access ${requiredRole}-only endpoint`,
-    metadata: {
-      path: req.path,
-      method: req.method,
-      requiredRole,
-      userRole
-    }
-  });
-}
-
-/**
  * Log suspicious activity
  */
 export function logSuspiciousActivity(req, activityType, details) {
@@ -145,28 +108,6 @@ export function logSuspiciousActivity(req, activityType, details) {
   
   // Also warn on console for immediate attention
   console.warn(`[SECURITY ALERT] ${activityType} from ${req.ip} - ${JSON.stringify(details)}`);
-}
-
-/**
- * Log application error (sanitized - no sensitive data)
- */
-export function logError(error, req = null, context = {}) {
-  const errorEntry = {
-    timestamp: new Date().toISOString(),
-    message: error.message,
-    stack: error.stack,
-    ...context
-  };
-  
-  // Add request context if available (no sensitive data)
-  if (req) {
-    errorEntry.path = req.path;
-    errorEntry.method = req.method;
-    errorEntry.ip = req.ip;
-    errorEntry.userId = req.user?._id;
-  }
-  
-  errorLogger.error(errorEntry);
 }
 
 /**

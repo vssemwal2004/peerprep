@@ -78,21 +78,6 @@ export function normalizeHref(value) {
   return `https://${raw}`;
 }
 
-/** Last `days` UTC days (the backend buckets activity by UTC day), oldest first. */
-export function buildDailySeries(activity, days = 30) {
-  const today = new Date();
-  return Array.from({ length: days }, (_, index) => {
-    const date = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - (days - 1 - index)));
-    const key = date.toISOString().slice(0, 10);
-    return {
-      key,
-      count: num(activity?.[key]),
-      tick: date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' }),
-      full: date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }),
-    };
-  });
-}
-
 /**
  * Reads the optional `learnerProgress` block (added server-side separately). Returns null when it
  * is absent so callers render nothing extra.
@@ -118,9 +103,3 @@ export function readLearnerProgress(student) {
   };
 }
 
-/** Most recent date the student reached `level`, or null. */
-export function levelReachedAt(progress, level) {
-  if (!progress) return null;
-  const entry = progress.levelHistory.find((item) => item.level === level);
-  return entry ? entry.achievedAt : null;
-}

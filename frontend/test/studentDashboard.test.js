@@ -128,6 +128,7 @@ beforeEach(async () => {
   api.listStudentAnnouncements = async () => { calls.push(['announcements']); return { announcements: structuredClone(announcements) }; };
   api.listEvents = async () => { calls.push(['events']); return structuredClone(events); };
   api.listStudentAssessments = async () => { calls.push(['assessments']); return { assessments: structuredClone(assessments) }; };
+  api.listStudentAnviAssignments = async () => { calls.push(['anvi']); return []; };
   socket.connect = () => { calls.push(['socket-connect']); return socket; };
   socket.on = (event, callback) => {
     if (!listeners.has(event)) listeners.set(event, new Set());
