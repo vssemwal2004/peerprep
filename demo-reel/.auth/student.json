@@ -1,0 +1,41 @@
+{
+  "cookies": [
+    {
+      "name": "accessToken",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2YWJiNDViZDNkNjUyOTE5OTYwNmYxYjQiLCJyb2xlIjoic3R1ZGVudCIsImVtYWlsIjoicGVlcnByZXAyNkBnbWFpbC5jb20iLCJzdHVkZW50SWQiOiIxMjM1NTYiLCJ0ZW5hbnRJZCI6InBsYXRmb3JtIiwiaWF0IjoxNzkzMDA4OTQ4LCJleHAiOjE3OTM2MTM3NDh9.AMCvzZ8eCkn2fRkW4mUf1VwDU6gIfAl9GnZMoKzPVDM",
+      "domain": "localhost",
+      "path": "/",
+      "expires": 1793095348.872773,
+      "httpOnly": true,
+      "secure": false,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": [
+    {
+      "origin": "http://localhost:5173",
+      "localStorage": [
+        {
+          "name": "studentSidebarPinned",
+          "value": "false"
+        },
+        {
+          "name": "theme",
+          "value": "light"
+        },
+        {
+          "name": "studentName",
+          "value": "Peerprep"
+        },
+        {
+          "name": "userId",
+          "value": "6abb45bd3d6529199606f1b4"
+        },
+        {
+          "name": "studentEmail",
+          "value": "peerprep26@gmail.com"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,999 @@
+{
+  "scenes": [
+    {
+      "id": "01-problem",
+      "lines": [
+        {
+          "start": 0.4,
+          "end": 3.1,
+          "onScreen": "Headline 'Every placement season looks the same.'",
+          "text": "Every placement season looks the same."
+        },
+        {
+          "start": 3.3,
+          "end": 7.8,
+          "onScreen": "'Coding practice - on one site' card, then 'Mock tests - on another' card",
+          "text": "Students code on one site, take mock tests on another."
+        },
+        {
+          "start": 8,
+          "end": 10.7,
+          "onScreen": "'Interview prep - on their own, no feedback' card",
+          "text": "Interview prep happens alone, without feedback."
+        },
+        {
+          "start": 10.9,
+          "end": 16.2,
+          "onScreen": "'Placement team - Sees none of it' panel; timeline fills through 'Preparation' (~13s) and 'Placement drive' (~15s)",
+          "text": "Placement teams see none of it, from preparation to the drive."
+        },
+        {
+          "start": 17.1,
+          "end": 20.6,
+          "onScreen": "Red 'Who needed help?' node and caption '...found out only after the drive is over.'",
+          "text": "They learn who needed help too late."
+        }
+      ],
+      "beats": [
+        {
+          "t": 0.4,
+          "onScreen": "Headline 'Every placement season looks the same.'"
+        },
+        {
+          "t": 3.3,
+          "onScreen": "'Coding practice - on one site' card, then 'Mock tests - on another' card"
+        },
+        {
+          "t": 8,
+          "onScreen": "'Interview prep - on their own, no feedback' card"
+        },
+        {
+          "t": 10.9,
+          "onScreen": "'Placement team - Sees none of it' panel enters (absent at 10.5, settled with empty track at 11.5)"
+        },
+        {
+          "t": 13,
+          "onScreen": "Timeline 'Preparation' node appears, track fills (visible at 13.5 and 14.5)"
+        },
+        {
+          "t": 15,
+          "onScreen": "'Placement drive' node appears, track fully filled by 16.5 with no red node yet"
+        },
+        {
+          "t": 17.5,
+          "onScreen": "Red 'Who needed help?' node and caption '...found out only after the drive is over.' visible; static through 20.5"
+        }
+      ],
+      "issuesFixed": 4,
+      "remainingBudgetProblems": []
+    },
+    {
+      "id": "02-vision",
+      "lines": [
+        {
+          "start": 21.4,
+          "end": 27.1,
+          "onScreen": "'WHAT IF' question card: a student's entire preparation, and a college's entire view of it, lived in one place?",
+          "text": "What if a student's preparation, and the college's view, lived in one place?"
+        },
+        {
+          "start": 27.4,
+          "end": 29.6,
+          "onScreen": "PeerPrep logo alone at top",
+          "text": "That place is PeerPrep."
+        },
+        {
+          "start": 30,
+          "end": 32.2,
+          "onScreen": "Pills appear one by one: Learn, Practise, Assess, Interview, Analyse",
+          "text": "Learn, practise, assess, interview, analyse."
+        },
+        {
+          "start": 32.4,
+          "end": 36.7,
+          "onScreen": "Landing page in browser with student dashboard mockup; caption 'Built for college students, faculty, coordinators, and placement teams' from about 33.5s",
+          "text": "Built for students, faculty, coordinators and placement teams."
+        }
+      ],
+      "beats": [
+        {
+          "t": 21.5,
+          "onScreen": "'WHAT IF' question card: a student's entire preparation, and a college's entire view of it, lived in one place?"
+        },
+        {
+          "t": 26.5,
+          "onScreen": "Question card still fully on screen"
+        },
+        {
+          "t": 27.5,
+          "onScreen": "PeerPrep logo alone at top, fading in"
+        },
+        {
+          "t": 29.5,
+          "onScreen": "PeerPrep logo alone, no pills yet"
+        },
+        {
+          "t": 30.5,
+          "onScreen": "Learn pill landed, Practise fading in (pills arrive about every 0.5s from about 30.0s)"
+        },
+        {
+          "t": 31.5,
+          "onScreen": "Learn, Practise, Assess, Interview landed; Analyse still fading in; no mockup yet"
+        },
+        {
+          "t": 32.5,
+          "onScreen": "Browser mockup of the landing page with the student dashboard laptop, all five pills in place; no audience caption yet"
+        },
+        {
+          "t": 33.5,
+          "onScreen": "Small caption appears under the cards: 'Built for college students, faculty, coordinators, and placement teams.'"
+        },
+        {
+          "t": 36.5,
+          "onScreen": "Page scrolled further; caption still visible, 'Who we are' section starting"
+        }
+      ],
+      "issuesFixed": 2,
+      "remainingBudgetProblems": []
+    },
+    {
+      "id": "03-student-home",
+      "lines": [
+        {
+          "start": 37.3,
+          "end": 39.4,
+          "onScreen": "Dashboard with 'Continue where you left off' card; cursor on it at 38.5s",
+          "text": "Students resume unfinished problems."
+        },
+        {
+          "start": 39.6,
+          "end": 41.4,
+          "onScreen": "Cursor on Today's missions (39.5s) then the streak tracker (40.5s)",
+          "text": "Daily missions and streaks."
+        },
+        {
+          "start": 41.6,
+          "end": 43.8,
+          "onScreen": "Cursor on Coding progress ring (41.5-42.5s); Prep Score & rank card visible below throughout",
+          "text": "Coding progress and Prep Score."
+        },
+        {
+          "start": 44,
+          "end": 47.3,
+          "onScreen": "Coding sheets section after pull-back; scroll reveals card details, ending before 'Next in practice' at 47.5s",
+          "text": "Then straight into coding practice."
+        }
+      ],
+      "beats": [
+        {
+          "t": 37.5,
+          "onScreen": "Dashboard zooming in; greeting says the daily challenge is ready; Continue where you left off card (Range Frequency Queries); cursor near Today's missions"
+        },
+        {
+          "t": 38.5,
+          "onScreen": "Cursor on the 'Continue where you left off' card header"
+        },
+        {
+          "t": 39.5,
+          "onScreen": "Cursor on Today's missions (Solve Count Good Triplets, +20 XP)"
+        },
+        {
+          "t": 40.5,
+          "onScreen": "Cursor on the day-streak tracker (1 day streak, Best 13)"
+        },
+        {
+          "t": 41.5,
+          "onScreen": "Cursor on the Coding progress card header; ring shows 7/4003 solved"
+        },
+        {
+          "t": 42.5,
+          "onScreen": "Cursor on the Coding progress ring; Prep Score & rank card (#1 of 19, Top 6%) directly below"
+        },
+        {
+          "t": 43.5,
+          "onScreen": "Camera pulled back, sidebar visible; cursor back on streak tracker; Coding sheets with Placement essentials card fully visible; Prep Score & rank still on screen"
+        },
+        {
+          "t": 44.5,
+          "onScreen": "Cursor in the Coding sheets area beside the Placement essentials card"
+        },
+        {
+          "t": 46.5,
+          "onScreen": "Scrolled down: Placement essentials card details (tags, 0/4 questions, 50 XP reward, Review button)"
+        },
+        {
+          "t": 47.5,
+          "onScreen": "'Next in practice' / PrepCoding section scrolls into view"
+        }
+      ],
+      "issuesFixed": 4,
+      "remainingBudgetProblems": []
+    },
+    {
+      "id": "04-prep-coding",
+      "lines": [
+        {
+          "start": 48.4,
+          "end": 53.1,
+          "onScreen": "Problem library; 4,012 problems / 132 topics / 577 companies pills; company chips; Topics panel",
+          "text": "Prep Coding holds 4,012 problems, by topic and company."
+        },
+        {
+          "start": 53.4,
+          "end": 58.5,
+          "onScreen": "Typing 'Two Sum' in search; list loads; problem opens beside the C++ editor at about 56.5",
+          "text": "We search for Two Sum; it opens beside a code editor."
+        },
+        {
+          "start": 58.7,
+          "end": 64.5,
+          "onScreen": "C++ solution typed; zoom on the C++ language dropdown at 61.5-62.5; scroll to the Run panel",
+          "text": "Students pick a language, here C++, write their solution, then press Run."
+        },
+        {
+          "start": 64.8,
+          "end": 67.7,
+          "onScreen": "Running..., toast, then 'Passed' with Cases 3/3",
+          "text": "Sample cases: three of three passed."
+        },
+        {
+          "start": 68.7,
+          "end": 70.9,
+          "onScreen": "Cursor reaches and clicks Submit (about 69.3-69.5); screen dims while the result loads",
+          "text": "Submit goes to Judge0's sandbox."
+        },
+        {
+          "start": 71.1,
+          "end": 73.4,
+          "onScreen": "Accepted modal with gold coin, 'All 10 hidden test cases passed', confetti",
+          "text": "Accepted: ten hidden tests pass."
+        }
+      ],
+      "beats": [
+        {
+          "t": 48.5,
+          "onScreen": "Prep Coding library: pills for 4,012 problems, 132 topics and 577 companies; company chips; Topics panel"
+        },
+        {
+          "t": 53.5,
+          "onScreen": "'Two Sum' being typed into the search box"
+        },
+        {
+          "t": 55.5,
+          "onScreen": "List is still dimmed and loading under the 'Two Sum' search chip; problem not open yet"
+        },
+        {
+          "t": 56.5,
+          "onScreen": "Two Sum problem description open on the left, C++ code editor on the right"
+        },
+        {
+          "t": 60.5,
+          "onScreen": "C++ solution typed; C++ language dropdown visible (never opened, only C++ shown)"
+        },
+        {
+          "t": 61.5,
+          "onScreen": "Zoom on the C++ language dropdown (until about 62.5)"
+        },
+        {
+          "t": 64.5,
+          "onScreen": "Run panel; Running..., toast, then 'Passed' with Cases 3/3 by about 67.5"
+        },
+        {
+          "t": 68.5,
+          "onScreen": "Cursor moving toward the Submit button"
+        },
+        {
+          "t": 69.5,
+          "onScreen": "Cursor on Submit (click at about 69.3-69.5); Test Result already shows 'AC' and a runtime card shows 'beats 33.33%' (recommend trimming 69.0-69.5)"
+        },
+        {
+          "t": 70.5,
+          "onScreen": "Screen dims while the result loads; no Judge0 UI shown"
+        },
+        {
+          "t": 71.5,
+          "onScreen": "Accepted modal: gold coin, ACCEPTED, 'All 10 hidden test cases passed', 19 ms / 2.9 MB / C++, confetti; no coin amount or Prep Score change shown"
+        },
+        {
+          "t": 73.5,
+          "onScreen": "Modal shrinking but still legible, confetti across the screen"
+        }
+      ],
+      "issuesFixed": 5,
+      "remainingBudgetProblems": []
+    },
+    {
+      "id": "05-assessments",
+      "lines": [
+        {
+          "start": 74.3,
+          "end": 76.8,
+          "onScreen": "Assessment preview, zoom on the duration timer; 'Timed' and 'Optional proctoring' chips appear (about 75.5-76.5s)",
+          "text": "Timed assessments, with optional proctoring."
+        },
+        {
+          "start": 77,
+          "end": 79.2,
+          "onScreen": "Problem description with Medium, 2s limit and 256 MB chips",
+          "text": "Difficulty, time and memory limits."
+        },
+        {
+          "start": 79.4,
+          "end": 82,
+          "onScreen": "Questions rail opens into the palette with MCQ and Coding tabs",
+          "text": "One navigator: MCQ and coding."
+        },
+        {
+          "start": 82.3,
+          "end": 83.7,
+          "onScreen": "Cursor clicks Next; Coding 1/2 becomes Coding 2/2 with a new problem and starter code",
+          "text": "Next: question two."
+        }
+      ],
+      "beats": [
+        {
+          "t": 74.5,
+          "onScreen": "Assessment preview opens on 'Add Two Numbers and Remove Duplicates' (Coding 1/2); only the 'MCQ + coding' chip is visible, fading in"
+        },
+        {
+          "t": 75.5,
+          "onScreen": "Zoom on the DURATION 01:30:00 timer; 'Timed' chip visible, 'Optional proctoring' chip fading in"
+        },
+        {
+          "t": 76.5,
+          "onScreen": "All three chips fully visible: MCQ + coding, Timed, Optional proctoring"
+        },
+        {
+          "t": 78.5,
+          "onScreen": "Problem description with chips Medium, 2s limit, 256 MB"
+        },
+        {
+          "t": 80.5,
+          "onScreen": "Questions palette open on the right with MCQ 10 and Coding 2 tabs, question buttons 1 and 2"
+        },
+        {
+          "t": 82.5,
+          "onScreen": "Cursor on Next, header shows Coding 1/2, problem still 'Add Two Numbers and Remove Duplicates'"
+        },
+        {
+          "t": 83.5,
+          "onScreen": "Page changed to Coding 2/2: new '...Cycle' problem and new starter code"
+        }
+      ],
+      "issuesFixed": 3,
+      "remainingBudgetProblems": []
+    },
+    {
+      "id": "06-anvi",
+      "lines": [
+        {
+          "start": 84.4,
+          "end": 90.2,
+          "onScreen": "Admin schedules page: cohort schedule with time window and completion progress; Voice interview / AI-scored / PDF report chips appear",
+          "text": "ANVI, our AI interviewer. Colleges schedule it per cohort, within a time window."
+        },
+        {
+          "start": 90.4,
+          "end": 96.2,
+          "onScreen": "Student AI Interviews page with Voice interview chip; Completed tab card shows 'Report pending' from about 92.5",
+          "text": "Students interview by voice; reports stay pending until the placement team releases them."
+        },
+        {
+          "start": 96.4,
+          "end": 104.2,
+          "onScreen": "Admin reports table with the attempt's overall score, then report drawer with 21% overall ring and Download PDF",
+          "text": "ANVI scores each attempt and writes a report, downloadable as a PDF."
+        },
+        {
+          "start": 105.8,
+          "end": 111.5,
+          "onScreen": "Question-wise feedback tab (active from about 106.0); Q1 per-answer score, pace, filler words, answer length from 109.5",
+          "text": "Each answer gets its own score, plus pace, filler words and length."
+        },
+        {
+          "start": 111.9,
+          "end": 113.7,
+          "onScreen": "Action items tab with numbered action plan",
+          "text": "And numbered action items."
+        }
+      ],
+      "beats": [
+        {
+          "t": 84.5,
+          "onScreen": "Admin AI Interview Schedules: 'Amazon Intern Hiring' cohort schedule, Open, window 26 Oct 3:03 pm to 27 Oct 3:04 pm IST, progress 100% (1 of 1 completed); 'Voice interview' chip fading in"
+        },
+        {
+          "t": 90.5,
+          "onScreen": "Student AI Interviews page, Upcoming tab ('Practice temporarily unavailable'); chips Voice interview / AI-scored / PDF report in header"
+        },
+        {
+          "t": 92.5,
+          "onScreen": "Completed tab: Amazon Intern Hiring card with 'Report pending' and 'Report will be released by your institution.'"
+        },
+        {
+          "t": 96.5,
+          "onScreen": "Admin AI Interview Reports table: Report ready, score 10.5/50, 21% Needs work; only an overall score, no per-answer scores"
+        },
+        {
+          "t": 99,
+          "onScreen": "Report drawer opens: 21% OVERALL ring, AI Interview Report header; Download PDF button visible about 102.5-103.5"
+        },
+        {
+          "t": 105.5,
+          "onScreen": "Report drawer, Summary tab still active"
+        },
+        {
+          "t": 106.5,
+          "onScreen": "Question-wise feedback tab active, Q1-Q5 selector"
+        },
+        {
+          "t": 109.5,
+          "onScreen": "Q1 Interview - Technical: 0% score ring, functional/non-functional bars, time spent, pace 79 wpm 'Too slow', filler words, answer length"
+        },
+        {
+          "t": 111.5,
+          "onScreen": "Still Question-wise feedback, Knowledge and Articulation success metrics"
+        },
+        {
+          "t": 112.5,
+          "onScreen": "Action items tab: numbered action plan, 'What the candidate should practise next'"
+        }
+      ],
+      "issuesFixed": 7,
+      "remainingBudgetProblems": []
+    },
+    {
+      "id": "07-analysis",
+      "lines": [
+        {
+          "start": 114.3,
+          "end": 117.4,
+          "onScreen": "Overview tab, zoom on Readiness 20/100 card; chips Readiness / Coding accuracy / University rank appear",
+          "text": "Every student gets one analysis: readiness first."
+        },
+        {
+          "start": 117.6,
+          "end": 120.8,
+          "onScreen": "Performance by area bar chart and Readiness history line chart fully in view",
+          "text": "Performance by area, and readiness history."
+        },
+        {
+          "start": 121.8,
+          "end": 126.9,
+          "onScreen": "Coding tab: Accuracy 84%, topic-by-topic accuracy bars, Practice queue 'What to work on next'",
+          "text": "Then coding accuracy, topic by topic, and what to practise next."
+        },
+        {
+          "start": 127.1,
+          "end": 130.6,
+          "onScreen": "Your rankings: University standing #1 of 19, Prep Score 1.5",
+          "text": "Plus one Prep Score and a university rank."
+        }
+      ],
+      "beats": [
+        {
+          "t": 114.5,
+          "onScreen": "Overview tab at full width: Readiness 20/100 card, recommended next step, metric tiles, top of Performance by area and Readiness history charts; Readiness chip fading in"
+        },
+        {
+          "t": 116.5,
+          "onScreen": "Zoomed in on Readiness 20/100 card, cursor on 'Readiness'; chips Readiness / Coding accuracy / University rank shown"
+        },
+        {
+          "t": 117.5,
+          "onScreen": "Zoom easing out: readiness card still prominent, Performance by area bar and Readiness history line starting to show below"
+        },
+        {
+          "t": 118.5,
+          "onScreen": "Performance by area (Problems bar) and Readiness history line chart clearly in view, cursor on Readiness history"
+        },
+        {
+          "t": 120.5,
+          "onScreen": "Full Overview with both charts readable"
+        },
+        {
+          "t": 121.5,
+          "onScreen": "Zooming toward the tabs, cursor on 'Coding'; charts cropped"
+        },
+        {
+          "t": 122.5,
+          "onScreen": "Coding tab: Accuracy 84%, Topic performance bars, Practice queue 'What to work on next'"
+        },
+        {
+          "t": 126.5,
+          "onScreen": "Coding tab zoomed: topic accuracy bars (String, Math, Recursion...) and practice queue cards"
+        },
+        {
+          "t": 127.5,
+          "onScreen": "Your rankings: University standing #1 of 19, Prep Score 1.5; Global standing shows it needs a central-server connection"
+        },
+        {
+          "t": 130.5,
+          "onScreen": "Rankings zoomed, cursor on University standing"
+        }
+      ],
+      "issuesFixed": 4,
+      "remainingBudgetProblems": []
+    },
+    {
+      "id": "08-admin-campus",
+      "lines": [
+        {
+          "start": 131.4,
+          "end": 135.4,
+          "onScreen": "Master admin overview, zoom on 589 total students",
+          "text": "Now the other side: one console for every campus."
+        },
+        {
+          "start": 135.6,
+          "end": 139.2,
+          "onScreen": "Universities overview, then 'How a university goes live' STEP 1-4 cards",
+          "text": "A new university goes live in four steps."
+        },
+        {
+          "start": 139.4,
+          "end": 142.9,
+          "onScreen": "Graphic university, Modules tab with on/off switches",
+          "text": "Each campus gets only the modules it needs."
+        },
+        {
+          "start": 143.7,
+          "end": 145.7,
+          "onScreen": "Plan & Prep Coins tab opens: Service period and Account limits panels",
+          "text": "Service dates, seat limits."
+        }
+      ],
+      "beats": [
+        {
+          "t": 131.5,
+          "onScreen": "Master admin overview, zoom on 589 total students"
+        },
+        {
+          "t": 136.5,
+          "onScreen": "Universities overview: Live now 1, Need attention 1, Graphic listed in Needs attention, Recent activity; 'How a university goes live' heading just entering at bottom"
+        },
+        {
+          "t": 137.5,
+          "onScreen": "'How a university goes live' STEP 1-4 cards: Add the university, Choose what it gets, Share assessments, Students sign in"
+        },
+        {
+          "t": 139.5,
+          "onScreen": "Graphic university, Modules tab with on/off switches (Learning, Assessments, Question practice, Peer interviews, AI interviews, Resumes)"
+        },
+        {
+          "t": 143.5,
+          "onScreen": "Cursor clicking 'Plan & Prep Coins' tab; Modules panel still showing"
+        },
+        {
+          "t": 144.5,
+          "onScreen": "Plan & Prep Coins tab open: Service period (starts/ends), Account limits (max coordinators, max students), University wallet"
+        }
+      ],
+      "issuesFixed": 3,
+      "remainingBudgetProblems": []
+    },
+    {
+      "id": "09-admin-anvi",
+      "lines": [
+        {
+          "start": 146.3,
+          "end": 149.8,
+          "onScreen": "New interview builder; zoom on the 4-step stepper; chips appear",
+          "text": "Placement teams build interviews in four guided steps."
+        },
+        {
+          "start": 150,
+          "end": 153.6,
+          "onScreen": "Basics form: role, experience level, difficulty ('These details shape the questions'); ends before cut to list",
+          "text": "Role, level and difficulty shape what ANVI asks."
+        },
+        {
+          "start": 154,
+          "end": 156.8,
+          "onScreen": "Published 'Amazon Intern Hiring' interview in the AI Interviews list, zoom on the row",
+          "text": "Then we publish it for students."
+        },
+        {
+          "start": 157,
+          "end": 164.7,
+          "onScreen": "Usage and cost: sessions, live minutes, tokens; AI calls 'Requests sent to Gemini' readable from about 162.5s",
+          "text": "We track usage per session: live minutes, tokens, and Gemini AI calls."
+        }
+      ],
+      "beats": [
+        {
+          "t": 146.5,
+          "onScreen": "New interview builder, Basics step; 4-step stepper (Basics, Questions, ANVI settings, Review & publish); '4-step builder' chip fading in"
+        },
+        {
+          "t": 147.5,
+          "onScreen": "Chips '4-step builder', 'Live questions', 'Usage tracked' visible (stay up for the rest of the scene)"
+        },
+        {
+          "t": 150.5,
+          "onScreen": "Zoom on stepper and 'What is this interview for?'; 'These details shape the questions and how answers are judged'; Role and audience form"
+        },
+        {
+          "t": 153.5,
+          "onScreen": "Scrolled Basics: Job role, Company, Experience level (Fresher/Junior/Mid-level/Senior), Difficulty (Easy/Medium/Hard), Format section"
+        },
+        {
+          "t": 154.5,
+          "onScreen": "Cut to AI Interviews list: 'Amazon Intern Hiring', 5 questions, <=23 min, Published"
+        },
+        {
+          "t": 156.5,
+          "onScreen": "Zoom on the published 'Amazon Intern Hiring' row"
+        },
+        {
+          "t": 157.5,
+          "onScreen": "Cut to AI Interview Reports > Usage and cost: Sessions 1, Live minutes 4.9 min, Tokens 137.9K; AI calls 23 'Requests sent to Gemini' in lower row"
+        },
+        {
+          "t": 162.5,
+          "onScreen": "Zoomed usage cards; AI calls 23 'Requests sent to Gemini' clearly readable"
+        }
+      ],
+      "issuesFixed": 5,
+      "remainingBudgetProblems": []
+    },
+    {
+      "id": "10-admin-analysis",
+      "lines": [
+        {
+          "start": 165.3,
+          "end": 169.9,
+          "onScreen": "Prep Analysis overview with stat cards, charts, 'Any student group' and 'Export' chips; Download button visible at 168.5-169.5",
+          "text": "Prep Analysis shows any student group's preparation, ready to download."
+        },
+        {
+          "start": 170.1,
+          "end": 172.9,
+          "onScreen": "Zoom on Top students chart ('Who leads on Prep Score')",
+          "text": "Top students, ranked by Prep Score."
+        },
+        {
+          "start": 173.1,
+          "end": 178.6,
+          "onScreen": "Filters clicked; drawer with feature choice, 'Activity from' period and 'Which students?' filters",
+          "text": "Filter by feature, time period and exactly which students count."
+        },
+        {
+          "start": 179,
+          "end": 181.7,
+          "onScreen": "Prep Score formula settings with exponents, scale and module weights",
+          "text": "Even the scoring formula is configurable."
+        }
+      ],
+      "beats": [
+        {
+          "t": 165.5,
+          "onScreen": "Prep Analysis overview: stat cards, Top students and Solved by difficulty charts; 'Any student group' chip in header"
+        },
+        {
+          "t": 166.5,
+          "onScreen": "'Export' chip appears in header; view panned, Download button cropped out"
+        },
+        {
+          "t": 168.5,
+          "onScreen": "Full Prep Analysis page with Download button visible top right; all three header chips shown"
+        },
+        {
+          "t": 170.5,
+          "onScreen": "Zoom on Top students chart, subtitle 'Who leads on Prep Score'; Download button out of frame"
+        },
+        {
+          "t": 172.5,
+          "onScreen": "Cursor on Filters button"
+        },
+        {
+          "t": 175.5,
+          "onScreen": "Filters drawer: 'What do you want to analyse?' feature cards, 'Activity from' period, 'Which students?' filters"
+        },
+        {
+          "t": 178.5,
+          "onScreen": "Drawer scrolled: Prep Coding filters, Student details, 'Everyone, or only the top / bottom?'"
+        },
+        {
+          "t": 179.5,
+          "onScreen": "Prep Score formula settings: volume/difficulty exponents, scale, decimal places, per-module weights and points"
+        }
+      ],
+      "issuesFixed": 3,
+      "remainingBudgetProblems": []
+    },
+    {
+      "id": "11-architecture",
+      "lines": [
+        {
+          "start": 182.4,
+          "end": 186.4,
+          "onScreen": "Title 'One codebase. Every campus isolated.', then React 19 web app and Node + Express API cards",
+          "text": "One codebase. React web app, Node and Express API."
+        },
+        {
+          "start": 186.6,
+          "end": 191.2,
+          "onScreen": "Tenant context node, then University A, B and C each with own MongoDB",
+          "text": "Every request picks its university. Each has its own MongoDB."
+        },
+        {
+          "start": 191.4,
+          "end": 195,
+          "onScreen": "Redis + BullMQ job queues card (from 191.0s), then Judge0 sandboxed code runs card (from about 193.0s)",
+          "text": "Redis queues jobs. Judge0 sandboxes code."
+        },
+        {
+          "start": 195.2,
+          "end": 197.9,
+          "onScreen": "Google Gemini - ANVI interviews card (appears about 195.0s)",
+          "text": "ANVI runs on Google Gemini."
+        },
+        {
+          "start": 198.1,
+          "end": 201.7,
+          "onScreen": "Python analytics - separate service card (appears about 198.0s); full diagram",
+          "text": "We run analytics as a separate Python service."
+        }
+      ],
+      "beats": [
+        {
+          "t": 182.4,
+          "onScreen": "Title 'One codebase. Every campus isolated.'; React 19 web app and Node + Express API cards"
+        },
+        {
+          "t": 186.5,
+          "onScreen": "Tenant context card fading in"
+        },
+        {
+          "t": 190.5,
+          "onScreen": "Tenant context linked to University A, B, C, each 'own MongoDB'"
+        },
+        {
+          "t": 191,
+          "onScreen": "Redis + BullMQ card (job queues, workers) appears; connector from API starts drawing"
+        },
+        {
+          "t": 193,
+          "onScreen": "Judge0 'sandboxed code runs' card appears (absent at 192.5, present at 193.5)"
+        },
+        {
+          "t": 195,
+          "onScreen": "Google Gemini 'ANVI interviews' card appears (absent at 194.5, present at 195.5); connector toward analytics starts drawing"
+        },
+        {
+          "t": 198,
+          "onScreen": "Python analytics 'separate service' card appears with connector from API (absent at 197.5, present at 198.5); Gemini connector drawn"
+        },
+        {
+          "t": 201.5,
+          "onScreen": "Full architecture diagram"
+        }
+      ],
+      "issuesFixed": 3,
+      "remainingBudgetProblems": []
+    },
+    {
+      "id": "12-business",
+      "lines": [
+        {
+          "start": 202.3,
+          "end": 205.8,
+          "onScreen": "Title 'B2B SaaS for universities', then the Campus subscription card appears at about 203.2",
+          "text": "Our model is B2B: universities subscribe per campus."
+        },
+        {
+          "start": 206,
+          "end": 208.6,
+          "onScreen": "Campus subscription card: sized by student seats, pay for the modules you switch on",
+          "text": "Pricing follows seats and modules."
+        },
+        {
+          "start": 208.8,
+          "end": 211.9,
+          "onScreen": "Prep Coin credits card enters at about 208.6 and is fully visible by 209.5: AI interviews run on credits",
+          "text": "AI interviews run on Prep Coin credits,"
+        },
+        {
+          "start": 212.6,
+          "end": 216.6,
+          "onScreen": "Cost control built in card fades in from about 212.4 next to the Prep Coin card: usage tracked per session, budget caps per interview",
+          "text": "so usage pays for compute, capped per interview."
+        }
+      ],
+      "beats": [
+        {
+          "t": 202.5,
+          "onScreen": "Eyebrow 'Business model' and title 'B2B SaaS for universities' on an otherwise empty backdrop"
+        },
+        {
+          "t": 203.5,
+          "onScreen": "Campus subscription card has popped in (keyframe at 1.2s scene time, about 203.2s absolute): sized by student seats, pay for the modules you switch on, service dates per campus"
+        },
+        {
+          "t": 208.5,
+          "onScreen": "Only the Campus subscription card is visible; the Prep Coin card has not appeared yet"
+        },
+        {
+          "t": 208.6,
+          "onScreen": "Prep Coin credits card starts its entrance (Motion.jsx keyframe at 6.6s scene time, which matches the 208.5 and 209.5 frames, so the scene starts at about 202.0s). It is mostly in place by about 208.9"
+        },
+        {
+          "t": 209.5,
+          "onScreen": "Prep Coin credits card fully visible: AI interviews run on credits; usage-heavy features pay for their compute; free monthly allowance per feature"
+        },
+        {
+          "t": 212.4,
+          "onScreen": "Cost control built in card starts its entrance (keyframe at 10.4s scene time) and is partly visible at 212.5"
+        },
+        {
+          "t": 213.5,
+          "onScreen": "All three cards visible. Cost control: AI usage tracked per session, budget caps per interview, seat limits enforced on upload. Holds until 216.7"
+        }
+      ],
+      "issuesFixed": 2,
+      "remainingBudgetProblems": []
+    },
+    {
+      "id": "13-scale-close",
+      "lines": [
+        {
+          "start": 217.3,
+          "end": 220.4,
+          "onScreen": "'Add a university = add a database.' headline, 'Every campus isolated' bullet, first tiles appearing",
+          "text": "Adding a university means adding a database."
+        },
+        {
+          "start": 220.6,
+          "end": 224.4,
+          "onScreen": "'Every heavy job queued' and 'Workers scale out horizontally' bullets; grid filling up",
+          "text": "Heavy jobs are queued, and workers scale out."
+        },
+        {
+          "start": 224.7,
+          "end": 227.3,
+          "onScreen": "Full 24-tile database grid holding",
+          "text": "No new code per campus."
+        },
+        {
+          "start": 228,
+          "end": 230.1,
+          "onScreen": "PeerPrep logo; 589 / 4,012 stat cards pop in (present by 228.5), then 577 tags and 132 topics",
+          "text": "Already 589 students onboarded."
+        },
+        {
+          "start": 230.3,
+          "end": 233.5,
+          "onScreen": "'...and built for many more campuses.' tagline with Learn / Practise / Assess / Interview / Analyse chips",
+          "text": "So help comes before the drive."
+        }
+      ],
+      "beats": [
+        {
+          "t": 217.5,
+          "onScreen": "BUILT TO SCALE / 'Add a university = add a database.' headline; first database tile in an empty 6x4 grid; no bullets yet"
+        },
+        {
+          "t": 219.5,
+          "onScreen": "'Every campus isolated' bullet visible; first row of tiles plus one more filled"
+        },
+        {
+          "t": 220.5,
+          "onScreen": "'Every heavy job queued' bullet added; second row filling"
+        },
+        {
+          "t": 222.5,
+          "onScreen": "'Workers scale out horizontally' bullet added; grid about three rows full"
+        },
+        {
+          "t": 224.5,
+          "onScreen": "Full 24-tile database grid with all three bullets, held until about 226.5"
+        },
+        {
+          "t": 227.5,
+          "onScreen": "Transition to closing card: PeerPrep logo only, no stat cards"
+        },
+        {
+          "t": 228.5,
+          "onScreen": "Stat cards 589 students onboarded and 4,012 coding problems ALREADY visible (the checker's claim of 'logo only at 228.5' is wrong per the frame), so the cards arrive between 227.5 and 228.5"
+        },
+        {
+          "t": 229.5,
+          "onScreen": "All four stat cards: 589 students onboarded, 4,012 coding problems, 577 company tags, 132 topics; no tagline yet"
+        },
+        {
+          "t": 230.5,
+          "onScreen": "Tagline '...and built for many more campuses.' plus Learn / Practise / Assess / Interview / Analyse chips visible (appeared between 229.5 and 230.5)"
+        },
+        {
+          "t": 233.5,
+          "onScreen": "Final hold: logo, four stat cards, tagline and chips unchanged"
+        }
+      ],
+      "issuesFixed": 4,
+      "remainingBudgetProblems": []
+    }
+  ],
+  "flowFixes": [
+    {
+      "sceneId": "01-problem",
+      "lineIndex": 4,
+      "problem": "Weak closing for the problem setup. 'Only afterwards' is flat, and the line needs a sharp phrase that the final line can echo.",
+      "replacement": "They learn who needed help too late."
+    },
+    {
+      "sceneId": "04-prep-coding",
+      "lineIndex": 4,
+      "problem": "Judge0 first appears here, but its pronunciation hint is in 11-architecture[2]. The hint must go on the first mention.",
+      "replacement": "Submit goes to Judge0's (Judge zero's) sandbox."
+    },
+    {
+      "sceneId": "06-anvi",
+      "lineIndex": 0,
+      "problem": "ANVI first appears here without its pronunciation hint, which is in 11[3]. 'Colleges' also clashes with the 'placement team' wording used in the next line and in scene 09.",
+      "replacement": "ANVI (AHN-vee), our AI interviewer. Placement teams schedule it per cohort and time window."
+    },
+    {
+      "sceneId": "06-anvi",
+      "lineIndex": 1,
+      "problem": "Using 'placement' alone as a noun is unclear and does not match the term 'placement team'.",
+      "replacement": "Students interview by voice; reports stay pending until the placement team releases them."
+    },
+    {
+      "sceneId": "06-anvi",
+      "lineIndex": 2,
+      "problem": "Repeats 'scores' and 'score' in one sentence, and the next line says 'scores' again.",
+      "replacement": "ANVI scores each attempt and writes a report, downloadable as a PDF."
+    },
+    {
+      "sceneId": "06-anvi",
+      "lineIndex": 3,
+      "problem": "A third 'scores' in a row. The wording also says 'answer' twice.",
+      "replacement": "Each answer gets its own score, plus pace, filler words and length."
+    },
+    {
+      "sceneId": "06-anvi",
+      "lineIndex": 4,
+      "problem": "Starts with 'Plus', and 07[3] does the same soon after. Varying the connector helps the flow.",
+      "replacement": "And numbered action items."
+    },
+    {
+      "sceneId": "11-architecture",
+      "lineIndex": 2,
+      "problem": "The Judge0 hint moves to its first mention in 04[4], so it is removed here.",
+      "replacement": "Redis queues jobs. Judge0 sandboxes code."
+    },
+    {
+      "sceneId": "11-architecture",
+      "lineIndex": 3,
+      "problem": "The ANVI hint moves to its first mention in 06[0], so it is removed here.",
+      "replacement": "ANVI runs on Google Gemini."
+    },
+    {
+      "sceneId": "13-scale-close",
+      "lineIndex": 0,
+      "problem": "Says the same thing as 11[1] ('Each has its own MongoDB'). Rephrasing it to match the on-screen headline frames it as the scaling story.",
+      "replacement": "Adding a university means adding a database."
+    },
+    {
+      "sceneId": "13-scale-close",
+      "lineIndex": 1,
+      "problem": "Repeats 11[2] ('Redis queues jobs') and leaves out the visible 'Workers scale out horizontally' point, which is the real claim about scale.",
+      "replacement": "Heavy jobs are queued, and workers scale out."
+    },
+    {
+      "sceneId": "13-scale-close",
+      "lineIndex": 2,
+      "problem": "'A new campus is configuration' is vague and echoes 08[1]. It needs a crisp contrast.",
+      "replacement": "No new code per campus."
+    },
+    {
+      "sceneId": "13-scale-close",
+      "lineIndex": 4,
+      "problem": "Weak final line. It only reads out the tagline, says 'campuses' yet again, and does not answer the opening problem of finding out after the drive.",
+      "replacement": "So help comes before the drive."
+    }
+  ],
+  "missing": [],
+  "flowApplied": true
+}

@@ -1,0 +1,22 @@
+{
+  "name": "peerprep-demo-reel",
+  "private": true,
+  "type": "module",
+  "description": "Silent PeerPrep pitch video: Playwright scene capture + Remotion assembly. Gitignored; not part of the app.",
+  "scripts": {
+    "auth:admin": "node auth.mjs admin",
+    "auth:student": "node auth.mjs student",
+    "timing": "node script/check-timing.mjs"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.525",
+    "@remotion/renderer": "4.0.525",
+    "@remotion/studio": "4.0.525",
+    "ffmpeg-static": "5.3.0",
+    "ffprobe-static": "3.1.0",
+    "playwright": "1.63.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "remotion": "4.0.525"
+  }
+}

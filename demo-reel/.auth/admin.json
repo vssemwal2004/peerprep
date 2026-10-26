@@ -1,0 +1,45 @@
+{
+  "cookies": [
+    {
+      "name": "accessToken",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2YTY3Y2ZjZjkzNTc2ZTIwYTU1ZTM3MmEiLCJyb2xlIjoiYWRtaW4iLCJlbWFpbCI6ImFAZ21haWwuY29tIiwidGVuYW50SWQiOiJwbGF0Zm9ybSIsImlhdCI6MTc5MzAxMTMyNSwiZXhwIjoxNzkzNjE2MTI1fQ.-_yTpmd43YP7hnGMLxA_f67qWK-zGPF-LoTLERs5sXU",
+      "domain": "localhost",
+      "path": "/",
+      "expires": 1793097725.187193,
+      "httpOnly": true,
+      "secure": false,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": [
+    {
+      "origin": "http://localhost:5173",
+      "localStorage": [
+        {
+          "name": "studentSidebarPinned",
+          "value": "false"
+        },
+        {
+          "name": "theme",
+          "value": "light"
+        },
+        {
+          "name": "studentName",
+          "value": "Admin"
+        },
+        {
+          "name": "userId",
+          "value": "6a67cfcf93576e20a55e372a"
+        },
+        {
+          "name": "isAdmin",
+          "value": "true"
+        },
+        {
+          "name": "studentEmail",
+          "value": "a@gmail.com"
+        }
+      ]
+    }
+  ]
+}
